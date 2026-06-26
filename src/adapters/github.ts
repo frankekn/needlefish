@@ -133,14 +133,10 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
-  const pr = gh([
-    "api",
-    `repos/${repo}/pulls/${prNumber}`,
-  ]);
-  const headSha = pr.head?.sha ?? git(["rev-parse", "HEAD"], cwd);
-  const baseSha = pr.base?.sha ?? git(["merge-base", "origin/" + (pr.base?.ref ?? "main"), "HEAD"], cwd);
-
-  const patch = ghText(["pr", "diff", String(prNumber)]);
+  const pr = gh(["api", `repos/${repo}/pulls/${prNumber}`]);
+  const baseSha = pr.base?.sha ?? git(["merge-base", "origin/main", "HEAD"], cwd);
+  const headSha = git(["rev-parse", "HEAD"], cwd);
+  const patch = git(["diff", baseSha, "HEAD"], cwd);
   const changedFiles = changedFileSet(cwd, baseSha);
   const changedPaths = new Set(changedFiles.map((f) => f.path));
 
@@ -188,7 +184,7 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
       repo,
       headSha,
       null,
-      "neutral",
+      "failure",
       "Needlefish: review failed",
       `Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``
     );
