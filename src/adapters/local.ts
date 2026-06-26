@@ -29,9 +29,21 @@ function detectBase(cwd: string, override?: string): string {
   return "main";
 }
 
+function gh(args: string[], cwd: string): string {
+  const res = spawnSync("gh", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 64,
+  });
+  if (res.status !== 0) {
+    throw new Error(`gh ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
+  }
+  return (res.stdout ?? "").trim();
+}
+
 function fetchPrMeta(cwd: string, prNumber: number): PrMeta | null {
   try {
-    const raw = git(
+    const raw = gh(
       [
         "pr",
         "view",

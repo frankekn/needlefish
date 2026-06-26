@@ -1,5 +1,9 @@
 name: needlefish-review
 
+# Self-review mode: this repo IS needlefish, so the PR checkout's own src/ is
+# the tool. For OTHER repos, use the generic template in README.md (which adds a
+# second checkout of frankekn/needlefish as the tool).
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -13,28 +17,16 @@ jobs:
   review:
     runs-on: self-hosted
     steps:
-      - name: Checkout target PR
+      - name: Checkout PR head
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Checkout needlefish
-        uses: actions/checkout@v4
-        with:
-          repository: frankekn/needlefish
-          path: needlefish
-          # If needlefish is private, provide a PAT with repo read scope:
-          # token: ${{ secrets.NEEDLEFISH_PAT }}
-
-      - name: Setup needlefish
+      - name: Install
         run: corepack enable && pnpm install --frozen-lockfile
-        working-directory: needlefish
 
-      - name: Review
-        working-directory: ${{ github.workspace }}
+      - name: Needlefish review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
-        run: |
-          ./needlefish/node_modules/.bin/tsx needlefish/src/cli.ts --github --pr ${{ github.event.pull_request.number }}
+        run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.pull_request.number }}
