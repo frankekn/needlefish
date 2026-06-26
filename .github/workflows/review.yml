@@ -1,12 +1,18 @@
 name: needlefish-review
 
-# Self-review mode: this repo IS needlefish, so the PR checkout's own src/ is
-# the tool. For OTHER repos, use the generic template in README.md (which adds a
-# second checkout of frankekn/needlefish as the tool).
+# Trusted-tool pattern: the reviewer (needlefish) is checked out from `main`
+# (trusted); only the PR head under review is untrusted. This prevents a PR from
+# controlling its own review by modifying the tool. For OTHER repos, copy this
+# workflow and point the tool checkout at frankekn/needlefish@main.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to review (manual trigger; bypasses pull_request webhook)
+        required: true
 
 permissions:
   contents: read
@@ -16,22 +22,49 @@ permissions:
 jobs:
   review:
     runs-on: self-hosted
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - name: Checkout PR head
+      - name: Resolve PR refs
+        id: refs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$EVENT_HEAD" ]; then
+            echo "head=$EVENT_HEAD" >> "$GITHUB_OUTPUT"
+            echo "base=$EVENT_BASE" >> "$GITHUB_OUTPUT"
+          else
+            echo "head=$(gh pr view "$PR_NUM" -R "$REPO" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
+            echo "base=$(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout review target (PR head)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.refs.outputs.head }}
           fetch-depth: 0
+          path: target
 
-      - name: Install
+      - name: Checkout trusted tool (main)
+        uses: actions/checkout@v4
+        with:
+          repository: frankekn/needlefish
+          ref: main
+          path: needlefish
+
+      - name: Install tool
         shell: zsh -l {0}
+        working-directory: needlefish
         run: corepack enable && pnpm install --frozen-lockfile
 
       - name: Needlefish review
         shell: zsh -l {0}
+        working-directory: target
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ steps.refs.outputs.base }}
+          PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
+        run: '"$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" --github --pr ${{ github.event.inputs.pr_number || github.event.pull_request.number }}'
