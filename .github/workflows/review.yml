@@ -27,6 +27,7 @@ jobs:
         id: refs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           PR_NUM: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
@@ -35,8 +36,8 @@ jobs:
             echo "head=$EVENT_HEAD" >> "$GITHUB_OUTPUT"
             echo "base=$EVENT_BASE" >> "$GITHUB_OUTPUT"
           else
-            echo "head=$(gh pr view "$PR_NUM" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
-            echo "base=$(gh pr view "$PR_NUM" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
+            echo "head=$(gh pr view "$PR_NUM" -R "$REPO" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
+            echo "base=$(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout PR head
