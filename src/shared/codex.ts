@@ -20,8 +20,14 @@ export function runCodex(prompt: string, opts: CodexOptions): string {
   const args = ["exec", "--color", "never", "-s", "read-only", "--output-last-message", lastMsg];
   if (model) args.push("-m", model);
 
+  const env = { ...process.env };
+  delete env.GH_TOKEN;
+  delete env.GITHUB_TOKEN;
+  delete env.GITHUB_API_TOKEN;
+
   const res = spawnSync(bin, args, {
     cwd: opts.repoPath,
+    env,
     input: prompt,
     encoding: "utf8",
     timeout: timeoutMs,
