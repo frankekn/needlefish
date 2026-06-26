@@ -30,16 +30,13 @@ jobs:
           PR_NUM: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
-          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           if [ -n "$EVENT_HEAD" ]; then
-            echo "head=$EVENT_HEAD"      >> "$GITHUB_OUTPUT"
-            echo "base=$EVENT_BASE"      >> "$GITHUB_OUTPUT"
-            echo "base_ref=$EVENT_BASE_REF" >> "$GITHUB_OUTPUT"
+            echo "head=$EVENT_HEAD" >> "$GITHUB_OUTPUT"
+            echo "base=$EVENT_BASE" >> "$GITHUB_OUTPUT"
           else
-            echo "head=$(gh pr view "$PR_NUM" --json headRefOid -q .headRefOid)"   >> "$GITHUB_OUTPUT"
-            echo "base=$(gh pr view "$PR_NUM" --json baseRefOid -q .baseRefOid)"   >> "$GITHUB_OUTPUT"
-            echo "base_ref=$(gh pr view "$PR_NUM" --json baseRef -q .baseRef)"     >> "$GITHUB_OUTPUT"
+            echo "head=$(gh pr view "$PR_NUM" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
+            echo "base=$(gh pr view "$PR_NUM" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout PR head

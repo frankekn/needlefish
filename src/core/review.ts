@@ -27,16 +27,17 @@ export async function review(
 
   const rawCandidate = runCodex(reviewPrompt, { repoPath: bundle.repoPath });
   const candidate = normalizeReview(extractJson(rawCandidate));
+  if (!candidate.summary) {
+    throw new Error("review produced no summary (likely malformed model output)");
+  }
 
   const criticPrompt = loadPrompt("critic.md")
     .replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
     .replace("{{PATCH}}", () => bundle.patch);
   const rawPruned = runCodex(criticPrompt, { repoPath: bundle.repoPath });
   const pruned: RawReview = normalizeReview(extractJson(rawPruned));
-  if (!pruned.summary && pruned.findings.length === 0 && pruned.checked.length === 0) {
-    throw new Error(
-      "review produced no usable output (empty summary, findings, and checks)"
-    );
+  if (!pruned.summary) {
+    throw new Error("critic produced no summary (likely malformed model output)");
   }
 
   const verdict = deriveVerdict(pruned.findings, pruned.residual_risks);
