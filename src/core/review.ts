@@ -22,15 +22,15 @@ export async function review(
 ): Promise<ReviewResult> {
   const reviewPrompt = loadPrompt("review.md").replace(
     "{{BUNDLE}}",
-    JSON.stringify(bundle, null, 2)
+    () => JSON.stringify(bundle, null, 2)
   );
 
   const rawCandidate = runCodex(reviewPrompt, { repoPath: bundle.repoPath });
   const candidate = normalizeReview(extractJson(rawCandidate));
 
   const criticPrompt = loadPrompt("critic.md")
-    .replace("{{FINDINGS}}", JSON.stringify(candidate, null, 2))
-    .replace("{{PATCH}}", bundle.patch);
+    .replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
+    .replace("{{PATCH}}", () => bundle.patch);
   const rawPruned = runCodex(criticPrompt, { repoPath: bundle.repoPath });
   const pruned: RawReview = normalizeReview(extractJson(rawPruned));
 
