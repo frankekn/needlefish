@@ -13,6 +13,12 @@ on:
       pr_number:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
+  workflow_call:
+    inputs:
+      pr_number:
+        description: PR number (optional; defaults to the event PR)
+        type: string
+        required: false
 
 permissions:
   contents: read
