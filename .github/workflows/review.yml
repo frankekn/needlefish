@@ -29,6 +29,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.ref }}
           fetch-depth: 0
 
+      - name: Fetch base branch
+        run: git fetch origin "$BASE_REF" --depth=1
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
+
       - name: Install
         shell: zsh -l {0}
         run: corepack enable && pnpm install --frozen-lockfile
