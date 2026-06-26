@@ -81,6 +81,10 @@ Env:
 `;
 
 async function main() {
+  if (process.argv.slice(2).some((a) => a === "-v" || a === "--version")) {
+    process.stdout.write("needlefish 0.1.0\n");
+    process.exit(0);
+  }
   const { github, pr, repo, opts, fix, recheck } = parse(process.argv.slice(2));
 
   if (fix) {
