@@ -93,10 +93,9 @@ const CATEGORIES: Category[] = [
 ];
 
 export function normalizeFinding(raw: Partial<Finding>): Finding {
+  const sev = String(raw.severity ?? "").trim().toUpperCase();
   return {
-    severity: (SEVERITIES.includes(raw.severity as Severity)
-      ? raw.severity
-      : "P3") as Severity,
+    severity: (SEVERITIES.includes(sev as Severity) ? sev : "P1") as Severity,
     title: String(raw.title ?? "Untitled finding").slice(0, 120),
     category: (CATEGORIES.includes(raw.category as Category)
       ? raw.category
