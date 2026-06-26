@@ -24,9 +24,11 @@ jobs:
           fetch-depth: 0
 
       - name: Install
+        shell: zsh -l {0}
         run: corepack enable && pnpm install --frozen-lockfile
 
       - name: Needlefish review
+        shell: zsh -l {0}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.pull_request.number }}
