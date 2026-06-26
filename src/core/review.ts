@@ -33,6 +33,11 @@ export async function review(
     .replace("{{PATCH}}", () => bundle.patch);
   const rawPruned = runCodex(criticPrompt, { repoPath: bundle.repoPath });
   const pruned: RawReview = normalizeReview(extractJson(rawPruned));
+  if (!pruned.summary && pruned.findings.length === 0 && pruned.checked.length === 0) {
+    throw new Error(
+      "review produced no usable output (empty summary, findings, and checks)"
+    );
+  }
 
   const verdict = deriveVerdict(pruned.findings, pruned.residual_risks);
 
