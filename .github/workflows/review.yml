@@ -32,4 +32,6 @@ jobs:
         shell: zsh -l {0}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.pull_request.number }}
