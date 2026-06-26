@@ -112,19 +112,32 @@ export function normalizeFinding(raw: Partial<Finding>): Finding {
 }
 
 export function normalizeReview(raw: any): RawReview {
-  const findings = Array.isArray(raw?.findings)
-    ? raw.findings.map(normalizeFinding)
-    : [];
-  const residual = Array.isArray(raw?.residual_risks)
-    ? raw.residual_risks.map((r: any) => ({
-        text: String(r?.text ?? ""),
-        blocks: Boolean(r?.blocks),
-      }))
-    : [];
+  if (!raw || typeof raw !== "object") {
+    throw new Error("malformed review output: not an object");
+  }
+  if (typeof raw.summary !== "string") {
+    throw new Error("malformed review output: summary missing or not a string");
+  }
+  if (!Array.isArray(raw.findings)) {
+    throw new Error("malformed review output: findings missing or not an array");
+  }
+  if (!Array.isArray(raw.checked)) {
+    throw new Error("malformed review output: checked missing or not an array");
+  }
+  if (!Array.isArray(raw.residual_risks)) {
+    throw new Error(
+      "malformed review output: residual_risks missing or not an array"
+    );
+  }
+  const findings = raw.findings.map(normalizeFinding);
+  const residual = raw.residual_risks.map((r: any) => ({
+    text: String(r?.text ?? ""),
+    blocks: Boolean(r?.blocks),
+  }));
   return {
-    summary: String(raw?.summary ?? ""),
+    summary: raw.summary,
     findings,
-    checked: Array.isArray(raw?.checked) ? raw.checked.map(String) : [],
+    checked: raw.checked.map(String),
     residual_risks: residual,
   };
 }
