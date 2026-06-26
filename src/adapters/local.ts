@@ -8,7 +8,11 @@ import { renderMarkdown } from "../shared/render";
 import type { Bundle, PrMeta, ReviewResult } from "../shared/schema";
 
 function git(args: string[], cwd: string): string {
-  const res = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const res = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 64,
+  });
   if (res.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
   }

@@ -34,7 +34,11 @@ function ghText(args: string[]): string {
 }
 
 function git(args: string[], cwd: string): string {
-  const res = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const res = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 64,
+  });
   if (res.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
   }
@@ -162,7 +166,7 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
 
   const bundle: Bundle = {
     repoPath: cwd,
-    baseSha,
+    baseSha: mergeBase,
     headSha,
     patch,
     changedFiles,
