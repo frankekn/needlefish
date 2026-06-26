@@ -134,8 +134,8 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
   const pr = gh(["api", `repos/${repo}/pulls/${prNumber}`]);
-  const headSha = process.env.PR_HEAD_SHA ?? git(["rev-parse", "HEAD"], cwd);
-  const baseSha = process.env.PR_BASE_SHA ?? git(["merge-base", "origin/main", "HEAD"], cwd);
+  const headSha = process.env.PR_HEAD_SHA || git(["rev-parse", "HEAD"], cwd);
+  const baseSha = process.env.PR_BASE_SHA || git(["merge-base", "origin/main", "HEAD"], cwd);
   const patch = git(["diff", baseSha, "HEAD"], cwd);
   const changedFiles = changedFileSet(cwd, baseSha);
   const changedPaths = new Set(changedFiles.map((f) => f.path));
