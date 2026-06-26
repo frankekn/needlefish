@@ -107,6 +107,8 @@ function postReview(
         "-f",
         `event=${event}`,
         "-f",
+        `commit_id=${headSha}`,
+        "-f",
         `body=${body}`,
       ]
     );
