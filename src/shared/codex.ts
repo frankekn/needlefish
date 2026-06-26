@@ -17,7 +17,7 @@ export function runCodex(prompt: string, opts: CodexOptions): string {
 
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
   const lastMsg = path.join(tmp, "last.txt");
-  const args = ["exec", "--color", "never", "-s", "read-only", "--output-last-message", lastMsg];
+  const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
   if (model) args.push("-m", model);
 
   const env = { ...process.env };
