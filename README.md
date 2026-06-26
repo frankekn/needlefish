@@ -52,12 +52,15 @@ line-anchored inline comments plus a check run. Verdict → surface mapping:
 
 | verdict              | review event        | check     |
 | -------------------- | ------------------- | --------- |
-| pass                 | APPROVE             | success   |
+| pass                 | COMMENT             | success   |
 | changes_requested    | REQUEST_CHANGES     | failure   |
 | needs_human          | COMMENT             | neutral   |
-| run failed           | (none)              | neutral   |
+| run failed           | (none)              | failure   |
 
-A failed review never passes a PR — the check goes neutral with the error.
+`pass` posts a `COMMENT` (not `APPROVE`) plus a green check: the `GITHUB_TOKEN`
+bot is not permitted to formally approve PRs (anti-self-approval), so the green
+check-run is the merge gate. A failed review never passes a PR — the check goes
+`failure`.
 
 ### Runner setup (one-time)
 

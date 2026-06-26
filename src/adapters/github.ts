@@ -41,8 +41,8 @@ function git(args: string[], cwd: string): string {
   return (res.stdout ?? "").trim();
 }
 
-const VERDICT_EVENT: Record<Verdict, "APPROVE" | "REQUEST_CHANGES" | "COMMENT"> = {
-  pass: "APPROVE",
+const VERDICT_EVENT: Record<Verdict, "COMMENT" | "REQUEST_CHANGES" | "COMMENT"> = {
+  pass: "COMMENT",
   changes_requested: "REQUEST_CHANGES",
   needs_human: "COMMENT",
 };
