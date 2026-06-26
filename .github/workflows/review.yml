@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch base branch
-        run: git fetch origin "$BASE_REF" --depth=1
+        run: git fetch origin "refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
 
