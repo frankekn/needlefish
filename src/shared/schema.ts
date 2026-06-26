@@ -92,25 +92,49 @@ const CATEGORIES: Category[] = [
   "validation",
 ];
 
-export function normalizeFinding(raw: Partial<Finding>): Finding {
+export function normalizeFinding(raw: any): Finding {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("malformed finding: not an object");
+  }
   const sev = String(raw.severity ?? "").trim().toUpperCase();
+  if (!SEVERITIES.includes(sev as Severity)) {
+    throw new Error(`malformed finding: invalid severity "${raw.severity}"`);
+  }
+  const cat = String(raw.category ?? "").trim();
+  if (!CATEGORIES.includes(cat as Category)) {
+    throw new Error(`malformed finding: invalid category "${raw.category}"`);
+  }
+  const file = String(raw.file ?? "").trim();
+  if (!file) throw new Error("malformed finding: missing file");
+  const title = String(raw.title ?? "").trim();
+  if (!title) throw new Error("malformed finding: missing title");
+  const whyItBreaks = String(raw.whyItBreaks ?? "").trim();
+  if (!whyItBreaks) throw new Error("malformed finding: missing whyItBreaks");
+  const suggestedFix = String(raw.suggestedFix ?? "").trim();
+  if (!suggestedFix) throw new Error("malformed finding: missing suggestedFix");
+  const lineStart = Number(raw.lineStart);
+  if (!Number.isFinite(lineStart) || lineStart <= 0) {
+    throw new Error(`malformed finding: invalid lineStart ${raw.lineStart}`);
+  }
+  const lineEnd = Number(raw.lineEnd ?? raw.lineStart);
+  if (!Number.isFinite(lineEnd) || lineEnd <= 0) {
+    throw new Error(`malformed finding: invalid lineEnd ${raw.lineEnd}`);
+  }
   return {
-    severity: (SEVERITIES.includes(sev as Severity) ? sev : "P1") as Severity,
-    title: String(raw.title ?? "Untitled finding").slice(0, 120),
-    category: (CATEGORIES.includes(raw.category as Category)
-      ? raw.category
-      : "bug") as Category,
-    file: String(raw.file ?? ""),
-    lineStart: Number(raw.lineStart ?? 0),
-    lineEnd: Number(raw.lineEnd ?? raw.lineStart ?? 0),
+    severity: sev as Severity,
+    category: cat as Category,
+    file,
+    title,
+    whyItBreaks,
+    suggestedFix,
+    lineStart,
+    lineEnd,
     confidence: Math.max(0, Math.min(1, Number(raw.confidence ?? 0))),
-    whyItBreaks: String(raw.whyItBreaks ?? ""),
-    suggestedFix: String(raw.suggestedFix ?? ""),
     validation: String(raw.validation ?? ""),
   };
 }
 
-export function normalizeReview(raw: any): RawReview {
+export function normalizeReview(raw: any, strict = true): RawReview {
   if (!raw || typeof raw !== "object") {
     throw new Error("malformed review output: not an object");
   }
@@ -128,7 +152,17 @@ export function normalizeReview(raw: any): RawReview {
       "malformed review output: residual_risks missing or not an array"
     );
   }
-  const findings = raw.findings.map(normalizeFinding);
+  const findings = strict
+    ? raw.findings.map(normalizeFinding)
+    : raw.findings
+        .map((f: any) => {
+          try {
+            return normalizeFinding(f);
+          } catch {
+            return null;
+          }
+        })
+        .filter((f: Finding | null): f is Finding => f !== null);
   const residual = raw.residual_risks.map((r: any) => ({
     text: String(r?.text ?? ""),
     blocks: Boolean(r?.blocks),

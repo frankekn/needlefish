@@ -26,7 +26,7 @@ export async function review(
   );
 
   const rawCandidate = runCodex(reviewPrompt, { repoPath: bundle.repoPath });
-  const candidate = normalizeReview(extractJson(rawCandidate));
+  const candidate = normalizeReview(extractJson(rawCandidate), false);
   if (!candidate.summary || candidate.checked.length === 0) {
     throw new Error("review produced no summary or checked list (likely malformed output)");
   }
