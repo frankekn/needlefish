@@ -7,6 +7,11 @@ name: needlefish-review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to review (manual trigger; bypasses pull_request webhook)
+        required: true
 
 permissions:
   contents: read
@@ -16,12 +21,12 @@ permissions:
 jobs:
   review:
     runs-on: self-hosted
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - name: Checkout PR head
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
           fetch-depth: 0
 
       - name: Install
@@ -34,4 +39,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.pull_request.number }}
+        run: ./node_modules/.bin/tsx src/cli.ts --github --pr ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
