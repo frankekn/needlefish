@@ -10,6 +10,22 @@ export interface CodexOptions {
 }
 
 export function runCodex(prompt: string, opts: CodexOptions): string {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return runCodexOnce(prompt, opts);
+    } catch (e) {
+      lastErr = e;
+      if (attempt < 2) {
+        const backoff = Number(process.env.CODEX_RETRY_MS ?? 5000);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, backoff);
+      }
+    }
+  }
+  throw lastErr;
+}
+
+function runCodexOnce(prompt: string, opts: CodexOptions): string {
   const bin = process.env.CODEX_BIN ?? "codex";
   const model = opts.model ?? process.env.CODEX_MODEL;
   const timeoutMs =

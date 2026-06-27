@@ -29,7 +29,7 @@ Return ONLY a single ```json block in this shape:
 ```
 Rules:
 - Every changed file must appear in at least one hotspot.
-- Keep hotspots to <= 8 total; merge tiny related ones.
+- Keep hotspots to <= 6 total; merge tiny related ones.
 - `edges` are the load-bearing output: list every changed value that a downstream predicate/validation/router/persistence layer reads. Prefer real `rg`-found consumers with a line number; omit the edges array only if a surface genuinely has no cross-file consumers.
 - Do not report bugs. That is the next phase's job.
 

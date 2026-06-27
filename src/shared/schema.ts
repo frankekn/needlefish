@@ -59,6 +59,8 @@ export interface Finding {
   whyItBreaks: string;
   suggestedFix: string;
   validation: string;
+  consumerFile?: string;
+  consumerLine?: number;
 }
 
 export interface ResidualRisk {
@@ -195,6 +197,8 @@ export function normalizeFinding(raw: any): Finding {
     lineEnd,
     confidence: Math.max(0, Math.min(1, Number(raw.confidence ?? 0))),
     validation: String(raw.validation ?? ""),
+    consumerFile: raw.consumerFile ? String(raw.consumerFile).trim() || undefined : undefined,
+    consumerLine: raw.consumerLine ? Number(raw.consumerLine) || undefined : undefined,
   };
 }
 
