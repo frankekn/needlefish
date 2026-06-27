@@ -86,6 +86,8 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     patchStat: bundle.patchStat,
     changedFiles: bundle.changedFiles,
     agentsMd: bundle.agentsMd,
+    focus: bundle.focus,
+    deep: bundle.deep,
   };
   const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2));
   const mapResult = normalizeMap(extractJson(runCodex(mapPrompt, { repoPath: bundle.repoPath })));
@@ -117,6 +119,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     const deepPrompt = loadPrompt("deep.md")
       .replace("{{AGENTS}}", () => agents)
       .replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
+      .replace("{{FOCUS}}", bundle.focus ?? "(none)")
       .replace("{{BASE}}", bundle.baseSha)
       .replace("{{HEAD}}", bundle.headSha);
     let res: RawReview;

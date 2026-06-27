@@ -51,3 +51,4 @@ Return ONLY a single ```json block in the standard review shape:
 # Refs
 BASE: {{BASE}}
 HEAD: {{HEAD}}
+Focus: {{FOCUS}} (if not "(none)", prioritize findings in that area)
