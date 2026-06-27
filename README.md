@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Needlefish" width="100%">
+</p>
+
 # needlefish
 
 Strict local PR review agent. Acts like a senior engineer reviewing your diff

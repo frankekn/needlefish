@@ -40,6 +40,7 @@ export interface Bundle {
   baseSha: string;
   headSha: string;
   patch: string;
+  patchStat: string;
   changedFiles: ChangedFile[];
   agentsMd: string | null;
   prMeta: PrMeta | null;
@@ -58,6 +59,8 @@ export interface Finding {
   whyItBreaks: string;
   suggestedFix: string;
   validation: string;
+  consumerFile?: string;
+  consumerLine?: number;
 }
 
 export interface ResidualRisk {
@@ -80,6 +83,69 @@ export interface ReviewResult {
   residualRisks: ResidualRisk[];
   baseSha: string;
   headSha: string;
+}
+
+export interface RiskEdge {
+  producer: string;
+  consumerFile: string;
+  consumerLine: number;
+  why: string;
+}
+
+export interface Hotspot {
+  name: string;
+  files: string[];
+  why: string;
+  risk: "high" | "med" | "low";
+  edges: RiskEdge[];
+}
+
+export interface MapResult {
+  summary: string;
+  hotspots: Hotspot[];
+}
+
+export function normalizeMap(raw: any): MapResult {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("malformed map output: not an object");
+  }
+  if (typeof raw.summary !== "string") {
+    throw new Error("malformed map output: summary missing");
+  }
+  if (!Array.isArray(raw.hotspots)) {
+    throw new Error("malformed map output: hotspots missing or not an array");
+  }
+  const hotspots: Hotspot[] = raw.hotspots
+    .map((h: any): Hotspot | null => {
+      if (!h || typeof h !== "object") return null;
+      const files = Array.isArray(h.files) ? h.files.map(String).filter(Boolean) : [];
+      if (files.length === 0) return null;
+      const risk = h.risk === "high" || h.risk === "med" || h.risk === "low" ? h.risk : "med";
+      const edges = Array.isArray(h.edges)
+        ? h.edges
+            .map((e: any): RiskEdge | null => {
+              if (!e || typeof e !== "object") return null;
+              const cf = String(e.consumerFile ?? "").trim();
+              if (!cf) return null;
+              return {
+                producer: String(e.producer ?? "").trim(),
+                consumerFile: cf,
+                consumerLine: Number(e.consumerLine ?? 0),
+                why: String(e.why ?? "").trim(),
+              };
+            })
+            .filter((e: RiskEdge | null): e is RiskEdge => e !== null)
+        : [];
+      return {
+        name: String(h.name ?? files[0]).slice(0, 80),
+        files,
+        why: String(h.why ?? "").trim(),
+        risk,
+        edges,
+      };
+    })
+    .filter((h: Hotspot | null): h is Hotspot => h !== null);
+  return { summary: raw.summary, hotspots };
 }
 
 const SEVERITIES: Severity[] = ["P0", "P1", "P2", "P3"];
@@ -131,6 +197,8 @@ export function normalizeFinding(raw: any): Finding {
     lineEnd,
     confidence: Math.max(0, Math.min(1, Number(raw.confidence ?? 0))),
     validation: String(raw.validation ?? ""),
+    consumerFile: raw.consumerFile ? String(raw.consumerFile).trim() || undefined : undefined,
+    consumerLine: raw.consumerLine ? Number(raw.consumerLine) || undefined : undefined,
   };
 }
 
