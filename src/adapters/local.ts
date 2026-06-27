@@ -102,6 +102,7 @@ export async function runLocal(
   const baseSha = git(["merge-base", baseRef, "HEAD"], cwd);
   const headSha = git(["rev-parse", "HEAD"], cwd);
   const patch = git(["diff", baseSha, "HEAD"], cwd);
+  const patchStat = git(["diff", "--stat", baseSha, "HEAD"], cwd);
   const nameOnly = git(["diff", "--name-only", baseSha, "HEAD"], cwd);
   const changedFiles = classifyFiles(
     nameOnly.split("\n").filter(Boolean)
@@ -125,6 +126,7 @@ export async function runLocal(
     baseSha,
     headSha,
     patch,
+    patchStat,
     changedFiles,
     agentsMd,
     prMeta,

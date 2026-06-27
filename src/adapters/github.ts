@@ -144,6 +144,7 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
   const baseSha = process.env.PR_BASE_SHA || git(["merge-base", "origin/main", "HEAD"], cwd);
   const mergeBase = git(["merge-base", baseSha, headSha], cwd);
   const patch = git(["diff", mergeBase, headSha], cwd);
+  const patchStat = git(["diff", "--stat", mergeBase, headSha], cwd);
   const changedFiles = changedFileSet(cwd, mergeBase);
   const changedPaths = new Set(changedFiles.map((f) => f.path));
 
@@ -171,6 +172,7 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
     baseSha: mergeBase,
     headSha,
     patch,
+    patchStat,
     changedFiles,
     agentsMd,
     prMeta,
