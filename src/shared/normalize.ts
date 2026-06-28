@@ -144,7 +144,11 @@ export function normalizeFinding(raw: unknown): Finding {
   if (lineEnd < lineStart) {
     throw new Error("malformed finding: lineEnd before lineStart");
   }
-  const confidence = Math.max(0, Math.min(1, Number(record.confidence ?? 0)));
+  const rawConfidence = Number(record.confidence ?? 0);
+  if (!Number.isFinite(rawConfidence)) {
+    throw new Error(`malformed finding: invalid confidence ${String(record.confidence)}`);
+  }
+  const confidence = Math.max(0, Math.min(1, rawConfidence));
   if (severity !== "P3" && confidence < 0.65) {
     throw new Error("malformed finding: blocking finding has low confidence");
   }

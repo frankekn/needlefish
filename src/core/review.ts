@@ -150,6 +150,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     try {
       res = normalizeReview(extractJson(await runCodex(deepPrompt, { repoPath: bundle.repoPath })));
       checked.push(`[${h.name}] ${res.summary || "(no summary)"}`);
+      checked.push(...res.checked);
       all = all.concat(res.findings);
       residuals.push(...res.residual_risks);
     } catch (e) {

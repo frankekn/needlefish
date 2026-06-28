@@ -51,6 +51,21 @@ test("normalizeFinding rejects low-confidence blocking findings", () => {
   assert.throws(() => normalizeFinding(raw), /blocking finding has low confidence/);
 });
 
+test("normalizeFinding rejects nonnumeric blocking confidence", () => {
+  const raw = {
+    severity: "P2",
+    title: "Malformed blocker",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 1,
+    confidence: "bad",
+    whyItBreaks: "Invalid model output should not block a PR.",
+    suggestedFix: "Reject malformed confidence.",
+  };
+
+  assert.throws(() => normalizeFinding(raw), /invalid confidence/);
+});
+
 test("normalizeReview rejects empty residual risk text", () => {
   const raw = {
     summary: "reviewed",
