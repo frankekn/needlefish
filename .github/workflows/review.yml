@@ -35,7 +35,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR_NUM: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+          PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -61,20 +61,20 @@ jobs:
           ref: main
           path: needlefish
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Install tool
         working-directory: needlefish
-        # corepack enable can fail with EACCES on /usr/bin; system pnpm is the
-        # fallback. Avoid a login/interactive shell (zsh -l) — its init scripts
-        # can intermittently corrupt PATH on the self-hosted runner, surfacing as
-        # a bare "zsh: command not found" in <10ms and failing the whole run.
         run: |
           PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-          if corepack enable 2>/dev/null; then
-            corepack prepare "$PNPM_VERSION" --activate
+          if corepack enable 2>/dev/null && corepack prepare "$PNPM_VERSION" --activate; then
+            pnpm install --frozen-lockfile
           else
-            npm install -g "$PNPM_VERSION"
+            npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
           fi
-          pnpm install --frozen-lockfile
 
       - name: Needlefish review
         working-directory: target
@@ -82,4 +82,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
-        run: '"$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" --github --pr ${{ github.event.inputs.pr_number || github.event.pull_request.number }}'
+        run: '"$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" --github --pr ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}'

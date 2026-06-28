@@ -14,13 +14,28 @@ from the surviving findings, never freehanded by the model.
 
 ## Install
 
-Requires Node 20+, pnpm, and the Codex CLI authed locally.
+Requires:
+
+- Node 20+
+- Corepack (recommended) or the pinned pnpm from `packageManager`
+- Codex CLI authed locally
+- GitHub CLI (`gh`) for `--pr` / GitHub Action mode
 
 ```bash
 git clone https://github.com/frankekn/needlefish
 cd needlefish
+PNPM_VERSION=$(node -p "require('./package.json').packageManager")
 corepack enable
-pnpm install
+corepack prepare "$PNPM_VERSION" --activate
+pnpm install --frozen-lockfile
+```
+
+If Corepack is unavailable, install the package manager pinned in
+`package.json`:
+
+```bash
+PNPM_VERSION=$(node -p "require('./package.json').packageManager")
+npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
 ```
 
 ### Make `needlefish` resolve on PATH (optional, recommended)
@@ -112,14 +127,15 @@ copy `review.yml` into the target repo if you want it frozen.)
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
-2. On that runner, auth Codex non-interactively once (persisted):
+2. Ensure the runner has `gh` and the Codex CLI on `PATH`.
+3. On that runner, auth Codex non-interactively once (persisted):
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
-3. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
+4. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
    access to this repo available to the target; otherwise (public) the default
    `GITHUB_TOKEN` is enough.
-4. **Codex global-instructions caveat:** the Codex CLI auto-loads global
+5. **Codex global-instructions caveat:** the Codex CLI auto-loads global
    instructions from `~/.codex/` on the runner. needlefish instructs the model
    to ignore anything outside the target repo's `AGENTS.md` as policy, but if
    you want zero leakage, keep the runner's `~/.codex/` free of unrelated
