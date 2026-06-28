@@ -6,6 +6,7 @@ import type {
   ReviewResult,
   Verdict,
 } from "../shared/schema";
+import type { RunnerOptions } from "../shared/runner";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -83,7 +84,11 @@ function postCheck(
   );
 }
 
-export async function runGithub(cwd: string, prNumber: number): Promise<void> {
+export async function runGithub(
+  cwd: string,
+  prNumber: number,
+  opts: RunnerOptions = {}
+): Promise<void> {
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
@@ -128,7 +133,7 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
 
   let result: ReviewResult | null = null;
   try {
-    result = await review(bundle);
+    result = await review(bundle, opts);
     const conclusion = VERDICT_CONCLUSION[result.verdict];
     postReview(repo, prNumber, headSha, result);
     postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, renderMarkdown(result));

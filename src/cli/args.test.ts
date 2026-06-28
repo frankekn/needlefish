@@ -11,6 +11,7 @@ test("parseArgs returns github command when pr is valid", () => {
     kind: "github",
     pr: 123,
     repo: "/tmp/repo",
+    opts: {},
     fix: false,
     recheck: false,
   });
@@ -44,4 +45,20 @@ test("parseArgs rejects local-only flags in github mode", () => {
   assert.throws(() => parseArgs(["--github", "--pr", "1", "--base", "main"]), /--base is only valid in local mode/);
   assert.throws(() => parseArgs(["--github", "--pr", "1", "--focus", "security"]), /--focus is only valid in local mode/);
   assert.throws(() => parseArgs(["--github", "--pr", "1", "--deep"]), /--deep is only valid in local mode/);
+});
+
+test("parseArgs accepts runner options", () => {
+  const command = parseArgs(["--runner", "claude", "--model", "opus", "--timeout-ms", "1234"]);
+
+  assert.equal(command.kind, "local");
+  if (command.kind === "local") {
+    assert.equal(command.opts.runner, "claude");
+    assert.equal(command.opts.model, "opus");
+    assert.equal(command.opts.timeoutMs, 1234);
+  }
+});
+
+test("parseArgs validates runner options", () => {
+  assert.throws(() => parseArgs(["--runner", "wat"]), /--runner must be one of/);
+  assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
 });

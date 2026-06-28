@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { runCodex, extractJson } from "../shared/codex";
+import { runCodex, extractJson, type CodexOptions } from "../shared/codex";
+import type { RunnerOptions } from "../shared/runner";
 import {
   type Bundle,
   type Finding,
@@ -25,6 +26,11 @@ const LARGE_PATCH_CHARS = 30000;
 const LARGE_FILE_COUNT = 10;
 const MAX_HOTSPOTS = 6;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+interface ReviewRun {
+  readonly bundle: Bundle;
+  readonly runnerOptions: RunnerOptions;
+}
 
 function isLarge(bundle: Bundle): boolean {
   return bundle.patch.length > LARGE_PATCH_CHARS || bundle.changedFiles.length > LARGE_FILE_COUNT;
@@ -56,8 +62,12 @@ function sortByRisk(hotspots: readonly Hotspot[]): Hotspot[] {
   return [...hotspots].sort((a, b) => rank[a.risk] - rank[b.risk]);
 }
 
-async function runReviewPrompt(prompt: string, bundle: Bundle): Promise<RawReview> {
-  return normalizeReview(extractJson(await runCodex(prompt, { repoPath: bundle.repoPath })));
+function codexOptions(run: ReviewRun): CodexOptions {
+  return { repoPath: run.bundle.repoPath, ...run.runnerOptions };
+}
+
+async function runReviewPrompt(prompt: string, run: ReviewRun): Promise<RawReview> {
+  return normalizeReview(extractJson(await runCodex(prompt, codexOptions(run))));
 }
 
 function assertUsableReview(review: RawReview, label: string): void {
@@ -66,18 +76,20 @@ function assertUsableReview(review: RawReview, label: string): void {
   }
 }
 
-async function runCritic(candidate: RawReview, patchText: string, bundle: Bundle): Promise<RawReview> {
+async function runCritic(candidate: RawReview, patchText: string, run: ReviewRun): Promise<RawReview> {
+  const { bundle } = run;
   const criticPrompt = loadPrompt("critic.md")
     .replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
     .replace("{{PATCH}}", () => patchText)
     .replace("{{BASE}}", bundle.baseSha)
     .replace("{{HEAD}}", bundle.headSha);
-  const pruned = await runReviewPrompt(criticPrompt, bundle);
+  const pruned = await runReviewPrompt(criticPrompt, run);
   assertUsableReview(pruned, "critic");
   return pruned;
 }
 
-function toReviewResult(raw: RawReview, bundle: Bundle, summary = raw.summary): ReviewResult {
+function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): ReviewResult {
+  const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
   return {
     verdict,
@@ -91,18 +103,20 @@ function toReviewResult(raw: RawReview, bundle: Bundle, summary = raw.summary): 
 }
 
 // Small PR: stuff the full diff into one review call (current behavior).
-async function reviewSmall(bundle: Bundle): Promise<ReviewResult> {
+async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
+  const { bundle } = run;
   const reviewPrompt = loadPrompt("review.md").replace(
     "{{BUNDLE}}",
     () => JSON.stringify(bundle, null, 2)
   );
-  const candidate = await runReviewPrompt(reviewPrompt, bundle);
+  const candidate = await runReviewPrompt(reviewPrompt, run);
   assertUsableReview(candidate, "review");
-  return toReviewResult(await runCritic(candidate, bundle.patch, bundle), bundle);
+  return toReviewResult(await runCritic(candidate, bundle.patch, run), run);
 }
 
 // Large PR: map (blast-radius survey, no diff text) -> deep per hotspot -> merge -> critic.
-async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
+async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
+  const { bundle } = run;
   const mapBundle = {
     baseSha: bundle.baseSha,
     headSha: bundle.headSha,
@@ -114,7 +128,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     deep: bundle.deep,
   };
   const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2));
-  const mapResult = normalizeMap(extractJson(await runCodex(mapPrompt, { repoPath: bundle.repoPath })));
+  const mapResult = normalizeMap(extractJson(await runCodex(mapPrompt, codexOptions(run))));
   const mappedHotspots = changedHotspots(mapResult.hotspots, bundle);
   const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
@@ -149,7 +163,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
       .replace("{{HEAD}}", bundle.headSha);
     let res: RawReview;
     try {
-      res = normalizeReview(extractJson(await runCodex(deepPrompt, { repoPath: bundle.repoPath })));
+      res = normalizeReview(extractJson(await runCodex(deepPrompt, codexOptions(run))));
       checked.push(`[${h.name}] ${res.summary || "(no summary)"}`);
       checked.push(...res.checked);
       all = all.concat(res.findings);
@@ -171,11 +185,15 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
   const pruned = await runCritic(
     candidateMerged,
     bundle.patchStat || "(see git diff --stat; repo at HEAD)",
-    bundle
+    run
   );
-  return toReviewResult(pruned, bundle, `${mapResult.summary} — ${pruned.summary}`);
+  return toReviewResult(pruned, run, `${mapResult.summary} — ${pruned.summary}`);
 }
 
-export async function review(bundle: Bundle): Promise<ReviewResult> {
-  return bundle.deep || isLarge(bundle) ? reviewLarge(bundle) : reviewSmall(bundle);
+export async function review(
+  bundle: Bundle,
+  runnerOptions: RunnerOptions = {}
+): Promise<ReviewResult> {
+  const run = { bundle, runnerOptions };
+  return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);
 }

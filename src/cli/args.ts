@@ -1,4 +1,10 @@
 import type { LocalOptions } from "../adapters/local";
+import {
+  parsePositiveInteger,
+  parseRunnerName,
+  type RunnerName,
+  type RunnerOptions,
+} from "../shared/runner";
 
 export type CliCommand =
   | {
@@ -15,6 +21,7 @@ export type CliCommand =
       readonly kind: "github";
       readonly pr: number;
       readonly repo?: string;
+      readonly opts: RunnerOptions;
       readonly fix: boolean;
       readonly recheck: boolean;
     };
@@ -27,14 +34,35 @@ Usage:
   needlefish --deep                wider context (call sites, history, adjacent tests)
   needlefish --pr 123              also pull PR body/comments/checks via gh
   needlefish --base develop        override base ref
+  needlefish --runner claude       run with codex, claude, or opencode
   needlefish --github --pr 123     GitHub Action mode (post review + check)
   needlefish --recheck             re-run review on current head
 
 Env:
-  CODEX_BIN           codex executable (default: codex)
-  CODEX_MODEL         model id
-  CODEX_TIMEOUT_MS    per-call timeout (default: 600000)
+  NEEDLEFISH_RUNNER       codex | claude | opencode (default: codex)
+  NEEDLEFISH_MODEL        model id for the selected runner
+  NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
+  CODEX_BIN               codex executable (default: codex)
+  CLAUDE_BIN              claude executable (default: claude)
+  OPENCODE_BIN            opencode executable (default: opencode)
 `;
+
+type MutableLocalOptions = {
+  base?: string;
+  pr?: number;
+  deep?: boolean;
+  focus?: string;
+  cacheDir?: string;
+  runner?: RunnerName;
+  model?: string;
+  timeoutMs?: number;
+};
+
+type MutableRunnerOptions = {
+  runner?: RunnerName;
+  model?: string;
+  timeoutMs?: number;
+};
 
 function takeValue(argv: readonly string[], index: number, flag: string): string {
   const value = argv[index + 1];
@@ -51,18 +79,22 @@ function inlineValue(arg: string, flag: string): string {
 }
 
 function parsePr(value: string): number {
-  const pr = Number(value);
-  if (!Number.isInteger(pr) || pr <= 0) {
-    throw new Error("--pr requires a positive integer");
-  }
-  return pr;
+  return parsePositiveInteger(value, "--pr");
+}
+
+function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
+  const runnerOpts: MutableRunnerOptions = {};
+  if (opts.runner) runnerOpts.runner = opts.runner;
+  if (opts.model) runnerOpts.model = opts.model;
+  if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
+  return runnerOpts;
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
   let github = false;
   let pr: number | undefined;
   let repo: string | undefined;
-  const opts: LocalOptions = {};
+  const opts: MutableLocalOptions = {};
   let fix = false;
   let recheck = false;
 
@@ -107,6 +139,21 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       i++;
       continue;
     }
+    if (arg === "--runner") {
+      opts.runner = parseRunnerName(takeValue(argv, i, "--runner"), "--runner");
+      i++;
+      continue;
+    }
+    if (arg === "--model") {
+      opts.model = takeValue(argv, i, "--model");
+      i++;
+      continue;
+    }
+    if (arg === "--timeout-ms") {
+      opts.timeoutMs = parsePositiveInteger(takeValue(argv, i, "--timeout-ms"), "--timeout-ms");
+      i++;
+      continue;
+    }
     if (arg.startsWith("--pr=")) {
       pr = parsePr(inlineValue(arg, "--pr"));
       opts.pr = pr;
@@ -124,6 +171,18 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus = inlineValue(arg, "--focus");
       continue;
     }
+    if (arg.startsWith("--runner=")) {
+      opts.runner = parseRunnerName(inlineValue(arg, "--runner"), "--runner");
+      continue;
+    }
+    if (arg.startsWith("--model=")) {
+      opts.model = inlineValue(arg, "--model");
+      continue;
+    }
+    if (arg.startsWith("--timeout-ms=")) {
+      opts.timeoutMs = parsePositiveInteger(inlineValue(arg, "--timeout-ms"), "--timeout-ms");
+      continue;
+    }
     throw new Error(`unknown option ${arg}`);
   }
 
@@ -132,7 +191,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     if (opts.base) throw new Error("--base is only valid in local mode");
     if (opts.focus) throw new Error("--focus is only valid in local mode");
     if (opts.deep) throw new Error("--deep is only valid in local mode");
-    return { kind: "github", pr, repo, fix, recheck };
+    return { kind: "github", pr, repo, opts: runnerOptionsFrom(opts), fix, recheck };
   }
 
   return { kind: "local", repo, opts, fix, recheck };

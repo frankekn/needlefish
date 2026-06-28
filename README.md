@@ -8,9 +8,10 @@ Strict local PR review agent. Acts like a senior engineer reviewing your diff
 before merge — only real defects (bugs, regressions, security, data loss,
 migration/upgrade risk, missing validation, duplicate behavior), never style.
 
-Read-only by default. Two Codex calls per review: a deep pass, then an
-adversarial critic that prunes weak findings. Verdict is derived deterministically
-from the surviving findings, never freehanded by the model.
+Read-only by default. Two model calls per review: a deep pass, then an
+adversarial critic that prunes weak findings. Codex is the default runner;
+Claude Code and opencode are also supported. Verdict is derived
+deterministically from the surviving findings, never freehanded by the model.
 
 ## Install
 
@@ -18,7 +19,7 @@ Requires:
 
 - Node 20+
 - Corepack (recommended) or the pinned pnpm from `packageManager`
-- Codex CLI authed locally
+- One supported model CLI authed locally: Codex (default), Claude Code, or opencode
 - GitHub CLI (`gh`) for `--pr` / GitHub Action mode
 
 ```bash
@@ -70,6 +71,8 @@ needlefish --repo /path/to/some-repo --focus security
 needlefish --repo /path/to/some-repo --deep
 needlefish --repo /path/to/some-repo --pr 123  # pulls PR metadata via gh
 needlefish --repo /path/to/some-repo --base develop
+needlefish --repo /path/to/some-repo --runner claude
+needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 ```
 
 Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-review.json`.
@@ -118,6 +121,10 @@ jobs:
     uses: frankekn/needlefish/.github/workflows/review.yml@main
     with:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+      # Optional:
+      # runner: codex
+      # model: gpt-5.5
+      # timeout_ms: "600000"
     secrets: inherit
 ```
 
@@ -127,29 +134,45 @@ copy `review.yml` into the target repo if you want it frozen.)
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
-2. Ensure the runner has `gh` and the Codex CLI on `PATH`.
-3. On that runner, auth Codex non-interactively once (persisted):
+2. Ensure the runner has `gh` and the selected model CLI on `PATH`.
+3. On that runner, auth the selected CLI once. For Codex:
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
 4. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
    access to this repo available to the target; otherwise (public) the default
    `GITHUB_TOKEN` is enough.
-5. **Codex global-instructions caveat:** the Codex CLI auto-loads global
-   instructions from `~/.codex/` on the runner. needlefish instructs the model
+5. **Runner global-instructions caveat:** model CLIs may auto-load global
+   instructions from the runner's home directory. needlefish instructs the model
    to ignore anything outside the target repo's `AGENTS.md` as policy, but if
-   you want zero leakage, keep the runner's `~/.codex/` free of unrelated
-   instruction files (e.g. `RTK.md`).
+   you want zero leakage, keep the runner home free of unrelated instruction
+   files.
 
 > Self-hosted runners execute PR code on your machine. Fine for solo use on your
 > own repos; if you ever open PRs to outside contributors, isolate the runner
 > (ephemeral container) so contributor code can't touch your persistent host.
 
-## Codex invocation
+## Model runner invocation
 
-`src/shared/codex.ts` shells out to `codex exec` (prompt via stdin), reading
-`CODEX_BIN`, `CODEX_MODEL`, `CODEX_TIMEOUT_MS` from env. If your installed
-Codex CLI uses different exec flags, adjust that one file.
+`src/shared/codex.ts` shells out to the selected CLI. Use `--runner`, `--model`,
+and `--timeout-ms`, or the matching env vars:
+
+| option | env | default |
+| --- | --- | --- |
+| runner | `NEEDLEFISH_RUNNER` | `codex` |
+| model | `NEEDLEFISH_MODEL` | runner default |
+| timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+
+Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
+`OPENCODE_BIN`. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
+`CODEX_RETRY_MS` still work for Codex compatibility.
+
+Codex runs with `-s read-only`. Claude Code runs with `--permission-mode plan`,
+`--safe-mode`, and no session persistence. opencode runs with `--pure` and never
+uses `--dangerously-skip-permissions`. For non-Codex runners, the target
+worktree must start clean; needlefish also checks
+`git status --porcelain --untracked-files=all` after each model call and fails if
+the target worktree changes.
 
 ## Verdict derivation (deterministic)
 
@@ -161,6 +184,6 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.1. Read-only. `--fix` and `@needlefish` comment commands are in
+v0.2. Read-only. `--fix` and `@needlefish` comment commands are in
 `FUTURE_TODO.md`. Every push re-triggers the action, so server-side re-review is
 automatic; `--recheck` is a local affordance only.

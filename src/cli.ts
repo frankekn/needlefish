@@ -8,34 +8,34 @@ async function main() {
 
   switch (command.kind) {
     case "version":
-      process.stdout.write("needlefish 0.1.0\n");
+      process.stdout.write("needlefish 0.2.0\n");
       return;
     case "help":
       process.stdout.write(USAGE);
       return;
     case "github": {
       if (command.fix) {
-        process.stderr.write("--fix is not implemented in v0.1 (see FUTURE_TODO.md).\n");
+        process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
         return;
       }
       if (command.recheck) {
         process.stderr.write(
-          "v0.1 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
+          "v0.2 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
         );
       }
-      await runGithub(command.repo ?? process.cwd(), command.pr);
+      await runGithub(command.repo ?? process.cwd(), command.pr, command.opts);
       return;
     }
     case "local": {
       if (command.fix) {
-        process.stderr.write("--fix is not implemented in v0.1 (see FUTURE_TODO.md).\n");
+        process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
         return;
       }
       if (command.recheck) {
         process.stderr.write(
-          "v0.1 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
+          "v0.2 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
         );
       }
       const opts: LocalOptions = command.opts;

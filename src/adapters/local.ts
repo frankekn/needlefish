@@ -6,6 +6,7 @@ import { renderMarkdown } from "../shared/render";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
 import { normalizePrMeta } from "../shared/normalize";
 import type { ReviewResult } from "../shared/schema";
+import type { RunnerOptions } from "../shared/runner";
 
 function detectBase(cwd: string, override?: string): string {
   if (override) return override;
@@ -80,19 +81,19 @@ function diffBundle(cwd: string, opts: LocalOptions) {
   });
 }
 
-export interface LocalOptions {
-  base?: string;
-  pr?: number;
-  deep?: boolean;
-  focus?: string;
-  cacheDir?: string;
+export interface LocalOptions extends RunnerOptions {
+  readonly base?: string;
+  readonly pr?: number;
+  readonly deep?: boolean;
+  readonly focus?: string;
+  readonly cacheDir?: string;
 }
 
 export async function runLocal(
   cwd: string,
   opts: LocalOptions
 ): Promise<ReviewResult> {
-  const result = await review(diffBundle(cwd, opts));
+  const result = await review(diffBundle(cwd, opts), opts);
   const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
   mkdirSync(cache, { recursive: true });
   writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));

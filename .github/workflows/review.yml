@@ -13,10 +13,31 @@ on:
       pr_number:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
+      runner:
+        description: "Model runner: codex, claude, or opencode"
+        required: false
+      model:
+        description: Optional model id for the selected runner
+        required: false
+      timeout_ms:
+        description: Optional per-call timeout in milliseconds
+        required: false
   workflow_call:
     inputs:
       pr_number:
         description: PR number (optional; defaults to the event PR)
+        type: string
+        required: false
+      runner:
+        description: "Model runner: codex, claude, or opencode"
+        type: string
+        required: false
+      model:
+        description: Optional model id for the selected runner
+        type: string
+        required: false
+      timeout_ms:
+        description: Optional per-call timeout in milliseconds
         type: string
         required: false
 
@@ -82,4 +103,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
-        run: '"$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" --github --pr ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}'
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner }}
+          NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
+          NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
+        run: |
+          args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
+          if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
+          if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
+          if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
+          "$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" "${args[@]}"

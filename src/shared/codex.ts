@@ -1,24 +1,59 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  parsePositiveInteger,
+  parseRunnerName,
+  type RunnerName,
+  type RunnerOptions,
+} from "./runner";
 
-export interface CodexOptions {
-  repoPath: string;
-  model?: string;
-  timeoutMs?: number;
+export interface CodexOptions extends RunnerOptions {
+  readonly repoPath: string;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+interface RunnerResult {
+  readonly res: SpawnSyncReturns<string>;
+  readonly out: string;
+}
+
+interface RunnerInvocation {
+  readonly prompt: string;
+  readonly repoPath: string;
+  readonly model: string | undefined;
+  readonly timeoutMs: number;
+  readonly env: NodeJS.ProcessEnv;
+  readonly tmp: string;
+}
+
+class RunnerWorktreeChangedError extends Error {
+  constructor(runner: RunnerName) {
+    super(`${runner} runner changed the target worktree`);
+  }
+}
+
+class RunnerDirtyWorktreeError extends Error {
+  constructor(runner: RunnerName) {
+    super(`${runner} runner requires a clean target worktree`);
+  }
 }
 
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
+  const runner = resolveRunner(opts);
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      return runCodexOnce(prompt, opts);
+      return runCodexOnce(prompt, opts, runner);
     } catch (err) {
       if (!(err instanceof Error)) throw err;
+      if (err instanceof RunnerWorktreeChangedError) throw err;
+      if (err instanceof RunnerDirtyWorktreeError) throw err;
       lastErr = err;
       if (attempt < 2) {
-        const backoff = Number(process.env.CODEX_RETRY_MS ?? 5000);
+        const backoff = retryMsFor(runner);
         await new Promise<void>((resolve) => setTimeout(resolve, backoff));
       }
     }
@@ -26,48 +61,32 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
   throw lastErr;
 }
 
-function runCodexOnce(prompt: string, opts: CodexOptions): string {
-  const bin = process.env.CODEX_BIN ?? "codex";
-  const model = opts.model ?? process.env.CODEX_MODEL;
-  const timeoutMs =
-    opts.timeoutMs ?? Number(process.env.CODEX_TIMEOUT_MS ?? 600000);
-
+function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): string {
+  const model = resolveModel(opts, runner);
+  const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
   const ghConfigDir = path.join(tmp, "gh-empty");
   mkdirSync(ghConfigDir, { recursive: true });
-  const lastMsg = path.join(tmp, "last.txt");
-  const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
-  if (model) args.push("-m", model);
 
   const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: ghConfigDir };
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   delete env.GITHUB_API_TOKEN;
 
-  const res = spawnSync(bin, args, {
-    cwd: opts.repoPath,
-    env,
-    input: prompt,
-    encoding: "utf8",
-    timeout: timeoutMs,
-    maxBuffer: 1024 * 1024 * 64,
-  });
-
-  let out = "";
   try {
-    out = readFileSync(lastMsg, "utf8");
-  } catch {
-    out = res.stdout ?? "";
-  }
-  rmSync(tmp, { recursive: true, force: true });
+    const invocation = { prompt, repoPath: opts.repoPath, model, timeoutMs, env, tmp };
+    const result = runWithWorktreeGuard(runner, opts.repoPath, () => runRunner(runner, invocation));
 
-  if (res.error) throw res.error;
-  if (res.status !== 0) {
-    throw new Error(
-      `codex exec exited ${res.status}: ${(res.stderr ?? "").slice(0, 2000)}`
-    );
+    if (result.res.error) throw result.res.error;
+    if (result.res.status !== 0) {
+      throw new Error(
+        `${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`
+      );
+    }
+    return result.out;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
   }
-  return out;
 }
 
 export function extractJson(text: string): unknown {
@@ -79,4 +98,174 @@ export function extractJson(text: string): unknown {
     throw new Error("no JSON object found in codex output");
   }
   return JSON.parse(raw.slice(start, end + 1));
+}
+
+function resolveRunner(opts: CodexOptions): RunnerName {
+  if (opts.runner) return opts.runner;
+  const envRunner = process.env.NEEDLEFISH_RUNNER;
+  return envRunner ? parseRunnerName(envRunner, "NEEDLEFISH_RUNNER") : "codex";
+}
+
+function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefined {
+  if (opts.model) return opts.model;
+  if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
+  switch (runner) {
+    case "codex":
+      return process.env.CODEX_MODEL;
+    case "claude":
+      return process.env.CLAUDE_MODEL;
+    case "opencode":
+      return process.env.OPENCODE_MODEL;
+  }
+}
+
+function timeoutMsFor(runner: RunnerName): number {
+  if (process.env.NEEDLEFISH_TIMEOUT_MS !== undefined) {
+    return parsePositiveInteger(process.env.NEEDLEFISH_TIMEOUT_MS, "NEEDLEFISH_TIMEOUT_MS");
+  }
+  if (runner === "codex" && process.env.CODEX_TIMEOUT_MS !== undefined) {
+    return parsePositiveInteger(process.env.CODEX_TIMEOUT_MS, "CODEX_TIMEOUT_MS");
+  }
+  return 600000;
+}
+
+function retryMsFor(runner: RunnerName): number {
+  if (process.env.NEEDLEFISH_RETRY_MS !== undefined) {
+    return parsePositiveInteger(process.env.NEEDLEFISH_RETRY_MS, "NEEDLEFISH_RETRY_MS");
+  }
+  if (runner === "codex" && process.env.CODEX_RETRY_MS !== undefined) {
+    return parsePositiveInteger(process.env.CODEX_RETRY_MS, "CODEX_RETRY_MS");
+  }
+  return 5000;
+}
+
+function runWithWorktreeGuard(
+  runner: RunnerName,
+  repoPath: string,
+  run: () => RunnerResult
+): RunnerResult {
+  if (runner === "codex") return run();
+  const statusBefore = gitStatus(repoPath);
+  if (statusBefore.trim()) throw new RunnerDirtyWorktreeError(runner);
+  try {
+    return run();
+  } finally {
+    if (gitStatus(repoPath) !== statusBefore) {
+      throw new RunnerWorktreeChangedError(runner);
+    }
+  }
+}
+
+function runRunner(runner: RunnerName, invocation: RunnerInvocation): RunnerResult {
+  switch (runner) {
+    case "codex":
+      return runCodexCli(invocation);
+    case "claude":
+      return runClaude(invocation);
+    case "opencode":
+      return runOpenCode(invocation);
+  }
+}
+
+function runCodexCli(invocation: RunnerInvocation): RunnerResult {
+  const lastMsg = path.join(invocation.tmp, "last.txt");
+  const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
+  if (invocation.model) args.push("-m", invocation.model);
+
+  const res = spawnSync(process.env.CODEX_BIN ?? "codex", args, {
+    cwd: invocation.repoPath,
+    env: invocation.env,
+    input: invocation.prompt,
+    encoding: "utf8",
+    timeout: invocation.timeoutMs,
+    maxBuffer: 1024 * 1024 * 64,
+  });
+
+  let out = "";
+  try {
+    out = readFileSync(lastMsg, "utf8");
+  } catch {
+    out = res.stdout ?? "";
+  }
+  return { res, out };
+}
+
+function runClaude(invocation: RunnerInvocation): RunnerResult {
+  const args = [
+    "--print",
+    "--output-format",
+    "text",
+    "--permission-mode",
+    "plan",
+    "--safe-mode",
+    "--no-session-persistence",
+  ];
+  if (invocation.model) args.push("--model", invocation.model);
+
+  const res = spawnSync(process.env.CLAUDE_BIN ?? "claude", args, {
+    cwd: invocation.repoPath,
+    env: invocation.env,
+    input: invocation.prompt,
+    encoding: "utf8",
+    timeout: invocation.timeoutMs,
+    maxBuffer: 1024 * 1024 * 64,
+  });
+  return { res, out: res.stdout ?? "" };
+}
+
+function runOpenCode(invocation: RunnerInvocation): RunnerResult {
+  const promptPath = path.join(invocation.tmp, "prompt.md");
+  writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+  const args = ["run", "--format", "json", "--pure", "--dir", invocation.repoPath];
+  args.push("--file", promptPath);
+  if (invocation.model) args.push("--model", invocation.model);
+  args.push("Use the attached prompt file as your complete instruction.");
+
+  const res = spawnSync(process.env.OPENCODE_BIN ?? "opencode", args, {
+    cwd: invocation.repoPath,
+    env: invocation.env,
+    encoding: "utf8",
+    timeout: invocation.timeoutMs,
+    maxBuffer: 1024 * 1024 * 64,
+  });
+  return { res, out: extractOpenCodeText(res.stdout ?? "") };
+}
+
+function gitStatus(repoPath: string): string {
+  const res = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+    cwd: repoPath,
+    encoding: "utf8",
+    timeout: 10000,
+  });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error(`git status failed: ${(res.stderr ?? "").slice(0, 2000)}`);
+  }
+  return res.stdout ?? "";
+}
+
+function isRecord(raw: unknown): raw is JsonRecord {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw);
+}
+
+function openCodeText(raw: JsonRecord): string | null {
+  const direct = raw.text;
+  if (typeof direct === "string") return direct;
+  const part = raw.part;
+  if (!isRecord(part)) return null;
+  const nested = part.text;
+  return typeof nested === "string" ? nested : null;
+}
+
+function extractOpenCodeText(stdout: string): string {
+  const parts: string[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const raw: unknown = JSON.parse(trimmed);
+    if (!isRecord(raw)) continue;
+    const text = openCodeText(raw);
+    if (text) parts.push(text);
+  }
+  return parts.length > 0 ? parts.join("") : stdout;
 }
