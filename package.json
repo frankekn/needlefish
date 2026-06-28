@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Strict local PR review agent.",
+  "bin": {
+    "needlefish": "bin/needlefish"
+  },
   "scripts": {
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit"

@@ -1,0 +1,18 @@
+#!/bin/sh
+# needlefish CLI entry point.
+# The implementation is TypeScript run via the repo-local tsx (declared as a
+# devDependency), so this shim resolves tsx relative to the package install and
+# runs src/cli.ts. Works from any cwd/shell once the package is linked on PATH.
+# Resolve symlinks first (e.g. when linked from ~/.local/bin) so basedir points
+# at the real package directory, not the symlink's parent.
+self=$0
+while [ -L "$self" ]; do
+  dir=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
+  self=$(readlink -- "$self")
+  case "$self" in
+    /*) : ;;
+    *) self=$dir/$self ;;
+  esac
+done
+basedir=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
+exec "$basedir/node_modules/.bin/tsx" "$basedir/src/cli.ts" "$@"
