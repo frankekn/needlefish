@@ -1,23 +1,11 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { classifyFiles } from "../shared/classify";
 import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
-import type { Bundle, PrMeta, ReviewResult } from "../shared/schema";
-
-function git(args: string[], cwd: string): string {
-  const res = spawnSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 64,
-  });
-  if (res.status !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
-  }
-  return (res.stdout ?? "").trim();
-}
+import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
+import { normalizePrMeta } from "../shared/normalize";
+import type { ReviewResult } from "../shared/schema";
 
 function detectBase(cwd: string, override?: string): string {
   if (override) return override;
@@ -27,27 +15,15 @@ function detectBase(cwd: string, override?: string): string {
       cwd
     );
     if (head) return head;
-  } catch {
-    /* fall through */
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
   }
   return "main";
 }
 
-function gh(args: string[], cwd: string): string {
-  const res = spawnSync("gh", args, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 64,
-  });
-  if (res.status !== 0) {
-    throw new Error(`gh ${args.join(" ")} failed: ${(res.stderr ?? "").trim()}`);
-  }
-  return (res.stdout ?? "").trim();
-}
-
-function fetchPrMeta(cwd: string, prNumber: number): PrMeta | null {
+function fetchPrMeta(cwd: string, prNumber: number) {
   try {
-    const raw = gh(
+    const raw = ghText(
       [
         "pr",
         "view",
@@ -57,33 +33,51 @@ function fetchPrMeta(cwd: string, prNumber: number): PrMeta | null {
       ],
       cwd
     );
-    const j = JSON.parse(raw);
-    return {
-      number: j.number,
-      title: j.title ?? "",
-      body: j.body ?? null,
-      comments: (j.comments ?? []).map((c: any) => c.body ?? "").filter(Boolean),
-      reviews: (j.reviews ?? []).map((r: any) => r.body ?? "").filter(Boolean),
-      checks: (j.statusCheckRollup ?? []).map((c: any) => ({
-        name: c.name ?? c.context ?? "",
-        status: c.status ?? "",
-        conclusion: c.conclusion ?? null,
-      })),
-    };
-  } catch {
-    return null;
+    return normalizePrMeta(JSON.parse(raw), prNumber);
+  } catch (err) {
+    if (err instanceof Error) return null;
+    throw err;
   }
 }
 
-function repoSlug(cwd: string): string {
+function cacheSlug(cwd: string): string {
   try {
     const url = git(["config", "--get", "remote.origin.url"], cwd);
-    const m = url.match(/[:/]([^/]+)\/([^/]+?)(\.git)?$/);
-    if (m) return `${m[1]}-${m[2]}`;
-  } catch {
-    /* ignore */
+    const match = url.match(/[:/]([^/]+)\/([^/]+?)(\.git)?$/);
+    if (match) return `${match[1]}-${match[2]}`;
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
   }
   return path.basename(cwd);
+}
+
+function diffBundle(cwd: string, opts: LocalOptions) {
+  const dirty = git(["status", "--porcelain"], cwd);
+  if (dirty.trim()) {
+    process.stderr.write(
+      "needlefish: warning: uncommitted changes are not included; review is merge-base..HEAD only.\n"
+    );
+  }
+  const baseRef = detectBase(cwd, opts.base);
+  const baseSha = git(["merge-base", baseRef, "HEAD"], cwd);
+  const headSha = git(["rev-parse", "HEAD"], cwd);
+  const patch = git(["diff", baseSha, "HEAD"], cwd);
+  if (!patch.trim()) {
+    throw new Error(
+      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review.`
+    );
+  }
+  return makeBundle({
+    repoPath: cwd,
+    baseSha,
+    headSha,
+    patch,
+    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd),
+    changedFiles: changedFiles(cwd, baseSha),
+    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    deep: Boolean(opts.deep),
+    focus: opts.focus ?? null,
+  });
 }
 
 export interface LocalOptions {
@@ -98,45 +92,8 @@ export async function runLocal(
   cwd: string,
   opts: LocalOptions
 ): Promise<ReviewResult> {
-  const baseRef = detectBase(cwd, opts.base);
-  const baseSha = git(["merge-base", baseRef, "HEAD"], cwd);
-  const headSha = git(["rev-parse", "HEAD"], cwd);
-  const patch = git(["diff", baseSha, "HEAD"], cwd);
-  const patchStat = git(["diff", "--stat", baseSha, "HEAD"], cwd);
-  const nameOnly = git(["diff", "--name-only", baseSha, "HEAD"], cwd);
-  const changedFiles = classifyFiles(
-    nameOnly.split("\n").filter(Boolean)
-  );
-
-  if (!patch.trim()) {
-    throw new Error(
-      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review.`
-    );
-  }
-
-  const agentsPath = path.join(cwd, "AGENTS.md");
-  const agentsMd = existsSync(agentsPath)
-    ? readFileSync(agentsPath, "utf8")
-    : "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
-
-  const prMeta = opts.pr ? fetchPrMeta(cwd, opts.pr) : null;
-
-  const bundle: Bundle = {
-    repoPath: cwd,
-    baseSha,
-    headSha,
-    patch,
-    patchStat,
-    changedFiles,
-    agentsMd,
-    prMeta,
-    deep: Boolean(opts.deep),
-    focus: opts.focus ?? null,
-  };
-
-  const result = await review(bundle);
-
-  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", repoSlug(cwd));
+  const result = await review(diffBundle(cwd, opts));
+  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
   mkdirSync(cache, { recursive: true });
   writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
 

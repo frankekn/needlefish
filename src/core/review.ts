@@ -3,8 +3,6 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { runCodex, extractJson } from "../shared/codex";
 import {
-  normalizeReview,
-  normalizeMap,
   type Bundle,
   type Finding,
   type Hotspot,
@@ -13,6 +11,7 @@ import {
   type ReviewResult,
   type Severity,
 } from "../shared/schema";
+import { normalizeMap, normalizeReview } from "../shared/normalize";
 import { deriveVerdict } from "./verdict";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,7 +30,17 @@ function isLarge(bundle: Bundle): boolean {
   return bundle.patch.length > LARGE_PATCH_CHARS || bundle.changedFiles.length > LARGE_FILE_COUNT;
 }
 
-function dedup(findings: Finding[]): Finding[] {
+function changedHotspots(hotspots: readonly Hotspot[], bundle: Bundle): Hotspot[] {
+  const changed = new Set(bundle.changedFiles.map((file) => file.path));
+  return hotspots
+    .map((hotspot) => ({
+      ...hotspot,
+      files: hotspot.files.filter((file) => changed.has(file)),
+    }))
+    .filter((hotspot) => hotspot.files.length > 0);
+}
+
+function dedup(findings: readonly Finding[]): Finding[] {
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const out = new Map<string, Finding>();
   for (const f of findings) {
@@ -42,9 +51,43 @@ function dedup(findings: Finding[]): Finding[] {
   return [...out.values()];
 }
 
-function sortByRisk(hotspots: Hotspot[]): Hotspot[] {
+function sortByRisk(hotspots: readonly Hotspot[]): Hotspot[] {
   const rank = { high: 0, med: 1, low: 2 } as const;
   return [...hotspots].sort((a, b) => rank[a.risk] - rank[b.risk]);
+}
+
+async function runReviewPrompt(prompt: string, bundle: Bundle): Promise<RawReview> {
+  return normalizeReview(extractJson(await runCodex(prompt, { repoPath: bundle.repoPath })));
+}
+
+function assertUsableReview(review: RawReview, label: string): void {
+  if (!review.summary || review.checked.length === 0) {
+    throw new Error(`${label} produced no summary or checked list (likely malformed output)`);
+  }
+}
+
+async function runCritic(candidate: RawReview, patchText: string, bundle: Bundle): Promise<RawReview> {
+  const criticPrompt = loadPrompt("critic.md")
+    .replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
+    .replace("{{PATCH}}", () => patchText)
+    .replace("{{BASE}}", bundle.baseSha)
+    .replace("{{HEAD}}", bundle.headSha);
+  const pruned = await runReviewPrompt(criticPrompt, bundle);
+  assertUsableReview(pruned, "critic");
+  return pruned;
+}
+
+function toReviewResult(raw: RawReview, bundle: Bundle, summary = raw.summary): ReviewResult {
+  const verdict = deriveVerdict(raw.findings, raw.residual_risks);
+  return {
+    verdict,
+    summary,
+    findings: raw.findings,
+    checked: raw.checked,
+    residualRisks: raw.residual_risks,
+    baseSha: bundle.baseSha,
+    headSha: bundle.headSha,
+  };
 }
 
 // Small PR: stuff the full diff into one review call (current behavior).
@@ -53,29 +96,9 @@ async function reviewSmall(bundle: Bundle): Promise<ReviewResult> {
     "{{BUNDLE}}",
     () => JSON.stringify(bundle, null, 2)
   );
-  const candidate = normalizeReview(extractJson(runCodex(reviewPrompt, { repoPath: bundle.repoPath })));
-  if (!candidate.summary || candidate.checked.length === 0) {
-    throw new Error("review produced no summary or checked list (likely malformed output)");
-  }
-  const criticPrompt = loadPrompt("critic.md")
-    .replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
-    .replace("{{PATCH}}", () => bundle.patch)
-    .replace("{{BASE}}", bundle.baseSha)
-    .replace("{{HEAD}}", bundle.headSha);
-  const pruned: RawReview = normalizeReview(extractJson(runCodex(criticPrompt, { repoPath: bundle.repoPath })));
-  if (!pruned.summary || pruned.checked.length === 0) {
-    throw new Error("critic produced no summary or checked list (likely malformed output)");
-  }
-  const verdict = deriveVerdict(pruned.findings, pruned.residual_risks);
-  return {
-    verdict,
-    summary: pruned.summary || candidate.summary,
-    findings: pruned.findings,
-    checked: pruned.checked.length ? pruned.checked : candidate.checked,
-    residualRisks: pruned.residual_risks,
-    baseSha: bundle.baseSha,
-    headSha: bundle.headSha,
-  };
+  const candidate = await runReviewPrompt(reviewPrompt, bundle);
+  assertUsableReview(candidate, "review");
+  return toReviewResult(await runCritic(candidate, bundle.patch, bundle), bundle);
 }
 
 // Large PR: map (blast-radius survey, no diff text) -> deep per hotspot -> merge -> critic.
@@ -90,12 +113,13 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     deep: bundle.deep,
   };
   const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2));
-  const mapResult = normalizeMap(extractJson(runCodex(mapPrompt, { repoPath: bundle.repoPath })));
-  if (mapResult.hotspots.length === 0) {
+  const mapResult = normalizeMap(extractJson(await runCodex(mapPrompt, { repoPath: bundle.repoPath })));
+  const mappedHotspots = changedHotspots(mapResult.hotspots, bundle);
+  if (mappedHotspots.length === 0) {
     throw new Error("map pass produced no hotspots");
   }
 
-  const hotspots = sortByRisk(mapResult.hotspots).slice(0, MAX_HOTSPOTS);
+  const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
   // Coverage backstop: any changed file not in a selected hotspot goes into a tail
   // hotspot so it still gets deep-reviewed (never silently skip a changed file).
@@ -111,7 +135,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     });
   }
 
-  const agents = bundle.agentsMd ?? "(no AGENTS.md)";
+  const agents = bundle.agentsMd;
   let all: Finding[] = [];
   const checked: string[] = [];
   const residuals: ResidualRisk[] = [];
@@ -124,7 +148,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
       .replace("{{HEAD}}", bundle.headSha);
     let res: RawReview;
     try {
-      res = normalizeReview(extractJson(runCodex(deepPrompt, { repoPath: bundle.repoPath })));
+      res = normalizeReview(extractJson(await runCodex(deepPrompt, { repoPath: bundle.repoPath })));
       checked.push(`[${h.name}] ${res.summary || "(no summary)"}`);
       all = all.concat(res.findings);
       residuals.push(...res.residual_risks);
@@ -142,27 +166,14 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     checked,
     residual_risks: residuals,
   };
-  const criticPrompt = loadPrompt("critic.md")
-    .replace("{{FINDINGS}}", () => JSON.stringify(candidateMerged, null, 2))
-    .replace("{{PATCH}}", () => bundle.patchStat || "(see git diff --stat; repo at HEAD)")
-    .replace("{{BASE}}", bundle.baseSha)
-    .replace("{{HEAD}}", bundle.headSha);
-  const pruned: RawReview = normalizeReview(extractJson(runCodex(criticPrompt, { repoPath: bundle.repoPath })));
-  if (!pruned.summary || pruned.checked.length === 0) {
-    throw new Error("critic produced no summary or checked list (likely malformed output)");
-  }
-  const verdict = deriveVerdict(pruned.findings, pruned.residual_risks);
-  return {
-    verdict,
-    summary: `${mapResult.summary} — ${pruned.summary}`,
-    findings: pruned.findings,
-    checked: pruned.checked.length ? pruned.checked : checked,
-    residualRisks: pruned.residual_risks,
-    baseSha: bundle.baseSha,
-    headSha: bundle.headSha,
-  };
+  const pruned = await runCritic(
+    candidateMerged,
+    bundle.patchStat || "(see git diff --stat; repo at HEAD)",
+    bundle
+  );
+  return toReviewResult(pruned, bundle, `${mapResult.summary} — ${pruned.summary}`);
 }
 
 export async function review(bundle: Bundle): Promise<ReviewResult> {
-  return isLarge(bundle) ? reviewLarge(bundle) : reviewSmall(bundle);
+  return bundle.deep || isLarge(bundle) ? reviewLarge(bundle) : reviewSmall(bundle);
 }

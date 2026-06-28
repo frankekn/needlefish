@@ -3,8 +3,8 @@ import type { Finding, ResidualRisk, Verdict } from "../shared/schema";
 const BLOCKING: Finding["severity"][] = ["P0", "P1", "P2"];
 
 export function deriveVerdict(
-  findings: Finding[],
-  residualRisks: ResidualRisk[]
+  findings: readonly Finding[],
+  residualRisks: readonly ResidualRisk[]
 ): Verdict {
   const hasBlocking = findings.some((f) => BLOCKING.includes(f.severity));
   if (hasBlocking) return "changes_requested";
