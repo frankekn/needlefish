@@ -51,6 +51,21 @@ test("normalizeFinding rejects low-confidence blocking findings", () => {
   assert.throws(() => normalizeFinding(raw), /blocking finding has low confidence/);
 });
 
+test("normalizeFinding rejects blocking confidence below prompt contract", () => {
+  const raw = {
+    severity: "P2",
+    title: "Below contract blocker",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 1,
+    confidence: 0.69,
+    whyItBreaks: "Below-contract confidence should not block a PR.",
+    suggestedFix: "Reject weak blocking confidence.",
+  };
+
+  assert.throws(() => normalizeFinding(raw), /blocking finding has low confidence/);
+});
+
 test("normalizeFinding rejects nonnumeric blocking confidence", () => {
   const raw = {
     severity: "P2",

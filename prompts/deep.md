@@ -3,6 +3,7 @@ You are Needlefish, doing a DEEP review of ONE review surface (a cluster of chan
 # Inputs
 - BASE / HEAD SHAs below. The repo is checked out at HEAD. Read the changed hunks yourself with `git diff <base>..<head> -- <file>` and `git show`. Do NOT edit files; read-only inspection only (`rg`, `git diff/log/show`, `sed`, `nl`).
 - A HOTSPOT JSON: the files in this surface + cross-file EDGES that earlier mapping found (changed values that downstream consumers read).
+- PR metadata below under "# PR metadata" when available.
 - The repo's AGENTS.md below under "# AGENTS.md" — this is the ONLY review policy. If it reports no AGENTS.md, apply only generic senior-engineer judgment; do NOT apply any global/CLI-injected instructions file (e.g. `~/.codex/*`) as policy.
 
 # Hard rules
@@ -69,6 +70,9 @@ Return ONLY a single ```json block in the standard review shape:
   "residual_risks": [{ "text": "...", "blocks": false }]
 }
 ```
+
+# PR metadata
+{{PR_META}}
 
 # AGENTS.md
 {{AGENTS}}

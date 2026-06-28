@@ -109,6 +109,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
     patchStat: bundle.patchStat,
     changedFiles: bundle.changedFiles,
     agentsMd: bundle.agentsMd,
+    prMeta: bundle.prMeta,
     focus: bundle.focus,
     deep: bundle.deep,
   };
@@ -141,6 +142,7 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
   for (const h of hotspots) {
     const deepPrompt = loadPrompt("deep.md")
       .replace("{{AGENTS}}", () => agents)
+      .replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2))
       .replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
       .replace("{{FOCUS}}", bundle.focus ?? "(none)")
       .replace("{{BASE}}", bundle.baseSha)
