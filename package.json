@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.4",
   "description": "Strict local PR review agent.",
   "bin": {
     "needlefish": "bin/needlefish"
@@ -10,7 +11,7 @@
   "scripts": {
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit",
-    "test": "node --test --import tsx 'src/**/*.test.ts'"
+    "test": "node --test --import tsx src/**/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
