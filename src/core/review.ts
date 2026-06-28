@@ -115,10 +115,6 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
   const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2));
   const mapResult = normalizeMap(extractJson(await runCodex(mapPrompt, { repoPath: bundle.repoPath })));
   const mappedHotspots = changedHotspots(mapResult.hotspots, bundle);
-  if (mappedHotspots.length === 0) {
-    throw new Error("map pass produced no hotspots");
-  }
-
   const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
   // Coverage backstop: any changed file not in a selected hotspot goes into a tail
@@ -133,6 +129,9 @@ async function reviewLarge(bundle: Bundle): Promise<ReviewResult> {
       risk: "low",
       edges: [],
     });
+  }
+  if (hotspots.length === 0) {
+    throw new Error("map pass produced no changed-file hotspots");
   }
 
   const agents = bundle.agentsMd;

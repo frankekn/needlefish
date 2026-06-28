@@ -6,7 +6,7 @@ import test from "node:test";
 import { review } from "./review";
 import type { Bundle } from "../shared/schema";
 
-test("review preserves deep evidence before critic pruning", async (t) => {
+test("review preserves deep evidence through tail coverage", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
   const bin = path.join(tmp, "codex-bin.js");
   const previous = {
@@ -33,10 +33,11 @@ test("review preserves deep evidence before critic pruning", async (t) => {
       "  const finding = { severity: 'P2', title: 'Deep bug', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'The changed path breaks.', suggestedFix: 'Fix the path.', validation: 'pnpm test' };",
       "  const evidence = 'EVIDENCE finding:Deep bug changed=src/app.ts:1 effect=bad path';",
       "  if (input.includes('review-MAP pass')) {",
-      "    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'app', files: ['src/app.ts'], why: 'changed app path', risk: 'high', edges: [] }] }));",
+      "    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'consumer', files: ['src/unchanged.ts'], why: 'consumer only', risk: 'high', edges: [] }] }));",
       "    return;",
       "  }",
       "  if (input.includes('doing a DEEP review')) {",
+      "    if (!input.includes('tail-coverage') || !input.includes('src/app.ts')) { process.stderr.write('missing tail coverage'); process.exit(1); }",
       "    fs.writeFileSync(out, JSON.stringify({ summary: 'deep found blocker', findings: [finding], checked: [evidence], residual_risks: [] }));",
       "    return;",
       "  }",
