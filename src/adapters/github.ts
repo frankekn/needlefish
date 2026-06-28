@@ -149,7 +149,9 @@ export async function runGithub(cwd: string, prNumber: number): Promise<void> {
   const changedPaths = new Set(changedFiles.map((f) => f.path));
 
   const agentsPath = path.join(cwd, "AGENTS.md");
-  const agentsMd = existsSync(agentsPath) ? readFileSync(agentsPath, "utf8") : null;
+  const agentsMd = existsSync(agentsPath)
+    ? readFileSync(agentsPath, "utf8")
+    : "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
 
   const comments = (pr.comments_url
     ? gh(["api", pr.comments_url])

@@ -117,7 +117,7 @@ export async function runLocal(
   const agentsPath = path.join(cwd, "AGENTS.md");
   const agentsMd = existsSync(agentsPath)
     ? readFileSync(agentsPath, "utf8")
-    : null;
+    : "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
 
   const prMeta = opts.pr ? fetchPrMeta(cwd, opts.pr) : null;
 
