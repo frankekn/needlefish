@@ -23,24 +23,39 @@ corepack enable
 pnpm install
 ```
 
+### Make `needlefish` resolve on PATH (optional, recommended)
+
+The package ships a `bin/needlefish` shim (declared in `package.json`). After
+clone, symlink it onto a directory that's on your PATH so you can invoke
+`needlefish` from any cwd/shell:
+
+```bash
+ln -sf "$PWD/bin/needlefish" ~/.local/bin/needlefish   # or any PATH dir
+needlefish --version
+```
+
+The shim resolves symlinks and runs the repo-local `tsx` against `src/cli.ts`,
+so it survives the repo being linked from elsewhere and works in non-interactive
+shells (unlike a shell alias). Without this step, invoke via the full path below.
+
 ## Local use (read-only, no GitHub writes)
 
 Run from inside any repo you want reviewed, on a branch with changes:
 
 ```bash
-# Option A — run from inside the target repo (cwd is the target):
+# If the bin is linked (above), from inside the target repo:
 cd /path/to/some-repo
+needlefish
+
+# Otherwise, full path (cwd is the target):
 /path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts
 
-# Option B — point at the target with --repo from anywhere:
-tsx /path/to/needlefish/src/cli.ts --repo /path/to/some-repo --focus security
-tsx /path/to/needlefish/src/cli.ts --repo /path/to/some-repo --deep
-tsx /path/to/needlefish/src/cli.ts --repo /path/to/some-repo --pr 123  # pulls PR metadata via gh
-tsx /path/to/needlefish/src/cli.ts --repo /path/to/some-repo --base develop
+# Point at the target with --repo from anywhere:
+needlefish --repo /path/to/some-repo --focus security
+needlefish --repo /path/to/some-repo --deep
+needlefish --repo /path/to/some-repo --pr 123  # pulls PR metadata via gh
+needlefish --repo /path/to/some-repo --base develop
 ```
-
-Tip: alias it — `alias needlefish="tsx $HOME/Github/needlefish/src/cli.ts"`,
-then `needlefish --repo .` from any repo.
 
 Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-review.json`.
 
@@ -68,8 +83,32 @@ check-run is the merge gate. A failed review never passes a PR — the check goe
 
 ### Runner setup (one-time)
 
-The workflow lives in the **target** repo (`.github/workflows/review.yml`),
-not in needlefish — copy it from this repo. It checks out needlefish as a tool.
+Target repos consume needlefish by **calling the reusable workflow** in this
+repo. Add a thin caller in the target repo (e.g. `.github/workflows/needlefish.yml`):
+
+```yaml
+name: needlefish
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number: { description: PR number to review (manual trigger), required: true }
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+jobs:
+  review:
+    uses: frankekn/needlefish/.github/workflows/review.yml@main
+    with:
+      pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+    secrets: inherit
+```
+
+Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
+every target repo automatically — no per-repo update needed. (Alternatively,
+copy `review.yml` into the target repo if you want it frozen.)
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
@@ -77,9 +116,14 @@ not in needlefish — copy it from this repo. It checks out needlefish as a tool
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
-3. If needlefish stays **private**, set a PAT secret (`NEEDLEFISH_PAT`) and
-   uncomment the `token:` line in the workflow's needlefish checkout step.
-   If needlefish is **public**, the default `GITHUB_TOKEN` is enough.
+3. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
+   access to this repo available to the target; otherwise (public) the default
+   `GITHUB_TOKEN` is enough.
+4. **Codex global-instructions caveat:** the Codex CLI auto-loads global
+   instructions from `~/.codex/` on the runner. needlefish instructs the model
+   to ignore anything outside the target repo's `AGENTS.md` as policy, but if
+   you want zero leakage, keep the runner's `~/.codex/` free of unrelated
+   instruction files (e.g. `RTK.md`).
 
 > Self-hosted runners execute PR code on your machine. Fine for solo use on your
 > own repos; if you ever open PRs to outside contributors, isolate the runner
