@@ -3,3 +3,4 @@ dist/
 artifacts/
 .needlefish/
 *.log
+AGENTS.local.md
