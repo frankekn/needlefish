@@ -9,7 +9,8 @@
   },
   "scripts": {
     "review": "tsx src/cli.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node --test --import tsx 'src/**/*.test.ts'"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

@@ -12,6 +12,7 @@ A context bundle (JSON) follows under "Context bundle". It contains: base/head S
 - Precondition findings: report ONLY when a downstream guard would REJECT the new value on a live path, producing a concrete wrong/missing behavior (mis-route, skipped validation, wrong classification, dropped write, blocked submit). "A nil/empty value reaches a guard" with no wrong effect is NOT a finding — do not pad. Scope to predicates/validations that branch on the changed field, 1 layer; do not chase transitive readers.
 - Verdict gate on new sentinel values: you may return PASS on a diff that adds or changes a nil/empty/zero/default value ONLY if, for each named downstream predicate that reads it, your output records the guard expression + file:line + "passes" or "rejects". If you did not open a guard for such a value, you cannot conclude pass — list it under residual_risks with blocks=true (never as a finding: a finding requires a verified rejection on a live path).
 - If evidence is insufficient to verify something material, put it in residual_risks. Set blocks=true ONLY when the gap actually prevents a verdict.
+- Set `residual_risks.blocks=true` for unresolved sentinel/default tracing only when the value feeds externally visible behavior, persistence, authorization, routing, validation, or a public contract. Do not block solely because a local/private helper value was not exhaustively traced.
 
 # Required output when triggered (structural — not optional)
 Two bug classes look "fine" under per-line inspection because each individual guard behaves correctly. They are real defects anyway. When EITHER trigger matches the diff, you MUST produce the enumeration below; a triggered section left blank or absent means you cannot conclude pass — put it under residual_risks with blocks=true.
@@ -30,8 +31,27 @@ Finding: product > caller timeout (or a timeout that aborts after state was pers
 
 For both triggers: substitute and compute with real values from the code (rg/git show), not estimates. If a needed value is genuinely unresolvable from the diff, say so explicitly per field — do not leave it blank.
 
+# Evidence recording contract
+Use `checked[]` for proof, not vague activity logs.
+
+For every P0/P1/P2 finding, include one checked entry beginning with:
+- `EVIDENCE finding:<title> changed=<file:line> effect=<specific wrong behavior>`
+
+For every cleared Trigger A, include:
+- `TRIGGER_A cleared predicate=<symbol> callsites=[file:line action governs=yes/no ...]`
+
+For every cleared Trigger B, include:
+- `TRIGGER_B cleared loop=<file:line> timeout=<file:line value> per_iteration=<file:line value> max_iterations=<file:line value> product=<value> persisted_before_failure=yes/no`
+
+If a trigger fires but cannot be cleared, do not invent a finding. Add one `residual_risks[]` entry with `blocks:true` and name the missing evidence.
+
+Confidence is evidence confidence, not gut feel:
+- 0.90-1.00: changed line and failing consumer/path verified directly.
+- 0.70-0.89: changed line verified and failure path strongly established.
+- Below 0.70: do not emit P0/P1/P2; use P3 or residual risk.
+
 # Process — inspect in order, cross-check across lenses
-1. Surface map: read changed_files with surface labels. Flag anything small with large blast radius (public-api, cli, config default, schema/migration, workflow, dependency/lockfile).
+1. Surface map: read changedFiles with surface labels. Flag anything small with large blast radius (public-api, cli, config default, schema/migration, workflow, dependency/lockfile).
 2. Hunk bugs: per hunk — introduced by this PR? affects real behavior? points to a changed line? has a minimal fix? Any "no" → drop it.
 3. Call sites & preconditions: for each changed symbol, read the full function and trace 1-2 layers of callers/callees (args, async ordering, cleanup, return values, error propagation). **PRECONDITION SUBSTITUTION (do not skip — naming a caller is not checking it):** for every value the diff ADDS or CHANGES, especially nil/empty/zero/default/wrong-type, open each NAMED 1-layer downstream predicate or validation that READS that field (boolean `?` methods, policy guards, before_actions, validations, scopes), locate the guard it applies to that field (`present?`/`blank?`/`nil?`/`empty?`/`is_a?`/range/type/feature flag), and substitute the new value. Record per consumer: `field=value → Consumer#guard @file:line → branch taken → behavior effect` (route/classification/validation/submit/persistence). A traced consumer is NOT checked until this is recorded. If the changed value gates an approval/submit/route/transition, ALSO run **TRIGGER A (over-block)** from the "Required output when triggered" section — a guard that rejects is a bug when the rejected action was legitimately approvable on its own.
 4. Contract / compatibility: CLI flags, config defaults, env vars, API/schema, serialized or persisted state, DB schema, cache keys. Does this break old users, old data, or old settings on upgrade? Default/migration/schema/provider-routing changes are high-risk even when they fix a real bug.
@@ -63,7 +83,9 @@ Return ONLY a single ```json block, nothing else, in exactly this shape:
       "confidence": 0.0,
       "whyItBreaks": "concrete reason current behavior breaks",
       "suggestedFix": "minimal fix",
-      "validation": "command or step to prove the fix"
+      "validation": "command or step to prove the fix",
+      "consumerFile": "optional repo-relative consumer path for cross-file claims",
+      "consumerLine": 1
     }
   ],
   "checked": ["what you verified"],

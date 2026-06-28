@@ -66,8 +66,8 @@ Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-revie
 ## GitHub Action mode (self-hosted runner)
 
 `needlefish --github --pr N` collects the PR via `gh api`, runs the same core,
-and posts a formal PR review (`APPROVE` / `REQUEST_CHANGES` / `COMMENT`) with
-line-anchored inline comments plus a check run. Verdict → surface mapping:
+and posts a formal PR review (`REQUEST_CHANGES` / `COMMENT`) with the full
+rendered review body plus a check run. Verdict → surface mapping:
 
 | verdict              | review event        | check     |
 | -------------------- | ------------------- | --------- |

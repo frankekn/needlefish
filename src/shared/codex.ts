@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,16 +9,17 @@ export interface CodexOptions {
   timeoutMs?: number;
 }
 
-export function runCodex(prompt: string, opts: CodexOptions): string {
+export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       return runCodexOnce(prompt, opts);
-    } catch (e) {
-      lastErr = e;
+    } catch (err) {
+      if (!(err instanceof Error)) throw err;
+      lastErr = err;
       if (attempt < 2) {
         const backoff = Number(process.env.CODEX_RETRY_MS ?? 5000);
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, backoff);
+        await new Promise<void>((resolve) => setTimeout(resolve, backoff));
       }
     }
   }
@@ -32,11 +33,13 @@ function runCodexOnce(prompt: string, opts: CodexOptions): string {
     opts.timeoutMs ?? Number(process.env.CODEX_TIMEOUT_MS ?? 600000);
 
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
+  const ghConfigDir = path.join(tmp, "gh-empty");
+  mkdirSync(ghConfigDir, { recursive: true });
   const lastMsg = path.join(tmp, "last.txt");
   const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
   if (model) args.push("-m", model);
 
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: ghConfigDir };
   delete env.GH_TOKEN;
   delete env.GITHUB_TOKEN;
   delete env.GITHUB_API_TOKEN;
@@ -67,7 +70,7 @@ function runCodexOnce(prompt: string, opts: CodexOptions): string {
   return out;
 }
 
-export function extractJson(text: string): any {
+export function extractJson(text: string): unknown {
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const raw = fence ? fence[1] : text;
   const start = raw.indexOf("{");
