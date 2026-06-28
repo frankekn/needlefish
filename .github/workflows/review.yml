@@ -62,12 +62,20 @@ jobs:
           path: needlefish
 
       - name: Install tool
-        shell: zsh -l {0}
         working-directory: needlefish
-        run: corepack enable 2>/dev/null || true; pnpm install --frozen-lockfile
+        # corepack enable can fail with EACCES on /usr/bin; system pnpm is the
+        # fallback. Avoid a login/interactive shell (zsh -l) — its init scripts
+        # can intermittently corrupt PATH on the self-hosted runner, surfacing as
+        # a bare "zsh: command not found" in <10ms and failing the whole run.
+        run: |
+          corepack enable 2>/dev/null || true
+          if command -v pnpm >/dev/null 2>&1; then
+            pnpm install --frozen-lockfile
+          else
+            npm install -g pnpm && pnpm install --frozen-lockfile
+          fi
 
       - name: Needlefish review
-        shell: zsh -l {0}
         working-directory: target
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
