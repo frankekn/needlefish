@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { ensurePrCommits, prDiffFromShas, type PrRefInfo } from "./repo";
+import { ensurePrCommits, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -47,4 +47,24 @@ test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("makeBundle preserves review target disclosure", () => {
+  const bundle = makeBundle({
+    repoPath: process.cwd(),
+    baseSha: "base",
+    headSha: "head",
+    patch: "diff",
+    patchStat: "stat",
+    changedFiles: [],
+    reviewTarget: "Review target: local base..head\nPR context: #24 metadata only",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  });
+
+  assert.equal(
+    bundle.reviewTarget,
+    "Review target: local base..head\nPR context: #24 metadata only"
+  );
 });

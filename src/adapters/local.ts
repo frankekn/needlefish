@@ -45,7 +45,11 @@ function fetchPrMeta(cwd: string, prNumber: number) {
     );
     return normalizePrMeta(JSON.parse(raw), prNumber);
   } catch (err) {
-    if (err instanceof Error) return null;
+    if (err instanceof Error) {
+      throw new Error(
+        `--pr ${prNumber} requested, but PR metadata could not be fetched: ${err.message}. Check gh auth or remove --pr for local-only review.`
+      );
+    }
     throw err;
   }
 }
@@ -90,7 +94,12 @@ function diffBundle(cwd: string, opts: LocalOptions): Bundle {
     patch,
     patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd),
     changedFiles: changedFiles(cwd, baseSha),
-    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    ...(opts.pr
+      ? {
+          reviewTarget: `Review target: local ${baseSha}..${headSha}\nPR context: #${opts.pr} metadata only`,
+          prMeta: fetchPrMeta(cwd, opts.pr),
+        }
+      : { prMeta: null }),
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
   });
@@ -107,6 +116,7 @@ function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle
     patch: diff.patch,
     patchStat: diff.patchStat,
     changedFiles: diff.changedFiles,
+    reviewTarget: `Review target: PR #${pr.prMeta.number} ${diff.baseSha}..${diff.headSha}`,
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,

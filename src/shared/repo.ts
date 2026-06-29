@@ -42,6 +42,7 @@ export interface BundleInput {
   readonly patch: string;
   readonly patchStat: string;
   readonly changedFiles: ChangedFile[];
+  readonly reviewTarget?: string;
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
   readonly focus: string | null;
@@ -56,6 +57,7 @@ export function makeBundle(input: BundleInput): Bundle {
     patch: input.patch,
     patchStat: input.patchStat,
     changedFiles: input.changedFiles,
+    ...(input.reviewTarget ? { reviewTarget: input.reviewTarget } : {}),
     agentsMd: input.agentsMd ?? readAgents(input.repoPath),
     prMeta: input.prMeta,
     deep: input.deep,
