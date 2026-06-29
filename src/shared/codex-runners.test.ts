@@ -164,6 +164,46 @@ test("runCodex rejects non-codex runners that dirty the target repo", async (t) 
   assert.equal(existsSync(path.join(repo, "runner-wrote.txt")), false);
 });
 
+test("runCodex ignores CodeGraph cache files in the review sandbox", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "claude-bin.js");
+  const previous = {
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(path.join(repo, ".gitignore"), ".codegraph/\n");
+  commitAll(repo, "ignore local codegraph cache");
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "fs.mkdirSync('.codegraph', { recursive: true });",
+      "fs.writeFileSync('.codegraph/index.db', 'cache');",
+      "process.stdout.write('{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CLAUDE_BIN = bin;
+  process.env.NEEDLEFISH_RUNNER = "claude";
+
+  const output = await runCodex("prompt", {
+    repoPath: repo,
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  assert.equal(output, "{\"ok\":true}");
+});
+
 test("runCodex reviews a clean clone when the target starts dirty", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);

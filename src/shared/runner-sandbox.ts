@@ -50,7 +50,7 @@ export function assertRunnerSandboxClean(
   let status: string;
   try {
     currentHead = git(["rev-parse", "HEAD"], repoPath);
-    status = gitStatus(repoPath);
+    status = actionableStatus(gitStatus(repoPath));
   } catch (error) {
     if (error instanceof Error) {
       throw new RunnerWorktreeChangedError(runner, error.message);
@@ -82,5 +82,21 @@ function gitStatus(repoPath: string): string {
   return git(
     ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"],
     repoPath
+  );
+}
+
+function actionableStatus(status: string): string {
+  return status
+    .split(/\r?\n/)
+    .filter((line) => line !== "" && !isCodeGraphCacheStatus(line))
+    .join("\n");
+}
+
+function isCodeGraphCacheStatus(line: string): boolean {
+  const statusCode = line.slice(0, 2);
+  const file = line.slice(3);
+  return (
+    (statusCode === "??" || statusCode === "!!") &&
+    (file === ".codegraph" || file.startsWith(".codegraph/"))
   );
 }
