@@ -7,12 +7,12 @@
 # at the real package directory, not the symlink's parent.
 self=$0
 while [ -L "$self" ]; do
-  dir=$(CDPATH= cd -- "$(dirname -- "$self")" && pwd)
-  self=$(readlink -- "$self")
+  dir=$(CDPATH= cd "$(dirname "$self")" && pwd)
+  self=$(readlink "$self")
   case "$self" in
     /*) : ;;
     *) self=$dir/$self ;;
   esac
 done
-basedir=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
+basedir=$(CDPATH= cd "$(dirname "$self")/.." && pwd)
 exec "$basedir/node_modules/.bin/tsx" "$basedir/src/cli.ts" "$@"
