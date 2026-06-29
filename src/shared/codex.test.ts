@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -62,6 +62,7 @@ test("runCodex retry backoff yields the event loop", async (t) => {
 
   const output = await runCodex("prompt", {
     repoPath: repo,
+    runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
   });
@@ -74,6 +75,7 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
+  const childPidPath = path.join(tmp, "child.pid");
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
@@ -89,6 +91,11 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
     bin,
     [
       "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const { spawn } = require('node:child_process');",
+      `const childPidPath = ${JSON.stringify(childPidPath)};`,
+      "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\"], { stdio: 'ignore' });",
+      "fs.writeFileSync(childPidPath, String(child.pid));",
       "process.on('SIGTERM', () => {});",
       "setInterval(() => {}, 1000);",
     ].join("\n")
@@ -103,10 +110,32 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
     () =>
       runCodex("prompt", {
         repoPath: repo,
+        runner: "codex",
         targetHeadSha: headSha(repo),
-        timeoutMs: 100,
+        timeoutMs: 500,
       }),
     /ETIMEDOUT/
   );
-  assert.ok(Date.now() - startedAt < 2000);
+  assert.ok(Date.now() - startedAt < 3000);
+  const childPid = Number(readFileSync(childPidPath, "utf8"));
+  assert.equal(await processExited(childPid, 2000), true);
 });
+
+async function processExited(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processExists(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return !processExists(pid);
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+    throw error;
+  }
+}

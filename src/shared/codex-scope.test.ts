@@ -32,6 +32,7 @@ test("runCodex hides dirty target files from codex runner", async (t) => {
 
   const output = await runCodex("prompt", {
     repoPath: repo,
+    runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
   });

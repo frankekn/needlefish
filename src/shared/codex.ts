@@ -1,4 +1,3 @@
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +7,7 @@ import {
   type RunnerName,
   type RunnerOptions,
 } from "./runner";
+import { spawnRunnerProcess, type RunnerProcessResult } from "./runner-process";
 import {
   assertRunnerSandboxClean,
   isRunnerSafetyError,
@@ -24,7 +24,7 @@ export interface CodexOptions extends RunnerOptions {
 type JsonRecord = Record<string, unknown>;
 
 interface RunnerResult {
-  readonly res: SpawnSyncReturns<string>;
+  readonly res: RunnerProcessResult;
   readonly out: string;
 }
 
@@ -37,14 +37,12 @@ interface RunnerInvocation {
   readonly tmp: string;
 }
 
-const RUNNER_TIMEOUT_KILL_SIGNAL: NodeJS.Signals = "SIGKILL";
-
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      return runCodexOnce(prompt, opts, runner);
+      return await runCodexOnce(prompt, opts, runner);
     } catch (err) {
       if (!(err instanceof Error)) throw err;
       if (isRunnerSafetyError(err)) throw err;
@@ -58,7 +56,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
   throw lastErr;
 }
 
-function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): string {
+async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): Promise<string> {
   const model = resolveModel(opts, runner);
   const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
@@ -86,7 +84,7 @@ function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): s
       env,
       tmp,
     };
-    const result = runRunner(runner, invocation);
+    const result = await runRunner(runner, invocation);
 
     if (result.res.error) throw result.res.error;
     if (result.res.status !== 0) {
@@ -151,30 +149,29 @@ function retryMsFor(runner: RunnerName): number {
   return 5000;
 }
 
-function runRunner(runner: RunnerName, invocation: RunnerInvocation): RunnerResult {
+async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Promise<RunnerResult> {
   switch (runner) {
     case "codex":
-      return runCodexCli(invocation);
+      return await runCodexCli(invocation);
     case "claude":
-      return runClaude(invocation);
+      return await runClaude(invocation);
     case "opencode":
-      return runOpenCode(invocation);
+      return await runOpenCode(invocation);
   }
 }
 
-function runCodexCli(invocation: RunnerInvocation): RunnerResult {
+async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> {
   const lastMsg = path.join(invocation.tmp, "last.txt");
   const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
   if (invocation.model) args.push("-m", invocation.model);
 
-  const res = spawnSync(process.env.CODEX_BIN ?? "codex", args, {
-    cwd: invocation.repoPath,
+  const res = await spawnRunnerProcess({
+    command: process.env.CODEX_BIN ?? "codex",
+    args,
+    stdin: invocation.prompt,
+    repoPath: invocation.repoPath,
+    timeoutMs: invocation.timeoutMs,
     env: invocation.env,
-    input: invocation.prompt,
-    encoding: "utf8",
-    timeout: invocation.timeoutMs,
-    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
-    maxBuffer: 1024 * 1024 * 64,
   });
 
   let out = "";
@@ -186,7 +183,7 @@ function runCodexCli(invocation: RunnerInvocation): RunnerResult {
   return { res, out };
 }
 
-function runClaude(invocation: RunnerInvocation): RunnerResult {
+async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
   const args = [
     "--print",
     "--output-format",
@@ -198,19 +195,18 @@ function runClaude(invocation: RunnerInvocation): RunnerResult {
   ];
   if (invocation.model) args.push("--model", invocation.model);
 
-  const res = spawnSync(process.env.CLAUDE_BIN ?? "claude", args, {
-    cwd: invocation.repoPath,
+  const res = await spawnRunnerProcess({
+    command: process.env.CLAUDE_BIN ?? "claude",
+    args,
+    stdin: invocation.prompt,
+    repoPath: invocation.repoPath,
+    timeoutMs: invocation.timeoutMs,
     env: invocation.env,
-    input: invocation.prompt,
-    encoding: "utf8",
-    timeout: invocation.timeoutMs,
-    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
-    maxBuffer: 1024 * 1024 * 64,
   });
   return { res, out: res.stdout ?? "" };
 }
 
-function runOpenCode(invocation: RunnerInvocation): RunnerResult {
+async function runOpenCode(invocation: RunnerInvocation): Promise<RunnerResult> {
   const promptPath = path.join(invocation.tmp, "prompt.md");
   writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
   const args = ["run", "--format", "json", "--pure", "--dir", invocation.repoPath];
@@ -218,13 +214,13 @@ function runOpenCode(invocation: RunnerInvocation): RunnerResult {
   if (invocation.model) args.push("--model", invocation.model);
   args.push("Use the attached prompt file as your complete instruction.");
 
-  const res = spawnSync(process.env.OPENCODE_BIN ?? "opencode", args, {
-    cwd: invocation.repoPath,
+  const res = await spawnRunnerProcess({
+    command: process.env.OPENCODE_BIN ?? "opencode",
+    args,
+    stdin: "",
+    repoPath: invocation.repoPath,
+    timeoutMs: invocation.timeoutMs,
     env: invocation.env,
-    encoding: "utf8",
-    timeout: invocation.timeoutMs,
-    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
-    maxBuffer: 1024 * 1024 * 64,
   });
   return { res, out: res.stdout ?? "" };
 }

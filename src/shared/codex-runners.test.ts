@@ -77,6 +77,7 @@ test("runCodex extracts opencode json text output", async (t) => {
   const bin = path.join(tmp, "opencode-bin.js");
   const argsPath = path.join(tmp, "args.json");
   const inputPath = path.join(tmp, "prompt-copy.txt");
+  const stdinPath = path.join(tmp, "stdin.txt");
   const previous = {
     bin: process.env.OPENCODE_BIN,
     runner: process.env.NEEDLEFISH_RUNNER,
@@ -95,6 +96,7 @@ test("runCodex extracts opencode json text output", async (t) => {
       "const fs = require('node:fs');",
       "const args = process.argv.slice(2);",
       `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
+      `fs.writeFileSync(${JSON.stringify(stdinPath)}, fs.readFileSync(0, 'utf8'));`,
       "const promptFile = args[args.indexOf('--file') + 1];",
       `fs.writeFileSync(${JSON.stringify(inputPath)}, fs.readFileSync(promptFile, 'utf8'));`,
       "process.stdout.write('warning: ignored noise\\n');",
@@ -119,6 +121,7 @@ test("runCodex extracts opencode json text output", async (t) => {
   assert.equal(args.at(-1), "Use the attached prompt file as your complete instruction.");
   assert.equal(args.includes("prompt"), false);
   assert.equal(readFileSync(inputPath, "utf8"), "prompt");
+  assert.equal(readFileSync(stdinPath, "utf8"), "");
 });
 
 test("runCodex rejects non-codex runners that dirty the target repo", async (t) => {
