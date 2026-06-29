@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { extractJson, runCodex } from "./codex";
+import { headSha, initRepo } from "./codex-runner-test-fixtures";
 
 test("extractJson parses fenced JSON output", () => {
   const text = "preface\n```json\n{\"ok\":true}\n```\ntrailer";
@@ -21,6 +22,7 @@ test("extractJson rejects output without a JSON object", () => {
 
 test("runCodex retry backoff yields the event loop", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const state = path.join(tmp, "state");
   const previous = {
@@ -59,8 +61,8 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   }, 0);
 
   const output = await runCodex("prompt", {
-    repoPath: tmp,
-    targetHeadSha: "unused-by-codex-runner",
+    repoPath: repo,
+    targetHeadSha: headSha(repo),
     timeoutMs: 1000,
   });
 

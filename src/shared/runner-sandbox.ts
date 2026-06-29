@@ -32,9 +32,6 @@ export function isRunnerSafetyError(error: unknown): boolean {
 }
 
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {
-  if (options.runner === "codex") {
-    return { repoPath: options.repoPath, prompt: options.prompt };
-  }
   const sandboxPath = path.join(options.tmp, "runner-repo");
   git(["clone", "--quiet", "--no-hardlinks", options.repoPath, sandboxPath], options.repoPath);
   git(["checkout", "--quiet", "--detach", options.targetHeadSha], sandboxPath);
@@ -49,7 +46,6 @@ export function assertRunnerSandboxClean(
   repoPath: string,
   expectedHeadSha: string
 ): void {
-  if (runner === "codex") return;
   let currentHead: string;
   let status: string;
   try {

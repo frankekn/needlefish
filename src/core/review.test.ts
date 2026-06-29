@@ -9,6 +9,7 @@ import type { Bundle } from "../shared/schema";
 
 test("review preserves deep evidence through tail coverage", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const previous = {
     bin: process.env.CODEX_BIN,
@@ -59,9 +60,9 @@ test("review preserves deep evidence through tail coverage", async (t) => {
   process.env.CODEX_RETRY_MS = "1";
 
   const bundle: Bundle = {
-    repoPath: tmp,
+    repoPath: repo,
     baseSha: "base",
-    headSha: "head",
+    headSha: headSha(repo),
     patch: "short",
     patchStat: " src/app.ts | 1 +",
     changedFiles: [{ path: "src/app.ts", surface: "source" }],
@@ -142,6 +143,7 @@ test("review aborts deep fallback when a non-codex runner dirties the sandbox", 
 
 test("review keeps deep failure residuals after critic pruning", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const previous = {
     bin: process.env.CODEX_BIN,
@@ -185,9 +187,9 @@ test("review keeps deep failure residuals after critic pruning", async (t) => {
   process.env.CODEX_BIN = bin;
   process.env.CODEX_RETRY_MS = "1";
   const bundle: Bundle = {
-    repoPath: tmp,
+    repoPath: repo,
     baseSha: "base",
-    headSha: "head",
+    headSha: headSha(repo),
     patch: "short",
     patchStat: " src/app.ts | 1 +",
     changedFiles: [{ path: "src/app.ts", surface: "source" }],
