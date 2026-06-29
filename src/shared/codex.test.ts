@@ -69,3 +69,44 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   assert.equal(output, "{\"ok\":true}");
   assert.equal(timerFired, true);
 });
+
+test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "process.on('SIGTERM', () => {});",
+      "setInterval(() => {}, 1000);",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const startedAt = Date.now();
+
+  await assert.rejects(
+    () =>
+      runCodex("prompt", {
+        repoPath: repo,
+        targetHeadSha: headSha(repo),
+        timeoutMs: 100,
+      }),
+    /ETIMEDOUT/
+  );
+  assert.ok(Date.now() - startedAt < 2000);
+});

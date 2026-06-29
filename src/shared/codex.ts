@@ -37,6 +37,8 @@ interface RunnerInvocation {
   readonly tmp: string;
 }
 
+const RUNNER_TIMEOUT_KILL_SIGNAL: NodeJS.Signals = "SIGKILL";
+
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
   let lastErr: unknown;
@@ -171,6 +173,7 @@ function runCodexCli(invocation: RunnerInvocation): RunnerResult {
     input: invocation.prompt,
     encoding: "utf8",
     timeout: invocation.timeoutMs,
+    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
     maxBuffer: 1024 * 1024 * 64,
   });
 
@@ -201,6 +204,7 @@ function runClaude(invocation: RunnerInvocation): RunnerResult {
     input: invocation.prompt,
     encoding: "utf8",
     timeout: invocation.timeoutMs,
+    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
     maxBuffer: 1024 * 1024 * 64,
   });
   return { res, out: res.stdout ?? "" };
@@ -219,6 +223,7 @@ function runOpenCode(invocation: RunnerInvocation): RunnerResult {
     env: invocation.env,
     encoding: "utf8",
     timeout: invocation.timeoutMs,
+    killSignal: RUNNER_TIMEOUT_KILL_SIGNAL,
     maxBuffer: 1024 * 1024 * 64,
   });
   return { res, out: res.stdout ?? "" };
