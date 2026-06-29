@@ -16,9 +16,9 @@ function collectTests(dir) {
   return tests;
 }
 
-const files = collectTests("src").sort();
+const files = [...collectTests("src"), ...collectTests("eval")].sort();
 if (files.length === 0) {
-  process.stderr.write("No test files found under src.\n");
+  process.stderr.write("No test files found under src or eval.\n");
   process.exit(1);
 }
 
