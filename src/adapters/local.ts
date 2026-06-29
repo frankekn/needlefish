@@ -3,9 +3,18 @@ import os from "node:os";
 import path from "node:path";
 import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
-import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
+import {
+  changedFiles,
+  ensurePrCommits,
+  fetchPrRefInfo,
+  ghText,
+  git,
+  makeBundle,
+  prDiffFromShas,
+  readAgentsAt,
+} from "../shared/repo";
 import { normalizePrMeta } from "../shared/normalize";
-import type { ReviewResult } from "../shared/schema";
+import type { Bundle, ReviewResult } from "../shared/schema";
 import type { RunnerOptions } from "../shared/runner";
 
 function detectBase(cwd: string, override?: string): string {
@@ -52,7 +61,13 @@ function cacheSlug(cwd: string): string {
   return path.basename(cwd);
 }
 
-function diffBundle(cwd: string, opts: LocalOptions) {
+function writeCache(cwd: string, opts: LocalOptions, result: ReviewResult): void {
+  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
+  mkdirSync(cache, { recursive: true });
+  writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
+}
+
+function diffBundle(cwd: string, opts: LocalOptions): Bundle {
   const dirty = git(["status", "--porcelain"], cwd);
   if (dirty.trim()) {
     process.stderr.write(
@@ -81,6 +96,24 @@ function diffBundle(cwd: string, opts: LocalOptions) {
   });
 }
 
+function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
+  const pr = fetchPrRefInfo(cwd, prNumber);
+  ensurePrCommits(cwd, pr);
+  const diff = prDiffFromShas(cwd, pr.baseSha, pr.headSha);
+  return makeBundle({
+    repoPath: cwd,
+    baseSha: diff.baseSha,
+    headSha: diff.headSha,
+    patch: diff.patch,
+    patchStat: diff.patchStat,
+    changedFiles: diff.changedFiles,
+    prMeta: pr.prMeta,
+    deep: Boolean(opts.deep),
+    focus: opts.focus ?? null,
+    agentsMd: readAgentsAt(cwd, pr.headSha),
+  });
+}
+
 export interface LocalOptions extends RunnerOptions {
   readonly base?: string;
   readonly pr?: number;
@@ -94,10 +127,17 @@ export async function runLocal(
   opts: LocalOptions
 ): Promise<ReviewResult> {
   const result = await review(diffBundle(cwd, opts), opts);
-  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
-  mkdirSync(cache, { recursive: true });
-  writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
+  writeCache(cwd, opts, result);
+  return result;
+}
 
+export async function runLocalPr(
+  cwd: string,
+  prNumber: number,
+  opts: LocalOptions
+): Promise<ReviewResult> {
+  const result = await review(prDiffBundle(cwd, prNumber, opts), opts);
+  writeCache(cwd, opts, result);
   return result;
 }
 

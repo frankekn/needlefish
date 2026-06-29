@@ -20,7 +20,7 @@ Requires:
 - Node 20+
 - Corepack (recommended) or the pinned pnpm from `packageManager`
 - One supported model CLI authed locally: Codex (default), Claude Code, or opencode
-- GitHub CLI (`gh`) for `--pr` / GitHub Action mode
+- GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action mode
 
 ```bash
 git clone https://github.com/frankekn/needlefish
@@ -66,11 +66,16 @@ needlefish
 # Otherwise, full path (cwd is the target):
 /path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts
 
-# Point at the target with --repo from anywhere:
+# Local diff review. Point at the target with --repo from anywhere:
 needlefish --repo /path/to/some-repo --focus security
 needlefish --repo /path/to/some-repo --deep
-needlefish --repo /path/to/some-repo --pr 123  # pulls PR metadata via gh
+needlefish --repo /path/to/some-repo --pr 123  # attaches PR metadata to the local diff
 needlefish --repo /path/to/some-repo --base develop
+
+# PR ref review from any branch:
+needlefish pr 123 --repo /path/to/some-repo
+
+# Runner selection:
 needlefish --repo /path/to/some-repo --runner claude
 needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 ```

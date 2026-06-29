@@ -17,6 +17,26 @@ test("parseArgs returns github command when pr is valid", () => {
   });
 });
 
+test("parseArgs separates pr command from --pr context", () => {
+  const prCommand = parseArgs(["pr", "24", "--repo", "/tmp/repo", "--focus", "security"]);
+
+  assert.equal(prCommand.kind, "pr");
+  if (prCommand.kind === "pr") {
+    assert.equal(prCommand.pr, 24);
+    assert.equal(prCommand.repo, "/tmp/repo");
+    assert.equal(prCommand.opts.focus, "security");
+  }
+
+  const contextCommand = parseArgs(["--pr", "24"]);
+
+  assert.equal(contextCommand.kind, "local");
+  if (contextCommand.kind === "local") {
+    assert.equal(contextCommand.opts.pr, 24);
+  }
+
+  assert.deepEqual(parseArgs(["pr", "--help"]), { kind: "help" });
+});
+
 test("parseArgs rejects missing option values", () => {
   const argv = ["--base"];
 
