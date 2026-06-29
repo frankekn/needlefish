@@ -6,6 +6,7 @@ export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
   readonly timeoutMs?: number;
+  readonly reasoningEffort?: string;
 }
 
 export function isRunnerName(value: string): value is RunnerName {

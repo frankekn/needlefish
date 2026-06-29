@@ -32,6 +32,7 @@ interface RunnerInvocation {
   readonly prompt: string;
   readonly repoPath: string;
   readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
   readonly timeoutMs: number;
   readonly env: NodeJS.ProcessEnv;
   readonly tmp: string;
@@ -80,6 +81,7 @@ async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerNa
       prompt: sandbox.prompt,
       repoPath: sandbox.repoPath,
       model,
+      reasoningEffort: opts.reasoningEffort,
       timeoutMs,
       env,
       tmp,
@@ -164,6 +166,7 @@ async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> 
   const lastMsg = path.join(invocation.tmp, "last.txt");
   const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
   if (invocation.model) args.push("-m", invocation.model);
+  if (invocation.reasoningEffort) args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
   const res = await spawnRunnerProcess({
     command: process.env.CODEX_BIN ?? "codex",
@@ -194,6 +197,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
     "--no-session-persistence",
   ];
   if (invocation.model) args.push("--model", invocation.model);
+  if (invocation.reasoningEffort) args.push("--effort", invocation.reasoningEffort);
 
   const res = await spawnRunnerProcess({
     command: process.env.CLAUDE_BIN ?? "claude",
@@ -212,6 +216,7 @@ async function runOpenCode(invocation: RunnerInvocation): Promise<RunnerResult> 
   const args = ["run", "--format", "json", "--pure", "--dir", invocation.repoPath];
   args.push("--file", promptPath);
   if (invocation.model) args.push("--model", invocation.model);
+  if (invocation.reasoningEffort) args.push("--variant", invocation.reasoningEffort);
   args.push("Use the attached prompt file as your complete instruction.");
 
   const res = await spawnRunnerProcess({

@@ -63,6 +63,7 @@ export interface Report {
   readonly promptHash: string;
   readonly runner: RunnerName;
   readonly model: string | null;
+  readonly effort: string | null;
   readonly draws: number;
   readonly createdAt: string;
   readonly baseline: boolean;

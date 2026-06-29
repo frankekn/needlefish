@@ -20,6 +20,7 @@ const FIXTURES_DIR = path.join(__dirname, "fixtures");
 interface RunArgs {
   runner: RunnerName;
   model: string | null;
+  effort: string | null;
   draws: number;
   baseline: boolean;
   report: string;
@@ -38,6 +39,7 @@ function parseArgs(argv: readonly string[]): RunArgs {
     throw new Error(`--runner must be codex|claude|opencode, got: ${runner}`);
   }
   const model = get("--model");
+  const effort = get("--effort");
   const draws = Number(get("--draws") ?? "1");
   if (!Number.isInteger(draws) || draws < 1) throw new Error("--draws must be a positive integer");
   const baseline = argv.includes("--baseline");
@@ -45,7 +47,7 @@ function parseArgs(argv: readonly string[]): RunArgs {
   const report = get("--report") ?? `eval/reports/${runner}${model ? "-" + model.replace(/[^\w.-]/g, "_") : ""}.json`;
   const compare = get("--compare");
   const fixtures = get("--fixtures");
-  return { runner: runner as RunnerName, model, draws, baseline, report, dryRun, compare, fixtures };
+  return { runner: runner as RunnerName, model, effort, draws, baseline, report, dryRun, compare, fixtures };
 }
 
 async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
@@ -68,6 +70,7 @@ async function runOne(
   spec: FixtureSpec,
   runner: RunnerName,
   model: string | null,
+  effort: string | null,
   dryRun: boolean
 ): Promise<DrawResult> {
   const loaded = loadFixture(spec);
@@ -78,7 +81,7 @@ async function runOne(
     if (dryRun) {
       error = "dry-run";
     } else {
-      result = await review(loaded.bundle, { runner, model: model ?? undefined });
+      result = await review(loaded.bundle, { runner, model: model ?? undefined, reasoningEffort: effort ?? undefined });
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -127,6 +130,7 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
     promptHash: promptHash(),
     runner: args.runner,
     model: args.model,
+    effort: args.effort,
     draws: args.draws,
     createdAt: new Date().toISOString(),
     baseline: args.baseline,
@@ -150,7 +154,7 @@ function compare(baselinePath: string, candidate: Report): void {
   const delta = (x: number, y: number) => (y - x);
   const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
   const lines = [
-    `compare: ${candidate.runner}${candidate.model ? "/" + candidate.model : ""} vs baseline ${baseline.runner}`,
+    `compare: ${candidate.runner}${candidate.model ? "/" + candidate.model : ""}${candidate.effort ? ` @${candidate.effort}` : ""} vs baseline ${baseline.runner}`,
     `prompt-hash: ${candidate.promptHash} (matched)`,
     `  recall:                ${pct(c.recall)} (baseline ${pct(b.recall)}, Δ ${pct(delta(b.recall, c.recall))})`,
     `  falsePositiveRate:     ${pct(c.falsePositiveRate)} (baseline ${pct(b.falsePositiveRate)}, Δ ${pct(delta(b.falsePositiveRate, c.falsePositiveRate))})`,
@@ -170,7 +174,7 @@ async function main(): Promise<void> {
     const results: DrawResult[] = [];
     for (const spec of specs) {
       for (let draw = 0; draw < args.draws; draw++) {
-        results.push(await runOne(spec, args.runner, args.model, args.dryRun));
+        results.push(await runOne(spec, args.runner, args.model, args.effort, args.dryRun));
       }
     }
     const report = writeReport(args, results, specs);
@@ -184,13 +188,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   process.stderr.write(`prompt-hash: ${promptHash()}\n`);
-  process.stderr.write(`fixtures: ${specs.length} | runner: ${args.runner} | model: ${args.model ?? "(default)"} | draws: ${args.draws}${args.dryRun ? " | dry-run" : ""}\n`);
+  process.stderr.write(`fixtures: ${specs.length} | runner: ${args.runner} | model: ${args.model ?? "(default)"}${args.effort ? ` | effort: ${args.effort}` : ""} | draws: ${args.draws}${args.dryRun ? " | dry-run" : ""}\n`);
 
   const results: DrawResult[] = [];
   for (const spec of specs) {
     for (let draw = 0; draw < args.draws; draw++) {
       process.stderr.write(`  [${spec.id}] draw ${draw + 1}/${args.draws} ... `);
-      const r = await runOne(spec, args.runner, args.model, args.dryRun);
+      const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun);
       results.push({ ...r, draw });
       process.stderr.write(`${r.score.formatOk ? "ok" : "FAIL"} (${r.durationMs}ms)\n`);
       writeReport(args, results, specs);
