@@ -151,24 +151,39 @@ function isShallow(cwd: string): boolean {
   }
 }
 
+function deepenShallowPrRefs(cwd: string, remotes: readonly string[], refs: readonly string[]): void {
+  if (!isShallow(cwd)) return;
+  for (const remote of remotes) {
+    for (const ref of refs) {
+      if (!isShallow(cwd)) return;
+      tryFetch(cwd, ["fetch", "--quiet", "--unshallow", remote, ref]);
+    }
+  }
+}
+
 export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
   const ready = () =>
     hasCommit(cwd, pr.baseSha) &&
     hasCommit(cwd, pr.headSha) &&
     hasMergeBase(cwd, pr.baseSha, pr.headSha);
-  if (ready()) return;
-
   const remotes = listRemotes(cwd);
   const pullRef = `pull/${pr.prMeta.number}/head`;
+  const prRefs = [pullRef, pr.baseRefName, pr.headRefName];
+  const readyForSandbox = () => ready() && !isShallow(cwd);
+
+  if (ready()) {
+    deepenShallowPrRefs(cwd, remotes, prRefs);
+    if (readyForSandbox()) return;
+  }
 
   for (const remote of remotes) {
-    if (ready()) return;
+    if (readyForSandbox()) return;
     tryFetch(cwd, ["fetch", "--quiet", remote, pullRef]);
   }
 
   for (const remote of remotes) {
     for (const ref of [pr.baseRefName, pr.headRefName]) {
-      if (ready()) return;
+      if (readyForSandbox()) return;
       tryFetch(cwd, ["fetch", "--quiet", remote, ref]);
     }
   }
@@ -180,25 +195,20 @@ export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
     }
   }
 
-  if (!ready() && isShallow(cwd)) {
-    for (const remote of remotes) {
-      for (const ref of [pullRef, pr.baseRefName, pr.headRefName]) {
-        if (ready()) return;
-        if (!isShallow(cwd)) break;
-        tryFetch(cwd, ["fetch", "--quiet", "--unshallow", remote, ref]);
-      }
-    }
-  }
+  deepenShallowPrRefs(cwd, remotes, prRefs);
 
   const missingBase = !hasCommit(cwd, pr.baseSha);
   const missingHead = !hasCommit(cwd, pr.headSha);
-  if (!missingBase && !missingHead && hasMergeBase(cwd, pr.baseSha, pr.headSha)) return;
+  const missingMergeBase = !missingBase && !missingHead && !hasMergeBase(cwd, pr.baseSha, pr.headSha);
+  const shallow = isShallow(cwd);
+  if (!missingBase && !missingHead && !missingMergeBase && !shallow) return;
 
   throw new Error(
     `PR #${pr.prMeta.number}: missing ${[
       missingBase ? "base" : "",
       missingHead ? "head" : "",
-      !missingBase && !missingHead ? "merge-base" : "",
+      missingMergeBase ? "merge-base" : "",
+      shallow ? "unshallowed-history" : "",
     ]
       .filter(Boolean)
       .join("/")} commit locally; try git fetch`

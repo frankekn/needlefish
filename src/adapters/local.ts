@@ -136,8 +136,9 @@ export async function runLocal(
   cwd: string,
   opts: LocalOptions
 ): Promise<ReviewResult> {
-  const result = await review(diffBundle(cwd, opts), opts);
-  writeCache(cwd, opts, result);
+  const repoPath = path.resolve(cwd);
+  const result = await review(diffBundle(repoPath, opts), opts);
+  writeCache(repoPath, opts, result);
   return result;
 }
 
@@ -146,8 +147,9 @@ export async function runLocalPr(
   prNumber: number,
   opts: LocalOptions
 ): Promise<ReviewResult> {
-  const result = await review(prDiffBundle(cwd, prNumber, opts), opts);
-  writeCache(cwd, opts, result);
+  const repoPath = path.resolve(cwd);
+  const result = await review(prDiffBundle(repoPath, prNumber, opts), opts);
+  writeCache(repoPath, opts, result);
   return result;
 }
 
