@@ -169,10 +169,10 @@ Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
 
 Codex runs with `-s read-only`. Claude Code runs with `--permission-mode plan`,
 `--safe-mode`, and no session persistence. opencode runs with `--pure` and never
-uses `--dangerously-skip-permissions`. For non-Codex runners, the target
-worktree must start clean; needlefish also checks
-`git status --porcelain --untracked-files=all` after each model call and fails if
-the target worktree changes.
+uses `--dangerously-skip-permissions`. Non-Codex runners execute inside a
+throwaway clean clone at the review head commit; needlefish checks that sandbox
+with `git status --porcelain --untracked-files=all --ignored=matching` and
+verifies `HEAD` did not move after each successful model call.
 
 ## Verdict derivation (deterministic)
 

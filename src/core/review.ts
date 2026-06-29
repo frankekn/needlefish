@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { runCodex, extractJson, type CodexOptions } from "../shared/codex";
+import { runCodex, extractJson, isRunnerSafetyError, type CodexOptions } from "../shared/codex";
 import type { RunnerOptions } from "../shared/runner";
 import {
   type Bundle,
@@ -63,7 +63,7 @@ function sortByRisk(hotspots: readonly Hotspot[]): Hotspot[] {
 }
 
 function codexOptions(run: ReviewRun): CodexOptions {
-  return { repoPath: run.bundle.repoPath, ...run.runnerOptions };
+  return { repoPath: run.bundle.repoPath, targetHeadSha: run.bundle.headSha, ...run.runnerOptions };
 }
 
 async function runReviewPrompt(prompt: string, run: ReviewRun): Promise<RawReview> {
@@ -169,6 +169,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
       all = all.concat(res.findings);
       residuals.push(...res.residual_risks);
     } catch (e) {
+      if (isRunnerSafetyError(e)) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       checked.push(`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`);
       residuals.push({ text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`, blocks: true });

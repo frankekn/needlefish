@@ -8,9 +8,17 @@ import {
   type RunnerName,
   type RunnerOptions,
 } from "./runner";
+import {
+  assertRunnerSandboxClean,
+  isRunnerSafetyError,
+  prepareRunnerSandbox,
+} from "./runner-sandbox";
+
+export { isRunnerSafetyError } from "./runner-sandbox";
 
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
+  readonly targetHeadSha: string;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -29,18 +37,6 @@ interface RunnerInvocation {
   readonly tmp: string;
 }
 
-class RunnerWorktreeChangedError extends Error {
-  constructor(runner: RunnerName) {
-    super(`${runner} runner changed the target worktree`);
-  }
-}
-
-class RunnerDirtyWorktreeError extends Error {
-  constructor(runner: RunnerName) {
-    super(`${runner} runner requires a clean target worktree`);
-  }
-}
-
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
   let lastErr: unknown;
@@ -49,8 +45,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
       return runCodexOnce(prompt, opts, runner);
     } catch (err) {
       if (!(err instanceof Error)) throw err;
-      if (err instanceof RunnerWorktreeChangedError) throw err;
-      if (err instanceof RunnerDirtyWorktreeError) throw err;
+      if (isRunnerSafetyError(err)) throw err;
       lastErr = err;
       if (attempt < 2) {
         const backoff = retryMsFor(runner);
@@ -74,8 +69,22 @@ function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): s
   delete env.GITHUB_API_TOKEN;
 
   try {
-    const invocation = { prompt, repoPath: opts.repoPath, model, timeoutMs, env, tmp };
-    const result = runWithWorktreeGuard(runner, opts.repoPath, () => runRunner(runner, invocation));
+    const sandbox = prepareRunnerSandbox({
+      runner,
+      repoPath: opts.repoPath,
+      prompt,
+      targetHeadSha: opts.targetHeadSha,
+      tmp,
+    });
+    const invocation = {
+      prompt: sandbox.prompt,
+      repoPath: sandbox.repoPath,
+      model,
+      timeoutMs,
+      env,
+      tmp,
+    };
+    const result = runRunner(runner, invocation);
 
     if (result.res.error) throw result.res.error;
     if (result.res.status !== 0) {
@@ -83,7 +92,8 @@ function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): s
         `${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`
       );
     }
-    return result.out;
+    assertRunnerSandboxClean(runner, sandbox.repoPath, opts.targetHeadSha);
+    return outputFor(runner, result);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -137,23 +147,6 @@ function retryMsFor(runner: RunnerName): number {
     return parsePositiveInteger(process.env.CODEX_RETRY_MS, "CODEX_RETRY_MS");
   }
   return 5000;
-}
-
-function runWithWorktreeGuard(
-  runner: RunnerName,
-  repoPath: string,
-  run: () => RunnerResult
-): RunnerResult {
-  if (runner === "codex") return run();
-  const statusBefore = gitStatus(repoPath);
-  if (statusBefore.trim()) throw new RunnerDirtyWorktreeError(runner);
-  try {
-    return run();
-  } finally {
-    if (gitStatus(repoPath) !== statusBefore) {
-      throw new RunnerWorktreeChangedError(runner);
-    }
-  }
 }
 
 function runRunner(runner: RunnerName, invocation: RunnerInvocation): RunnerResult {
@@ -228,20 +221,17 @@ function runOpenCode(invocation: RunnerInvocation): RunnerResult {
     timeout: invocation.timeoutMs,
     maxBuffer: 1024 * 1024 * 64,
   });
-  return { res, out: extractOpenCodeText(res.stdout ?? "") };
+  return { res, out: res.stdout ?? "" };
 }
 
-function gitStatus(repoPath: string): string {
-  const res = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], {
-    cwd: repoPath,
-    encoding: "utf8",
-    timeout: 10000,
-  });
-  if (res.error) throw res.error;
-  if (res.status !== 0) {
-    throw new Error(`git status failed: ${(res.stderr ?? "").slice(0, 2000)}`);
+function outputFor(runner: RunnerName, result: RunnerResult): string {
+  switch (runner) {
+    case "codex":
+    case "claude":
+      return result.out;
+    case "opencode":
+      return extractOpenCodeText(result.out);
   }
-  return res.stdout ?? "";
 }
 
 function isRecord(raw: unknown): raw is JsonRecord {
@@ -262,7 +252,13 @@ function extractOpenCodeText(stdout: string): string {
   for (const line of stdout.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const raw: unknown = JSON.parse(trimmed);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(trimmed);
+    } catch (error) {
+      if (error instanceof SyntaxError) continue;
+      throw error;
+    }
     if (!isRecord(raw)) continue;
     const text = openCodeText(raw);
     if (text) parts.push(text);
