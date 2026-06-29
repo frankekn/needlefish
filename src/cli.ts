@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { runGithub } from "./adapters/github";
-import { runLocal, printLocal, type LocalOptions } from "./adapters/local";
+import { runLocal, runLocalPr, printLocal } from "./adapters/local";
 import { parseArgs, USAGE } from "./cli/args";
 
 async function main() {
@@ -27,7 +27,8 @@ async function main() {
       await runGithub(command.repo ?? process.cwd(), command.pr, command.opts);
       return;
     }
-    case "local": {
+    case "local":
+    case "pr": {
       if (command.fix) {
         process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
@@ -38,8 +39,9 @@ async function main() {
           "v0.2 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
         );
       }
-      const opts: LocalOptions = command.opts;
-      const result = await runLocal(command.repo ?? process.cwd(), opts);
+      const cwd = command.repo ?? process.cwd();
+      const result =
+        command.kind === "pr" ? await runLocalPr(cwd, command.pr, command.opts) : await runLocal(cwd, command.opts);
       printLocal(result);
       return;
     }

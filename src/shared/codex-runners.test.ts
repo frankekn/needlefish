@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCodex } from "./codex";
-import { commitAll, headSha, initRepo, readStringArray } from "./codex-runner-test-fixtures";
+import { commitAll, gitText, headSha, initRepo, readStringArray } from "./codex-runner-test-fixtures";
 
 test("runCodex invokes claude in non-interactive plan mode", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
@@ -239,6 +239,52 @@ test("runCodex reviews a clean clone when the target starts dirty", async (t) =>
 
   assert.equal(output, "{\"ok\":true}");
   assert.equal(existsSync(path.join(repo, "preexisting.txt")), true);
+});
+
+test("runCodex can review an unreferenced target commit", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const baseBranch = gitText(["branch", "--show-current"], repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "README.md"), "feature\n");
+  commitAll(repo, "feature");
+  const targetHeadSha = headSha(repo);
+  gitText(["checkout", baseBranch], repo);
+  gitText(["branch", "-D", "feature"], repo);
+  const bin = path.join(tmp, "claude-bin.js");
+  const readmePath = path.join(tmp, "readme.txt");
+  const previous = {
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(readmePath)}, fs.readFileSync('README.md', 'utf8'));`,
+      "process.stdout.write('{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CLAUDE_BIN = bin;
+  process.env.NEEDLEFISH_RUNNER = "claude";
+
+  const output = await runCodex("prompt", {
+    repoPath: path.relative(process.cwd(), repo),
+    targetHeadSha,
+    timeoutMs: 1000,
+  });
+
+  assert.equal(output, "{\"ok\":true}");
+  assert.equal(readFileSync(readmePath, "utf8"), "feature\n");
 });
 
 test("runCodex reports opencode exit errors before parsing stdout", async (t) => {

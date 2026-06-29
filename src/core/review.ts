@@ -99,6 +99,7 @@ function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): 
     residualRisks: raw.residual_risks,
     baseSha: bundle.baseSha,
     headSha: bundle.headSha,
+    ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
   };
 }
 

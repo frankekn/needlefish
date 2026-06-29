@@ -19,6 +19,7 @@ export function renderMarkdown(result: ReviewResult): string {
   lines.push("");
   lines.push(`**Verdict:** ${VERDICT_BADGE[result.verdict] ?? result.verdict}`);
   lines.push(`**Base:** ${result.baseSha}  →  **Head:** ${result.headSha}`);
+  if (result.reviewTarget) lines.push(...result.reviewTarget.split("\n"));
   if (result.summary) lines.push("");
   if (result.summary) lines.push(result.summary);
   lines.push("");

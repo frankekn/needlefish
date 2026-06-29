@@ -33,11 +33,13 @@ export function isRunnerSafetyError(error: unknown): boolean {
 
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {
   const sandboxPath = path.join(options.tmp, "runner-repo");
-  git(["clone", "--quiet", "--no-hardlinks", options.repoPath, sandboxPath], options.repoPath);
-  git(["checkout", "--quiet", "--detach", options.targetHeadSha], sandboxPath);
+  const sourceRepoPath = path.resolve(options.repoPath);
+  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", sourceRepoPath, sandboxPath], sourceRepoPath);
+  git(["fetch", "--quiet", sourceRepoPath, options.targetHeadSha], sandboxPath);
+  git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandboxPath);
   return {
     repoPath: sandboxPath,
-    prompt: options.prompt.split(options.repoPath).join(sandboxPath),
+    prompt: options.prompt.split(sourceRepoPath).join(sandboxPath),
   };
 }
 

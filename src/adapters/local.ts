@@ -3,9 +3,18 @@ import os from "node:os";
 import path from "node:path";
 import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
-import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
+import {
+  changedFiles,
+  ensurePrCommits,
+  fetchPrRefInfo,
+  ghText,
+  git,
+  makeBundle,
+  prDiffFromShas,
+  readAgentsAt,
+} from "../shared/repo";
 import { normalizePrMeta } from "../shared/normalize";
-import type { ReviewResult } from "../shared/schema";
+import type { Bundle, ReviewResult } from "../shared/schema";
 import type { RunnerOptions } from "../shared/runner";
 
 function detectBase(cwd: string, override?: string): string {
@@ -36,7 +45,11 @@ function fetchPrMeta(cwd: string, prNumber: number) {
     );
     return normalizePrMeta(JSON.parse(raw), prNumber);
   } catch (err) {
-    if (err instanceof Error) return null;
+    if (err instanceof Error) {
+      throw new Error(
+        `--pr ${prNumber} requested, but PR metadata could not be fetched: ${err.message}. Check gh auth or remove --pr for local-only review.`
+      );
+    }
     throw err;
   }
 }
@@ -52,7 +65,13 @@ function cacheSlug(cwd: string): string {
   return path.basename(cwd);
 }
 
-function diffBundle(cwd: string, opts: LocalOptions) {
+function writeCache(cwd: string, opts: LocalOptions, result: ReviewResult): void {
+  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
+  mkdirSync(cache, { recursive: true });
+  writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
+}
+
+function diffBundle(cwd: string, opts: LocalOptions): Bundle {
   const dirty = git(["status", "--porcelain"], cwd);
   if (dirty.trim()) {
     process.stderr.write(
@@ -75,9 +94,33 @@ function diffBundle(cwd: string, opts: LocalOptions) {
     patch,
     patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd),
     changedFiles: changedFiles(cwd, baseSha),
-    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    ...(opts.pr
+      ? {
+          reviewTarget: `Review target: local ${baseSha}..${headSha}\nPR context: #${opts.pr} metadata only`,
+          prMeta: fetchPrMeta(cwd, opts.pr),
+        }
+      : { prMeta: null }),
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
+  });
+}
+
+function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
+  const pr = fetchPrRefInfo(cwd, prNumber);
+  ensurePrCommits(cwd, pr);
+  const diff = prDiffFromShas(cwd, pr.baseSha, pr.headSha);
+  return makeBundle({
+    repoPath: cwd,
+    baseSha: diff.baseSha,
+    headSha: diff.headSha,
+    patch: diff.patch,
+    patchStat: diff.patchStat,
+    changedFiles: diff.changedFiles,
+    reviewTarget: `Review target: PR #${pr.prMeta.number} ${diff.baseSha}..${diff.headSha}`,
+    prMeta: pr.prMeta,
+    deep: Boolean(opts.deep),
+    focus: opts.focus ?? null,
+    agentsMd: readAgentsAt(cwd, pr.headSha),
   });
 }
 
@@ -93,11 +136,20 @@ export async function runLocal(
   cwd: string,
   opts: LocalOptions
 ): Promise<ReviewResult> {
-  const result = await review(diffBundle(cwd, opts), opts);
-  const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
-  mkdirSync(cache, { recursive: true });
-  writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
+  const repoPath = path.resolve(cwd);
+  const result = await review(diffBundle(repoPath, opts), opts);
+  writeCache(repoPath, opts, result);
+  return result;
+}
 
+export async function runLocalPr(
+  cwd: string,
+  prNumber: number,
+  opts: LocalOptions
+): Promise<ReviewResult> {
+  const repoPath = path.resolve(cwd);
+  const result = await review(prDiffBundle(repoPath, prNumber, opts), opts);
+  writeCache(repoPath, opts, result);
   return result;
 }
 

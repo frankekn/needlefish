@@ -42,6 +42,7 @@ export interface Bundle {
   readonly patch: string;
   readonly patchStat: string;
   readonly changedFiles: readonly ChangedFile[];
+  readonly reviewTarget?: string;
   readonly agentsMd: string;
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
@@ -83,6 +84,7 @@ export interface ReviewResult {
   readonly residualRisks: readonly ResidualRisk[];
   readonly baseSha: string;
   readonly headSha: string;
+  readonly reviewTarget?: string;
 }
 
 export interface RiskEdge {

@@ -24,19 +24,35 @@ export type CliCommand =
       readonly opts: RunnerOptions;
       readonly fix: boolean;
       readonly recheck: boolean;
+    }
+  | {
+      readonly kind: "pr";
+      readonly pr: number;
+      readonly repo?: string;
+      readonly opts: LocalOptions;
+      readonly fix: boolean;
+      readonly recheck: boolean;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
 
 Usage:
-  needlefish                       review merge-base..HEAD (local, read-only)
-  needlefish --focus security      narrow the review lens
-  needlefish --deep                wider context (call sites, history, adjacent tests)
-  needlefish --pr 123              also pull PR body/comments/checks via gh
-  needlefish --base develop        override base ref
-  needlefish --runner claude       run with codex, claude, or opencode
-  needlefish --github --pr 123     GitHub Action mode (post review + check)
-  needlefish --recheck             re-run review on current head
+  needlefish [options]                 review merge-base..HEAD (local, read-only)
+  needlefish pr <number> [options]     review PR base..head via gh (any branch)
+  needlefish --github --pr <number>    GitHub Action mode (post review + check)
+
+Shared options:
+  --repo <path>        target repository
+  --focus <text>       narrow the review lens
+  --deep               wider context (call sites, history, adjacent tests)
+  --runner <name>      codex | claude | opencode
+  --model <id>         model id for the selected runner
+  --timeout-ms <ms>    per-call timeout
+  --recheck            re-run review on current target
+
+Local diff options:
+  --pr <number>        attach PR metadata to the local diff review
+  --base <ref>         override base ref
 
 Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode (default: codex)
@@ -91,6 +107,11 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  const prCommand = argv[0] === "pr";
+  if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
+  if (prCommand && (argv[1] === "-v" || argv[1] === "--version")) return { kind: "version" };
+  const prCommandNumber = prCommand ? parsePositiveInteger(argv[1] ?? "", "pr") : undefined;
+  const start = prCommand ? 2 : 0;
   let github = false;
   let pr: number | undefined;
   let repo: string | undefined;
@@ -98,7 +119,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   let fix = false;
   let recheck = false;
 
-  for (let i = 0; i < argv.length; i++) {
+  for (let i = start; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { kind: "help" };
     if (arg === "-v" || arg === "--version") return { kind: "version" };
@@ -187,11 +208,18 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   }
 
   if (github) {
+    if (prCommand) throw new Error("pr command cannot be combined with --github");
     if (!pr) throw new Error("--github requires --pr <number>");
     if (opts.base) throw new Error("--base is only valid in local mode");
     if (opts.focus) throw new Error("--focus is only valid in local mode");
     if (opts.deep) throw new Error("--deep is only valid in local mode");
     return { kind: "github", pr, repo, opts: runnerOptionsFrom(opts), fix, recheck };
+  }
+
+  if (prCommand) {
+    if (pr) throw new Error("pr command cannot be combined with --pr");
+    if (opts.base) throw new Error("--base is not valid with pr command");
+    return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck };
   }
 
   return { kind: "local", repo, opts, fix, recheck };

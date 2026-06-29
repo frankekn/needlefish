@@ -1,3 +1,4 @@
+import path from "node:path";
 import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
@@ -89,21 +90,22 @@ export async function runGithub(
   prNumber: number,
   opts: RunnerOptions = {}
 ): Promise<void> {
+  const repoPath = path.resolve(cwd);
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
   const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
   if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
-  const headSha = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || git(["rev-parse", "HEAD"], cwd);
+  const headSha = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || git(["rev-parse", "HEAD"], repoPath);
   const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
   if (!baseSha || !headSha) throw new Error("Could not resolve PR base/head SHA");
-  const mergeBase = git(["merge-base", baseSha, headSha], cwd);
-  const patch = git(["diff", mergeBase, headSha], cwd);
+  const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
+  const patch = git(["diff", mergeBase, headSha], repoPath);
   if (!patch.trim()) {
     throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
   }
-  const patchStat = git(["diff", "--stat", mergeBase, headSha], cwd);
-  const changed = changedFiles(cwd, mergeBase, headSha);
+  const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath);
+  const changed = changedFiles(repoPath, mergeBase, headSha);
 
   const commentsUrl = stringField(pr, "comments_url");
   const reviewsUrl = stringField(pr, "review_comments_url");
@@ -120,7 +122,7 @@ export async function runGithub(
   };
 
   const bundle = makeBundle({
-    repoPath: cwd,
+    repoPath,
     baseSha: mergeBase,
     headSha,
     patch,
