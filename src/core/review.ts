@@ -188,7 +188,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
     bundle.patchStat || "(see git diff --stat; repo at HEAD)",
     run
   );
-  return toReviewResult(pruned, run, `${mapResult.summary} — ${pruned.summary}`);
+  const blockingResiduals = residuals.filter((risk) => risk.blocks);
+  const final = { ...pruned, residual_risks: [...pruned.residual_risks, ...blockingResiduals] };
+  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`);
 }
 
 export async function review(
