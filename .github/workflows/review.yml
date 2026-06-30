@@ -1,13 +1,8 @@
 name: needlefish-review
 
-# Trusted-tool pattern: the reviewer (needlefish) is checked out from `main`
-# (trusted); only the PR head under review is untrusted. This prevents a PR from
-# controlling its own review by modifying the tool. For OTHER repos, copy this
-# workflow and point the tool checkout at frankekn/needlefish@main.
-
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -21,6 +16,9 @@ on:
         required: false
       timeout_ms:
         description: Optional per-call timeout in milliseconds
+        required: false
+      codex_reasoning_effort:
+        description: "Codex reasoning effort: medium, high, or xhigh"
         required: false
   workflow_call:
     inputs:
@@ -40,16 +38,24 @@ on:
         description: Optional per-call timeout in milliseconds
         type: string
         required: false
+      codex_reasoning_effort:
+        description: "Codex reasoning effort: medium, high, or xhigh"
+        type: string
+        required: false
 
 permissions:
   contents: read
   pull-requests: write
   checks: write
 
+concurrency:
+  group: needlefish-${{ github.repository }}-${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: self-hosted
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Resolve PR refs
         id: refs
@@ -75,28 +81,6 @@ jobs:
           fetch-depth: 0
           path: target
 
-      - name: Checkout trusted tool (main)
-        uses: actions/checkout@v4
-        with:
-          repository: frankekn/needlefish
-          ref: main
-          path: needlefish
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install tool
-        working-directory: needlefish
-        run: |
-          PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-          if corepack enable 2>/dev/null && corepack prepare "$PNPM_VERSION" --activate; then
-            pnpm install --frozen-lockfile
-          else
-            npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
-          fi
-
       - name: Needlefish review
         working-directory: target
         env:
@@ -106,9 +90,14 @@ jobs:
           NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
+          CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
         run: |
+          if [ ! -x "$HOME/.local/bin/needlefish" ]; then
+            echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
+            exit 1
+          fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
-          "$GITHUB_WORKSPACE/needlefish/node_modules/.bin/tsx" "$GITHUB_WORKSPACE/needlefish/src/cli.ts" "${args[@]}"
+          "$HOME/.local/bin/needlefish" "${args[@]}"

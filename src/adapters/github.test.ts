@@ -56,6 +56,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write('{}'); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/7') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
+          state: "open",
           title: "PR",
           body: "",
           comments_url: "https://example.invalid/comments",
@@ -98,4 +99,47 @@ test("runGithub normalizes relative repo paths before building prompts", async (
   const repoPathInPrompt = readFileSync(promptRepoPath, "utf8");
   assert.equal(path.isAbsolute(repoPathInPrompt), true);
   assert.equal(path.basename(repoPathInPrompt), "runner-repo");
+});
+
+test("runGithub skips closed PRs before review", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-github-closed-test-"));
+  const fakeBin = path.join(tmp, "bin");
+  const gh = path.join(fakeBin, "gh");
+  const logPath = path.join(tmp, "gh.log");
+  const previous = {
+    path: process.env.PATH,
+    repository: process.env.GITHUB_REPOSITORY,
+  };
+  t.after(() => {
+    if (previous.path === undefined) delete process.env.PATH;
+    else process.env.PATH = previous.path;
+    if (previous.repository === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous.repository;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  mkdirSync(fakeBin);
+  writeFileSync(
+    gh,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const args = process.argv.slice(2);",
+      `fs.appendFileSync(${JSON.stringify(logPath)}, args.join(' ') + '\\n');`,
+      "if (args[0] !== 'api') process.exit(2);",
+      `if (args[1] === 'repos/frankekn/needlefish/pulls/8') { process.stdout.write(${JSON.stringify(
+        JSON.stringify({ state: "closed", title: "Closed PR" })
+      )}); process.exit(0); }`,
+      "process.stderr.write(`unexpected gh args ${args.join(' ')}`);",
+      "process.exit(2);",
+    ].join("\n")
+  );
+  chmodSync(gh, 0o755);
+  process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
+  process.env.GITHUB_REPOSITORY = "frankekn/needlefish";
+
+  await runGithub(tmp, 8, { runner: "claude", timeoutMs: 1000 });
+
+  const ghCalls = readFileSync(logPath, "utf8").trim().split("\n");
+  assert.deepEqual(ghCalls, ["api repos/frankekn/needlefish/pulls/8"]);
 });

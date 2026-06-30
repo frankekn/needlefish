@@ -129,25 +129,30 @@ jobs:
       # Optional:
       # runner: codex
       # model: gpt-5.5
+      # codex_reasoning_effort: high
       # timeout_ms: "600000"
     secrets: inherit
 ```
 
 Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
-every target repo automatically — no per-repo update needed. (Alternatively,
-copy `review.yml` into the target repo if you want it frozen.)
+every target repo automatically. The runner must have needlefish deployed at
+`~/.local/bin/needlefish`; the workflow does not reinstall the tool on every PR.
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
-2. Ensure the runner has `gh` and the selected model CLI on `PATH`.
-3. On that runner, auth the selected CLI once. For Codex:
+2. Deploy needlefish once on that runner. Future pushes to `main` run
+   `needlefish-deploy` and update the runner automatically:
+   ```bash
+   ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
+   ```
+3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
+4. On that runner, auth the selected CLI once. For Codex:
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
-4. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
-   access to this repo available to the target; otherwise (public) the default
-   `GITHUB_TOKEN` is enough.
-5. **Runner global-instructions caveat:** model CLIs may auto-load global
+5. If needlefish is **private**, the caller repo must be allowed to call this
+   reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is enough.
+6. **Runner global-instructions caveat:** model CLIs may auto-load global
    instructions from the runner's home directory. needlefish instructs the model
    to ignore anything outside the target repo's `AGENTS.md` as policy, but if
    you want zero leakage, keep the runner home free of unrelated instruction
@@ -166,18 +171,23 @@ and `--timeout-ms`, or the matching env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | `codex` |
 | model | `NEEDLEFISH_MODEL` | runner default |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `high` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
 `OPENCODE_BIN`. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
 `CODEX_RETRY_MS` still work for Codex compatibility.
 
-Codex runs with `-s read-only`. Claude Code runs with `--permission-mode plan`,
-`--safe-mode`, and no session persistence. opencode runs with `--pure` and never
-uses `--dangerously-skip-permissions`. Non-Codex runners execute inside a
-throwaway clean clone at the review head commit; needlefish checks that sandbox
-with `git status --porcelain --untracked-files=all --ignored=matching` and
-verifies `HEAD` did not move after each successful model call.
+Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
+read-only`. Use `CODEX_REASONING_EFFORT=medium` for throughput experiments or
+`xhigh` for the old high-accuracy setting. Claude Code runs with
+`--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
+runs with `--pure` and never uses `--dangerously-skip-permissions`. Closed PRs
+are skipped before diffing or model invocation. Non-Codex runners execute inside
+a throwaway clean clone at the review head commit;
+needlefish checks that sandbox with
+`git status --porcelain --untracked-files=all --ignored=matching` and verifies
+`HEAD` did not move after each successful model call.
 
 ## Verdict derivation (deterministic)
 
@@ -186,6 +196,15 @@ verifies `HEAD` did not move after each successful model call.
 - otherwise → `pass`
 
 P3-only findings are reported but do not block (check stays green).
+
+## GitHub status model
+
+The `Needlefish` check-run is the authoritative PR signal. `changes_requested`
+sets that check to failure and makes the workflow job fail, but PR review output
+is posted as a non-sticky comment review so an older Needlefish review cannot
+keep a fixed PR in GitHub's `CHANGES_REQUESTED` state. Before posting any result,
+needlefish re-reads the PR and skips output if the PR closed or the head SHA
+moved.
 
 ## Status
 

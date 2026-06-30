@@ -50,7 +50,7 @@ if (shimResult.status !== 0) {
   process.exit(shimResult.status ?? 1);
 }
 
-const result = spawnSync(process.execPath, ["--test", "--import", "tsx", ...files], {
+const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", "--import", "tsx", ...files], {
   stdio: "inherit",
 });
 

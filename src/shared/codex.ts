@@ -22,6 +22,7 @@ export interface CodexOptions extends RunnerOptions {
 }
 
 type JsonRecord = Record<string, unknown>;
+type CodexReasoningEffort = "medium" | "high" | "xhigh";
 
 interface RunnerResult {
   readonly res: RunnerProcessResult;
@@ -162,7 +163,20 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
 
 async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> {
   const lastMsg = path.join(invocation.tmp, "last.txt");
-  const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
+  const reasoningEffort = resolveCodexReasoningEffort();
+  const args = [
+    "exec",
+    "--color",
+    "never",
+    "--ignore-user-config",
+    "-c",
+    `model_reasoning_effort="${reasoningEffort}"`,
+    "-s",
+    "read-only",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    lastMsg,
+  ];
   if (invocation.model) args.push("-m", invocation.model);
 
   const res = await spawnRunnerProcess({
@@ -181,6 +195,13 @@ async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> 
     out = res.stdout ?? "";
   }
   return { res, out };
+}
+
+function resolveCodexReasoningEffort(): CodexReasoningEffort {
+  const value = process.env.CODEX_REASONING_EFFORT;
+  if (value === undefined || value === "") return "high";
+  if (value === "medium" || value === "high" || value === "xhigh") return value;
+  throw new Error("CODEX_REASONING_EFFORT must be one of: medium, high, xhigh");
 }
 
 async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
