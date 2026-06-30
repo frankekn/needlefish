@@ -30,12 +30,6 @@ function nestedString(raw: JsonRecord, field: string, nestedField: string): stri
   return isRecord(value) ? stringField(value, nestedField) : "";
 }
 
-const VERDICT_EVENT: Record<Verdict, "COMMENT"> = {
-  pass: "COMMENT",
-  changes_requested: "COMMENT",
-  needs_human: "COMMENT",
-};
-
 const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
   pass: "success",
   changes_requested: "failure",
@@ -48,14 +42,13 @@ function postReview(
   headSha: string,
   result: ReviewResult
 ) {
-  const event = VERDICT_EVENT[result.verdict];
   const body = renderMarkdown(result);
   const repoArg = `repos/${repo}`;
 
   const payload = JSON.stringify({
     commit_id: headSha,
     body,
-    event,
+    event: "COMMENT",
     comments: [],
   });
 

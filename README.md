@@ -89,20 +89,25 @@ Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-revie
 ## GitHub Action mode (self-hosted runner)
 
 `needlefish --github --pr N` collects the PR via `gh api`, runs the same core,
-and posts a formal PR review (`REQUEST_CHANGES` / `COMMENT`) with the full
-rendered review body plus a check run. Verdict → surface mapping:
+and posts a non-sticky `COMMENT` review with the full rendered review body plus
+the authoritative `Needlefish` check-run. Verdict → surface mapping:
 
 | verdict              | review event        | check     |
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
-| changes_requested    | REQUEST_CHANGES     | failure   |
+| changes_requested    | COMMENT             | failure   |
 | needs_human          | COMMENT             | neutral   |
 | run failed           | (none)              | failure   |
 
-`pass` posts a `COMMENT` (not `APPROVE`) plus a green check: the `GITHUB_TOKEN`
-bot is not permitted to formally approve PRs (anti-self-approval), so the green
-check-run is the merge gate. A failed review never passes a PR — the check goes
-`failure`.
+All verdict reviews are `COMMENT`, not approval or blocking-review events. The
+`GITHUB_TOKEN` bot is not permitted to formally approve PRs, and sticky blocking
+reviews can outlive a fixed head. The check-run is the merge gate: a failed
+review never passes a PR because the check goes `failure`.
+
+The reusable workflow skips closed PR events and fork PRs before checkout or
+model invocation on the persistent self-hosted runner. Before posting any
+result, the CLI re-reads the PR and skips output if the PR closed or the head
+SHA moved.
 
 ### Runner setup (one-time)
 
@@ -137,6 +142,9 @@ jobs:
 Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
 every target repo automatically. The runner must have needlefish deployed at
 `~/.local/bin/needlefish`; the workflow does not reinstall the tool on every PR.
+Hardened installed releases should also publish
+`~/.local/share/needlefish/current/release.json` with the installed Needlefish
+SHA so review jobs can fail before spending model tokens when a runner is stale.
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
@@ -145,6 +153,9 @@ every target repo automatically. The runner must have needlefish deployed at
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
+   For a fleet, dispatch the same release SHA to all six selected runners and
+   verify each runner reports the same installed metadata before trusting the
+   fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
 4. On that runner, auth the selected CLI once. For Codex:
    ```bash
@@ -179,8 +190,9 @@ Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
 `CODEX_RETRY_MS` still work for Codex compatibility.
 
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
-read-only`. Use `CODEX_REASONING_EFFORT=medium` for throughput experiments or
-`xhigh` for the old high-accuracy setting. Claude Code runs with
+read-only`. Keep `CODEX_REASONING_EFFORT=high` as the default; use `medium`
+only for measured throughput experiments, or `xhigh` for the old high-accuracy
+setting. Claude Code runs with
 `--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
 runs with `--pure` and never uses `--dangerously-skip-permissions`. Closed PRs
 are skipped before diffing or model invocation. Non-Codex runners execute inside
@@ -196,15 +208,6 @@ needlefish checks that sandbox with
 - otherwise → `pass`
 
 P3-only findings are reported but do not block (check stays green).
-
-## GitHub status model
-
-The `Needlefish` check-run is the authoritative PR signal. `changes_requested`
-sets that check to failure and makes the workflow job fail, but PR review output
-is posted as a non-sticky comment review so an older Needlefish review cannot
-keep a fixed PR in GitHub's `CHANGES_REQUESTED` state. Before posting any result,
-needlefish re-reads the PR and skips output if the PR closed or the head SHA
-moved.
 
 ## Status
 
