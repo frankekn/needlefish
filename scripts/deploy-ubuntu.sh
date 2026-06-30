@@ -11,15 +11,7 @@ mkdir -p "$releases" "$bin_dir"
 tmp=$(mktemp -d "$releases/.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
-git init "$tmp/repo"
-cd "$tmp/repo"
-git remote add origin "$NEEDLEFISH_REPO_URL"
-git fetch --depth 1 origin "$NEEDLEFISH_REF"
-git checkout --detach FETCH_HEAD
-
-sha=$(git rev-parse HEAD)
-release="$releases/$sha"
-if [ -e "$release" ]; then
+validate_release() {
   if [ ! -f "$release/release.json" ]; then
     echo "existing release is missing release.json: $release" >&2
     exit 1
@@ -33,6 +25,18 @@ for (const key of ["sha", "version", "repoUrl", "deployedAt", "node"]) {
 if (metadata.sha !== expectedSha) process.exit(1);
 NODE
   "$release/bin/needlefish" --version
+}
+
+git init "$tmp/repo"
+cd "$tmp/repo"
+git remote add origin "$NEEDLEFISH_REPO_URL"
+git fetch --depth 1 origin "$NEEDLEFISH_REF"
+git checkout --detach FETCH_HEAD
+
+sha=$(git rev-parse HEAD)
+release="$releases/$sha"
+if [ -e "$release" ]; then
+  validate_release
 else
 if ! command -v pnpm >/dev/null 2>&1; then
   pnpm_version=$(node -p "require('./package.json').packageManager")
@@ -50,7 +54,9 @@ const [path, sha, version, repoUrl, deployedAt, node] = process.argv.slice(2);
 fs.writeFileSync(path, `${JSON.stringify({ sha, version, repoUrl, deployedAt, node }, null, 2)}\n`);
 NODE
   "$tmp/repo/bin/needlefish" --version
-  mv "$tmp/repo" "$release"
+  if ! mv "$tmp/repo" "$release"; then
+    validate_release
+  fi
 fi
 
 ln -sfn "$release" "$root/current"
