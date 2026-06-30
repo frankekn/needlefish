@@ -40,15 +40,16 @@ interface RunnerInvocation {
 
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
+  const maxAttempts = process.env.NEEDLEFISH_NO_RETRY ? 1 : 2;
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await runCodexOnce(prompt, opts, runner);
     } catch (err) {
       if (!(err instanceof Error)) throw err;
       if (isRunnerSafetyError(err)) throw err;
       lastErr = err;
-      if (attempt < 2) {
+      if (attempt < maxAttempts) {
         const backoff = retryMsFor(runner);
         await new Promise<void>((resolve) => setTimeout(resolve, backoff));
       }

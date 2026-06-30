@@ -1,0 +1,1896 @@
+{
+  "promptHash": "2d82256f1bb7da69",
+  "runner": "opencode",
+  "model": "zai-coding-plan/glm-5.2",
+  "effort": "max",
+  "draws": 3,
+  "createdAt": "2026-06-29T23:27:03.690Z",
+  "baseline": false,
+  "results": [
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 77990
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 120419
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 67864
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 41829
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 57899
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 49891
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 114595
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 75023
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 70131
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 126896
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 148170
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "no JSON object found in codex output"
+      },
+      "durationMs": 114161
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 40854
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 87925
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 47811
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 53868
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 44816
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 80975
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 36812
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43774
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 32826
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 22870
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 20763
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 34852
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 56825
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 46416
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 50032
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 25786
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 35871
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 38982
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 38819
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 39659
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43897
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 85901
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 149629
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 102934
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 26811
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 35774
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 41826
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43763
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 36794
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 34850
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 0,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 65870
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 1,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 84939
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 2,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 44927
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 104454
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 1,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 126972
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 2,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 146981
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 68918
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/builder.cpython-314.pyc"
+      },
+      "durationMs": 73941
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/builder.cpython-314.pyc"
+      },
+      "durationMs": 94939
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 55960
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 56899
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 45875
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/transform.cpython-314.pyc"
+      },
+      "durationMs": 111711
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 78240
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 90938
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 26788
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 24861
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 17775
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 27840
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 29794
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 35860
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 29808
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33799
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 24801
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 109086
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43860
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 63859
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31858
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 39386
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 35835
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 85897
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 118950
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 132165
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 44850
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43812
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 37831
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 68890
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 65919
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 76606
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 68926
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 51856
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 62873
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 140011
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 140115
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 185070
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 185073
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 134018
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "no JSON object found in codex output"
+      },
+      "durationMs": 53806
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33844
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 32812
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31813
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 72900
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 85993
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 128080
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 72888
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 37857
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 53412
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 0,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 117010
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 1,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 125036
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 2,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 156027
+    }
+  ],
+  "aggregates": {
+    "recall": 0.5952380952380952,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0.049019607843137254,
+    "verdictMatchRate": 0.8235294117647058,
+    "lineAnchorValidRate": 0.7745098039215687,
+    "meanDurationMs": 68810.75490196078,
+    "recallByFixture": {
+      "docker-infra-supply-chain": 1,
+      "docker-version-bump": 1,
+      "go-backend-slop-swallow": 0,
+      "go-concurrency-leak": 0.6666666666666666,
+      "go-dep-patch": 1,
+      "go-harmless-variadic": 1,
+      "neg-dep-patch": 1,
+      "neg-docs-only": 1,
+      "neg-harmless-default": 1,
+      "neg-loop-under-timeout": 1,
+      "neg-missing-tests-no-bug": 1,
+      "neg-safe-tightening": 1,
+      "neg-style-only": 1,
+      "neg-test-only": 1,
+      "parity-throw": 1,
+      "pos-over-block": 1,
+      "py-backend-flag-ignored": 0.3333333333333333,
+      "py-backend-spec-drift": 0,
+      "py-data-partial-state": 0.6666666666666666,
+      "py-docs-only": 1,
+      "py-safe-refactor": 1,
+      "py-test-only": 1,
+      "rs-backend-spec-drift": 0,
+      "rs-missing-tests-no-bug": 1,
+      "rs-ownership-use-after-move": 1,
+      "rs-refactor": 1,
+      "sql-data-migration-break": 1,
+      "sql-safe-index": 1,
+      "ts-backend-slop-swallow": 1,
+      "ts-data-duplicate": 0.3333333333333333,
+      "ts-frontend-style-refactor": 1,
+      "ts-frontend-type-mismatch": 1,
+      "yml-docs-only": 1,
+      "yml-infra-token-leak": 0.3333333333333333
+    }
+  }
+}

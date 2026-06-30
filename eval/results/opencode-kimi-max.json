@@ -1,0 +1,1912 @@
+{
+  "promptHash": "2d82256f1bb7da69",
+  "runner": "opencode",
+  "model": "kimi-for-coding/k2p7",
+  "effort": "max",
+  "draws": 3,
+  "createdAt": "2026-06-30T10:00:23.216Z",
+  "baseline": false,
+  "results": [
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 33213
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 41229
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 33311
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 40139
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 28097
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 35250
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 38181
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 34136
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33687
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 48145
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 43822
+    },
+    {
+      "fixtureId": "go-concurrency-leak",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-concurrency-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2
+      },
+      "durationMs": 92288
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "critic produced no summary or checked list (likely malformed output)"
+      },
+      "durationMs": 62328
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31170
+    },
+    {
+      "fixtureId": "go-dep-patch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 40238
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 50540
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31174
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31344
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 27586
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31321
+    },
+    {
+      "fixtureId": "neg-dep-patch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-dep-patch",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 37556
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 18454
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31323
+    },
+    {
+      "fixtureId": "neg-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 24066
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 29234
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 59867
+    },
+    {
+      "fixtureId": "neg-harmless-default",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-harmless-default",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33501
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "critic produced no summary or checked list (likely malformed output)"
+      },
+      "durationMs": 22847
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 19546
+    },
+    {
+      "fixtureId": "neg-loop-under-timeout",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-loop-under-timeout",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 27576
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 34492
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 22792
+    },
+    {
+      "fixtureId": "neg-missing-tests-no-bug",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 31095
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 43247
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 72782
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 109637
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 17333
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21545
+    },
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21361
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21426
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 22309
+    },
+    {
+      "fixtureId": "neg-test-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 42033
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 0,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 38290
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 1,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 38440
+    },
+    {
+      "fixtureId": "parity-throw",
+      "draw": 2,
+      "score": {
+        "fixtureId": "parity-throw",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 36724
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 50161
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 1,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 52887
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 2,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 52424
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/builder.cpython-314.pyc"
+      },
+      "durationMs": 36245
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 39933
+    },
+    {
+      "fixtureId": "py-backend-flag-ignored",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-flag-ignored",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 31641
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/validators.cpython-314.pyc"
+      },
+      "durationMs": 36089
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/validators.cpython-314.pyc"
+      },
+      "durationMs": 55184
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/validators.cpython-314.pyc"
+      },
+      "durationMs": 54900
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 38462
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 35395
+    },
+    {
+      "fixtureId": "py-data-partial-state",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-data-partial-state",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 32337
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 18379
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 26400
+    },
+    {
+      "fixtureId": "py-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 18281
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 20263
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21386
+    },
+    {
+      "fixtureId": "py-safe-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-safe-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 20323
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21459
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/calc.cpython-314.pyc"
+      },
+      "durationMs": 21185
+    },
+    {
+      "fixtureId": "py-test-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-test-only",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "opencode runner changed the review sandbox worktree: ?? src/__pycache__/calc.cpython-314.pyc"
+      },
+      "durationMs": 20702
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 68418
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2
+      },
+      "durationMs": 66762
+    },
+    {
+      "fixtureId": "rs-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 54634
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 22671
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33247
+    },
+    {
+      "fixtureId": "rs-missing-tests-no-bug",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-missing-tests-no-bug",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 38270
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 60552
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 46605
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 40630
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21375
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21235
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 33214
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205173
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205279
+    },
+    {
+      "fixtureId": "sql-data-migration-break",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-data-migration-break",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205247
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205231
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205213
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205227
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205266
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205239
+    },
+    {
+      "fixtureId": "ts-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-backend-slop-swallow",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205351
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205264
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205240
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205247
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "error": "spawn opencode ETIMEDOUT"
+      },
+      "durationMs": 1205224
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 288749
+    },
+    {
+      "fixtureId": "ts-frontend-style-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-frontend-style-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 22561
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 42528
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 50343
+    },
+    {
+      "fixtureId": "ts-frontend-type-mismatch",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-frontend-type-mismatch",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 41597
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 30408
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 30599
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21776
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 0,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 25279
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 1,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 51448
+    },
+    {
+      "fixtureId": "yml-infra-token-leak",
+      "draw": 2,
+      "score": {
+        "fixtureId": "yml-infra-token-leak",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 46425
+    }
+  ],
+  "aggregates": {
+    "recall": 0.5952380952380952,
+    "falsePositiveRate": 0.05263157894736842,
+    "invalidJsonRate": 0.20588235294117646,
+    "verdictMatchRate": 0.7254901960784313,
+    "lineAnchorValidRate": 0.7549019607843137,
+    "meanDurationMs": 188394.49019607843,
+    "recallByFixture": {
+      "docker-infra-supply-chain": 1,
+      "docker-version-bump": 1,
+      "go-backend-slop-swallow": 0,
+      "go-concurrency-leak": 1,
+      "go-dep-patch": 0.6666666666666666,
+      "go-harmless-variadic": 1,
+      "neg-dep-patch": 1,
+      "neg-docs-only": 1,
+      "neg-harmless-default": 1,
+      "neg-loop-under-timeout": 0.6666666666666666,
+      "neg-missing-tests-no-bug": 1,
+      "neg-safe-tightening": 1,
+      "neg-style-only": 1,
+      "neg-test-only": 1,
+      "parity-throw": 1,
+      "pos-over-block": 1,
+      "py-backend-flag-ignored": 0.6666666666666666,
+      "py-backend-spec-drift": 0,
+      "py-data-partial-state": 1,
+      "py-docs-only": 1,
+      "py-safe-refactor": 1,
+      "py-test-only": 0.3333333333333333,
+      "rs-backend-spec-drift": 0.6666666666666666,
+      "rs-missing-tests-no-bug": 1,
+      "rs-ownership-use-after-move": 1,
+      "rs-refactor": 1,
+      "sql-data-migration-break": 0,
+      "sql-safe-index": 0,
+      "ts-backend-slop-swallow": 0,
+      "ts-data-duplicate": 0,
+      "ts-frontend-style-refactor": 0.6666666666666666,
+      "ts-frontend-type-mismatch": 1,
+      "yml-docs-only": 1,
+      "yml-infra-token-leak": 1
+    }
+  }
+}

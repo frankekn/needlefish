@@ -20,7 +20,7 @@ run_model() {
   fi
 }
 
-run_model codex-gpt55       codex    ""                          xhigh 1
+run_model codex-gpt55-xhigh  codex    ""                          xhigh 1
 run_model claude-opus-48    claude   claude-opus-4-8             xhigh 0
 run_model claude-opus-47    claude   claude-opus-4-7             xhigh 0
 run_model opencode-glm52    opencode zai-coding-plan/glm-5.2     max   0
