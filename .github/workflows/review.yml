@@ -20,6 +20,9 @@ on:
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
         required: false
+      needlefish_release_sha:
+        description: Optional expected Needlefish release SHA
+        required: false
   workflow_call:
     inputs:
       pr_number:
@@ -40,6 +43,10 @@ on:
         required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
+        type: string
+        required: false
+      needlefish_release_sha:
+        description: Optional expected Needlefish release SHA
         type: string
         required: false
 
@@ -72,6 +79,36 @@ jobs:
           else
             echo "head=$(gh pr view "$PR_NUM" -R "$REPO" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
             echo "base=$(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify Needlefish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
+          EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
+        run: |
+          if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
+            EXPECTED_NEEDLEFISH_SHA="$(gh api repos/frankekn/needlefish/commits/main --jq .sha)"
+          fi
+
+          metadata="$HOME/.local/share/needlefish/current/release.json"
+          actual_sha=""
+          if [ -f "$metadata" ]; then
+            actual_sha="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (typeof json.sha === "string") process.stdout.write(json.sha);' "$metadata" 2>/dev/null || true)"
+          fi
+
+          if [ "$actual_sha" != "$EXPECTED_NEEDLEFISH_SHA" ]; then
+            if [ -z "$actual_sha" ]; then actual_sha="missing"; fi
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$PR_HEAD_SHA" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish release mismatch" \
+              -f "output[summary]=Expected Needlefish release $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata."
+            echo "Needlefish release mismatch: expected $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata." >&2
+            exit 1
           fi
 
       - name: Checkout review target (PR head)
