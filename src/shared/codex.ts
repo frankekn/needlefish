@@ -61,6 +61,9 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
 async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): Promise<string> {
   const model = resolveModel(opts, runner);
   const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+  if (runner === "openai") {
+    return runOpenAIDirect(prompt, model, timeoutMs);
+  }
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
   const ghConfigDir = path.join(tmp, "gh-empty");
   mkdirSync(ghConfigDir, { recursive: true });
@@ -129,6 +132,8 @@ function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefine
       return process.env.CLAUDE_MODEL;
     case "opencode":
       return process.env.OPENCODE_MODEL;
+    case "openai":
+      return process.env.OPENAI_MODEL;
   }
 }
 
@@ -160,6 +165,8 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
       return await runClaude(invocation);
     case "opencode":
       return await runOpenCode(invocation);
+    case "openai":
+      throw new Error("openai runner uses direct HTTP path, not runRunner");
   }
 }
 
@@ -238,6 +245,35 @@ function outputFor(runner: RunnerName, result: RunnerResult): string {
       return result.out;
     case "opencode":
       return extractOpenCodeText(result.out);
+    case "openai":
+      return result.out;
+  }
+}
+
+async function runOpenAIDirect(prompt: string, model: string | undefined, timeoutMs: number): Promise<string> {
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is required for the openai runner");
+  if (!model) throw new Error("model is required for the openai runner (use --model or OPENAI_MODEL)");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`);
+    const json = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
+    const content = json.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content) {
+      throw new Error(`openai runner: empty content in response: ${text.slice(0, 500)}`);
+    }
+    return content;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
