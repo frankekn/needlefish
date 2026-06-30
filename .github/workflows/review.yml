@@ -62,7 +62,7 @@ concurrency:
 jobs:
   review:
     runs-on: self-hosted
-    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: inputs.pr_number != '' || github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Resolve PR refs
         id: refs
@@ -72,16 +72,50 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          EVENT_ACTION: ${{ github.event.action }}
         run: |
           if [ -n "$EVENT_HEAD" ]; then
-            echo "head=$EVENT_HEAD" >> "$GITHUB_OUTPUT"
-            echo "base=$EVENT_BASE" >> "$GITHUB_OUTPUT"
+            head="$EVENT_HEAD"
+            base="$EVENT_BASE"
+            head_repo="$EVENT_HEAD_REPO"
+            state="OPEN"
+            if [ "$EVENT_ACTION" = "closed" ]; then state="CLOSED"; fi
           else
-            echo "head=$(gh pr view "$PR_NUM" -R "$REPO" --json headRefOid -q .headRefOid)" >> "$GITHUB_OUTPUT"
-            echo "base=$(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid -q .baseRefOid)" >> "$GITHUB_OUTPUT"
+            mapfile -t pr_fields < <(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid,headRefOid,headRepository,state -q '.headRefOid, .baseRefOid, (.headRepository.nameWithOwner // ""), .state')
+            head="${pr_fields[0]}"
+            base="${pr_fields[1]}"
+            head_repo="${pr_fields[2]}"
+            state="${pr_fields[3]}"
           fi
 
+          skip=false
+          skip_reason=""
+          if [ -z "$head" ] || [ -z "$base" ] || [ -z "$state" ]; then
+            skip=true
+            skip_reason="PR metadata unavailable"
+          elif [ "$state" != "OPEN" ]; then
+            skip=true
+            skip_reason="PR state is $state"
+          elif [ "$head_repo" != "$REPO" ]; then
+            skip=true
+            skip_reason="PR head repository $head_repo differs from $REPO"
+          fi
+
+          {
+            echo "head=$head"
+            echo "base=$base"
+            echo "head_repo=$head_repo"
+            echo "skip=$skip"
+            echo "skip_reason=$skip_reason"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report skipped PR
+        if: steps.refs.outputs.skip == 'true'
+        run: echo "${{ steps.refs.outputs.skip_reason }}"
+
       - name: Verify Needlefish release
+        if: steps.refs.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -112,6 +146,7 @@ jobs:
           fi
 
       - name: Checkout review target (PR head)
+        if: steps.refs.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.refs.outputs.head }}
@@ -119,6 +154,7 @@ jobs:
           path: target
 
       - name: Needlefish review
+        if: steps.refs.outputs.skip != 'true'
         working-directory: target
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
