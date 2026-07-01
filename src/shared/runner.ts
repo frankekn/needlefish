@@ -1,4 +1,4 @@
-export const RUNNERS = ["codex", "claude", "opencode", "openai"] as const;
+export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok"] as const;
 
 export type RunnerName = (typeof RUNNERS)[number];
 
@@ -10,7 +10,7 @@ export interface RunnerOptions {
 }
 
 export function isRunnerName(value: string): value is RunnerName {
-  return value === "codex" || value === "claude" || value === "opencode" || value === "openai";
+  return value === "codex" || value === "claude" || value === "opencode" || value === "openai" || value === "grok";
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {

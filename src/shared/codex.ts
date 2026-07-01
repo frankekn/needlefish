@@ -134,6 +134,8 @@ function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefine
       return process.env.OPENCODE_MODEL;
     case "openai":
       return process.env.OPENAI_MODEL;
+    case "grok":
+      return process.env.GROK_MODEL;
   }
 }
 
@@ -167,6 +169,8 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
       return await runOpenCode(invocation);
     case "openai":
       throw new Error("openai runner uses direct HTTP path, not runRunner");
+    case "grok":
+      return await runGrok(invocation);
   }
 }
 
@@ -238,6 +242,22 @@ async function runOpenCode(invocation: RunnerInvocation): Promise<RunnerResult> 
   return { res, out: res.stdout ?? "" };
 }
 
+async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
+  const promptPath = path.join(invocation.tmp, "prompt.txt");
+  writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+  const args = ["-m", invocation.model ?? "grok-build", "--prompt-file", promptPath, "--output-format", "plain"];
+  if (invocation.reasoningEffort) args.push("--reasoning-effort", invocation.reasoningEffort);
+  const res = await spawnRunnerProcess({
+    command: process.env.GROK_BIN ?? "grok",
+    args,
+    stdin: "",
+    repoPath: invocation.repoPath,
+    timeoutMs: invocation.timeoutMs,
+    env: invocation.env,
+  });
+  return { res, out: res.stdout ?? "" };
+}
+
 function outputFor(runner: RunnerName, result: RunnerResult): string {
   switch (runner) {
     case "codex":
@@ -246,6 +266,8 @@ function outputFor(runner: RunnerName, result: RunnerResult): string {
     case "opencode":
       return extractOpenCodeText(result.out);
     case "openai":
+      return result.out;
+    case "grok":
       return result.out;
   }
 }

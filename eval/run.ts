@@ -36,8 +36,8 @@ function parseArgs(argv: readonly string[]): RunArgs {
     return i >= 0 ? argv[i + 1] ?? null : null;
   };
   const runner = get("--runner") ?? "codex";
-  if (runner !== "codex" && runner !== "claude" && runner !== "opencode" && runner !== "openai") {
-    throw new Error(`--runner must be codex|claude|opencode|openai, got: ${runner}`);
+  if (runner !== "codex" && runner !== "claude" && runner !== "opencode" && runner !== "openai" && runner !== "grok") {
+    throw new Error(`--runner must be codex|claude|opencode|openai|grok, got: ${runner}`);
   }
   const model = get("--model");
   const effort = get("--effort");
