@@ -40,18 +40,21 @@ const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
 const delta = (b: number, c: number) => `${(c - b) * 100 >= 0 ? "+" : ""}${((c - b) * 100).toFixed(0)}pp`;
 
 const lines: string[] = [];
-lines.push(`# Eval Results — 10 models × 3 draws`);
+lines.push(`# Eval Results — all runs`);
 lines.push(``);
-lines.push(`All runs share promptHash \`${reports[0].report.promptHash}\`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall).`);
+lines.push(`All runs share promptHash \`${reports[0].report.promptHash}\`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable.`);
 lines.push(``);
-lines.push(`## Aggregates (delta vs codex-xhigh baseline)`);
+lines.push(`## Aggregates (delta vs codex-xhigh baseline; full runs only)`);
 lines.push(``);
-lines.push(`| model | @effort | recall | Δrecall | fp | invalidJson | mean dur | fail |`);
-lines.push(`|---|---|---|---|---|---|---|---|`);
+lines.push(`| model | @effort | draws | recall | Δrecall | fp | invalidJson | mean dur | fail |`);
+lines.push(`|---|---|---|---|---|---|---|---|---|`);
 for (const { stem, report: r } of reports) {
   const a = r.aggregates;
-  const d = r === baseline.report ? "(baseline)" : delta(baseline.report.aggregates.recall, a.recall);
-  lines.push(`| ${stem} | @${r.effort ?? "?"} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
+  const draws = r.results.length;
+  const partial = draws < 102;
+  const d = r === baseline.report ? "(baseline)" : (partial ? "—" : delta(baseline.report.aggregates.recall, a.recall));
+  const mark = partial ? "⚠️ " : "";
+  lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/102 | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
 }
 lines.push(``);
 lines.push(`## Recall by positive fixture (hit rate over 3 draws)`);
@@ -87,9 +90,11 @@ for (const { stem, report: r } of reports) {
 }
 lines.push(``);
 lines.push(`## Notes`);
-lines.push(`- opencode @ max: high invalidJson = timeout/parse fail (4-min timeout + no-retry for qwen/grok; 10-min + 2x retry for glm52/deepseek/kimi). Not model quality — runner/variant reliability.`);
+lines.push(`- **Runner reliability confound (opencode @ max):** high invalidJson = timeout/parse fail from opencode's agentic loop, not model quality. Proven by grok-build-0.1: opencode agentic = 12% recall / 56% invalidJson; same model via direct single-shot (openai runner) = 47% recall / 2% invalidJson. opencode @ max numbers are runner-confounded — treat as lower bounds, not model quality.`);
+lines.push(`- **Partials (⚠️):** grok-build-0.1-direct = 98/102 (4 draws lost to grok outage on sql-data-migration-break); grok-composer-2.5-fast = 52/102 (skipped mid-run, grok instability). Their recall/fp are over completed draws only.`);
 lines.push(`- recall is a regex lower bound; a model may have found the bug with different wording and still scored 0. Use \`eval/inspect.ts <fixture-id>\` to verify specific misses.`);
 lines.push(`- codex medium (76%) ≈ high (74%) within 3-draw noise — reasoning effort is not monotonic in recall here.`);
+lines.push(`- claude opus-47 (76%) > opus-48 (64%) — newer opus regressed on this set.`);
 
 writeFileSync(path.join(__dirname, "RESULTS.md"), lines.join("\n") + "\n");
 process.stderr.write(`wrote eval/RESULTS.md (${lines.length} lines, ${reports.length} models)\n`);
