@@ -27,6 +27,7 @@ interface RunArgs {
   dryRun: boolean;
   compare: string | null;
   fixtures: string | null;
+  resume: string | null;
 }
 
 function parseArgs(argv: readonly string[]): RunArgs {
@@ -47,7 +48,8 @@ function parseArgs(argv: readonly string[]): RunArgs {
   const report = get("--report") ?? `eval/reports/${runner}${model ? "-" + model.replace(/[^\w.-]/g, "_") : ""}.json`;
   const compare = get("--compare");
   const fixtures = get("--fixtures");
-  return { runner: runner as RunnerName, model, effort, draws, baseline, report, dryRun, compare, fixtures };
+  const resume = get("--resume");
+  return { runner: runner as RunnerName, model, effort, draws, baseline, report, dryRun, compare, fixtures, resume };
 }
 
 async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
@@ -191,7 +193,32 @@ async function main(): Promise<void> {
   process.stderr.write(`fixtures: ${specs.length} | runner: ${args.runner} | model: ${args.model ?? "(default)"}${args.effort ? ` | effort: ${args.effort}` : ""} | draws: ${args.draws}${args.dryRun ? " | dry-run" : ""}\n`);
 
   const results: DrawResult[] = [];
+  let skipped = 0;
+  if (args.resume) {
+    try {
+      const existing = JSON.parse(readFileSync(args.resume, "utf8")) as Report;
+      const byFixture = new Map<string, DrawResult[]>();
+      for (const r of existing.results) {
+        const arr = byFixture.get(r.fixtureId) ?? [];
+        arr.push(r);
+        byFixture.set(r.fixtureId, arr);
+      }
+      for (const spec of specs) {
+        const draws = byFixture.get(spec.id) ?? [];
+        const good = draws.filter((d) => d.score.formatOk);
+        if (good.length >= args.draws) {
+          results.push(...good.slice(0, args.draws));
+          skipped++;
+        }
+      }
+      process.stderr.write(`resume: reused ${skipped} fixture(s) with ${args.draws} good draws, re-running the rest\n`);
+    } catch (err) {
+      process.stderr.write(`resume: could not load ${args.resume} (${err instanceof Error ? err.message : err}), starting fresh\n`);
+    }
+  }
+  const doneIds = new Set(results.map((r) => r.fixtureId));
   for (const spec of specs) {
+    if (doneIds.has(spec.id)) continue;
     for (let draw = 0; draw < args.draws; draw++) {
       process.stderr.write(`  [${spec.id}] draw ${draw + 1}/${args.draws} ... `);
       const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun);
