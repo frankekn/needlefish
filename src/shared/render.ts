@@ -79,7 +79,7 @@ export function renderMarkdown(
   if (opts?.resolvedCount && opts.resolvedCount > 0) {
     lines.push("");
     lines.push(
-      `✅ ${opts.resolvedCount} finding${opts.resolvedCount === 1 ? "" : "s"} from the previous round no longer apply.`
+      `✅ ${opts.resolvedCount} finding${opts.resolvedCount === 1 ? "" : "s"} from the previous round no longer ${opts.resolvedCount === 1 ? "applies" : "apply"}.`
     );
   }
 

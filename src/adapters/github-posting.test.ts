@@ -574,7 +574,7 @@ test("runGithub shows resolved count when a finding is fixed between rounds", as
   assert.ok(putPost);
   const putBody = JSON.parse(putPost.payload).body;
   assert.match(putBody, /Still open/);
-  assert.match(putBody, /✅ 1 finding from the previous round no longer apply/);
+  assert.match(putBody, /✅ 1 finding from the previous round no longer applies/);
 });
 
 test("runGithub treats corrupted state marker as first round", async (t) => {
