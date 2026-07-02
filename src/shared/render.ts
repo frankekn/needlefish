@@ -87,7 +87,7 @@ export function renderMarkdown(result: ReviewResult): string {
 }
 
 function formatDuration(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  return minutes > 0 ? `${minutes}m ${totalSeconds % 60}s` : `${totalSeconds}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
