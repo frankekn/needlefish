@@ -6,6 +6,7 @@ import {
   parseRunnerName,
   type RunnerName,
   type RunnerOptions,
+  type RunStat,
 } from "./runner";
 import { spawnRunnerProcess, type RunnerProcessResult } from "./runner-process";
 import {
@@ -19,6 +20,8 @@ export { isRunnerSafetyError } from "./runner-sandbox";
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
   readonly targetHeadSha: string;
+  readonly label?: string;
+  readonly onStat?: (stat: RunStat) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -40,13 +43,32 @@ interface RunnerInvocation {
 
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
+  const startedAt = Date.now();
+  let attempts = 0;
+  const emitStat = (ok: boolean): void => {
+    if (!opts.onStat) return;
+    const model = resolveModel(opts, runner);
+    opts.onStat({
+      label: opts.label ?? "(unlabeled)",
+      runner,
+      ...(model !== undefined ? { model } : {}),
+      durationMs: Date.now() - startedAt,
+      attempts,
+      ok,
+    });
+  };
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
+    attempts = attempt;
     try {
-      return await runCodexOnce(prompt, opts, runner);
+      const out = await runCodexOnce(prompt, opts, runner);
+      emitStat(true);
+      return out;
     } catch (err) {
-      if (!(err instanceof Error)) throw err;
-      if (isRunnerSafetyError(err)) throw err;
+      if (!(err instanceof Error) || isRunnerSafetyError(err)) {
+        emitStat(false);
+        throw err;
+      }
       lastErr = err;
       if (attempt < 2) {
         const backoff = retryMsFor(runner);
@@ -54,6 +76,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
       }
     }
   }
+  emitStat(false);
   throw lastErr;
 }
 

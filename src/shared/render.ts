@@ -69,5 +69,25 @@ export function renderMarkdown(result: ReviewResult): string {
     }
   }
 
+  if (result.stats && result.stats.length > 0) {
+    const retries = result.stats.reduce((sum, s) => sum + (s.attempts - 1), 0);
+    const calls = result.stats
+      .map((s) => `${s.label} ${formatDuration(s.durationMs)}${s.ok ? "" : " ✗"}`)
+      .join(" → ");
+    const parts = [`${result.stats.length} call${result.stats.length === 1 ? "" : "s"}`, calls];
+    if (retries > 0) parts.push(`${retries} ${retries === 1 ? "retry" : "retries"}`);
+    if (result.totalDurationMs !== undefined) {
+      parts.push(`total ${formatDuration(result.totalDurationMs)}`);
+    }
+    lines.push("");
+    lines.push(parts.join(" · "));
+  }
+
   return lines.join("\n").trim() + "\n";
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  return minutes > 0 ? `${minutes}m ${totalSeconds % 60}s` : `${totalSeconds}s`;
 }
