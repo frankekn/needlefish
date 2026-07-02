@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { parseArgs } from "./run";
+import { mapLimit, parseArgs } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -125,4 +125,27 @@ test("parseArgs: rejects malformed --env values", () => {
   assert.throws(() => parseArgs(["--env"]), /--env requires KEY=VALUE/);
   assert.throws(() => parseArgs(["--env", "NOEQUALS"]), /--env requires KEY=VALUE, got: NOEQUALS/);
   assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
+});
+
+test("parseArgs: --concurrency defaults to 4", () => {
+  assert.equal(parseArgs([]).concurrency, 4);
+});
+
+test("parseArgs: accepts valid --concurrency", () => {
+  assert.equal(parseArgs(["--concurrency", "1"]).concurrency, 1);
+  assert.equal(parseArgs(["--concurrency", "8"]).concurrency, 8);
+});
+
+test("parseArgs: rejects invalid --concurrency", () => {
+  assert.throws(() => parseArgs(["--concurrency"]), /--concurrency must be a positive integer/);
+  assert.throws(() => parseArgs(["--concurrency", "0"]), /--concurrency must be a positive integer/);
+  assert.throws(() => parseArgs(["--concurrency", "1.5"]), /--concurrency must be a positive integer/);
+});
+
+test("mapLimit: preserves result order regardless of completion order", async () => {
+  const out = await mapLimit([40, 10, 30, 20], 2, async (n) => {
+    await new Promise((resolve) => setTimeout(resolve, n));
+    return n * 2;
+  });
+  assert.deepEqual(out, [80, 20, 60, 40]);
 });

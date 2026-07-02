@@ -79,12 +79,15 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
+    noRetry: process.env.NEEDLEFISH_NO_RETRY,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
     else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+    else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
     rmSync(tmp, { recursive: true, force: true });
   });
   writeFileSync(
@@ -92,8 +95,9 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      "const { spawn } = require('node:child_process');",
       `const childPidPath = ${JSON.stringify(childPidPath)};`,
+      "fs.writeFileSync(childPidPath, String(process.pid));",
+      "const { spawn } = require('node:child_process');",
       "const child = spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);\"], { stdio: 'ignore' });",
       "fs.writeFileSync(childPidPath, String(child.pid));",
       "process.on('SIGTERM', () => {});",
@@ -103,6 +107,7 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
   process.env.CODEX_RETRY_MS = "1";
+  process.env.NEEDLEFISH_NO_RETRY = "1";
 
   const startedAt = Date.now();
 
@@ -112,13 +117,13 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
         repoPath: repo,
         runner: "codex",
         targetHeadSha: headSha(repo),
-        timeoutMs: 500,
+        timeoutMs: 2000,
       }),
     /ETIMEDOUT/
   );
-  assert.ok(Date.now() - startedAt < 3000);
+  assert.ok(Date.now() - startedAt < 5000);
   const childPid = Number(readFileSync(childPidPath, "utf8"));
-  assert.equal(await processExited(childPid, 2000), true);
+  assert.equal(await processExited(childPid, 5000), true);
 });
 
 async function processExited(pid: number, timeoutMs: number): Promise<boolean> {

@@ -47,6 +47,8 @@ export interface DrawResult {
   readonly draw: number;
   readonly score: FixtureScore;
   readonly durationMs: number;
+  readonly calls: number;
+  readonly retries: number;
 }
 
 export interface Aggregates {
