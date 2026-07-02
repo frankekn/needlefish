@@ -197,16 +197,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history: needlefish needs the merge base
-      - uses: frankekn/needlefish@main # pin a tag/SHA once released
+      - uses: frankekn/needlefish@v1
         env:
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
 ```
 
 Runner authentication (repo secrets, passed via `env` on the action step):
 
 | runner   | secret(s)                                                |
 | -------- | -------------------------------------------------------- |
-| codex    | `CODEX_API_KEY` (used for `codex login --with-api-key`)  |
+| codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY`                                       |
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
 

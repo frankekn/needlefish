@@ -24,4 +24,4 @@ jobs:
         with:
           pr_number: ${{ inputs.pr }}
         env:
-          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}

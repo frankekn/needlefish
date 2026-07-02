@@ -62,7 +62,13 @@ runs:
       env:
         RUNNER_NAME: ${{ inputs.runner }}
       run: |
-        if [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
+        # CODEX_AUTH_JSON: contents of a logged-in codex CLI's ~/.codex/auth.json
+        # (subscription auth). CODEX_API_KEY: plain API key. Either works.
+        if [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_AUTH_JSON:-}" ]; then
+          mkdir -p "$HOME/.codex"
+          printf '%s' "$CODEX_AUTH_JSON" > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
+        elif [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
           printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
         fi
     - name: Needlefish review
