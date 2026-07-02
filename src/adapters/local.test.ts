@@ -50,12 +50,15 @@ test("runLocal normalizes relative repo paths before building prompts", async (t
   const previous = {
     bin: process.env.CLAUDE_BIN,
     runner: process.env.NEEDLEFISH_RUNNER,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
     else process.env.CLAUDE_BIN = previous.bin;
     if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
     else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -75,6 +78,7 @@ test("runLocal normalizes relative repo paths before building prompts", async (t
   chmodSync(bin, 0o755);
   process.env.CLAUDE_BIN = bin;
   process.env.NEEDLEFISH_RUNNER = "claude";
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
 
   const relativeRepo = path.relative(process.cwd(), repo);
   await runLocal(relativeRepo, { cacheDir });

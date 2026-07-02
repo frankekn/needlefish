@@ -21,6 +21,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
     base: process.env.PR_BASE_SHA,
     runner: process.env.NEEDLEFISH_RUNNER,
     claude: process.env.CLAUDE_BIN,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
   };
   t.after(() => {
     if (previous.path === undefined) delete process.env.PATH;
@@ -35,6 +36,8 @@ test("runGithub normalizes relative repo paths before building prompts", async (
     else process.env.NEEDLEFISH_RUNNER = previous.runner;
     if (previous.claude === undefined) delete process.env.CLAUDE_BIN;
     else process.env.CLAUDE_BIN = previous.claude;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -91,6 +94,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
   process.env.PR_HEAD_SHA = targetHeadSha;
   process.env.NEEDLEFISH_RUNNER = "claude";
   process.env.CLAUDE_BIN = claude;
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
 
   const relativeRepo = path.relative(process.cwd(), repo);
   await runGithub(relativeRepo, 7, { timeoutMs: 1000 });

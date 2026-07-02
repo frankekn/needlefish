@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -581,4 +581,174 @@ test("review large thresholds are env-overridable", async (t) => {
 
   const labels = result.stats?.map((s) => s.label) ?? [];
   assert.ok(labels.includes("map"), "expected the large path (map pass) to run");
+});
+
+test("review docs-only fast path skips all model calls", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(calls)}, 'called\\n');`,
+      "process.exit(1);",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/README.md b/README.md\n+docs\n",
+    patchStat: " README.md | 1 +",
+    changedFiles: [
+      { path: "README.md", surface: "docs" },
+      { path: "docs/guide.md", surface: "docs" },
+    ],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.findings, []);
+  assert.deepEqual(result.residualRisks, []);
+  assert.match(result.summary, /Docs-only change \(2 file\(s\)\); model review skipped\./);
+  assert.deepEqual(result.checked, ["FAST_PATH docs-only files=[README.md, docs/guide.md]"]);
+  assert.equal(result.stats, undefined, "no stats when model is not called");
+  assert.ok((result.totalDurationMs ?? -1) >= 0, "totalDurationMs must be set");
+  assert.equal(result.baseSha, "base");
+  assert.ok(!existsSync(calls), "runner must not be invoked for docs-only bundle");
+});
+
+test("review mixed docs+source bundle still invokes the model", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+      "  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
+      "  fs.writeFileSync(out, JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/README.md b/README.md\n+docs\n",
+    patchStat: " README.md | 1 +",
+    changedFiles: [
+      { path: "README.md", surface: "docs" },
+      { path: "src/app.ts", surface: "source" },
+    ],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+  assert.ok(existsSync(calls), "runner must be invoked for mixed docs+source bundle");
+});
+
+test("review NEEDLEFISH_NO_FAST_PATH disables docs-only fast path", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+      "  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
+      "  fs.writeFileSync(out, JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/README.md b/README.md\n+docs\n",
+    patchStat: " README.md | 1 +",
+    changedFiles: [{ path: "README.md", surface: "docs" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+  assert.ok(existsSync(calls), "runner must be invoked when NEEDLEFISH_NO_FAST_PATH is set");
+  assert.doesNotMatch(result.summary, /Docs-only change/);
 });

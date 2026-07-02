@@ -269,10 +269,39 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`);
 }
 
+// Docs-only fast path: when every changed file is classified "docs" and the
+// escape hatch is unset, skip all model calls and return a deterministic pass.
+// classify.ts rule order already routes workflow yml to "workflow", so CI files
+// can never ride this path.
+function isDocsOnlyFastPath(bundle: Bundle): boolean {
+  return (
+    bundle.changedFiles.length > 0 &&
+    bundle.changedFiles.every((f) => f.surface === "docs") &&
+    !process.env.NEEDLEFISH_NO_FAST_PATH
+  );
+}
+
 export async function review(
   bundle: Bundle,
   runnerOptions: RunnerOptions = {}
 ): Promise<ReviewResult> {
-  const run: ReviewRun = { bundle, runnerOptions, stats: [], startedAt: Date.now() };
+  const startedAt = Date.now();
+
+  if (isDocsOnlyFastPath(bundle)) {
+    const paths = bundle.changedFiles.map((f) => f.path).join(", ");
+    return {
+      verdict: "pass",
+      summary: `Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
+      findings: [],
+      checked: [`FAST_PATH docs-only files=[${paths}]`],
+      residualRisks: [],
+      baseSha: bundle.baseSha,
+      headSha: bundle.headSha,
+      ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+      totalDurationMs: Date.now() - startedAt,
+    };
+  }
+
+  const run: ReviewRun = { bundle, runnerOptions, stats: [], startedAt };
   return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);
 }

@@ -4,6 +4,8 @@
 
 ### Changes
 
+- Docs-only fast path: when every changed file is classified `docs`, skip model calls and return a deterministic pass (`NEEDLEFISH_NO_FAST_PATH=1` disables). Same-head dedupe: GitHub mode skips re-reviewing a head already reviewed unless `--recheck` is passed (wired through `@needlefish recheck` manual dispatch).
+
 - Restore in-sandbox repo inspection (rg/git) for codex on GitHub-hosted Linux runners by lifting the AppArmor unprivileged-userns restriction (best-effort sysctl in the action).
 - Sticky re-review: on a re-review of the same PR, Needlefish now PUT-updates its previous review body instead of posting a new one, classifying findings as fresh / open / resolved across rounds (inline comments posted only for fresh anchorable findings; open findings listed as one-liners; resolved count shown as a single line).
 

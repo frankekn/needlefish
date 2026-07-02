@@ -181,6 +181,7 @@ jobs:
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: |
           if [ ! -x "$HOME/.local/bin/needlefish" ]; then
             echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
@@ -190,4 +191,5 @@ jobs:
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
+          if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           "$HOME/.local/bin/needlefish" "${args[@]}"

@@ -20,12 +20,7 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      if (command.recheck) {
-        process.stderr.write(
-          "v0.2 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
-        );
-      }
-      await runGithub(command.repo ?? process.cwd(), command.pr, command.opts);
+      await runGithub(command.repo ?? process.cwd(), command.pr, command.opts, command.recheck);
       return;
     }
     case "explain": {

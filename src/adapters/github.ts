@@ -315,7 +315,8 @@ function isCurrentOpenHead(repo: string, prNumber: number, headSha: string): boo
 export async function runGithub(
   cwd: string,
   prNumber: number,
-  opts: RunnerOptions = {}
+  opts: RunnerOptions = {},
+  recheck = false
 ): Promise<void> {
   const repoPath = path.resolve(cwd);
   const repo = process.env.GITHUB_REPOSITORY;
@@ -329,6 +330,16 @@ export async function runGithub(
     return;
   }
   const headSha = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || git(["rev-parse", "HEAD"], repoPath);
+
+  // Same-head dedupe: fetch the previous review once, reuse for both the
+  // short-circuit and the post-review posting logic. If we already reviewed
+  // this exact head and --recheck was not passed, skip entirely.
+  const prev = findPreviousReview(repo, prNumber);
+  if (prev && prev.state.headSha === headSha && !recheck) {
+    process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
+    return;
+  }
+
   const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
   if (!baseSha || !headSha) throw new Error("Could not resolve PR base/head SHA");
   const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
@@ -371,8 +382,6 @@ export async function runGithub(
     const conclusion = VERDICT_CONCLUSION[result.verdict];
     if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
     if (result.verdict === "changes_requested") process.exitCode = 1;
-
-    const prev = findPreviousReview(repo, prNumber);
 
     if (prev) {
       const { fresh, open, resolvedCount } = matchFindings(prev.state.findings, result.findings);

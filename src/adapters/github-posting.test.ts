@@ -102,6 +102,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
     base: process.env.PR_BASE_SHA,
     runner: process.env.NEEDLEFISH_RUNNER,
     claude: process.env.CLAUDE_BIN,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
     exitCode: process.exitCode,
   };
   t.after(() => {
@@ -117,6 +118,8 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
     else process.env.NEEDLEFISH_RUNNER = previous.runner;
     if (previous.claude === undefined) delete process.env.CLAUDE_BIN;
     else process.env.CLAUDE_BIN = previous.claude;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
     process.exitCode = previous.exitCode;
     rmSync(tmp, { recursive: true, force: true });
   });
@@ -210,6 +213,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
   process.env.PR_HEAD_SHA = targetHeadSha;
   process.env.NEEDLEFISH_RUNNER = "claude";
   process.env.CLAUDE_BIN = claude;
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
   return { postLog, repo, reviewOutput: reviewOutputFile, reviewsState };
 }
 
@@ -527,7 +531,7 @@ test("runGithub PUT-updates previous review when same findings persist", async (
   await runGithub(fixture.repo, 21, { timeoutMs: 1000 });
   const round1Count = readPosts(fixture.postLog).length;
 
-  await runGithub(fixture.repo, 21, { timeoutMs: 1000 });
+  await runGithub(fixture.repo, 21, { timeoutMs: 1000 }, true);
   const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
   const putPost = round2Posts.find((p) => p.args.includes("PUT"));
@@ -567,7 +571,7 @@ test("runGithub shows resolved count when a finding is fixed between rounds", as
     residual_risks: [],
   }));
 
-  await runGithub(fixture.repo, 22, { timeoutMs: 1000 });
+  await runGithub(fixture.repo, 22, { timeoutMs: 1000 }, true);
   const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
   const putPost = round2Posts.find((p) => p.args.includes("PUT"));
@@ -606,4 +610,49 @@ test("runGithub treats corrupted state marker as first round", async (t) => {
   const payload = parseReviewPayload(newReviewPost.payload);
   assert.match(payload.body, /needlefish-state:/);
   assert.equal(payload.comments.length, 1);
+});
+
+// --- Same-head dedupe ---
+
+test("runGithub skips re-review when previous review has same head (no recheck)", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 30,
+    rawReview: JSON.stringify({
+      summary: "first round",
+      findings: [mkFinding({ title: "bug", lineStart: 1 })],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 30, { timeoutMs: 1000 });
+  const round1Count = readPosts(fixture.postLog).length;
+  assert.ok(round1Count > 0, "round 1 should post");
+
+  await runGithub(fixture.repo, 30, { timeoutMs: 1000 });
+  const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+  assert.deepEqual(round2Posts, [], "no posts when same head already reviewed without --recheck");
+});
+
+test("runGithub re-reviews same head when recheck is true", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 31,
+    rawReview: JSON.stringify({
+      summary: "first round",
+      findings: [mkFinding({ title: "bug", lineStart: 1 })],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 31, { timeoutMs: 1000 });
+  const round1Count = readPosts(fixture.postLog).length;
+  assert.ok(round1Count > 0, "round 1 should post");
+
+  await runGithub(fixture.repo, 31, { timeoutMs: 1000 }, true);
+  const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+  const putPost = round2Posts.find((p) => p.args.includes("PUT"));
+  assert.ok(putPost, "round 2 with --recheck should still review and PUT-update");
 });
