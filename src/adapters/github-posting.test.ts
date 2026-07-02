@@ -46,11 +46,26 @@ function readPosts(file: string): readonly Post[] {
     });
 }
 
-function reviewEvent(payload: string): string {
+type ReviewPayload = {
+  readonly commit_id: string;
+  readonly body: string;
+  readonly event: string;
+  readonly comments: readonly Record<string, unknown>[];
+};
+
+function parseReviewPayload(payload: string): ReviewPayload {
   const raw: unknown = JSON.parse(payload);
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "";
-  const event = Reflect.get(raw, "event");
-  return typeof event === "string" ? event : "";
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("expected review payload object");
+  }
+  const record = raw as Record<string, unknown>;
+  const comments = Array.isArray(record.comments) ? record.comments as Record<string, unknown>[] : [];
+  return {
+    commit_id: typeof record.commit_id === "string" ? record.commit_id : "",
+    body: typeof record.body === "string" ? record.body : "",
+    event: typeof record.event === "string" ? record.event : "",
+    comments,
+  };
 }
 
 function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
@@ -178,7 +193,17 @@ test("runGithub posts blocking findings as non-sticky review comments", async (t
     post.args.includes("repos/frankekn/needlefish/pulls/9/reviews")
   );
   assert.ok(reviewPost);
-  assert.equal(reviewEvent(reviewPost.payload), "COMMENT");
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.equal(payload.event, "COMMENT");
+  assert.ok(payload.commit_id, "payload must keep commit_id");
+  assert.equal(payload.comments.length, 1);
+  const comment = payload.comments[0];
+  assert.equal(comment.path, "README.md");
+  assert.equal(comment.line, 1);
+  assert.equal(comment.side, "RIGHT");
+  assert.match(String(comment.body), /\*\*P2\*\* bug/);
+  assert.match(String(comment.body), /\*\*Fix:\*\* fix/);
+  assert.match(String(comment.body), /\*\*Validate:\*\* test/);
   assert.equal(process.exitCode, 1);
 });
 
@@ -197,4 +222,97 @@ test("runGithub skips posting when the PR head changes after review", async (t) 
   await runGithub(fixture.repo, 10, { timeoutMs: 1000 });
 
   assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+test("runGithub keeps non-anchorable findings in the review body only", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 11,
+    rawReview: JSON.stringify({
+      summary: "ghost finding",
+      findings: [
+        {
+          severity: "P2",
+          title: "ghost",
+          category: "bug",
+          file: "does-not-exist-in-diff.md",
+          lineStart: 1,
+          lineEnd: 1,
+          confidence: 0.9,
+          whyItBreaks: "breaks",
+          suggestedFix: "fix",
+          validation: "test",
+        },
+      ],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 11, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((post) =>
+    post.args.includes("repos/frankekn/needlefish/pulls/11/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.deepEqual(payload.comments, []);
+  assert.match(payload.body, /### P2: ghost/);
+  assert.match(payload.body, /\*\*Why this breaks:\*\* breaks/);
+});
+
+test("runGithub inlines only P0/P1/P2 when more than 20 findings are anchorable", async (t) => {
+  const findings = [];
+  for (let i = 0; i < 5; i++) {
+    findings.push({
+      severity: "P2",
+      title: `p2-${i}`,
+      category: "bug",
+      file: "README.md",
+      lineStart: 1,
+      lineEnd: 1,
+      confidence: 0.9,
+      whyItBreaks: "w",
+      suggestedFix: "f",
+      validation: "v",
+    });
+  }
+  for (let i = 0; i < 20; i++) {
+    findings.push({
+      severity: "P3",
+      title: `p3-${i}`,
+      category: "bug",
+      file: "README.md",
+      lineStart: 1,
+      lineEnd: 1,
+      confidence: 0.9,
+      whyItBreaks: "w",
+      suggestedFix: "f",
+      validation: "v",
+    });
+  }
+
+  const fixture = setupFixture(t, {
+    prNumber: 12,
+    rawReview: JSON.stringify({
+      summary: "many findings",
+      findings,
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 12, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((post) =>
+    post.args.includes("repos/frankekn/needlefish/pulls/12/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.equal(payload.comments.length, 5);
+  for (const comment of payload.comments) {
+    assert.match(String(comment.body), /\*\*P2\*\*/);
+    assert.equal(comment.side, "RIGHT");
+  }
+  assert.match(payload.body, /### P3: p3-0/);
+  assert.doesNotMatch(payload.body, /### P2: p2-0/);
 });

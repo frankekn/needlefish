@@ -4,6 +4,8 @@
 
 ### Changes
 
+- Post anchorable findings as inline PR review comments on the diff (RIGHT side), capped at 20 with P0/P1/P2 priority; non-anchorable and overflow findings stay in the review body.
+
 - Add `needlefish pr <number>` for reviewing pull request refs locally without switching branches. (#7) thanks @samzong
 - Run deep passes concurrently on large PRs (`NEEDLEFISH_DEEP_CONCURRENCY`, default 3; 1 restores sequential order of execution — output order is always stable).
 - Re-ask the model once when it emits malformed or unusable JSON instead of failing the whole review; runner safety errors still abort immediately.

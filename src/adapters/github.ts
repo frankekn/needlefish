@@ -4,6 +4,7 @@ import { renderMarkdown } from "../shared/render";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
 import { normalizeBodyList } from "../shared/normalize";
 import type {
+  Finding,
   ReviewResult,
   Verdict,
 } from "../shared/schema";
@@ -36,20 +37,102 @@ const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
   needs_human: "neutral",
 };
 
+// Parse a unified diff into head-side (new) line ranges per file path.
+// For each `+++ b/<path>`, hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1];
+// d defaults to 1 when omitted. Deleted files (`+++ /dev/null`) are skipped.
+export function headLinesInPatch(
+  patch: string
+): Map<string, Array<[number, number]>> {
+  const ranges = new Map<string, Array<[number, number]>>();
+  let file: string | null = null;
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("+++ ")) {
+      const m = /^\+\+\+ b\/(.+)$/.exec(raw);
+      file = m ? m[1] : null;
+      if (file && !ranges.has(file)) ranges.set(file, []);
+      continue;
+    }
+    if (file && raw.startsWith("@@")) {
+      const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+      if (h) {
+        const c = Number(h[1]);
+        const d = h[2] === undefined ? 1 : Number(h[2]);
+        if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
+      }
+    }
+  }
+  return ranges;
+}
+
+export function anchorableIn(
+  ranges: Map<string, Array<[number, number]>>,
+  file: string,
+  line: number
+): boolean {
+  const rs = ranges.get(file);
+  if (!rs) return false;
+  return rs.some(([start, end]) => line >= start && line <= end);
+}
+
+type InlineComment = {
+  readonly path: string;
+  readonly line: number;
+  readonly side: "RIGHT";
+  readonly body: string;
+};
+
+function formatInlineComment(f: Finding): string {
+  const lines = [
+    `**${f.severity}** ${f.title}`,
+    "",
+    f.whyItBreaks,
+    "",
+    `**Fix:** ${f.suggestedFix}`,
+  ];
+  if (f.validation) lines.push("", `**Validate:** ${f.validation}`);
+  return lines.join("\n");
+}
+
+function buildInlineComments(
+  result: ReviewResult,
+  patch: string
+): { comments: InlineComment[]; inlined: Set<Finding> } {
+  const ranges = headLinesInPatch(patch);
+  const anchorable = result.findings.filter(
+    (f) => f.file !== "" && anchorableIn(ranges, f.file, f.lineStart)
+  );
+  const selected =
+    anchorable.length > 20
+      ? anchorable.filter(
+          (f) => f.severity === "P0" || f.severity === "P1" || f.severity === "P2"
+        )
+      : anchorable;
+  const inlined = new Set<Finding>(selected);
+  const comments: InlineComment[] = selected.map((f) => ({
+    path: f.file,
+    line: f.lineStart,
+    side: "RIGHT",
+    body: formatInlineComment(f),
+  }));
+  return { comments, inlined };
+}
+
 function postReview(
   repo: string,
   prNumber: number,
   headSha: string,
-  result: ReviewResult
+  result: ReviewResult,
+  comments: readonly InlineComment[],
+  inlined: ReadonlySet<Finding>
 ) {
-  const body = renderMarkdown(result);
+  const body = renderMarkdown(result, { inlinedFindings: inlined });
   const repoArg = `repos/${repo}`;
 
   const payload = JSON.stringify({
     commit_id: headSha,
     body,
     event: "COMMENT",
-    comments: [],
+    comments,
   });
 
   ghJson(
@@ -153,9 +236,10 @@ export async function runGithub(
     const conclusion = VERDICT_CONCLUSION[result.verdict];
     if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
     if (result.verdict === "changes_requested") process.exitCode = 1;
-    postReview(repo, prNumber, headSha, result);
-    postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, renderMarkdown(result));
-    process.stdout.write(renderMarkdown(result));
+    const { comments, inlined } = buildInlineComments(result, patch);
+    postReview(repo, prNumber, headSha, result, comments, inlined);
+    postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, renderMarkdown(result, { inlinedFindings: inlined }));
+    process.stdout.write(renderMarkdown(result, { inlinedFindings: inlined }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (isCurrentOpenHead(repo, prNumber, headSha)) {

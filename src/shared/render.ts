@@ -1,4 +1,4 @@
-import type { ReviewResult, Severity } from "./schema";
+import type { Finding, ReviewResult, Severity } from "./schema";
 
 const SEV_ORDER: Record<Severity, number> = {
   P0: 0,
@@ -13,7 +13,10 @@ const VERDICT_BADGE: Record<string, string> = {
   needs_human: "👀 needs_human",
 };
 
-export function renderMarkdown(result: ReviewResult): string {
+export function renderMarkdown(
+  result: ReviewResult,
+  opts?: { inlinedFindings?: ReadonlySet<Finding> }
+): string {
   const lines: string[] = [];
   lines.push("# Needlefish PR Review");
   lines.push("");
@@ -28,28 +31,33 @@ export function renderMarkdown(result: ReviewResult): string {
     (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]
   );
 
+  const inlinedSet = opts?.inlinedFindings;
+  const inlined =
+    inlinedSet && inlinedSet.size > 0
+      ? findings.filter((f) => inlinedSet.has(f))
+      : [];
+
   if (findings.length === 0) {
     lines.push("## Findings");
     lines.push("");
     lines.push("No actionable findings. Prefer this over padding weak ones.");
+  } else if (inlined.length === 0) {
+    lines.push("## Findings");
+    lines.push("");
+    for (const f of findings) pushFindingBlock(lines, f);
   } else {
     lines.push("## Findings");
     lines.push("");
-    for (const f of findings) {
-      lines.push(`### ${f.severity}: ${f.title}`);
-      lines.push(
-        `${f.file || "(no file)"}:${f.lineStart}${
-          f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ""
-        }`
-      );
+    for (const f of inlined) {
+      lines.push(`- **${f.severity}** ${f.title} — ${findingLoc(f)}`);
+    }
+    const outside = findings.filter((f) => !inlinedSet!.has(f));
+    if (outside.length > 0) {
       lines.push("");
-      lines.push(`**Why this breaks:** ${f.whyItBreaks}`);
+      lines.push("## Findings outside the diff");
       lines.push("");
-      lines.push(`**Suggested fix:** ${f.suggestedFix}`);
-      if (f.validation) {
-        lines.push("");
-        lines.push(`**Validation:** \`${f.validation}\``);
-      }
+      for (const f of outside) pushFindingBlock(lines, f);
+    } else {
       lines.push("");
     }
   }
@@ -84,6 +92,28 @@ export function renderMarkdown(result: ReviewResult): string {
   }
 
   return lines.join("\n").trim() + "\n";
+}
+
+function findingLoc(f: Finding): string {
+  return `${f.file || "(no file)"}:${f.lineStart}`;
+}
+
+function pushFindingBlock(lines: string[], f: Finding): void {
+  lines.push(`### ${f.severity}: ${f.title}`);
+  lines.push(
+    `${f.file || "(no file)"}:${f.lineStart}${
+      f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ""
+    }`
+  );
+  lines.push("");
+  lines.push(`**Why this breaks:** ${f.whyItBreaks}`);
+  lines.push("");
+  lines.push(`**Suggested fix:** ${f.suggestedFix}`);
+  if (f.validation) {
+    lines.push("");
+    lines.push(`**Validation:** \`${f.validation}\``);
+  }
+  lines.push("");
 }
 
 function formatDuration(ms: number): string {
