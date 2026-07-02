@@ -47,5 +47,5 @@ test("runCodex hides dirty target files from codex runner", async (t) => {
   assert.equal(output.includes(repo), false);
   const args = readStringArray(argsPath);
   assert.equal(args.includes("--ignore-user-config"), true);
-  assert.equal(args.includes('model_reasoning_effort="high"'), true);
+  assert.equal(args.includes('model_reasoning_effort="medium"'), true);
 });

@@ -237,7 +237,7 @@ async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> 
 
 function resolveCodexReasoningEffort(): CodexReasoningEffort {
   const value = process.env.CODEX_REASONING_EFFORT;
-  if (value === undefined || value === "") return "high";
+  if (value === undefined || value === "") return "medium";
   if (value === "medium" || value === "high" || value === "xhigh") return value;
   throw new Error("CODEX_REASONING_EFFORT must be one of: medium, high, xhigh");
 }

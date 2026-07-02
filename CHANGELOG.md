@@ -11,4 +11,5 @@
 - Make large-path thresholds env-overridable (`NEEDLEFISH_LARGE_PATCH_CHARS`, `NEEDLEFISH_LARGE_FILE_COUNT`).
 - Feed the small-path diff to the model as raw text between sentinel lines instead of escaped JSON inside the bundle.
 - Add a conditional small-path gating sweep for predicate-shaped diffs before critic pruning.
+- Default codex reasoning effort is now `medium` (was `high`): on the 34-fixture eval it matched or beat `xhigh` recall at 3.3x the speed. Set `CODEX_REASONING_EFFORT` to restore the old behavior.
 - Ship a composite `action.yml` so any repo can run reviews on GitHub-hosted runners; `review.yml` gains `runs_on` and `needlefish_repo` inputs (defaults unchanged).
