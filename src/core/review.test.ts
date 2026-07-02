@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { review } from "./review";
+import { patchTouchesGatingPredicate, review } from "./review";
 import { headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import type { Bundle } from "../shared/schema";
 
@@ -581,4 +581,202 @@ test("review large thresholds are env-overridable", async (t) => {
 
   const labels = result.stats?.map((s) => s.label) ?? [];
   assert.ok(labels.includes("map"), "expected the large path (map pass) to run");
+});
+
+test("review runs a gating sweep before critic when the patch touches a predicate", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `  const calls = ${JSON.stringify(calls)};`,
+      "  const finding = { severity: 'P2', title: 'Keep draft save available', category: 'bug', file: 'src/app.ts', lineStart: 2, lineEnd: 2, confidence: 0.9, whyItBreaks: 'The tightened predicate rejects save-draft even though payment only governs submit.', suggestedFix: 'Split the draft action from the payment gate.', validation: 'pnpm test', consumerFile: 'src/app.ts', consumerLine: 8 };",
+      "  if (input.includes('focused over-block gating sweep')) {",
+      "    fs.appendFileSync(calls, 'sweep\\n');",
+      "    fs.writeFileSync(out, JSON.stringify({ summary: 'sweep found over-block', findings: [finding], checked: ['EVIDENCE finding:Keep draft save available changed=src/app.ts:2 effect=save-draft blocked'], residual_risks: [] }));",
+      "    return;",
+      "  }",
+      "  if (input.includes('adversarial critic')) {",
+      "    fs.appendFileSync(calls, 'critic\\n');",
+      "    const candidate = input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat')).trim();",
+      "    fs.writeFileSync(out, JSON.stringify({ ...JSON.parse(candidate), residual_risks: [] }));",
+      "    return;",
+      "  }",
+      "  fs.appendFileSync(calls, 'review\\n');",
+      "  fs.writeFileSync(out, JSON.stringify({ summary: 'main clean', findings: [], checked: ['main checked'], residual_risks: [] }));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/src/app.ts b/src/app.ts\n-export function canApprove(order: Order) { return true; }\n+export function canApprove(order: Order) { return order.paid; }\n",
+    patchStat: " src/app.ts | 2 +-",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "changes_requested");
+  assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "sweep", "critic"]);
+  assert.equal(result.findings[0]?.title, "Keep draft save available");
+  assert.deepEqual(result.stats?.map((s) => s.label), ["review", "sweep", "critic"]);
+});
+
+test("review skips gating sweep when the patch does not touch a predicate", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `  const calls = ${JSON.stringify(calls)};`,
+      "  const review = { summary: 'clean', findings: [], checked: ['checked'], residual_risks: [] };",
+      "  if (input.includes('focused over-block gating sweep')) { process.stderr.write('unexpected sweep'); process.exit(1); }",
+      "  if (input.includes('adversarial critic')) { fs.appendFileSync(calls, 'critic\\n'); fs.writeFileSync(out, JSON.stringify(review)); return; }",
+      "  fs.appendFileSync(calls, 'review\\n');",
+      "  fs.writeFileSync(out, JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/src/app.ts b/src/app.ts\n-const label = 'old';\n+const label = 'new';\n",
+    patchStat: " src/app.ts | 2 +-",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "critic"]);
+  assert.deepEqual(result.stats?.map((s) => s.label), ["review", "critic"]);
+});
+
+test("review records a non-blocking residual when gating sweep output is malformed twice", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `  const calls = ${JSON.stringify(calls)};`,
+      "  const review = { summary: 'main clean', findings: [], checked: ['main checked'], residual_risks: [] };",
+      "  if (input.includes('focused over-block gating sweep')) { fs.appendFileSync(calls, 'sweep\\n'); fs.writeFileSync(out, 'not json'); return; }",
+      "  if (input.includes('adversarial critic')) {",
+      "    fs.appendFileSync(calls, 'critic\\n');",
+      "    const candidate = input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat')).trim();",
+      "    fs.writeFileSync(out, JSON.stringify({ ...JSON.parse(candidate), residual_risks: [] }));",
+      "    return;",
+      "  }",
+      "  fs.appendFileSync(calls, 'review\\n');",
+      "  fs.writeFileSync(out, JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/src/app.ts b/src/app.ts\n-export function canApprove(order: Order) { return true; }\n+export function canApprove(order: Order) { return order.paid; }\n",
+    patchStat: " src/app.ts | 2 +-",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "sweep", "sweep", "critic"]);
+  assert.deepEqual(result.checked, ["main checked"]);
+  assert.match(result.residualRisks[0]?.text ?? "", /gating sweep failed/);
+  assert.equal(result.residualRisks[0]?.blocks, false);
+});
+
+test("patchTouchesGatingPredicate detects predicate-shaped diff lines", () => {
+  assert.equal(patchTouchesGatingPredicate("+const allowed = canApprove(order);"), true);
+  assert.equal(patchTouchesGatingPredicate("-if (!is_valid_state(order)) return false;"), true);
+  assert.equal(patchTouchesGatingPredicate("+  return false;"), true);
+  assert.equal(patchTouchesGatingPredicate("+Update README wording for the release notes."), false);
+  assert.equal(patchTouchesGatingPredicate("+++ b/src/app.ts\n--- a/src/app.ts"), false);
+  assert.equal(patchTouchesGatingPredicate("+const renamed = nextName;"), false);
+  assert.equal(patchTouchesGatingPredicate("+can approve this doc sentence"), false);
 });

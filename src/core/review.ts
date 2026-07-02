@@ -27,6 +27,10 @@ const LARGE_FILE_COUNT = 10;
 const MAX_HOTSPOTS = 6;
 const DEFAULT_DEEP_CONCURRENCY = 3;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+// Broad by design: one extra sweep is cheaper than missing an over-blocking predicate.
+const GATING_PREDICATE_RE =
+  /\b(?:can|may|is|has|should|allow|enable|permit|approve|eligible)(?:[A-Z][A-Za-z0-9]*|_[A-Za-z0-9_]+)\b/;
+const CONTROL_RE = /\breturn\s+(?:false|true)\b|\bthrow\b/;
 
 interface ReviewRun {
   readonly bundle: Bundle;
@@ -72,6 +76,15 @@ function isLarge(bundle: Bundle): boolean {
     bundle.patch.length > envPositiveInt("NEEDLEFISH_LARGE_PATCH_CHARS", LARGE_PATCH_CHARS) ||
     bundle.changedFiles.length > envPositiveInt("NEEDLEFISH_LARGE_FILE_COUNT", LARGE_FILE_COUNT)
   );
+}
+
+export function patchTouchesGatingPredicate(patch: string): boolean {
+  for (const line of patch.split("\n")) {
+    if (!/^[+-]/.test(line) || line.startsWith("+++") || line.startsWith("---")) continue;
+    const changed = line.slice(1);
+    if (GATING_PREDICATE_RE.test(changed) || CONTROL_RE.test(changed)) return true;
+  }
+  return false;
 }
 
 function changedHotspots(hotspots: readonly Hotspot[], bundle: Bundle): Hotspot[] {
@@ -155,6 +168,33 @@ async function runCritic(candidate: RawReview, patchText: string, run: ReviewRun
   return runJsonPrompt("critic", criticPrompt, run, parseUsableReview("critic"));
 }
 
+async function runGatingSweep(candidate: RawReview, run: ReviewRun): Promise<RawReview> {
+  const { bundle } = run;
+  const { patch, ...meta } = bundle;
+  const sweepPrompt = loadPrompt("gating-sweep.md")
+    .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
+    .replace("{{PATCH}}", () => patch);
+  try {
+    const sweep = await runJsonPrompt("sweep", sweepPrompt, run, normalizeReview);
+    return {
+      summary: candidate.summary,
+      findings: dedup([...candidate.findings, ...sweep.findings]),
+      checked: [...candidate.checked, ...sweep.checked],
+      residual_risks: [...candidate.residual_risks, ...sweep.residual_risks],
+    };
+  } catch (e) {
+    if (isRunnerSafetyError(e)) throw e;
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ...candidate,
+      residual_risks: [
+        ...candidate.residual_risks,
+        { text: `gating sweep failed (${msg.slice(0, 150)})`, blocks: false },
+      ],
+    };
+  }
+}
+
 function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): ReviewResult {
   const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
@@ -182,7 +222,17 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
     .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
     .replace("{{PATCH}}", () => patch);
   const candidate = await runJsonPrompt("review", reviewPrompt, run, parseUsableReview("review"));
-  return toReviewResult(await runCritic(candidate, bundle.patch, run), run);
+  const swept = patchTouchesGatingPredicate(bundle.patch) ? await runGatingSweep(candidate, run) : candidate;
+  const pruned = await runCritic(swept, bundle.patch, run);
+  const sweepFailures = swept.residual_risks.filter((risk) => risk.text.startsWith("gating sweep failed ("));
+  const final = {
+    ...pruned,
+    residual_risks: [
+      ...pruned.residual_risks,
+      ...sweepFailures.filter((risk) => !pruned.residual_risks.some((kept) => kept.text === risk.text)),
+    ],
+  };
+  return toReviewResult(final, run);
 }
 
 // Large PR: map (blast-radius survey, no diff text) -> deep per hotspot -> merge -> critic.
