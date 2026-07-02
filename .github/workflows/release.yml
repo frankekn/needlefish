@@ -23,12 +23,13 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm check
           pnpm test
-      - name: Roll floating v1
+      - name: Roll floating major tag
         run: |
           git config user.name "needlefish-release"
           git config user.email "actions@github.com"
-          git tag -f v1 "${GITHUB_REF_NAME}"
-          git push -f origin v1
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "${GITHUB_REF_NAME}"
+          git push -f origin "$major"
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 # Dogfood the composite action on a GitHub-hosted runner.
 # Manual trigger only — pull_request reviews stay on the self-hosted runner
-# (review.yml); this exists to live-test the `uses: frankekn/needlefish@v1`
+# (review.yml); this exists to live-test the `uses: frankekn/needlefish@v0`
 # path without double-reviewing every PR.
 name: hosted-review
 on:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: frankekn/needlefish@v1
+      - uses: frankekn/needlefish@v0
         with:
           pr_number: ${{ inputs.pr }}
         env:

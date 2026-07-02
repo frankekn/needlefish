@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: frankekn/needlefish@v1
+      - uses: frankekn/needlefish@v0
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
 ```
@@ -233,7 +233,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history: needlefish needs the merge base
-      - uses: frankekn/needlefish@v1
+      - uses: frankekn/needlefish@v0
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
 ```
