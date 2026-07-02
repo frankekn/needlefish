@@ -29,7 +29,7 @@ export function parseRunnerName(value: string, label: string): RunnerName {
 
 export function parsePositiveInteger(value: string, label: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error(`${label} requires a positive integer`);
   }
   return parsed;
