@@ -44,6 +44,16 @@ runs:
         corepack enable
         corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
         pnpm install --frozen-lockfile
+    - name: Enable unprivileged user namespaces (Linux hosted runners)
+      shell: bash
+      run: |
+        # Ubuntu 23.10+ AppArmor blocks unprivileged user namespaces, which
+        # breaks the codex CLI sandbox (bwrap) on GitHub-hosted VMs and
+        # degrades reviews to diff-only. Best-effort: a locked-down runner
+        # without sudo just keeps the degraded mode.
+        if [ "$(uname -s)" = "Linux" ] && sudo -n true 2>/dev/null; then
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+        fi
     - name: Install model runner CLI
       shell: bash
       env:

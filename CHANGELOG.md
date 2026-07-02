@@ -4,6 +4,7 @@
 
 ### Changes
 
+- Restore in-sandbox repo inspection (rg/git) for codex on GitHub-hosted Linux runners by lifting the AppArmor unprivileged-userns restriction (best-effort sysctl in the action).
 - Sticky re-review: on a re-review of the same PR, Needlefish now PUT-updates its previous review body instead of posting a new one, classifying findings as fresh / open / resolved across rounds (inline comments posted only for fresh anchorable findings; open findings listed as one-liners; resolved count shown as a single line).
 
 - Add `@needlefish recheck` / `@needlefish explain <text>` PR comment commands (maintainers only) and a `needlefish explain` CLI mode that posts a one-call deep explanation of a single finding.

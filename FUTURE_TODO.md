@@ -30,8 +30,9 @@ Optional second critic model or deeper call-site archaeology (`--deep` currently
 widens prompt framing).
 
 ## Hosted-runner repo inspection
-On GitHub-hosted VMs the codex read-only sandbox fails bwrap loopback setup
-(`bwrap: loopback: Failed RTM_NEWADDR`), so the model reviews from the diff
-alone — findings still land, but rg/git verification inside the clone is
-degraded. Live-tested on PR #8 (planted bug caught anyway, 37s). Investigate
-codex sandbox config for hosted VMs if diff-only reviews prove weaker.
+RESOLVED 2026-07: root cause was Ubuntu 24.04 AppArmor blocking unprivileged
+user namespaces (bwrap). Verified by probe on ubuntu-latest: after
+`sysctl kernel.apparmor_restrict_unprivileged_userns=0`, rg/git run fine
+inside the codex read-only sandbox. action.yml now applies the sysctl
+best-effort on Linux runners with passwordless sudo; runners without sudo
+keep the documented diff-only degradation.
