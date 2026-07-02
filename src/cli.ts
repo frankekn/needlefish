@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runGithubExplain } from "./adapters/explain";
 import { runGithub } from "./adapters/github";
 import { runLocal, runLocalPr, printLocal } from "./adapters/local";
 import { parseArgs, USAGE } from "./cli/args";
@@ -25,6 +26,10 @@ async function main() {
         );
       }
       await runGithub(command.repo ?? process.cwd(), command.pr, command.opts);
+      return;
+    }
+    case "explain": {
+      await runGithubExplain(command.repo ?? process.cwd(), command.pr, command.finding, command.opts);
       return;
     }
     case "local":

@@ -82,3 +82,20 @@ test("parseArgs validates runner options", () => {
   assert.throws(() => parseArgs(["--runner", "wat"]), /--runner must be one of/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
 });
+
+test("parseArgs parses explain command", () => {
+  const cmd = parseArgs(["explain", "8", "--finding", "rounded seconds"]);
+  assert.equal(cmd.kind, "explain");
+  if (cmd.kind === "explain") {
+    assert.equal(cmd.pr, 8);
+    assert.equal(cmd.finding, "rounded seconds");
+  }
+});
+
+test("parseArgs rejects explain without --finding", () => {
+  assert.throws(() => parseArgs(["explain", "8"]), /explain requires --finding/);
+});
+
+test("parseArgs rejects --finding outside explain", () => {
+  assert.throws(() => parseArgs(["--finding", "x"]), /only valid with the explain command/);
+});

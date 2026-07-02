@@ -105,7 +105,7 @@ function diffBundle(cwd: string, opts: LocalOptions): Bundle {
   });
 }
 
-function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
+export function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
   const pr = fetchPrRefInfo(cwd, prNumber);
   ensurePrCommits(cwd, pr);
   const diff = prDiffFromShas(cwd, pr.baseSha, pr.headSha);

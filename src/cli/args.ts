@@ -32,6 +32,13 @@ export type CliCommand =
       readonly opts: LocalOptions;
       readonly fix: boolean;
       readonly recheck: boolean;
+    }
+  | {
+      readonly kind: "explain";
+      readonly pr: number;
+      readonly finding: string;
+      readonly repo?: string;
+      readonly opts: RunnerOptions;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -40,6 +47,8 @@ Usage:
   needlefish [options]                 review merge-base..HEAD (local, read-only)
   needlefish pr <number> [options]     review PR base..head via gh (any branch)
   needlefish --github --pr <number>    GitHub Action mode (post review + check)
+  needlefish explain <number> --finding <text>
+                                       explain one finding on a PR (Action mode)
 
 Shared options:
   --repo <path>        target repository
@@ -107,11 +116,13 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
-  const prCommand = argv[0] === "pr";
+  const explainCommand = argv[0] === "explain";
+  const prCommand = argv[0] === "pr" || explainCommand;
   if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
   if (prCommand && (argv[1] === "-v" || argv[1] === "--version")) return { kind: "version" };
-  const prCommandNumber = prCommand ? parsePositiveInteger(argv[1] ?? "", "pr") : undefined;
+  const prCommandNumber = prCommand ? parsePositiveInteger(argv[1] ?? "", explainCommand ? "explain" : "pr") : undefined;
   const start = prCommand ? 2 : 0;
+  let finding: string | undefined;
   let github = false;
   let pr: number | undefined;
   let repo: string | undefined;
@@ -148,6 +159,15 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     if (arg === "--base") {
       opts.base = takeValue(argv, i, "--base");
       i++;
+      continue;
+    }
+    if (arg === "--finding") {
+      finding = takeValue(argv, i, "--finding");
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--finding=")) {
+      finding = inlineValue(arg, "--finding");
       continue;
     }
     if (arg === "--repo") {
@@ -215,6 +235,12 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     if (opts.deep) throw new Error("--deep is only valid in local mode");
     return { kind: "github", pr, repo, opts: runnerOptionsFrom(opts), fix, recheck };
   }
+
+  if (explainCommand) {
+    if (!finding) throw new Error("explain requires --finding <text>");
+    return { kind: "explain", pr: prCommandNumber!, finding, repo, opts: runnerOptionsFrom(opts) };
+  }
+  if (finding !== undefined) throw new Error("--finding is only valid with the explain command");
 
   if (prCommand) {
     if (pr) throw new Error("pr command cannot be combined with --pr");

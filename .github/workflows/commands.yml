@@ -1,0 +1,83 @@
+# `@needlefish <command>` PR comment commands (maintainers only).
+#   @needlefish recheck            re-run the review on this PR
+#   @needlefish explain <text>     explain the finding matching <text>
+# The comment body is untrusted input: it is parsed with a strict prefix
+# match, never eval'd, and only a sanitized key ever reaches the model.
+name: needlefish-commands
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+concurrency:
+  group: needlefish-cmd-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.issue.pull_request &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      startsWith(github.event.comment.body, '@needlefish ')
+    outputs:
+      command: ${{ steps.cmd.outputs.command }}
+      finding: ${{ steps.cmd.outputs.finding }}
+    steps:
+      - name: Parse command
+        id: cmd
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          first_line="${BODY%%$'\n'*}"
+          command=""
+          finding=""
+          case "$first_line" in
+            "@needlefish recheck")
+              command="recheck" ;;
+            "@needlefish explain "*)
+              command="explain"
+              finding="${first_line#@needlefish explain }" ;;
+            *)
+              echo "Unrecognized needlefish command: $first_line" ;;
+          esac
+          {
+            echo "command=$command"
+            echo "finding=$finding"
+          } >> "$GITHUB_OUTPUT"
+      - name: Acknowledge
+        if: steps.cmd.outputs.command != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes
+      - name: Dispatch recheck
+        if: steps.cmd.outputs.command == 'recheck'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run review.yml -R "${{ github.repository }}" -f pr_number="${{ github.event.issue.number }}"
+
+  explain:
+    needs: parse
+    if: needs.parse.outputs.command == 'explain'
+    runs-on: self-hosted
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: target
+      - name: Needlefish explain
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FINDING: ${{ needs.parse.outputs.finding }}
+        run: |
+          if [ ! -x "$HOME/.local/bin/needlefish" ]; then
+            echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
+            exit 1
+          fi
+          "$HOME/.local/bin/needlefish" explain "${{ github.event.issue.number }}" --finding "$FINDING"
