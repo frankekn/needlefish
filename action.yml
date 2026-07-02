@@ -1,0 +1,90 @@
+name: Needlefish PR Review
+description: >-
+  Strict PR review agent. Reviews the pull request diff with a read-only model
+  runner and posts a COMMENT review plus a Needlefish check-run.
+inputs:
+  pr_number:
+    description: PR number to review (defaults to the pull_request event PR)
+    required: false
+  runner:
+    description: "Model runner: codex, claude, or opencode"
+    required: false
+    default: codex
+  model:
+    description: Optional model id for the selected runner
+    required: false
+  timeout_ms:
+    description: Optional per-call timeout in milliseconds
+    required: false
+  codex_reasoning_effort:
+    description: "Codex reasoning effort: medium, high, or xhigh"
+    required: false
+  runner_version:
+    description: npm version of the model runner CLI to install
+    required: false
+    default: latest
+  repo_path:
+    description: Path to the target repo checkout to review
+    required: false
+    default: ${{ github.workspace }}
+  github_token:
+    description: Token for gh reads and posting the review and check-run
+    required: false
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    - name: Install needlefish dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        corepack enable
+        corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+        pnpm install --frozen-lockfile
+    - name: Install model runner CLI
+      shell: bash
+      env:
+        RUNNER_NAME: ${{ inputs.runner }}
+        RUNNER_VERSION: ${{ inputs.runner_version }}
+      run: |
+        case "$RUNNER_NAME" in
+          codex) pkg="@openai/codex" ;;
+          claude) pkg="@anthropic-ai/claude-code" ;;
+          opencode) pkg="opencode-ai" ;;
+          *) echo "unknown runner: $RUNNER_NAME" >&2; exit 1 ;;
+        esac
+        npm install -g "${pkg}@${RUNNER_VERSION}"
+    - name: Authenticate model runner
+      shell: bash
+      env:
+        RUNNER_NAME: ${{ inputs.runner }}
+      run: |
+        if [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
+          printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
+        fi
+    - name: Needlefish review
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort }}
+        PR_INPUT: ${{ inputs.pr_number }}
+        EVENT_PR: ${{ github.event.pull_request.number }}
+        TARGET_REPO_PATH: ${{ inputs.repo_path }}
+        RUNNER_INPUT: ${{ inputs.runner }}
+        MODEL_INPUT: ${{ inputs.model }}
+        TIMEOUT_INPUT: ${{ inputs.timeout_ms }}
+      run: |
+        pr="${PR_INPUT:-$EVENT_PR}"
+        if [ -z "$pr" ]; then
+          echo "No PR number: pass pr_number or trigger on pull_request events." >&2
+          exit 1
+        fi
+        args=(--github --pr "$pr" --repo "$TARGET_REPO_PATH")
+        if [ -n "$RUNNER_INPUT" ]; then args+=(--runner "$RUNNER_INPUT"); fi
+        if [ -n "$MODEL_INPUT" ]; then args+=(--model "$MODEL_INPUT"); fi
+        if [ -n "$TIMEOUT_INPUT" ]; then args+=(--timeout-ms "$TIMEOUT_INPUT"); fi
+        pnpm review "${args[@]}"

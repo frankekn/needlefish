@@ -23,6 +23,14 @@ on:
       needlefish_release_sha:
         description: Optional expected Needlefish release SHA
         required: false
+      runs_on:
+        description: Runner label for the review job
+        required: false
+        default: self-hosted
+      needlefish_repo:
+        description: Needlefish source repo for the release staleness check
+        required: false
+        default: frankekn/needlefish
   workflow_call:
     inputs:
       pr_number:
@@ -49,6 +57,14 @@ on:
         description: Optional expected Needlefish release SHA
         type: string
         required: false
+      runs_on:
+        description: Runner label for the review job
+        type: string
+        required: false
+      needlefish_repo:
+        description: Needlefish source repo for the release staleness check
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -61,7 +77,7 @@ concurrency:
 
 jobs:
   review:
-    runs-on: self-hosted
+    runs-on: ${{ inputs.runs_on || github.event.inputs.runs_on || 'self-hosted' }}
     if: inputs.pr_number != '' || github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Resolve PR refs
@@ -121,9 +137,10 @@ jobs:
           REPO: ${{ github.repository }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
           EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
+          NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
         run: |
           if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
-            EXPECTED_NEEDLEFISH_SHA="$(gh api repos/frankekn/needlefish/commits/main --jq .sha)"
+            EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
           fi
 
           metadata="$HOME/.local/share/needlefish/current/release.json"

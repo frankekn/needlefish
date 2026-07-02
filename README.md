@@ -174,6 +174,58 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
 > own repos; if you ever open PRs to outside contributors, isolate the runner
 > (ephemeral container) so contributor code can't touch your persistent host.
 
+## GitHub Action (hosted, any repo)
+
+No self-hosted runner required: this repo doubles as a composite action that
+runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo:
+
+```yaml
+name: needlefish
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+jobs:
+  review:
+    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: needlefish needs the merge base
+      - uses: frankekn/needlefish@main # pin a tag/SHA once released
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+```
+
+Runner authentication (repo secrets, passed via `env` on the action step):
+
+| runner   | secret(s)                                                |
+| -------- | -------------------------------------------------------- |
+| codex    | `CODEX_API_KEY` (used for `codex login --with-api-key`)  |
+| claude   | `ANTHROPIC_API_KEY`                                       |
+| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
+
+Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
+(default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
+`runner_version` (npm version of the runner CLI), `repo_path` (defaults to the
+workspace checkout), `github_token` (defaults to the workflow token).
+
+Cost and behavior notes:
+
+- Each review is 2–9 model calls, and every push to the PR re-triggers the
+  workflow. Budget accordingly.
+- Fork PRs don't receive secrets by default. The `if:` gate above skips them.
+  `pull_request_target` would hand secrets to workflows triggered by fork
+  code — avoid it unless you fully understand the exposure.
+- The hosted path cold-starts on every run (pnpm install + runner CLI
+  install, roughly a minute). The self-hosted path above stays the
+  low-latency option.
+
 ## Model runner invocation
 
 `src/shared/codex.ts` shells out to the selected CLI. Use `--runner`, `--model`,
