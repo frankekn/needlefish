@@ -6,6 +6,7 @@ import {
   parseRunnerName,
   type RunnerName,
   type RunnerOptions,
+  type RunStat,
 } from "./runner";
 import { spawnRunnerProcess, type RunnerProcessResult } from "./runner-process";
 import {
@@ -19,9 +20,12 @@ export { isRunnerSafetyError } from "./runner-sandbox";
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
   readonly targetHeadSha: string;
+  readonly label?: string;
+  readonly onStat?: (stat: RunStat) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
+type CodexReasoningEffort = "medium" | "high" | "xhigh";
 
 interface RunnerResult {
   readonly res: RunnerProcessResult;
@@ -41,13 +45,32 @@ interface RunnerInvocation {
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
   const maxAttempts = process.env.NEEDLEFISH_NO_RETRY ? 1 : 2;
+  const startedAt = Date.now();
+  let attempts = 0;
+  const emitStat = (ok: boolean): void => {
+    if (!opts.onStat) return;
+    const model = resolveModel(opts, runner);
+    opts.onStat({
+      label: opts.label ?? "(unlabeled)",
+      runner,
+      ...(model !== undefined ? { model } : {}),
+      durationMs: Date.now() - startedAt,
+      attempts,
+      ok,
+    });
+  };
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    attempts = attempt;
     try {
-      return await runCodexOnce(prompt, opts, runner);
+      const out = await runCodexOnce(prompt, opts, runner);
+      emitStat(true);
+      return out;
     } catch (err) {
-      if (!(err instanceof Error)) throw err;
-      if (isRunnerSafetyError(err)) throw err;
+      if (!(err instanceof Error) || isRunnerSafetyError(err)) {
+        emitStat(false);
+        throw err;
+      }
       lastErr = err;
       if (attempt < maxAttempts) {
         const backoff = retryMsFor(runner);
@@ -55,6 +78,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
       }
     }
   }
+  emitStat(false);
   throw lastErr;
 }
 
@@ -176,7 +200,20 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
 
 async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> {
   const lastMsg = path.join(invocation.tmp, "last.txt");
-  const args = ["exec", "--color", "never", "-s", "read-only", "--skip-git-repo-check", "--output-last-message", lastMsg];
+  const reasoningEffort = resolveCodexReasoningEffort();
+  const args = [
+    "exec",
+    "--color",
+    "never",
+    "--ignore-user-config",
+    "-c",
+    `model_reasoning_effort="${reasoningEffort}"`,
+    "-s",
+    "read-only",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    lastMsg,
+  ];
   if (invocation.model) args.push("-m", invocation.model);
   if (invocation.reasoningEffort) args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
@@ -196,6 +233,13 @@ async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> 
     out = res.stdout ?? "";
   }
   return { res, out };
+}
+
+function resolveCodexReasoningEffort(): CodexReasoningEffort {
+  const value = process.env.CODEX_REASONING_EFFORT;
+  if (value === undefined || value === "") return "high";
+  if (value === "medium" || value === "high" || value === "xhigh") return value;
+  throw new Error("CODEX_REASONING_EFFORT must be one of: medium, high, xhigh");
 }
 
 async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {

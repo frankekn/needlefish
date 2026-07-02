@@ -30,12 +30,6 @@ function nestedString(raw: JsonRecord, field: string, nestedField: string): stri
   return isRecord(value) ? stringField(value, nestedField) : "";
 }
 
-const VERDICT_EVENT: Record<Verdict, "COMMENT" | "REQUEST_CHANGES"> = {
-  pass: "COMMENT",
-  changes_requested: "REQUEST_CHANGES",
-  needs_human: "COMMENT",
-};
-
 const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
   pass: "success",
   changes_requested: "failure",
@@ -48,14 +42,13 @@ function postReview(
   headSha: string,
   result: ReviewResult
 ) {
-  const event = VERDICT_EVENT[result.verdict];
   const body = renderMarkdown(result);
   const repoArg = `repos/${repo}`;
 
   const payload = JSON.stringify({
     commit_id: headSha,
     body,
-    event,
+    event: "COMMENT",
     comments: [],
   });
 
@@ -85,6 +78,22 @@ function postCheck(
   );
 }
 
+function isCurrentOpenHead(repo: string, prNumber: number, headSha: string): boolean {
+  const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
+  if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
+  const state = stringField(pr, "state");
+  if (state !== "open") {
+    process.stdout.write(`Needlefish skipped posting for PR #${prNumber} because state is ${state || "unknown"}.\n`);
+    return false;
+  }
+  const currentHeadSha = nestedString(pr, "head", "sha");
+  if (currentHeadSha !== headSha) {
+    process.stdout.write(`Needlefish skipped stale result for PR #${prNumber}: ${headSha} is no longer current.\n`);
+    return false;
+  }
+  return true;
+}
+
 export async function runGithub(
   cwd: string,
   prNumber: number,
@@ -96,6 +105,11 @@ export async function runGithub(
 
   const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
   if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
+  const state = stringField(pr, "state");
+  if (state !== "open") {
+    process.stdout.write(`Needlefish skipped PR #${prNumber} because state is ${state || "unknown"}.\n`);
+    return;
+  }
   const headSha = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || git(["rev-parse", "HEAD"], repoPath);
   const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
   if (!baseSha || !headSha) throw new Error("Could not resolve PR base/head SHA");
@@ -137,19 +151,23 @@ export async function runGithub(
   try {
     result = await review(bundle, opts);
     const conclusion = VERDICT_CONCLUSION[result.verdict];
+    if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
+    if (result.verdict === "changes_requested") process.exitCode = 1;
     postReview(repo, prNumber, headSha, result);
     postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, renderMarkdown(result));
     process.stdout.write(renderMarkdown(result));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    postCheck(
-      repo,
-      headSha,
-      null,
-      "failure",
-      "Needlefish: review failed",
-      `Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``
-    );
+    if (isCurrentOpenHead(repo, prNumber, headSha)) {
+      postCheck(
+        repo,
+        headSha,
+        null,
+        "failure",
+        "Needlefish: review failed",
+        `Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``
+      );
+    }
     process.stderr.write(`needlefish review failed: ${msg}\n`);
     process.exitCode = 1;
   }

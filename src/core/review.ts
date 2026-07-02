@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { runCodex, extractJson, isRunnerSafetyError, type CodexOptions } from "../shared/codex";
-import type { RunnerOptions } from "../shared/runner";
+import { parsePositiveInteger, type RunnerOptions, type RunStat } from "../shared/runner";
 import {
   type Bundle,
   type Finding,
@@ -25,15 +25,53 @@ function loadPrompt(name: string): string {
 const LARGE_PATCH_CHARS = 30000;
 const LARGE_FILE_COUNT = 10;
 const MAX_HOTSPOTS = 6;
+const DEFAULT_DEEP_CONCURRENCY = 3;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
 interface ReviewRun {
   readonly bundle: Bundle;
   readonly runnerOptions: RunnerOptions;
+  readonly stats: RunStat[];
+  readonly startedAt: number;
+}
+
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  return parsePositiveInteger(raw, name);
+}
+
+function deepConcurrency(): number {
+  return envPositiveInt("NEEDLEFISH_DEEP_CONCURRENCY", DEFAULT_DEEP_CONCURRENCY);
+}
+
+// Worker pool over a shared index; results land at their item's index so
+// output order never depends on completion order.
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(limit, items.length)) },
+    async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i], i);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function isLarge(bundle: Bundle): boolean {
-  return bundle.patch.length > LARGE_PATCH_CHARS || bundle.changedFiles.length > LARGE_FILE_COUNT;
+  return (
+    bundle.patch.length > envPositiveInt("NEEDLEFISH_LARGE_PATCH_CHARS", LARGE_PATCH_CHARS) ||
+    bundle.changedFiles.length > envPositiveInt("NEEDLEFISH_LARGE_FILE_COUNT", LARGE_FILE_COUNT)
+  );
 }
 
 function changedHotspots(hotspots: readonly Hotspot[], bundle: Bundle): Hotspot[] {
@@ -62,18 +100,49 @@ function sortByRisk(hotspots: readonly Hotspot[]): Hotspot[] {
   return [...hotspots].sort((a, b) => rank[a.risk] - rank[b.risk]);
 }
 
-function codexOptions(run: ReviewRun): CodexOptions {
-  return { repoPath: run.bundle.repoPath, targetHeadSha: run.bundle.headSha, ...run.runnerOptions };
+function codexOptions(run: ReviewRun, label: string): CodexOptions {
+  return {
+    repoPath: run.bundle.repoPath,
+    targetHeadSha: run.bundle.headSha,
+    label,
+    onStat: (stat) => run.stats.push(stat),
+    ...run.runnerOptions,
+  };
 }
 
-async function runReviewPrompt(prompt: string, run: ReviewRun): Promise<RawReview> {
-  return normalizeReview(extractJson(await runCodex(prompt, codexOptions(run))));
+// One retry on malformed output: re-ask the model, never re-parse the same
+// text. Safety errors throw from runCodex itself, outside the try, so they
+// propagate immediately without a retry.
+async function runJsonPrompt<T>(
+  label: string,
+  prompt: string,
+  run: ReviewRun,
+  parse: (raw: unknown) => T
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const out = await runCodex(prompt, codexOptions(run, label));
+    try {
+      return parse(extractJson(out));
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 function assertUsableReview(review: RawReview, label: string): void {
   if (!review.summary || review.checked.length === 0) {
     throw new Error(`${label} produced no summary or checked list (likely malformed output)`);
   }
+}
+
+function parseUsableReview(label: string): (raw: unknown) => RawReview {
+  return (raw) => {
+    const review = normalizeReview(raw);
+    assertUsableReview(review, label);
+    return review;
+  };
 }
 
 async function runCritic(candidate: RawReview, patchText: string, run: ReviewRun): Promise<RawReview> {
@@ -83,9 +152,7 @@ async function runCritic(candidate: RawReview, patchText: string, run: ReviewRun
     .replace("{{PATCH}}", () => patchText)
     .replace("{{BASE}}", bundle.baseSha)
     .replace("{{HEAD}}", bundle.headSha);
-  const pruned = await runReviewPrompt(criticPrompt, run);
-  assertUsableReview(pruned, "critic");
-  return pruned;
+  return runJsonPrompt("critic", criticPrompt, run, parseUsableReview("critic"));
 }
 
 function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): ReviewResult {
@@ -100,6 +167,8 @@ function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): 
     baseSha: bundle.baseSha,
     headSha: bundle.headSha,
     ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+    ...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
+    totalDurationMs: Date.now() - run.startedAt,
   };
 }
 
@@ -110,8 +179,7 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
     "{{BUNDLE}}",
     () => JSON.stringify(bundle, null, 2)
   );
-  const candidate = await runReviewPrompt(reviewPrompt, run);
-  assertUsableReview(candidate, "review");
+  const candidate = await runJsonPrompt("review", reviewPrompt, run, parseUsableReview("review"));
   return toReviewResult(await runCritic(candidate, bundle.patch, run), run);
 }
 
@@ -129,7 +197,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
     deep: bundle.deep,
   };
   const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2));
-  const mapResult = normalizeMap(extractJson(await runCodex(mapPrompt, codexOptions(run))));
+  const mapResult = await runJsonPrompt("map", mapPrompt, run, normalizeMap);
   const mappedHotspots = changedHotspots(mapResult.hotspots, bundle);
   const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
@@ -151,10 +219,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   }
 
   const agents = bundle.agentsMd;
-  let all: Finding[] = [];
-  const checked: string[] = [];
-  const residuals: ResidualRisk[] = [];
-  for (const h of hotspots) {
+  const passes = await mapLimit(hotspots, deepConcurrency(), async (h) => {
     const deepPrompt = loadPrompt("deep.md")
       .replace("{{AGENTS}}", () => agents)
       .replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2))
@@ -162,20 +227,28 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
       .replace("{{FOCUS}}", bundle.focus ?? "(none)")
       .replace("{{BASE}}", bundle.baseSha)
       .replace("{{HEAD}}", bundle.headSha);
-    let res: RawReview;
     try {
-      res = normalizeReview(extractJson(await runCodex(deepPrompt, codexOptions(run))));
-      checked.push(`[${h.name}] ${res.summary || "(no summary)"}`);
-      checked.push(...res.checked);
-      all = all.concat(res.findings);
-      residuals.push(...res.residual_risks);
+      const res = await runJsonPrompt(`deep:${h.name}`, deepPrompt, run, (raw) => normalizeReview(raw));
+      return {
+        checked: [`[${h.name}] ${res.summary || "(no summary)"}`, ...res.checked],
+        findings: res.findings,
+        residuals: res.residual_risks,
+      };
     } catch (e) {
       if (isRunnerSafetyError(e)) throw e;
       const msg = e instanceof Error ? e.message : String(e);
-      checked.push(`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`);
-      residuals.push({ text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`, blocks: true });
+      return {
+        checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
+        findings: [] as readonly Finding[],
+        residuals: [
+          { text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`, blocks: true },
+        ] as readonly ResidualRisk[],
+      };
     }
-  }
+  });
+  const all = passes.flatMap((p) => p.findings);
+  const checked = passes.flatMap((p) => p.checked);
+  const residuals = passes.flatMap((p) => p.residuals);
 
   const merged = dedup(all);
   const candidateMerged: RawReview = {
@@ -198,6 +271,6 @@ export async function review(
   bundle: Bundle,
   runnerOptions: RunnerOptions = {}
 ): Promise<ReviewResult> {
-  const run = { bundle, runnerOptions };
+  const run: ReviewRun = { bundle, runnerOptions, stats: [], startedAt: Date.now() };
   return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);
 }

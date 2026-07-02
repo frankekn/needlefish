@@ -9,6 +9,15 @@ export interface RunnerOptions {
   readonly reasoningEffort?: string;
 }
 
+export interface RunStat {
+  readonly label: string;
+  readonly runner: RunnerName;
+  readonly model?: string;
+  readonly durationMs: number;
+  readonly attempts: number;
+  readonly ok: boolean;
+}
+
 export function isRunnerName(value: string): value is RunnerName {
   return value === "codex" || value === "claude" || value === "opencode" || value === "openai" || value === "grok";
 }

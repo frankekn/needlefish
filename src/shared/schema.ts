@@ -1,3 +1,5 @@
+import type { RunStat } from "./runner";
+
 export type Severity = "P0" | "P1" | "P2" | "P3";
 
 export type Category =
@@ -85,6 +87,8 @@ export interface ReviewResult {
   readonly baseSha: string;
   readonly headSha: string;
   readonly reviewTarget?: string;
+  readonly stats?: readonly RunStat[];
+  readonly totalDurationMs?: number;
 }
 
 export interface RiskEdge {

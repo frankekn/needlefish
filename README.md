@@ -89,20 +89,26 @@ Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-revie
 ## GitHub Action mode (self-hosted runner)
 
 `needlefish --github --pr N` collects the PR via `gh api`, runs the same core,
-and posts a formal PR review (`REQUEST_CHANGES` / `COMMENT`) with the full
-rendered review body plus a check run. Verdict → surface mapping:
+and posts a non-sticky `COMMENT` review with the full rendered review body plus
+the authoritative `Needlefish` check-run. Verdict → surface mapping:
 
 | verdict              | review event        | check     |
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
-| changes_requested    | REQUEST_CHANGES     | failure   |
+| changes_requested    | COMMENT             | failure   |
 | needs_human          | COMMENT             | neutral   |
 | run failed           | (none)              | failure   |
 
-`pass` posts a `COMMENT` (not `APPROVE`) plus a green check: the `GITHUB_TOKEN`
-bot is not permitted to formally approve PRs (anti-self-approval), so the green
-check-run is the merge gate. A failed review never passes a PR — the check goes
-`failure`.
+All verdict reviews are `COMMENT`, not approval or blocking-review events. The
+`GITHUB_TOKEN` bot is not permitted to formally approve PRs, and sticky blocking
+reviews can outlive a fixed head. The check-run is the merge gate: a failed
+review never passes a PR because the check goes `failure`.
+
+The reusable workflow skips closed or forked `pull_request` events before the
+self-hosted job starts. Manual and reusable dispatch resolve PR metadata first,
+then skip closed or forked PRs before checkout or model invocation. Before
+posting any result, the CLI re-reads the PR and skips output if the PR closed or
+the head SHA moved.
 
 ### Runner setup (one-time)
 
@@ -129,25 +135,36 @@ jobs:
       # Optional:
       # runner: codex
       # model: gpt-5.5
+      # codex_reasoning_effort: high
       # timeout_ms: "600000"
     secrets: inherit
 ```
 
 Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
-every target repo automatically — no per-repo update needed. (Alternatively,
-copy `review.yml` into the target repo if you want it frozen.)
+every target repo automatically. The runner must have needlefish deployed at
+`~/.local/bin/needlefish`; the workflow does not reinstall the tool on every PR.
+Hardened installed releases should also publish
+`~/.local/share/needlefish/current/release.json` with the installed Needlefish
+SHA so review jobs can fail before spending model tokens when a runner is stale.
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
-2. Ensure the runner has `gh` and the selected model CLI on `PATH`.
-3. On that runner, auth the selected CLI once. For Codex:
+2. Deploy needlefish once on that runner. Future pushes to `main` run
+   `needlefish-deploy` and update the runner automatically:
+   ```bash
+   ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
+   ```
+   For a fleet, dispatch the same release SHA to all six selected runners and
+   verify each runner reports the same installed metadata before trusting the
+   fleet.
+3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
+4. On that runner, auth the selected CLI once. For Codex:
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
-4. If needlefish is **private**, the caller's `secrets: inherit` needs a PAT with
-   access to this repo available to the target; otherwise (public) the default
-   `GITHUB_TOKEN` is enough.
-5. **Runner global-instructions caveat:** model CLIs may auto-load global
+5. If needlefish is **private**, the caller repo must be allowed to call this
+   reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is enough.
+6. **Runner global-instructions caveat:** model CLIs may auto-load global
    instructions from the runner's home directory. needlefish instructs the model
    to ignore anything outside the target repo's `AGENTS.md` as policy, but if
    you want zero leakage, keep the runner home free of unrelated instruction
@@ -156,6 +173,58 @@ copy `review.yml` into the target repo if you want it frozen.)
 > Self-hosted runners execute PR code on your machine. Fine for solo use on your
 > own repos; if you ever open PRs to outside contributors, isolate the runner
 > (ephemeral container) so contributor code can't touch your persistent host.
+
+## GitHub Action (hosted, any repo)
+
+No self-hosted runner required: this repo doubles as a composite action that
+runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo:
+
+```yaml
+name: needlefish
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+jobs:
+  review:
+    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: needlefish needs the merge base
+      - uses: frankekn/needlefish@main # pin a tag/SHA once released
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+```
+
+Runner authentication (repo secrets, passed via `env` on the action step):
+
+| runner   | secret(s)                                                |
+| -------- | -------------------------------------------------------- |
+| codex    | `CODEX_API_KEY` (used for `codex login --with-api-key`)  |
+| claude   | `ANTHROPIC_API_KEY`                                       |
+| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
+
+Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
+(default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
+`runner_version` (npm version of the runner CLI), `repo_path` (defaults to the
+workspace checkout), `github_token` (defaults to the workflow token).
+
+Cost and behavior notes:
+
+- Each review is 2–9 model calls, and every push to the PR re-triggers the
+  workflow. Budget accordingly.
+- Fork PRs don't receive secrets by default. The `if:` gate above skips them.
+  `pull_request_target` would hand secrets to workflows triggered by fork
+  code — avoid it unless you fully understand the exposure.
+- The hosted path cold-starts on every run (pnpm install + runner CLI
+  install, roughly a minute). The self-hosted path above stays the
+  low-latency option.
 
 ## Model runner invocation
 
@@ -166,18 +235,24 @@ and `--timeout-ms`, or the matching env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | `codex` |
 | model | `NEEDLEFISH_MODEL` | runner default |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `high` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
 `OPENCODE_BIN`. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
 `CODEX_RETRY_MS` still work for Codex compatibility.
 
-Codex runs with `-s read-only`. Claude Code runs with `--permission-mode plan`,
-`--safe-mode`, and no session persistence. opencode runs with `--pure` and never
-uses `--dangerously-skip-permissions`. Non-Codex runners execute inside a
-throwaway clean clone at the review head commit; needlefish checks that sandbox
-with `git status --porcelain --untracked-files=all --ignored=matching` and
-verifies `HEAD` did not move after each successful model call.
+Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
+read-only`. Keep `CODEX_REASONING_EFFORT=high` as the default; use `medium`
+only for measured throughput experiments, or `xhigh` for the old high-accuracy
+setting. Claude Code runs with
+`--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
+runs with `--pure` and never uses `--dangerously-skip-permissions`. Closed PRs
+are skipped before diffing or model invocation. Non-Codex runners execute inside
+a throwaway clean clone at the review head commit;
+needlefish checks that sandbox with
+`git status --porcelain --untracked-files=all --ignored=matching` and verifies
+`HEAD` did not move after each successful model call.
 
 ## Verdict derivation (deterministic)
 
