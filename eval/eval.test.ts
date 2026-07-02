@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { mapLimit, parseArgs } from "./run";
+import { mapLimit, parseArgs, filterByHoldout } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
-import type { Expected } from "./shared/types";
+import type { Expected, FixtureSpec } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
 
@@ -148,4 +148,67 @@ test("mapLimit: preserves result order regardless of completion order", async ()
     return n * 2;
   });
   assert.deepEqual(out, [80, 20, 60, 40]);
+});
+
+test("parseArgs: --holdout defaults to include", () => {
+  assert.equal(parseArgs([]).holdout, "include");
+});
+
+test("parseArgs: accepts valid --holdout modes", () => {
+  assert.equal(parseArgs(["--holdout", "include"]).holdout, "include");
+  assert.equal(parseArgs(["--holdout", "exclude"]).holdout, "exclude");
+  assert.equal(parseArgs(["--holdout", "only"]).holdout, "only");
+});
+
+test("parseArgs: rejects invalid --holdout", () => {
+  assert.throws(() => parseArgs(["--holdout", "nope"]), /--holdout must be include\|exclude\|only/);
+});
+
+function holdoutSpec(id: string, holdout: boolean): FixtureSpec {
+  return {
+    id,
+    kind: "positive",
+    defectClass: "test",
+    description: "test",
+    baseFiles: {},
+    headFiles: {},
+    expected: { verdict: "pass", mustFind: [{ pattern: "x" }] },
+    ...(holdout ? { holdout: true } : {}),
+  };
+}
+
+test("filterByHoldout: include keeps everything, preserves order", () => {
+  const specs = [holdoutSpec("a", false), holdoutSpec("h1", true), holdoutSpec("b", false), holdoutSpec("h2", true)];
+  assert.deepEqual(filterByHoldout(specs, "include").map((s) => s.id), ["a", "h1", "b", "h2"]);
+});
+
+test("filterByHoldout: exclude drops holdouts", () => {
+  const specs = [holdoutSpec("a", false), holdoutSpec("h1", true), holdoutSpec("b", false), holdoutSpec("h2", true)];
+  assert.deepEqual(filterByHoldout(specs, "exclude").map((s) => s.id), ["a", "b"]);
+});
+
+test("filterByHoldout: only keeps holdouts", () => {
+  const specs = [holdoutSpec("a", false), holdoutSpec("h1", true), holdoutSpec("b", false), holdoutSpec("h2", true)];
+  assert.deepEqual(filterByHoldout(specs, "only").map((s) => s.id), ["h1", "h2"]);
+});
+
+test("score: criticPruneError true when a candidate hit is pruned from final", () => {
+  const expected: Expected = { verdict: "changes_requested", mustFind: [{ pattern: "viewer" }] };
+  const hit = finding({ title: "viewer branch unreachable", whyItBreaks: "viewers are blocked", file: "src/h.ts", lineStart: 1 });
+  const s = score({ verdict: "pass", findings: [], candidateFindings: [hit] }, expected, "prune-fixture");
+  assert.equal(s.criticPruneError, true, "candidate hit + final miss must flag a prune error");
+});
+
+test("score: criticPruneError false when both candidate and final hit", () => {
+  const expected: Expected = { verdict: "changes_requested", mustFind: [{ pattern: "viewer" }] };
+  const hit = finding({ title: "viewer branch unreachable", whyItBreaks: "viewers are blocked", file: "src/h.ts", lineStart: 1 });
+  const s = score({ verdict: "changes_requested", findings: [hit], candidateFindings: [hit] }, expected, "prune-fixture");
+  assert.equal(s.criticPruneError, false, "both hit must not flag a prune error");
+});
+
+test("score: criticPruneError false when candidateFindings absent (trace off)", () => {
+  const expected: Expected = { verdict: "changes_requested", mustFind: [{ pattern: "viewer" }] };
+  const hit = finding({ title: "viewer branch unreachable", whyItBreaks: "viewers are blocked", file: "src/h.ts", lineStart: 1 });
+  const s = score({ verdict: "changes_requested", findings: [hit] }, expected, "prune-fixture");
+  assert.equal(s.criticPruneError, false, "no trace means no prune-error signal");
 });

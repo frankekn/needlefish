@@ -13,6 +13,21 @@ function isBlocking(finding: Finding): boolean {
   return BLOCKING.includes(finding.severity);
 }
 
+// Critic prune-error: reuses matchesSpec (the recall matcher). True when a
+// mustFind pattern was hit by the pre-critic candidate findings but is missing
+// from the final findings — i.e. the critic deleted a correct hit. Requires
+// candidateFindings (eval trace); without it, no prune is detectable.
+function criticPruneError(
+  candidate: readonly Finding[] | undefined,
+  final: readonly Finding[],
+  mustFind: readonly MatchSpec[]
+): boolean {
+  if (!candidate || candidate.length === 0) return false;
+  return mustFind.some(
+    (spec) => candidate.some((f) => matchesSpec(f, spec)) && !final.some((f) => matchesSpec(f, spec))
+  );
+}
+
 function lineAnchorValid(findings: readonly Finding[], expected: Expected): boolean {
   if (!expected.anchorFile) return true;
   const range = expected.anchorLineRange;
@@ -24,7 +39,7 @@ function lineAnchorValid(findings: readonly Finding[], expected: Expected): bool
 }
 
 export function score(
-  result: { readonly verdict: Verdict; readonly findings: readonly Finding[] } | null,
+  result: { readonly verdict: Verdict; readonly findings: readonly Finding[]; readonly candidateFindings?: readonly Finding[] } | null,
   expected: Expected,
   fixtureId: string,
   error?: string
@@ -42,6 +57,7 @@ export function score(
       formatOk: false,
       findingCount: 0,
       blockingFindingCount: 0,
+      criticPruneError: false,
       error,
     };
   }
@@ -67,5 +83,6 @@ export function score(
     formatOk: true,
     findingCount: findings.length,
     blockingFindingCount: findings.filter(isBlocking).length,
+    criticPruneError: criticPruneError(result.candidateFindings, findings, mustFind),
   };
 }

@@ -3,6 +3,11 @@ import type { RunnerName } from "../../src/shared/runner";
 
 export type FixtureKind = "positive" | "negative" | "parity";
 
+// Holdout filter mode for eval runs. `include` (default) tells the full truth;
+// `exclude` hides holdouts during prompt-tuning iteration; `only` runs just
+// the sealed holdouts for a final-gate check.
+export type HoldoutMode = "include" | "exclude" | "only";
+
 export interface MatchSpec {
   readonly pattern: string;
   readonly category?: Category;
@@ -25,6 +30,7 @@ export interface FixtureSpec {
   readonly baseFiles: Readonly<Record<string, string>>;
   readonly headFiles: Readonly<Record<string, string>>;
   readonly expected: Expected;
+  readonly holdout?: boolean;
 }
 
 export interface FixtureScore {
@@ -39,6 +45,7 @@ export interface FixtureScore {
   readonly formatOk: boolean;
   readonly findingCount: number;
   readonly blockingFindingCount: number;
+  readonly criticPruneError: boolean;
   readonly error?: string;
 }
 
@@ -59,6 +66,7 @@ export interface Aggregates {
   readonly lineAnchorValidRate: number;
   readonly meanDurationMs: number;
   readonly recallByFixture: Readonly<Record<string, number>>;
+  readonly criticPruneErrorRate: number;
 }
 
 export interface Report {
@@ -69,6 +77,7 @@ export interface Report {
   readonly draws: number;
   readonly createdAt: string;
   readonly baseline: boolean;
+  readonly holdout: HoldoutMode;
   readonly results: readonly DrawResult[];
   readonly aggregates: Aggregates;
 }

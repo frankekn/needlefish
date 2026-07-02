@@ -89,6 +89,9 @@ export interface ReviewResult {
   readonly reviewTarget?: string;
   readonly stats?: readonly RunStat[];
   readonly totalDurationMs?: number;
+  // Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
+  // Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
+  readonly candidateFindings?: readonly Finding[];
 }
 
 export interface RiskEdge {

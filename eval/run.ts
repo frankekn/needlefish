@@ -11,6 +11,7 @@ import type {
   Aggregates,
   DrawResult,
   FixtureSpec,
+  HoldoutMode,
   Report,
 } from "./shared/types";
 
@@ -29,6 +30,7 @@ interface RunArgs {
   compare: string | null;
   fixtures: string | null;
   resume: string | null;
+  holdout: HoldoutMode;
   env: Record<string, string>;
 }
 
@@ -76,6 +78,11 @@ export function parseArgs(argv: readonly string[]): RunArgs {
   const compare = get("--compare");
   const fixtures = get("--fixtures");
   const resume = get("--resume");
+  const holdoutRaw = get("--holdout") ?? "include";
+  if (holdoutRaw !== "include" && holdoutRaw !== "exclude" && holdoutRaw !== "only") {
+    throw new Error(`--holdout must be include|exclude|only, got: ${holdoutRaw}`);
+  }
+  const holdout = holdoutRaw as HoldoutMode;
   const env: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] !== "--env") continue;
@@ -86,7 +93,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
     env[raw.slice(0, eq)] = raw.slice(eq + 1);
     i++;
   }
-  return { runner: runner as RunnerName, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, env };
+  return { runner: runner as RunnerName, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, holdout, env };
 }
 
 async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
@@ -103,6 +110,15 @@ async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
     if (mod.default) specs.push(mod.default as FixtureSpec);
   }
   return specs;
+}
+
+// Holdout filtering is a pure post-load step so plain runs always tell the
+// full truth (include), prompt-tuning iteration can hide sealed holdouts
+// (exclude), and final gates can run just the holdouts (only).
+export function filterByHoldout(specs: readonly FixtureSpec[], mode: HoldoutMode): FixtureSpec[] {
+  if (mode === "include") return [...specs];
+  if (mode === "only") return specs.filter((s) => s.holdout === true);
+  return specs.filter((s) => s.holdout !== true);
 }
 
 async function runOne(
@@ -234,6 +250,9 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
   const verdictMatchRate = results.filter((r) => r.score.verdictMatch).length / results.length;
   const lineAnchorValidRate = results.filter((r) => r.score.lineAnchorValid).length / results.length;
   const meanDurationMs = results.reduce((sum, r) => sum + r.durationMs, 0) / (results.length || 1);
+  const criticPruneErrorRate = positiveResults.length
+    ? positiveResults.filter((r) => r.score.criticPruneError).length / positiveResults.length
+    : 0;
   const recallByFixture: Record<string, number> = {};
   for (const id of new Set(results.map((r) => r.fixtureId))) {
     const draws = results.filter((r) => r.fixtureId === id);
@@ -247,6 +266,7 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
     lineAnchorValidRate,
     meanDurationMs,
     recallByFixture,
+    criticPruneErrorRate,
   };
 }
 
@@ -259,6 +279,7 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
     draws: args.draws,
     createdAt: new Date().toISOString(),
     baseline: args.baseline,
+    holdout: args.holdout,
     results,
     aggregates: aggregate(results, specs),
   };
@@ -293,13 +314,18 @@ function compare(baselinePath: string, candidate: Report): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  // Eval runs always enable the critic prune-error trace. Applied once here
+  // (not per-draw) alongside user --env overrides, and restored in finally.
+  // A user `--env NEEDLEFISH_EVAL_TRACE=...` wins over the default.
+  const envDefaults: Record<string, string> = { NEEDLEFISH_EVAL_TRACE: "1" };
   const envPrevious = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(args.env)) {
+  for (const [key, value] of Object.entries({ ...envDefaults, ...args.env })) {
     envPrevious.set(key, process.env[key]);
     process.env[key] = value;
   }
   try {
-    const specs = await loadFixtures(args.fixtures);
+    const loaded = await loadFixtures(args.fixtures);
+    const specs = filterByHoldout(loaded, args.holdout);
     const work = buildWorkList(specs, args.draws);
 
     if (args.compare) {
@@ -315,7 +341,7 @@ async function main(): Promise<void> {
     }
     process.stderr.write(`prompt-hash: ${promptHash()}\n`);
     process.stderr.write(
-      `fixtures: ${specs.length} | runner: ${args.runner} | model: ${args.model ?? "(default)"}${args.effort ? ` | effort: ${args.effort}` : ""} | draws: ${args.draws} | concurrency: ${args.concurrency}${args.dryRun ? " | dry-run" : ""}\n`
+      `fixtures: ${specs.length} | runner: ${args.runner} | model: ${args.model ?? "(default)"}${args.effort ? ` | effort: ${args.effort}` : ""} | draws: ${args.draws} | concurrency: ${args.concurrency} | holdout: ${args.holdout}${args.dryRun ? " | dry-run" : ""}\n`
     );
 
     const { slots } = resumeSlots(args, specs, work);

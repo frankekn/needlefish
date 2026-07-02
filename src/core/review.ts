@@ -45,6 +45,15 @@ function deepConcurrency(): number {
   return envPositiveInt("NEEDLEFISH_DEEP_CONCURRENCY", DEFAULT_DEEP_CONCURRENCY);
 }
 
+// Eval-only: when set, ReviewResult carries candidateFindings (the pre-critic
+// finding list) so the eval scorer can detect critic prune-errors. Zero cost
+// when unset — callers still pass the candidate list (a reference), but it is
+// only attached to the result here when the flag is on.
+function evalTraceOn(): boolean {
+  const raw = process.env.NEEDLEFISH_EVAL_TRACE;
+  return raw !== undefined && raw !== "";
+}
+
 // Worker pool over a shared index; results land at their item's index so
 // output order never depends on completion order.
 async function mapLimit<T, R>(
@@ -155,7 +164,12 @@ async function runCritic(candidate: RawReview, patchText: string, run: ReviewRun
   return runJsonPrompt("critic", criticPrompt, run, parseUsableReview("critic"));
 }
 
-function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): ReviewResult {
+function toReviewResult(
+  raw: RawReview,
+  run: ReviewRun,
+  summary = raw.summary,
+  candidateFindings?: readonly Finding[]
+): ReviewResult {
   const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
   return {
@@ -169,6 +183,7 @@ function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): 
     ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
     ...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
     totalDurationMs: Date.now() - run.startedAt,
+    ...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
   };
 }
 
@@ -182,7 +197,7 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
     .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
     .replace("{{PATCH}}", () => patch);
   const candidate = await runJsonPrompt("review", reviewPrompt, run, parseUsableReview("review"));
-  return toReviewResult(await runCritic(candidate, bundle.patch, run), run);
+  return toReviewResult(await runCritic(candidate, bundle.patch, run), run, undefined, candidate.findings);
 }
 
 // Large PR: map (blast-radius survey, no diff text) -> deep per hotspot -> merge -> critic.
@@ -266,7 +281,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   );
   const blockingResiduals = residuals.filter((risk) => risk.blocks);
   const final = { ...pruned, residual_risks: [...pruned.residual_risks, ...blockingResiduals] };
-  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`);
+  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged);
 }
 
 // Docs-only fast path: when every changed file is classified "docs" and the

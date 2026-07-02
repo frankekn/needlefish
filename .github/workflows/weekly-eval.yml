@@ -1,0 +1,57 @@
+# Weekly eval regression: full fixture set x 3 draws on the self-hosted
+# runner. Opens an issue when recall drops or the run itself fails.
+name: needlefish-weekly-eval
+on:
+  schedule:
+    - cron: "0 18 * * 0" # Sunday 18:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: needlefish-weekly-eval
+  cancel-in-progress: false
+jobs:
+  eval:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run full eval
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          mkdir -p eval/results/weekly
+          node --import tsx eval/run.ts --runner codex --effort medium --draws 3 --concurrency 4 \
+            --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
+      - name: Compare with previous week and commit report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest="$(find eval/results/weekly -name '*.json' | sort | tail -1)"
+          prev="$(find eval/results/weekly -name '*.json' | sort | tail -2 | head -1)"
+          recall="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).aggregates.recall)' "$latest")"
+          echo "recall=$recall"
+          if [ "$prev" != "$latest" ]; then
+            prev_recall="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).aggregates.recall)' "$prev")"
+            drop="$(node -e 'console.log((Number(process.argv[1]) - Number(process.argv[2])) > 0.05 ? "yes" : "no")' "$prev_recall" "$recall")"
+            if [ "$drop" = "yes" ]; then
+              gh issue create -R "${{ github.repository }}" \
+                --title "Weekly eval: recall dropped ($prev_recall -> $recall)" \
+                --body "Weekly eval recall fell by more than 5pp. Reports: $prev vs $latest."
+            fi
+          fi
+          git config user.name "needlefish-weekly"
+          git config user.email "actions@github.com"
+          git add eval/results/weekly
+          git commit -m "chore(eval): weekly regression report $(date -u +%Y-%m-%d)" || exit 0
+          git pull --rebase origin main && git push origin HEAD:main
+      - name: Open issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create -R "${{ github.repository }}" \
+            --title "Weekly eval run failed ($(date -u +%Y-%m-%d))" \
+            --body "The scheduled eval run failed. See ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."

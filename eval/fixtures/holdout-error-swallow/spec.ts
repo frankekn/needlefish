@@ -6,6 +6,7 @@ const spec: FixtureSpec = {
   id: "holdout-error-swallow",
   kind: "positive",
   defectClass: "ai-slop-error-swallow",
+  holdout: true,
   description:
     "The diff wraps a throwing parser in try/catch returning defaults, so a corrupt settings file is silently replaced by defaults which the caller then persists back over the user's file.",
   baseFiles: {

@@ -4,6 +4,8 @@
 
 ### Changes
 
+- Eval: add `--holdout include|exclude|only` (default `include`) so plain runs always tell the full truth, prompt-tuning iteration can `exclude` sealed holdouts, and final gates can run `only` them; the mode is recorded in the report JSON. Add a critic prune-error metric: under `NEEDLEFISH_EVAL_TRACE` the review result carries pre-critic `candidateFindings`, and the eval scores per-draw `criticPruneError` (a mustFind hit present before the critic but missing after) aggregated into `criticPruneErrorRate` over positive fixtures.
+
 - Docs-only fast path: when every changed file is classified `docs`, skip model calls and return a deterministic pass (`NEEDLEFISH_NO_FAST_PATH=1` disables). Same-head dedupe: GitHub mode skips re-reviewing a head already reviewed unless `--recheck` is passed (wired through `@needlefish recheck` manual dispatch).
 
 - Restore in-sandbox repo inspection (rg/git) for codex on GitHub-hosted Linux runners by lifting the AppArmor unprivileged-userns restriction (best-effort sysctl in the action).

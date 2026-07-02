@@ -6,6 +6,7 @@ const spec: FixtureSpec = {
   id: "holdout-spec-drift",
   kind: "positive",
   defectClass: "spec-impl-drift-doc-trust",
+  holdout: true,
   description:
     "Doc comment promises the list is capped at `limit` entries; the diff rewrites the body and drops the cap while keeping the doc. The caller sizes a fixed buffer from the documented cap.",
   baseFiles: {

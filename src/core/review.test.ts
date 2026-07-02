@@ -752,3 +752,101 @@ test("review NEEDLEFISH_NO_FAST_PATH disables docs-only fast path", async (t) =>
   assert.ok(existsSync(calls), "runner must be invoked when NEEDLEFISH_NO_FAST_PATH is set");
   assert.doesNotMatch(result.summary, /Docs-only change/);
 });
+
+// Small-path echo critic: the runner answers both review and critic prompts
+// with the same finding. Under NEEDLEFISH_EVAL_TRACE the result must expose
+// the pre-critic candidate findings; without it, the field stays absent.
+function evalTraceEchoBundle(repo: string): Bundle {
+  return {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "short",
+    patchStat: " src/app.ts | 1 +",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+}
+
+function writeEchoCriticBin(bin: string): void {
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "  const finding = { severity: 'P2', title: 'Echo bug', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
+      "  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [finding], checked: ['looked'], residual_risks: [] }));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+}
+
+test("review records candidateFindings when NEEDLEFISH_EVAL_TRACE is set (small path)", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeEchoCriticBin(bin);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
+
+  const result = await review(evalTraceEchoBundle(repo));
+
+  assert.ok(result.candidateFindings, "candidateFindings must be present under NEEDLEFISH_EVAL_TRACE");
+  assert.equal(result.candidateFindings!.length, 1);
+  assert.equal(result.candidateFindings![0].title, "Echo bug");
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.findings[0].title, "Echo bug");
+});
+
+test("review omits candidateFindings when NEEDLEFISH_EVAL_TRACE is unset (small path)", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeEchoCriticBin(bin);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+  delete process.env.NEEDLEFISH_EVAL_TRACE;
+
+  const result = await review(evalTraceEchoBundle(repo));
+
+  assert.equal(result.candidateFindings, undefined, "candidateFindings must be absent without NEEDLEFISH_EVAL_TRACE");
+  assert.equal(result.findings.length, 1);
+});
