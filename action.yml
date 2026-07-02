@@ -47,28 +47,28 @@ runs:
     - name: Install model runner CLI
       shell: bash
       env:
-        RUNNER_NAME: ${{ inputs.runner }}
-        RUNNER_VERSION: ${{ inputs.runner_version }}
+        NF_RUNNER: ${{ inputs.runner }}
+        NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
-        case "$RUNNER_NAME" in
+        case "$NF_RUNNER" in
           codex) pkg="@openai/codex" ;;
           claude) pkg="@anthropic-ai/claude-code" ;;
           opencode) pkg="opencode-ai" ;;
-          *) echo "unknown runner: $RUNNER_NAME" >&2; exit 1 ;;
+          *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
-        npm install -g "${pkg}@${RUNNER_VERSION}"
+        npm install -g "${pkg}@${NF_RUNNER_VERSION}"
     - name: Authenticate model runner
       shell: bash
       env:
-        RUNNER_NAME: ${{ inputs.runner }}
+        NF_RUNNER: ${{ inputs.runner }}
       run: |
         # CODEX_AUTH_JSON: contents of a logged-in codex CLI's ~/.codex/auth.json
         # (subscription auth). CODEX_API_KEY: plain API key. Either works.
-        if [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_AUTH_JSON:-}" ]; then
+        if [ "$NF_RUNNER" = "codex" ] && [ -n "${CODEX_AUTH_JSON:-}" ]; then
           mkdir -p "$HOME/.codex"
           printf '%s' "$CODEX_AUTH_JSON" > "$HOME/.codex/auth.json"
           chmod 600 "$HOME/.codex/auth.json"
-        elif [ "$RUNNER_NAME" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
+        elif [ "$NF_RUNNER" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
           printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
         fi
     - name: Needlefish review
