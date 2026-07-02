@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
-import { runGithub } from "./github";
+import { renderState, parseState, matchFindings, type FindingKey, runGithub } from "./github";
+import type { Finding } from "../shared/schema";
 
 type Post = {
   readonly args: readonly string[];
@@ -14,6 +15,8 @@ type Post = {
 type Fixture = {
   readonly postLog: string;
   readonly repo: string;
+  readonly reviewOutput: string;
+  readonly reviewsState: string;
 };
 
 type FixtureOptions = {
@@ -68,6 +71,22 @@ function parseReviewPayload(payload: string): ReviewPayload {
   };
 }
 
+function mkFinding(overrides: Partial<Finding> = {}): Finding {
+  return {
+    severity: "P2",
+    title: "bug",
+    category: "bug",
+    file: "README.md",
+    lineStart: 1,
+    lineEnd: 1,
+    confidence: 0.9,
+    whyItBreaks: "breaks",
+    suggestedFix: "fix",
+    validation: "test",
+    ...overrides,
+  };
+}
+
 function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-github-posting-test-"));
   const repo = initRepo(tmp);
@@ -75,6 +94,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
   const gh = path.join(fakeBin, "gh");
   const claude = path.join(fakeBin, "claude");
   const postLog = path.join(tmp, "posts.jsonl");
+  const reviewsState = path.join(tmp, "reviews-state.json");
   const previous = {
     path: process.env.PATH,
     repository: process.env.GITHUB_REPOSITORY,
@@ -126,6 +146,24 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
       "if (args.includes('--input')) {",
       "  const payload = fs.readFileSync(0, 'utf8');",
       `  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload }) + '\\n');`,
+      `  const reviewsPath = ${JSON.stringify(reviewsState)};`,
+      `  const reviewsEndpoint = ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)};`,
+      "  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
+      "  const methodIdx = args.indexOf('-X');",
+      "  const method = methodIdx >= 0 ? args[methodIdx + 1] : 'GET';",
+      "  const apiPath = methodIdx >= 0 ? args[methodIdx + 2] : args[1];",
+      "  if (apiPath === reviewsEndpoint && method === 'POST') {",
+      "    const parsed = JSON.parse(payload);",
+      "    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: 'github-actions' } });",
+      "    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
+      "  }",
+      "  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT') {",
+      "    const id = Number(apiPath.split('/').pop());",
+      "    const parsed = JSON.parse(payload);",
+      "    const review = reviews.find(r => r.id === id);",
+      "    if (review) review.body = parsed.body || '';",
+      "    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
+      "  }",
       "  process.stdout.write('{}');",
       "  process.exit(0);",
       "}",
@@ -143,15 +181,27 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
       "  }));",
       "  process.exit(0);",
       "}",
+      `if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)}) {`,
+      `  const reviewsPath = ${JSON.stringify(reviewsState)};`,
+      "  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
+      "  process.stdout.write(JSON.stringify(reviews));",
+      "  process.exit(0);",
+      "}",
       "if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
       "process.stderr.write(`unexpected gh args ${args.join(' ')}`);",
       "process.exit(2);",
     ].join("\n")
   );
   chmodSync(gh, 0o755);
+  const reviewOutputFile = path.join(tmp, "review-output.json");
+  writeFileSync(reviewOutputFile, opts.rawReview);
   writeFileSync(
     claude,
-    ["#!/usr/bin/env node", `process.stdout.write(${JSON.stringify(opts.rawReview)});`].join("\n")
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+    ].join("\n")
   );
   chmodSync(claude, 0o755);
   process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
@@ -160,7 +210,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
   process.env.PR_HEAD_SHA = targetHeadSha;
   process.env.NEEDLEFISH_RUNNER = "claude";
   process.env.CLAUDE_BIN = claude;
-  return { postLog, repo };
+  return { postLog, repo, reviewOutput: reviewOutputFile, reviewsState };
 }
 
 test("runGithub posts blocking findings as non-sticky review comments", async (t) => {
@@ -315,4 +365,245 @@ test("runGithub inlines only P0/P1/P2 when more than 20 findings are anchorable"
   }
   assert.match(payload.body, /### P3: p3-0/);
   assert.doesNotMatch(payload.body, /### P2: p2-0/);
+});
+
+// --- State marker pure-function tests ---
+
+test("renderState produces an HTML comment with versioned JSON", () => {
+  const marker = renderState("abc123", [mkFinding({ title: "Bug", lineStart: 5 })]);
+  assert.match(marker, /^<!-- needlefish-state: /);
+  assert.match(marker, /-->$/);
+  assert.match(marker, /"v":1/);
+  assert.match(marker, /"headSha":"abc123"/);
+  assert.match(marker, /"title":"bug"/);
+});
+
+test("parseState round-trips through renderState", () => {
+  const findings: Finding[] = [
+    mkFinding({ title: "Null deref", lineStart: 42 }),
+    mkFinding({ title: "Race", lineStart: 100, file: "other.ts" }),
+  ];
+  const marker = renderState("dead", findings);
+  const parsed = parseState(`# Review\n\nbody text\n\n${marker}\n`);
+  assert.ok(parsed);
+  assert.equal(parsed!.v, 1);
+  assert.equal(parsed!.headSha, "dead");
+  assert.equal(parsed!.findings.length, 2);
+  assert.equal(parsed!.findings[0].file, "README.md");
+  assert.equal(parsed!.findings[0].lineStart, 42);
+  assert.equal(parsed!.findings[0].title, "null deref");
+  assert.equal(parsed!.findings[1].file, "other.ts");
+});
+
+test("parseState returns null for missing or corrupted markers", () => {
+  assert.equal(parseState("no marker here"), null);
+  assert.equal(parseState("<!-- needlefish-state: {bad json} -->"), null);
+  assert.equal(parseState('<!-- needlefish-state: {"v":2,"headSha":"x","findings":[]} -->'), null);
+  assert.equal(parseState('<!-- needlefish-state: {"v":1} -->'), null);
+  assert.equal(parseState('<!-- needlefish-state: {"v":1,"headSha":"x","findings":"nope"} -->'), null);
+  assert.equal(parseState('<!-- needlefish-state: {"v":1,"headSha":"x","findings":[{"file":1}]} -->'), null);
+});
+
+// --- matchFindings pure-function tests ---
+
+test("matchFindings classifies identical findings as open", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
+  ];
+  const curr: Finding[] = [mkFinding({ file: "a.ts", lineStart: 10, category: "bug", title: "null deref" })];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 1);
+  assert.equal(result.fresh.length, 0);
+  assert.equal(result.resolvedCount, 0);
+});
+
+test("matchFindings tolerates line drift within 10 lines", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
+  ];
+  const curr: Finding[] = [mkFinding({ file: "a.ts", lineStart: 20, category: "bug", title: "null deref" })];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 1);
+  assert.equal(result.fresh.length, 0);
+  assert.equal(result.resolvedCount, 0);
+});
+
+test("matchFindings treats line drift beyond 10 as fresh and resolved", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
+  ];
+  const curr: Finding[] = [mkFinding({ file: "a.ts", lineStart: 25, category: "bug", title: "null deref" })];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 0);
+  assert.equal(result.fresh.length, 1);
+  assert.equal(result.resolvedCount, 1);
+});
+
+test("matchFindings matches on first-60-char title prefix", () => {
+  const longTitle = "A".repeat(70);
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 1, category: "bug", title: "a".repeat(60) },
+  ];
+  const curr: Finding[] = [mkFinding({ file: "a.ts", lineStart: 1, category: "bug", title: longTitle })];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 1);
+  assert.equal(result.fresh.length, 0);
+});
+
+test("matchFindings does not match same title in a different file", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 1, category: "bug", title: "null deref" },
+  ];
+  const curr: Finding[] = [mkFinding({ file: "b.ts", lineStart: 1, category: "bug", title: "null deref" })];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.fresh.length, 1);
+  assert.equal(result.resolvedCount, 1);
+});
+
+test("matchFindings greedy-matches duplicate-title findings", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 1, category: "bug", title: "dup" },
+    { file: "a.ts", lineStart: 5, category: "bug", title: "dup" },
+  ];
+  const curr: Finding[] = [
+    mkFinding({ file: "a.ts", lineStart: 1, category: "bug", title: "dup" }),
+    mkFinding({ file: "a.ts", lineStart: 5, category: "bug", title: "dup" }),
+  ];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 2);
+  assert.equal(result.fresh.length, 0);
+  assert.equal(result.resolvedCount, 0);
+});
+
+test("matchFindings counts resolved for prev keys with no match", () => {
+  const prev: FindingKey[] = [
+    { file: "a.ts", lineStart: 1, category: "bug", title: "fixed" },
+    { file: "a.ts", lineStart: 10, category: "bug", title: "persists" },
+  ];
+  const curr: Finding[] = [
+    mkFinding({ file: "a.ts", lineStart: 10, category: "bug", title: "persists" }),
+  ];
+  const result = matchFindings(prev, curr);
+  assert.equal(result.open.length, 1);
+  assert.equal(result.fresh.length, 0);
+  assert.equal(result.resolvedCount, 1);
+});
+
+// --- Multi-round integration tests ---
+
+test("runGithub posts review with state marker on first round", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 20,
+    rawReview: JSON.stringify({
+      summary: "first round",
+      findings: [mkFinding({ title: "bug", lineStart: 1 })],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 20, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((p) =>
+    p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/20/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.match(payload.body, /needlefish-state:/);
+  assert.equal(payload.comments.length, 1);
+});
+
+test("runGithub PUT-updates previous review when same findings persist", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 21,
+    rawReview: JSON.stringify({
+      summary: "persisting finding",
+      findings: [mkFinding({ title: "bug", lineStart: 1 })],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 21, { timeoutMs: 1000 });
+  const round1Count = readPosts(fixture.postLog).length;
+
+  await runGithub(fixture.repo, 21, { timeoutMs: 1000 });
+  const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+  const putPost = round2Posts.find((p) => p.args.includes("PUT"));
+  assert.ok(putPost, "round 2 should PUT-update the previous review");
+  const putBody = JSON.parse(putPost.payload).body;
+  assert.match(putBody, /Still open/);
+  assert.match(putBody, /needlefish-state:/);
+
+  const newReviewPost = round2Posts.find((p) =>
+    p.args.includes("POST") &&
+    p.args.some((a) => a === "repos/frankekn/needlefish/pulls/21/reviews")
+  );
+  assert.equal(newReviewPost, undefined, "no new review when no fresh findings");
+});
+
+test("runGithub shows resolved count when a finding is fixed between rounds", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 22,
+    rawReview: JSON.stringify({
+      summary: "two findings",
+      findings: [
+        mkFinding({ title: "persisting", lineStart: 1 }),
+        mkFinding({ title: "to-be-fixed", lineStart: 1 }),
+      ],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 22, { timeoutMs: 1000 });
+  const round1Count = readPosts(fixture.postLog).length;
+
+  writeFileSync(fixture.reviewOutput, JSON.stringify({
+    summary: "one fixed",
+    findings: [mkFinding({ title: "persisting", lineStart: 1 })],
+    checked: ["checked"],
+    residual_risks: [],
+  }));
+
+  await runGithub(fixture.repo, 22, { timeoutMs: 1000 });
+  const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+  const putPost = round2Posts.find((p) => p.args.includes("PUT"));
+  assert.ok(putPost);
+  const putBody = JSON.parse(putPost.payload).body;
+  assert.match(putBody, /Still open/);
+  assert.match(putBody, /✅ 1 finding from the previous round no longer apply/);
+});
+
+test("runGithub treats corrupted state marker as first round", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 23,
+    rawReview: JSON.stringify({
+      summary: "first",
+      findings: [mkFinding({ title: "bug", lineStart: 1 })],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 23, { timeoutMs: 1000 });
+  const round1Count = readPosts(fixture.postLog).length;
+
+  const reviews = JSON.parse(readFileSync(fixture.reviewsState, "utf8"));
+  reviews[0].body = "# Corrupted review with no state marker";
+  writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
+
+  await runGithub(fixture.repo, 23, { timeoutMs: 1000 });
+  const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+  const newReviewPost = round2Posts.find((p) =>
+    p.args.includes("POST") &&
+    p.args.some((a) => a === "repos/frankekn/needlefish/pulls/23/reviews")
+  );
+  assert.ok(newReviewPost, "corrupted state should cause a fresh POST review");
+  const payload = parseReviewPayload(newReviewPost.payload);
+  assert.match(payload.body, /needlefish-state:/);
+  assert.equal(payload.comments.length, 1);
 });

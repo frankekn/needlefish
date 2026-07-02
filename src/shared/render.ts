@@ -15,7 +15,12 @@ const VERDICT_BADGE: Record<string, string> = {
 
 export function renderMarkdown(
   result: ReviewResult,
-  opts?: { inlinedFindings?: ReadonlySet<Finding> }
+  opts?: {
+    inlinedFindings?: ReadonlySet<Finding>;
+    openFindings?: readonly Finding[];
+    resolvedCount?: number;
+    stateMarker?: string;
+  }
 ): string {
   const lines: string[] = [];
   lines.push("# Needlefish PR Review");
@@ -62,6 +67,22 @@ export function renderMarkdown(
     }
   }
 
+  if (opts?.openFindings && opts.openFindings.length > 0) {
+    lines.push("");
+    lines.push(`## Still open (${opts.openFindings.length})`);
+    lines.push("");
+    for (const f of opts.openFindings) {
+      lines.push(`- **${f.severity}** ${f.title} — ${findingLoc(f)}`);
+    }
+  }
+
+  if (opts?.resolvedCount && opts.resolvedCount > 0) {
+    lines.push("");
+    lines.push(
+      `✅ ${opts.resolvedCount} finding${opts.resolvedCount === 1 ? "" : "s"} from the previous round no longer apply.`
+    );
+  }
+
   if (result.checked.length > 0) {
     lines.push("## Checked");
     lines.push("");
@@ -91,7 +112,11 @@ export function renderMarkdown(
     lines.push(parts.join(" · "));
   }
 
-  return lines.join("\n").trim() + "\n";
+  let out = lines.join("\n").trim() + "\n";
+  if (opts?.stateMarker) {
+    out += "\n" + opts.stateMarker + "\n";
+  }
+  return out;
 }
 
 function findingLoc(f: Finding): string {
