@@ -3,14 +3,12 @@
 Deferred by design (v0.1 is read-only, local-diff + self-hosted action).
 
 ## Recall stability (from the over-block/budget trigger work)
-The structural triggers in `prompts/review.md` + `prompts/deep.md` (TRIGGER A
-over-block, TRIGGER B aggregate-budget) were validated on 5 PRs. Recall is
-stable (3/3 on both target classes) and precision is clean (0 spurious across 9
-negative-control runs), but the over-block class is detected ~2/3 of the time on
-a *single* draw for some instances. Action-mode mitigates this by re-reviewing on
-every push, but a single-shot local run can miss it. Idea: a cheap second
-deep-style sweep focused only on changed gating predicates, or a higher
-reasoning effort for the proposal pass.
+RESOLVED 2026-07: after switching the small-path diff to raw sentinel text and
+the default effort to medium, over-block recall measured 10/10 across
+`pos-over-block` and `pos-over-block-shared` (5 draws each) with no sweep. A
+conditional gating-sweep pass was built, failed its A/B gate (no recall gain,
++50% calls when triggered), and was reverted — see eval/RESULTS.md. Revisit
+only if over-block regressions reappear on real PRs.
 
 ## Issue-comment commands
 `@needlefish recheck` / `@needlefish review` / `@needlefish explain` via `issue_comment`

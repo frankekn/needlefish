@@ -84,3 +84,25 @@ historical on the old prompt. Gate: non-inferior recall + no fp/json
 regression → **shipped** (needlefish main a488292).
 
 Reports: eval/results/gate-p5-armA.json, gate-p5-armB.json, confirm-p5-rs.json.
+
+## Effort experiment: medium vs xhigh (2026-07-02, raw-diff prompt)
+
+| effort | recall | fp | mean dur |
+|---|---|---|---|
+| xhigh | 85.7% | 0% | 146s |
+| medium | **92.9%** | 5.3% → 0/3 on confirm | **44s** |
+
+The single medium fp (docker-version-bump) did not reproduce across 3 confirm
+draws; py-backend-spec-drift hit 2/3 at medium. Default effort flipped to
+medium (needlefish ef397be).
+
+## Gating-sweep A/B (2026-07-02) — REVERTED
+
+Conditional TRIGGER-A sweep for predicate-shaped small diffs, over-block
+fixtures x 5 draws @ medium: no sweep 10/10 recall, with sweep 10/10 recall
+but +50% calls when triggered and mean 60s → 79s. The trigger regex also
+missed predicate-body-only changes (function name in context lines). No
+measured benefit → reverted. Over-block instability from FUTURE_TODO is
+resolved by raw-diff prompt + medium effort.
+
+Reports: eval/results/effort-medium.json, confirm-medium.json, sweep-armA.json, sweep-armB.json.

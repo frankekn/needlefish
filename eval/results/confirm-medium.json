@@ -1,0 +1,143 @@
+{
+  "promptHash": "c3418e2c8fd4762c",
+  "runner": "codex",
+  "model": null,
+  "effort": "medium",
+  "draws": 3,
+  "createdAt": "2026-07-02T03:52:21.430Z",
+  "baseline": false,
+  "results": [
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 110266,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 59225,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "docker-version-bump",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-version-bump",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 21273,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "durationMs": 79453,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 72742,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 69427,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 0.6666666666666666,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.8333333333333334,
+    "lineAnchorValidRate": 0.6666666666666666,
+    "meanDurationMs": 68731,
+    "recallByFixture": {
+      "docker-version-bump": 1,
+      "py-backend-spec-drift": 0.6666666666666666
+    }
+  }
+}

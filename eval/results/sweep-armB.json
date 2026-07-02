@@ -1,0 +1,223 @@
+{
+  "promptHash": "c3418e2c8fd4762c",
+  "runner": "codex",
+  "model": null,
+  "effort": "medium",
+  "draws": 5,
+  "createdAt": "2026-07-02T04:02:45.724Z",
+  "baseline": false,
+  "results": [
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 95870,
+      "calls": 3,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 1,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 104779,
+      "calls": 3,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 2,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 90977,
+      "calls": 3,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 3,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 88525,
+      "calls": 3,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 4,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 126371,
+      "calls": 3,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 63528,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 1,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 58384,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 2,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 59624,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 3,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 53180,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 4,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "durationMs": 51014,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 0.5,
+    "meanDurationMs": 79225.2,
+    "recallByFixture": {
+      "pos-over-block": 1,
+      "pos-over-block-shared": 1
+    }
+  }
+}
