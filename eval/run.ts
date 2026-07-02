@@ -28,9 +28,10 @@ interface RunArgs {
   compare: string | null;
   fixtures: string | null;
   resume: string | null;
+  env: Record<string, string>;
 }
 
-function parseArgs(argv: readonly string[]): RunArgs {
+export function parseArgs(argv: readonly string[]): RunArgs {
   const get = (flag: string): string | null => {
     const i = argv.indexOf(flag);
     return i >= 0 ? argv[i + 1] ?? null : null;
@@ -49,7 +50,17 @@ function parseArgs(argv: readonly string[]): RunArgs {
   const compare = get("--compare");
   const fixtures = get("--fixtures");
   const resume = get("--resume");
-  return { runner: runner as RunnerName, model, effort, draws, baseline, report, dryRun, compare, fixtures, resume };
+  const env: Record<string, string> = {};
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== "--env") continue;
+    const raw = argv[i + 1];
+    if (!raw) throw new Error("--env requires KEY=VALUE");
+    const eq = raw.indexOf("=");
+    if (eq <= 0) throw new Error(`--env requires KEY=VALUE, got: ${raw}`);
+    env[raw.slice(0, eq)] = raw.slice(eq + 1);
+    i++;
+  }
+  return { runner: runner as RunnerName, model, effort, draws, baseline, report, dryRun, compare, fixtures, resume, env };
 }
 
 async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
@@ -68,12 +79,29 @@ async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
   return specs;
 }
 
+async function withEnv<T>(overrides: Readonly<Record<string, string>>, fn: () => Promise<T>): Promise<T> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(overrides)) {
+    previous.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 async function runOne(
   spec: FixtureSpec,
   runner: RunnerName,
   model: string | null,
   effort: string | null,
-  dryRun: boolean
+  dryRun: boolean,
+  env: Readonly<Record<string, string>>
 ): Promise<DrawResult> {
   const loaded = loadFixture(spec);
   const start = Date.now();
@@ -83,7 +111,9 @@ async function runOne(
     if (dryRun) {
       error = "dry-run";
     } else {
-      result = await review(loaded.bundle, { runner, model: model ?? undefined, reasoningEffort: effort ?? undefined });
+      result = await withEnv(env, () =>
+        review(loaded.bundle, { runner, model: model ?? undefined, reasoningEffort: effort ?? undefined })
+      );
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -176,7 +206,7 @@ async function main(): Promise<void> {
     const results: DrawResult[] = [];
     for (const spec of specs) {
       for (let draw = 0; draw < args.draws; draw++) {
-        results.push(await runOne(spec, args.runner, args.model, args.effort, args.dryRun));
+        results.push(await runOne(spec, args.runner, args.model, args.effort, args.dryRun, args.env));
       }
     }
     const report = writeReport(args, results, specs);
@@ -221,7 +251,7 @@ async function main(): Promise<void> {
     if (doneIds.has(spec.id)) continue;
     for (let draw = 0; draw < args.draws; draw++) {
       process.stderr.write(`  [${spec.id}] draw ${draw + 1}/${args.draws} ... `);
-      const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun);
+      const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun, args.env);
       results.push({ ...r, draw });
       process.stderr.write(`${r.score.formatOk ? "ok" : "FAIL"} (${r.durationMs}ms)\n`);
       writeReport(args, results, specs);
@@ -233,7 +263,9 @@ async function main(): Promise<void> {
   process.stdout.write(JSON.stringify({ promptHash: report.promptHash, aggregates: report.aggregates }, null, 2) + "\n");
 }
 
-main().catch((err) => {
-  process.stderr.write(`eval failed: ${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main().catch((err) => {
+    process.stderr.write(`eval failed: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
+}

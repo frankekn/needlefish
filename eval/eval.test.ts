@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../src/shared/schema";
+import { parseArgs } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -105,4 +106,23 @@ test("score: null result (review failed) is formatOk=false", () => {
   assert.equal(s.formatOk, false);
   assert.equal(s.recall, false);
   assert.equal(s.error, "runner exited 1");
+});
+
+test("parseArgs: collects --env KEY=VALUE overrides", () => {
+  const args = parseArgs(["--runner", "codex", "--env", "NEEDLEFISH_LARGE_PATCH_CHARS=80000", "--env", "NEEDLEFISH_DEEP_CONCURRENCY=1"]);
+  assert.deepEqual(args.env, {
+    NEEDLEFISH_LARGE_PATCH_CHARS: "80000",
+    NEEDLEFISH_DEEP_CONCURRENCY: "1",
+  });
+});
+
+test("parseArgs: later --env overrides the same key", () => {
+  const args = parseArgs(["--env", "FOO=1", "--env", "FOO=2"]);
+  assert.deepEqual(args.env, { FOO: "2" });
+});
+
+test("parseArgs: rejects malformed --env values", () => {
+  assert.throws(() => parseArgs(["--env"]), /--env requires KEY=VALUE/);
+  assert.throws(() => parseArgs(["--env", "NOEQUALS"]), /--env requires KEY=VALUE, got: NOEQUALS/);
+  assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
 });
