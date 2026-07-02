@@ -465,6 +465,59 @@ test("review runs deep passes concurrently and keeps hotspot order", async (t) =
   }
 });
 
+test("review feeds the diff as raw text, not escaped bundle JSON", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+      "  if (input.includes('adversarial critic')) {",
+      "    fs.writeFileSync(out, JSON.stringify(review));",
+      "    return;",
+      "  }",
+      "  if (!input.includes('===== BEGIN DIFF (base..head) =====')) { process.stderr.write('missing diff sentinel'); process.exit(1); }",
+      "  if (!input.includes('diff --git a/src/app.ts b/src/app.ts\\n+const answer = 42;')) { process.stderr.write('diff not raw text'); process.exit(1); }",
+      "  if (input.includes('\"patch\"')) { process.stderr.write('patch leaked into bundle json'); process.exit(1); }",
+      "  fs.writeFileSync(out, JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "diff --git a/src/app.ts b/src/app.ts\n+const answer = 42;\n",
+    patchStat: " src/app.ts | 1 +",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const result = await review(bundle);
+
+  assert.equal(result.verdict, "pass");
+});
+
 test("review large thresholds are env-overridable", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
   const repo = initRepo(tmp);

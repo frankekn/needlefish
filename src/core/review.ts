@@ -172,13 +172,15 @@ function toReviewResult(raw: RawReview, run: ReviewRun, summary = raw.summary): 
   };
 }
 
-// Small PR: stuff the full diff into one review call (current behavior).
+// Small PR: one review call over the full diff. The diff goes in as raw text
+// between sentinel lines — never inside the JSON bundle, where escaping
+// inflates tokens and hurts the model's read of the hunks.
 async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
   const { bundle } = run;
-  const reviewPrompt = loadPrompt("review.md").replace(
-    "{{BUNDLE}}",
-    () => JSON.stringify(bundle, null, 2)
-  );
+  const { patch, ...meta } = bundle;
+  const reviewPrompt = loadPrompt("review.md")
+    .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
+    .replace("{{PATCH}}", () => patch);
   const candidate = await runJsonPrompt("review", reviewPrompt, run, parseUsableReview("review"));
   return toReviewResult(await runCritic(candidate, bundle.patch, run), run);
 }
