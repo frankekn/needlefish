@@ -31,6 +31,9 @@ inputs:
     description: Token for gh reads and posting the review and check-run
     required: false
     default: ${{ github.token }}
+branding:
+  icon: eye
+  color: blue
 runs:
   using: composite
   steps:

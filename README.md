@@ -13,6 +13,42 @@ adversarial critic that prunes weak findings. Codex is the default runner;
 Claude Code and opencode are also supported. Verdict is derived
 deterministically from the surviving findings, never freehanded by the model.
 
+## Quick start (any repo, 30 seconds)
+
+Add `.github/workflows/needlefish.yml` to your repo:
+
+```yaml
+name: needlefish
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: frankekn/needlefish@v1
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+```
+
+Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
+`~/.codex/auth.json`) or `CODEX_API_KEY` — and open a PR. Findings arrive as
+inline review comments anchored to the diff; pushes update the same review
+in place (fresh / still-open / resolved) instead of stacking new ones.
+
+Cost: 2 model calls per review on small PRs (~45s at the default `medium`
+effort), up to 9 on large ones. Docs-only PRs and unchanged heads skip the
+model entirely. Maintainers can comment `@needlefish recheck` or
+`@needlefish explain <finding>` on the PR.
+
 ## Install
 
 Requires:

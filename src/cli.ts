@@ -9,7 +9,7 @@ async function main() {
 
   switch (command.kind) {
     case "version":
-      process.stdout.write("needlefish 0.2.0\n");
+      process.stdout.write("needlefish 0.3.0\n");
       return;
     case "help":
       process.stdout.write(USAGE);

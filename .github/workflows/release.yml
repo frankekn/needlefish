@@ -1,0 +1,37 @@
+# Release: on a semver tag push, verify the tagged commit and roll the
+# floating v1 tag so `uses: frankekn/needlefish@v1` consumers get it.
+name: needlefish-release
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm test
+      - name: Roll floating v1
+        run: |
+          git config user.name "needlefish-release"
+          git config user.email "actions@github.com"
+          git tag -f v1 "${GITHUB_REF_NAME}"
+          git push -f origin v1
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" -R "${{ github.repository }}" \
+            --title "needlefish ${GITHUB_REF_NAME}" --generate-notes || true
