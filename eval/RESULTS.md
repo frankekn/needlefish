@@ -106,3 +106,36 @@ measured benefit → reverted. Over-block instability from FUTURE_TODO is
 resolved by raw-diff prompt + medium effort.
 
 Reports: eval/results/effort-medium.json, confirm-medium.json, sweep-armA.json, sweep-armB.json.
+
+## P9 TRIGGER C/D gate (2026-07-02) — shipped
+
+Added TRIGGER C (contract drift) + TRIGGER D (swallowed failure) to
+review.md/deep.md with a critic carve-out for contract-drift findings.
+promptHash changes again — rows above not comparable.
+
+Final gate (36 fixtures incl 2 sealed holdouts, medium, 1 draw):
+recall **94.1%**, fp 0, invalidJson 0, meanDur 47.9s. Confirm tiers:
+py/rs-backend-spec-drift 3/3+3/3 (was ~1/4-2/3), holdout-spec-drift and
+holdout-error-swallow hit on first exposure, py-data-partial-state and
+py-backend-flag-ignored 3/3 after regression fixes.
+
+Iteration notes (6 rounds, each diagnosed before editing):
+1. Triggers alone: spec-drift found by review but pruned by critic
+   ("naming-only") → critic exception added.
+2. Zero-caller escapes: both C and D cleared on "no in-repo callers" →
+   public-carrier clauses added.
+3. Trigger-as-taxonomy: model began treating the trigger list as the
+   complete bug taxonomy ("No Trigger A-D fired → pass"), regressing
+   py-data-partial-state to 0/3 → explicit anti-taxonomy line fixed it.
+4. Pendulum fp: public-carrier clause flagged a harmless unused variadic
+   param (go-harmless-variadic 3/3 fp) → clause scoped to promises that
+   affect the result/data a caller receives; residual fp 1/3 in isolated
+   confirm, 0 in the final gate.
+
+Known blind spot (unchanged, 4 wording layers attempted): an exported
+error-swallowing wrapper with zero in-repo callers
+(go-backend-slop-swallow, 0/5+ across all variants) — the model will not
+flag dead public API as P2. Candidate future fix: dedicated fixture class
+sweep at higher effort, or accept as documented limitation.
+
+Reports: eval/results/p9-gate-v2.json, p9-confirm.json, p9-confirm5.json.
