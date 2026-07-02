@@ -4,3 +4,4 @@ artifacts/
 .needlefish/
 *.log
 AGENTS.local.md
+eval/reports/

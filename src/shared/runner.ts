@@ -1,4 +1,4 @@
-export const RUNNERS = ["codex", "claude", "opencode"] as const;
+export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok"] as const;
 
 export type RunnerName = (typeof RUNNERS)[number];
 
@@ -6,6 +6,7 @@ export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
   readonly timeoutMs?: number;
+  readonly reasoningEffort?: string;
 }
 
 export interface RunStat {
@@ -18,7 +19,7 @@ export interface RunStat {
 }
 
 export function isRunnerName(value: string): value is RunnerName {
-  return value === "codex" || value === "claude" || value === "opencode";
+  return value === "codex" || value === "claude" || value === "opencode" || value === "openai" || value === "grok";
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {

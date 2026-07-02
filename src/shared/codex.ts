@@ -36,6 +36,7 @@ interface RunnerInvocation {
   readonly prompt: string;
   readonly repoPath: string;
   readonly model: string | undefined;
+  readonly reasoningEffort: string | undefined;
   readonly timeoutMs: number;
   readonly env: NodeJS.ProcessEnv;
   readonly tmp: string;
@@ -43,6 +44,7 @@ interface RunnerInvocation {
 
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
+  const maxAttempts = process.env.NEEDLEFISH_NO_RETRY ? 1 : 2;
   const startedAt = Date.now();
   let attempts = 0;
   const emitStat = (ok: boolean): void => {
@@ -58,7 +60,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
     });
   };
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     attempts = attempt;
     try {
       const out = await runCodexOnce(prompt, opts, runner);
@@ -70,7 +72,7 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
         throw err;
       }
       lastErr = err;
-      if (attempt < 2) {
+      if (attempt < maxAttempts) {
         const backoff = retryMsFor(runner);
         await new Promise<void>((resolve) => setTimeout(resolve, backoff));
       }
@@ -83,6 +85,9 @@ export async function runCodex(prompt: string, opts: CodexOptions): Promise<stri
 async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerName): Promise<string> {
   const model = resolveModel(opts, runner);
   const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+  if (runner === "openai") {
+    return runOpenAIDirect(prompt, model, timeoutMs);
+  }
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
   const ghConfigDir = path.join(tmp, "gh-empty");
   mkdirSync(ghConfigDir, { recursive: true });
@@ -104,6 +109,7 @@ async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerNa
       prompt: sandbox.prompt,
       repoPath: sandbox.repoPath,
       model,
+      reasoningEffort: opts.reasoningEffort,
       timeoutMs,
       env,
       tmp,
@@ -150,6 +156,10 @@ function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefine
       return process.env.CLAUDE_MODEL;
     case "opencode":
       return process.env.OPENCODE_MODEL;
+    case "openai":
+      return process.env.OPENAI_MODEL;
+    case "grok":
+      return process.env.GROK_MODEL;
   }
 }
 
@@ -181,6 +191,10 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
       return await runClaude(invocation);
     case "opencode":
       return await runOpenCode(invocation);
+    case "openai":
+      throw new Error("openai runner uses direct HTTP path, not runRunner");
+    case "grok":
+      return await runGrok(invocation);
   }
 }
 
@@ -201,6 +215,7 @@ async function runCodexCli(invocation: RunnerInvocation): Promise<RunnerResult> 
     lastMsg,
   ];
   if (invocation.model) args.push("-m", invocation.model);
+  if (invocation.reasoningEffort) args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
   const res = await spawnRunnerProcess({
     command: process.env.CODEX_BIN ?? "codex",
@@ -238,6 +253,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
     "--no-session-persistence",
   ];
   if (invocation.model) args.push("--model", invocation.model);
+  if (invocation.reasoningEffort) args.push("--effort", invocation.reasoningEffort);
 
   const res = await spawnRunnerProcess({
     command: process.env.CLAUDE_BIN ?? "claude",
@@ -256,10 +272,27 @@ async function runOpenCode(invocation: RunnerInvocation): Promise<RunnerResult> 
   const args = ["run", "--format", "json", "--pure", "--dir", invocation.repoPath];
   args.push("--file", promptPath);
   if (invocation.model) args.push("--model", invocation.model);
+  if (invocation.reasoningEffort) args.push("--variant", invocation.reasoningEffort);
   args.push("Use the attached prompt file as your complete instruction.");
 
   const res = await spawnRunnerProcess({
     command: process.env.OPENCODE_BIN ?? "opencode",
+    args,
+    stdin: "",
+    repoPath: invocation.repoPath,
+    timeoutMs: invocation.timeoutMs,
+    env: invocation.env,
+  });
+  return { res, out: res.stdout ?? "" };
+}
+
+async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
+  const promptPath = path.join(invocation.tmp, "prompt.txt");
+  writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+  const args = ["-m", invocation.model ?? "grok-build", "--prompt-file", promptPath, "--output-format", "plain"];
+  if (invocation.reasoningEffort) args.push("--reasoning-effort", invocation.reasoningEffort);
+  const res = await spawnRunnerProcess({
+    command: process.env.GROK_BIN ?? "grok",
     args,
     stdin: "",
     repoPath: invocation.repoPath,
@@ -276,6 +309,37 @@ function outputFor(runner: RunnerName, result: RunnerResult): string {
       return result.out;
     case "opencode":
       return extractOpenCodeText(result.out);
+    case "openai":
+      return result.out;
+    case "grok":
+      return result.out;
+  }
+}
+
+async function runOpenAIDirect(prompt: string, model: string | undefined, timeoutMs: number): Promise<string> {
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY is required for the openai runner");
+  if (!model) throw new Error("model is required for the openai runner (use --model or OPENAI_MODEL)");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`);
+    const json = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
+    const content = json.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content) {
+      throw new Error(`openai runner: empty content in response: ${text.slice(0, 500)}`);
+    }
+    return content;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
