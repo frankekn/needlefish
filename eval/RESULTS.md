@@ -66,3 +66,21 @@ All runs share promptHash `2d82256f1bb7da69`. Baseline = codex gpt-5.5 @ xhigh. 
 - recall is a regex lower bound; a model may have found the bug with different wording and still scored 0. Use `eval/inspect.ts <fixture-id>` to verify specific misses.
 - codex medium (76%) ≈ high (74%) within 3-draw noise — reasoning effort is not monotonic in recall here.
 - claude opus-47 (76%) > opus-48 (64%) — newer opus regressed on this set.
+
+## P5 raw-diff prompt gate (2026-07-02)
+
+Prompt change: small-path diff moved out of the escaped JSON bundle into a raw
+sentinel-delimited section. promptHash 2d82256f1bb7da69 → c3418e2c8fd4762c —
+rows above are NOT comparable with runs at the new hash.
+
+| arm | prompt | recall | fp | invalidJson | mean dur |
+|---|---|---|---|---|---|
+| A | escaped JSON (old) | 78.6% (11/14) | 0% | 0% | 137s |
+| B | raw diff (new) | **85.7% (12/14)** | 0% | 0% | 146s |
+
+codex gpt-5.5 @ xhigh, 34 fixtures x 1 draw, concurrency 4. Sole divergence:
+rs-backend-spec-drift (A miss, B hit); confirm tier on B = 2/3 vs ~1/4
+historical on the old prompt. Gate: non-inferior recall + no fp/json
+regression → **shipped** (needlefish main a488292).
+
+Reports: eval/results/gate-p5-armA.json, gate-p5-armB.json, confirm-p5-rs.json.
