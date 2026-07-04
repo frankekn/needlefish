@@ -1,6 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
 
-const RUNNER_TIMEOUT_KILL_SIGNAL: NodeJS.Signals = "SIGKILL";
+const RUNNER_TIMEOUT_GRACE_MS = (() => {
+  const parsed = Number(process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS ?? 5000);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
+})();
 const RUNNER_MAX_BUFFER_BYTES = 1024 * 1024 * 64;
 
 export interface RunnerProcessResult {
@@ -49,6 +52,7 @@ export async function spawnRunnerProcess(
     let spawnError: Error | undefined;
     let bufferError: Error | undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: invocation.repoPath,
@@ -61,6 +65,7 @@ export async function spawnRunnerProcess(
       if (settled) return;
       settled = true;
       if (timer !== null) clearTimeout(timer);
+      if (hardKillTimer !== null) clearTimeout(hardKillTimer);
       resolve({
         status,
         signal,
@@ -79,7 +84,7 @@ export async function spawnRunnerProcess(
       bytes.count += Buffer.byteLength(text);
       if (bytes.count > RUNNER_MAX_BUFFER_BYTES) {
         bufferError = new RunnerMaxBufferError(invocation.command);
-        killRunnerProcessTree(child.pid);
+        killRunnerProcessTree(child.pid, "SIGKILL");
         return;
       }
       chunks.push(text);
@@ -102,21 +107,24 @@ export async function spawnRunnerProcess(
 
     timer = setTimeout(() => {
       timedOut = true;
-      killRunnerProcessTree(child.pid);
+      killRunnerProcessTree(child.pid, "SIGTERM");
+      hardKillTimer = setTimeout(() => {
+        killRunnerProcessTree(child.pid, "SIGKILL");
+      }, RUNNER_TIMEOUT_GRACE_MS);
     }, invocation.timeoutMs);
 
     child.stdin.end(invocation.stdin);
   });
 }
 
-function killRunnerProcessTree(pid: number | undefined): void {
+function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
   if (pid === undefined) return;
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
     return;
   }
   try {
-    process.kill(-pid, RUNNER_TIMEOUT_KILL_SIGNAL);
+    process.kill(-pid, signal);
   } catch (error) {
     if (!isMissingProcess(error)) throw error;
   }

@@ -50,7 +50,13 @@ if (shimResult.status !== 0) {
   process.exit(shimResult.status ?? 1);
 }
 
+const testEnv = {
+  ...process.env,
+  NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS: process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS ?? "100",
+};
+
 const result = spawnSync(process.execPath, ["--test", "--test-concurrency=1", "--import", "tsx", ...files], {
+  env: testEnv,
   stdio: "inherit",
 });
 
