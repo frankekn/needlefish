@@ -136,12 +136,14 @@ Breaking shape changes require a new `schemaVersion` and changelog entry.
 | --- | --- |
 | `schemaVersion` | Literal `1`. |
 | `verdict` | `pass`, `needs_human`, or `changes_requested`. |
-| `findings[]` | Finding objects with `severity`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
+| `reviewTarget` | Optional review target string. |
+| `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
 | `findings[].consumerLine` | Optional downstream line affected by the finding. |
 | `residualRisks[]` | Residual-risk objects with `text` and `blocks`. |
 | `checked[]` | Evidence strings describing what the review examined. |
 | `stats` | Optional per-runner-call timing and attempt stats. |
+| `totalDurationMs` | Optional total review duration in milliseconds. |
 
 ## Base detection
 

@@ -4,6 +4,7 @@
 
 - CLI: add `--json` ReviewResult output with `schemaVersion: 1` as the stable machine interface.
 - Runner timeouts now terminate the runner process group, wait a configurable grace period, then hard-kill the group to prevent orphaned subprocesses.
+- Runner timeouts now give up waiting after post-SIGKILL pipes stay open, and blank runner timeout env values fall back to defaults.
 
 ## 0.3.0 — 2026-07-02
 

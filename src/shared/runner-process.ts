@@ -1,9 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
 
-const RUNNER_TIMEOUT_GRACE_MS = (() => {
-  const parsed = Number(process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS ?? 5000);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
-})();
+const RUNNER_TIMEOUT_GRACE_MS = readRunnerDurationMs(
+  process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS,
+  5000
+);
+const RUNNER_SIGKILL_GIVE_UP_MS = readRunnerDurationMs(
+  process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS,
+  2000
+);
 const RUNNER_MAX_BUFFER_BYTES = 1024 * 1024 * 64;
 
 export interface RunnerProcessResult {
@@ -53,6 +57,7 @@ export async function spawnRunnerProcess(
     let bufferError: Error | undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
+    let giveUpTimer: ReturnType<typeof setTimeout> | null = null;
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: invocation.repoPath,
@@ -66,6 +71,7 @@ export async function spawnRunnerProcess(
       settled = true;
       if (timer !== null) clearTimeout(timer);
       if (hardKillTimer !== null) clearTimeout(hardKillTimer);
+      if (giveUpTimer !== null) clearTimeout(giveUpTimer);
       resolve({
         status,
         signal,
@@ -110,11 +116,23 @@ export async function spawnRunnerProcess(
       killRunnerProcessTree(child.pid, "SIGTERM");
       hardKillTimer = setTimeout(() => {
         killRunnerProcessTree(child.pid, "SIGKILL");
+        giveUpTimer = setTimeout(() => {
+          // A setsid-escaped descendant has left this kill group and may keep inherited pipes open.
+          // We cannot kill that escapee here; the goal is to stop waiting for child "close".
+          finish(null, "SIGKILL");
+        }, RUNNER_SIGKILL_GIVE_UP_MS);
       }, RUNNER_TIMEOUT_GRACE_MS);
     }, invocation.timeoutMs);
 
     child.stdin.end(invocation.stdin);
   });
+}
+
+export function readRunnerDurationMs(value: string | undefined, fallbackMs: number): number {
+  const trimmed = value?.trim();
+  if (trimmed === undefined || trimmed === "") return fallbackMs;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallbackMs;
 }
 
 function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
