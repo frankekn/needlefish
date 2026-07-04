@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Needlefish — 執行遺書(by Fable,最終交接文件)</title>
+<style>
+  :root {
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --ink: #1a2332;
+    --muted: #5c6b7a;
+    --accent: #0e7490;
+    --accent-soft: #e0f2f7;
+    --border: #e2e5e9;
+    --code-bg: #f1f4f6;
+    --p-now: #0e7490;
+    --p-measure: #b45309;
+    --p-data: #6d28d9;
+    --p-face: #be185d;
+    --ok: #15803d;
+    --warn: #b91c1c;
+    --law: #7c2d12;
+    --law-soft: #fef3ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151c;
+      --card: #171e28;
+      --ink: #e4e9ef;
+      --muted: #93a1b1;
+      --accent: #38bdd8;
+      --accent-soft: #123a45;
+      --border: #2a3441;
+      --code-bg: #1e2733;
+      --p-now: #38bdd8;
+      --p-measure: #f0a34a;
+      --p-data: #a78bfa;
+      --p-face: #f472b6;
+      --ok: #4ade80;
+      --warn: #f87171;
+      --law: #fdba74;
+      --law-soft: #2a1e14;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Segoe UI", sans-serif;
+    line-height: 1.75;
+    font-size: 15.5px;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 48px 28px 96px; }
+  h1 { font-size: 1.9rem; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--muted); margin: 0 0 36px; font-size: .95rem; }
+  h2 { font-size: 1.35rem; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); letter-spacing: -0.01em; }
+  h3 { font-size: 1.02rem; margin: 22px 0 8px; color: var(--accent); }
+  h4 { font-size: .95rem; margin: 16px 0 6px; }
+  p { margin: 8px 0; }
+  code, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .86em;
+  }
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    line-height: 1.55;
+    margin: 10px 0 14px;
+  }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: .93em; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; }
+  ul, ol { margin: 8px 0; padding-left: 24px; }
+  li { margin: 4px 0; }
+  .tldr {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 24px 0 8px;
+  }
+  .tldr strong { color: var(--accent); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin: 28px 0;
+  }
+  .card > h2 { margin-top: 0; border-bottom: none; padding-bottom: 0; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+  .badge {
+    display: inline-block;
+    font-size: .78rem;
+    font-weight: 600;
+    padding: 2px 12px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+  }
+  .b-now { color: var(--p-now); }
+  .b-measure { color: var(--p-measure); }
+  .b-data { color: var(--p-data); }
+  .b-face { color: var(--p-face); }
+  .b-effort { color: var(--muted); }
+  .b-risk-low { color: var(--ok); }
+  .b-risk-mid { color: var(--p-measure); }
+  .b-human { color: var(--warn); }
+  .card.now { border-left-color: var(--p-now); }
+  .card.measure { border-left-color: var(--p-measure); }
+  .card.data { border-left-color: var(--p-data); }
+  .card.face { border-left-color: var(--p-face); }
+  .evidence {
+    border-left: 3px solid var(--muted);
+    padding: 2px 0 2px 14px;
+    margin: 10px 0;
+    color: var(--muted);
+    font-size: .93em;
+  }
+  .warn { color: var(--warn); font-weight: 600; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .law {
+    background: var(--law-soft);
+    border: 1px solid var(--law);
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin: 14px 0;
+  }
+  .law strong:first-child { color: var(--law); }
+  .toc { columns: 2; column-gap: 32px; font-size: .95em; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .flow {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: .85em;
+    line-height: 1.9;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .done-table td:first-child { white-space: nowrap; }
+  .checklist li { list-style: none; margin-left: -18px; }
+  .checklist li::before { content: "☐ "; color: var(--accent); font-weight: 700; }
+  .footnote { color: var(--muted); font-size: .88em; margin-top: 48px; border-top: 1px solid var(--border); padding-top: 16px; }
+  @media (max-width: 640px) { .toc { columns: 1; } main { padding: 32px 18px 64px; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Needlefish — 執行遺書</h1>
+<p class="subtitle">by Fable · 2026-07-04 · 基準 commit <code>df60aac</code>(main,v0.3.0)· 撰寫前提:作者離線後不再回來;接手者可能是能力較弱的 LLM。本文件是唯一權威交接,取代先前所有 Round 1 / Round 2 計畫文件。</p>
+
+<div class="tldr">
+<strong>TL;DR:</strong>引擎已可信:36 fixtures 最終 gate <strong>recall 94.1%、誤報 0、invalid JSON 0、平均 47.9s</strong>(codex gpt-5.5 @ medium)。Round 1(P1–P8)與 Round 2(P9–P16)幾乎全數出貨。剩餘工作共九張工單,按序執行:<strong>W0 家務清理 → W1 文件同步 → W2 suggestion 一鍵套用(Round 2 唯一未完成規格)→ W3 已知盲點終局 → W4 critic 刪錯率判讀 → W5 Marketplace 上架(需 Frank)→ W6 v1.0.0(條件觸發)→ W7 harness 煞車系統(ACP 線)→ W8 JSON 契約(修復 lane 地基,可插隊)</strong>。修復 lane 架構已定案(R8):同 repo 分 lane,裁判與球員分離。更遠的路(§5B)也已規劃完:北極星是「團隊敢拿來擋 merge」,Horizon 2/3(修復通道三階段、模型世代更替 SOP、config/GitLab、benchmark 公開化、信任量測、知識庫閉環)每項都帶觸發條件與寫死的判準——後人只需執行,不需規劃。執行鐵律只有三條:<strong>憲法(§3)凌駕一切;判準先寫死、gate 不過就 revert;不確定就停下來問 Frank,不要猜。</strong>
+</div>
+
+<h2 id="toc">目錄</h2>
+<div class="toc">
+<p>
+<a href="#s0">§0 給接手者:本文件使用規則</a><br>
+<a href="#s1">§1 這個專案是什麼(一頁)</a><br>
+<a href="#s2">§2 現狀快照與已完成證據</a><br>
+<a href="#s3">§3 憲法:十二條紅線</a><br>
+<a href="#s4">§4 操作手冊</a><br>
+<a href="#s5">§5 Round 3 工單(W0–W7)</a><br>
+<a href="#s5b">§5B 遠期 Roadmap(Horizon 2/3)</a><br>
+<a href="#s6">§6 故障手冊(Playbooks)</a><br>
+<a href="#s7">§7 何時必須停下來問 Frank</a><br>
+<a href="#s8">§8 明確不做的事</a><br>
+<a href="#s9">§9 附錄:檔案地圖 / 名詞表 / 數據出處</a>
+</p>
+</div>
+
+<!-- ============================================================ S0 -->
+<h2 id="s0">§0 給接手者:本文件使用規則</h2>
+
+<p>你(接手的 LLM 或人)在動任何東西之前,先把這十條讀完。這十條的存在理由:過去六個月裡,這個專案每一次品質躍升都來自紀律,每一次差點翻車都來自即興。</p>
+
+<ol>
+<li><strong>逐字照做,不即興。</strong>工單步驟有編號,按順序執行。你想到「更好的做法」時,那個想法有超過一半的機率是錯的——本文件的每個決定背後都有你看不到的量測數據。</li>
+<li><strong>動手前先驗證引用。</strong>本文件所有 <code>file:line</code> 以 commit <code>df60aac</code> 為準。開工第一步:<code>git log --oneline -3</code> 確認你在哪;若 main 已前進,先 <code>grep</code> 確認引用的符號還在原位,對不上就停,不要憑記憶腦補。</li>
+<li><strong>一次只做一張工單。</strong>做完該工單「驗收點」表的全部項目(跑檢驗指令、比對通過標準、存證輸出),才准碰下一張。並行做兩張 = 兩張都做壞。</li>
+<li><strong>優先序:憲法(§3)&gt; 工單內容 &gt; 你的直覺。</strong>工單與憲法衝突時,憲法贏,並且這代表本文件有 bug——停下來報告 Frank。</li>
+<li><strong>判準已寫死的,不准重新發明。</strong>每張工單的 gate 數字是作者離線前定案的。gate 不過就走「失敗處置」,不要「再調一點點措辭試試」——那正是過擬合的入口。</li>
+<li><strong>你認為本文件寫錯了 → 停,報告,等 Frank 裁決。</strong>不要自行修改本文件之後照著改過的版本做。</li>
+<li><strong>所有 prompt 措辭改動,提交前跑一次自檢:</strong>新增文字不得含任何 eval fixture 的專有詞彙(檢查法:<code>ls eval/fixtures/</code> 看目錄名,把目錄名的關鍵詞在你的新措辭裡 grep 一遍,零命中才算過)。</li>
+<li><strong>Commit 規範:</strong>conventional commits(<code>feat:</code>/<code>fix:</code>/<code>docs:</code>/<code>chore:</code>);gate 數據寫進 commit 訊息;<span class="warn">絕對禁止</span> <code>Co-Authored-By</code>、<code>Generated with Claude Code</code> 等任何 AI attribution 行(會被 reject)。</li>
+<li><strong>不確定 = 停。</strong>猜錯的清理成本永遠大於等 Frank 回覆的成本。§7 列了必須停的完整清單。</li>
+<li><strong>每完成一張工單,回來更新 §5 該工單的狀態標記</strong>(把 badge 文字改成「已完成 + commit SHA」),連同程式碼一起 commit。本文件是活的交接紀錄,不是唯讀遺物。</li>
+</ol>
+
+<!-- ============================================================ S1 -->
+<h2 id="s1">§1 這個專案是什麼(一頁)</h2>
+
+<p><strong>Needlefish 是一個嚴格的 PR 審查 agent</strong>:TypeScript CLI,把 local diff 或 GitHub PR 餵給 read-only 的模型 runner(預設 codex gpt-5.5),用 critic pass 刪掉弱 finding,最後由<strong>確定性程式碼</strong>(不是模型)決定 verdict。三個產品支柱,任何改動不得動搖:</p>
+
+<ul>
+<li><strong>Evidence-or-silence</strong>:每個 blocking finding 必須附 <code>checked[]</code> 結構化證據;給不出證據就不准報。寧可零 finding,不可編故事。</li>
+<li><strong>Read-only</strong>:模型 runner 在沙箱裡只能讀(rg/git show),永不寫入目標 repo、永不碰 GitHub 憑證。</li>
+<li><strong>決定論 verdict</strong>:<code>src/core/verdict.ts</code> 的 <code>deriveVerdict</code> 只看驗證過的 findings/residual risks——P0–P2 存在 → <code>changes_requested</code>;blocking residual → <code>needs_human</code>;否則 <code>pass</code>。模型散文永遠不能決定 pass/fail。</li>
+</ul>
+
+<div class="flow">審查管線(兩條路,由 diff 大小自動選):
+
+小徑(預設):bundle ──&gt; review(1 次調用)──&gt; critic(1 次調用)──&gt; normalize ──&gt; deriveVerdict ──&gt; render/post
+大徑(大 diff):bundle ──&gt; map(拆 hotspot)──&gt; deep × N(併發 3)──&gt; critic ──&gt; normalize ──&gt; deriveVerdict ──&gt; render/post
+
+三種介面:
+  local CLI     needlefish --repo &lt;path&gt;        → stdout Markdown + ~/.cache/needlefish/&lt;repo&gt;/last-review.json
+  local PR      needlefish pr &lt;number&gt;           → 同上,免切 branch
+  GitHub mode   action.yml / review.yml          → COMMENT review + 行內留言 + Needlefish check-run(sticky:同 PR 更新同一則)</div>
+
+<p><strong>關鍵數字(接手時的品質基線,任何回歸以此為對照):</strong></p>
+<table>
+<tr><th>指標</th><th>值</th><th>條件</th><th>出處</th></tr>
+<tr><td>recall(regex 下界)</td><td><strong>94.1%</strong></td><td>36 fixtures(含 2 sealed holdout)× 1 draw,codex gpt-5.5 @ medium</td><td><code>eval/RESULTS.md</code> P9 gate;<code>eval/results/p9-gate-v2.json</code></td></tr>
+<tr><td>誤報</td><td><strong>0</strong></td><td>同上</td><td>同上</td></tr>
+<tr><td>invalid JSON</td><td><strong>0</strong></td><td>同上</td><td>同上</td></tr>
+<tr><td>單次 review 均時</td><td><strong>~48s</strong></td><td>小徑 @ medium</td><td>同上</td></tr>
+<tr><td>已知盲點</td><td class="warn">go-backend-slop-swallow</td><td>0/5+ 所有措辭變體;見 W3</td><td><code>eval/RESULTS.md</code> Known blind spot</td></tr>
+</table>
+
+<!-- ============================================================ S2 -->
+<h2 id="s2">§2 現狀快照與已完成證據</h2>
+
+<h3>Round 1(P1–P8)+ Round 2(P9–P16)結案表</h3>
+<table class="done-table">
+<tr><th>項目</th><th>狀態</th><th>證據(commit / 檔案)</th></tr>
+<tr><td>P1 eval harness</td><td class="ok">出貨</td><td><code>eval/</code>;36 fixtures、並行、resume、compare、holdout 分層</td></tr>
+<tr><td>P5 raw-diff prompt</td><td class="ok">出貨</td><td><code>a488292</code>;A/B gate recall 78.6%→85.7%</td></tr>
+<tr><td>預設 effort → medium</td><td class="ok">出貨</td><td><code>ef397be</code>;92.9% vs 85.7%,44s vs 146s</td></tr>
+<tr><td>P3/P7/P2 併發+重試+stats</td><td class="ok">出貨</td><td>deep 併發 3、壞 JSON 重問一次、per-call stats</td></tr>
+<tr><td>P8 composite action</td><td class="ok">出貨</td><td><code>action.yml</code>;hosted+self-hosted 雙路實測(PR #8)</td></tr>
+<tr><td>gating sweep</td><td class="warn">被自己的 gate 否決</td><td><code>102b270</code> revert;數據留檔——這就是紀律在工作</td></tr>
+<tr><td>P9 TRIGGER C/D</td><td class="ok">出貨</td><td><code>80f45a2</code>;gate recall 94.1%,6 輪迭代紀錄在 RESULTS.md</td></tr>
+<tr><td>P10-v1 行內留言</td><td class="ok">出貨</td><td><code>d47d7ee</code>;錨定驗證 + 20 條上限 + body fallback</td></tr>
+<tr><td>P10-v2 suggestion 區塊</td><td class="warn">未實作</td><td><code>grep -ri replacement src/ prompts/</code> 零命中 → <a href="#w2">W2</a></td></tr>
+<tr><td>P11 sticky re-review</td><td class="ok">出貨</td><td><code>de119c2</code>;fresh/open/resolved 生命週期</td></tr>
+<tr><td>P12 @needlefish 指令</td><td class="ok">出貨</td><td><code>8a87a29</code>;<code>.github/workflows/commands.yml</code>,maintainer-only,injection 三層防線</td></tr>
+<tr><td>P13 hosted repo 檢索</td><td class="ok">出貨</td><td><code>83df54a</code>;根因 = Ubuntu AppArmor userns;action 內 best-effort sysctl</td></tr>
+<tr><td>P14 fast path + 去重</td><td class="ok">出貨</td><td><code>beb189f</code>;docs-only 免模型、same-head dedupe、<code>NEEDLEFISH_NO_FAST_PATH=1</code> 逃生口</td></tr>
+<tr><td>P15 eval 深化</td><td class="ok">出貨</td><td><code>76d8787</code>;holdout tier、criticPruneErrorRate、<code>weekly-eval.yml</code></td></tr>
+<tr><td>P16 發版</td><td>大半完成</td><td>0.3.0 cut(<code>dc9d8d2</code>)、release.yml 自動滾浮動 major tag(<code>df60aac</code>)、branding 已加;<span class="warn">缺:Marketplace 上架(W5)、README Status 段過期(W1)</span></td></tr>
+</table>
+
+<h3>工作副本狀態(2026-07-04)</h3>
+<div class="evidence">
+未追蹤檔案:<code>.github/workflows/AGENTS.md</code>、<code>scripts/AGENTS.md</code>、<code>.omo/</code>、<code>oracle-*.md</code> × 3、<code>needlefish-acp-harness-design.html</code>、<code>plan_by_fable.html</code>(本文件)。處置全部寫在 <a href="#w0">W0</a>。<br>
+版本:package.json <code>0.3.0</code>;tags:<code>v0.3.0</code>(不可變)+ <code>v0</code>(浮動,release.yml 自動跟隨)。pre-1.0 期間浮動 tag 是 <code>v0</code>;cut v1.0.0 後 release.yml 自動產生並滾 <code>v1</code>(W6)。
+</div>
+
+<!-- ============================================================ S3 -->
+<h2 id="s3">§3 憲法:十二條紅線</h2>
+
+<p>每一條都是用真實的失敗或量測換來的。格式:條文 → 為什麼 → 怎麼驗證自己沒違反。</p>
+
+<div class="law"><strong>第 1 條 — Eval gate 是唯一出貨通道。</strong>任何 <code>prompts/</code> 或審查管線(<code>src/core/</code>、<code>src/shared/normalize.ts</code>、runner 行為)的改動,必須:動手前寫死通過判準 → 全量 fixture @ 預設 effort 跑 gate → 不過就 revert,數據照樣記進 <code>eval/RESULTS.md</code>。<br><em>為什麼:</em>gating sweep 功能就是被自己的 gate 否決後 revert 的(<code>102b270</code>)——這個先例證明判準寫死能擋住「感覺有用」的功能。<br><em>驗證:</em>你的 PR/commit 訊息裡有 gate 數字,且判準是在跑 gate 之前寫下的(工單裡已寫死的就用工單的)。</div>
+
+<div class="law"><strong>第 2 條 — Prompt 禁用 fixture 詞彙。</strong>prompt 措辭不得包含任何 eval fixture 的專有名詞、變數名、語言特定慣用語。類別定義必須通用。<br><em>為什麼:</em>否則 eval 分數上升是背答案,不是變聰明,真實 PR 上立即現形。<br><em>驗證:</em>§0 第 7 條的 grep 自檢。</div>
+
+<div class="law"><strong>第 3 條 — Holdout 封存紀律。</strong>標了 <code>holdout: true</code> 的 fixture,prompt 措辭迭代期間永不跑(<code>--holdout exclude</code>);只在最終 gate 跑(<code>--holdout include</code>,這也是預設)。每輪 prompt 改動至少新增一個 holdout fixture。<br><em>為什麼:</em>34 個 fixture 全參與調參 = 遲早全體過擬合;holdout 是唯一的體外對照組。<br><em>驗證:</em>迭代期間的報告 JSON 裡 <code>holdout</code> 欄位是 <code>exclude</code>。</div>
+
+<div class="law"><strong>第 4 條 — Verdict 決定論。</strong><code>deriveVerdict</code> 之外的任何地方(尤其是模型輸出的散文)不得影響 pass/fail。改 verdict 邏輯 = 改產品契約,需要 Frank 簽核。<br><em>驗證:</em><code>src/core/verdict.ts</code> 仍然只有那 ~14 行純函式。</div>
+
+<div class="law"><strong>第 5 條 — Runner 永遠 read-only。</strong>不得給模型 runner 任何能變異目標 repo 或觸碰 GitHub 憑證的權限。<code>runCodex</code> 剝除 token env、沙箱唯讀,這一層不准鬆。<br><em>驗證:</em><code>src/shared/codex.ts</code> 與 <code>runner-sandbox.ts</code> 的既有測試全綠;新增 runner 時比照辦理。</div>
+
+<div class="law"><strong>第 6 條 — 單抽不下結論。</strong>全量單抽在 medium 下天然閃爍 1–2 個 fixture。任何「回歸了」或「變好了」的結論,必須對 divergent fixtures confirm × 3 draws 之後才成立。<br><em>驗證:</em>你引用的每個結論數字旁邊都有 draws 數。</div>
+
+<div class="law"><strong>第 7 條 — 不為單一目標 repo 客製。</strong>不加目標 repo 的名詞、欄位、fixture、bug 特定 prompt 補丁。Needlefish 是通用工具。</div>
+
+<div class="law"><strong>第 8 條 — Commit 不留 AI attribution。</strong>無 <code>Co-Authored-By</code>、無 <code>Generated with</code>。違者 reject。</div>
+
+<div class="law"><strong>第 9 條 — <code>--fix</code> 與 multi-repo config 不做</strong>,除非 Frank 明示立項。<code>--fix</code> 的立項前提是 W2 suggestion 的實際使用率數據。</div>
+
+<div class="law"><strong>第 10 條 — 外部留言正文永不進 prompt。</strong><code>@needlefish</code> 指令是嚴格白名單前綴解析,只有 sanitize 過的 finding 匹配鍵能到模型面前。外部留言者是不可信輸入(prompt injection 防線)。<br><em>驗證:</em><code>commands.yml</code> 的 parse job 仍是 case-pattern 精確匹配。</div>
+
+<div class="law"><strong>第 11 條 — Miss museum。</strong>真實 PR 上每個確認的 miss(人抓到、bot 沒抓到),一週內化成 generic fixture(無目標 repo 詞彙)進 eval。這是 recall 持續上升的唯一原料來源。</div>
+
+<div class="law"><strong>第 12 條 — 結構優先於措辭。</strong>模型明明有證據卻漏掉 bug 時,優先改 process/輸出結構(如 TRIGGER 證據契約),其次才是 prompt 散文。散文補丁的半衰期很短。<br><em>為什麼:</em>P9 六輪迭代的每一輪都證明:有效的修法都是結構(critic 例外、證據欄位),失效的都是形容詞。</div>
+
+<!-- ============================================================ S4 -->
+<h2 id="s4">§4 操作手冊</h2>
+
+<h3 id="s4-1">4.1 環境與安裝(冷啟動,新機器照抄)</h3>
+<pre><code># 需求:Node >= 20、git、gh(GitHub mode 才要)、codex CLI(模型 runner)
+cd /Users/termtek/Github/needlefish
+corepack enable
+corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+pnpm install --frozen-lockfile
+pnpm check          # tsc --noEmit,必須零錯
+pnpm test           # node:test 全套,必須全綠(先驗 bin/needlefish --version)</code></pre>
+<p>模型 runner:codex CLI 需已登入(訂閱憑證在 <code>~/.codex/auth.json</code>;CI 上用 secret <code>CODEX_AUTH_JSON</code>)。self-hosted runner 部署:<code>scripts/deploy-ubuntu.sh</code>。</p>
+
+<h3 id="s4-2">4.2 日常驗證(每次改動後,無例外)</h3>
+<pre><code>pnpm check && pnpm test</code></pre>
+
+<h3 id="s4-3">4.3 Eval:旗標全表與讀報告</h3>
+<pre><code>node --import tsx eval/run.ts [旗標...]</code></pre>
+<table>
+<tr><th>旗標</th><th>意義</th><th>預設</th></tr>
+<tr><td><code>--runner</code></td><td>codex | claude | opencode | openai | grok</td><td>codex</td></tr>
+<tr><td><code>--model</code></td><td>runner 的 model id</td><td>runner 預設</td></tr>
+<tr><td><code>--effort</code></td><td>reasoning effort(codex:medium/high/xhigh)</td><td>runner 預設(產品預設 medium)</td></tr>
+<tr><td><code>--draws</code></td><td>每 fixture 抽幾次</td><td>1</td></tr>
+<tr><td><code>--concurrency</code></td><td>並行 fixture 數</td><td>4</td></tr>
+<tr><td><code>--report</code></td><td>輸出 JSON 路徑</td><td><code>eval/reports/&lt;runner&gt;.json</code></td></tr>
+<tr><td><code>--fixtures</code></td><td><strong>regex</strong>,對 fixture 目錄名過濾(如 <code>--fixtures 'spec-drift|slop-swallow'</code>)</td><td>全部</td></tr>
+<tr><td><code>--holdout</code></td><td>include | exclude | only(第 3 條:迭代用 exclude,gate 用 include)</td><td>include</td></tr>
+<tr><td><code>--compare</code></td><td>與既有報告比對(同 promptHash 才有效)</td><td>—</td></tr>
+<tr><td><code>--resume</code></td><td>從中斷的報告續跑</td><td>—</td></tr>
+<tr><td><code>--env KEY=VALUE</code></td><td>傳給 runner 子行程(可重複)</td><td>eval 自動帶 <code>NEEDLEFISH_EVAL_TRACE=1</code></td></tr>
+<tr><td><code>--baseline</code> / <code>--dry-run</code></td><td>存 baseline / 只列不跑</td><td>—</td></tr>
+</table>
+<p><strong>報告怎麼讀</strong>(<code>aggregates</code> 欄位):<code>recall</code>(regex 下界,漏抓可能是措辭不同——用 <code>node --import tsx eval/inspect.ts &lt;fixture-id&gt;</code> 肉眼核對)、<code>falsePositiveRate</code>、<code>invalidJsonRate</code>、<code>verdictMatchRate</code>、<code>lineAnchorValidRate</code>、<code>criticPruneErrorRate</code>(critic 刪掉 mustFind 命中的比率)、<code>meanDurationMs</code>、<code>recallByFixture</code>。</p>
+<p><strong>成本概念:</strong>全量 36 fixtures × 1 draw @ medium ≈ 13–15 分鐘(併發 4)。confirm × 3 on 單一 fixture ≈ 3 次調用 × ~48s。</p>
+
+<h3 id="s4-4">4.4 標準 eval gate SOP(prompt/管線改動一律走這裡)</h3>
+<ol>
+<li><strong>寫死判準</strong>(動手改碼之前,寫進工單或 commit draft):最低 recall、fp 上限、invalidJson 上限、目標 fixture 的達標數、meanDur 漲幅上限。</li>
+<li>若本輪會改 prompt 措辭:<strong>先寫一個新 holdout fixture 並封存</strong>(spec 標 <code>holdout: true</code>)。</li>
+<li>迭代期:<code>--holdout exclude --fixtures '&lt;相關 fixture regex&gt;' --draws 1</code> 快速反饋,只跑相關子集。</li>
+<li>措辭定稿:全量 gate <code>--holdout include --draws 1 --report eval/reports/&lt;工單&gt;-gate.json</code>。</li>
+<li>對 divergent fixtures(單抽與基線不一致的)confirm:<code>--fixtures '&lt;id&gt;' --draws 3</code>。</li>
+<li>判準全過 → commit(數據入訊息)+ 把報告留在 <code>eval/reports/</code>,重要 gate 複製到 <code>eval/results/</code> + 更新 <code>eval/RESULTS.md</code>(格式模仿既有段落:表格 + Reports 行)。</li>
+<li>判準不過 → 最多再迭代一輪;<strong>兩輪不過就 revert</strong>,RESULTS.md 記失敗數據與嘗試過的措辭(見 PB1)。</li>
+</ol>
+<div class="evidence">陷阱:改任何 <code>prompts/*.md</code> 都會改變 promptHash,跨 hash 的數字<strong>不可比</strong>。A/B 必須在同一 hash 內設臂,或重跑基線臂。</div>
+
+<h3 id="s4-5">4.5 發版 SOP</h3>
+<ol>
+<li><code>CHANGELOG.md</code>:把 Unreleased 內容 cut 成 <code>## X.Y.Z — YYYY-MM-DD</code>。</li>
+<li><code>package.json</code> 的 <code>version</code> 改成 X.Y.Z。</li>
+<li>commit <code>chore(release): X.Y.Z</code> → push(push 需 Frank 同意,§7)。</li>
+<li><code>git tag vX.Y.Z && git push origin vX.Y.Z</code> → <code>release.yml</code> 自動:跑 <code>pnpm check && pnpm test</code> → 驗證過才滾浮動 major tag(<code>v0</code> 或 <code>v1</code>)→ 建 GitHub Release(generate-notes)。</li>
+<li>驗收:<code>gh release view vX.Y.Z</code> 存在;<code>git ls-remote origin refs/tags/v0</code> 指到新 SHA。</li>
+</ol>
+<p><strong>回滾</strong>(發錯版時,一分鐘):<code>git tag -f v0 &lt;上一個好版的 SHA&gt; && git push -f origin v0</code>。不可變 tag(vX.Y.Z)永不改。</p>
+
+<h3 id="s4-6">4.6 Weekly eval 看守</h3>
+<p><code>.github/workflows/weekly-eval.yml</code>:每週日 18:00 UTC 在 self-hosted runner 跑全量 × 3 draws @ medium,報告 commit 進 <code>eval/results/weekly/</code>。兩種 issue 會自動開:</p>
+<ul>
+<li><strong>recall 掉 &gt;5pp</strong> → 照 PB4 處理(先 confirm 再診斷,不要直接改 prompt)。</li>
+<li><strong>run failed</strong> → 通常是 runner 機器或 codex CLI 問題,照 PB5。</li>
+</ul>
+<p>手動觸發:GitHub Actions 頁面 workflow_dispatch,或 <code>gh workflow run needlefish-weekly-eval</code>。</p>
+
+<h3 id="s4-7">4.7 Live 驗證(埋 bug PR 流程)</h3>
+<p>任何 GitHub adapter 的行為改動,單測綠了之後還要 live 目測一次(GitHub UI 的實際長相無法單測):</p>
+<ol>
+<li>在測試 repo(或本 repo)開 branch,故意埋一個明確的 bug(例:改掉一個邊界檢查),開 PR。</li>
+<li>等 review.yml 跑完(或 <code>@needlefish recheck</code>),核對:verdict 正確、行內留言錨對行、check-run 狀態正確。</li>
+<li>驗 sticky:修掉一半 bug 再 push,核對 fresh/open/resolved 標記與 verdict 轉變。</li>
+<li>驗完關 PR、刪 branch。先例:PR #8。</li>
+</ol>
+
+<!-- ============================================================ S5 -->
+<h2 id="s5">§5 Round 3 工單(按序執行)</h2>
+
+<table>
+<tr><th>工單</th><th>一句話</th><th>預估</th><th>風險</th><th>需要 Frank?</th></tr>
+<tr><td><a href="#w0">W0</a></td><td>工作副本家務清理</td><td>30–60 分</td><td>無</td><td>commit 前告知即可</td></tr>
+<tr><td><a href="#w1">W1</a></td><td>README/文件與現實同步</td><td>1 小時</td><td>無</td><td>否</td></tr>
+<tr><td><a href="#w2">W2</a></td><td>suggestion 一鍵套用(P10-v2)</td><td>1 天</td><td>中(動 schema+prompt,要 gate)</td><td>否</td></tr>
+<tr><td><a href="#w3">W3</a></td><td>go-backend-slop-swallow 盲點終局</td><td>半天</td><td>中(pre-declared 兩發,打完收工)</td><td>否</td></tr>
+<tr><td><a href="#w4">W4</a></td><td>criticPruneErrorRate 首次判讀</td><td>2 小時</td><td>無(純讀數據)</td><td>否</td></tr>
+<tr><td><a href="#w5">W5</a></td><td>Marketplace 上架</td><td>半天</td><td>低</td><td><span class="warn">是(網頁點擊)</span></td></tr>
+<tr><td><a href="#w6">W6</a></td><td>v1.0.0(條件觸發)</td><td>半天</td><td>低</td><td>是(push/tag)</td></tr>
+<tr><td><a href="#w7">W7</a></td><td>Harness 煞車系統(ACP 線)</td><td>1.5–2 天</td><td>中</td><td>階段 B 立項時確認</td></tr>
+<tr><td><a href="#w8">W8</a></td><td>findings/verdict 穩定 JSON 契約(修復 lane 地基)</td><td>半天</td><td>低</td><td>否</td></tr>
+</table>
+<p>W8 無前置依賴、零模型風險,可插隊在任何工單之間執行;它是 R8 修復 lane 的必要地基,越早落地越好。</p>
+<p><strong>驗收規則(適用所有工單):</strong>每張工單的「驗收點」表逐項執行——跑「檢驗指令」欄的指令,實際輸出符合「通過標準」欄才打勾;<strong>全部打勾才算 DONE</strong>,才准碰下一張工單。驗收時把每條指令的實際輸出貼進 commit 訊息或 PR 描述存證。任何一項不過 = 工單未完成,回到步驟修,不准「大致上可以」。</p>
+
+<!-- ============ W0 ============ -->
+<div class="card now" id="w0">
+<h2>W0 · 工作副本家務清理</h2>
+<div class="badges">
+<span class="badge b-now">第 1 順位</span>
+<span class="badge b-effort">30–60 分</span>
+<span class="badge b-risk-low">風險:無(不碰產品碼)</span>
+</div>
+<h3>目標</h3>
+<p><code>git status</code> 歸零。每個未追蹤檔案有明確去處,repo 從此乾淨到可以直接給外人看。</p>
+<h3>逐檔處置表(照表執行)</h3>
+<table>
+<tr><th>檔案</th><th>處置</th><th>理由</th></tr>
+<tr><td><code>.github/workflows/AGENTS.md</code><br><code>scripts/AGENTS.md</code></td><td>先讀內容確認是導覽文件(與 <code>src/*/AGENTS.md</code> 同類)→ <code>git add</code>,一起 commit <code>docs(agents): workflows/scripts knowledge base</code></td><td>其他目錄的 AGENTS.md 都已入版控</td></tr>
+<tr><td><code>plan_by_fable.html</code>(本文件)<br><code>needlefish-acp-harness-design.html</code><br><code>oracle-implementation-plan.md</code><br><code>oracle-post-change-gate.md</code><br><code>oracle-structure-review.md</code></td><td>建 <code>docs/plans/</code>,<code>git mv</code> 進去(未追蹤檔直接 <code>mv</code>)後 commit <code>docs(plans): archive planning documents</code>。<span class="warn">注意:</span>移動本文件後,W7 引用的設計文件路徑變成 <code>docs/plans/needlefish-acp-harness-design.html</code></td><td>計畫文件是專案資產,該進版控;放根目錄污染門面</td></tr>
+<tr><td><code>.omo/</code></td><td>加進 <code>.gitignore</code>(一行 <code>.omo/</code>),不 commit 內容</td><td>AGENTS.md 明言:分析暫存,非產品路徑</td></tr>
+</table>
+<h3>驗收點(逐項執行,全過才算 DONE)</h3>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>工作副本歸零</td><td><code>git status --porcelain</code></td><td>輸出為空(零行)</td></tr>
+<tr><td>2</td><td>計畫文件歸位</td><td><code>ls docs/plans/</code></td><td>恰好 5 個檔案:plan_by_fable.html、needlefish-acp-harness-design.html、oracle-implementation-plan.md、oracle-post-change-gate.md、oracle-structure-review.md</td></tr>
+<tr><td>3</td><td>.omo 被忽略</td><td><code>git check-ignore -v .omo/</code></td><td>exit 0,輸出指向 .gitignore 的規則行</td></tr>
+<tr><td>4</td><td>AGENTS 文件入版控</td><td><code>git ls-files .github/workflows/AGENTS.md scripts/AGENTS.md</code></td><td>兩個路徑都列出</td></tr>
+<tr><td>5</td><td>沒動到產品碼</td><td><code>git diff HEAD~2 --stat -- src/ prompts/ eval/ bin/ action.yml</code></td><td>輸出為空(本工單的 commits 只碰 docs/plans、.gitignore、AGENTS.md)</td></tr>
+<tr><td>6</td><td>建置與測試無恙</td><td><code>pnpm check && pnpm test</code></td><td>exit 0,零 fail</td></tr>
+<tr><td>7</td><td>commit 訊息乾淨</td><td><code>git log -2 --format=%B | grep -ci 'co-authored\|generated with'</code></td><td>輸出 <code>0</code></td></tr>
+</table>
+<h3>失敗處置</h3>
+<p>若 Frank 曾另有指示(例如某檔要留在根目錄),以他為準;不確定某個 <code>.omo/</code> 內容是否還有用 → 只 gitignore、不刪除,刪除永遠要問(§7)。</p>
+</div>
+
+<!-- ============ W1 ============ -->
+<div class="card now" id="w1">
+<h2>W1 · README / 文件與現實同步</h2>
+<div class="badges">
+<span class="badge b-now">第 2 順位</span>
+<span class="badge b-effort">1 小時</span>
+<span class="badge b-risk-low">風險:無(純文件)</span>
+</div>
+<h3>目標</h3>
+<p>README 不再對使用者說謊。目前 <code>## Status</code> 段(README 尾)還停在 v0.2 敘述,宣稱 <code>@needlefish</code> 指令「在 FUTURE_TODO」——但它 0.3.0 已出貨。文件過期比沒有文件更糟。</p>
+<h3>步驟</h3>
+<ol>
+<li>把 README <code>## Status</code> 段整段替換為(可微調措辭,事實不可變):
+<pre><code>## Status
+
+v0.3. Read-only. Shipped: inline review comments, sticky re-review
+(fresh/open/resolved across pushes), `@needlefish recheck` / `@needlefish
+explain` maintainer commands, docs-only fast path (no model calls),
+same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
+sysctl). `--fix` stays unimplemented by design. Known limitation: an
+exported error-swallowing wrapper with zero in-repo callers is not
+flagged (see eval/RESULTS.md).</code></pre></li>
+<li>在 GitHub Action 段落附近加<strong>成本透明</strong>短段(Round 2 P16 未完成的驗收項):小徑每 PR 2 次模型調用(review+critic),實測 ~48s @ medium;大徑 1(map)+N(deep,併發 3)+1(critic);docs-only PR 0 次調用;同 head 重跑 0 次調用。</li>
+<li>通讀整份 README,凡與 §2 結案表矛盾的敘述一併修正(已知過期點就是 Status 段;其他若發現,列進 commit 訊息)。</li>
+<li><code>FUTURE_TODO.md</code>:把已出貨的「Issue-comment commands」「Action packaging」段標記 RESOLVED(比照檔內既有 RESOLVED 段的寫法,留一行結果與日期)。</li>
+</ol>
+<h3>驗收點(逐項執行,全過才算 DONE)</h3>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>Status 段版本正確</td><td><code>sed -n '/## Status/,$p' README.md | grep -c 'v0.3'</code></td><td>≥ 1;且 <code>grep -c 'v0.2' README.md</code> 輸出 0</td></tr>
+<tr><td>2</td><td>六個已出貨事實都在 Status 段</td><td><code>sed -n '/## Status/,$p' README.md</code> 人工比對</td><td>inline comments、sticky re-review、@needlefish 指令、docs-only fast path、same-head dedupe、hosted 檢索(sysctl)六項全部出現,且無「in FUTURE_TODO」等過期措辭</td></tr>
+<tr><td>3</td><td>Known limitation 句存在</td><td><code>grep -c 'zero in-repo callers' README.md</code></td><td>≥ 1(措辭可異,但必須指向 exported error-swallow 盲點並引用 eval/RESULTS.md)</td></tr>
+<tr><td>4</td><td>成本透明段存在</td><td><code>grep -n '48s\|model call' README.md</code></td><td>找得到一段含:小徑 2 次調用、~48s @ medium、大徑 1+N+1、docs-only 0 次、同 head 重跑 0 次</td></tr>
+<tr><td>5</td><td>FUTURE_TODO 已出貨項標記</td><td><code>grep -c 'RESOLVED' FUTURE_TODO.md</code></td><td>≥ 4(原有 2 + Issue-comment commands + Action packaging;每個 RESOLVED 附一行結果與日期)</td></tr>
+<tr><td>6</td><td>逐宣稱溯源</td><td>對 Status 段每一個宣稱,在 <code>git log --oneline</code> 或檔案裡找到對應證據</td><td>每個宣稱可指到一個 commit SHA 或檔案路徑;找不到的宣稱必須刪掉</td></tr>
+<tr><td>7</td><td>測試無恙 + commit 乾淨</td><td><code>pnpm test</code>;<code>git log -1 --format=%B | grep -ci 'co-authored\|generated with'</code></td><td>exit 0;grep 輸出 0</td></tr>
+</table>
+</div>
+
+<!-- ============ W2 ============ -->
+<div class="card now" id="w2">
+<h2>W2 · Suggestion 一鍵套用(P10-v2,Round 2 唯一未完成規格)</h2>
+<div class="badges">
+<span class="badge b-now">第 3 順位 · 信任前沿</span>
+<span class="badge b-effort">1 天</span>
+<span class="badge b-risk-mid">風險:中(動 schema + prompt → 要走 4.4 完整 gate)</span>
+</div>
+<h3>目標</h3>
+<p>當模型能給出精確替換程式碼時,行內留言附 GitHub 原生 <code>```suggestion</code> 區塊,作者一鍵 commit。這是「使用者感覺得到卓越」的最大殘留單點。核心原則:<strong>填錯寧缺勿濫</strong>——suggestion 的信任成本極高,錯一次就毀掉整個功能的可信度,所以由確定性驗證把關,不靠模型自律。</p>
+<h3>現狀證據</h3>
+<div class="evidence"><code>grep -ri 'replacement\|suggestion' src/ prompts/</code> 零命中 → v2 完全未動工。v1(行內留言、錨定驗證、20 條上限、body fallback)已出貨(<code>d47d7ee</code>),本工單只疊加,不重寫。</div>
+<h3>步驟(照序)</h3>
+<ol>
+<li><strong>Schema</strong>:<code>src/shared/schema.ts</code> 的 <code>Finding</code> 加可選欄位:
+<pre><code>readonly replacement?: { readonly lines: readonly string[] };</code></pre></li>
+<li><strong>Normalize</strong>:<code>src/shared/normalize.ts</code> 驗證——欄位存在時必須是非空 string 陣列;形狀不對就把該欄位丟棄(finding 本身保留,降級為無 suggestion),<strong>不要</strong>因 replacement 壞掉而整個 finding 報錯(它是增強,不是必需)。</li>
+<li><strong>Prompt</strong>:<code>prompts/review.md</code> 與 <code>prompts/deep.md</code> 的 finding 欄位說明各加一句(先寫 holdout!第 3 條)。建議措辭(通用,無 fixture 詞彙;可微調但語意不可變):
+<pre><code>"replacement": optional. Only include when you can provide the exact
+full replacement for lines lineStart..lineEnd, one array element per
+line, matching the file's existing indentation. When unsure, omit.</code></pre></li>
+<li><strong>確定性驗證</strong>:<code>src/adapters/github.ts</code> 貼行內留言前——finding 有 replacement 時,取 head 版該檔的 <code>lineStart..lineEnd</code> 原文(從既有 patch 解析或 <code>git show &lt;headSha&gt;:&lt;file&gt;</code>),確認該行區間確實存在且在 diff 的 RIGHT 側 hunk 內(v1 的 anchorable 檢查已涵蓋後者)。驗證過 → 留言 body 附:
+<pre><code>```suggestion
+&lt;replacement.lines joined by \n&gt;
+```</code></pre>
+驗不過 → 留言照 v1 樣式(不附 suggestion),<strong>絕不硬貼</strong>。</li>
+<li><strong>單測</strong>:normalize 的接受/降級各一;<code>github-posting.test.ts</code> 模式加三個 case:驗證過附 suggestion、驗證失敗降級、無 replacement 走 v1 原樣。</li>
+<li><strong>Eval gate</strong>(動了 prompt,走 4.4 全套):判準<strong>現在寫死</strong>——全量 36 @ medium × 1 draw:recall ≥ 0.90、fp = 0、invalidJson = 0、meanDur 漲幅 ≤ 15%;divergent fixtures confirm × 3 非劣。</li>
+<li><strong>Live 驗證</strong>(4.7 流程):埋 bug PR 上看到 suggestion 且一鍵 commit 成功;截圖存證。</li>
+</ol>
+<h3>驗收點(四層,逐項執行,全過才算 DONE)</h3>
+<p><strong>第一層 · 單測</strong>——以下 6 個 case 必須存在且綠(<code>pnpm test</code> exit 0;case 名可異,行為必須一一對應):</p>
+<table>
+<tr><th>#</th><th>測試行為</th><th>斷言</th></tr>
+<tr><td>U1</td><td>normalize:合法 replacement(非空 string 陣列)</td><td>欄位保留,內容原樣</td></tr>
+<tr><td>U2</td><td>normalize:非陣列 / 含非字串元素 / 空陣列</td><td>replacement 欄位被丟棄,<strong>finding 本身保留</strong>(不整筆報錯)</td></tr>
+<tr><td>U3</td><td>posting:head 行文驗證通過</td><td>留言 payload body 含 <code>```suggestion</code> 區塊,區塊內容 = <code>replacement.lines.join("\n")</code></td></tr>
+<tr><td>U4</td><td>posting:lineStart..lineEnd 與 head 原文不符</td><td>body 無 suggestion 區塊,行內留言仍照 v1 樣式貼出</td></tr>
+<tr><td>U5</td><td>posting:finding 無 replacement</td><td>輸出與 v1 完全相同(對照既有測試不改仍綠)</td></tr>
+<tr><td>U6</td><td>schema 相容:舊 JSON(無 replacement 欄)</td><td>normalize 結果與加欄前 byte 級一致</td></tr>
+</table>
+<p><strong>第二層 · Eval gate</strong>——報告 <code>eval/reports/w2-gate.json</code> 必須存在,以下每欄用 <code>jq</code> 讀值比對(基線 = <code>eval/results/p9-gate-v2.json</code>:recall 94.1%、meanDur 47.9s):</p>
+<table>
+<tr><th>#</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>G1</td><td><code>jq .aggregates.recall eval/reports/w2-gate.json</code></td><td>≥ 0.90(36 fixtures、<code>--holdout include</code>、medium、1 draw)</td></tr>
+<tr><td>G2</td><td><code>jq .aggregates.falsePositiveRate ...</code></td><td>= 0</td></tr>
+<tr><td>G3</td><td><code>jq .aggregates.invalidJsonRate ...</code></td><td>= 0</td></tr>
+<tr><td>G4</td><td><code>jq .aggregates.meanDurationMs ...</code></td><td>≤ 55000(基線 47.9s × 1.15)</td></tr>
+<tr><td>G5</td><td>對每個與基線 recallByFixture 不一致的 fixture:<code>--fixtures '&lt;id&gt;' --draws 3</code></td><td>每個 divergent fixture ≥ 2/3,且無 fixture 從穩定 hit 變穩定 miss</td></tr>
+<tr><td>G6</td><td>檢查本輪新 holdout</td><td>新 holdout fixture 的 spec 含 <code>holdout: true</code>,且其首次執行紀錄只出現在 gate 報告,不出現在任何 iter 報告(<code>grep -l '&lt;holdout-id&gt;' eval/reports/w2-iter*.json</code> 零命中)</td></tr>
+</table>
+<p><strong>第三層 · Live</strong>(4.7 流程):</p>
+<table>
+<tr><th>#</th><th>驗收項</th><th>通過標準</th></tr>
+<tr><td>L1</td><td>埋 bug PR 上至少 1 個 finding 帶 suggestion</td><td>GitHub UI 顯示原生 suggestion 區塊(有「Commit suggestion」按鈕)</td></tr>
+<tr><td>L2</td><td>一鍵 commit</td><td>點擊後產生的 commit diff 內容 = replacement 內容,無錯位</td></tr>
+<tr><td>L3</td><td>存證</td><td>PR 連結與截圖記進工單 commit 訊息或 PR 描述</td></tr>
+</table>
+<p><strong>第四層 · 文件</strong>:<code>grep -c suggestion README.md</code> ≥ 1(GitHub mode 段);CHANGELOG Unreleased 一條;RESULTS.md 新段落含 gate 數字與報告路徑(格式仿 P9 段)。</p>
+<h3>失敗處置</h3>
+<p>gate 顯示 recall 掉或 invalidJson 升 → 削 prompt 措辭一次(更短、更保守)再 gate;再敗 → revert 整個 prompt 改動,<strong>保留</strong> schema/normalize/渲染碼(它們對舊輸出零影響),RESULTS.md 記錄,W2 標記為「基礎建設完成、prompt 啟用失敗待重試」。</p>
+</div>
+
+<!-- ============ W3 ============ -->
+<div class="card measure" id="w3">
+<h2>W3 · go-backend-slop-swallow 盲點終局(兩發子彈,打完收工)</h2>
+<div class="badges">
+<span class="badge b-measure">第 4 順位</span>
+<span class="badge b-effort">半天</span>
+<span class="badge b-risk-mid">風險:中(prompt/管線,全程 gate)</span>
+</div>
+<h3>目標與背景</h3>
+<p>唯一量測到的穩定盲點:<strong>exported 的錯誤吞噬 wrapper、repo 內零呼叫端</strong>——模型不把「死的公開 API」當 P2 報。P9 期間已試過 4 層措辭全敗(0/5+)。本工單是<strong>終局</strong>:預先聲明兩個實驗,各有寫死的 gate,兩發都不中就正式結案為 documented limitation。<span class="warn">禁止第三發</span>——注意力預算紅線:review.md 每加一段,其他類別的 recall 就被稀釋,這是 P9 第 3 輪迭代量測過的真實現象(trigger-as-taxonomy 回歸)。</p>
+<h3>實驗 A(先打:結構,不動 prompt 措辭)</h3>
+<p>TRIGGER D 觸發但無法清除(產生 <code>blocks:true</code> residual)時,由<strong>程式碼</strong>(<code>src/core/review.ts</code>)對該 surface 用 <code>high</code> effort 追加一次重審,合併結果後照常走 critic。這是第 12 條的正統做法:結構優先於措辭。</p>
+<ul>
+<li>gate(寫死):<code>go-backend-slop-swallow</code> ≥ 2/3(confirm × 3);全量非劣(recall ≥ 0.90、fp = 0);追加調用只允許出現在 D-觸發的 draw(報告的 per-draw calls 可驗)。</li>
+</ul>
+<h3>實驗 B(A 敗才打:一句 prompt)</h3>
+<p>review.md/deep.md 的 TRIGGER D 段加一句(先寫新 holdout;建議措辭,無語言/fixture 詞彙):</p>
+<pre><code>Weakened error handling in an exported/public symbol counts even with
+zero in-repo callers: the callers of a public API live outside this repo.</code></pre>
+<ul>
+<li>gate 同 A;特別盯負樣本(<code>go-harmless-variadic</code>、<code>neg-safe-tightening</code>)零新增誤報——P9 第 4 輪的 pendulum fp 就是 public-carrier 措辭盪過頭造成的。</li>
+</ul>
+<h3>兩發皆敗 → 結案程序</h3>
+<ol>
+<li>revert 全部改動;RESULTS.md 記兩個實驗的數據。</li>
+<li>fixture 保留在 eval(<strong>不刪</strong>——它是誠實的分母)。</li>
+<li>README Status 的 Known limitation 句已在 W1 寫好,確認措辭一致。</li>
+<li>FUTURE_TODO 記:「dead-public-API error swallow:6 種手段已試盡,擱置;重啟條件 = 換模型世代,或真實 PR 出現同類 miss」。</li>
+</ol>
+<h3>驗收點(依結局分三套,走到哪套驗哪套)</h3>
+<p><strong>結局 A(實驗 A 過 gate):</strong></p>
+<table>
+<tr><th>#</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>A1</td><td><code>node --import tsx eval/run.ts --fixtures 'go-backend-slop-swallow' --draws 3 --report eval/reports/w3-confirm.json</code> 後 <code>jq '.aggregates.recallByFixture["go-backend-slop-swallow"]'</code></td><td>≥ 0.66(即 ≥ 2/3)</td></tr>
+<tr><td>A2</td><td>全量 gate 報告 <code>jq .aggregates.recall / .falsePositiveRate / .invalidJsonRate</code></td><td>≥ 0.90 / = 0 / = 0</td></tr>
+<tr><td>A3</td><td>追加調用只發生在 D-觸發 draw:比對報告 <code>draws[].calls</code> 與基線</td><td>非 D-觸發 fixture 的每 draw 調用數與基線相同;只有 D-觸發 draw 多 1 次(高 effort 重審那次)</td></tr>
+<tr><td>A4</td><td>單測:D-觸發 → 升級重審的分支邏輯</td><td>stub runner 測「residual blocks + TRIGGER D → 第二次調用發生;無 residual → 不發生」兩向皆綠</td></tr>
+<tr><td>A5</td><td>RESULTS.md 新段落</td><td>含判準、實測數字、報告路徑、promptHash 註記</td></tr>
+</table>
+<p><strong>結局 B(實驗 B 過 gate):</strong>A1、A2、A5 同上,另加:</p>
+<table>
+<tr><th>#</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>B1</td><td><code>--fixtures 'go-harmless-variadic|neg-safe-tightening|rs-refactor' --draws 3</code></td><td>三個負樣本 fp 全部 = 0(pendulum fp 主防線)</td></tr>
+<tr><td>B2</td><td>新 holdout 封存檢查(同 W2 的 G6)</td><td>holdout 只出現在最終 gate 報告</td></tr>
+<tr><td>B3</td><td>fixture 詞彙自檢(§0 第 7 條)</td><td>新措辭對 <code>ls eval/fixtures/</code> 目錄名關鍵詞 grep 零命中</td></tr>
+</table>
+<p><strong>結局 C(兩發皆敗,結案為 documented limitation):</strong></p>
+<table>
+<tr><th>#</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>C1</td><td><code>git status --porcelain</code> + <code>git diff main -- prompts/ src/</code></td><td>revert 完成,對 main 零 diff</td></tr>
+<tr><td>C2</td><td><code>grep -c 'CLOSED' eval/RESULTS.md</code>(或等義標題)</td><td>新段落存在,含兩個實驗的判準、數字、報告路徑</td></tr>
+<tr><td>C3</td><td><code>ls eval/fixtures/go-backend-slop-swallow/</code></td><td>spec.ts 仍在(fixture 不刪,誠實分母)</td></tr>
+<tr><td>C4</td><td><code>grep -A3 'dead-public-API' FUTURE_TODO.md</code></td><td>條目含兩個重啟條件:換模型世代、或真實 PR 同類 miss</td></tr>
+<tr><td>C5</td><td>README known limitation 句與 W1 驗收 #3 一致</td><td>grep 找得到且措辭無矛盾</td></tr>
+</table>
+</div>
+
+<!-- ============ W4 ============ -->
+<div class="card measure" id="w4">
+<h2>W4 · criticPruneErrorRate 首次判讀(先有數字,後有工程)</h2>
+<div class="badges">
+<span class="badge b-measure">第 5 順位</span>
+<span class="badge b-effort">2 小時</span>
+<span class="badge b-risk-low">風險:無(純讀數)</span>
+</div>
+<h3>目標</h3>
+<p>P15 建好了量測管線(eval 預設帶 <code>NEEDLEFISH_EVAL_TRACE=1</code>,報告有 <code>aggregates.criticPruneErrorRate</code>),但從未有人正式判讀。FUTURE_TODO 的「critic parallelism / depth」立項與否,由這個數字決定。</p>
+<h3>步驟</h3>
+<ol>
+<li>讀 <code>eval/results/weekly/*.json</code>(weekly-eval 每週自動產)最近兩份的 <code>criticPruneErrorRate</code>;不足兩份就手動跑一份全量 × 3 draws @ medium 補上。</li>
+<li>判讀規則(寫死):
+<ul>
+<li><strong>≤ 5%</strong> → 不立項。FUTURE_TODO 的 critic 段記數據 + 日期 + 「RESOLVED-for-now,重啟條件:任一週 weekly 報告 &gt; 5%」。結案。</li>
+<li><strong>&gt; 5%</strong> → 立項 critic 改造,但照這個順序:先用 <code>eval/inspect.ts</code> 看每個被刪的 mustFind 命中長什麼樣 → 找共同形狀(最可能:critic 把某類證據誤判為「naming-only」或「speculative」,P9 第 1 輪迭代的 spec-drift 被刪就是這型)→ 優先在 <code>prompts/critic.md</code> 的 DELETE 規則加<strong>窄例外</strong>(比照既有 contract-drift carve-out 的寫法)→ 走 4.4 gate。<span class="warn">不要</span>直接跳到「第二個 critic 模型」——那是加調用,最後手段。</li>
+</ul></li>
+</ol>
+<h3>驗收點(逐項執行,全過才算 DONE)</h3>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>數據來源合格</td><td>對每份報告:<code>jq '{n: (.draws|length), hash: .promptHash, rate: .aggregates.criticPruneErrorRate}' &lt;report&gt;</code></td><td>≥ 2 份報告、每份為全量 × 3 draws(draws 長度 = 36×3 = 108)、兩份 promptHash 相同;不足就先補跑</td></tr>
+<tr><td>2</td><td>判讀值採計規則</td><td>取兩份中<strong>較差</strong>(較高)的 criticPruneErrorRate 為判讀值</td><td>判讀值與兩份原始值一起記錄,不准只記好看的那份</td></tr>
+<tr><td>3a</td><td>結局 ≤5%</td><td><code>grep -B2 -A4 'criticPruneErrorRate' FUTURE_TODO.md</code></td><td>critic 段含:兩份數值、報告路徑、判讀日期、「RESOLVED-for-now」、重啟條件句(任一週 weekly &gt; 5%)</td></tr>
+<tr><td>3b</td><td>結局 &gt;5%(立項)</td><td>檢視新工單文件</td><td>含四段:目標 / 步驟 / 寫死的 gate / 失敗處置;且第一步驟的產物已存在——用 <code>eval/inspect.ts</code> 列出每個被刪 mustFind 的 fixture 清單 + 一段共同形狀歸納(哪條 DELETE 規則誤殺)</td></tr>
+<tr><td>4</td><td>不越權</td><td>本工單的 diff</td><td>零程式碼、零 prompt 改動——W4 是純判讀;若 3b 立項,實作屬於新工單,不在 W4 內動工</td></tr>
+</table>
+</div>
+
+<!-- ============ W5 ============ -->
+<div class="card data" id="w5">
+<h2>W5 · GitHub Marketplace 上架</h2>
+<div class="badges">
+<span class="badge b-data">第 6 順位</span>
+<span class="badge b-effort">半天</span>
+<span class="badge b-risk-low">風險:低</span>
+<span class="badge b-human">需要 Frank:最後一步網頁點擊</span>
+</div>
+<h3>目標</h3>
+<p>Needlefish 可被搜尋、可被 <code>uses:</code>、可被信賴。LLM 能做的是把一切準備到「Frank 只需點兩下」。</p>
+<h3>前置查核(全部已滿足才進行)</h3>
+<ul class="checklist">
+<li><code>action.yml</code> 有 <code>branding</code>(已有:icon eye / color blue ✔)、name、description(✔)</li>
+<li><code>gh release view v0.3.0</code> 存在(release.yml 應已建;沒有就照 4.5 補)</li>
+<li>README quick start 30 秒區塊在頂部(✔,README 第 16 行起)</li>
+<li>W1 完成(Status 段不再過期——上架前門面必須誠實)</li>
+</ul>
+<h3>上架文案(交給 Frank 用)</h3>
+<pre><code>Needlefish — strict PR review that shows its work
+
+Three differences from other AI reviewers:
+1. Evidence or silence: every blocking finding carries structured
+   evidence (checked[]); no evidence, no finding. Zero findings is a
+   valid, common outcome.
+2. Read-only by construction: the model runner is sandboxed, never
+   touches your credentials, never mutates your repo.
+3. Deterministic verdict: pass / needs_human / changes_requested is
+   derived by code from validated findings — model prose never decides.
+
+Measured on a 36-fixture eval: 94% recall, 0 false positives, ~48s per
+review. Docs-only PRs short-circuit for free.</code></pre>
+<h3>人工步驟(LLM 準備好上面一切後,開 issue 或留言請 Frank 執行)</h3>
+<ol>
+<li>GitHub → repo → Releases → 對既有 release「Edit」→ 勾選「Publish this Action to the GitHub Marketplace」→ 選分類(建議:Code review / Code quality)→ 儲存。需要帳號 2FA,LLM 不能代做。</li>
+</ol>
+<h3>驗收點(分「上架前準備」與「上架後」兩段)</h3>
+<p><strong>上架前(LLM 可獨力完成的部分,全過才准請 Frank 點擊):</strong></p>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>Release 存在</td><td><code>gh release view v0.3.0</code></td><td>exit 0,notes 非空</td></tr>
+<tr><td>2</td><td>branding 完整</td><td><code>grep -A2 'branding:' action.yml</code></td><td>icon 與 color 兩欄都有值</td></tr>
+<tr><td>3</td><td>README 門面</td><td><code>grep -n 'Quick start' README.md</code></td><td>出現在前 30 行內</td></tr>
+<tr><td>4</td><td>W1 已完成</td><td>W1 驗收表全過</td><td>上架前門面必須誠實</td></tr>
+<tr><td>5</td><td>文案交付</td><td><code>gh issue view &lt;n&gt;</code>(或留言連結)</td><td>issue/留言含:完整上架文案、分類建議、逐步網頁操作步驟,Frank 照著點不需要思考</td></tr>
+</table>
+<p><strong>上架後(Frank 點完回報後執行):</strong></p>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>6</td><td>Marketplace 頁存在</td><td><code>curl -sI https://github.com/marketplace/actions/&lt;slug&gt;</code></td><td>HTTP 200</td></tr>
+<tr><td>7</td><td>外部可用性實測</td><td>在一個乾淨測試 repo 放 workflow <code>uses: frankekn/needlefish@v0</code>,開一個埋 bug PR</td><td>action run 結束於 verdict 對應的 conclusion(success/failure),而不是 error/crash</td></tr>
+<tr><td>8</td><td>Badge</td><td><code>grep -c 'marketplace' README.md</code></td><td>≥ 1,連結指向第 6 項的 URL</td></tr>
+</table>
+</div>
+
+<!-- ============ W6 ============ -->
+<div class="card data" id="w6">
+<h2>W6 · v1.0.0(條件觸發,不要提前)</h2>
+<div class="badges">
+<span class="badge b-data">條件觸發</span>
+<span class="badge b-effort">半天</span>
+<span class="badge b-risk-low">風險:低</span>
+<span class="badge b-human">需要 Frank:push + tag</span>
+</div>
+<h3>進入條件(四項全滿足才准 cut;缺一就繼續等)</h3>
+<ol>
+<li>連續 <strong>4 次</strong> weekly-eval 無 recall-drop issue、無 run-failed issue。</li>
+<li>≥ <strong>2 個</strong>非本 repo 的真實 repo 以 <code>uses:</code> 實際在跑(問 Frank 或看 action 的 traffic)。</li>
+<li>W2 已出貨且 live 驗證過。</li>
+<li>無 open 的 P0 等級 bug issue。</li>
+</ol>
+<h3>步驟</h3>
+<ol>
+<li>照 4.5 SOP cut <code>1.0.0</code>(CHANGELOG、package.json、tag <code>v1.0.0</code>)。release.yml 會自動驗證並產生浮動 <code>v1</code> tag。</li>
+<li>README 全文把 <code>@v0</code> 範例改成 <code>@v1</code>。</li>
+<li>Marketplace release 說明更新(若 W5 已上架)。</li>
+</ol>
+<h3>驗收點(逐項執行,全過才算 DONE)</h3>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>進入條件證據化</td><td>cut commit 訊息或 release notes</td><td>四項條件各附可查證據:(a) <code>gh issue list --search "Weekly eval" --state all</code> 顯示最近 4 週零新 issue;(b) 兩個外部 repo 名;(c) W2 的 live PR 連結;(d) <code>gh issue list --search "P0"</code> 零 open</td></tr>
+<tr><td>2</td><td>版本三處一致</td><td><code>node -p "require('./package.json').version"</code>;<code>grep -n '## 1.0.0' CHANGELOG.md</code>;<code>git tag -l v1.0.0</code></td><td>三處都是 1.0.0</td></tr>
+<tr><td>3</td><td>release workflow 成功</td><td><code>gh run list --workflow needlefish-release -L1</code></td><td>conclusion = success(代表 tag push 觸發的 check+test 綠)</td></tr>
+<tr><td>4</td><td>浮動 tag 滾動</td><td><code>git ls-remote origin refs/tags/v1 refs/tags/v1.0.0</code></td><td>兩個 ref 指向同一 SHA</td></tr>
+<tr><td>5</td><td>GitHub Release 存在</td><td><code>gh release view v1.0.0</code></td><td>exit 0</td></tr>
+<tr><td>6</td><td>README 無殘留舊 tag</td><td><code>grep -c '@v0' README.md</code></td><td>= 0</td></tr>
+<tr><td>7</td><td>消費者實測</td><td>測試 repo 的 workflow 改 <code>@v1</code> 跑一次</td><td>run 正常結束於 verdict conclusion</td></tr>
+</table>
+<h3>回滾</h3>
+<p><code>git tag -f v1 &lt;上一個好版 SHA&gt; && git push -f origin v1</code>。已演練過,一分鐘。</p>
+</div>
+
+<!-- ============ W7 ============ -->
+<div class="card face" id="w7">
+<h2>W7 · Harness 煞車系統(ACP 線)</h2>
+<div class="badges">
+<span class="badge b-face">獨立線 · 可與 W2–W5 並行</span>
+<span class="badge b-effort">階段 A:1 天;階段 B:1 天</span>
+<span class="badge b-risk-mid">風險:中(碰 runner 子行程管理)</span>
+</div>
+<h3>設計原則(一句話版)</h3>
+<p><strong>「ACP 是訊號線,煞車系統必須在 Needlefish。」</strong>Runner(codex/claude/opencode/未來的 ACP agent)是不可信 agent:可能掛死、可能不理 cancel、可能生孫行程。可靠性邊界由 Needlefish 擁有:<code>deadline → soft cancel → grace → kill process tree</code>,OS 級 kill 是最後保證,協議級 cancel 只是禮貌。完整設計圖:<code>docs/plans/needlefish-acp-harness-design.html</code>(W0 移入後的路徑)。</p>
+<h3>階段 A — RunnerProcess 硬保證(先做,獨立有價值,不需 ACP)</h3>
+<p>改 <code>src/shared/runner-process.ts</code>(既有 timeout 邏輯在此):</p>
+<ol>
+<li>spawn 時把 runner 放進自己的 process group(<code>detached: true</code>),記 pgid。</li>
+<li>timeout 到:先對<strong>群組</strong>送 SIGTERM(<code>process.kill(-pid, "SIGTERM")</code>)→ 等 grace(寫死 5 秒)→ 仍活著就 SIGKILL 群組。darwin 與 linux 行為一致;不支援 Windows(現況也不支援,不新增)。</li>
+<li>被 kill 的 run 回傳 typed timeout error(沿用既有錯誤型別/訊息慣例,見檔內現有 timeout 路徑),上層照既有失敗路徑走(GitHub mode 貼 failed check;絕不默默當成功)。</li>
+<li><strong>殭屍測試</strong>(DONE 的核心判準):stub script spawn 一個孫行程、trap SIGTERM 不退出;斷言 deadline 後(a)孫行程也死了(用 pgid probe),(b)review 收到 typed error 而非 hang,(c)測試本身在有限時間內結束。放 <code>src/shared/runner-process.test.ts</code>,沿用 temp-script stub 慣例。</li>
+</ol>
+<h3>階段 B — ACP adapter(A 出貨後,立項前跟 Frank 確認一次)</h3>
+<ol>
+<li>新增第五種 runner:<code>acp</code>(現有:codex/claude/opencode/openai/grok,見 <code>src/shared/runner.ts</code>)。ACP 提供 cancel/update 的協議語意;deadline 與 kill 仍走階段 A 的機制——協議 cancel 先試,不聽話就 OS kill。</li>
+<li>read-only 契約照第 5 條:ACP agent 的沙箱/權限比照 codex runner 的處理(token env 剝除、唯讀)。</li>
+<li>測試:stub ACP server(temp script)模擬四個象限——clean exit / typed error / malformed output / hang,四種都必須以確定性結局收場。</li>
+<li>eval:用 <code>--runner acp</code> 跑 smoke 子集確認管線通;不需 prompt gate(不動 prompts)。</li>
+</ol>
+<h3>紅線</h3>
+<ul>
+<li>任何路徑不得讓 review 無限等待;任何 runner 失敗不得被吞成 pass。</li>
+<li>本工單<strong>不動 prompts</strong>——若你發現自己在改 prompts,你走錯路了,停。</li>
+</ul>
+<h3>驗收點(兩階段各自獨立驗收)</h3>
+<p><strong>階段 A(kill-tree 硬保證):</strong></p>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗方法</th><th>通過標準</th></tr>
+<tr><td>A1</td><td>殭屍測試存在且綠</td><td><code>src/shared/runner-process.test.ts</code> 新測試:stub script spawn 孫行程、trap SIGTERM 不退出</td><td>斷言三件事全過:(a) 呼叫在 timeout+grace+2s 裕度內返回;(b) 返回的是既有慣例的 typed timeout error,不是 hang、不是靜默成功;(c) <code>process.kill(-pgid, 0)</code> 拋 <code>ESRCH</code>——整個 process group 含孫行程已滅</td></tr>
+<tr><td>A2</td><td>快速路徑零回歸</td><td><code>pnpm test</code></td><td>既有 runner-process / codex-runners / codex-scope 測試<strong>一行不改</strong>仍全綠(正常退出的 runner 行為完全不變)</td></tr>
+<tr><td>A3</td><td>雙平台</td><td>本機 darwin 跑 pnpm test + push 後 CI(linux)綠</td><td>兩平台都綠;commit 訊息附 CI run 連結</td></tr>
+<tr><td>A4</td><td>grace 常數單一定義</td><td><code>grep -rn 'grace' src/shared/ | grep -v test</code></td><td>常數只定義一處(允許 env 覆蓋,但預設值單點)</td></tr>
+<tr><td>A5</td><td>失敗不被吞</td><td>單測:被 kill 的 review 走 GitHub 失敗路徑</td><td>斷言 failed check 會貼、絕不產生 pass verdict</td></tr>
+</table>
+<p><strong>階段 B(ACP adapter):</strong></p>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗方法</th><th>通過標準</th></tr>
+<tr><td>B1</td><td>四象限 stub 測試</td><td>stub ACP server(temp script)× 4:clean exit / typed error / malformed output / hang</td><td>四個測試各自斷言確定性結局:成功解析 / 錯誤上拋 / 重問一次後上拋 / deadline 後 kill + typed error;任何一個都不得讓測試逾時</td></tr>
+<tr><td>B2</td><td>憑證剝除比照 codex</td><td>單測斷言 spawn env</td><td><code>GH_TOKEN</code>/<code>GITHUB_TOKEN</code>/<code>GITHUB_API_TOKEN</code> 不存在於 ACP 子行程 env</td></tr>
+<tr><td>B3</td><td>runner 註冊完整</td><td><code>node --import tsx src/cli.ts --help</code> + args 單測</td><td><code>acp</code> 出現在 runner 白名單;非法值錯誤訊息含 acp</td></tr>
+<tr><td>B4</td><td>smoke eval 通</td><td><code>node --import tsx eval/run.ts --runner acp --fixtures 'pos-over-block|neg-style-only' --draws 1</code></td><td>跑完無 fail、invalidJsonRate = 0(recall 不設門檻——取決於接上的 agent,不是本工單的責任)</td></tr>
+<tr><td>B5</td><td>文件</td><td><code>grep -c acp README.md CHANGELOG.md</code></td><td>README runner 段 ≥ 1、CHANGELOG ≥ 1</td></tr>
+</table>
+</div>
+
+<!-- ============ W8 ============ -->
+<div class="card face" id="w8">
+<h2>W8 · findings/verdict 穩定 JSON 契約(修復 lane 地基)</h2>
+<div class="badges">
+<span class="badge b-face">可插隊 · 無前置依賴</span>
+<span class="badge b-effort">半天</span>
+<span class="badge b-risk-low">風險:低(不碰 prompts,不需 eval gate)</span>
+</div>
+<h3>目標</h3>
+<p>把審查結果從「輸出」升格為「API」:任何機器消費者(首要是 R8 修復 lane,未來含 CI 整合、統計腳本)都能依賴一個<strong>版本化、文件化、不隨手改</strong>的 JSON 形狀。這是 Frank 已拍板的 C 架構(同 repo 分 lane)的第一塊地基——fixer 消費 reviewer 的唯一通道就是這個契約。</p>
+<h3>現狀證據</h3>
+<div class="evidence"><code>~/.cache/needlefish/&lt;repo&gt;/last-review.json</code> 已存完整 <code>ReviewResult</code>(<code>src/adapters/local.ts</code>),但:無版本欄、無 stdout 直出模式(消費者得知道快取路徑)、README 沒有任何穩定性承諾。</div>
+<h3>步驟</h3>
+<ol>
+<li><code>src/shared/schema.ts</code>:<code>ReviewResult</code> 加 <code>readonly schemaVersion: 1</code>(字面型別;將來破壞性改動 = 升號 + CHANGELOG 記載)。組裝結果處(<code>src/core/review.ts</code>)填值。</li>
+<li><code>src/cli/args.ts</code> + <code>src/cli.ts</code>:local 與 <code>pr</code> 模式加 <code>--json</code> 旗標——stdout 改印 <code>ReviewResult</code> JSON(單行或 pretty 皆可,選一種寫死),Markdown 與人類訊息全部改走 stderr 或省略;exit code 慣例照舊。GitHub 模式拒絕 <code>--json</code>(比照既有「拒絕被忽略的旗標組合」慣例)。</li>
+<li>快取檔與 <code>--json</code> 輸出必須是<strong>同一個序列化路徑</strong>(單一函式),不許兩處各自 stringify——否則遲早漂移。</li>
+<li>README 加「Machine interface」短段:欄位表(verdict、findings[](severity/file/lineStart/lineEnd/confidence/whyItBreaks/suggestedFix/validation/consumerFile/consumerLine)、residual_risks[]、checked[]、stats、schemaVersion)、穩定性承諾(同 schemaVersion 內只加欄不改不刪)、消費範例(<code>needlefish --repo . --json | jq .verdict</code>)。</li>
+<li>單測:args 解析(--json 各模式接受/拒絕)、輸出形狀 snapshot(stub runner)、schemaVersion 存在於 stdout 與快取兩處。</li>
+</ol>
+<h3>驗收點(逐項執行,全過才算 DONE)</h3>
+<table>
+<tr><th>#</th><th>驗收項</th><th>檢驗指令</th><th>通過標準</th></tr>
+<tr><td>1</td><td>stdout 是純 JSON</td><td><code>needlefish --repo &lt;測試 repo&gt; --json | jq . &gt; /dev/null</code></td><td>exit 0;stdout 除 JSON 外零雜訊(人類訊息全在 stderr)</td></tr>
+<tr><td>2</td><td>版本欄</td><td><code>... --json | jq .schemaVersion</code></td><td>輸出 <code>1</code></td></tr>
+<tr><td>3</td><td>verdict 合法值</td><td><code>... --json | jq -r .verdict</code></td><td>∈ {pass, needs_human, changes_requested}</td></tr>
+<tr><td>4</td><td>兩路輸出同源</td><td><code>diff &lt;(jq -S . ~/.cache/needlefish/&lt;repo&gt;/last-review.json) &lt;(needlefish --repo &lt;repo&gt; --json | jq -S .)</code>(同一次 run 的快取與 stdout)</td><td>diff 為空;且 <code>grep -rn 'JSON.stringify' src/</code> 中 ReviewResult 的序列化只有一處(單一函式)</td></tr>
+<tr><td>5</td><td>pr 模式同樣支援</td><td><code>needlefish pr &lt;n&gt; --json | jq .schemaVersion</code></td><td>輸出 <code>1</code></td></tr>
+<tr><td>6</td><td>GitHub 模式拒絕</td><td><code>needlefish --github --pr 1 --json</code></td><td>exit 非 0,錯誤訊息明確指出組合不支援(比照既有拒絕慣例)</td></tr>
+<tr><td>7</td><td>單測覆蓋</td><td><code>pnpm test</code></td><td>新增 case 全綠:args 解析三向(local 接受 / pr 接受 / github 拒絕)、輸出形狀 snapshot(stub runner)、schemaVersion 同時存在於 stdout 與快取</td></tr>
+<tr><td>8</td><td>契約文件</td><td><code>grep -n 'Machine interface' README.md</code></td><td>段落存在,含欄位表、穩定性承諾句(同 schemaVersion 內只加欄不改不刪)、jq 消費範例;CHANGELOG 一條</td></tr>
+<tr><td>9</td><td>建置</td><td><code>pnpm check && pnpm test</code></td><td>exit 0</td></tr>
+</table>
+<h3>紅線</h3>
+<p>本工單<strong>只包裝、不改形狀</strong>:不趁機重命名欄位、不「順手清理」schema——既有欄位形狀就是契約 v1 的內容。發現形狀有問題,記進 FUTURE_TODO 等 v2,不要現在動。</p>
+</div>
+
+<h3 id="dormant">條件觸發項(躺著的,不主動做)</h3>
+<table>
+<tr><th>項目</th><th>觸發條件</th><th>觸發後第一步</th></tr>
+<tr><td><code>--fix</code> 修復 lane</td><td>W2 suggestion 出貨後,實際「一鍵 commit 採用率」有數據且 Frank 點頭</td><td>先做 W8(地基),再照 R8 定案架構走階段 2;架構與四條硬規則見 <a href="#r8">R8</a></td></tr>
+<tr><td>Multi-repo config 檔</td><td>第二個真實使用者提出具體需求</td><td>需求訪談,不要先設計</td></tr>
+<tr><td>第二 critic / critic 深化</td><td>W4 量出 criticPruneErrorRate &gt; 5%</td><td>照 W4 的順序:先 inspect,後窄例外,最後才加調用</td></tr>
+<tr><td>P4 sandbox 池化</td><td>clone 時間佔比 &gt; 5%(per-call stats 可算)</td><td>先重新量測,數據過門檻才動</td></tr>
+<tr><td>盲點重啟</td><td>換模型世代,或真實 PR 出現 dead-public-API miss</td><td>重讀 W3 結案紀錄,設計第三種結構性手段</td></tr>
+</table>
+
+<!-- ============================================================ S5B -->
+<h2 id="s5b">§5B 遠期 Roadmap(Horizon 2/3)— 這是唯一一次長程規劃,寫給沒有規劃能力的執行者</h2>
+
+<p><strong>北極星(唯一的長期目標):</strong>Needlefish 從「一個會留言的 bot」變成「<strong>團隊敢拿來擋 merge 的審查者</strong>」。所有遠期方向都以此排序。量測信任的唯一誠實指標是 <strong>override rate</strong>:人類推翻 Needlefish verdict 的頻率——低 override + 高採用 = 信任;其他一切(星星數、安裝數)都是虛榮指標。</p>
+
+<p>使用規則:Horizon 2/3 的項目<strong>不是待辦</strong>,是「觸發條件成立時的預授權方向」。立項程序固定:(1) 確認觸發條件成立且有證據;(2) 把該項展開成 §5 工單格式(目標/步驟/DONE/gate/失敗處置),判準抄本節已寫死的;(3) 照 §4.4 執行。任何本節沒列的新方向 = 問 Frank,不要自行發明戰略。</p>
+
+<div class="flow">時間軸與依賴(H1 = §5 的 W0–W7):
+
+H1(現在–3 個月)  W0..W7 ──────────────────────────┐
+                                                    │
+H2(3–9 個月,條件觸發)                              ▼
+  R8  修復 lane(架構定案:同 repo 分 lane)◄── 地基:W8;觸發:W2 suggestion 採用率數據
+  R9  模型世代更替 SOP              ◄── 觸發:新模型世代發布(必然發生)
+  R10 config 檔與規模化             ◄── 觸發:第 2+ 真實使用者的具體需求
+  R11 第二 forge(GitLab)adapter    ◄── 觸發:真實需求 ≥ 2 起
+                                                    │
+H3(9 個月+,願景)                                   ▼
+  R12 eval 公開 benchmark 化        ◄── 觸發:fixtures ≥ 60 且 R9 跑過一輪
+  R13 信任量測與「敢擋 merge」       ◄── 觸發:≥ 5 個活躍 repo
+  R14 審查知識庫閉環                ◄── 觸發:miss museum ≥ 20 個真實 miss</div>
+
+<h3 id="r8">R8 · 修復 lane(<code>--fix</code> 的終局形態)— 架構已定案</h3>
+<p><strong>架構決策(2026-07-04,Frank 拍板):同 repo、分 lane。</strong>Needlefish 不自己跑修復 loop——裁判與球員分離,reviewer 當 oracle,fixer 是它的獨立消費者。既不把 <code>--fix</code> 塞進 review 流程(污染 read-only 信任敘事),也不過早開新專案(重複一整套 harness/沙箱/eval 基礎設施)。分 lane 靠以下四條硬規則維持邊界,<strong>違反任何一條 = 架構腐蝕,停工回報</strong>:</p>
+<ol>
+<li><strong>依賴單向。</strong>fixer 可以 import <code>core/shared</code>;reviewer 核心永不 import fixer 的任何東西(檢查法:<code>grep -rn 'from ".*fix' src/core src/shared src/adapters</code> 必須零命中)。fixer 消費 reviewer 一律走 CLI + W8 的 JSON 契約,不走函式呼叫——這保證將來抽離是搬目錄,不是動手術。</li>
+<li><strong>獨立指令、獨立沙箱身分。</strong>修復是獨立入口(<code>needlefish fix</code> 子指令或獨立 bin),有自己的權限剖面(可寫入<strong>自己開的 branch</strong>、可跑目標 repo 測試 = 執行不可信程式碼,需要自己的沙箱設計,威脅模型獨立成文)。<code>action.yml</code> 的 review 路徑<strong>永不</strong>載入任何 write 能力的程式碼——Marketplace 的「read-only by construction」宣稱不得從「構造上不可能」弱化成「我們保證沒呼叫」。</li>
+<li><strong>裁判獨立性。</strong>re-review 對 fix 的審查,調用時不得攜帶「這是我自己改的」上下文;fixer 應使用<strong>與 reviewer 不同的模型</strong>(打破盲點相關性:同模型血統的 fixer 犯的錯,reviewer 大概率因同一偏誤看不見——<code>go-backend-slop-swallow</code> 是實證。選型依據:RESULTS.md 全模型表)。</li>
+<li><strong>抽出條件寫死。</strong>fixer 出現自己的發版節奏,或出現第二個消費者(別的 reviewer/工具想用這個 fix loop)→ 抽成獨立專案。屆時因規則 1,成本是搬目錄 + 把 core/shared 抽成共用套件。</li>
+</ol>
+<p><strong>Loop 煞車規格(階段 3 之前就要寫死,W7 的煞車思維升到 loop 層級):</strong></p>
+<ul>
+<li>終止條件(全部確定性):圈數硬上限 3;「連續兩圈 findings 集合無縮小」即棄;單 PR token/時間預算上限;任何一項到頂 → 棄圈,留下乾淨狀態(fix branch 刪除或標 draft + 失敗報告),永不留半改的 branch,永不碰原 branch。</li>
+<li>誤報成本不對稱:fixer 只消費通過資格判準的 finding——severity ∈ {P0,P1,P2}、有 <code>validation</code> 步驟、cross-file 者必有 consumer 引用。P3 與 residual risk 永不自動修。</li>
+<li>第二套 eval 先行:進入階段 3 前必須有 fix eval harness(fixtures 帶可執行測試;量:修復率、測試通過率、新 bug 引入率)。沒有這套 harness,階段 3 沒有 gate 可寫,等於裸奔——不准做。</li>
+</ul>
+<p><strong>信任階梯三階段</strong>(每階段獨立 gate,上一階段的實測數據是下一階段的入場券):</p>
+<ol>
+<li><strong>階段 1(已含於 W2):</strong>suggestion 區塊,人類點擊才 commit。入場數據:採用率 ≥ 30%(低於此 = 建議品質不夠格談自動化,停在這裡繼續改品質)。</li>
+<li><strong>階段 2:fix branch。</strong><code>@needlefish fix</code> 指令(maintainer-only)→ fixer 在<strong>新 branch</strong> 套用驗證過的 replacement + 跑目標 repo 測試 → 測試綠才開 PR 給人審,不綠附失敗報告。gate(現在寫死):20 次真實 fix PR 中,人類 merge 率 ≥ 60% 且零起「fix 引入新 bug」事件。前置:W8 已出貨(fixer 的輸入就是那個 JSON 契約)。</li>
+<li><strong>階段 3:自動修復 loop。</strong>changes_requested 時自動跑 fix → re-review 收斂迴圈(煞車規格如上),產出 fix PR。入場券 = 階段 2 的 gate 數據 + fix eval harness 存在 + Frank 明示同意。<span class="warn">在階段 2 數據存在之前,任何人(包括未來的你)提議直接做階段 3,一律拒絕——這是本文件預先行使的否決權。</span></li>
+</ol>
+<p><strong>放棄條件:</strong>階段 1 採用率連續兩季 &lt; 15% → 人類根本不想要機器改碼,整條線降級為永久 suggestion-only,FUTURE_TODO 記錄數據。</p>
+
+<h3 id="r9">R9 · 模型世代更替 SOP(必然發生,寫死流程)</h3>
+<p><strong>觸發:</strong>codex/claude/任何 runner 出新模型世代,或現用模型漲價/退役。<strong>這不是功能,是生存程序</strong>——Needlefish 的品質完全建立在模型之上,換模型 = 換引擎。流程(照抄執行):</p>
+<ol>
+<li>新模型以候選身分跑全量 eval × 3 draws(<code>--runner ... --model ...</code>),與現任在<strong>同 promptHash</strong> 下對比(RESULTS.md 全模型表就是這個流程的歷史產物)。</li>
+<li>切換判準(寫死):recall 非劣(≥ 現任 − 2pp)且 fp 不升,或 recall +5pp 以上可容忍 fp +1 個 fixture(需 confirm × 3)。速度/成本只做 tie-breaker。</li>
+<li>切換 = 改預設 runner/effort 的一個 commit + 全量重跑作為新基線 + RESULTS.md 記錄。<strong>prompt 不隨模型切換同步大改</strong>——一次只變一個變數。</li>
+<li>切換後第一個月,weekly-eval 門檻收緊為 &gt; 3pp 即開 issue(暫時改 weekly-eval.yml 的比較參數,一個月後改回)。</li>
+<li>已知風險先例:opus-4.8 &lt; opus-4.7(64% vs 76%)——<strong>新 ≠ 好,永遠先量再換</strong>。</li>
+</ol>
+
+<h3 id="r10">R10 · Config 檔與規模化</h3>
+<p><strong>觸發:</strong>第二個以上真實使用者提出具體需求(base branch、severity gate、focus 預設、path ignore)。<strong>設計骨架(需求成立時照此做,不要重新設計):</strong>單一 <code>.needlefish.json</code> 於目標 repo 根;欄位只加有人要過的;CLI 旗標 &gt; config &gt; 預設的覆蓋序;normalize 同樣用 unknown-then-narrow;config 解析是純函式 + 單測。<strong>紅線:</strong>不做組織級/多 repo 中央配置——那是產品公司的事,不是這個工具的事。</p>
+
+<h3 id="r11">R11 · 第二 forge adapter(GitLab)</h3>
+<p><strong>觸發:</strong>≥ 2 起真實 GitLab 需求(issue 或使用者)。<strong>可行性依據:</strong>架構已為此準備——<code>src/adapters/</code> 是唯一碰 GitHub API 的層,core/prompts/verdict 全部 forge 無關。<strong>做法:</strong><code>adapters/gitlab.ts</code> 對齊 <code>github.ts</code> 的能力面(review 貼文、行內留言、check 等價物 = pipeline status、sticky 更新),用相同的 stub-CLI 測試模式(<code>glab</code> 或直接 REST)。<strong>gate:</strong>live 驗證流程(4.7)在真實 GitLab MR 上走通。<strong>放棄條件:</strong>需求只有一起且三個月無第二起 → 不做,回覆使用者 workaround(local CLI 模式本來就 forge 無關)。</p>
+
+<h3 id="r12">R12 · Eval 公開 benchmark 化</h3>
+<p><strong>觸發:</strong>fixtures ≥ 60、defect-class 覆蓋表完成、R9 至少跑過一輪(證明 eval 能公平比較模型)。<strong>為什麼值得:</strong>RESULTS.md 的全模型表已經是市面上少見的「review agent 真實 recall」數據;公開它 = Needlefish 從工具變成該領域的<strong>度量衡</strong>,這是比任何行銷都強的護城河。<strong>步驟骨架:</strong>fixtures 抽成獨立可跑的公開子集(私留 holdout 防洩題)+ 排行榜頁(靜態生成,不要建服務)+ 投稿協議(新 runner 一個 PR 就能上榜)。<strong>紅線:</strong>公開集永不含任何真實 repo 衍生的內容(miss museum fixture 要脫敏重寫);holdout 永不公開。</p>
+
+<h3 id="r13">R13 · 信任量測與「敢擋 merge」</h3>
+<p><strong>觸發:</strong>≥ 5 個活躍 repo 在用。<strong>量什麼(全部從 GitHub API 可得,不建服務):</strong>override rate(changes_requested 後人類未修就 merge 的比率)、fix-before-merge rate(finding 被修掉才 merge)、suggestion 採用率、needs_human 的人工結論分布。<strong>做法:</strong>一個 read-only 統計腳本(<code>scripts/</code>)+ 每月人工判讀,寫進 RESULTS.md 姊妹檔 <code>eval/FIELD.md</code>。<strong>敢擋 merge 的判準(寫死):</strong>override rate 連續一季 &lt; 10% 且零 P0 誤擋投訴 → 才可以在 README 提供「required check 建議配置」;在那之前,Needlefish 永遠自稱 advisory。<strong>這條線沒有放棄條件——它就是北極星本身的量測。</strong></p>
+
+<h3 id="r14">R14 · 審查知識庫閉環(最遠的一步)</h3>
+<p><strong>觸發:</strong>miss museum 累積 ≥ 20 個真實 miss fixture。<strong>假說:</strong>屆時 fixtures 會呈現缺陷類別的長尾分布,而 TRIGGER A–D 只覆蓋頭部。<strong>方向:</strong>把 miss museum 蒸餾成缺陷類別覆蓋表(哪些類別有結構化協議、哪些裸奔)→ 每季挑「真實 miss 最多的裸奔類別」做一輪 P9 式的 TRIGGER 工程(六輪迭代筆記是方法論教材)。<strong>紅線不變:</strong>注意力預算——TRIGGER 總篇幅有上限,加新的可能要求砍舊的(屆時用 eval 驗證砍誰);prompt 不是倉庫,是稀缺的注意力分配。</p>
+
+<h3>給未來規劃者的收尾規則(本文件的規劃到此為止)</h3>
+<ul>
+<li>H2/H3 全部做完或全部觸發失敗時,這份文件的規劃壽命結束。屆時的規劃方法:<strong>拿三個月的真實使用數據(R13 的量測),找「信任階梯上最痛的一階」,只規劃那一階。</strong>這就是本文件每一輪規劃實際使用的方法。</li>
+<li>永遠不要同時開超過兩條線(一條碰模型品質、一條純工程,是唯一安全的並行組合)。</li>
+<li>任何規劃寫下來之前先問:「這一項的 gate 是什麼?失敗長什麼樣?」答不出來的項目不准進 roadmap。</li>
+</ul>
+
+<!-- ============================================================ S6 -->
+<h2 id="s6">§6 故障手冊(Playbooks)</h2>
+
+<h3>PB1 · Eval gate 失敗</h3>
+<ol>
+<li>最多迭代兩輪(§0 第 5 條)。第二輪仍不過:revert 改動——prompt 改動用 <code>git checkout &lt;基線 SHA&gt; -- prompts/</code>;已 commit 的用 <code>git revert &lt;sha&gt;</code>。</li>
+<li>RESULTS.md 記錄(模板,仿 gating-sweep 段):
+<pre><code>## &lt;工單名&gt; gate (YYYY-MM-DD) — REVERTED
+&lt;一句話:試了什麼、判準、實測數字、為何不過&gt;
+Reports: eval/reports/&lt;...&gt;.json</code></pre></li>
+<li>失敗數據是資產,不是恥辱——gating sweep 的 revert 紀錄後來救過至少一次重複立項。</li>
+</ol>
+
+<h3>PB2 · promptHash 不可比陷阱</h3>
+<p>症狀:兩份報告 recall 差很多,結論卻怪怪的。先查兩份的 <code>promptHash</code> 欄位——不同 hash 的數字<strong>沒有可比性</strong>(RESULTS.md 頂部的規則)。需要跨版本比較時,在當前 hash 下重跑基線臂。</p>
+
+<h3>PB3 · 單抽閃爍</h3>
+<p>全量單抽差 1–2 個 fixture = 雜訊,不是訊號(medium effort 的天然方差)。對 divergent fixtures <code>--draws 3</code> confirm 後才准下結論(第 6 條)。</p>
+
+<h3>PB4 · Weekly issue:recall dropped</h3>
+<ol>
+<li>開兩份報告(issue body 有路徑),diff <code>recallByFixture</code> 找掉的 fixture。</li>
+<li>對掉的 fixture confirm × 3。噪音 → 關 issue 附數據。真回歸 →</li>
+<li>檢查兩份報告的 promptHash 是否相同。不同 → 期間有 prompt/管線 commit,<code>git log --oneline -- prompts/ src/core/ src/shared/</code> 逐一嫌疑,必要時對嫌疑 commit 前後各跑相關 fixture 子集定位。</li>
+<li>相同 hash 仍回歸 → 上游模型(codex CLI 或模型本身)變了:檢查 runner 版本,考慮 pin <code>runner_version</code>;RESULTS.md 記錄環境變異。</li>
+</ol>
+
+<h3>PB5 · Weekly issue:run failed / self-hosted runner 死了</h3>
+<ol>
+<li>看 issue 連結的 Actions log:是 eval 程式錯(→ 修碼)還是 runner 機器問題(→ 下一步)。</li>
+<li>機器問題:SSH 上 runner 主機檢查 GitHub Actions runner service、磁碟、codex CLI 登入態(<code>~/.codex/auth.json</code>)。重佈:<code>scripts/deploy-ubuntu.sh</code>。</li>
+<li>機器短期救不回:weekly 可暫改 <code>runs-on: ubuntu-latest</code> + <code>CODEX_AUTH_JSON</code> secret 走 hosted(較慢但能動),修好再改回。</li>
+</ol>
+
+<h3>PB6 · 發錯版</h3>
+<p><code>git tag -f &lt;浮動tag&gt; &lt;上一個好版 SHA&gt; && git push -f origin &lt;浮動tag&gt;</code>。不可變 tag 不回收;錯得離譜的 release 用 <code>gh release edit</code> 標 prerelease + 說明。</p>
+
+<h3>PB7 · GitHub 貼文失敗</h3>
+<p>行內留言整批失敗 → body-only fallback 是內建行為(v1 設計),check-run 仍會貼。若連 check-run 都失敗:查 workflow 的 <code>permissions</code>(需要 <code>checks: write</code>、<code>pull-requests: write</code>)與 token 是否過期。降級永遠優於沉默——任何改動不得讓「審了但什麼都沒貼」發生。</p>
+
+<h3>PB8 · Codex CLI 升級弄壞東西</h3>
+<p>action 有 <code>runner_version</code> input 可 pin 舊版止血。診斷期間可用備援 runner 對照(RESULTS.md 全模型表:次佳是 claude opus-4.7 @xhigh,recall 76%;<span class="warn">opencode 系列的高 invalidJson 是 runner 迴圈問題,不是模型品質</span>——RESULTS.md Notes 有完整說明,別誤判)。</p>
+
+<h3>PB9 · 「模型看得到證據卻漏抓」型 miss</h3>
+<p>先讀 RESULTS.md 的 P9 六輪迭代筆記——大概率你要處理的形狀已經出現過(critic 誤刪 → 窄例外;零呼叫端逃逸 → public-carrier 條款;trigger-as-taxonomy → 反分類學句;措辭盪過頭 → 收窄範圍)。然後才設計新手段,且照第 12 條:結構優先於措辭。</p>
+
+<!-- ============================================================ S7 -->
+<h2 id="s7">§7 何時必須停下來問 Frank(升級規則)</h2>
+<ul>
+<li><strong>一律要問:</strong>push / merge / deploy / 刪除任何檔案或 branch / 碰 secrets / 對外發布(Marketplace、release、對外文案)/ 新增依賴 / 改安全模型(沙箱、token 處理、權限)/ 改 <code>deriveVerdict</code> 語意。</li>
+<li><strong>發現本文件與現實衝突:</strong>以現實為準,停下報告,不要照文件硬做。</li>
+<li><strong>工單之外的「好主意」:</strong>寫下來放 FUTURE_TODO,不執行。</li>
+<li><strong>連續兩次 gate 失敗後想試第三次:</strong>停。那個衝動就是第 1 條要防的東西。</li>
+<li><strong>不需要問的(標準授權):</strong>讀任何東西、跑測試/eval、本地 commit、read-only 調查、按本文件工單順序執行已寫死的步驟。</li>
+</ul>
+
+<!-- ============================================================ S8 -->
+<h2 id="s8">§8 明確不做的事(附理由,防止後人重新發明)</h2>
+<ul>
+<li><strong>跳級的全自動 <code>--fix</code></strong> — 修復 lane 的架構與階梯已定案(R8:同 repo 分 lane、三階段各有 gate);「不做」的是跳過階段數據直接上自動 loop,以及任何把 write 能力混進 reviewer/review action 的做法。</li>
+<li><strong>Bot 給 APPROVE</strong> — pass 永遠是 COMMENT + success check;bot 自我批准是治理反模式。</li>
+<li><strong>Schema 驗證依賴(Zod 等)</strong> — normalize.ts 小而可讀;依賴是永久維護成本。</li>
+<li><strong>Plugin 框架 / 廣義抽象</strong> — 現有 adapters/core/shared 分層足夠;第二個真實需求出現前不抽象。</li>
+<li><strong>Token 精算儀表板 / 趨勢 UI</strong> — weekly JSON + RESULTS.md 敘事已滿足決策;儀表板是給沒有紀律的團隊的安慰劑。</li>
+<li><strong>對 fixture 打補丁式的 prompt 修改</strong> — 憲法第 2、3 條的存在理由。</li>
+<li><strong>增量 diff 審查(只審新 commit)</strong> — 會漏跨 commit 交互;全量 48s 夠便宜,省的該是噪音(sticky review 已解決)不是 token。</li>
+</ul>
+
+<!-- ============================================================ S9 -->
+<h2 id="s9">§9 附錄</h2>
+
+<h3>9.1 檔案地圖(改東西前先找對地方)</h3>
+<table>
+<tr><th>要改什麼</th><th>去哪裡</th><th>注意</th></tr>
+<tr><td>CLI 旗標/模式</td><td><code>src/cli.ts</code>、<code>src/cli/args.ts</code></td><td><code>--fix</code> 是刻意報錯的</td></tr>
+<tr><td>審查管線/小大徑選擇</td><td><code>src/core/review.ts</code></td><td>動它 = 走 4.4 gate</td></tr>
+<tr><td>Verdict 規則</td><td><code>src/core/verdict.ts</code></td><td>憲法第 4 條</td></tr>
+<tr><td>Local 審查/快取</td><td><code>src/adapters/local.ts</code></td><td><code>~/.cache/needlefish/&lt;repo&gt;/last-review.json</code></td></tr>
+<tr><td>GitHub 貼文/行內留言/sticky</td><td><code>src/adapters/github.ts</code></td><td>改了要 live 驗證(4.7)</td></tr>
+<tr><td>Runner 呼叫/超時/沙箱</td><td><code>src/shared/codex.ts</code>、<code>runner-process.ts</code>、<code>runner-sandbox.ts</code></td><td>W7 的主場;憲法第 5 條</td></tr>
+<tr><td>模型輸出驗證</td><td><code>src/shared/normalize.ts</code></td><td>boundary 用 unknown 再收窄</td></tr>
+<tr><td>Prompt(= 產品邏輯)</td><td><code>prompts/*.md</code></td><td>動任何字 = promptHash 變 = 走 gate</td></tr>
+<tr><td>Eval</td><td><code>eval/run.ts</code>、<code>eval/fixtures/*/spec.ts</code>、<code>eval/inspect.ts</code></td><td>fixture 規格看既有 spec 模仿</td></tr>
+<tr><td>CI/自動化</td><td><code>.github/workflows/</code>:review / hosted-review / commands / weekly-eval / release / deploy</td><td>workflow 改動用 actionlint 自檢</td></tr>
+</table>
+
+<h3>9.2 名詞表(本專案黑話,按字母序)</h3>
+<table>
+<tr><th>名詞</th><th>定義</th></tr>
+<tr><td>confirm tier</td><td>對特定 fixture × 3 draws 的複測;單抽結論無效(憲法第 6 條)</td></tr>
+<tr><td>critic</td><td>第二次模型調用,只刪不加:prune 弱 finding、降級灌水嚴重度。空 findings 是好結果</td></tr>
+<tr><td>evidence-or-silence</td><td>產品支柱:blocking finding 必附 <code>checked[]</code> 結構化證據,否則不准報</td></tr>
+<tr><td>fast path</td><td>docs-only PR 免模型調用直接 pass;<code>NEEDLEFISH_NO_FAST_PATH=1</code> 關閉</td></tr>
+<tr><td>holdout</td><td>封存 fixture:調參期不跑、只在最終 gate 跑,防過擬合(憲法第 3 條)</td></tr>
+<tr><td>hotspot / surface</td><td>大徑中 map 調用把 changed files 依風險分群的單位,每群一次 deep 調用</td></tr>
+<tr><td>miss museum</td><td>紀律:真實 PR 的確認 miss 一週內變 generic fixture(憲法第 11 條)</td></tr>
+<tr><td>修復 lane(fix lane)</td><td>同 repo 內與 reviewer 分離的修復通道:依賴單向、獨立指令與沙箱、裁判獨立、抽出條件寫死(R8)。reviewer 永不寫,fixer 永不裁決</td></tr>
+<tr><td>promptHash</td><td>prompts/ 內容的雜湊;跨 hash 的 eval 數字不可比(PB2)</td></tr>
+<tr><td>residual risk</td><td>模型清不掉又不敢下結論的風險;<code>blocks:true</code> → verdict = needs_human</td></tr>
+<tr><td>same-head dedupe</td><td>GitHub mode 同一 head SHA 已審過就不重審;<code>--recheck</code> 旁路</td></tr>
+<tr><td>sticky review</td><td>同 PR 跨 push 更新同一則 review,finding 分 fresh/open/resolved</td></tr>
+<tr><td>TRIGGER A</td><td>over-block:共用 predicate 收緊誤傷合法動作。結構化清除協議 + 證據契約</td></tr>
+<tr><td>TRIGGER B</td><td>aggregate budget:迴圈總耗時超過呼叫端 timeout,且可能留下部分持久化狀態</td></tr>
+<tr><td>TRIGGER C</td><td>contract drift:改名/文件承諾與函式本體行為脫節</td></tr>
+<tr><td>TRIGGER D</td><td>swallowed failure:錯誤訊號被丟棄/靜默化。注意:TRIGGER 清單不是 bug 分類學——prompt 內有明文反分類學句,別刪它(P9 第 3 輪教訓)</td></tr>
+</table>
+
+<h3>9.3 數據與紀錄出處</h3>
+<ul>
+<li><code>eval/RESULTS.md</code> — 所有 gate/實驗的權威敘事(含 P9 六輪迭代筆記,PB9 的教材)。</li>
+<li><code>eval/results/</code> — 重要 gate 報告 JSON;<code>eval/results/weekly/</code> — 週回歸。</li>
+<li><code>eval/reports/</code> — 工作報告(迭代過程)。</li>
+<li><code>AGENTS.md</code>(根目錄)— repo 級知識庫與慣例;與本文件衝突時,以較嚴格者為準並回報。</li>
+<li><code>docs/plans/</code>(W0 之後)— 歷史計畫文件,含 Round 2 原文與 ACP harness 設計圖。</li>
+</ul>
+
+<p class="footnote">
+本文件寫於 2026-07-04,基準 commit <code>df60aac</code>(main, v0.3.0)。所有 file:line 與旗標以該版本驗證過。作者的最後一句話:這個專案的護城河從來不是任何一段 prompt,而是「判準先寫死、gate 不過就 revert、失敗數據照樣入檔」這條紀律本身。prompt 會被下一代模型淘汰,紀律不會。守住 §3,其他都可以重建。
+</p>
+
+</main>
+</body>
+</html>

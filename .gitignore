@@ -5,3 +5,4 @@ artifacts/
 *.log
 AGENTS.local.md
 eval/reports/
+.omo/
