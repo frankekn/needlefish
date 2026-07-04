@@ -132,7 +132,7 @@ export function readRunnerDurationMs(value: string | undefined, fallbackMs: numb
   const trimmed = value?.trim();
   if (trimmed === undefined || trimmed === "") return fallbackMs;
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallbackMs;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
 }
 
 function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
