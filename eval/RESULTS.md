@@ -163,3 +163,33 @@ fixtures): recall 100%, fp 0, invalidJson 0.
 
 Reports: eval/reports/w2-iter-subset.json, eval/reports/w2-gate-round1.json,
 eval/reports/w2-gate.json, eval/reports/w2-confirm-tenant-cache-bleed.json.
+
+## W3 go-backend-slop-swallow blind spot — CLOSED as documented limitation (2026-07-04)
+
+Scope: two pre-declared experiments for the dead-public-API error-swallow
+blind spot; no third experiment.
+
+Experiment A (structural high-effort retry on blocking TRIGGER D residuals):
+- A1 required `go-backend-slop-swallow` recall >= 0.66 over 3 draws. Measured
+  0/3 recall (0.00), fp 0, invalidJson 0, verdictMatch 0, lineAnchorValid 0,
+  criticPruneError 3/3, calls 2/2/2. FAIL.
+- A4 unit coverage passed locally before the gate:
+  `review adds one high-effort review call when Trigger D residual blocks` and
+  `review does not add a high-effort call without blocking Trigger D residual`.
+- A2 full gate and A3 call-delta audit were not run because A1 failed. Code and
+  test changes were reverted.
+- Report: eval/reports/w3a-confirm-failed.json.
+
+Experiment B (one TRIGGER D sentence plus one sealed holdout fixture):
+- B/A1 required `go-backend-slop-swallow` recall >= 0.66 over 3 draws. Measured
+  0/3 recall (0.00), fp 0, invalidJson 0, verdictMatch 0, lineAnchorValid 0,
+  criticPruneError 3/3, calls 2/2/2. FAIL.
+- B/A2 full gate, B/A3 call architecture check, B1 negative confirm, and B2
+  holdout seal proof were not run because B/A1 failed. Prompt and fixture
+  changes were reverted.
+- The B fixture-vocab self-check produced zero hits before the failed gate.
+- Report: eval/reports/w3-confirm.json.
+
+Outcome C: shipped no code, prompt, or fixture change. The
+`go-backend-slop-swallow` fixture remains in the denominator as the documented
+stable miss, and README "Known limitation" wording remains consistent.

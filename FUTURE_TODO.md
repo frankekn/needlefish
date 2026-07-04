@@ -10,6 +10,11 @@ conditional gating-sweep pass was built, failed its A/B gate (no recall gain,
 +50% calls when triggered), and was reverted — see eval/RESULTS.md. Revisit
 only if over-block regressions reappear on real PRs.
 
+## dead-public-API blind spot
+Closed as a documented limitation in W3. Reopen only if:
+1. A new model generation is available.
+2. A real production PR shows an actual miss of this same defect class.
+
 ## Issue-comment commands
 RESOLVED 2026-07: maintainer commands shipped as `@needlefish recheck` and
 `@needlefish explain`; `recheck` is the forced-review path.

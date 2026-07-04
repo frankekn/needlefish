@@ -1,0 +1,87 @@
+{
+  "promptHash": "d57194ed3ee27896",
+  "runner": "codex",
+  "model": null,
+  "effort": null,
+  "draws": 3,
+  "createdAt": "2026-07-04T05:51:04.708Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": true
+      },
+      "durationMs": 50581,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": true
+      },
+      "durationMs": 63340,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": true
+      },
+      "durationMs": 56636,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0,
+    "lineAnchorValidRate": 0,
+    "meanDurationMs": 56852.333333333336,
+    "recallByFixture": {
+      "go-backend-slop-swallow": 0
+    },
+    "criticPruneErrorRate": 1
+  }
+}
