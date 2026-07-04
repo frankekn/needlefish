@@ -3,6 +3,7 @@ import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
 import { normalizeBodyList } from "../shared/normalize";
+import { formatSuggestionComment } from "./github-suggestions";
 import type {
   Finding,
   ReviewResult,
@@ -195,7 +196,6 @@ type InlineComment = {
 type SuggestionContext = {
   readonly repoPath: string;
   readonly headSha: string;
-  readonly ranges: Map<string, Array<[number, number]>>;
 };
 
 function headLineCount(repoPath: string, headSha: string, file: string): number | null {
@@ -209,38 +209,10 @@ function headLineCount(repoPath: string, headSha: string, file: string): number 
   }
 }
 
-function rangeAnchorableIn(ranges: Map<string, Array<[number, number]>>, f: Finding): boolean {
-  const rs = ranges.get(f.file);
-  if (!rs) return false;
-  return rs.some(([start, end]) => f.lineStart >= start && f.lineEnd <= end);
-}
-
-function validatedReplacementLines(f: Finding, ctx: SuggestionContext): readonly string[] | null {
-  const replacement = f.replacement;
-  if (!replacement) return null;
-  if (!rangeAnchorableIn(ctx.ranges, f)) return null;
-  const lineCount = headLineCount(ctx.repoPath, ctx.headSha, f.file);
-  if (lineCount === null || f.lineStart > lineCount || f.lineEnd > lineCount || replacement.lines.some((line) => /`{3,}/.test(line))) return null;
-  return replacement.lines;
-}
-
-function formatInlineComment(f: Finding, replacementLines: readonly string[] | null): string {
-  const lines = [
-    `**${f.severity}** ${f.title}`,
-    "",
-    f.whyItBreaks,
-    "",
-    `**Fix:** ${f.suggestedFix}`,
-  ];
-  if (f.validation) lines.push("", `**Validate:** ${f.validation}`);
-  if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
-  return lines.join("\n");
-}
-
 function buildInlineComments(
   result: ReviewResult,
   patch: string,
-  ctx: Omit<SuggestionContext, "ranges">
+  ctx: SuggestionContext
 ): { comments: InlineComment[]; inlined: Set<Finding> } {
   const ranges = headLinesInPatch(patch);
   const anchorable = result.findings.filter(
@@ -253,17 +225,19 @@ function buildInlineComments(
         )
       : anchorable;
   const inlined = new Set<Finding>(selected);
-  const suggestionContext = { ...ctx, ranges };
   const comments: InlineComment[] = selected.map((f) => {
-    const replacementLines = validatedReplacementLines(f, suggestionContext);
+    const formatted = formatSuggestionComment(f, {
+      ranges,
+      headLineCount: () => headLineCount(ctx.repoPath, ctx.headSha, f.file),
+    });
     return {
       path: f.file,
-      line: replacementLines && f.lineEnd !== f.lineStart ? f.lineEnd : f.lineStart,
+      line: formatted.line,
       side: "RIGHT",
-      ...(replacementLines && f.lineEnd !== f.lineStart
-        ? { start_line: f.lineStart, start_side: "RIGHT" as const }
+      ...(formatted.startLine !== undefined
+        ? { start_line: formatted.startLine, start_side: "RIGHT" as const }
         : {}),
-      body: formatInlineComment(f, replacementLines),
+      body: formatted.body,
     };
   });
   return { comments, inlined };
