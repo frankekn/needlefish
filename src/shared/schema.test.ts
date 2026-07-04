@@ -64,6 +64,25 @@ test("normalizeFinding drops malformed replacement but keeps finding", () => {
   }
 });
 
+test("normalizeFinding drops multiline replacement elements but keeps finding", () => {
+  const raw = {
+    severity: "P2",
+    title: "Wrong branch",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 3,
+    confidence: 0.9,
+    whyItBreaks: "The branch returns the wrong value.",
+    suggestedFix: "Replace the branch.",
+    replacement: { lines: ["return ok;\nreturn wrong;"] },
+  };
+
+  const finding = normalizeFinding(raw);
+
+  assert.equal(finding.title, "Wrong branch");
+  assert.equal(finding.replacement, undefined);
+});
+
 test("normalizeReview keeps old JSON output unchanged without replacement", () => {
   const raw = {
     summary: "reviewed",

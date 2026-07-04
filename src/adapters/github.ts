@@ -220,7 +220,7 @@ function validatedReplacementLines(f: Finding, ctx: SuggestionContext): readonly
   if (!replacement) return null;
   if (!rangeAnchorableIn(ctx.ranges, f)) return null;
   const lineCount = headLineCount(ctx.repoPath, ctx.headSha, f.file);
-  if (lineCount === null || f.lineStart > lineCount || f.lineEnd > lineCount) return null;
+  if (lineCount === null || f.lineStart > lineCount || f.lineEnd > lineCount || replacement.lines.some((line) => /`{3,}/.test(line))) return null;
   return replacement.lines;
 }
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitHub suggestion replacements with fence-breaking backticks or embedded newlines are now omitted instead of rendering unsafe suggestion blocks.
 - GitHub mode now appends native suggestion blocks to inline comments only after deterministic replacement validation.
 - CLI: add `--json` ReviewResult output with `schemaVersion: 1` as the stable machine interface.
 - Runner timeouts now terminate the runner process group, wait a configurable grace period, then hard-kill the group to prevent orphaned subprocesses.

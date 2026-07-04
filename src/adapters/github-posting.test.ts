@@ -298,6 +298,45 @@ test("runGithub appends a suggestion block when replacement validates", async (t
   assert.equal(String(comment.body), "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```");
 });
 
+test("runGithub omits fence-breaking suggestions but still posts inline comments", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 16,
+    rawReview: JSON.stringify({
+      summary: "blocking finding",
+      findings: [
+        {
+          severity: "P2",
+          title: "bug",
+          category: "bug",
+          file: "README.md",
+          lineStart: 1,
+          lineEnd: 1,
+          confidence: 0.9,
+          whyItBreaks: "breaks",
+          suggestedFix: "fix",
+          validation: "test",
+          replacement: { lines: ['const fence = "```";'] },
+        },
+      ],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 16, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((post) =>
+    post.args.includes("repos/frankekn/needlefish/pulls/16/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.equal(payload.comments.length, 1);
+  const comment = payload.comments[0];
+  assert.doesNotMatch(String(comment.body), /```suggestion/);
+  assert.match(String(comment.body), /\*\*P2\*\* bug/);
+  assert.match(String(comment.body), /\*\*Fix:\*\* fix/);
+});
+
 test("runGithub omits invalid suggestions but still posts inline comments", async (t) => {
   const fixture = setupFixture(t, {
     prNumber: 15,

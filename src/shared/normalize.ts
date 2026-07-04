@@ -125,7 +125,7 @@ function parseReplacement(raw: unknown): Finding["replacement"] | undefined {
   if (!isRecord(raw)) return undefined;
   const lines = raw.lines;
   if (!Array.isArray(lines) || lines.length === 0) return undefined;
-  if (!lines.every((line): line is string => typeof line === "string")) return undefined;
+  if (!lines.every((line): line is string => typeof line === "string" && !line.includes("\n") && !line.includes("\r"))) return undefined;
   return { lines };
 }
 
