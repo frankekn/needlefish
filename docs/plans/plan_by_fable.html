@@ -159,10 +159,10 @@
 <main>
 
 <h1>Needlefish — 執行遺書</h1>
-<p class="subtitle">by Fable · 2026-07-04 · 基準 commit <code>df60aac</code>(main,v0.3.0)· 撰寫前提:作者離線後不再回來;接手者可能是能力較弱的 LLM。本文件是唯一權威交接,取代先前所有 Round 1 / Round 2 計畫文件。</p>
+<p class="subtitle">by Fable · 2026-07-04 · 基準 commit <code>df60aac</code>(main,v0.3.0)· <strong>進度更新 2026-07-04 晚:main = <code>beed25c</code>,W0–W4/W7A/W8 全數出貨,詳見 §5 表</strong>· 撰寫前提:作者離線後不再回來;接手者可能是能力較弱的 LLM。本文件是唯一權威交接,取代先前所有 Round 1 / Round 2 計畫文件。</p>
 
 <div class="tldr">
-<strong>TL;DR:</strong>引擎已可信:36 fixtures 最終 gate <strong>recall 94.1%、誤報 0、invalid JSON 0、平均 47.9s</strong>(codex gpt-5.5 @ medium)。Round 1(P1–P8)與 Round 2(P9–P16)幾乎全數出貨。剩餘工作共九張工單,按序執行:<strong>W0 家務清理 → W1 文件同步 → W2 suggestion 一鍵套用(Round 2 唯一未完成規格)→ W3 已知盲點終局 → W4 critic 刪錯率判讀 → W5 Marketplace 上架(需 Frank)→ W6 v1.0.0(條件觸發)→ W7 harness 煞車系統(ACP 線)→ W8 JSON 契約(修復 lane 地基,可插隊)</strong>。修復 lane 架構已定案(R8):同 repo 分 lane,裁判與球員分離。更遠的路(§5B)也已規劃完:北極星是「團隊敢拿來擋 merge」,Horizon 2/3(修復通道三階段、模型世代更替 SOP、config/GitLab、benchmark 公開化、信任量測、知識庫閉環)每項都帶觸發條件與寫死的判準——後人只需執行,不需規劃。執行鐵律只有三條:<strong>憲法(§3)凌駕一切;判準先寫死、gate 不過就 revert;不確定就停下來問 Frank,不要猜。</strong>
+<strong>TL;DR:</strong>引擎已可信:36 fixtures 最終 gate <strong>recall 94.1%、誤報 0、invalid JSON 0、平均 47.9s</strong>(codex gpt-5.5 @ medium)。Round 1(P1–P8)與 Round 2(P9–P16)幾乎全數出貨。<strong>進度(07-04 晚):九張工單已完成七張(W0/W1/W2/W3/W4/W7-A/W8),剩 W5(Marketplace,需 Frank 點擊)與 W6(v1.0.0,條件未熟)、W7-B(ACP,未立項)。基線升至 recall 94.7%、criticPruneErrorRate 0、歷史盲點解決。</strong>原九張工單,按序執行:<strong>W0 家務清理 → W1 文件同步 → W2 suggestion 一鍵套用(Round 2 唯一未完成規格)→ W3 已知盲點終局 → W4 critic 刪錯率判讀 → W5 Marketplace 上架(需 Frank)→ W6 v1.0.0(條件觸發)→ W7 harness 煞車系統(ACP 線)→ W8 JSON 契約(修復 lane 地基,可插隊)</strong>。修復 lane 架構已定案(R8):同 repo 分 lane,裁判與球員分離。更遠的路(§5B)也已規劃完:北極星是「團隊敢拿來擋 merge」,Horizon 2/3(修復通道三階段、模型世代更替 SOP、config/GitLab、benchmark 公開化、信任量測、知識庫閉環)每項都帶觸發條件與寫死的判準——後人只需執行,不需規劃。執行鐵律只有三條:<strong>憲法(§3)凌駕一切;判準先寫死、gate 不過就 revert;不確定就停下來問 Frank,不要猜。</strong>
 </div>
 
 <h2 id="toc">目錄</h2>
@@ -224,11 +224,11 @@
 <p><strong>關鍵數字(接手時的品質基線,任何回歸以此為對照):</strong></p>
 <table>
 <tr><th>指標</th><th>值</th><th>條件</th><th>出處</th></tr>
-<tr><td>recall(regex 下界)</td><td><strong>94.1%</strong></td><td>36 fixtures(含 2 sealed holdout)× 1 draw,codex gpt-5.5 @ medium</td><td><code>eval/RESULTS.md</code> P9 gate;<code>eval/results/p9-gate-v2.json</code></td></tr>
+<tr><td>recall(regex 下界)</td><td><strong>94.7%</strong>(接手時 94.1%)</td><td>39 fixtures(含 3 sealed holdout)× 1 draw,codex gpt-5.5 @ medium</td><td><code>eval/RESULTS.md</code> W4 gate;<code>eval/reports/w4-final-gate.json</code></td></tr>
 <tr><td>誤報</td><td><strong>0</strong></td><td>同上</td><td>同上</td></tr>
 <tr><td>invalid JSON</td><td><strong>0</strong></td><td>同上</td><td>同上</td></tr>
 <tr><td>單次 review 均時</td><td><strong>~48s</strong></td><td>小徑 @ medium</td><td>同上</td></tr>
-<tr><td>已知盲點</td><td class="warn">go-backend-slop-swallow</td><td>0/5+ 所有措辭變體;見 W3</td><td><code>eval/RESULTS.md</code> Known blind spot</td></tr>
+<tr><td>已知盲點</td><td class="ok">已解決(2026-07-04)</td><td>go-backend-slop-swallow 0/3→3/3——根因是 critic 誤殺而非偵測,W4 critic 窄例外修復;criticPruneErrorRate 5.56%→0</td><td><code>eval/RESULTS.md</code> W4 段</td></tr>
 </table>
 
 <!-- ============================================================ S2 -->
@@ -788,9 +788,9 @@ review. Docs-only PRs short-circuit for free.</code></pre>
 <tr><th>項目</th><th>觸發條件</th><th>觸發後第一步</th></tr>
 <tr><td><code>--fix</code> 修復 lane</td><td>W2 suggestion 出貨後,實際「一鍵 commit 採用率」有數據且 Frank 點頭</td><td>先做 W8(地基),再照 R8 定案架構走階段 2;架構與四條硬規則見 <a href="#r8">R8</a></td></tr>
 <tr><td>Multi-repo config 檔</td><td>第二個真實使用者提出具體需求</td><td>需求訪談,不要先設計</td></tr>
-<tr><td>第二 critic / critic 深化</td><td>W4 量出 criticPruneErrorRate &gt; 5%</td><td>照 W4 的順序:先 inspect,後窄例外,最後才加調用</td></tr>
+<tr><td>第二 critic / critic 深化</td><td class="ok">已量測並修復(2026-07-04):5.56% → 窄例外 → 0(<code>b6ed806</code>)。重新觸發條件:任一週 weekly 報告 &gt; 5%</td><td>照 W4 前例:先 inspect,後窄例外,最後才加調用</td></tr>
 <tr><td>P4 sandbox 池化</td><td>clone 時間佔比 &gt; 5%(per-call stats 可算)</td><td>先重新量測,數據過門檻才動</td></tr>
-<tr><td>盲點重啟</td><td>換模型世代,或真實 PR 出現 dead-public-API miss</td><td>重讀 W3 結案紀錄,設計第三種結構性手段</td></tr>
+<tr><td>盲點重啟</td><td class="ok">已解決(2026-07-04):W4 critic 修復,3/3 穩定命中(<code>b6ed806</code>)</td><td>若同類 miss 再現於真實 PR,先查 criticPruneError 再查偵測</td></tr>
 </table>
 
 <!-- ============================================================ S5B -->
