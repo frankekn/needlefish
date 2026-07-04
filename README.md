@@ -8,9 +8,9 @@ Strict local PR review agent. Acts like a senior engineer reviewing your diff
 before merge — only real defects (bugs, regressions, security, data loss,
 migration/upgrade risk, missing validation, duplicate behavior), never style.
 
-Read-only by default. Two model calls per review: a deep pass, then an
-adversarial critic that prunes weak findings. Codex is the default runner;
-Claude Code and opencode are also supported. Verdict is derived
+Read-only by default. Small PRs use a review pass plus an adversarial critic;
+large PRs use map/deep passes before the same critic. Codex is the default
+runner; Claude Code and opencode are also supported. Verdict is derived
 deterministically from the surviving findings, never freehanded by the model.
 
 ## Quick start (any repo, 30 seconds)
@@ -44,10 +44,10 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (~45s at the default `medium`
-effort), up to 9 on large ones. Docs-only PRs and unchanged heads skip the
-model entirely. Maintainers can comment `@needlefish recheck` or
-`@needlefish explain <finding>` on the PR.
+Cost: 2 model calls per review on small PRs (~48s at the default `medium`
+effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
+unchanged heads skip the model entirely. Maintainers can comment
+`@needlefish recheck` or `@needlefish explain <finding>` on the PR.
 
 ## Install
 
@@ -253,8 +253,10 @@ workspace checkout), `github_token` (defaults to the workflow token).
 
 Cost and behavior notes:
 
-- Each review is 2–9 model calls, and every push to the PR re-triggers the
-  workflow. Budget accordingly.
+- Small PRs use 2 model calls per PR (review + critic), about 48s at the
+  default `medium` effort. Large PRs use 1 map call + N deep calls
+  (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
+  Same-head re-runs use 0 model calls unless forced with `--recheck`.
 - Fork PRs don't receive secrets by default. The `if:` gate above skips them.
   `pull_request_target` would hand secrets to workflows triggered by fork
   code — avoid it unless you fully understand the exposure.
@@ -271,7 +273,7 @@ and `--timeout-ms`, or the matching env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | `codex` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `high` |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
@@ -279,9 +281,8 @@ Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
 `CODEX_RETRY_MS` still work for Codex compatibility.
 
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
-read-only`. Keep `CODEX_REASONING_EFFORT=high` as the default; use `medium`
-only for measured throughput experiments, or `xhigh` for the old high-accuracy
-setting. Claude Code runs with
+read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
+restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
 `--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
 runs with `--pure` and never uses `--dangerously-skip-permissions`. Closed PRs
 are skipped before diffing or model invocation. Non-Codex runners execute inside
@@ -300,6 +301,10 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.2. Read-only. `--fix` and `@needlefish` comment commands are in
-`FUTURE_TODO.md`. Every push re-triggers the action, so server-side re-review is
-automatic; `--recheck` is a local affordance only.
+v0.3. Read-only. Shipped: inline review comments, sticky re-review
+(fresh/open/resolved across pushes), `@needlefish recheck` / `@needlefish
+explain` maintainer commands, docs-only fast path (no model calls),
+same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
+sysctl). `--fix` stays unimplemented by design. Known limitation: an
+exported error-swallowing wrapper with zero in-repo callers is not
+flagged (see eval/RESULTS.md).

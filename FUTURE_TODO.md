@@ -11,16 +11,16 @@ conditional gating-sweep pass was built, failed its A/B gate (no recall gain,
 only if over-block regressions reappear on real PRs.
 
 ## Issue-comment commands
-`@needlefish recheck` / `@needlefish review` / `@needlefish explain` via `issue_comment`
-trigger. v0.1 only auto-reviews on `pull_request` events.
+RESOLVED 2026-07: maintainer commands shipped as `@needlefish recheck` and
+`@needlefish explain`; `recheck` is the forced-review path.
 
 ## Repair lane (`--fix`)
 Let needlefish mutate the branch and push a fix (ClawSweeper-style bounded repair
 loop). v0.1 is report-only; `--fix` is parsed but errors out.
 
 ## Action packaging
-Ship as a reusable `action.yml` (Docker/node20) so others can `uses: frankekn/needlefish@v1`.
-v0.1 runs via workflow checkout + `pnpm review --github`.
+RESOLVED 2026-07: shipped composite `action.yml` for
+`uses: frankekn/needlefish@v0`; reusable workflow support remains available.
 
 ## Multi-repo config
 Per-repo config file (base branch, severity gates, focus defaults) instead of flags only.
