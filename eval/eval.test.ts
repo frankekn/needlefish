@@ -109,7 +109,8 @@ test("score: null result (review failed) is formatOk=false", () => {
 });
 
 test("parseArgs: collects --env KEY=VALUE overrides", () => {
-  const args = parseArgs(["--runner", "codex", "--env", "NEEDLEFISH_LARGE_PATCH_CHARS=80000", "--env", "NEEDLEFISH_DEEP_CONCURRENCY=1"]);
+  const args = parseArgs(["--runner", "acp", "--env", "NEEDLEFISH_LARGE_PATCH_CHARS=80000", "--env", "NEEDLEFISH_DEEP_CONCURRENCY=1"]);
+  assert.equal(args.runner, "acp");
   assert.deepEqual(args.env, {
     NEEDLEFISH_LARGE_PATCH_CHARS: "80000",
     NEEDLEFISH_DEEP_CONCURRENCY: "1",

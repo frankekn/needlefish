@@ -10,8 +10,9 @@ migration/upgrade risk, missing validation, duplicate behavior), never style.
 
 Read-only by default. Small PRs use a review pass plus an adversarial critic;
 large PRs use map/deep passes before the same critic. Codex is the default
-runner; Claude Code and opencode are also supported. Verdict is derived
-deterministically from the surviving findings, never freehanded by the model.
+runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, and ACP agents are
+also supported. Verdict is derived deterministically from the surviving
+findings, never freehanded by the model.
 
 ## Quick start (any repo, 30 seconds)
 
@@ -114,6 +115,7 @@ needlefish pr 123 --repo /path/to/some-repo
 # Runner selection:
 needlefish --repo /path/to/some-repo --runner claude
 needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
+NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
 ```
 
 Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-review.json`.
@@ -276,6 +278,9 @@ Runner authentication (repo secrets, passed via `env` on the action step):
 | codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY`                                       |
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
+| openai   | `OPENAI_API_KEY`                                          |
+| grok     | Grok CLI auth or provider-specific key                    |
+| acp      | agent-specific auth plus `NEEDLEFISH_ACP_BIN` on the runner |
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
@@ -297,7 +302,7 @@ Cost and behavior notes:
 
 ## Model runner invocation
 
-`src/shared/codex.ts` shells out to the selected CLI. Use `--runner`, `--model`,
+`src/shared/codex.ts` invokes the selected runner. Use `--runner`, `--model`,
 and `--timeout-ms`, or the matching env vars:
 
 | option | env | default |
@@ -307,17 +312,21 @@ and `--timeout-ms`, or the matching env vars:
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
-Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, and
-`OPENCODE_BIN`. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
-`CODEX_RETRY_MS` still work for Codex compatibility.
+Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
+`GROK_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required for the
+`acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and `CODEX_RETRY_MS`
+still work for Codex compatibility.
 
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
 read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
 restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
 `--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
-runs with `--pure` and never uses `--dangerously-skip-permissions`. Closed PRs
-are skipped before diffing or model invocation. Non-Codex runners execute inside
-a throwaway clean clone at the review head commit;
+runs with `--pure` and never uses `--dangerously-skip-permissions`. ACP runs a
+JSON-RPC 2.0 Agent Client Protocol process over stdio from `NEEDLEFISH_ACP_BIN`;
+Needlefish sends `session/cancel` on timeout, then applies the same process-group
+kill path as the CLI runners. Closed PRs are skipped before diffing or model
+invocation. Non-Codex runners execute inside a throwaway clean clone at the
+review head commit;
 needlefish checks that sandbox with
 `git status --porcelain --untracked-files=all --ignored=matching` and verifies
 `HEAD` did not move after each successful model call.

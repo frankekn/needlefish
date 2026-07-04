@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runAcp } from "./acp";
 import {
   parsePositiveInteger,
   parseRunnerName,
@@ -160,6 +161,8 @@ function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefine
       return process.env.OPENAI_MODEL;
     case "grok":
       return process.env.GROK_MODEL;
+    case "acp":
+      return undefined;
   }
 }
 
@@ -195,6 +198,8 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
       throw new Error("openai runner uses direct HTTP path, not runRunner");
     case "grok":
       return await runGrok(invocation);
+    case "acp":
+      return await runAcp(invocation);
   }
 }
 
@@ -312,6 +317,8 @@ function outputFor(runner: RunnerName, result: RunnerResult): string {
     case "openai":
       return result.out;
     case "grok":
+      return result.out;
+    case "acp":
       return result.out;
   }
 }

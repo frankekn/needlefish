@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { review } from "../src/core/review";
-import type { RunnerName } from "../src/shared/runner";
+import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
@@ -56,10 +56,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
     const i = argv.indexOf(flag);
     return i >= 0 ? argv[i + 1] ?? null : null;
   };
-  const runner = get("--runner") ?? "codex";
-  if (runner !== "codex" && runner !== "claude" && runner !== "opencode" && runner !== "openai" && runner !== "grok") {
-    throw new Error(`--runner must be codex|claude|opencode|openai|grok, got: ${runner}`);
-  }
+  const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
   const model = get("--model");
   const effort = get("--effort");
   const draws = Number(get("--draws") ?? "1");
@@ -93,7 +90,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
     env[raw.slice(0, eq)] = raw.slice(eq + 1);
     i++;
   }
-  return { runner: runner as RunnerName, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, holdout, env };
+  return { runner, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, holdout, env };
 }
 
 async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {

@@ -88,18 +88,18 @@ test("parseArgs rejects local-only flags in github mode", () => {
 });
 
 test("parseArgs accepts runner options", () => {
-  const command = parseArgs(["--runner", "claude", "--model", "opus", "--timeout-ms", "1234"]);
+  const command = parseArgs(["--runner", "acp", "--model", "opus", "--timeout-ms", "1234"]);
 
   assert.equal(command.kind, "local");
   if (command.kind === "local") {
-    assert.equal(command.opts.runner, "claude");
+    assert.equal(command.opts.runner, "acp");
     assert.equal(command.opts.model, "opus");
     assert.equal(command.opts.timeoutMs, 1234);
   }
 });
 
 test("parseArgs validates runner options", () => {
-  assert.throws(() => parseArgs(["--runner", "wat"]), /--runner must be one of/);
+  assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, acp/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
 });
 

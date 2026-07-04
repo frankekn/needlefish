@@ -56,7 +56,7 @@ Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
-  --runner <name>      codex | claude | opencode
+  --runner <name>      codex | claude | opencode | openai | grok | acp
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -67,12 +67,13 @@ Local diff options:
   --base <ref>         override base ref
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode (default: codex)
+  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | acp (default: codex)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)
+  NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
 `;
 
 type MutableLocalOptions = {
