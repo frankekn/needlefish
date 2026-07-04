@@ -1,0 +1,87 @@
+{
+  "promptHash": "641a7be1ede6cfcf",
+  "runner": "codex",
+  "model": null,
+  "effort": "medium",
+  "draws": 3,
+  "createdAt": "2026-07-04T11:49:50.550Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 63039,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "criticPruneError": false
+      },
+      "durationMs": 54765,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "criticPruneError": false
+      },
+      "durationMs": 79151,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0.6666666666666666,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.3333333333333333,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 65651.66666666667,
+    "recallByFixture": {
+      "go-harmless-variadic": 1
+    },
+    "criticPruneErrorRate": 0
+  }
+}

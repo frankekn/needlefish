@@ -193,3 +193,71 @@ Experiment B (one TRIGGER D sentence plus one sealed holdout fixture):
 Outcome C: shipped no code, prompt, or fixture change. The
 `go-backend-slop-swallow` fixture remains in the denominator as the documented
 stable miss, and README "Known limitation" wording remains consistent.
+
+Update 2026-07-04: resolved later the same day by the W4 critic fix below —
+the miss was critic misprune, not detection.
+
+## W4 critic prune-error fix (2026-07-04) — shipped
+
+Source reports: `eval/reports/w2-gate.json`,
+`eval/reports/w3a-confirm-failed.json`, and `eval/reports/w3-confirm.json`.
+
+Diagnosis before prompt edits:
+- `w2-gate.json` has `aggregates.criticPruneErrorRate = 0.0556`; the only
+  positive fixture with `criticPruneError=true` is
+  `go-backend-slop-swallow`.
+- `w3a-confirm-failed.json` and `w3-confirm.json` both show
+  `go-backend-slop-swallow` recall 0/3, final `findingCount=0` every draw,
+  and `criticPruneError=true` every draw.
+- By `eval/shared/score.ts`, `criticPruneError=true` means a pre-critic
+  `candidateFindings` entry matched the fixture `mustFind` regex, then no
+  final finding matched after the critic. The saved report schema does not
+  persist the candidate JSON, so the exact candidate prose is not recoverable
+  from these artifacts; the reconstructable shape is a finding on
+  `src/store.go:15-18` that the newly exported `LoadOrDefault` discards
+  `Load`'s error with `v, _ := Load(...)`, silently masking a missing-key
+  failure for callers.
+- The critic kill path is the broad DELETE rule plus the cross-file consumer
+  rule: DELETE if speculative / not behavior-affecting / missing a plausible
+  minimal fix, and DELETE cross-file findings unless they name an in-repo
+  downstream consumer. That reasoning is wrong for newly exported/public error
+  handling: external public API callers are the consumers, so "no in-repo
+  caller" must not justify deletion. The existing contract-drift exception
+  protects public promises, but it does not protect weakened/discarded error
+  propagation in public symbols.
+
+Fix shipped (two critic.md changes, gated together):
+1. New narrow exception: newly weakened/discarded error propagation in
+   exported/public symbols must not be deleted solely for lack of an in-repo
+   caller (public API callers live outside the repo); keep only when the
+   changed line itself shows the discarded error and the fix restores
+   propagation.
+2. Tightened the pre-existing contract-drift exception: the unmet promise must
+   change the result/data/status/error/control flow a caller actually
+   receives; unused inputs or labels with zero effect are deleted as
+   naming-only. Round-1 gating had found every remaining fp traced to this
+   pre-existing clause misfiring on `go-harmless-variadic` (baseline 3/3 fp on
+   the then-committed prompt — worse than with the W4 exception), so the
+   clause was fixed rather than shipping past a red fp gate.
+
+Sealed `holdout-authorization-guard` (`holdout: true`) before iteration;
+distinctive-fixture-vocab check on critic.md: zero hits.
+
+Final combined gate (39 fixtures incl 3 holdouts, medium, 1 draw):
+recall **94.7%**, fp 0, invalidJson 0, meanDur 49.0s,
+**criticPruneErrorRate 0** (trigger metric, was 0.0556). Confirms:
+`go-backend-slop-swallow` 3/3 (was 0/3 — the W3 documented limitation is
+resolved); `go-harmless-variadic` 0/5 fp; `neg-safe-tightening` +
+`rs-refactor` 0/3 fp; `ts-data-duplicate` 3/3 (single-draw gate flicker,
+not a regression). Causality: with only the contract-drift tightening
+stashed out, `go-harmless-variadic` fp returned at 2/3 — the clause, not
+draw luck, removes the fp.
+
+Note: an earlier `w4-iter-subset.json` was discarded — nested-codex sandbox
+runs failed before model output (`Operation not permitted`); those were
+environment failures, not measurements. Gates were rerun outside the
+implementation sandbox.
+
+Reports: eval/reports/w4-final-gate.json, w4-final-confirm-go.json,
+w4-final-confirm-variadic.json, w4-final-confirm-negpair.json,
+w4-final-confirm-tsdup.json, w4-causality-baseline.json.

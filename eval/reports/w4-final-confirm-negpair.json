@@ -1,0 +1,151 @@
+{
+  "promptHash": "e520ec3c6ffed066",
+  "runner": "codex",
+  "model": null,
+  "effort": "medium",
+  "draws": 3,
+  "createdAt": "2026-07-04T11:48:13.153Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 56941,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 51423,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "neg-safe-tightening",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-safe-tightening",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 48600,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 56845,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 45814,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "rs-refactor",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-refactor",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 81006,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 56771.5,
+    "recallByFixture": {
+      "neg-safe-tightening": 1,
+      "rs-refactor": 1
+    },
+    "criticPruneErrorRate": 0
+  }
+}

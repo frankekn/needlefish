@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Critic: keep findings about newly weakened error handling in exported/public symbols even with zero in-repo callers, and tighten the contract-drift exception to promises that affect what callers actually receive. Resolves the go-backend-slop-swallow documented limitation (criticPruneErrorRate 0.0556 -> 0).
 - GitHub suggestion replacements with fence-breaking backticks or embedded newlines are now omitted instead of rendering unsafe suggestion blocks.
 - GitHub mode now appends native suggestion blocks to inline comments only after deterministic replacement validation.
 - CLI: add `--json` ReviewResult output with `schemaVersion: 1` as the stable machine interface.

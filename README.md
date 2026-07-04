@@ -336,6 +336,4 @@ v0.3. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), `@needlefish recheck` / `@needlefish
 explain` maintainer commands, docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
-sysctl). `--fix` stays unimplemented by design. Known limitation: an
-exported error-swallowing wrapper with zero in-repo callers is not
-flagged (see eval/RESULTS.md).
+sysctl). `--fix` stays unimplemented by design.

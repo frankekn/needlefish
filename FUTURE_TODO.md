@@ -11,9 +11,12 @@ conditional gating-sweep pass was built, failed its A/B gate (no recall gain,
 only if over-block regressions reappear on real PRs.
 
 ## dead-public-API blind spot
-Closed as a documented limitation in W3. Reopen only if:
-1. A new model generation is available.
-2. A real production PR shows an actual miss of this same defect class.
+RESOLVED 2026-07: W3 closed this as a documented limitation (detection-side
+experiments exhausted), then W4's criticPruneError diagnosis showed the review
+pass found the bug every draw and the critic deleted it. A narrow critic.md
+exception (public error handling is consumer-facing; "no in-repo caller" does
+not justify deletion) fixed it: go-backend-slop-swallow 0/3 -> 3/3, full gate
+non-inferior, criticPruneErrorRate 0.0556 -> 0. See eval/RESULTS.md W4.
 
 ## Issue-comment commands
 RESOLVED 2026-07: maintainer commands shipped as `@needlefish recheck` and
