@@ -66,6 +66,7 @@ export interface Finding {
   readonly validation: string;
   readonly consumerFile?: string;
   readonly consumerLine?: number;
+  readonly replacement?: { readonly lines: readonly string[] };
 }
 
 export interface ResidualRisk {

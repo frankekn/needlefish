@@ -80,6 +80,8 @@ Confidence is evidence confidence, not gut feel:
 - P3: low-risk correctness, docs, or test gap
 
 # Output
+In each finding, `"replacement"` is optional; emit it for exact full replacement of `lineStart..lineEnd`, one array element per line with matching existing indentation; otherwise omit.
+
 Return ONLY a single ```json block, nothing else, in exactly this shape:
 ```json
 {

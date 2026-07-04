@@ -167,6 +167,10 @@ All verdict reviews are `COMMENT`, not approval or blocking-review events. The
 reviews can outlive a fixed head. The check-run is the merge gate: a failed
 review never passes a PR because the check goes `failure`.
 
+When a finding includes a validated exact replacement, its inline comment adds
+a native GitHub suggestion block; failed validation falls back to the normal
+comment without a suggestion.
+
 The reusable workflow skips closed or forked `pull_request` events before the
 self-hosted job starts. Manual and reusable dispatch resolve PR metadata first,
 then skip closed or forked PRs before checkout or model invocation. Before

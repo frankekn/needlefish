@@ -121,6 +121,14 @@ function parseCategory(raw: unknown): Category {
   }
 }
 
+function parseReplacement(raw: unknown): Finding["replacement"] | undefined {
+  if (!isRecord(raw)) return undefined;
+  const lines = raw.lines;
+  if (!Array.isArray(lines) || lines.length === 0) return undefined;
+  if (!lines.every((line): line is string => typeof line === "string")) return undefined;
+  return { lines };
+}
+
 export function normalizeFinding(raw: unknown): Finding {
   const record = requireRecord(raw, "malformed finding");
   const severity = parseSeverity(record.severity);
@@ -152,6 +160,7 @@ export function normalizeFinding(raw: unknown): Finding {
   if (severity !== "P3" && confidence < 0.7) {
     throw new Error("malformed finding: blocking finding has low confidence");
   }
+  const replacement = parseReplacement(record.replacement);
   return {
     severity,
     category,
@@ -165,6 +174,7 @@ export function normalizeFinding(raw: unknown): Finding {
     validation: String(record.validation ?? ""),
     consumerFile: record.consumerFile ? asString(record.consumerFile) || undefined : undefined,
     consumerLine: record.consumerLine ? Number(record.consumerLine) || undefined : undefined,
+    ...(replacement ? { replacement } : {}),
   };
 }
 

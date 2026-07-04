@@ -261,6 +261,81 @@ test("runGithub posts blocking findings as non-sticky review comments", async (t
   assert.equal(process.exitCode, 1);
 });
 
+test("runGithub appends a suggestion block when replacement validates", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 14,
+    rawReview: JSON.stringify({
+      summary: "blocking finding",
+      findings: [
+        {
+          severity: "P2",
+          title: "bug",
+          category: "bug",
+          file: "README.md",
+          lineStart: 1,
+          lineEnd: 1,
+          confidence: 0.9,
+          whyItBreaks: "breaks",
+          suggestedFix: "fix",
+          validation: "test",
+          replacement: { lines: ["fixed"] },
+        },
+      ],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 14, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((post) =>
+    post.args.includes("repos/frankekn/needlefish/pulls/14/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.equal(payload.comments.length, 1);
+  const comment = payload.comments[0];
+  assert.equal(String(comment.body), "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```");
+});
+
+test("runGithub omits invalid suggestions but still posts inline comments", async (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 15,
+    rawReview: JSON.stringify({
+      summary: "blocking finding",
+      findings: [
+        {
+          severity: "P2",
+          title: "bug",
+          category: "bug",
+          file: "README.md",
+          lineStart: 1,
+          lineEnd: 2,
+          confidence: 0.9,
+          whyItBreaks: "breaks",
+          suggestedFix: "fix",
+          validation: "test",
+          replacement: { lines: ["fixed", "second"] },
+        },
+      ],
+      checked: ["checked"],
+      residual_risks: [],
+    }),
+  });
+
+  await runGithub(fixture.repo, 15, { timeoutMs: 1000 });
+
+  const reviewPost = readPosts(fixture.postLog).find((post) =>
+    post.args.includes("repos/frankekn/needlefish/pulls/15/reviews")
+  );
+  assert.ok(reviewPost);
+  const payload = parseReviewPayload(reviewPost.payload);
+  assert.equal(payload.comments.length, 1);
+  const comment = payload.comments[0];
+  assert.doesNotMatch(String(comment.body), /```suggestion/);
+  assert.match(String(comment.body), /\*\*Fix:\*\* fix/);
+});
+
 test("runGithub skips posting when the PR head changes after review", async (t) => {
   const fixture = setupFixture(t, {
     prNumber: 10,

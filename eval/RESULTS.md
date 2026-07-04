@@ -139,3 +139,27 @@ flag dead public API as P2. Candidate future fix: dedicated fixture class
 sweep at higher effort, or accept as documented limitation.
 
 Reports: eval/results/p9-gate-v2.json, p9-confirm.json, p9-confirm5.json.
+
+## W2 GitHub suggestion blocks gate (2026-07-04) — shipped
+
+Added optional `replacement.lines` to findings, normalization that drops only
+malformed replacement fields, and deterministic GitHub inline suggestion
+rendering. Gate criteria: recall >= 90%, fp = 0, invalidJson = 0, meanDur <=
+55s.
+
+Final gate after one allowed prompt trim (38 fixtures incl 3 sealed holdouts,
+medium, 1 draw): recall **94.4%**, fp 0, invalidJson 0, meanDur 49.7s.
+The first gate attempt hit recall 94.4%, fp 0, invalidJson 0, but failed the
+duration criterion at 62.1s; prompt wording was shortened once and re-gated.
+
+Divergence vs `eval/results/p9-gate-v2.json`: only the new sealed
+`tenant-cache-bleed` fixture (missing from P9, 1/1 in W2). Confirm tier:
+`tenant-cache-bleed` 3/3. No existing fixture regressed from stable-hit to
+stable-miss; `go-backend-slop-swallow` remains the known stable miss.
+
+Iteration subset before the final gate used `--holdout exclude`
+(`pos-over-block|ts-data-duplicate|neg-style-only`, 4 matched non-holdout
+fixtures): recall 100%, fp 0, invalidJson 0.
+
+Reports: eval/reports/w2-iter-subset.json, eval/reports/w2-gate-round1.json,
+eval/reports/w2-gate.json, eval/reports/w2-confirm-tenant-cache-bleed.json.

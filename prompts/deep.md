@@ -54,6 +54,8 @@ For all triggers: substitute and compute with real values from the code (`git di
 4. Do not chase files outside this surface except to verify a concrete consumer/call-site/timeout needed by an edge, Trigger A, Trigger B, or a changed public contract. Stop after the evidence needed to keep or drop the finding.
 
 # Output
+In each finding, `"replacement"` is optional; emit it for exact full replacement of `lineStart..lineEnd`, one array element per line with matching existing indentation; otherwise omit.
+
 Return ONLY a single ```json block in the standard review shape:
 ```json
 {

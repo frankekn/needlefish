@@ -21,6 +21,90 @@ test("normalizeFinding accepts a complete model finding", () => {
   assert.equal(finding.confidence, 0.8);
 });
 
+test("normalizeFinding keeps a valid replacement", () => {
+  const raw = {
+    severity: "P2",
+    title: "Wrong branch",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 3,
+    lineEnd: 4,
+    confidence: 0.9,
+    whyItBreaks: "The branch returns the wrong value.",
+    suggestedFix: "Replace the branch.",
+    replacement: { lines: ["  return ok;", "}"] },
+  };
+
+  const finding = normalizeFinding(raw);
+
+  assert.deepEqual(finding.replacement, { lines: ["  return ok;", "}"] });
+});
+
+test("normalizeFinding drops malformed replacement but keeps finding", () => {
+  const base = {
+    severity: "P2",
+    title: "Wrong branch",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 3,
+    confidence: 0.9,
+    whyItBreaks: "The branch returns the wrong value.",
+    suggestedFix: "Replace the branch.",
+  };
+
+  for (const replacement of [
+    { lines: "return ok;" },
+    { lines: ["return ok;", 1] },
+    { lines: [] },
+  ]) {
+    const finding = normalizeFinding({ ...base, replacement });
+
+    assert.equal(finding.title, "Wrong branch");
+    assert.equal(finding.replacement, undefined);
+  }
+});
+
+test("normalizeReview keeps old JSON output unchanged without replacement", () => {
+  const raw = {
+    summary: "reviewed",
+    findings: [
+      {
+        severity: "P3",
+        title: "Small issue",
+        category: "bug",
+        file: "src/app.ts",
+        lineStart: 1,
+        whyItBreaks: "It breaks.",
+        suggestedFix: "Fix it.",
+      },
+    ],
+    checked: ["diff"],
+    residual_risks: [],
+  };
+
+  const review = normalizeReview(raw);
+
+  assert.equal(JSON.stringify(review), JSON.stringify({
+    summary: "reviewed",
+    findings: [
+      {
+        severity: "P3",
+        category: "bug",
+        file: "src/app.ts",
+        title: "Small issue",
+        whyItBreaks: "It breaks.",
+        suggestedFix: "Fix it.",
+        lineStart: 1,
+        lineEnd: 1,
+        confidence: 0,
+        validation: "",
+      },
+    ],
+    checked: ["diff"],
+    residual_risks: [],
+  }));
+});
+
 test("normalizeFinding rejects line ranges that run backward", () => {
   const raw = {
     severity: "P3",

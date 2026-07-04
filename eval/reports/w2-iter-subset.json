@@ -1,0 +1,111 @@
+{
+  "promptHash": "ba74c759fda16410",
+  "runner": "codex",
+  "model": null,
+  "effort": "medium",
+  "draws": 1,
+  "createdAt": "2026-07-04T05:04:12.216Z",
+  "baseline": false,
+  "holdout": "exclude",
+  "results": [
+    {
+      "fixtureId": "neg-style-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-style-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "criticPruneError": false
+      },
+      "durationMs": 32336,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "criticPruneError": false
+      },
+      "durationMs": 61045,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "criticPruneError": false
+      },
+      "durationMs": 53418,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "criticPruneError": false
+      },
+      "durationMs": 72828,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 0.5,
+    "meanDurationMs": 54906.75,
+    "recallByFixture": {
+      "neg-style-only": 1,
+      "pos-over-block": 1,
+      "pos-over-block-shared": 1,
+      "ts-data-duplicate": 1
+    },
+    "criticPruneErrorRate": 0
+  }
+}

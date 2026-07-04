@@ -187,10 +187,44 @@ type InlineComment = {
   readonly path: string;
   readonly line: number;
   readonly side: "RIGHT";
+  readonly start_line?: number;
+  readonly start_side?: "RIGHT";
   readonly body: string;
 };
 
-function formatInlineComment(f: Finding): string {
+type SuggestionContext = {
+  readonly repoPath: string;
+  readonly headSha: string;
+  readonly ranges: Map<string, Array<[number, number]>>;
+};
+
+function headLineCount(repoPath: string, headSha: string, file: string): number | null {
+  try {
+    const content = git(["show", `${headSha}:${file}`], repoPath);
+    if (content === "") return 0;
+    return (content.endsWith("\n") ? content.slice(0, -1) : content).split("\n").length;
+  } catch (err) {
+    if (err instanceof Error) return null;
+    throw err;
+  }
+}
+
+function rangeAnchorableIn(ranges: Map<string, Array<[number, number]>>, f: Finding): boolean {
+  const rs = ranges.get(f.file);
+  if (!rs) return false;
+  return rs.some(([start, end]) => f.lineStart >= start && f.lineEnd <= end);
+}
+
+function validatedReplacementLines(f: Finding, ctx: SuggestionContext): readonly string[] | null {
+  const replacement = f.replacement;
+  if (!replacement) return null;
+  if (!rangeAnchorableIn(ctx.ranges, f)) return null;
+  const lineCount = headLineCount(ctx.repoPath, ctx.headSha, f.file);
+  if (lineCount === null || f.lineStart > lineCount || f.lineEnd > lineCount) return null;
+  return replacement.lines;
+}
+
+function formatInlineComment(f: Finding, replacementLines: readonly string[] | null): string {
   const lines = [
     `**${f.severity}** ${f.title}`,
     "",
@@ -199,12 +233,14 @@ function formatInlineComment(f: Finding): string {
     `**Fix:** ${f.suggestedFix}`,
   ];
   if (f.validation) lines.push("", `**Validate:** ${f.validation}`);
+  if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
   return lines.join("\n");
 }
 
 function buildInlineComments(
   result: ReviewResult,
-  patch: string
+  patch: string,
+  ctx: Omit<SuggestionContext, "ranges">
 ): { comments: InlineComment[]; inlined: Set<Finding> } {
   const ranges = headLinesInPatch(patch);
   const anchorable = result.findings.filter(
@@ -217,12 +253,19 @@ function buildInlineComments(
         )
       : anchorable;
   const inlined = new Set<Finding>(selected);
-  const comments: InlineComment[] = selected.map((f) => ({
-    path: f.file,
-    line: f.lineStart,
-    side: "RIGHT",
-    body: formatInlineComment(f),
-  }));
+  const suggestionContext = { ...ctx, ranges };
+  const comments: InlineComment[] = selected.map((f) => {
+    const replacementLines = validatedReplacementLines(f, suggestionContext);
+    return {
+      path: f.file,
+      line: replacementLines && f.lineEnd !== f.lineStart ? f.lineEnd : f.lineStart,
+      side: "RIGHT",
+      ...(replacementLines && f.lineEnd !== f.lineStart
+        ? { start_line: f.lineStart, start_side: "RIGHT" as const }
+        : {}),
+      body: formatInlineComment(f, replacementLines),
+    };
+  });
   return { comments, inlined };
 }
 
@@ -386,7 +429,10 @@ export async function runGithub(
     if (prev) {
       const { fresh, open, resolvedCount } = matchFindings(prev.state.findings, result.findings);
       const freshResult: ReviewResult = { ...result, findings: fresh };
-      const { comments: freshComments, inlined: freshInlined } = buildInlineComments(freshResult, patch);
+      const { comments: freshComments, inlined: freshInlined } = buildInlineComments(freshResult, patch, {
+        repoPath,
+        headSha,
+      });
       const renderOpts = {
         inlinedFindings: freshInlined,
         openFindings: open,
@@ -404,7 +450,7 @@ export async function runGithub(
       postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, summary);
       process.stdout.write(summary);
     } else {
-      const { comments, inlined } = buildInlineComments(result, patch);
+      const { comments, inlined } = buildInlineComments(result, patch, { repoPath, headSha });
       const body = renderMarkdown(result, {
         inlinedFindings: inlined,
         stateMarker: renderState(headSha, result.findings),
