@@ -16,6 +16,7 @@ export type CliCommand =
       readonly opts: LocalOptions;
       readonly fix: boolean;
       readonly recheck: boolean;
+      readonly json: boolean;
     }
   | {
       readonly kind: "github";
@@ -32,6 +33,7 @@ export type CliCommand =
       readonly opts: LocalOptions;
       readonly fix: boolean;
       readonly recheck: boolean;
+      readonly json: boolean;
     }
   | {
       readonly kind: "explain";
@@ -58,6 +60,7 @@ Shared options:
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
+  --json               print ReviewResult JSON to stdout (local/pr only)
 
 Local diff options:
   --pr <number>        attach PR metadata to the local diff review
@@ -129,6 +132,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   const opts: MutableLocalOptions = {};
   let fix = false;
   let recheck = false;
+  let json = false;
 
   for (let i = start; i < argv.length; i++) {
     const arg = argv[i];
@@ -148,6 +152,10 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     if (arg === "--recheck") {
       recheck = true;
+      continue;
+    }
+    if (arg === "--json") {
+      json = true;
       continue;
     }
     if (arg === "--pr") {
@@ -230,6 +238,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   if (github) {
     if (prCommand) throw new Error("pr command cannot be combined with --github");
     if (!pr) throw new Error("--github requires --pr <number>");
+    if (json) throw new Error("--json is not supported with --github");
     if (opts.base) throw new Error("--base is only valid in local mode");
     if (opts.focus) throw new Error("--focus is only valid in local mode");
     if (opts.deep) throw new Error("--deep is only valid in local mode");
@@ -237,6 +246,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   }
 
   if (explainCommand) {
+    if (json) throw new Error("--json is only valid in local and pr modes");
     if (!finding) throw new Error("explain requires --finding <text>");
     return { kind: "explain", pr: prCommandNumber!, finding, repo, opts: runnerOptionsFrom(opts) };
   }
@@ -245,8 +255,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   if (prCommand) {
     if (pr) throw new Error("pr command cannot be combined with --pr");
     if (opts.base) throw new Error("--base is not valid with pr command");
-    return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck };
+    return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck, json };
   }
 
-  return { kind: "local", repo, opts, fix, recheck };
+  return { kind: "local", repo, opts, fix, recheck, json };
 }

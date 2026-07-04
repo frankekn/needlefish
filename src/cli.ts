@@ -3,6 +3,7 @@ import { runGithubExplain } from "./adapters/explain";
 import { runGithub } from "./adapters/github";
 import { runLocal, runLocalPr, printLocal } from "./adapters/local";
 import { parseArgs, USAGE } from "./cli/args";
+import { serializeReviewResult } from "./shared/schema";
 
 async function main() {
   const command = parseArgs(process.argv.slice(2));
@@ -42,7 +43,11 @@ async function main() {
       const cwd = command.repo ?? process.cwd();
       const result =
         command.kind === "pr" ? await runLocalPr(cwd, command.pr, command.opts) : await runLocal(cwd, command.opts);
-      printLocal(result);
+      if (command.json) {
+        process.stdout.write(serializeReviewResult(result));
+      } else {
+        printLocal(result);
+      }
       return;
     }
   }

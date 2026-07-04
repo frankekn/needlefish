@@ -14,7 +14,7 @@ import {
   readAgentsAt,
 } from "../shared/repo";
 import { normalizePrMeta } from "../shared/normalize";
-import type { Bundle, ReviewResult } from "../shared/schema";
+import { serializeReviewResult, type Bundle, type ReviewResult } from "../shared/schema";
 import type { RunnerOptions } from "../shared/runner";
 
 function detectBase(cwd: string, override?: string): string {
@@ -68,7 +68,7 @@ function cacheSlug(cwd: string): string {
 function writeCache(cwd: string, opts: LocalOptions, result: ReviewResult): void {
   const cache = opts.cacheDir ?? path.join(os.homedir(), ".cache", "needlefish", cacheSlug(cwd));
   mkdirSync(cache, { recursive: true });
-  writeFileSync(path.join(cache, "last-review.json"), JSON.stringify(result, null, 2));
+  writeFileSync(path.join(cache, "last-review.json"), serializeReviewResult(result));
 }
 
 function diffBundle(cwd: string, opts: LocalOptions): Bundle {

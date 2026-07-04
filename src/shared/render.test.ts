@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderMarkdown } from "./render";
-import type { Finding, ReviewResult } from "./schema";
+import { REVIEW_RESULT_SCHEMA_VERSION, type Finding, type ReviewResult } from "./schema";
 
 test("renderMarkdown includes review target disclosure", () => {
   const result: ReviewResult = {
+    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
     verdict: "pass",
     summary: "Clean.",
     findings: [],
@@ -23,6 +24,7 @@ test("renderMarkdown includes review target disclosure", () => {
 
 test("renderMarkdown appends a stats summary line", () => {
   const result: ReviewResult = {
+    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
     verdict: "pass",
     summary: "Clean.",
     findings: [],
@@ -44,6 +46,7 @@ test("renderMarkdown appends a stats summary line", () => {
 
 function baseResult(findings: readonly Finding[]): ReviewResult {
   return {
+    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
     verdict: "changes_requested",
     summary: "s",
     findings,

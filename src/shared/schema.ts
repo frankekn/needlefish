@@ -1,5 +1,7 @@
 import type { RunStat } from "./runner";
 
+export const REVIEW_RESULT_SCHEMA_VERSION = 1;
+
 export type Severity = "P0" | "P1" | "P2" | "P3";
 
 export type Category =
@@ -79,6 +81,7 @@ export interface RawReview {
 }
 
 export interface ReviewResult {
+  readonly schemaVersion: typeof REVIEW_RESULT_SCHEMA_VERSION;
   readonly verdict: Verdict;
   readonly summary: string;
   readonly findings: readonly Finding[];
@@ -92,6 +95,12 @@ export interface ReviewResult {
   // Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
   // Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
   readonly candidateFindings?: readonly Finding[];
+}
+
+export function serializeReviewResult(result: ReviewResult): string {
+  const json = JSON.stringify(result, null, 2);
+  if (!json) throw new Error("ReviewResult serialization failed");
+  return `${json}\n`;
 }
 
 export interface RiskEdge {

@@ -37,6 +37,26 @@ test("parseArgs separates pr command from --pr context", () => {
   assert.deepEqual(parseArgs(["pr", "--help"]), { kind: "help" });
 });
 
+test("parseArgs accepts --json for local and pr modes", () => {
+  const localCommand = parseArgs(["--repo", "/tmp/repo", "--json"]);
+
+  assert.equal(localCommand.kind, "local");
+  if (localCommand.kind === "local") {
+    assert.equal(localCommand.json, true);
+  }
+
+  const prCommand = parseArgs(["pr", "24", "--repo", "/tmp/repo", "--json"]);
+
+  assert.equal(prCommand.kind, "pr");
+  if (prCommand.kind === "pr") {
+    assert.equal(prCommand.json, true);
+  }
+});
+
+test("parseArgs rejects --json in github mode", () => {
+  assert.throws(() => parseArgs(["--github", "--pr", "1", "--json"]), /--json is not supported with --github/);
+});
+
 test("parseArgs rejects missing option values", () => {
   const argv = ["--base"];
 

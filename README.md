@@ -117,6 +117,31 @@ needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/g
 ```
 
 Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-review.json`.
+Pass `--json` to print the same `ReviewResult` JSON to stdout instead:
+
+```bash
+needlefish --repo . --json | jq .verdict
+```
+
+## Machine interface
+
+`needlefish --repo <path> --json` and `needlefish pr <number> --json` print a
+versioned `ReviewResult` JSON object to stdout. The local cache stores the same
+serialized object at `~/.cache/needlefish/<repo>/last-review.json`.
+
+Within a `schemaVersion`, fields are only added, never changed or removed.
+Breaking shape changes require a new `schemaVersion` and changelog entry.
+
+| Field | Shape |
+| --- | --- |
+| `schemaVersion` | Literal `1`. |
+| `verdict` | `pass`, `needs_human`, or `changes_requested`. |
+| `findings[]` | Finding objects with `severity`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
+| `findings[].consumerFile` | Optional downstream file affected by the finding. |
+| `findings[].consumerLine` | Optional downstream line affected by the finding. |
+| `residualRisks[]` | Residual-risk objects with `text` and `blocks`. |
+| `checked[]` | Evidence strings describing what the review examined. |
+| `stats` | Optional per-runner-call timing and attempt stats. |
 
 ## Base detection
 

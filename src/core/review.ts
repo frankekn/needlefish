@@ -4,6 +4,7 @@ import path from "node:path";
 import { runCodex, extractJson, isRunnerSafetyError, type CodexOptions } from "../shared/codex";
 import { parsePositiveInteger, type RunnerOptions, type RunStat } from "../shared/runner";
 import {
+  REVIEW_RESULT_SCHEMA_VERSION,
   type Bundle,
   type Finding,
   type Hotspot,
@@ -173,6 +174,7 @@ function toReviewResult(
   const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
   return {
+    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
     verdict,
     summary,
     findings: raw.findings,
@@ -305,6 +307,7 @@ export async function review(
   if (isDocsOnlyFastPath(bundle)) {
     const paths = bundle.changedFiles.map((f) => f.path).join(", ");
     return {
+      schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
       verdict: "pass",
       summary: `Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
       findings: [],

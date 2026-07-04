@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- CLI: add `--json` ReviewResult output with `schemaVersion: 1` as the stable machine interface.
+
 ## 0.3.0 — 2026-07-02
 
 ### Changes
