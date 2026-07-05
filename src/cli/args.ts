@@ -69,7 +69,7 @@ Local diff options:
   --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | acp (default: codex)
+  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | acp (default: auto-detect codex, claude, opencode)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
   CODEX_BIN               codex executable (default: codex)
