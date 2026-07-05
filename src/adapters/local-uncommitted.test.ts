@@ -1,83 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test, { type TestContext } from "node:test";
+import test from "node:test";
 import { runLocal } from "./local";
+import { fakeClaudeEnv, installFakeClaude, writeFakeClaude } from "./local-uncommitted-test-fixtures";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 
 const TSX_IMPORT = process.env.NEEDLEFISH_TEST_TSX_IMPORT ?? "tsx";
-
-function restoreEnv(name: string, value: string | undefined): void {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
-}
-
-function installFakeClaude(t: TestContext, tmp: string): { readonly promptPath: string } {
-  const promptPath = join(tmp, "prompts.txt");
-  const bin = join(tmp, "claude-bin.js");
-  const previous = {
-    bin: process.env.CLAUDE_BIN,
-    runner: process.env.NEEDLEFISH_RUNNER,
-    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
-    noRetry: process.env.NEEDLEFISH_NO_RETRY,
-  };
-  t.after(() => {
-    restoreEnv("CLAUDE_BIN", previous.bin);
-    restoreEnv("NEEDLEFISH_RUNNER", previous.runner);
-    restoreEnv("NEEDLEFISH_NO_FAST_PATH", previous.noFastPath);
-    restoreEnv("NEEDLEFISH_NO_RETRY", previous.noRetry);
-  });
-  writeFileSync(
-    bin,
-    [
-      "#!/usr/bin/env node",
-      "const fs = require('node:fs');",
-      "let prompt = '';",
-      "process.stdin.setEncoding('utf8');",
-      "process.stdin.on('data', (chunk) => { prompt += chunk; });",
-      "process.stdin.on('end', () => {",
-      `  fs.appendFileSync(${JSON.stringify(promptPath)}, '\\n---PROMPT---\\n' + prompt);`,
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
-      "});",
-    ].join("\n")
-  );
-  chmodSync(bin, 0o755);
-  process.env.CLAUDE_BIN = bin;
-  process.env.NEEDLEFISH_RUNNER = "claude";
-  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
-  process.env.NEEDLEFISH_NO_RETRY = "1";
-  return { promptPath };
-}
-
-function fakeClaudeEnv(bin: string, home: string): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    CLAUDE_BIN: bin,
-    HOME: home,
-    NEEDLEFISH_NO_FAST_PATH: "1",
-    NEEDLEFISH_NO_RETRY: "1",
-  };
-}
-
-function writeFakeClaude(bin: string, promptPath: string): void {
-  writeFileSync(
-    bin,
-    [
-      "#!/usr/bin/env node",
-      "const fs = require('node:fs');",
-      "let prompt = '';",
-      "process.stdin.setEncoding('utf8');",
-      "process.stdin.on('data', (chunk) => { prompt += chunk; });",
-      "process.stdin.on('end', () => {",
-      `  fs.appendFileSync(${JSON.stringify(promptPath)}, '\\n---PROMPT---\\n' + prompt);`,
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
-      "});",
-    ].join("\n")
-  );
-  chmodSync(bin, 0o755);
-}
 
 test("runLocal reviews staged unstaged and untracked changes when working tree is dirty", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-uncommitted-"));
@@ -124,6 +55,66 @@ test("runLocal excludes gitignored untracked files from the uncommitted review",
   const prompts = readFileSync(promptPath, "utf8");
   assert.match(prompts, /diff --git a\/visible\.ts b\/visible\.ts/);
   assert.equal(prompts.includes("ignored.ts"), false);
+});
+
+test("runLocal skips tracked binary files while reviewing uncommitted text changes", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-tracked-binary-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  mkdirSync(join(repo, "src"));
+  writeFileSync(join(repo, "src", "app.ts"), "export const app = 1;\n");
+  writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 1, 2, 3]));
+  commitAll(repo, "base");
+  writeFileSync(join(repo, "src", "app.ts"), "export const app = 2;\n");
+  writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 9, 2, 3]));
+  writeFileSync(join(repo, "src", "untracked.ts"), "export const untracked = 1;\n");
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.match(result.reviewTarget ?? "", /Skipped tracked files: tracked image\.bin \(binary\)/);
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.match(prompts, /diff --git a\/src\/app\.ts b\/src\/app\.ts/);
+  assert.match(prompts, /\+export const app = 2;/);
+  assert.match(prompts, /diff --git a\/src\/untracked\.ts b\/src\/untracked\.ts/);
+  assert.equal(prompts.includes("diff --git a/tracked image.bin"), false);
+  assert.equal(prompts.includes("Binary files"), false);
+  assert.equal(prompts.includes('"path": "tracked image.bin"'), false);
+});
+
+test("runLocal reports skipped tracked binary files when no reviewable uncommitted patch remains", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-only-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 1, 2, 3]));
+  commitAll(repo, "base");
+  writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 9, 2, 3]));
+
+  await assert.rejects(
+    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
+    /No uncommitted changes to review\. Skipped files: tracked image\.bin \(binary\)\./
+  );
+});
+
+test("runLocal reports skipped tracked binary renames with spaces when no reviewable patch remains", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-rename-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  gitText(["config", "diff.renames", "true"], repo);
+  writeFileSync(join(repo, "old image.bin"), Buffer.from([0, 1, 2, 3]));
+  commitAll(repo, "base");
+  gitText(["mv", "old image.bin", "new image.bin"], repo);
+
+  await assert.rejects(
+    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
+    /No uncommitted changes to review\. Skipped files: old image\.bin \(binary\), new image\.bin \(binary\)\./
+  );
 });
 
 test("runLocal notes skipped binary oversize and total-capped untracked files", async (t) => {

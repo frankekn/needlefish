@@ -22,6 +22,7 @@ import {
   EMPTY_BASE_SHA,
   formatUncommittedReviewTarget,
   joinSections,
+  parseTrackedBinaryPathsFromNumstat,
   WORKING_HEAD_SHA,
 } from "./local-uncommitted";
 
@@ -60,6 +61,19 @@ function hasHeadCommit(cwd: string): boolean {
 
 function gitLines(args: readonly string[], cwd: string): string[] {
   return git(args, cwd).split("\n").filter(Boolean);
+}
+
+function gitNulFields(args: readonly string[], cwd: string): string[] {
+  const output = git(args, cwd);
+  if (!output) return [];
+  const fields = output.endsWith("\0") ? output.slice(0, -1).split("\0") : output.split("\0");
+  return fields.filter(Boolean);
+}
+
+function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
+  const args = ["diff", ...extraArgs, "HEAD"];
+  if (excludedPaths.length === 0) return args;
+  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude)${filePath}`)];
 }
 
 function fetchPrMeta(cwd: string, prNumber: number) {
@@ -141,9 +155,13 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
-  const trackedPatch = headExists ? git(["diff", "HEAD"], cwd) : "";
-  const trackedPatchStat = headExists ? git(["diff", "--stat", "HEAD"], cwd) : "";
-  const trackedPaths = headExists ? gitLines(["diff", "--name-only", "HEAD"], cwd) : [];
+  const trackedBinaryPaths = headExists
+    ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
+    : [];
+  const trackedPatch = headExists ? git(trackedDiffArgs([], trackedBinaryPaths), cwd) : "";
+  const trackedPatchStat = headExists ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd) : "";
+  const trackedPaths = headExists ? gitNulFields(trackedDiffArgs(["--name-only", "-z"], trackedBinaryPaths), cwd) : [];
+  const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
     ? gitLines(["ls-files", "--others", "--exclude-standard"], cwd)
     : gitLines(["ls-files", "--cached", "--others", "--exclude-standard"], cwd);
@@ -151,7 +169,9 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const patch = joinSections([trackedPatch, untracked.patch]);
 
   if (!patch.trim()) {
-    throw new Error("No uncommitted changes to review.");
+    const skipped = [...trackedSkipped, ...untracked.skipped];
+    const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
+    throw new Error(`No uncommitted changes to review.${skippedMessage}`);
   }
 
   return makeBundle({
@@ -161,7 +181,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     patch,
     patchStat: joinSections([trackedPatchStat, untracked.patchStat]),
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
-    reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped),
+    reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,

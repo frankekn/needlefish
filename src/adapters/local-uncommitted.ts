@@ -14,8 +14,60 @@ export interface UntrackedPatch {
   readonly skipped: readonly string[];
 }
 
+interface NumstatRow {
+  readonly additions: string;
+  readonly deletions: string;
+  readonly path: string;
+}
+
 function isBinary(content: Buffer): boolean {
   return content.includes(0);
+}
+
+function parseNumstatRow(row: string): NumstatRow | null {
+  const firstTab = row.indexOf("\t");
+  if (firstTab === -1) return null;
+  const secondTab = row.indexOf("\t", firstTab + 1);
+  if (secondTab === -1) return null;
+  return {
+    additions: row.slice(0, firstTab),
+    deletions: row.slice(firstTab + 1, secondTab),
+    path: row.slice(secondTab + 1),
+  };
+}
+
+export function parseTrackedBinaryPathsFromNumstat(numstat: string): string[] {
+  const fields = numstat ? numstat.split("\0") : [];
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const addPath = (filePath: string): void => {
+    if (!filePath || seen.has(filePath)) return;
+    seen.add(filePath);
+    paths.push(filePath);
+  };
+
+  let index = 0;
+  while (index < fields.length) {
+    const row = parseNumstatRow(fields[index] ?? "");
+    index += 1;
+    if (!row) continue;
+
+    const isBinaryRow = row.additions === "-" && row.deletions === "-";
+    if (row.path === "") {
+      const oldPath = fields[index] ?? "";
+      const newPath = fields[index + 1] ?? "";
+      index += 2;
+      if (isBinaryRow) {
+        addPath(oldPath);
+        addPath(newPath);
+      }
+      continue;
+    }
+
+    if (isBinaryRow) addPath(row.path);
+  }
+
+  return paths;
 }
 
 function diffLines(text: string): { readonly lines: readonly string[]; readonly hasFinalNewline: boolean } {
@@ -98,9 +150,14 @@ export function joinSections(parts: readonly string[]): string {
   return parts.filter((part) => part.trim()).join("\n");
 }
 
-export function formatUncommittedReviewTarget(pr: number | undefined, skipped: readonly string[]): string {
+export function formatUncommittedReviewTarget(
+  pr: number | undefined,
+  skippedUntracked: readonly string[],
+  skippedTracked: readonly string[] = []
+): string {
   const lines = ["Review target: uncommitted changes"];
   if (pr !== undefined) lines.push(`PR context: #${pr} metadata only`);
-  if (skipped.length > 0) lines.push(`Skipped untracked files: ${skipped.join(", ")}`);
+  if (skippedUntracked.length > 0) lines.push(`Skipped untracked files: ${skippedUntracked.join(", ")}`);
+  if (skippedTracked.length > 0) lines.push(`Skipped tracked files: ${skippedTracked.join(", ")}`);
   return lines.join("\n");
 }
