@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { runCodex, extractJson, isRunnerSafetyError, type CodexOptions } from "../shared/codex";
-import { parsePositiveInteger, type RunnerOptions, type RunStat } from "../shared/runner";
+import { runCodex, extractJson, isRunnerSafetyError, type CodexOptions } from "../shared/codex.js";
+import { parsePositiveInteger, type RunnerOptions, type RunStat } from "../shared/runner.js";
 import {
   REVIEW_RESULT_SCHEMA_VERSION,
   type Bundle,
@@ -12,16 +9,10 @@ import {
   type ResidualRisk,
   type ReviewResult,
   type Severity,
-} from "../shared/schema";
-import { normalizeMap, normalizeReview } from "../shared/normalize";
-import { deriveVerdict } from "./verdict";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROMPTS_DIR = path.resolve(__dirname, "..", "..", "prompts");
-
-function loadPrompt(name: string): string {
-  return readFileSync(path.join(PROMPTS_DIR, name), "utf8");
-}
+} from "../shared/schema.js";
+import { normalizeMap, normalizeReview } from "../shared/normalize.js";
+import { deriveVerdict } from "./verdict.js";
+import { loadPrompt } from "./prompts.js";
 
 const LARGE_PATCH_CHARS = 30000;
 const LARGE_FILE_COUNT = 10;

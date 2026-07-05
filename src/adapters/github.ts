@@ -1,15 +1,15 @@
 import path from "node:path";
-import { review } from "../core/review";
-import { renderMarkdown } from "../shared/render";
-import { changedFiles, ghText, git, makeBundle } from "../shared/repo";
-import { normalizeBodyList } from "../shared/normalize";
-import { formatSuggestionComment } from "./github-suggestions";
+import { review } from "../core/review.js";
+import { renderMarkdown } from "../shared/render.js";
+import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
+import { normalizeBodyList } from "../shared/normalize.js";
+import { formatSuggestionComment } from "./github-suggestions.js";
 import type {
   Finding,
   ReviewResult,
   Verdict,
-} from "../shared/schema";
-import type { RunnerOptions } from "../shared/runner";
+} from "../shared/schema.js";
+import type { RunnerOptions } from "../shared/runner.js";
 
 type JsonRecord = Record<string, unknown>;
 

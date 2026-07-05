@@ -1,10 +1,10 @@
-import type { LocalOptions } from "../adapters/local";
+import type { LocalOptions } from "../adapters/local.js";
 import {
   parsePositiveInteger,
   parseRunnerName,
   type RunnerName,
   type RunnerOptions,
-} from "../shared/runner";
+} from "../shared/runner.js";
 
 export type CliCommand =
   | {

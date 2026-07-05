@@ -7,7 +7,7 @@ import type {
   RawReview,
   RiskEdge,
   Severity,
-} from "./schema";
+} from "./schema.js";
 
 type JsonRecord = Record<string, unknown>;
 

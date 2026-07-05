@@ -1,8 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { review } from "../core/review";
-import { renderMarkdown } from "../shared/render";
+import { review } from "../core/review.js";
+import { renderMarkdown } from "../shared/render.js";
 import {
   changedFiles,
   changedFilesFromPaths,
@@ -13,10 +13,10 @@ import {
   makeBundle,
   prDiffFromShas,
   readAgentsAt,
-} from "../shared/repo";
-import { normalizePrMeta } from "../shared/normalize";
-import { serializeReviewResult, type Bundle, type ReviewResult } from "../shared/schema";
-import type { RunnerOptions } from "../shared/runner";
+} from "../shared/repo.js";
+import { normalizePrMeta } from "../shared/normalize.js";
+import { serializeReviewResult, type Bundle, type ReviewResult } from "../shared/schema.js";
+import type { RunnerOptions } from "../shared/runner.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
@@ -24,7 +24,7 @@ import {
   joinSections,
   parseTrackedBinaryPathsFromNumstat,
   WORKING_HEAD_SHA,
-} from "./local-uncommitted";
+} from "./local-uncommitted.js";
 
 function detectBase(cwd: string, override?: string): string {
   if (override) return override;

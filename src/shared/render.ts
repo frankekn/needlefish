@@ -1,4 +1,4 @@
-import type { Finding, ReviewResult, Severity } from "./schema";
+import type { Finding, ReviewResult, Severity } from "./schema.js";
 
 const SEV_ORDER: Record<Severity, number> = {
   P0: 0,

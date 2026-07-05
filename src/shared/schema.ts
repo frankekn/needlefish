@@ -1,4 +1,4 @@
-import type { RunStat } from "./runner";
+import type { RunStat } from "./runner.js";
 
 export const REVIEW_RESULT_SCHEMA_VERSION = 1;
 

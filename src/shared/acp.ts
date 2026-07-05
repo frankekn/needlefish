@@ -2,7 +2,7 @@ import {
   runManagedRunnerProcess,
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
-} from "./runner-process";
+} from "./runner-process.js";
 
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;

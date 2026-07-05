@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { classifyFiles } from "./classify";
-import { normalizePrMeta } from "./normalize";
-import { runText } from "./process";
-import type { Bundle, ChangedFile, PrMeta } from "./schema";
+import { classifyFiles } from "./classify.js";
+import { normalizePrMeta } from "./normalize.js";
+import { runText } from "./process.js";
+import type { Bundle, ChangedFile, PrMeta } from "./schema.js";
 
 const NO_AGENTS =
   "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";

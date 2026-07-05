@@ -1,4 +1,4 @@
-import type { Finding, ResidualRisk, Verdict } from "../shared/schema";
+import type { Finding, ResidualRisk, Verdict } from "../shared/schema.js";
 
 const BLOCKING: Finding["severity"][] = ["P0", "P1", "P2"];
 

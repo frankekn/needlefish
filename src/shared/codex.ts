@@ -1,22 +1,22 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { runAcp } from "./acp";
+import { runAcp } from "./acp.js";
 import {
   parsePositiveInteger,
-  parseRunnerName,
   type RunnerName,
   type RunnerOptions,
   type RunStat,
-} from "./runner";
-import { spawnRunnerProcess, type RunnerProcessResult } from "./runner-process";
+} from "./runner.js";
+import { resolveRunner } from "./runner-detection.js";
+import { spawnRunnerProcess, type RunnerProcessResult } from "./runner-process.js";
 import {
   assertRunnerSandboxClean,
   isRunnerSafetyError,
   prepareRunnerSandbox,
-} from "./runner-sandbox";
+} from "./runner-sandbox.js";
 
-export { isRunnerSafetyError } from "./runner-sandbox";
+export { isRunnerSafetyError } from "./runner-sandbox.js";
 
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
@@ -141,12 +141,6 @@ export function extractJson(text: string): unknown {
     throw new Error("no JSON object found in codex output");
   }
   return JSON.parse(raw.slice(start, end + 1));
-}
-
-function resolveRunner(opts: CodexOptions): RunnerName {
-  if (opts.runner) return opts.runner;
-  const envRunner = process.env.NEEDLEFISH_RUNNER;
-  return envRunner ? parseRunnerName(envRunner, "NEEDLEFISH_RUNNER") : "codex";
 }
 
 function resolveModel(opts: CodexOptions, runner: RunnerName): string | undefined {

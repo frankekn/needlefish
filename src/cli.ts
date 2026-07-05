@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { runGithubExplain } from "./adapters/explain";
-import { runGithub } from "./adapters/github";
-import { runLocal, runLocalPr, printLocal } from "./adapters/local";
-import { parseArgs, USAGE } from "./cli/args";
-import { serializeReviewResult } from "./shared/schema";
+import { runGithubExplain } from "./adapters/explain.js";
+import { runGithub } from "./adapters/github.js";
+import { runLocal, runLocalPr, printLocal } from "./adapters/local.js";
+import { parseArgs, USAGE } from "./cli/args.js";
+import { serializeReviewResult } from "./shared/schema.js";
 
 async function main() {
   const command = parseArgs(process.argv.slice(2));

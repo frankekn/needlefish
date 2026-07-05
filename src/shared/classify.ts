@@ -1,4 +1,4 @@
-import type { Surface } from "./schema";
+import type { Surface } from "./schema.js";
 
 const RULES: { test: RegExp; surface: Surface }[] = [
   { test: /(^|\/)\.github\/workflows\/.+\.ya?ml$/i, surface: "workflow" },

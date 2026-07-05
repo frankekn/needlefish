@@ -1,14 +1,32 @@
 {
   "name": "needlefish",
   "version": "0.3.0",
-  "private": true,
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "description": "Strict local PR review agent.",
-  "bin": {
-    "needlefish": "bin/needlefish"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frankekn/needlefish.git"
   },
+  "bin": {
+    "needlefish": "bin/needlefish.js"
+  },
+  "files": [
+    "bin/needlefish.js",
+    "dist",
+    "prompts/critic.md",
+    "prompts/deep.md",
+    "prompts/explain.md",
+    "prompts/map.md",
+    "prompts/review.md",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm build && pnpm test",
+    "pack:smoke": "sh scripts/pack-smoke.sh",
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit",
     "test": "node scripts/test.mjs"

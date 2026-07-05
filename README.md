@@ -14,7 +14,19 @@ runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, and ACP agents are
 also supported. Verdict is derived deterministically from the surviving
 findings, never freehanded by the model.
 
-## Quick start (any repo, 30 seconds)
+## Install
+
+From inside any git repo you want reviewed:
+
+```bash
+npx needlefish
+```
+
+Requires Node 20+ and at least one authed runner CLI on `PATH`. Needlefish
+auto-detects `codex`, then `claude`, then `opencode`. Pass `--runner` or set
+`NEEDLEFISH_RUNNER` when you want a specific runner.
+
+## GitHub Action quick start
 
 Add `.github/workflows/needlefish.yml` to your repo:
 
@@ -50,13 +62,13 @@ effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers can comment
 `@needlefish recheck` or `@needlefish explain <finding>` on the PR.
 
-## Install
+## Development install
 
 Requires:
 
 - Node 20+
 - Corepack (recommended) or the pinned pnpm from `packageManager`
-- One supported model CLI authed locally: Codex (default), Claude Code, or opencode
+- One supported model CLI authed locally: Codex, Claude Code, or opencode
 - GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action mode
 
 ```bash
@@ -76,11 +88,11 @@ PNPM_VERSION=$(node -p "require('./package.json').packageManager")
 npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
 ```
 
-### Make `needlefish` resolve on PATH (optional, recommended)
+### Make the development shim resolve on PATH (optional)
 
-The package ships a `bin/needlefish` shim (declared in `package.json`). After
-clone, symlink it onto a directory that's on your PATH so you can invoke
-`needlefish` from any cwd/shell:
+The repo keeps a `bin/needlefish` development shim. After clone, symlink it
+onto a directory that's on your PATH so you can invoke `needlefish` from any
+cwd/shell:
 
 ```bash
 ln -sf "$PWD/bin/needlefish" ~/.local/bin/needlefish   # or any PATH dir
@@ -96,8 +108,11 @@ shells (unlike a shell alias). Without this step, invoke via the full path below
 Run from inside any repo you want reviewed, on a branch with changes:
 
 ```bash
-# If the bin is linked (above), from inside the target repo:
+# One-line package install/run:
 cd /path/to/some-repo
+npx needlefish
+
+# If the development shim is linked (above), from inside the target repo:
 needlefish
 
 # Otherwise, full path (cwd is the target):
@@ -313,7 +328,7 @@ and `--timeout-ms`, or the matching env vars:
 
 | option | env | default |
 | --- | --- | --- |
-| runner | `NEEDLEFISH_RUNNER` | `codex` |
+| runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
@@ -322,6 +337,10 @@ Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
 `GROK_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required for the
 `acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and `CODEX_RETRY_MS`
 still work for Codex compatibility.
+
+When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
+`claude`, or `opencode` can be found, Needlefish exits with install commands
+for those three CLIs instead of a stack trace.
 
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
 read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to

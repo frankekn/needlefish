@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import type { RunnerName } from "./runner";
+import type { RunnerName } from "./runner.js";
 
 export interface RunnerSandbox {
   readonly repoPath: string;

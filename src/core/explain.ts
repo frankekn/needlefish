@@ -1,12 +1,7 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { runCodex } from "../shared/codex";
-import type { RunnerOptions } from "../shared/runner";
-import type { Bundle } from "../shared/schema";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROMPTS_DIR = path.resolve(__dirname, "..", "..", "prompts");
+import { runCodex } from "../shared/codex.js";
+import type { RunnerOptions } from "../shared/runner.js";
+import type { Bundle } from "../shared/schema.js";
+import { loadPrompt } from "./prompts.js";
 
 // Untrusted comment text becomes a plain search key: strip everything but
 // word chars and light punctuation so it cannot smuggle markup or newlines.
@@ -22,7 +17,7 @@ export async function explainFinding(
   const key = sanitizeFindingKey(findingKey);
   if (!key) throw new Error("explain: finding key is empty after sanitizing");
   const { patch, ...meta } = bundle;
-  const prompt = readFileSync(path.join(PROMPTS_DIR, "explain.md"), "utf8")
+  const prompt = loadPrompt("explain.md")
     .replace("{{FINDING_KEY}}", () => key)
     .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
     .replace("{{PATCH}}", () => patch);

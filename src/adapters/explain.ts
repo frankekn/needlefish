@@ -1,8 +1,8 @@
 import path from "node:path";
-import { explainFinding } from "../core/explain";
-import { ghText } from "../shared/repo";
-import type { RunnerOptions } from "../shared/runner";
-import { prDiffBundle } from "./local";
+import { explainFinding } from "../core/explain.js";
+import { ghText } from "../shared/repo.js";
+import type { RunnerOptions } from "../shared/runner.js";
+import { prDiffBundle } from "./local.js";
 
 // `@needlefish explain <key>` — one model call, posted as an issue comment.
 // The key is sanitized in explainFinding; this layer only does IO.

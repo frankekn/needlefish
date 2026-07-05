@@ -1,4 +1,4 @@
-import type { Finding } from "../shared/schema";
+import type { Finding } from "../shared/schema.js";
 
 export type DiffLineRange = readonly [number, number];
 
