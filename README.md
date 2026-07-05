@@ -103,7 +103,13 @@ needlefish
 # Otherwise, full path (cwd is the target):
 /path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts
 
-# Local diff review. Point at the target with --repo from anywhere:
+# Uncommitted code (no branch/PR needed): if the working tree is dirty —
+# or the repo has no commits yet — `needlefish` reviews your uncommitted
+# changes, untracked files included. Not a git repo yet? Run `git init` first.
+needlefish --repo /path/to/some-repo --uncommitted  # force working-tree review
+needlefish --repo /path/to/some-repo --branch       # force merge-base..HEAD review
+
+# Local diff review of committed work. Point at the target with --repo from anywhere:
 needlefish --repo /path/to/some-repo --focus security
 needlefish --repo /path/to/some-repo --deep
 needlefish --repo /path/to/some-repo --pr 123  # attaches PR metadata to the local diff
