@@ -21,6 +21,7 @@ export { isRunnerSafetyError } from "./runner-sandbox";
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
   readonly targetHeadSha: string;
+  readonly targetPatch?: string;
   readonly label?: string;
   readonly onStat?: (stat: RunStat) => void;
 }
@@ -104,6 +105,7 @@ async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerNa
       repoPath: opts.repoPath,
       prompt,
       targetHeadSha: opts.targetHeadSha,
+      ...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
       tmp,
     });
     const invocation = {
@@ -123,7 +125,7 @@ async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerNa
         `${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`
       );
     }
-    assertRunnerSandboxClean(runner, sandbox.repoPath, opts.targetHeadSha);
+    assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha);
     return outputFor(runner, result);
   } finally {
     rmSync(tmp, { recursive: true, force: true });

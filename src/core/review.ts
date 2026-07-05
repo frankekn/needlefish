@@ -114,6 +114,7 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
   return {
     repoPath: run.bundle.repoPath,
     targetHeadSha: run.bundle.headSha,
+    ...(run.bundle.headSha === "WORKING" ? { targetPatch: run.bundle.patch } : {}),
     label,
     onStat: (stat) => run.stats.push(stat),
     ...run.runnerOptions,

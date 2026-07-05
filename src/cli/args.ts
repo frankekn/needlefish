@@ -46,7 +46,7 @@ export type CliCommand =
 export const USAGE = `Needlefish — strict local PR review agent.
 
 Usage:
-  needlefish [options]                 review merge-base..HEAD (local, read-only)
+  needlefish [options]                 review local changes (uncommitted when dirty)
   needlefish pr <number> [options]     review PR base..head via gh (any branch)
   needlefish --github --pr <number>    GitHub Action mode (post review + check)
   needlefish explain <number> --finding <text>
@@ -65,6 +65,8 @@ Shared options:
 Local diff options:
   --pr <number>        attach PR metadata to the local diff review
   --base <ref>         override base ref
+  --uncommitted        review staged, unstaged, and untracked working-tree changes
+  --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | acp (default: codex)
@@ -85,6 +87,7 @@ type MutableLocalOptions = {
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
+  localMode?: "uncommitted" | "branch";
 };
 
 type MutableRunnerOptions = {
@@ -134,6 +137,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   let fix = false;
   let recheck = false;
   let json = false;
+  let sawUncommitted = false;
+  let sawBranch = false;
 
   for (let i = start; i < argv.length; i++) {
     const arg = argv[i];
@@ -145,6 +150,16 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     if (arg === "--deep") {
       opts.deep = true;
+      continue;
+    }
+    if (arg === "--uncommitted") {
+      sawUncommitted = true;
+      opts.localMode = "uncommitted";
+      continue;
+    }
+    if (arg === "--branch") {
+      sawBranch = true;
+      opts.localMode = "branch";
       continue;
     }
     if (arg === "--fix") {
@@ -236,11 +251,16 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error(`unknown option ${arg}`);
   }
 
+  if (sawUncommitted && sawBranch) {
+    throw new Error("--uncommitted cannot be combined with --branch");
+  }
+
   if (github) {
     if (prCommand) throw new Error("pr command cannot be combined with --github");
     if (!pr) throw new Error("--github requires --pr <number>");
     if (json) throw new Error("--json is not supported with --github");
     if (opts.base) throw new Error("--base is only valid in local mode");
+    if (opts.localMode) throw new Error("--uncommitted and --branch are only valid in local mode");
     if (opts.focus) throw new Error("--focus is only valid in local mode");
     if (opts.deep) throw new Error("--deep is only valid in local mode");
     return { kind: "github", pr, repo, opts: runnerOptionsFrom(opts), fix, recheck };
@@ -256,6 +276,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   if (prCommand) {
     if (pr) throw new Error("pr command cannot be combined with --pr");
     if (opts.base) throw new Error("--base is not valid with pr command");
+    if (opts.localMode) throw new Error("--uncommitted and --branch are not valid with pr command");
     return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck, json };
   }
 

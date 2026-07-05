@@ -5,6 +5,7 @@ import { review } from "../core/review";
 import { renderMarkdown } from "../shared/render";
 import {
   changedFiles,
+  changedFilesFromPaths,
   ensurePrCommits,
   fetchPrRefInfo,
   ghText,
@@ -16,6 +17,13 @@ import {
 import { normalizePrMeta } from "../shared/normalize";
 import { serializeReviewResult, type Bundle, type ReviewResult } from "../shared/schema";
 import type { RunnerOptions } from "../shared/runner";
+import {
+  buildUntrackedPatch,
+  EMPTY_BASE_SHA,
+  formatUncommittedReviewTarget,
+  joinSections,
+  WORKING_HEAD_SHA,
+} from "./local-uncommitted";
 
 function detectBase(cwd: string, override?: string): string {
   if (override) return override;
@@ -29,6 +37,29 @@ function detectBase(cwd: string, override?: string): string {
     if (!(err instanceof Error)) throw err;
   }
   return "main";
+}
+
+function ensureGitRepo(cwd: string): void {
+  try {
+    if (git(["rev-parse", "--is-inside-work-tree"], cwd) === "true") return;
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
+  }
+  throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
+}
+
+function hasHeadCommit(cwd: string): boolean {
+  try {
+    git(["cat-file", "-e", "HEAD^{commit}"], cwd);
+    return true;
+  } catch (err) {
+    if (err instanceof Error) return false;
+    throw err;
+  }
+}
+
+function gitLines(args: readonly string[], cwd: string): string[] {
+  return git(args, cwd).split("\n").filter(Boolean);
 }
 
 function fetchPrMeta(cwd: string, prNumber: number) {
@@ -71,7 +102,10 @@ function writeCache(cwd: string, opts: LocalOptions, result: ReviewResult): void
   writeFileSync(path.join(cache, "last-review.json"), serializeReviewResult(result));
 }
 
-function diffBundle(cwd: string, opts: LocalOptions): Bundle {
+function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
+  if (!hasHeadCommit(cwd)) {
+    throw new Error("No commits yet. Run without --branch to review uncommitted files.");
+  }
   const dirty = git(["status", "--porcelain"], cwd);
   if (dirty.trim()) {
     process.stderr.write(
@@ -105,6 +139,43 @@ function diffBundle(cwd: string, opts: LocalOptions): Bundle {
   });
 }
 
+function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
+  const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  const trackedPatch = headExists ? git(["diff", "HEAD"], cwd) : "";
+  const trackedPatchStat = headExists ? git(["diff", "--stat", "HEAD"], cwd) : "";
+  const trackedPaths = headExists ? gitLines(["diff", "--name-only", "HEAD"], cwd) : [];
+  const untrackedFiles = headExists
+    ? gitLines(["ls-files", "--others", "--exclude-standard"], cwd)
+    : gitLines(["ls-files", "--cached", "--others", "--exclude-standard"], cwd);
+  const untracked = buildUntrackedPatch(cwd, untrackedFiles);
+  const patch = joinSections([trackedPatch, untracked.patch]);
+
+  if (!patch.trim()) {
+    throw new Error("No uncommitted changes to review.");
+  }
+
+  return makeBundle({
+    repoPath: cwd,
+    baseSha,
+    headSha: WORKING_HEAD_SHA,
+    patch,
+    patchStat: joinSections([trackedPatchStat, untracked.patchStat]),
+    changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
+    reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped),
+    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    deep: Boolean(opts.deep),
+    focus: opts.focus ?? null,
+  });
+}
+
+function diffBundle(cwd: string, opts: LocalOptions): Bundle {
+  ensureGitRepo(cwd);
+  const headExists = hasHeadCommit(cwd);
+  const dirty = git(["status", "--porcelain"], cwd).trim() !== "";
+  const mode = opts.localMode ?? (!headExists || dirty ? "uncommitted" : "branch");
+  return mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
+}
+
 export function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
   const pr = fetchPrRefInfo(cwd, prNumber);
   ensurePrCommits(cwd, pr);
@@ -130,6 +201,7 @@ export interface LocalOptions extends RunnerOptions {
   readonly deep?: boolean;
   readonly focus?: string;
   readonly cacheDir?: string;
+  readonly localMode?: "uncommitted" | "branch";
 }
 
 export async function runLocal(

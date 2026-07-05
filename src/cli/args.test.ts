@@ -53,6 +53,24 @@ test("parseArgs accepts --json for local and pr modes", () => {
   }
 });
 
+test("parseArgs accepts local diff mode flags", () => {
+  const uncommitted = parseArgs(["--uncommitted"]);
+  assert.equal(uncommitted.kind, "local");
+  if (uncommitted.kind === "local") {
+    assert.equal(uncommitted.opts.localMode, "uncommitted");
+  }
+
+  const branch = parseArgs(["--branch"]);
+  assert.equal(branch.kind, "local");
+  if (branch.kind === "local") {
+    assert.equal(branch.opts.localMode, "branch");
+  }
+});
+
+test("parseArgs rejects mutually exclusive local diff mode flags", () => {
+  assert.throws(() => parseArgs(["--uncommitted", "--branch"]), /--uncommitted cannot be combined with --branch/);
+});
+
 test("parseArgs rejects --json in github mode", () => {
   assert.throws(() => parseArgs(["--github", "--pr", "1", "--json"]), /--json is not supported with --github/);
 });

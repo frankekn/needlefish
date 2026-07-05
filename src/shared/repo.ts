@@ -18,7 +18,11 @@ export function ghText(args: readonly string[], cwd?: string, input?: string): s
 
 export function changedFiles(cwd: string, baseSha: string, headSha = "HEAD"): ChangedFile[] {
   const nameOnly = git(["diff", "--name-only", baseSha, headSha], cwd);
-  return classifyFiles(nameOnly.split("\n").filter(Boolean));
+  return changedFilesFromPaths(nameOnly.split("\n"));
+}
+
+export function changedFilesFromPaths(paths: readonly string[]): ChangedFile[] {
+  return classifyFiles(paths.filter(Boolean));
 }
 
 export function readAgents(cwd: string): string {
