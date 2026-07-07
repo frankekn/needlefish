@@ -126,6 +126,136 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   assert.equal(await processExited(childPid, 5000), true);
 });
 
+test("runCodex passes allowlisted env vars to the runner subprocess", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const envDump = path.join(tmp, "env-dump.json");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    model: process.env.CODEX_MODEL,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.model === undefined) delete process.env.CODEX_MODEL;
+    else process.env.CODEX_MODEL = previous.model;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `const envDump = ${JSON.stringify(envDump)};`,
+      "fs.writeFileSync(envDump, JSON.stringify({ codexModel: process.env.CODEX_MODEL ?? null }));",
+      "fs.writeFileSync(out, '{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_MODEL = "test-model";
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const dump = JSON.parse(readFileSync(envDump, "utf8")) as { codexModel: string | null };
+  assert.equal(dump.codexModel, "test-model");
+});
+
+test("runCodex strips non-allowlisted env vars from the runner subprocess", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const envDump = path.join(tmp, "env-dump.json");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    secret: process.env.NEEDLEFISH_TEST_FAKE_SECRET,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.secret === undefined) delete process.env.NEEDLEFISH_TEST_FAKE_SECRET;
+    else process.env.NEEDLEFISH_TEST_FAKE_SECRET = previous.secret;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `const envDump = ${JSON.stringify(envDump)};`,
+      "fs.writeFileSync(envDump, JSON.stringify({ secret: process.env.NEEDLEFISH_TEST_FAKE_SECRET ?? null }));",
+      "fs.writeFileSync(out, '{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.NEEDLEFISH_TEST_FAKE_SECRET = "should-not-leak";
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const dump = JSON.parse(readFileSync(envDump, "utf8")) as { secret: string | null };
+  assert.equal(dump.secret, null);
+});
+
+test("runCodex passes NEEDLEFISH_RUNNER_ENV_PASSTHROUGH vars through", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const envDump = path.join(tmp, "env-dump.json");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    secret: process.env.NEEDLEFISH_TEST_FAKE_SECRET,
+    passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.secret === undefined) delete process.env.NEEDLEFISH_TEST_FAKE_SECRET;
+    else process.env.NEEDLEFISH_TEST_FAKE_SECRET = previous.secret;
+    if (previous.passthrough === undefined) delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+    else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `const envDump = ${JSON.stringify(envDump)};`,
+      "fs.writeFileSync(envDump, JSON.stringify({ secret: process.env.NEEDLEFISH_TEST_FAKE_SECRET ?? null }));",
+      "fs.writeFileSync(out, '{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.NEEDLEFISH_TEST_FAKE_SECRET = "should-leak-now";
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "NEEDLEFISH_TEST_FAKE_SECRET";
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const dump = JSON.parse(readFileSync(envDump, "utf8")) as { secret: string | null };
+  assert.equal(dump.secret, "should-leak-now");
+});
+
 async function processExited(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
