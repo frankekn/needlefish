@@ -136,10 +136,7 @@ async function runCodexOnce(prompt: string, opts: CodexOptions, runner: RunnerNa
   const ghConfigDir = path.join(tmp, "gh-empty");
   mkdirSync(ghConfigDir, { recursive: true });
 
-  const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: ghConfigDir };
-  delete env.GH_TOKEN;
-  delete env.GITHUB_TOKEN;
-  delete env.GITHUB_API_TOKEN;
+  const env = buildRunnerEnv(runner, ghConfigDir);
 
   try {
     const sandbox = prepareRunnerSandbox({
