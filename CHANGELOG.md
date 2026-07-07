@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-07-07
 
+First version published to npm. (An `0.3.0` build with the same content was also published to npm from a commit ahead of the `v0.3.0` git tag; `0.3.1` is the release whose git tag matches the npm tarball.)
+
+- WORKING sandbox: ensure a trailing newline before `git apply` to fix corrupt-patch errors, with a regression test.
 - Package: add a buildable npm package layout for `npx needlefish`, with packaged prompts and automatic local runner detection (`codex` -> `claude` -> `opencode`).
 - Local mode now reviews uncommitted changes by default when the working tree is dirty or the repo has no commits yet (untracked files included, gitignore respected, binary/empty/oversize skipped with notes). `--branch` forces the old merge-base review; `--uncommitted` forces working-tree review. Non-git folders get a friendly `git init` hint.
 - Critic: keep findings about newly weakened error handling in exported/public symbols even with zero in-repo callers, and tighten the contract-drift exception to promises that affect what callers actually receive. Resolves the go-backend-slop-swallow documented limitation (criticPruneErrorRate 0.0556 -> 0).
