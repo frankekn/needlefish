@@ -356,6 +356,15 @@ needlefish checks that sandbox with
 `git status --porcelain --untracked-files=all --ignored=matching` and verifies
 `HEAD` did not move after each successful model call.
 
+### Runner subprocess environment
+
+Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `acp`) are spawned with an
+allowlisted environment, not the full parent `process.env` — only
+locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
+variables are passed through. To pass an additional variable to the runner
+subprocess, set `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2` (comma-separated
+names).
+
 ## Verdict derivation (deterministic)
 
 - any P0 / P1 / P2 finding → `changes_requested`
