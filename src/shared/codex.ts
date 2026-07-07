@@ -43,8 +43,8 @@ const BASE_ENV_ALLOWLIST = [
 
 const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
   codex: ["CODEX_BIN", "CODEX_MODEL", "CODEX_REASONING_EFFORT", "CODEX_RETRY_MS", "CODEX_TIMEOUT_MS"],
-  claude: ["CLAUDE_BIN", "CLAUDE_MODEL"],
-  opencode: ["OPENCODE_BIN", "OPENCODE_MODEL"],
+  claude: ["CLAUDE_BIN", "CLAUDE_MODEL", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+  opencode: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
   grok: ["GROK_BIN", "GROK_MODEL"],
   openai: [],
   acp: ["NEEDLEFISH_ACP_BIN"],
@@ -92,6 +92,13 @@ interface RunnerInvocation {
 
 export async function runCodex(prompt: string, opts: CodexOptions): Promise<string> {
   const runner = resolveRunner(opts);
+  if (runner === "opencode" && !process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER) {
+    throw new Error(
+      "The opencode runner has no verified process-level sandbox restraint in headless mode " +
+        "(it executes tool calls with no permission gate) and must be explicitly enabled via " +
+        "NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1."
+    );
+  }
   const maxAttempts = process.env.NEEDLEFISH_NO_RETRY ? 1 : 2;
   const startedAt = Date.now();
   let attempts = 0;
@@ -232,13 +239,6 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
     case "claude":
       return await runClaude(invocation);
     case "opencode":
-      if (!process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER) {
-        throw new Error(
-          "The opencode runner has no verified process-level sandbox restraint in headless mode " +
-            "(it executes tool calls with no permission gate) and must be explicitly enabled via " +
-            "NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1."
-        );
-      }
       return await runOpenCode(invocation);
     case "openai":
       throw new Error("openai runner uses direct HTTP path, not runRunner");

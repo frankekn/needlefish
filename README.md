@@ -303,6 +303,11 @@ Runner authentication (repo secrets, passed via `env` on the action step):
 | grok     | Grok CLI auth or provider-specific key                    |
 | acp      | agent-specific auth plus `NEEDLEFISH_ACP_BIN` on the runner |
 
+The claude auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and
+opencode's `OPENAI_API_KEY` are allowlisted through to the runner subprocess;
+other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
+"Runner subprocess environment").
+
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
 `runner_version` (npm version of the runner CLI), `repo_path` (defaults to the

@@ -256,6 +256,51 @@ test("runCodex passes NEEDLEFISH_RUNNER_ENV_PASSTHROUGH vars through", async (t)
   assert.equal(dump.secret, "should-leak-now");
 });
 
+test("runCodex passes claude auth env vars to the claude runner subprocess", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "claude-bin.js");
+  const envDump = path.join(tmp, "env-dump.json");
+  const previous = {
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.apiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previous.apiKey;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "fs.readFileSync(0, 'utf8');",
+      `const envDump = ${JSON.stringify(envDump)};`,
+      "fs.writeFileSync(envDump, JSON.stringify({ apiKey: process.env.ANTHROPIC_API_KEY ?? null }));",
+      "process.stdout.write('{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CLAUDE_BIN = bin;
+  process.env.NEEDLEFISH_RUNNER = "claude";
+  process.env.ANTHROPIC_API_KEY = "test-key";
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const dump = JSON.parse(readFileSync(envDump, "utf8")) as { apiKey: string | null };
+  assert.equal(dump.apiKey, "test-key");
+});
+
 async function processExited(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
