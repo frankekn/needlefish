@@ -30,6 +30,7 @@
     "pack:smoke": "sh scripts/pack-smoke.sh",
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit",
+    "lint": "eslint src eval",
     "test": "node scripts/test.mjs"
   },
   "devDependencies": {
