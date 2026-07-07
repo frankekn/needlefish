@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeFinding, normalizeMap, normalizeReview } from "./normalize";
+import { normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
 
 test("normalizeMap accepts a summary with no hotspots", () => {
   const map = normalizeMap({ summary: "reviewed", hotspots: [] });
@@ -116,6 +116,81 @@ test("normalizeMap truncates long hotspot names", () => {
 
   assert.equal(map.hotspots[0]?.name.length, 80);
   assert.equal(map.hotspots[0]?.name, "x".repeat(80));
+});
+
+test("normalizePrMeta accepts complete PR metadata", () => {
+  const meta = normalizePrMeta({
+    number: 12,
+    title: "Fix parser",
+    body: "Body text",
+    comments: [" comment "],
+    reviews: [{ body: " review " }],
+    statusCheckRollup: [
+      { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
+      { context: "lint", status: "PENDING", conclusion: null },
+    ],
+  });
+
+  assert.deepEqual(meta, {
+    number: 12,
+    title: "Fix parser",
+    body: "Body text",
+    comments: ["comment"],
+    reviews: ["review"],
+    checks: [
+      { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
+      { name: "lint", status: "PENDING", conclusion: null },
+    ],
+  });
+});
+
+test("normalizePrMeta uses fallback number when number is missing", () => {
+  const meta = normalizePrMeta({ title: "Fix parser" }, 12);
+
+  assert.equal(meta.number, 12);
+});
+
+test("normalizePrMeta rejects missing number without fallback", () => {
+  assert.throws(() => normalizePrMeta({ title: "Fix parser" }), /invalid number/);
+});
+
+test("normalizePrMeta rejects nonpositive or non-integer numbers", () => {
+  for (const number of [0, -1, 1.5]) {
+    assert.throws(() => normalizePrMeta({ number }), /invalid number/);
+  }
+});
+
+test("normalizePrMeta drops non-object status checks", () => {
+  const meta = normalizePrMeta({
+    number: 12,
+    statusCheckRollup: [
+      "bad",
+      { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
+    ],
+  });
+
+  assert.deepEqual(meta.checks, [
+    { name: "test", status: "COMPLETED", conclusion: "SUCCESS" },
+  ]);
+});
+
+test("normalizePrMeta turns non-string body into null", () => {
+  for (const body of [null, 123]) {
+    const meta = normalizePrMeta({ number: 12, body });
+
+    assert.equal(meta.body, null);
+  }
+});
+
+test("normalizePrMeta normalizes comments and reviews with bodyList behavior", () => {
+  const meta = normalizePrMeta({
+    number: 12,
+    comments: [" first "],
+    reviews: [{ body: " second " }],
+  });
+
+  assert.deepEqual(meta.comments, ["first"]);
+  assert.deepEqual(meta.reviews, ["second"]);
 });
 
 test("normalizeFinding accepts a complete model finding", () => {
