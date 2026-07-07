@@ -20,8 +20,3 @@ export function runText(command: string, args: readonly string[], opts: RunOptio
   }
   return (res.stdout ?? "").trim();
 }
-
-export function runJson(command: string, args: readonly string[], opts: RunOptions = {}): unknown {
-  const out = runText(command, args, opts);
-  return out ? JSON.parse(out) : {};
-}
