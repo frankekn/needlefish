@@ -23,6 +23,10 @@ const BASE_ENV_ALLOWLIST = [
   "PATHEXT",
   "HOME",
   "USERPROFILE",
+  // claude CLI credential lookup (macOS Keychain) fails with "Not logged in"
+  // when USER is absent — verified 2026-07-07 by env -i bisection.
+  "USER",
+  "LOGNAME",
   "TMPDIR",
   "TMP",
   "TEMP",
