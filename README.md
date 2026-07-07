@@ -345,8 +345,16 @@ for those three CLIs instead of a stack trace.
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
 read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
 restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
-`--permission-mode plan`, `--safe-mode`, and no session persistence. opencode
-runs with `--pure` and never uses `--dangerously-skip-permissions`. ACP runs a
+`--permission-mode plan`, `--safe-mode`, and no session persistence. grok runs
+with `--permission-mode plan` for the same process-level restraint. opencode
+runs with `--pure` and never uses `--dangerously-skip-permissions`, but as of
+this writing opencode's headless `run` mode has **no** documented read-only or
+permission flag — a live probe confirmed it executes shell/tool calls with no
+gate at all in that mode. Because of that gap, the `opencode` runner refuses to
+start unless `NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1` is set explicitly; set it only
+if you've separately sandboxed the environment opencode runs in. If opencode's
+CLI later ships a real permission/sandbox flag, this opt-in gate should replace
+the flag instead of the env-var check. ACP runs a
 JSON-RPC 2.0 Agent Client Protocol process over stdio from `NEEDLEFISH_ACP_BIN`;
 Needlefish sends `session/cancel` on timeout, then applies the same process-group
 kill path as the CLI runners. Closed PRs are skipped before diffing or model
