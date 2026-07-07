@@ -18,6 +18,48 @@ import {
 
 export { isRunnerSafetyError } from "./runner-sandbox.js";
 
+const BASE_ENV_ALLOWLIST = [
+  "PATH",
+  "PATHEXT",
+  "HOME",
+  "USERPROFILE",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "SHELL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+] as const;
+
+const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
+  codex: ["CODEX_BIN", "CODEX_MODEL", "CODEX_REASONING_EFFORT", "CODEX_RETRY_MS", "CODEX_TIMEOUT_MS"],
+  claude: ["CLAUDE_BIN", "CLAUDE_MODEL"],
+  opencode: ["OPENCODE_BIN", "OPENCODE_MODEL"],
+  grok: ["GROK_BIN", "GROK_MODEL"],
+  openai: [],
+  acp: ["NEEDLEFISH_ACP_BIN"],
+};
+
+function buildRunnerEnv(runner: RunnerName, ghConfigDir: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
+  const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_ENV_ALLOWLIST[runner]];
+  const extra = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  for (const name of [...allowed, ...extra]) {
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
 export interface CodexOptions extends RunnerOptions {
   readonly repoPath: string;
   readonly targetHeadSha: string;
