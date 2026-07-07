@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
+import { normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
 
 test("normalizeMap accepts a summary with no hotspots", () => {
   const map = normalizeMap({ summary: "reviewed", hotspots: [] });
@@ -191,6 +191,30 @@ test("normalizePrMeta normalizes comments and reviews with bodyList behavior", (
 
   assert.deepEqual(meta.comments, ["first"]);
   assert.deepEqual(meta.reviews, ["second"]);
+});
+
+test("normalizeBodyList trims strings and filters empty entries", () => {
+  const bodies = normalizeBodyList([" first ", "", " ", "second"]);
+
+  assert.deepEqual(bodies, ["first", "second"]);
+});
+
+test("normalizeBodyList accepts body-shaped objects", () => {
+  const bodies = normalizeBodyList([{ body: " first " }, { body: " second " }]);
+
+  assert.deepEqual(bodies, ["first", "second"]);
+});
+
+test("normalizeBodyList handles mixed string and body-shaped entries", () => {
+  const bodies = normalizeBodyList([" first ", { body: " second " }, { body: "" }]);
+
+  assert.deepEqual(bodies, ["first", "second"]);
+});
+
+test("normalizeBodyList returns empty array for non-array input", () => {
+  for (const raw of [null, "string", {}]) {
+    assert.deepEqual(normalizeBodyList(raw), []);
+  }
 });
 
 test("normalizeFinding accepts a complete model finding", () => {
