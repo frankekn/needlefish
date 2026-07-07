@@ -1,6 +1,122 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeFinding, normalizeReview } from "./normalize";
+import { normalizeFinding, normalizeMap, normalizeReview } from "./normalize";
+
+test("normalizeMap accepts a summary with no hotspots", () => {
+  const map = normalizeMap({ summary: "reviewed", hotspots: [] });
+
+  assert.deepEqual(map, { summary: "reviewed", hotspots: [] });
+});
+
+test("normalizeMap keeps a complete hotspot with normalized edges", () => {
+  const map = normalizeMap({
+    summary: "reviewed",
+    hotspots: [
+      {
+        name: "API boundary",
+        files: ["src/api.ts"],
+        why: "Shared input validation.",
+        risk: "high",
+        edges: [
+          {
+            producer: "src/api.ts",
+            consumerFile: "src/app.ts",
+            consumerLine: "42",
+            why: "The app consumes the parsed shape.",
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(map.hotspots, [
+    {
+      name: "API boundary",
+      files: ["src/api.ts"],
+      why: "Shared input validation.",
+      risk: "high",
+      edges: [
+        {
+          producer: "src/api.ts",
+          consumerFile: "src/app.ts",
+          consumerLine: 42,
+          why: "The app consumes the parsed shape.",
+        },
+      ],
+    },
+  ]);
+});
+
+test("normalizeMap rejects missing or invalid summary", () => {
+  for (const raw of [
+    null,
+    { hotspots: [] },
+    { summary: 1, hotspots: [] },
+  ]) {
+    assert.throws(() => normalizeMap(raw), /malformed map output/);
+  }
+});
+
+test("normalizeMap drops hotspots without files", () => {
+  const map = normalizeMap({
+    summary: "reviewed",
+    hotspots: [
+      { name: "missing files", files: [], risk: "high" },
+      { name: "kept", files: ["src/app.ts"], risk: "low" },
+    ],
+  });
+
+  assert.deepEqual(map.hotspots.map((hotspot) => hotspot.name), ["kept"]);
+});
+
+test("normalizeMap defaults invalid hotspot risk to med", () => {
+  const map = normalizeMap({
+    summary: "reviewed",
+    hotspots: [
+      { name: "risky", files: ["src/app.ts"], risk: "critical" },
+    ],
+  });
+
+  assert.equal(map.hotspots[0]?.risk, "med");
+});
+
+test("normalizeMap drops edges missing consumerFile", () => {
+  const map = normalizeMap({
+    summary: "reviewed",
+    hotspots: [
+      {
+        name: "edge case",
+        files: ["src/app.ts"],
+        edges: [
+          { producer: "src/app.ts", why: "missing consumer file" },
+          { producer: "src/app.ts", consumerFile: "src/ui.ts", why: "kept" },
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(map.hotspots[0]?.edges, [
+    {
+      producer: "src/app.ts",
+      consumerFile: "src/ui.ts",
+      consumerLine: 0,
+      why: "kept",
+    },
+  ]);
+});
+
+test("normalizeMap truncates long hotspot names", () => {
+  const longName = "x".repeat(100);
+  const map = normalizeMap({
+    summary: "reviewed",
+    hotspots: [
+      { name: longName, files: ["src/app.ts"] },
+    ],
+  });
+
+  assert.equal(map.hotspots[0]?.name.length, 80);
+  assert.equal(map.hotspots[0]?.name, "x".repeat(80));
+});
 
 test("normalizeFinding accepts a complete model finding", () => {
   const raw = {
