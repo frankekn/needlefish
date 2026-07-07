@@ -228,6 +228,13 @@ async function runRunner(runner: RunnerName, invocation: RunnerInvocation): Prom
     case "claude":
       return await runClaude(invocation);
     case "opencode":
+      if (!process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER) {
+        throw new Error(
+          "The opencode runner has no verified process-level sandbox restraint in headless mode " +
+            "(it executes tool calls with no permission gate) and must be explicitly enabled via " +
+            "NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1."
+        );
+      }
       return await runOpenCode(invocation);
     case "openai":
       throw new Error("openai runner uses direct HTTP path, not runRunner");
@@ -329,7 +336,16 @@ async function runOpenCode(invocation: RunnerInvocation): Promise<RunnerResult> 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
   const promptPath = path.join(invocation.tmp, "prompt.txt");
   writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
-  const args = ["-m", invocation.model ?? "grok-build", "--prompt-file", promptPath, "--output-format", "plain"];
+  const args = [
+    "-m",
+    invocation.model ?? "grok-build",
+    "--prompt-file",
+    promptPath,
+    "--output-format",
+    "plain",
+    "--permission-mode",
+    "plan",
+  ];
   if (invocation.reasoningEffort) args.push("--reasoning-effort", invocation.reasoningEffort);
   const res = await spawnRunnerProcess({
     command: process.env.GROK_BIN ?? "grok",
