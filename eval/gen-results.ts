@@ -23,7 +23,6 @@ async function loadSpecs(): Promise<FixtureSpec[]> {
 }
 
 const specs = await loadSpecs();
-const specById = new Map(specs.map((s) => [s.id, s]));
 const positives = specs.filter((s) => s.kind === "positive");
 const negatives = specs.filter((s) => s.kind === "negative");
 

@@ -3,7 +3,6 @@ import { loadFixture } from "./shared/fixture";
 import { matchesSpec } from "./shared/score";
 import type { MatchSpec } from "./shared/types";
 import { promptHash } from "./shared/prompt-hash";
-import { readdirSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 
