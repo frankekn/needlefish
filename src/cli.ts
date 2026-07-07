@@ -4,13 +4,21 @@ import { runGithub } from "./adapters/github.js";
 import { runLocal, runLocalPr, printLocal } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
+import { readFileSync } from "node:fs";
+
+// package.json sits one level above both src/ (dev) and dist/ (published).
+const VERSION = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
 
 async function main() {
   const command = parseArgs(process.argv.slice(2));
 
   switch (command.kind) {
     case "version":
-      process.stdout.write("needlefish 0.3.0\n");
+      process.stdout.write(`needlefish ${VERSION}\n`);
       return;
     case "help":
       process.stdout.write(USAGE);

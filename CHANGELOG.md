@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 — 2026-07-07
+
+- CLI: `--version` now reads the version from package.json at runtime instead of a hardcoded string (0.3.1 still reported "0.3.0").
+
 ## 0.3.1 — 2026-07-07
 
 First version published to npm. (An `0.3.0` build with the same content was also published to npm from a commit ahead of the `v0.3.0` git tag; `0.3.1` is the release whose git tag matches the npm tarball.)
