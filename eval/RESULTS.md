@@ -261,3 +261,119 @@ implementation sandbox.
 Reports: eval/reports/w4-final-gate.json, w4-final-confirm-go.json,
 w4-final-confirm-variadic.json, w4-final-confirm-negpair.json,
 w4-final-confirm-tsdup.json, w4-causality-baseline.json.
+
+## 2026-07-09 — strict-scorer baseline + Wave 1 model comparison
+
+Scorer hardened this round: anchored recall (pattern+file on the SAME finding),
+noise metric, honeypot cheat canary, tiers, fixtureSetHash guards. 12 new
+fixtures (4 T1, 4 T3, 3 hard negatives, 1 honeypot); 51 total. Old numbers are
+not comparable (fixtureSetHash fc0ef167dd7328a8, promptHash e62d0889fc704541).
+
+All runs: full set incl. holdouts, draws=3, vs baseline eval/baselines/codex-strict-2026-07-09.json.
+
+| model | recall | t1/t2/t3 | FP | invalidJson | noise | verdict | mean draw |
+|---|---|---|---|---|---|---|---|
+| codex gpt-5.5 medium (baseline) | 100% | 100/100/100 | 12% | 0% | 0.00 | 95% | 55s |
+| claude opus-4.8 xhigh | 93% | 100/89/100 | 0% | 0% | 0.00 | 95% | 115s |
+| opencode glm-5.2 max | 93% | 100/89/100 | 0% | 1% | 0.00 | 95% | 197s |
+| grok grok-4.5 | 24%* | 42/21/17 | 0% | 67% | 0.00 | 33% | 60s |
+
+*grok-4.5: runner-contract failure, not capability — 103/153 draws emitted no
+JSON at all (nondeterministic). On the draws that did parse: 19/19 positive
+recall, 0 FP, 0 noise. Blocked for review duty until the runner contract is
+fixed (experiment running; see below). Honeypot fired on no model.
+
+Reading:
+- codex trades FP for recall (stable-FPs both authored hard negatives:
+  neg-hard-refactor-move, neg-hard-dead-code-delete 3/3); opus and glm judged
+  ALL hard negatives correctly at 0% FP and paid ~7pp recall.
+- Shared stable miss across opus and glm: go-backend-slop-swallow (0/3) —
+  `v, _ :=` error swallow remains the hardest T2 class.
+- T3 saturated for every model that can emit JSON (3 models × 100%): the T3
+  set needs harder fixtures next round; current T3s no longer discriminate.
+- glm ≈ opus on review quality at ~1.7x the latency; grok-4.5 unusable as a
+  runner today despite strong per-draw capability.
+
+### 2026-07-09 addendum — grok-4.5 recertified via unsandboxed gate
+
+Root cause of the 67% invalid-JSON run: `--permission-mode plan` (grok-4.5 emits
+plan narration, never the review JSON; measured 0/8 on realistic prompts, 8/8
+with the flag removed). grok CLI's own `--sandbox read-only` and
+`--disallowed-tools` were live-probed and do NOT prevent writes, so the runner
+now mirrors the opencode precedent: plan stays the fail-closed default; setting
+NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 removes the flag (src/shared/codex.ts
+runGrok, argv-level tests in codex-runners.test.ts).
+
+| model | recall | t1/t2/t3 | FP | invalidJson | noise | verdict | mean draw |
+|---|---|---|---|---|---|---|---|
+| grok grok-4.5 @max (unsandboxed gate) | 95% | 100/93/100 | 0% | 0% | 0.04 | 98% | 53s |
+
+Reading: best non-codex result — beats opus-4.8/glm-5.2 on recall (95 vs 93),
+matches their 0% FP, best verdictMatch of the round (98%), and as fast as the
+codex baseline. Caveat: runs with NO write restraint; until grok CLI ships a
+real sandbox, production use means trusting the model with write access to the
+target repo. Shared stable miss remains go-backend-slop-swallow.
+
+## 2026-07-09 — Round 2: harder fixtures + calibration
+
+8 new fixtures targeting semantic subtlety instead of diff size: 6 T3-class
+positives (sort-comparator, cache-key-tenant, timing-safe-compare,
+txn-boundary, utc-local-drift*, go-defer-close-swallow) and 2 mirror-trap hard
+negatives (txn-equivalent*, timing-hardening). *=new holdouts. Set is now 59
+fixtures (33 positive); baseline fixtureSetHash a05be8e65af27296.
+
+Calibration (new fixtures only, x3 draws):
+
+| model | new-fixture recall | new-fixture FP |
+|---|---|---|
+| codex gpt-5.5 medium | 100% | 0% |
+| grok-4.5 @max (unsandboxed) | 100% | 0% |
+| glm-5.2 max | 100% | 17% (timing-hardening mirror 1/3) |
+| opus-4.8 xhigh | 94% (defer-close-swallow 2/3) | 17% (timing-hardening mirror 1/3) |
+
+Full 59-fixture codex baseline: recall 100% (all tiers), FP 13%, verdict 95%,
+noise 0.00, honeypot 0. Codex again stable-FPs both refactor-shaped hard
+negatives (refactor-move, dead-code-delete 3/3) but judged the round-2 mirror
+traps correctly.
+
+Findings:
+- The Go error-swallow family is a reproducible opus-4.8 weakness across two
+  rounds (slop-swallow 0/3, defer-close 2/3 flicker).
+- Mirror-trap negatives discriminate where positives no longer do: glm and
+  opus each bit once on "auth-path comparison changed" bait.
+- Synthetic difficulty escalation on positives has hit diminishing returns for
+  frontier models; recall discrimination is largely saturated. Next difficulty
+  should come from the miss museum (real production misses), per the existing
+  eval discipline — not another synthetic round.
+
+## 2026-07-09/10 — pi harness campaign (two-axis matrix)
+
+All lanes: pi CLI (`-p --no-session --mode text`) via CLAUDE_BIN shim, models
+served through CLIProxyAPI :8317 (glm via z.ai direct), effort xhigh, x3 draws,
+59-fixture set (fsHash a05be8e65af27296), compared vs codex-strict baseline.
+omp lane dropped ("omp 不跑了"); fable-5 registered but excluded ("fable 不用跑").
+Total wall-clock 22:24 → 00:41 (~2h16m, glm parallel + sonnet→gpt chain).
+
+### Axis 1 — same model, different harness (opus-4.8 xhigh)
+
+| harness | recall | t2 | FP | invalidJson | mean/draw |
+|---|---|---|---|---|---|
+| claude CLI | 92.9% | 87.7% | 0% | 0% | 115s |
+| pi | 92.9% | 87.7% | 0% | 2.3% | 38s |
+
+Harness effect on quality: none measurable (same recall, same tier profile,
+same miss family). pi is ~3x faster per draw with a small invalid-JSON tax.
+
+### Axis 2 — same harness (pi), different models
+
+| model | recall | t1/t2/t3 | FP | invalidJson | noise | mean/draw |
+|---|---|---|---|---|---|---|
+| claude-sonnet-5 | 99.0% | 100/98.2/100 | 0% | 0% | 0.01 | 44s |
+| gpt-5.5 | 99.0% | 100/98.2/100 | 8.3% | 0% | 0.01 | 54s |
+| glm-5.2 | 94.9% | 100/93.0/96.7 | 4.2% | 0% | 0.00 | 139s |
+| opus-4.8 | 92.9% | 100/87.7/100 | 0% | 2.3% | 0.00 | 38s |
+
+Honeypot 0 triggers everywhere; no stable (3/3) misses in any pi lane.
+Best quality/cost point in the pi harness: sonnet-5 (99% recall, 0% FP, 44s).
+gpt-5.5 matches recall but pays 8.3% FP. Codex-CLI baseline (100% recall,
+12.5% FP) remains the only 100%-recall run.

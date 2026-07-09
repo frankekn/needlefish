@@ -5,6 +5,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "holdout-error-swallow",
   kind: "positive",
+  tier: 2,
   defectClass: "ai-slop-error-swallow",
   holdout: true,
   description:

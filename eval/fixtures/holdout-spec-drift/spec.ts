@@ -5,6 +5,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "holdout-spec-drift",
   kind: "positive",
+  tier: 2,
   defectClass: "spec-impl-drift-doc-trust",
   holdout: true,
   description:
@@ -42,7 +43,7 @@ export function renderFeed(all: string[]): string[] {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "limit|cap|slice|doc|promise|contract|drift|at most|20" },
+      { pattern: "at most|uncapped|cap|slice|truncat|spec.?drift|doc.{0,32}(promis|say|limit|cap)|contract|limit.{0,28}(dropp|ignor|remov|no longer|not.{0,8}appl)|exceed.{0,16}limit|buffer" },
     ],
     anchorFile: "src/feed.ts",
     anchorLineRange: [1, 6],

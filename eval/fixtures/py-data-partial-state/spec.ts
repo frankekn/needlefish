@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "py-data-partial-state",
   kind: "positive",
+  tier: 2,
   defectClass: "pandas-in-place-mutation",
   description: "Agent optimizes a transform by dropping the defensive .copy(); the function now mutates the caller's DataFrame in place and returns it, corrupting upstream data.",
   baseFiles: {

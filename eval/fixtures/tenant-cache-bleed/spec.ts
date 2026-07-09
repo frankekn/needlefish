@@ -5,6 +5,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "tenant-cache-bleed",
   kind: "positive",
+  tier: 2,
   defectClass: "tenant-cache-bleed",
   holdout: true,
   description:

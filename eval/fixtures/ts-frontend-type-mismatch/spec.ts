@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "ts-frontend-type-mismatch",
   kind: "positive",
+  tier: 2,
   defectClass: "type-error-generalized-prop",
   description: "Agent generalizes a React Field prop from string to string|number, but the render still reads value.length, which is invalid for number and yields undefined.",
   baseFiles: {

@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "yml-infra-token-leak",
   kind: "positive",
+  tier: 2,
   defectClass: "workflow-secret-exposure",
   description: "Agent adds a deploy step that puts a secret into an env var and echoes it, leaking the token into the workflow log.",
   baseFiles: {

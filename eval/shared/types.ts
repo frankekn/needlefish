@@ -1,7 +1,17 @@
 import type { Category, Verdict } from "../../src/shared/schema";
 import type { RunnerName } from "../../src/shared/runner";
 
-export type FixtureKind = "positive" | "negative" | "parity";
+// `honeypot` fixtures are clean diffs whose trap keywords exist only in the
+// spec file. Any finding matching a trap means the runner read the answer key
+// (or the harness leaked it) — the whole report is compromised, not just the
+// fixture. They count toward no rate except cheatDetectedCount.
+export type FixtureKind = "positive" | "negative" | "parity" | "honeypot";
+
+// Difficulty tier for positives. 1 = blatant (a model missing these is
+// disqualified regardless of other scores), 2 = requires reading the logic,
+// 3 = cross-file / haystack / multi-bug / concurrency. Tiers are calibrated
+// empirically: a tier-3 every model solves gets demoted, and vice versa.
+export type FixtureTier = 1 | 2 | 3;
 
 // Holdout filter mode for eval runs. `include` (default) tells the full truth;
 // `exclude` hides holdouts during prompt-tuning iteration; `only` runs just
@@ -11,6 +21,14 @@ export type HoldoutMode = "include" | "exclude" | "only";
 export interface MatchSpec {
   readonly pattern: string;
   readonly category?: Category;
+  // File the matching finding must anchor to (suffix match). For recall, a
+  // mustFind spec without `file` inherits the fixture-level anchorFile — the
+  // pattern and the anchor must be satisfied by the SAME finding, otherwise a
+  // keyword-stuffed finding on an unrelated file plus a lucky anchor elsewhere
+  // would score as a hit. Multi-bug fixtures set `file` per spec.
+  readonly file?: string;
+  // When set, the matching finding's lineStart must fall in this range.
+  readonly lineRange?: readonly [number, number];
 }
 
 export interface Expected {
@@ -20,6 +38,9 @@ export interface Expected {
   readonly noBlockingFindings?: boolean;
   readonly anchorFile?: string;
   readonly anchorLineRange?: readonly [number, number];
+  // Honeypot trap patterns: keywords that exist only in this spec file, never
+  // in the fixture's base/head files. A finding matching one = cheat.
+  readonly trap?: readonly MatchSpec[];
 }
 
 export interface FixtureSpec {
@@ -31,6 +52,8 @@ export interface FixtureSpec {
   readonly headFiles: Readonly<Record<string, string>>;
   readonly expected: Expected;
   readonly holdout?: boolean;
+  // Required on positives (enforced by anchor.test.ts).
+  readonly tier?: FixtureTier;
 }
 
 export interface FixtureScore {
@@ -45,7 +68,12 @@ export interface FixtureScore {
   readonly formatOk: boolean;
   readonly findingCount: number;
   readonly blockingFindingCount: number;
+  // Blocking findings that satisfy no mustFind spec. The precision signal on
+  // positives: a runner that sprays 20 findings to luck into recall pays here.
+  readonly noiseFindingCount: number;
   readonly criticPruneError: boolean;
+  // True when a finding matched a honeypot trap pattern (see FixtureKind).
+  readonly cheatDetected: boolean;
   readonly error?: string;
 }
 
@@ -67,6 +95,12 @@ export interface Aggregates {
   readonly meanDurationMs: number;
   readonly recallByFixture: Readonly<Record<string, number>>;
   readonly criticPruneErrorRate: number;
+  // Recall per difficulty tier, keys "t1"|"t2"|"t3". Untiered positives
+  // (legacy) count as t2.
+  readonly recallByTier: Readonly<Record<string, number>>;
+  readonly meanNoisePerPositive: number;
+  // Draws where a honeypot trap fired. Non-zero = the report is compromised.
+  readonly cheatDetectedCount: number;
 }
 
 export interface Report {
@@ -80,4 +114,8 @@ export interface Report {
   readonly holdout: HoldoutMode;
   readonly results: readonly DrawResult[];
   readonly aggregates: Aggregates;
+  // Optional so reports written before these fields existed still parse.
+  readonly gitSha?: string | null;
+  readonly fixtureSetHash?: string;
+  readonly fixtureTiers?: Readonly<Record<string, number>>;
 }

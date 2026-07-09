@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "docker-infra-supply-chain",
   kind: "positive",
+  tier: 2,
   defectClass: "supply-chain-curl-pipe-sh",
   description: "Agent adds a RUN step that pipes a remote install script straight into sh with no checksum verification.",
   baseFiles: {

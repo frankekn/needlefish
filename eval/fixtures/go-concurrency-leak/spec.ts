@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "go-concurrency-leak",
   kind: "positive",
+  tier: 2,
   defectClass: "goroutine-leak-no-sync",
   description: "Agent makes Process concurrent by spawning a goroutine per job, but ignores ctx (no cancellation) and uses no WaitGroup, so callers cannot know when work is done and may close results while goroutines still write.",
   baseFiles: {
