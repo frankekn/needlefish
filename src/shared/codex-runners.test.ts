@@ -334,7 +334,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
   );
 });
 
-test("runCodex invokes grok in plan permission mode", async (t) => {
+test("runCodex passes grok plan permission mode by default", async () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "grok-bin.js");
@@ -342,38 +342,91 @@ test("runCodex invokes grok in plan permission mode", async (t) => {
   const previous = {
     bin: process.env.GROK_BIN,
     runner: process.env.NEEDLEFISH_RUNNER,
+    allowUnsandboxed: process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED,
   };
-  t.after(() => {
+  try {
+    writeFileSync(
+      bin,
+      [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+        "process.stdout.write('{\"ok\":true}');",
+      ].join("\n")
+    );
+    chmodSync(bin, 0o755);
+    process.env.GROK_BIN = bin;
+    process.env.NEEDLEFISH_RUNNER = "grok";
+    delete process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED;
+
+    const output = await runCodex("prompt", {
+      repoPath: repo,
+      targetHeadSha: headSha(repo),
+      timeoutMs: 1000,
+    });
+    const args = readStringArray(argsPath);
+
+    assert.equal(output, "{\"ok\":true}");
+    const flagIndex = args.indexOf("--permission-mode");
+    assert.notEqual(flagIndex, -1);
+    assert.equal(args[flagIndex + 1], "plan");
+  } finally {
     if (previous.bin === undefined) delete process.env.GROK_BIN;
     else process.env.GROK_BIN = previous.bin;
     if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
     else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.allowUnsandboxed === undefined) delete process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED;
+    else process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED = previous.allowUnsandboxed;
     rmSync(tmp, { recursive: true, force: true });
-  });
-  writeFileSync(
-    bin,
-    [
-      "#!/usr/bin/env node",
-      "const fs = require('node:fs');",
-      `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
-      "process.stdout.write('{\"ok\":true}');",
-    ].join("\n")
-  );
-  chmodSync(bin, 0o755);
-  process.env.GROK_BIN = bin;
-  process.env.NEEDLEFISH_RUNNER = "grok";
+  }
+});
 
-  const output = await runCodex("prompt", {
-    repoPath: repo,
-    targetHeadSha: headSha(repo),
-    timeoutMs: 1000,
-  });
-  const args = readStringArray(argsPath);
+test("runCodex omits grok permission mode when unsandboxed env is set", async () => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "grok-bin.js");
+  const argsPath = path.join(tmp, "args.json");
+  const previous = {
+    bin: process.env.GROK_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+    allowUnsandboxed: process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED,
+  };
+  try {
+    writeFileSync(
+      bin,
+      [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+        "process.stdout.write('{\"ok\":true}');",
+      ].join("\n")
+    );
+    chmodSync(bin, 0o755);
+    process.env.GROK_BIN = bin;
+    process.env.NEEDLEFISH_RUNNER = "grok";
+    process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED = "1";
 
-  assert.equal(output, "{\"ok\":true}");
-  const flagIndex = args.indexOf("--permission-mode");
-  assert.notEqual(flagIndex, -1);
-  assert.equal(args[flagIndex + 1], "plan");
+    const output = await runCodex("prompt", {
+      repoPath: repo,
+      targetHeadSha: headSha(repo),
+      timeoutMs: 1000,
+    });
+    const args = readStringArray(argsPath);
+
+    assert.equal(output, "{\"ok\":true}");
+    assert.equal(args.includes("--permission-mode"), false);
+    assert.ok(args.includes("--output-format"));
+    assert.equal(args[args.indexOf("--output-format") + 1], "plain");
+    assert.ok(args.includes("--prompt-file"));
+  } finally {
+    if (previous.bin === undefined) delete process.env.GROK_BIN;
+    else process.env.GROK_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.allowUnsandboxed === undefined) delete process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED;
+    else process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED = previous.allowUnsandboxed;
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test("runCodex refuses the opencode runner without explicit opt-in", async (t) => {

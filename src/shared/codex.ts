@@ -347,9 +347,12 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
     promptPath,
     "--output-format",
     "plain",
-    "--permission-mode",
-    "plan",
   ];
+  // Fail closed in plan mode: on 2026-07-09 grok-4.5 produced 0/8 valid review
+  // JSON in plan mode, but it was write-restrained. The env opt-in unlocks the
+  // working unsandboxed mode; grok CLI --sandbox read-only and --disallowed-tools
+  // were verified ineffective at preventing writes that day.
+  if (!process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED) args.push("--permission-mode", "plan");
   if (invocation.reasoningEffort) args.push("--reasoning-effort", invocation.reasoningEffort);
   const res = await spawnRunnerProcess({
     command: process.env.GROK_BIN ?? "grok",
