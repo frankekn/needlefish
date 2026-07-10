@@ -10,9 +10,9 @@ migration/upgrade risk, missing validation, duplicate behavior), never style.
 
 Read-only by default. Small PRs use a review pass plus an adversarial critic;
 large PRs use map/deep passes before the same critic. Codex is the default
-runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, and ACP agents are
-also supported. Verdict is derived deterministically from the surviving
-findings, never freehanded by the model.
+runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP
+agents are also supported. Verdict is derived deterministically from the
+surviving findings, never freehanded by the model.
 
 ## Install
 
@@ -301,6 +301,7 @@ Runner authentication (repo secrets, passed via `env` on the action step):
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
 | openai   | `OPENAI_API_KEY`                                          |
 | grok     | Grok CLI auth or provider-specific key                    |
+| pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
 | acp      | agent-specific auth plus `NEEDLEFISH_ACP_BIN` on the runner |
 
 The claude auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and
@@ -339,9 +340,9 @@ and `--timeout-ms`, or the matching env vars:
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
-`GROK_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required for the
-`acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and `CODEX_RETRY_MS`
-still work for Codex compatibility.
+`GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
+for the `acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
+`CODEX_RETRY_MS` still work for Codex compatibility.
 
 When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 `claude`, or `opencode` can be found, Needlefish exits with install commands
@@ -359,7 +360,11 @@ gate at all in that mode. Because of that gap, the `opencode` runner refuses to
 start unless `NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1` is set explicitly; set it only
 if you've separately sandboxed the environment opencode runs in. If opencode's
 CLI later ships a real permission/sandbox flag, this opt-in gate should replace
-the flag instead of the env-var check. ACP runs a
+the flag instead of the env-var check. pi runs with `--no-session --mode text
+--provider openai-codex --thinking <level>`; pi advertises a `--tools
+read,grep,find,ls` read-only mode, but that restriction is unverified under
+headless invocation (same class as opencode), so the `pi` runner refuses to
+start unless `NEEDLEFISH_ALLOW_PI_RUNNER=1` is set explicitly. ACP runs a
 JSON-RPC 2.0 Agent Client Protocol process over stdio from `NEEDLEFISH_ACP_BIN`;
 Needlefish sends `session/cancel` on timeout, then applies the same process-group
 kill path as the CLI runners. Closed PRs are skipped before diffing or model
@@ -371,7 +376,7 @@ needlefish checks that sandbox with
 
 ### Runner subprocess environment
 
-Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `acp`) are spawned with an
+Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `pi`, `acp`) are spawned with an
 allowlisted environment, not the full parent `process.env` — only
 locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
 variables are passed through. To pass an additional variable to the runner

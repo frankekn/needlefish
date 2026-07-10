@@ -56,7 +56,7 @@ Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
-  --runner <name>      codex | claude | opencode | openai | grok | acp
+  --runner <name>      codex | claude | opencode | openai | grok | pi | acp
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -69,12 +69,13 @@ Local diff options:
   --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | acp (default: auto-detect codex, claude, opencode)
+  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)
+  PI_BIN                  pi executable (default: pi)
   NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
 `;
 

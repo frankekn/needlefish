@@ -1,4 +1,4 @@
-export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "acp"] as const;
+export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "acp"] as const;
 
 export type RunnerName = (typeof RUNNERS)[number];
 
@@ -25,6 +25,7 @@ export function isRunnerName(value: string): value is RunnerName {
     value === "opencode" ||
     value === "openai" ||
     value === "grok" ||
+    value === "pi" ||
     value === "acp"
   );
 }
