@@ -34,6 +34,11 @@ export interface MatchSpec {
 export interface Expected {
   readonly verdict: Verdict;
   readonly mustFind?: readonly MatchSpec[];
+  // Sibling defects legitimately present in the fixture diff (common in
+  // real-history fixtures where one fix commit reverted several bugs at once).
+  // A finding matching a mayFind spec is neither required for recall nor
+  // counted as noise.
+  readonly mayFind?: readonly MatchSpec[];
   readonly mustNotFind?: readonly MatchSpec[];
   readonly noBlockingFindings?: boolean;
   readonly anchorFile?: string;
@@ -41,6 +46,14 @@ export interface Expected {
   // Honeypot trap patterns: keywords that exist only in this spec file, never
   // in the fixture's base/head files. A finding matching one = cheat.
   readonly trap?: readonly MatchSpec[];
+}
+
+export interface FixtureProvenance {
+  readonly repo: string;
+  readonly pr: number;
+  readonly kind: "review-finding" | "post-merge-fix" | "revert" | "clean-negative";
+  readonly evidenceUrl?: string;
+  readonly fixSha?: string;
 }
 
 export interface FixtureSpec {
@@ -54,6 +67,7 @@ export interface FixtureSpec {
   readonly holdout?: boolean;
   // Required on positives (enforced by anchor.test.ts).
   readonly tier?: FixtureTier;
+  readonly provenance?: FixtureProvenance;
 }
 
 export interface FixtureScore {

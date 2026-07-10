@@ -101,8 +101,12 @@ export function score(
     (expected.mustNotFind ?? []).some((spec) => findings.some((f) => matchesSpec(f, spec))) ||
     (expected.noBlockingFindings === true && findings.some(isBlocking));
 
+  const mayFind = expected.mayFind ?? [];
   const noiseFindingCount = findings.filter(
-    (f) => isBlocking(f) && !mustFind.some((spec) => recallMatch(f, spec, expected))
+    (f) =>
+      isBlocking(f) &&
+      !mustFind.some((spec) => recallMatch(f, spec, expected)) &&
+      !mayFind.some((spec) => recallMatch(f, spec, expected))
   ).length;
 
   const cheatDetected = (expected.trap ?? []).some((spec) => findings.some((f) => matchesSpec(f, spec)));

@@ -377,3 +377,68 @@ Honeypot 0 triggers everywhere; no stable (3/3) misses in any pi lane.
 Best quality/cost point in the pi harness: sonnet-5 (99% recall, 0% FP, 44s).
 gpt-5.5 matches recall but pays 8.3% FP. Codex-CLI baseline (100% recall,
 12.5% FP) remains the only 100%-recall run.
+
+## 2026-07-10 — gpt-5.6 variants (codex CLI, effort medium)
+
+sol → luna → terra sequential chain, 59 fixtures x3 draws, holdout include,
+vs codex-strict-2026-07-09 baseline (gpt-5.5 medium). Wall-clock 07:28→10:28 (~3h).
+
+| model | recall | t1/t2/t3 | FP | invalidJson | noise | mean/draw |
+|---|---|---|---|---|---|---|
+| gpt-5.5 medium (baseline) | 100% | 100/100/100 | 12.5% | 0% | 0.00 | 55s |
+| gpt-5.6-luna | 99.0% | 100/98.2/100 | 8.3% | 0.6% | 0.04 | 54s |
+| gpt-5.6-sol | 93.9% | 100/91.2/96.7 | 13.9% | 0% | 0.09 | 48s |
+| gpt-5.6-terra | 91.9% | 100/89.5/93.3 | 5.6% | 1.7% | 0.04 | 139s |
+
+Honeypot 0 triggers all lanes. Findings:
+- luna is the clear winner: near-baseline recall with a third of the FP cut,
+  same speed as 5.5. Only flicker: refactor-move mirror FP (3/3, same as 5.5).
+- sol joins the go-backend-slop-swallow stable-miss club (3/3) and bites all
+  three refactor-shaped hard negatives — broadest FP surface of the family.
+- terra is slow and flaky on this harness: 3 draws hung to the 46-63 min
+  runner timeout (t3-utc-local-drift, tenant-cache-bleed x2), yml-infra-token-leak
+  stable miss 3/3, 139s mean/draw. Not suitable as a reviewer lane.
+
+## 2026-07-10 — REAL-PR eval round 1 (mined from frankekn/needlefish history)
+
+21 fixtures mined from this repo's own closed-PR history (PRs #1/#4/#8/#9/#10):
+every positive is a defect a real reviewer caught (or that shipped and was
+fixed), reconstructed as base=fixed / head=buggy inverse diffs. New scorer
+semantics: `mayFind` exempts sibling defects (same fix commit reverted several
+bugs) from noise without granting recall. 3 holdouts sealed. codex CLI,
+effort medium, x3 draws.
+
+| model | recall | t1/t2/t3 | noise | mean/draw |
+|---|---|---|---|---|
+| gpt-5.6-sol | 81.0% | 100/94/52 | 0.08 | 108s |
+| gpt-5.5 | 71.4% | 78/91/38 | 0.11 | 86s |
+| gpt-5.6-luna | 65.1% | 78/82/33 | 0.19 | 61s |
+
+**Rank inversion vs synthetic.** Synthetic 59-fixture set said luna 99% > sol
+93.9%; real PRs say sol 81% > gpt-5.5 71.4% > luna 65.1%, with luna 3/3-missing
+real-pr10 (a boundary flip it half-caught before) and the highest noise. The
+synthetic set rewards recognizing textbook bug shapes; real review findings
+measure something else. Model selection must be driven by the real-PR set.
+
+Hardest real fixtures (stable misses across models): lenient-candidate-parse
+(1-line strict=false, 9/9 missed all models — verdict pass), neutral-conclusion
+(multi-bug, 8/9), hotspot-truncation (multi-bug, 8/9), bundle-basesha-mismatch
+(8/9), severity-downgrade (5/9). gpt-5.5 and luna also missed the tier-1
+self-review-tool-checkout security fixture 2/3 each; only sol went 100% on T1.
+
+Caveats: n=21 from one repo; multi-bug fixtures use all-specs-required recall;
+draw variance on real fixtures is much higher than synthetic (gpt-5.5 T1 went
+100% → 78% between rounds on the same specs).
+
+## 2026-07-10 — runner-lane comparison (codex exec vs pi agent), gpt-5.6-sol medium
+
+Same 69-fixture set (holdout excluded), 3 draws, same model/effort; only the runner lane differs.
+
+| lane | recall | FP rate | verdict match | invalid JSON |
+|---|---|---|---|---|
+| codex exec | 85.2% | 0% | 100% | 0% |
+| pi agent (read-tools) | 84.4% | 10.6% | 93.2% | 0.5% |
+
+pi's agentic loop invents extra findings (false positives) and drifts verdicts; codex exec's single-shot discipline is strictly cleaner. Decision (Frank): production runner switched back to **codex** (review.yml / weekly-eval.yml defaults, model gpt-5.6-sol medium); pi remains a gated fallback lane.
+
+Prompt-tuning round on the pi lane (rev1: multi-defect enumeration + broadened triggers C/D) was rejected: none of the 4 target misses improved, FP worsened 10.6% → 13.6%. Original prompts retained. Reports: eval/results/tune-0-pi-sol.json, tune-1-pi-sol.json (pi lane), tune-*-sol/synth.json (codex lane).

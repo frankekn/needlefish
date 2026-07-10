@@ -19,6 +19,7 @@ import type {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
+const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
 
 interface RunArgs {
   runner: RunnerName;
@@ -95,20 +96,26 @@ export function parseArgs(argv: readonly string[]): RunArgs {
   return { runner, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, holdout, env };
 }
 
-async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
-  const dirs = readdirSync(FIXTURES_DIR, { withFileTypes: true })
+async function loadFixturesFrom(dirPath: string, glob: string | null): Promise<FixtureSpec[]> {
+  const dirs = readdirSync(dirPath, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .filter((name) => (glob ? new RegExp(glob).test(name) : true))
     .sort();
   const specs: FixtureSpec[] = [];
   for (const dir of dirs) {
-    const specPath = path.join(FIXTURES_DIR, dir, "spec.ts");
+    const specPath = path.join(dirPath, dir, "spec.ts");
     if (!existsSync(specPath)) continue;
     const mod = await import(pathToFileURL(specPath).href);
     if (mod.default) specs.push(mod.default as FixtureSpec);
   }
   return specs;
+}
+
+export async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
+  const specs = await loadFixturesFrom(FIXTURES_DIR, glob);
+  if (!existsSync(FIXTURES_REAL_DIR)) return specs;
+  return [...specs, ...(await loadFixturesFrom(FIXTURES_REAL_DIR, glob))];
 }
 
 // Holdout filtering is a pure post-load step so plain runs always tell the
@@ -257,7 +264,7 @@ async function runWork(
 export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
   const canonical = [...specs]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false }));
+    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
 }
 

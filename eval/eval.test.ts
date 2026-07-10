@@ -1,13 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { mapLimit, parseArgs, filterByHoldout } from "./run";
+import { fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
 import type { Expected, FixtureSpec } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreaks" | "file" | "lineStart">): Finding {
   return {
@@ -258,6 +263,30 @@ test("score: noiseFindingCount counts blocking findings that satisfy no mustFind
   assert.equal(s.noiseFindingCount, 2, "two blocking non-hits are noise; the P3 is not blocking");
 });
 
+test("score: mayFind exempts sibling-defect findings from noise but never grants recall", () => {
+  const expected: Expected = {
+    verdict: "changes_requested",
+    mustFind: [{ pattern: "viewer", file: "handler.ts" }],
+    mayFind: [{ pattern: "buffer", file: "handler.ts" }],
+  };
+  const sibling = finding({ title: "buffer cap removed", whyItBreaks: "large diff aborts", file: "src/handler.ts", lineStart: 3, severity: "P1" });
+  const noise = finding({ title: "spray", whyItBreaks: "guess", file: "src/a.ts", lineStart: 1, severity: "P1" });
+
+  // Sibling alone: no noise charged, but the mustFind is still unmet.
+  const miss = score({ verdict: "changes_requested" as Verdict, findings: [sibling, noise] }, expected, "mayfind-miss");
+  assert.equal(miss.recall, false, "mayFind hit must not satisfy recall");
+  assert.equal(miss.noiseFindingCount, 1, "sibling is exempt; unrelated spray still counts");
+
+  // Sibling + real hit: recall true, zero noise.
+  const hit = score(
+    { verdict: "changes_requested" as Verdict, findings: [sibling, finding({ title: "viewer branch unreachable", whyItBreaks: "blocked", file: "src/handler.ts", lineStart: 18 })] },
+    expected,
+    "mayfind-hit"
+  );
+  assert.equal(hit.recall, true);
+  assert.equal(hit.noiseFindingCount, 0);
+});
+
 test("score: honeypot trap match sets cheatDetected", () => {
   const expected: Expected = {
     verdict: "pass",
@@ -295,4 +324,53 @@ test("score: criticPruneError false when candidateFindings absent (trace off)", 
   const hit = finding({ title: "viewer branch unreachable", whyItBreaks: "viewers are blocked", file: "src/h.ts", lineStart: 1 });
   const s = score({ verdict: "changes_requested", findings: [hit] }, expected, "prune-fixture");
   assert.equal(s.criticPruneError, false, "no trace means no prune-error signal");
+});
+
+// --- provenance (real-PR fixture mining, eval/tools/pr2fixture.ts) ---
+
+test("fixtureSetHash: changes when provenance changes, same otherwise", () => {
+  const withoutProvenance = holdoutSpec("prov-a", false);
+  const withProvenanceA: FixtureSpec = {
+    ...withoutProvenance,
+    provenance: { repo: "owner/name", pr: 1, kind: "review-finding" },
+  };
+  const withProvenanceB: FixtureSpec = {
+    ...withoutProvenance,
+    provenance: { repo: "owner/name", pr: 2, kind: "review-finding" },
+  };
+  assert.notEqual(fixtureSetHash([withoutProvenance]), fixtureSetHash([withProvenanceA]));
+  assert.notEqual(fixtureSetHash([withProvenanceA]), fixtureSetHash([withProvenanceB]));
+});
+
+test("fixtureSetHash: unset provenance hashes identically whether the key is omitted or explicitly undefined", () => {
+  const implicit = holdoutSpec("prov-b", false);
+  const explicit: FixtureSpec = { ...implicit, provenance: undefined };
+  assert.equal(fixtureSetHash([implicit]), fixtureSetHash([explicit]));
+});
+
+test("loadFixtures: discovers a fixture placed in eval/fixtures-real/", async () => {
+  const realDir = path.join(__dirname, "fixtures-real");
+  const tmpFixtureDir = path.join(realDir, "tmp-discovery-test");
+  mkdirSync(tmpFixtureDir, { recursive: true });
+  writeFileSync(
+    path.join(tmpFixtureDir, "spec.ts"),
+    `import type { FixtureSpec } from "../../shared/types";
+const spec: FixtureSpec = {
+  id: "tmp-discovery-test",
+  kind: "negative",
+  defectClass: "test",
+  description: "test",
+  baseFiles: {},
+  headFiles: {},
+  expected: { verdict: "pass", noBlockingFindings: true },
+};
+export default spec;
+`
+  );
+  try {
+    const specs = await loadFixtures(null);
+    assert.ok(specs.some((s) => s.id === "tmp-discovery-test"), "discovered fixture missing from loadFixtures() result");
+  } finally {
+    rmSync(tmpFixtureDir, { recursive: true, force: true });
+  }
 });
