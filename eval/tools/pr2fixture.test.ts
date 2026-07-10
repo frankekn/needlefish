@@ -171,7 +171,7 @@ interface ToolRun {
   readonly source: string | null;
 }
 
-function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary"): ToolRun {
+function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file"): ToolRun {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
   const binDir = path.join(tmp, "bin");
   const outDir = path.join(tmp, "renamed-fixture");
@@ -191,23 +191,25 @@ if (endpoint === "repos/owner/name/pulls/7") {
   process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : pages));
 } else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("old content");
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
 } else if (endpoint.includes("/contents/src/new.ts?ref=head")) {
   if (mode === "404" || mode === "500") {
     process.stderr.write(mode === "404" ? "gh: Not Found (HTTP 404)\\n" : "gh: server failed (HTTP 500)\\n");
     process.exit(1);
   }
   if (mode === "invalid-json") process.stdout.write("not json");
+  else if (mode === "non-file") process.stdout.write(JSON.stringify({ type: "symlink", target: "../outside" }));
+  else if (mode === "malformed-file") process.stdout.write(JSON.stringify({ type: "file", encoding: "utf-8", content: "new content" }));
   else {
     const content = mode === "binary-rename" || mode === "all-binary" ? Buffer.from([0]) : Buffer.from("new content");
-    process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
+    process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
   }
 } else if (endpoint.includes("/contents/src/added.ts?ref=head")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("added content");
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
 } else if (endpoint.includes("/contents/src/removed.ts?ref=base")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("removed content");
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
 } else {
   process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
   process.exit(3);
@@ -263,6 +265,23 @@ test("CLI: a binary rename side omits the entire rename while keeping text chang
   assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
   assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
+});
+
+test("CLI: a known non-file rename side is skipped atomically while text changes remain", () => {
+  const result = runTool("non-file");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /skipping symlink: src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+  assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
+});
+
+test("CLI: malformed file contents abort fixture generation", () => {
+  const result = runTool("malformed-file");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unexpected contents encoding for src\/new\.ts@head/);
+  assert.equal(result.specExists, false);
 });
 
 test("CLI: an all-binary PR aborts without writing an empty fixture", () => {

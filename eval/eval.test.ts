@@ -39,21 +39,37 @@ test("loadFixture materializes a git repo and builds a bundle with the defect di
   }
 });
 
-test("loadFixture materializes a renamed file", () => {
-  const loaded = loadFixture({
-    ...posOverBlock,
-    id: "rename-materialization",
-    baseFiles: { "src/old.ts": "export const value = 1;\n" },
-    deletedFiles: ["src/old.ts"],
-    headFiles: { "src/new.ts": "export const value = 1;\n" },
-  });
+test("loadFixture forces deterministic rename detection when git config disables it", () => {
+  const previousCount = process.env.GIT_CONFIG_COUNT;
+  const previousKey = process.env.GIT_CONFIG_KEY_0;
+  const previousValue = process.env.GIT_CONFIG_VALUE_0;
+  process.env.GIT_CONFIG_COUNT = "1";
+  process.env.GIT_CONFIG_KEY_0 = "diff.renames";
+  process.env.GIT_CONFIG_VALUE_0 = "false";
+
+  let loaded: ReturnType<typeof loadFixture> | undefined;
   try {
+    loaded = loadFixture({
+      ...posOverBlock,
+      id: "rename-materialization",
+      baseFiles: { "src/old.ts": "export const value = 1;\n" },
+      deletedFiles: ["src/old.ts"],
+      headFiles: { "src/new.ts": "export const value = 1;\n" },
+    });
     assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/old.ts")), false);
     assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/new.ts")), true);
     assert.match(loaded.bundle.patch, /rename from src\/old\.ts/);
     assert.match(loaded.bundle.patch, /rename to src\/new\.ts/);
+    assert.match(loaded.bundle.patchStat, /src\/\{old\.ts => new\.ts\}/);
+    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts"]);
   } finally {
-    loaded.cleanup();
+    loaded?.cleanup();
+    if (previousCount === undefined) delete process.env.GIT_CONFIG_COUNT;
+    else process.env.GIT_CONFIG_COUNT = previousCount;
+    if (previousKey === undefined) delete process.env.GIT_CONFIG_KEY_0;
+    else process.env.GIT_CONFIG_KEY_0 = previousKey;
+    if (previousValue === undefined) delete process.env.GIT_CONFIG_VALUE_0;
+    else process.env.GIT_CONFIG_VALUE_0 = previousValue;
   }
 });
 
@@ -72,6 +88,19 @@ test("loadFixture materializes a deleted file", () => {
   } finally {
     loaded.cleanup();
   }
+});
+
+test("loadFixture rejects a deletedFiles path that is absent from the base tree", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "missing-deletion",
+      baseFiles: { "src/present.ts": "export const present = true;\n" },
+      deletedFiles: ["src/missing.ts"],
+      headFiles: {},
+    }),
+    /ENOENT|no such file or directory/
+  );
 });
 
 test("loadFixture preserves unchanged base-only files when deletedFiles is omitted", () => {

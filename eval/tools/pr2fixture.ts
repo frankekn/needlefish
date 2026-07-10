@@ -224,6 +224,13 @@ function encodePath(filename: string): string {
 function fetchFileContent(repo: string, filename: string, ref: string): Buffer | null {
   const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
   const obj = assertRecord(raw, "contents response");
+  if (obj.type === "symlink" || obj.type === "submodule") {
+    console.warn(`skipping ${obj.type}: ${filename}`);
+    return null;
+  }
+  if (obj.type !== "file") {
+    throw new Error(`unexpected contents type for ${filename}@${ref}`);
+  }
   if (obj.encoding !== "base64" || typeof obj.content !== "string") {
     throw new Error(`unexpected contents encoding for ${filename}@${ref}`);
   }

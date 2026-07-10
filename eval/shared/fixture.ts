@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { changedFiles, git, makeBundle } from "../../src/shared/repo";
+import { changedFilesFromPaths, git, makeBundle } from "../../src/shared/repo";
 import type { Bundle } from "../../src/shared/schema";
 import type { FixtureSpec } from "./types";
 
@@ -28,7 +28,7 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
     git(["add", "-A"], tmp);
     git([...IDENTITY, "commit", "--quiet", "-m", "base"], tmp);
     for (const rel of spec.deletedFiles ?? []) {
-      rmSync(path.join(tmp, rel), { force: true });
+      rmSync(path.join(tmp, rel));
     }
     writeFiles(tmp, spec.headFiles);
     git(["add", "-A"], tmp);
@@ -36,9 +36,10 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
 
     const baseSha = git(["rev-parse", "HEAD~1"], tmp);
     const headSha = git(["rev-parse", "HEAD"], tmp);
-    const patch = git(["diff", baseSha, headSha], tmp);
-    const patchStat = git(["diff", "--stat", baseSha, headSha], tmp);
-    const files = changedFiles(tmp, baseSha, headSha);
+    const patch = git(["diff", "-M", baseSha, headSha], tmp);
+    const patchStat = git(["diff", "-M", "--stat", baseSha, headSha], tmp);
+    const changedPaths = git(["diff", "-M", "--name-only", baseSha, headSha], tmp);
+    const files = changedFilesFromPaths(changedPaths.split("\n"));
 
     const bundle = makeBundle({
       repoPath: tmp,
