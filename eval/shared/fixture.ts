@@ -24,7 +24,9 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-eval-"));
   try {
     const deletedFiles = spec.deletedFiles ?? [];
-    const renamedFiles = spec.renamedFiles ?? [];
+    const renamedFiles = (spec.renamedFiles ?? [])
+      .map(({ from, to }) => ({ from, to }))
+      .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
     const seenDeletedFiles = new Set<string>();
     for (const rel of deletedFiles) {
       if (seenDeletedFiles.has(rel)) throw new Error(`duplicate deletedFiles path: ${rel}`);
@@ -42,6 +44,9 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
       seenRenameTo.add(rename.to);
       seenRenameEndpoints.add(rename.from);
       seenRenameEndpoints.add(rename.to);
+    }
+    for (const rel of deletedFiles) {
+      if (Object.hasOwn(spec.headFiles, rel)) throw new Error(`deletedFiles path still exists in headFiles: ${rel}`);
     }
     for (const rename of renamedFiles) {
       if (!seenDeletedFiles.has(rename.from)) throw new Error(`renamedFiles from path is not deleted: ${rename.from}`);

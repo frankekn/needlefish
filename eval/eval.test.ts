@@ -165,6 +165,19 @@ test("loadFixture rejects duplicate deletedFiles before materialization", () => 
   );
 });
 
+test("loadFixture rejects a deleted path that still exists in the head tree", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "deleted-path-retained",
+      baseFiles: { "src/deleted.ts": "old\n" },
+      deletedFiles: ["src/deleted.ts"],
+      headFiles: { "src/deleted.ts": "new\n" },
+    }),
+    /deletedFiles path still exists in headFiles: src\/deleted\.ts/
+  );
+});
+
 test("loadFixture rejects a deletedFiles path that is absent from the base tree", () => {
   assert.throws(
     () => loadFixture({
@@ -214,7 +227,7 @@ test("loadFixture rejects overlapping explicit rename endpoints", () => {
   );
 });
 
-test("loadFixture rejects a rename source that remains in the head tree", () => {
+test("loadFixture rejects a rename source that remains in the head tree as a deletion overlap", () => {
   assert.throws(
     () => loadFixture({
       ...posOverBlock,
@@ -224,8 +237,35 @@ test("loadFixture rejects a rename source that remains in the head tree", () => 
       renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }],
       headFiles: { "src/old.ts": "old\n", "src/new.ts": "old\n" },
     }),
-    /renamedFiles from path still exists in headFiles: src\/old\.ts/
+    /deletedFiles path still exists in headFiles: src\/old\.ts/
   );
+});
+
+test("loadFixture canonicalizes disjoint explicit rename order without mutating the spec", () => {
+  const first = { from: "src/a.ts", to: "src/x.ts" };
+  const second = { from: "src/b.ts", to: "src/y.ts" };
+  const base: FixtureSpec = {
+    ...posOverBlock,
+    id: "canonical-renames",
+    baseFiles: { "src/a.ts": "alpha\n", "src/b.ts": "bravo\n" },
+    deletedFiles: ["src/a.ts", "src/b.ts"],
+    headFiles: { "src/x.ts": "alpha\n", "src/y.ts": "bravo\n" },
+  };
+  const forward: FixtureSpec = { ...base, renamedFiles: [first, second] };
+  const reversedRenames = [second, first];
+  const reversed: FixtureSpec = { ...base, renamedFiles: reversedRenames };
+  const forwardLoaded = loadFixture(forward);
+  const reversedLoaded = loadFixture(reversed);
+  try {
+    assert.equal(forwardLoaded.bundle.patch, reversedLoaded.bundle.patch);
+    assert.equal(forwardLoaded.bundle.patchStat, reversedLoaded.bundle.patchStat);
+    assert.deepEqual(forwardLoaded.bundle.changedFiles, reversedLoaded.bundle.changedFiles);
+    assert.equal(fixtureSetHash([forward]), fixtureSetHash([reversed]));
+    assert.deepEqual(reversedRenames, [second, first]);
+  } finally {
+    forwardLoaded.cleanup();
+    reversedLoaded.cleanup();
+  }
 });
 
 test("loadFixture preserves unchanged base-only files when deletedFiles is omitted", () => {
