@@ -1,99 +1,255 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderMarkdown } from "./render";
-import { REVIEW_RESULT_SCHEMA_VERSION, type Finding, type ReviewResult } from "./schema";
+import {
+	REVIEW_RESULT_SCHEMA_VERSION,
+	type Finding,
+	type ReviewResult,
+	type Verdict,
+} from "./schema";
 
-test("renderMarkdown includes review target disclosure", () => {
-  const result: ReviewResult = {
-    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
-    verdict: "pass",
-    summary: "Clean.",
-    findings: [],
-    checked: ["diff"],
-    residualRisks: [],
-    baseSha: "base",
-    headSha: "head",
-    reviewTarget: "Review target: local base..head\nPR context: #24 metadata only",
-  };
-
-  const markdown = renderMarkdown(result);
-
-  assert.match(markdown, /Review target: local base\.\.head/);
-  assert.match(markdown, /PR context: #24 metadata only/);
-});
-
-test("renderMarkdown appends a stats summary line", () => {
-  const result: ReviewResult = {
-    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
-    verdict: "pass",
-    summary: "Clean.",
-    findings: [],
-    checked: ["diff"],
-    residualRisks: [],
-    baseSha: "base",
-    headSha: "head",
-    stats: [
-      { label: "review", runner: "codex", durationMs: 212000, attempts: 2, ok: true },
-      { label: "critic", runner: "codex", durationMs: 96000, attempts: 1, ok: true },
-    ],
-    totalDurationMs: 308000,
-  };
-
-  const markdown = renderMarkdown(result);
-
-  assert.match(markdown, /2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s/);
-});
-
-function baseResult(findings: readonly Finding[]): ReviewResult {
-  return {
-    schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
-    verdict: "changes_requested",
-    summary: "s",
-    findings,
-    checked: ["checked"],
-    residualRisks: [],
-    baseSha: "base",
-    headSha: "head",
-  };
+function finding(
+	severity: Finding["severity"],
+	title: string,
+	file: string,
+	overrides: Partial<Finding> = {},
+): Finding {
+	return {
+		severity,
+		title,
+		category: "bug",
+		file,
+		lineStart: 1,
+		lineEnd: 1,
+		confidence: 0.9,
+		whyItBreaks: "breaks",
+		suggestedFix: "fix it",
+		validation: "run the test",
+		...overrides,
+	};
 }
 
-function finding(severity: Finding["severity"], title: string, file: string): Finding {
-  return {
-    severity,
-    title,
-    category: "bug",
-    file,
-    lineStart: 1,
-    lineEnd: 1,
-    confidence: 0.9,
-    whyItBreaks: "w",
-    suggestedFix: "f",
-    validation: "v",
-  };
+function baseResult(
+	findings: readonly Finding[] = [],
+	verdict: Verdict = "changes_requested",
+): ReviewResult {
+	return {
+		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
+		verdict,
+		summary: "First sentence. Second sentence is omitted.",
+		findings,
+		checked: ["diff"],
+		residualRisks: [],
+		baseSha: "base",
+		headSha: "head",
+	};
 }
 
-test("renderMarkdown with inlinedFindings renders one-line entries and full blocks for the rest", () => {
-  const inlined = finding("P2", "in diff", "a.ts");
-  const outside = finding("P3", "outside", "b.ts");
-  const result = baseResult([inlined, outside]);
+test("renderMarkdown uses the headline for each verdict and the first summary sentence", () => {
+	assert.equal(
+		renderMarkdown(baseResult([], "pass")).split("\n")[0],
+		"LGTM ✅ — First sentence.",
+	);
+	assert.equal(
+		renderMarkdown(baseResult([], "changes_requested")).split("\n")[0],
+		"CHANGES REQUESTED ⚠️ — First sentence.",
+	);
+	assert.equal(
+		renderMarkdown(baseResult([], "needs_human")).split("\n")[0],
+		"NEEDS HUMAN 👀 — First sentence.",
+	);
 
-  const markdown = renderMarkdown(result, { inlinedFindings: new Set([inlined]) });
-
-  assert.match(markdown, /- \*\*P2\*\* in diff — a\.ts:1/);
-  assert.match(markdown, /## Findings outside the diff/);
-  assert.match(markdown, /### P3: outside/);
-  assert.doesNotMatch(markdown, /### P2: in diff/);
+	assert.equal(
+		renderMarkdown({ ...baseResult([], "pass"), summary: "" }).split("\n")[0],
+		"LGTM ✅",
+	);
 });
 
-test("renderMarkdown without opts is unchanged (full blocks for every finding)", () => {
-  const a = finding("P2", "a", "a.ts");
-  const b = finding("P3", "b", "b.ts");
-  const result = baseResult([a, b]);
+test("renderMarkdown sorts findings and shows every severity label in the table and details", () => {
+	const findings = [
+		finding("P3", "low", "low.ts", { lineStart: 40, lineEnd: 42 }),
+		finding("P1", "high", "high.ts", { lineStart: 12, lineEnd: 12 }),
+		finding("P2", "uses | pipe\nand newline", "medium.ts"),
+		finding("P0", "critical", "critical.ts"),
+	];
 
-  const markdown = renderMarkdown(result);
+	const markdown = renderMarkdown(baseResult(findings));
 
-  assert.match(markdown, /### P2: a/);
-  assert.match(markdown, /### P3: b/);
-  assert.doesNotMatch(markdown, /## Findings outside the diff/);
-  assert.doesNotMatch(markdown, /- \*\*P2\*\*/);
+	assert.match(markdown, /\| 1 \| 🔴 P0 \| critical \| `critical\.ts:1` \|/);
+	assert.match(markdown, /\| 2 \| 🟠 P1 \| high \| `high\.ts:12` \|/);
+	assert.match(
+		markdown,
+		/\| 3 \| 🟡 P2 \| uses \\\| pipe and newline \| `medium\.ts:1` \|/,
+	);
+	assert.match(markdown, /\| 4 \| ⚪ P3 \| low \| `low\.ts:40-42` \|/);
+	assert.match(markdown, /### 🔴 P0 F1: critical/);
+	assert.match(markdown, /### 🟠 P1 F2: high/);
+	assert.match(markdown, /### 🟡 P2 F3: uses \| pipe and newline/);
+	assert.match(markdown, /### ⚪ P3 F4: low/);
+});
+
+test("renderMarkdown links locations only when repository context is available", () => {
+	const linked = renderMarkdown(
+		baseResult([
+			finding("P1", "single", "src/single.ts", {
+				lineStart: 24,
+				lineEnd: 24,
+			}),
+			finding("P2", "range", "src/a space/é.ts", {
+				lineStart: 24,
+				lineEnd: 31,
+			}),
+			finding("P3", "no file", ""),
+		]),
+		{ repoSlug: "owner/name" },
+	);
+
+	assert.match(
+		linked,
+		/\[`src\/single\.ts:24`\]\(https:\/\/github\.com\/owner\/name\/blob\/head\/src\/single\.ts#L24\)/,
+	);
+	assert.match(
+		linked,
+		/\[`src\/a space\/é\.ts:24-31`\]\(https:\/\/github\.com\/owner\/name\/blob\/head\/src\/a%20space\/%C3%A9\.ts#L24-L31\)/,
+	);
+	assert.match(linked, /\| 3 \| ⚪ P3 \| no file \| — \|/);
+
+	const plain = renderMarkdown(
+		baseResult([
+			finding("P1", "plain", "src/plain.ts", {
+				lineStart: 7,
+				lineEnd: 9,
+			}),
+		]),
+	);
+	assert.match(plain, /\| `src\/plain\.ts:7-9` \|/);
+	assert.doesNotMatch(plain, /github\.com/);
+});
+
+test("renderMarkdown adds blocking and nit counts directly below the headline", () => {
+	const four = renderMarkdown(
+		baseResult([
+			finding("P0", "zero", "a.ts"),
+			finding("P1", "one", "b.ts"),
+			finding("P2", "two", "c.ts"),
+			finding("P3", "three", "d.ts"),
+		]),
+	);
+	assert.match(four, /^[^\n]+\n\*\*3 blocking\*\* · 1 nit\n/);
+
+	const blocking = renderMarkdown(baseResult([finding("P2", "one", "a.ts")]));
+	assert.match(blocking, /^[^\n]+\n\*\*1 blocking\*\*\n/);
+
+	const nits = renderMarkdown(
+		baseResult([finding("P3", "one", "a.ts"), finding("P3", "two", "b.ts")]),
+	);
+	assert.match(nits, /^[^\n]+\n2 nits\n/);
+
+	const none = renderMarkdown(baseResult([]));
+	assert.doesNotMatch(none, /blocking|\bnits?\b/);
+});
+
+test("renderMarkdown shows compact re-review deltas only for positive counts", () => {
+	const result = baseResult([finding("P2", "one", "a.ts")]);
+	assert.match(
+		renderMarkdown(result, { resolvedCount: 2 }),
+		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved\n/,
+	);
+	assert.match(
+		renderMarkdown(result, { newCount: 1 }),
+		/^([^\n]+\n)\*\*1 blocking\*\*\n🆕 1 new\n/,
+	);
+	assert.match(
+		renderMarkdown(result, { resolvedCount: 2, newCount: 1 }),
+		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
+	);
+	assert.doesNotMatch(
+		renderMarkdown(result, { resolvedCount: 0, newCount: 0 }),
+		/resolved|🆕/,
+	);
+});
+
+test("renderMarkdown uses the required zero-findings text without a table", () => {
+	const markdown = renderMarkdown(baseResult([]));
+
+	assert.match(
+		markdown,
+		/## Findings\n\nNo actionable findings\. Prefer this over padding weak ones\./,
+	);
+	assert.doesNotMatch(markdown, /\| # \| Severity/);
+	assert.doesNotMatch(markdown, /<summary>Finding details<\/summary>/);
+});
+
+test("renderMarkdown marks an inlined table finding and omits only its detail section", () => {
+	const inlined = finding("P2", "in diff", "a.ts");
+	const outside = finding("P3", "outside", "b.ts");
+
+	const markdown = renderMarkdown(baseResult([inlined, outside]), {
+		inlinedFindings: new Set([inlined]),
+	});
+
+	assert.match(
+		markdown,
+		/\| 1 \| 🟡 P2 \| in diff <sub>\(inline comment\)<\/sub> \| `a\.ts:1` \|/,
+	);
+	assert.doesNotMatch(markdown, /### 🟡 P2 F1: in diff/);
+	assert.match(markdown, /### ⚪ P3 F2: outside/);
+});
+
+test("renderMarkdown prefixes only blocking residual risks", () => {
+	const markdown = renderMarkdown({
+		...baseResult([]),
+		residualRisks: [
+			{ text: "blocks merge", blocks: true },
+			{ text: "monitor later", blocks: false },
+		],
+	});
+
+	assert.match(markdown, /<summary>Residual risk \(2\)<\/summary>/);
+	assert.match(markdown, /- ⛔ blocks merge/);
+	assert.match(markdown, /- monitor later/);
+	assert.doesNotMatch(markdown, /⛔ monitor later/);
+});
+
+test("renderMarkdown preserves review target, round state options, marker, and stats", () => {
+	const open = finding("P2", "still broken", "open.ts");
+	const result: ReviewResult = {
+		...baseResult([]),
+		reviewTarget:
+			"Review target: local base..head\nPR context: #24 metadata only",
+		stats: [
+			{
+				label: "review",
+				runner: "codex",
+				durationMs: 212000,
+				attempts: 2,
+				ok: true,
+			},
+			{
+				label: "critic",
+				runner: "codex",
+				durationMs: 96000,
+				attempts: 1,
+				ok: true,
+			},
+		],
+		totalDurationMs: 308000,
+	};
+
+	const markdown = renderMarkdown(result, {
+		openFindings: [open],
+		resolvedCount: 1,
+		stateMarker: "<!-- state -->",
+	});
+
+	assert.match(markdown, /^CHANGES REQUESTED ⚠️[^\n]*\n✅ 1 resolved\n/);
+	assert.match(markdown, /Review target: local base\.\.head/);
+	assert.match(markdown, /PR context: #24 metadata only/);
+	assert.match(markdown, /<summary>Still open \(1\)<\/summary>/);
+	assert.match(markdown, /<summary>Checked \(1\)<\/summary>/);
+	assert.match(
+		markdown,
+		/<sub>2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
+	);
+	assert.match(markdown, /<!-- state -->\n$/);
 });

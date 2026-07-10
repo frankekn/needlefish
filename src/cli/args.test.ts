@@ -117,7 +117,7 @@ test("parseArgs accepts runner options", () => {
 });
 
 test("parseArgs validates runner options", () => {
-  assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, acp/);
+  assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, pi, acp/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
 });
 

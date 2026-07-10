@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { RunnerName } from "./runner.js";
 
@@ -64,12 +64,15 @@ function prepareWorkingSandbox(
     mkdirSync(sandboxPath, { recursive: true });
     git(["init", "--quiet"], sandboxPath);
   }
-  // git apply reads the patch from stdin and rejects it as corrupt when the
-  // final line has no trailing newline (upstream helpers trim stdout).
+  // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
+  // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
+  // Also ensure a trailing newline (upstream helpers may trim stdout).
   const patchInput = options.targetPatch.endsWith("\n")
     ? options.targetPatch
     : `${options.targetPatch}\n`;
-  git(["apply", "--whitespace=nowarn"], sandboxPath, patchInput);
+  const patchFile = path.join(options.tmp, "working.patch");
+  writeFileSync(patchFile, patchInput);
+  git(["apply", "--whitespace=nowarn", patchFile], sandboxPath);
   git(["add", "-A"], sandboxPath);
   git(
     [

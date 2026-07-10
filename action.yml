@@ -7,7 +7,7 @@ inputs:
     description: PR number to review (defaults to the pull_request event PR)
     required: false
   runner:
-    description: "Model runner: codex, claude, or opencode"
+    description: "Model runner: codex, claude, opencode, or pi"
     required: false
     default: codex
   model:
@@ -67,6 +67,7 @@ runs:
           codex) pkg="@openai/codex" ;;
           claude) pkg="@anthropic-ai/claude-code" ;;
           opencode) pkg="opencode-ai" ;;
+          pi) pkg="@mariozechner/pi" ;;
           *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
         npm install -g "${pkg}@${NF_RUNNER_VERSION}"
@@ -83,6 +84,10 @@ runs:
           chmod 600 "$HOME/.codex/auth.json"
         elif [ "$NF_RUNNER" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
           printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
+        elif [ "$NF_RUNNER" = "pi" ] && [ -n "${PI_AUTH_JSON:-}" ]; then
+          mkdir -p "$HOME/.pi/agent"
+          printf '%s' "$PI_AUTH_JSON" > "$HOME/.pi/agent/auth.json"
+          chmod 600 "$HOME/.pi/agent/auth.json"
         fi
     - name: Needlefish review
       shell: bash
@@ -102,6 +107,9 @@ runs:
           echo "No PR number: pass pr_number or trigger on pull_request events." >&2
           exit 1
         fi
+        # CI runs on a disposable VM, so the pi runner's unverified-sandbox gate
+        # (src/shared/codex.ts) is deliberately satisfied here.
+        if [ "$RUNNER_INPUT" = "pi" ]; then export NEEDLEFISH_ALLOW_PI_RUNNER=1; fi
         args=(--github --pr "$pr" --repo "$TARGET_REPO_PATH")
         if [ -n "$RUNNER_INPUT" ]; then args+=(--runner "$RUNNER_INPUT"); fi
         if [ -n "$MODEL_INPUT" ]; then args+=(--model "$MODEL_INPUT"); fi

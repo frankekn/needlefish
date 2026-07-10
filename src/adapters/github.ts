@@ -4,449 +4,617 @@ import { renderMarkdown } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { formatSuggestionComment } from "./github-suggestions.js";
-import type {
-  Finding,
-  ReviewResult,
-  Verdict,
-} from "../shared/schema.js";
+import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(raw: unknown): raw is JsonRecord {
-  return typeof raw === "object" && raw !== null && !Array.isArray(raw);
+	return typeof raw === "object" && raw !== null && !Array.isArray(raw);
 }
 
 function ghJson(args: readonly string[], input?: string): unknown {
-  const out = ghText(args, undefined, input);
-  return out ? JSON.parse(out) : {};
+	const out = ghText(args, undefined, input);
+	if (!out) return {};
+	try {
+		return JSON.parse(out);
+	} catch (error) {
+		throw new Error("GitHub returned invalid JSON", { cause: error });
+	}
 }
 
 function stringField(raw: JsonRecord, field: string): string {
-  const value = raw[field];
-  return typeof value === "string" ? value : "";
+	const value = raw[field];
+	return typeof value === "string" ? value : "";
 }
 
-function nestedString(raw: JsonRecord, field: string, nestedField: string): string {
-  const value = raw[field];
-  return isRecord(value) ? stringField(value, nestedField) : "";
+function nestedString(
+	raw: JsonRecord,
+	field: string,
+	nestedField: string,
+): string {
+	const value = raw[field];
+	return isRecord(value) ? stringField(value, nestedField) : "";
 }
 
 const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
-  pass: "success",
-  changes_requested: "failure",
-  needs_human: "neutral",
+	pass: "success",
+	changes_requested: "failure",
+	needs_human: "neutral",
 };
+
+export const VERDICT_LABELS: Record<Verdict, string> = {
+	pass: "needlefish:pass",
+	changes_requested: "needlefish:changes-requested",
+	needs_human: "needlefish:needs-human",
+};
+
+const VERDICT_LABEL_COLORS: Record<Verdict, string> = {
+	pass: "0e8a16",
+	changes_requested: "d93f0b",
+	needs_human: "fbca04",
+};
+
+type GhFn = (args: readonly string[], input?: string) => unknown;
+
+function is404(error: unknown): boolean {
+	return error instanceof Error && /(?:\b404\b|not found)/i.test(error.message);
+}
+
+export function applyVerdictLabel(
+	repo: string,
+	prNumber: number,
+	verdict: Verdict,
+	ghFn: GhFn = (args, input) => ghJson(args, input),
+): Promise<void> {
+	const currentLabel = VERDICT_LABELS[verdict];
+	try {
+		try {
+			ghFn(["api", `repos/${repo}/labels/${currentLabel}`]);
+		} catch (error) {
+			if (!is404(error)) throw error;
+			ghFn([
+				"api",
+				"-X",
+				"POST",
+				`repos/${repo}/labels`,
+				"-f",
+				`name=${currentLabel}`,
+				"-f",
+				`color=${VERDICT_LABEL_COLORS[verdict]}`,
+				"-f",
+				"description=Needlefish review verdict",
+			]);
+		}
+
+		for (const label of Object.values(VERDICT_LABELS)) {
+			if (label === currentLabel) continue;
+			try {
+				ghFn([
+					"api",
+					"-X",
+					"DELETE",
+					`repos/${repo}/issues/${prNumber}/labels/${label}`,
+				]);
+			} catch (error) {
+				if (!is404(error)) throw error;
+			}
+		}
+
+		ghFn([
+			"api",
+			"-X",
+			"POST",
+			`repos/${repo}/issues/${prNumber}/labels`,
+			"-f",
+			`labels[]=${currentLabel}`,
+		]);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		process.stderr.write(
+			`needlefish: could not apply verdict label: ${message}\n`,
+		);
+	}
+	return Promise.resolve();
+}
 
 // Parse a unified diff into head-side (new) line ranges per file path.
 // For each `+++ b/<path>`, hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1];
 // d defaults to 1 when omitted. Deleted files (`+++ /dev/null`) are skipped.
 export function headLinesInPatch(
-  patch: string
+	patch: string,
 ): Map<string, Array<[number, number]>> {
-  const ranges = new Map<string, Array<[number, number]>>();
-  let file: string | null = null;
-  for (const raw of patch.split("\n")) {
-    if (raw.startsWith("+++ ")) {
-      const m = /^\+\+\+ b\/(.+)$/.exec(raw);
-      file = m ? m[1] : null;
-      if (file && !ranges.has(file)) ranges.set(file, []);
-      continue;
-    }
-    if (file && raw.startsWith("@@")) {
-      const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
-      if (h) {
-        const c = Number(h[1]);
-        const d = h[2] === undefined ? 1 : Number(h[2]);
-        if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
-      }
-    }
-  }
-  return ranges;
+	const ranges = new Map<string, Array<[number, number]>>();
+	let file: string | null = null;
+	for (const raw of patch.split("\n")) {
+		if (raw.startsWith("+++ ")) {
+			const m = /^\+\+\+ b\/(.+)$/.exec(raw);
+			file = m ? m[1] : null;
+			if (file && !ranges.has(file)) ranges.set(file, []);
+			continue;
+		}
+		if (file && raw.startsWith("@@")) {
+			const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+			if (h) {
+				const c = Number(h[1]);
+				const d = h[2] === undefined ? 1 : Number(h[2]);
+				if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
+			}
+		}
+	}
+	return ranges;
 }
 
 export function anchorableIn(
-  ranges: Map<string, Array<[number, number]>>,
-  file: string,
-  line: number
+	ranges: Map<string, Array<[number, number]>>,
+	file: string,
+	line: number,
 ): boolean {
-  const rs = ranges.get(file);
-  if (!rs) return false;
-  return rs.some(([start, end]) => line >= start && line <= end);
+	const rs = ranges.get(file);
+	if (!rs) return false;
+	return rs.some(([start, end]) => line >= start && line <= end);
 }
 
 // --- Cross-round review state ---
 // Title normalizer mirrors dedup() in src/core/review.ts (same idea, duplicated
 // locally to keep the adapter layer free of core imports).
 function normalizeTitle(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 60);
+	return s.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
 export interface FindingKey {
-  readonly file: string;
-  readonly lineStart: number;
-  readonly category: string;
-  readonly title: string;
+	readonly file: string;
+	readonly lineStart: number;
+	readonly category: string;
+	readonly title: string;
 }
 
 export interface RoundState {
-  readonly v: 1;
-  readonly headSha: string;
-  readonly findings: readonly FindingKey[];
+	readonly v: 1;
+	readonly headSha: string;
+	readonly findings: readonly FindingKey[];
 }
 
 function findingKey(f: Finding): FindingKey {
-  return {
-    file: f.file,
-    lineStart: f.lineStart,
-    category: f.category,
-    title: normalizeTitle(f.title),
-  };
+	return {
+		file: f.file,
+		lineStart: f.lineStart,
+		category: f.category,
+		title: normalizeTitle(f.title),
+	};
 }
 
-export function renderState(headSha: string, findings: readonly Finding[]): string {
-  const state: RoundState = { v: 1, headSha, findings: findings.map(findingKey) };
-  return `<!-- needlefish-state: ${JSON.stringify(state)} -->`;
+export function renderState(
+	headSha: string,
+	findings: readonly Finding[],
+): string {
+	const state: RoundState = {
+		v: 1,
+		headSha,
+		findings: findings.map(findingKey),
+	};
+	return `<!-- needlefish-state: ${JSON.stringify(state)} -->`;
 }
 
 const STATE_PREFIX = "<!-- needlefish-state:";
 
 export function parseState(body: string): RoundState | null {
-  const start = body.lastIndexOf(STATE_PREFIX);
-  if (start < 0) return null;
-  const jsonStart = start + STATE_PREFIX.length;
-  const end = body.indexOf("-->", jsonStart);
-  if (end < 0) return null;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(body.slice(jsonStart, end));
-  } catch {
-    return null;
-  }
-  if (!isRecord(raw)) return null;
-  if (raw.v !== 1) return null;
-  const headSha = raw.headSha;
-  if (typeof headSha !== "string") return null;
-  const findingsRaw = raw.findings;
-  if (!Array.isArray(findingsRaw)) return null;
-  const keys: FindingKey[] = [];
-  for (const item of findingsRaw) {
-    if (!isRecord(item)) return null;
-    const { file, lineStart, category, title } = item;
-    if (
-      typeof file !== "string" ||
-      typeof lineStart !== "number" ||
-      typeof category !== "string" ||
-      typeof title !== "string"
-    ) {
-      return null;
-    }
-    keys.push({ file, lineStart, category, title });
-  }
-  return { v: 1, headSha, findings: keys };
+	const start = body.lastIndexOf(STATE_PREFIX);
+	if (start < 0) return null;
+	const jsonStart = start + STATE_PREFIX.length;
+	const end = body.indexOf("-->", jsonStart);
+	if (end < 0) return null;
+	let raw: unknown;
+	try {
+		raw = JSON.parse(body.slice(jsonStart, end));
+	} catch {
+		return null;
+	}
+	if (!isRecord(raw)) return null;
+	if (raw.v !== 1) return null;
+	const headSha = raw.headSha;
+	if (typeof headSha !== "string") return null;
+	const findingsRaw = raw.findings;
+	if (!Array.isArray(findingsRaw)) return null;
+	const keys: FindingKey[] = [];
+	for (const item of findingsRaw) {
+		if (!isRecord(item)) return null;
+		const { file, lineStart, category, title } = item;
+		if (
+			typeof file !== "string" ||
+			typeof lineStart !== "number" ||
+			typeof category !== "string" ||
+			typeof title !== "string"
+		) {
+			return null;
+		}
+		keys.push({ file, lineStart, category, title });
+	}
+	return { v: 1, headSha, findings: keys };
 }
 
 export interface MatchResult {
-  readonly fresh: readonly Finding[];
-  readonly open: readonly Finding[];
-  readonly resolvedCount: number;
+	readonly fresh: readonly Finding[];
+	readonly open: readonly Finding[];
+	readonly resolvedCount: number;
+}
+
+function countNewFindings(
+	prevKeys: readonly FindingKey[],
+	curr: readonly Finding[],
+): number {
+	return curr.filter(
+		(finding) =>
+			!prevKeys.some(
+				(previous) =>
+					finding.file === previous.file &&
+					finding.lineStart === previous.lineStart &&
+					normalizeTitle(finding.title) === previous.title,
+			),
+	).length;
 }
 
 export function matchFindings(
-  prevKeys: readonly FindingKey[],
-  curr: readonly Finding[]
+	prevKeys: readonly FindingKey[],
+	curr: readonly Finding[],
 ): MatchResult {
-  const matched = new Set<number>();
-  let resolvedCount = 0;
-  for (const prev of prevKeys) {
-    let hit = -1;
-    for (let i = 0; i < curr.length; i++) {
-      if (matched.has(i)) continue;
-      const c = curr[i];
-      if (
-        c.file === prev.file &&
-        c.category === prev.category &&
-        normalizeTitle(c.title) === prev.title &&
-        Math.abs(c.lineStart - prev.lineStart) <= 10
-      ) {
-        hit = i;
-        break;
-      }
-    }
-    if (hit >= 0) matched.add(hit);
-    else resolvedCount++;
-  }
-  const fresh: Finding[] = [];
-  const open: Finding[] = [];
-  curr.forEach((f, i) => {
-    (matched.has(i) ? open : fresh).push(f);
-  });
-  return { fresh, open, resolvedCount };
+	const matched = new Set<number>();
+	let resolvedCount = 0;
+	for (const prev of prevKeys) {
+		let hit = -1;
+		for (let i = 0; i < curr.length; i++) {
+			if (matched.has(i)) continue;
+			const c = curr[i];
+			if (
+				c.file === prev.file &&
+				c.category === prev.category &&
+				normalizeTitle(c.title) === prev.title &&
+				Math.abs(c.lineStart - prev.lineStart) <= 10
+			) {
+				hit = i;
+				break;
+			}
+		}
+		if (hit >= 0) matched.add(hit);
+		else resolvedCount++;
+	}
+	const fresh: Finding[] = [];
+	const open: Finding[] = [];
+	curr.forEach((f, i) => {
+		(matched.has(i) ? open : fresh).push(f);
+	});
+	return { fresh, open, resolvedCount };
 }
 
 type InlineComment = {
-  readonly path: string;
-  readonly line: number;
-  readonly side: "RIGHT";
-  readonly start_line?: number;
-  readonly start_side?: "RIGHT";
-  readonly body: string;
+	readonly path: string;
+	readonly line: number;
+	readonly side: "RIGHT";
+	readonly start_line?: number;
+	readonly start_side?: "RIGHT";
+	readonly body: string;
 };
 
 type SuggestionContext = {
-  readonly repoPath: string;
-  readonly headSha: string;
+	readonly repoPath: string;
+	readonly headSha: string;
 };
 
-function headLineCount(repoPath: string, headSha: string, file: string): number | null {
-  try {
-    const content = git(["show", `${headSha}:${file}`], repoPath);
-    if (content === "") return 0;
-    return (content.endsWith("\n") ? content.slice(0, -1) : content).split("\n").length;
-  } catch (err) {
-    if (err instanceof Error) return null;
-    throw err;
-  }
+function headLineCount(
+	repoPath: string,
+	headSha: string,
+	file: string,
+): number | null {
+	try {
+		const content = git(["show", `${headSha}:${file}`], repoPath);
+		if (content === "") return 0;
+		return (content.endsWith("\n") ? content.slice(0, -1) : content).split("\n")
+			.length;
+	} catch (err) {
+		if (err instanceof Error) return null;
+		throw err;
+	}
 }
 
 function buildInlineComments(
-  result: ReviewResult,
-  patch: string,
-  ctx: SuggestionContext
+	result: ReviewResult,
+	patch: string,
+	ctx: SuggestionContext,
 ): { comments: InlineComment[]; inlined: Set<Finding> } {
-  const ranges = headLinesInPatch(patch);
-  const anchorable = result.findings.filter(
-    (f) => f.file !== "" && anchorableIn(ranges, f.file, f.lineStart)
-  );
-  const selected =
-    anchorable.length > 20
-      ? anchorable.filter(
-          (f) => f.severity === "P0" || f.severity === "P1" || f.severity === "P2"
-        )
-      : anchorable;
-  const inlined = new Set<Finding>(selected);
-  const comments: InlineComment[] = selected.map((f) => {
-    const formatted = formatSuggestionComment(f, {
-      ranges,
-      headLineCount: () => headLineCount(ctx.repoPath, ctx.headSha, f.file),
-    });
-    return {
-      path: f.file,
-      line: formatted.line,
-      side: "RIGHT",
-      ...(formatted.startLine !== undefined
-        ? { start_line: formatted.startLine, start_side: "RIGHT" as const }
-        : {}),
-      body: formatted.body,
-    };
-  });
-  return { comments, inlined };
+	const ranges = headLinesInPatch(patch);
+	const anchorable = result.findings.filter(
+		(f) => f.file !== "" && anchorableIn(ranges, f.file, f.lineStart),
+	);
+	const selected =
+		anchorable.length > 20
+			? anchorable.filter(
+					(f) =>
+						f.severity === "P0" || f.severity === "P1" || f.severity === "P2",
+				)
+			: anchorable;
+	const inlined = new Set<Finding>(selected);
+	const comments: InlineComment[] = selected.map((f) => {
+		const formatted = formatSuggestionComment(f, {
+			ranges,
+			headLineCount: () => headLineCount(ctx.repoPath, ctx.headSha, f.file),
+		});
+		return {
+			path: f.file,
+			line: formatted.line,
+			side: "RIGHT",
+			...(formatted.startLine !== undefined
+				? { start_line: formatted.startLine, start_side: "RIGHT" as const }
+				: {}),
+			body: formatted.body,
+		};
+	});
+	return { comments, inlined };
 }
 
 function postReview(
-  repo: string,
-  prNumber: number,
-  headSha: string,
-  body: string,
-  comments: readonly InlineComment[]
+	repo: string,
+	prNumber: number,
+	headSha: string,
+	body: string,
+	comments: readonly InlineComment[],
 ): void {
-  const payload = JSON.stringify({
-    commit_id: headSha,
-    body,
-    event: "COMMENT",
-    comments,
-  });
+	const payload = JSON.stringify({
+		commit_id: headSha,
+		body,
+		event: "COMMENT",
+		comments,
+	});
 
-  ghJson(
-    ["api", "-X", "POST", `repos/${repo}/pulls/${prNumber}/reviews`, "--input", "-"],
-    payload
-  );
+	ghJson(
+		[
+			"api",
+			"-X",
+			"POST",
+			`repos/${repo}/pulls/${prNumber}/reviews`,
+			"--input",
+			"-",
+		],
+		payload,
+	);
 }
 
 function updateReviewBody(
-  repo: string,
-  prNumber: number,
-  reviewId: number,
-  body: string
+	repo: string,
+	prNumber: number,
+	reviewId: number,
+	body: string,
 ): void {
-  ghJson(
-    ["api", "-X", "PUT", `repos/${repo}/pulls/${prNumber}/reviews/${reviewId}`, "--input", "-"],
-    JSON.stringify({ body })
-  );
+	ghJson(
+		[
+			"api",
+			"-X",
+			"PUT",
+			`repos/${repo}/pulls/${prNumber}/reviews/${reviewId}`,
+			"--input",
+			"-",
+		],
+		JSON.stringify({ body }),
+	);
 }
 
 function findPreviousReview(
-  repo: string,
-  prNumber: number
+	repo: string,
+	prNumber: number,
 ): { id: number; state: RoundState } | null {
-  const raw = ghJson(["api", `repos/${repo}/pulls/${prNumber}/reviews`]);
-  if (!Array.isArray(raw)) return null;
-  for (let i = raw.length - 1; i >= 0; i--) {
-    const item = raw[i];
-    if (!isRecord(item)) continue;
-    const state = parseState(stringField(item, "body"));
-    if (!state) continue;
-    const id = item.id;
-    if (typeof id !== "number") continue;
-    return { id, state };
-  }
-  return null;
+	const raw = ghJson(["api", `repos/${repo}/pulls/${prNumber}/reviews`]);
+	if (!Array.isArray(raw)) return null;
+	for (let i = raw.length - 1; i >= 0; i--) {
+		const item = raw[i];
+		if (!isRecord(item)) continue;
+		const state = parseState(stringField(item, "body"));
+		if (!state) continue;
+		const id = item.id;
+		if (typeof id !== "number") continue;
+		return { id, state };
+	}
+	return null;
 }
 
 function postCheck(
-  repo: string,
-  headSha: string,
-  result: ReviewResult | null,
-  conclusion: "success" | "failure" | "neutral",
-  title: string,
-  summary: string
+	repo: string,
+	headSha: string,
+	_result: ReviewResult | null,
+	conclusion: "success" | "failure" | "neutral",
+	title: string,
+	summary: string,
 ) {
-  ghJson(
-    ["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
-    JSON.stringify({
-      name: "Needlefish",
-      head_sha: headSha,
-      status: "completed",
-      conclusion,
-      output: { title, summary },
-    })
-  );
+	ghJson(
+		["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
+		JSON.stringify({
+			name: "Needlefish",
+			head_sha: headSha,
+			status: "completed",
+			conclusion,
+			output: { title, summary },
+		}),
+	);
 }
 
-function isCurrentOpenHead(repo: string, prNumber: number, headSha: string): boolean {
-  const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
-  if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
-  const state = stringField(pr, "state");
-  if (state !== "open") {
-    process.stdout.write(`Needlefish skipped posting for PR #${prNumber} because state is ${state || "unknown"}.\n`);
-    return false;
-  }
-  const currentHeadSha = nestedString(pr, "head", "sha");
-  if (currentHeadSha !== headSha) {
-    process.stdout.write(`Needlefish skipped stale result for PR #${prNumber}: ${headSha} is no longer current.\n`);
-    return false;
-  }
-  return true;
+function isCurrentOpenHead(
+	repo: string,
+	prNumber: number,
+	headSha: string,
+): boolean {
+	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
+	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
+	const state = stringField(pr, "state");
+	if (state !== "open") {
+		process.stdout.write(
+			`Needlefish skipped posting for PR #${prNumber} because state is ${state || "unknown"}.\n`,
+		);
+		return false;
+	}
+	const currentHeadSha = nestedString(pr, "head", "sha");
+	if (currentHeadSha !== headSha) {
+		process.stdout.write(
+			`Needlefish skipped stale result for PR #${prNumber}: ${headSha} is no longer current.\n`,
+		);
+		return false;
+	}
+	return true;
 }
 
 export async function runGithub(
-  cwd: string,
-  prNumber: number,
-  opts: RunnerOptions = {},
-  recheck = false
+	cwd: string,
+	prNumber: number,
+	opts: RunnerOptions = {},
+	recheck = false,
 ): Promise<void> {
-  const repoPath = path.resolve(cwd);
-  const repo = process.env.GITHUB_REPOSITORY;
-  if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
+	const repoPath = path.resolve(cwd);
+	const repo = process.env.GITHUB_REPOSITORY;
+	if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
-  const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
-  if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
-  const state = stringField(pr, "state");
-  if (state !== "open") {
-    process.stdout.write(`Needlefish skipped PR #${prNumber} because state is ${state || "unknown"}.\n`);
-    return;
-  }
-  const headSha = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || git(["rev-parse", "HEAD"], repoPath);
+	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
+	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
+	const state = stringField(pr, "state");
+	if (state !== "open") {
+		process.stdout.write(
+			`Needlefish skipped PR #${prNumber} because state is ${state || "unknown"}.\n`,
+		);
+		return;
+	}
+	const headSha =
+		process.env.PR_HEAD_SHA ||
+		nestedString(pr, "head", "sha") ||
+		git(["rev-parse", "HEAD"], repoPath);
 
-  // Same-head dedupe: fetch the previous review once, reuse for both the
-  // short-circuit and the post-review posting logic. If we already reviewed
-  // this exact head and --recheck was not passed, skip entirely.
-  const prev = findPreviousReview(repo, prNumber);
-  if (prev && prev.state.headSha === headSha && !recheck) {
-    process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
-    return;
-  }
+	// Same-head dedupe: fetch the previous review once, reuse for both the
+	// short-circuit and the post-review posting logic. If we already reviewed
+	// this exact head and --recheck was not passed, skip entirely.
+	const prev = findPreviousReview(repo, prNumber);
+	if (prev && prev.state.headSha === headSha && !recheck) {
+		process.stderr.write(
+			`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
+		);
+		return;
+	}
 
-  const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
-  if (!baseSha || !headSha) throw new Error("Could not resolve PR base/head SHA");
-  const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
-  const patch = git(["diff", mergeBase, headSha], repoPath);
-  if (!patch.trim()) {
-    throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
-  }
-  const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath);
-  const changed = changedFiles(repoPath, mergeBase, headSha);
+	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
+	if (!baseSha || !headSha)
+		throw new Error("Could not resolve PR base/head SHA");
+	const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
+	const patch = git(["diff", mergeBase, headSha], repoPath);
+	if (!patch.trim()) {
+		throw new Error(
+			`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
+		);
+	}
+	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath);
+	const changed = changedFiles(repoPath, mergeBase, headSha);
 
-  const commentsUrl = stringField(pr, "comments_url");
-  const reviewsUrl = stringField(pr, "review_comments_url");
-  const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
-  const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
+	const commentsUrl = stringField(pr, "comments_url");
+	const reviewsUrl = stringField(pr, "review_comments_url");
+	const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
+	const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
 
-  const prMeta = {
-    number: prNumber,
-    title: stringField(pr, "title"),
-    body: typeof pr.body === "string" ? pr.body : null,
-    comments: normalizeBodyList(comments),
-    reviews: normalizeBodyList(reviews),
-    checks: [],
-  };
+	const prMeta = {
+		number: prNumber,
+		title: stringField(pr, "title"),
+		body: typeof pr.body === "string" ? pr.body : null,
+		comments: normalizeBodyList(comments),
+		reviews: normalizeBodyList(reviews),
+		checks: [],
+	};
 
-  const bundle = makeBundle({
-    repoPath,
-    baseSha: mergeBase,
-    headSha,
-    patch,
-    patchStat,
-    changedFiles: changed,
-    prMeta,
-    deep: false,
-    focus: null,
-  });
+	const bundle = makeBundle({
+		repoPath,
+		baseSha: mergeBase,
+		headSha,
+		patch,
+		patchStat,
+		changedFiles: changed,
+		prMeta,
+		deep: false,
+		focus: null,
+	});
 
-  let result: ReviewResult | null = null;
-  try {
-    result = await review(bundle, opts);
-    const conclusion = VERDICT_CONCLUSION[result.verdict];
-    if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
-    if (result.verdict === "changes_requested") process.exitCode = 1;
+	try {
+		const result = await review(bundle, opts);
+		const conclusion = VERDICT_CONCLUSION[result.verdict];
+		if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
+		if (result.verdict === "changes_requested") process.exitCode = 1;
 
-    if (prev) {
-      const { fresh, open, resolvedCount } = matchFindings(prev.state.findings, result.findings);
-      const freshResult: ReviewResult = { ...result, findings: fresh };
-      const { comments: freshComments, inlined: freshInlined } = buildInlineComments(freshResult, patch, {
-        repoPath,
-        headSha,
-      });
-      const renderOpts = {
-        inlinedFindings: freshInlined,
-        openFindings: open,
-        resolvedCount,
-      };
-      const body = renderMarkdown(freshResult, {
-        ...renderOpts,
-        stateMarker: renderState(headSha, result.findings),
-      });
-      updateReviewBody(repo, prNumber, prev.id, body);
-      if (freshComments.length > 0) {
-        postReview(repo, prNumber, headSha, "", freshComments);
-      }
-      const summary = renderMarkdown(freshResult, renderOpts);
-      postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, summary);
-      process.stdout.write(summary);
-    } else {
-      const { comments, inlined } = buildInlineComments(result, patch, { repoPath, headSha });
-      const body = renderMarkdown(result, {
-        inlinedFindings: inlined,
-        stateMarker: renderState(headSha, result.findings),
-      });
-      postReview(repo, prNumber, headSha, body, comments);
-      const summary = renderMarkdown(result, { inlinedFindings: inlined });
-      postCheck(repo, headSha, result, conclusion, `Needlefish: ${result.verdict}`, summary);
-      process.stdout.write(summary);
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (isCurrentOpenHead(repo, prNumber, headSha)) {
-      postCheck(
-        repo,
-        headSha,
-        null,
-        "failure",
-        "Needlefish: review failed",
-        `Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``
-      );
-    }
-    process.stderr.write(`needlefish review failed: ${msg}\n`);
-    process.exitCode = 1;
-  }
+		if (prev) {
+			const { fresh, open, resolvedCount } = matchFindings(
+				prev.state.findings,
+				result.findings,
+			);
+			const freshResult: ReviewResult = { ...result, findings: fresh };
+			const { comments: freshComments, inlined: freshInlined } =
+				buildInlineComments(freshResult, patch, {
+					repoPath,
+					headSha,
+				});
+			const renderOpts = {
+				inlinedFindings: freshInlined,
+				openFindings: open,
+				resolvedCount,
+				newCount: countNewFindings(prev.state.findings, result.findings),
+				repoSlug: repo,
+			};
+			const body = renderMarkdown(freshResult, {
+				...renderOpts,
+				stateMarker: renderState(headSha, result.findings),
+			});
+			updateReviewBody(repo, prNumber, prev.id, body);
+			if (freshComments.length > 0) {
+				postReview(repo, prNumber, headSha, "", freshComments);
+			}
+			await applyVerdictLabel(repo, prNumber, result.verdict);
+			const summary = renderMarkdown(freshResult, renderOpts);
+			postCheck(
+				repo,
+				headSha,
+				result,
+				conclusion,
+				`Needlefish: ${result.verdict}`,
+				summary,
+			);
+			process.stdout.write(summary);
+		} else {
+			const { comments, inlined } = buildInlineComments(result, patch, {
+				repoPath,
+				headSha,
+			});
+			const body = renderMarkdown(result, {
+				inlinedFindings: inlined,
+				repoSlug: repo,
+				stateMarker: renderState(headSha, result.findings),
+			});
+			postReview(repo, prNumber, headSha, body, comments);
+			await applyVerdictLabel(repo, prNumber, result.verdict);
+			const summary = renderMarkdown(result, {
+				inlinedFindings: inlined,
+				repoSlug: repo,
+			});
+			postCheck(
+				repo,
+				headSha,
+				result,
+				conclusion,
+				`Needlefish: ${result.verdict}`,
+				summary,
+			);
+			process.stdout.write(summary);
+		}
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (isCurrentOpenHead(repo, prNumber, headSha)) {
+			postCheck(
+				repo,
+				headSha,
+				null,
+				"failure",
+				"Needlefish: review failed",
+				`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
+			);
+		}
+		process.stderr.write(`needlefish review failed: ${msg}\n`);
+		process.exitCode = 1;
+	}
 }

@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "ts-data-duplicate",
   kind: "positive",
+  tier: 2,
   defectClass: "duplicate-reinvented-config",
   description: "Agent adds a retries config and a retryBackground function that reimplements the existing maxAttempts retry loop, creating two divergent sources of truth. Includes a benign timeoutMs -> timeout rename as noise.",
   baseFiles: {

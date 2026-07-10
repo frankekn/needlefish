@@ -162,7 +162,7 @@
 <p class="subtitle">by Fable · 2026-07-04 · 基準 commit <code>df60aac</code>(main,v0.3.0)· <strong>進度更新 2026-07-04 晚:main = <code>beed25c</code>,W0–W4/W7A/W8 全數出貨,詳見 §5 表</strong>· 撰寫前提:作者離線後不再回來;接手者可能是能力較弱的 LLM。本文件是唯一權威交接,取代先前所有 Round 1 / Round 2 計畫文件。</p>
 
 <div class="tldr">
-<strong>TL;DR:</strong>引擎已可信:36 fixtures 最終 gate <strong>recall 94.1%、誤報 0、invalid JSON 0、平均 47.9s</strong>(codex gpt-5.5 @ medium)。Round 1(P1–P8)與 Round 2(P9–P16)幾乎全數出貨。<strong>進度(07-04 晚):九張工單已完成七張(W0/W1/W2/W3/W4/W7-A/W8),剩 W5(Marketplace,需 Frank 點擊)與 W6(v1.0.0,條件未熟)、W7-B(ACP,未立項)。基線升至 recall 94.7%、criticPruneErrorRate 0、歷史盲點解決。</strong>原九張工單,按序執行:<strong>W0 家務清理 → W1 文件同步 → W2 suggestion 一鍵套用(Round 2 唯一未完成規格)→ W3 已知盲點終局 → W4 critic 刪錯率判讀 → W5 Marketplace 上架(需 Frank)→ W6 v1.0.0(條件觸發)→ W7 harness 煞車系統(ACP 線)→ W8 JSON 契約(修復 lane 地基,可插隊)</strong>。修復 lane 架構已定案(R8):同 repo 分 lane,裁判與球員分離。更遠的路(§5B)也已規劃完:北極星是「團隊敢拿來擋 merge」,Horizon 2/3(修復通道三階段、模型世代更替 SOP、config/GitLab、benchmark 公開化、信任量測、知識庫閉環)每項都帶觸發條件與寫死的判準——後人只需執行,不需規劃。執行鐵律只有三條:<strong>憲法(§3)凌駕一切;判準先寫死、gate 不過就 revert;不確定就停下來問 Frank,不要猜。</strong>
+<strong>TL;DR:</strong>引擎已可信:36 fixtures 最終 gate <strong>recall 94.1%、誤報 0、invalid JSON 0、平均 47.9s</strong>(codex gpt-5.5 @ medium)。Round 1(P1–P8)與 Round 2(P9–P16)幾乎全數出貨。<strong>進度(07-04 晚):九張工單已完成七張(W0/W1/W2/W3/W4/W7-A/W8),W5(Marketplace)與 W6(v1.0.0)由 Frank 決策暫緩(2026-07-04),條件仍在背景累積;W7-B(ACP)未立項。基線升至 recall 94.7%、criticPruneErrorRate 0、歷史盲點解決。</strong>原九張工單,按序執行:<strong>W0 家務清理 → W1 文件同步 → W2 suggestion 一鍵套用(Round 2 唯一未完成規格)→ W3 已知盲點終局 → W4 critic 刪錯率判讀 → W5 Marketplace 上架(需 Frank)→ W6 v1.0.0(條件觸發)→ W7 harness 煞車系統(ACP 線)→ W8 JSON 契約(修復 lane 地基,可插隊)</strong>。修復 lane 架構已定案(R8):同 repo 分 lane,裁判與球員分離。更遠的路(§5B)也已規劃完:北極星是「團隊敢拿來擋 merge」,Horizon 2/3(修復通道三階段、模型世代更替 SOP、config/GitLab、benchmark 公開化、信任量測、知識庫閉環)每項都帶觸發條件與寫死的判準——後人只需執行,不需規劃。執行鐵律只有三條:<strong>憲法(§3)凌駕一切;判準先寫死、gate 不過就 revert;不確定就停下來問 Frank,不要猜。</strong>
 </div>
 
 <h2 id="toc">目錄</h2>
@@ -371,13 +371,15 @@ pnpm test           # node:test 全套,必須全綠(先驗 bin/needlefish --vers
 <tr><th>工單</th><th>一句話</th><th>預估</th><th>風險</th><th>需要 Frank?</th></tr>
 <tr><td><a href="#w0">W0</a></td><td>工作副本家務清理 — ✅ 2096fea</td><td>30–60 分</td><td>無</td><td>commit 前告知即可</td></tr>
 <tr><td><a href="#w1">W1</a></td><td>README/文件與現實同步 — ✅ df11774</td><td>1 小時</td><td>無</td><td>否</td></tr>
-<tr><td><a href="#w2">W2</a></td><td>suggestion 一鍵套用(P10-v2)— ✅ 612dc8c(gate 94.4%/fp 0/49.7s;live 驗證待放行)</td><td>1 天</td><td>中(動 schema+prompt,要 gate)</td><td>否</td></tr>
+<tr><td><a href="#w2">W2</a></td><td>suggestion 一鍵套用(P10-v2)— ✅ 612dc8c(gate 94.4%/fp 0/49.7s;live 驗證 ✅ PR #10:抓中埋餌 P2、錨定/sticky/recheck/check-run 全過;兩抽未 emit replacement——保守設計的預期行為,採用率數據續記於 R8)</td><td>1 天</td><td>中(動 schema+prompt,要 gate)</td><td>否</td></tr>
 <tr><td><a href="#w3">W3</a></td><td>go-backend-slop-swallow 盲點終局 — ✅ 結局 C 結案 36e7caa,後由 W4 critic 修復真正解決</td><td>半天</td><td>中(pre-declared 兩發,打完收工)</td><td>否</td></tr>
 <tr><td><a href="#w4">W4</a></td><td>criticPruneErrorRate 首次判讀 — ✅ b6ed806(觸發 5.56%→修後 0;順帶解掉 W3 盲點:critic 誤殺是根因,0/3→3/3)</td><td>2 小時</td><td>無(純讀數據)</td><td>否</td></tr>
-<tr><td><a href="#w5">W5</a></td><td>Marketplace 上架</td><td>半天</td><td>低</td><td><span class="warn">是(網頁點擊)</span></td></tr>
-<tr><td><a href="#w6">W6</a></td><td>v1.0.0(條件觸發)</td><td>半天</td><td>低</td><td>是(push/tag)</td></tr>
-<tr><td><a href="#w7">W7</a></td><td>Harness 煞車系統(ACP 線)— 階段 A ✅ c6b8322+037163b(含 give-up 掛死防護);階段 B 未動</td><td>1.5–2 天</td><td>中</td><td>階段 B 立項時確認</td></tr>
+<tr><td><a href="#w5">W5</a></td><td>Marketplace 上架 — ⏸ Frank 決策暫緩(2026-07-04);上架前置查核 1–5 已全備,重啟時只剩網頁點擊</td><td>半天</td><td>低</td><td><span class="warn">是(網頁點擊)</span></td></tr>
+<tr><td><a href="#w6">W6</a></td><td>v1.0.0 — ⏸ Frank 決策暫緩(2026-07-04),且進入條件本就未熟(weekly 尚未跑過首輪、外部 repo 未達 2)。暫緩不影響條件累積:weekly 自動跑、W2 採用率自動記</td><td>半天</td><td>低</td><td>是(push/tag)</td></tr>
+<tr><td><a href="#w7">W7</a></td><td>Harness 煞車系統(ACP 線)— 階段 A ✅ c6b8322+037163b(含 give-up 掛死防護);階段 B ✅ fc2457f(acp 第六 runner:協議 cancel 疊在 stage-A 煞車上,read-only 拒絕面,四象限 stub 測試)</td><td>1.5–2 天</td><td>中</td><td>階段 B 立項時確認</td></tr>
 <tr><td><a href="#w8">W8</a></td><td>findings/verdict 穩定 JSON 契約(修復 lane 地基)— ✅ ded810e</td><td>半天</td><td>低</td><td>否</td></tr>
+<tr><td><a href="#w10">W10</a></td><td>小白線:不懂 PR/git 也能用(Frank 指示 2026-07-05:「要先做好才會有人來用」)— W10-1 進行中</td><td>各半天~1 天</td><td>低~中(W10-1 動 bundle 組裝,不碰 prompt)</td><td>W10-2 npm publish 需 Frank</td></tr>
+<tr><td><a href="#w9">W9</a></td><td>紅利驅動重構(Frank 授權 2026-07-05:「發現有重構紅利則可以規劃重構」)— W9-1 可立即執行,其餘條件觸發</td><td>各半天內</td><td>低(不碰 prompt,無需 eval gate;純行為保持)</td><td>W9-1 立項時告知</td></tr>
 </table>
 <p>W8 無前置依賴、零模型風險,可插隊在任何工單之間執行;它是 R8 修復 lane 的必要地基,越早落地越好。</p>
 <p><strong>驗收規則(適用所有工單):</strong>每張工單的「驗收點」表逐項執行——跑「檢驗指令」欄的指令,實際輸出符合「通過標準」欄才打勾;<strong>全部打勾才算 DONE</strong>,才准碰下一張工單。驗收時把每條指令的實際輸出貼進 commit 訊息或 PR 描述存證。任何一項不過 = 工單未完成,回到步驟修,不准「大致上可以」。</p>
@@ -792,6 +794,32 @@ review. Docs-only PRs short-circuit for free.</code></pre>
 <tr><td>P4 sandbox 池化</td><td>clone 時間佔比 &gt; 5%(per-call stats 可算)</td><td>先重新量測,數據過門檻才動</td></tr>
 <tr><td>盲點重啟</td><td class="ok">已解決(2026-07-04):W4 critic 修復,3/3 穩定命中(<code>b6ed806</code>)</td><td>若同類 miss 再現於真實 PR,先查 criticPruneError 再查偵測</td></tr>
 </table>
+
+<div class="card face" id="w10">
+<h2>W10 · 小白線:vibe coder 不懂 PR 也能 review(漏斗最前端)</h2>
+<p><strong>用戶畫像與斷點(2026-07-05 實勘):</strong>vibe coder 有一資料夾 AI 生成的代碼,不 commit、不開 branch、不知道 PR;可能已裝 claude/codex CLI(vibe coding 工具自帶)。現狀三個絕緣體:(1) local 模式只審 merge-base..HEAD,<code>local.ts:78</code> 明示不含未提交變更——正好排除小白的全部代碼;(2) 安裝要 clone+pnpm+PATH shim;(3) 沒 base branch 的新 repo 吐 git plumbing 錯誤。</p>
+<table>
+<tr><th>子單</th><th>內容</th><th>驗收</th><th>狀態</th></tr>
+<tr><td><strong>W10-1</strong> 未提交代碼審查(關鍵)</td><td>工作樹髒 → 預設審未提交變更(tracked 走 <code>git diff HEAD</code>,untracked 合成 new-file diff,有量上限);乾淨 → 維持現行為。unborn HEAD(git init 後零 commit)→ 全部視為新增照審。非 git 資料夾 → 一句人話:先跑 <code>git init</code>。<code>--uncommitted</code>/<code>--branch</code> 可強制。不碰 prompts/。</td><td>單測覆蓋:髒樹含 untracked、unborn HEAD、非 git 資料夾、乾淨樹回退現行為、上限截斷;既有測試斷言不改;<code>pnpm check &amp;&amp; pnpm test</code> 綠</td><td class="ok">✅ 完成(2026-07-05,e4eac8e+0777637;親審修空檔 corrupt patch,二審修 tracked binary 排除)</td></tr>
+<tr><td><strong>W10-2</strong> 一行安裝 + 零參數</td><td>發佈 npm 套件:<code>npx needlefish</code> 在任意資料夾可跑;runner 自動偵測(codex/claude/opencode 誰在 PATH 用誰),都沒有 → 給安裝指引而非報錯</td><td>乾淨機器(無 clone)npx 跑通一次 local review;publish 是對外動作,需 Frank</td><td class="ok">✅ 完成(2026-07-05,ead96e5+7ef4f4b;npm publish 與 LICENSE 選擇仍待 Frank)</td></tr>
+<tr><td><strong>W10-3</strong> 人話輸出</td><td>報告頂部加一句小白能懂的結論(可以放心 / 這 N 處會炸先修哪個),工程細節照舊在後</td><td>純 render 層,既有 markdown 結構不變,快照測試更新</td><td>待 W10-1/2 出貨後看回饋</td></tr>
+</table>
+<p><strong>與其他線的關係:</strong>W5 Marketplace 服務「懂 PR 的 GitHub 用戶」,W10 服務「不懂 PR 的本地用戶」——兩個獨立漏斗;W10 不依賴 W5,且 npx 通路能先於 Marketplace 帶第一批用戶(餵 W6 的外部使用條件與 R8 的採用率數據)。R13 信任量測與此無關,不被暫緩波及。</p>
+</div>
+
+<div class="card face" id="w9">
+<h2>W9 · 紅利驅動重構(帳本制)</h2>
+<p><strong>原則(Frank 2026-07-05 授權):</strong>重構只從「已付出的成本」立項——同一表面被迫連續兩次修(double-fix)、加一個變體要改 N 處、或潛在掛死這類真實證據。審美不是紅利。每張子單都是行為保持:不碰 prompts/,無需 eval gate,驗收 = <code>pnpm check &amp;&amp; pnpm test</code> 全綠且既有測試不改語意(只允許搬家/補純函數直測)。盤點來源:2026-07-05 雙路調查(Fable 親讀 + codex read-only),完整報告見 git 歷史,以下為結論。</p>
+<table>
+<tr><th>子單</th><th>紅利證據(已付成本)</th><th>最小重構形狀</th><th>觸發條件</th><th>驗收</th></tr>
+<tr><td><strong>W9-1</strong> suggestion 驗證抽純函數<br>(HIGH)</td><td><code>612dc8c</code> 出貨後 <code>126d0b7</code> 立即二修(fence 逃逸/多行)——同表面 double-fix;驗證邏輯埋在 <code>github.ts:218</code> 一帶,整合測試要全套 GitHub fixture 才碰得到</td><td>抽 <code>src/adapters/github-suggestions.ts</code> 純單元(仍只被 github.ts 呼叫);normalize.ts 的模型形狀驗證不動</td><td class="ok">✅ 完成(2026-07-05,a683dfe)</td><td>新純函數直測至少四例:合法/多行/超界/fence 逃逸;<code>github-posting.test.ts</code> 既有案例全數不改斷言</td></tr>
+<tr><td><strong>W9-2</strong> runner 註冊表<br>(MED)</td><td><code>fc2457f</code> 加 acp 改了 6 處:<code>RUNNERS</code>、手寫 <code>isRunnerName</code>、codex.ts 三個 switch(154/191/312)、usage 文字</td><td>(a) <code>isRunnerName</code> 改由 <code>RUNNERS</code> 推導(隨手可做);(b) codex.ts 三 switch 收斂成 typed runner definition table</td><td>下一次要加 runner/provider 時,先做此單再加</td><td>加新 runner 只需改 1 個定義點 + usage 文字;既有 runner 測試全綠</td></tr>
+<tr><td><strong>W9-3</strong> kill 策略獨立<br>(MED)</td><td><code>c6b8322</code>→<code>037163b</code> 兩步修(give-up 掛死),<code>fc2457f</code> 又在同引擎上接互動 IO;<code>runManagedRunnerProcess</code> 現混雜 spawn/hook/緩衝/三段計時器</td><td>抽私有 kill-sequence controller(擁有 beginKillSequence + duration env 讀取 + 殺樹),公開 API 不變</td><td>下一次要動 runner 生命週期時,先做此單再動</td><td>四象限測試(含 acp 掛死象限)全綠不改斷言</td></tr>
+<tr><td><strong>W9-4</strong> mapLimit 去重<br>(LOW)</td><td><code>review.ts:60</code> 與 <code>eval/run.ts:37</code> 同款 ordered worker-pool;僅 eval 側有保序測試</td><td>移 <code>src/shared/concurrency.ts</code> 雙方引用</td><td>出現第三個使用點,或 W9-2/W9-3 順路</td><td>保序測試移到共用側,兩呼叫點行為不變</td></tr>
+</table>
+<p><strong>已盤點、目前無紅利(防止後人重新調查):</strong>normalize.ts(驗證已集中)、review.ts 小/大路徑(內聚)、eval fixture 物料化、codex-runner-test-fixtures(已廣泛重用)、schema 序列化(W8 已單源)、severity/verdict 常數平行表(無變更壓力,等變體真的要加再說)。</p>
+<p><strong>帳本規則:</strong>之後任何工單過程中發現新紅利,在本表加一列(證據+形狀+觸發),不立即動手;同一熱點累積兩筆紅利或觸發條件成立才立項。</p>
+</div>
 
 <!-- ============================================================ S5B -->
 <h2 id="s5b">§5B 遠期 Roadmap(Horizon 2/3)— 這是唯一一次長程規劃,寫給沒有規劃能力的執行者</h2>

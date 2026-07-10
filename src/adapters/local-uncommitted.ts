@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
@@ -70,29 +71,36 @@ export function parseTrackedBinaryPathsFromNumstat(numstat: string): string[] {
   return paths;
 }
 
-function diffLines(text: string): { readonly lines: readonly string[]; readonly hasFinalNewline: boolean } {
-  if (text === "") return { lines: [], hasFinalNewline: true };
-  const hasFinalNewline = text.endsWith("\n");
-  const lines = text.split("\n");
-  return { lines: hasFinalNewline ? lines.slice(0, -1) : lines, hasFinalNewline };
+function countInsertions(patch: string): number {
+  let insertions = 0;
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) insertions += 1;
+  }
+  return insertions;
 }
 
-function newFileDiff(filePath: string, content: Buffer): { readonly patch: string; readonly insertions: number } {
-  const text = content.toString("utf8");
-  const { lines, hasFinalNewline } = diffLines(text);
-  const hunk = [`@@ -0,0 +1,${lines.length} @@`, ...lines.map((line) => `+${line}`)];
-  if (!hasFinalNewline) hunk.push("\\ No newline at end of file");
-  return {
-    patch: [
-      `diff --git a/${filePath} b/${filePath}`,
-      "new file mode 100644",
-      "index 0000000..0000000",
-      "--- /dev/null",
-      `+++ b/${filePath}`,
-      ...hunk,
-    ].join("\n") + "\n",
-    insertions: lines.length,
-  };
+/** Real `git diff --no-index` for an untracked file. Exit 1 + stdout = success. */
+function gitNewFileDiff(
+  cwd: string,
+  filePath: string
+): { readonly patch: string; readonly insertions: number } {
+  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", filePath], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 64,
+  });
+  if (res.error) throw res.error;
+  // Do not trim: trailing newline must survive for git apply.
+  const stdout = res.stdout ?? "";
+  if (res.status === 0) {
+    throw new Error(`git diff --no-index produced no diff for ${filePath}`);
+  }
+  if (res.status !== 1 || stdout.length === 0) {
+    throw new Error(
+      `git diff --no-index -- /dev/null ${filePath} failed: ${(res.stderr ?? "").slice(0, 2000)}`
+    );
+  }
+  return { patch: stdout, insertions: countInsertions(stdout) };
 }
 
 function statLine(filePath: string, insertions: number): string {
@@ -131,7 +139,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
       skipped.push(`${file} (total untracked content cap 1MB)`);
       continue;
     }
-    const diff = newFileDiff(file, content);
+    const diff = gitNewFileDiff(cwd, file);
     totalBytes += content.byteLength;
     patches.push(diff.patch);
     statLines.push(statLine(file, diff.insertions));

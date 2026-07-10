@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "pos-over-block",
   kind: "positive",
+  tier: 2,
   defectClass: "over-block-viewer-dead-branch",
   description: "Agent hardens isEligible by rejecting viewers, but handle has a legitimate viewer read-only branch that is now unreachable. Includes a benign tooMany extraction as noise.",
   baseFiles: {

@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { git } from "../src/shared/repo";
 import { review } from "../src/core/review";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
@@ -17,6 +19,7 @@ import type {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
+const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
 
 interface RunArgs {
   runner: RunnerName;
@@ -93,20 +96,26 @@ export function parseArgs(argv: readonly string[]): RunArgs {
   return { runner, model, effort, draws, concurrency, baseline, report, dryRun, compare, fixtures, resume, holdout, env };
 }
 
-async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
-  const dirs = readdirSync(FIXTURES_DIR, { withFileTypes: true })
+async function loadFixturesFrom(dirPath: string, glob: string | null): Promise<FixtureSpec[]> {
+  const dirs = readdirSync(dirPath, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .filter((name) => (glob ? new RegExp(glob).test(name) : true))
     .sort();
   const specs: FixtureSpec[] = [];
   for (const dir of dirs) {
-    const specPath = path.join(FIXTURES_DIR, dir, "spec.ts");
+    const specPath = path.join(dirPath, dir, "spec.ts");
     if (!existsSync(specPath)) continue;
     const mod = await import(pathToFileURL(specPath).href);
     if (mod.default) specs.push(mod.default as FixtureSpec);
   }
   return specs;
+}
+
+export async function loadFixtures(glob: string | null): Promise<FixtureSpec[]> {
+  const specs = await loadFixturesFrom(FIXTURES_DIR, glob);
+  if (!existsSync(FIXTURES_REAL_DIR)) return specs;
+  return [...specs, ...(await loadFixturesFrom(FIXTURES_REAL_DIR, glob))];
 }
 
 // Holdout filtering is a pure post-load step so plain runs always tell the
@@ -183,6 +192,21 @@ function resumeSlots(
   if (!args.resume) return { slots, skipped };
   try {
     const existing = JSON.parse(readFileSync(args.resume, "utf8")) as Report;
+    // Refuse to reuse draws produced under a different prompt or fixture set —
+    // silently mixing them would fabricate a report no run ever produced.
+    if (existing.promptHash !== promptHash()) {
+      process.stderr.write(
+        `resume: prompt hash mismatch (${existing.promptHash} vs ${promptHash()}), ignoring resume file\n`
+      );
+      return { slots, skipped };
+    }
+    const currentFixtureHash = fixtureSetHash(specs);
+    if (existing.fixtureSetHash !== undefined && existing.fixtureSetHash !== currentFixtureHash) {
+      process.stderr.write(
+        `resume: fixture set hash mismatch (${existing.fixtureSetHash} vs ${currentFixtureHash}), ignoring resume file\n`
+      );
+      return { slots, skipped };
+    }
     const byFixture = new Map<string, DrawResult[]>();
     for (const r of existing.results) {
       const arr = byFixture.get(r.fixtureId) ?? [];
@@ -235,8 +259,26 @@ async function runWork(
   });
 }
 
+// Stable 16-hex digest of the fixture set actually run. Two reports are only
+// comparable when both promptHash and fixtureSetHash match.
+export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
+  const canonical = [...specs]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
+}
+
+function repoGitSha(): string | null {
+  try {
+    return git(["rev-parse", "HEAD"], path.join(__dirname, "..")).trim();
+  } catch {
+    return null;
+  }
+}
+
 function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]): Aggregates {
   const kindByFixture = new Map(specs.map((s) => [s.id, s.kind]));
+  const tierByFixture = new Map(specs.map((s) => [s.id, s.tier ?? 2]));
   const positiveResults = results.filter((r) => kindByFixture.get(r.fixtureId) === "positive");
   const negativeResults = results.filter((r) => kindByFixture.get(r.fixtureId) === "negative");
   const recall = positiveResults.length ? positiveResults.filter((r) => r.score.recall).length / positiveResults.length : 0;
@@ -255,6 +297,16 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
     const draws = results.filter((r) => r.fixtureId === id);
     recallByFixture[id] = draws.filter((r) => r.score.recall).length / draws.length;
   }
+  const recallByTier: Record<string, number> = {};
+  for (const tier of [1, 2, 3]) {
+    const tierResults = positiveResults.filter((r) => tierByFixture.get(r.fixtureId) === tier);
+    if (tierResults.length === 0) continue;
+    recallByTier[`t${tier}`] = tierResults.filter((r) => r.score.recall).length / tierResults.length;
+  }
+  const meanNoisePerPositive = positiveResults.length
+    ? positiveResults.reduce((sum, r) => sum + r.score.noiseFindingCount, 0) / positiveResults.length
+    : 0;
+  const cheatDetectedCount = results.filter((r) => r.score.cheatDetected).length;
   return {
     recall,
     falsePositiveRate,
@@ -264,10 +316,17 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
     meanDurationMs,
     recallByFixture,
     criticPruneErrorRate,
+    recallByTier,
+    meanNoisePerPositive,
+    cheatDetectedCount,
   };
 }
 
 function writeReport(args: RunArgs, results: readonly DrawResult[], specs: readonly FixtureSpec[]): Report {
+  const fixtureTiers: Record<string, number> = {};
+  for (const s of specs) {
+    if (s.kind === "positive") fixtureTiers[s.id] = s.tier ?? 2;
+  }
   const report: Report = {
     promptHash: promptHash(),
     runner: args.runner,
@@ -279,6 +338,9 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
     holdout: args.holdout,
     results,
     aggregates: aggregate(results, specs),
+    gitSha: repoGitSha(),
+    fixtureSetHash: fixtureSetHash(specs),
+    fixtureTiers,
   };
   mkdirSync(path.dirname(path.resolve(args.report)), { recursive: true });
   writeFileSync(args.report, JSON.stringify(report, null, 2));
@@ -290,6 +352,20 @@ function compare(baselinePath: string, candidate: Report): void {
   if (baseline.promptHash !== candidate.promptHash) {
     throw new Error(
       `prompt hash mismatch: baseline ${baseline.promptHash} vs candidate ${candidate.promptHash}. Re-run baseline after prompt changes.`
+    );
+  }
+  if (
+    baseline.fixtureSetHash !== undefined &&
+    candidate.fixtureSetHash !== undefined &&
+    baseline.fixtureSetHash !== candidate.fixtureSetHash
+  ) {
+    throw new Error(
+      `fixture set hash mismatch: baseline ${baseline.fixtureSetHash} vs candidate ${candidate.fixtureSetHash}. Re-run baseline after fixture changes.`
+    );
+  }
+  if (baseline.holdout !== candidate.holdout) {
+    throw new Error(
+      `holdout mode mismatch: baseline ran '${baseline.holdout}', candidate ran '${candidate.holdout}'. Deltas across different subsets are meaningless.`
     );
   }
   const b = baseline.aggregates;
@@ -309,6 +385,18 @@ function compare(baselinePath: string, candidate: Report): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
+// A fired honeypot trap means the runner produced text it could only have
+// gotten from the spec file (answer key). The whole report is compromised —
+// scream, don't bury it in an aggregate field nobody reads.
+function cheatAlert(report: Report): void {
+  if (report.aggregates.cheatDetectedCount === 0) return;
+  process.stderr.write(
+    `\nCHEAT ALERT: honeypot trap matched in ${report.aggregates.cheatDetectedCount} draw(s). ` +
+      `The runner referenced content that exists only in fixture spec files. ` +
+      `Treat every number in this report as compromised and investigate the runner sandbox.\n\n`
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   // Eval runs always enable the critic prune-error trace. Applied once here
@@ -321,6 +409,12 @@ async function main(): Promise<void> {
     process.env[key] = value;
   }
   try {
+    // Holdout discipline, machine-enforced: a baseline (the reference other
+    // runs compare against) must tell the full truth — never a holdout-free
+    // tuning subset frozen into a reference.
+    if (args.baseline && args.holdout !== "include") {
+      throw new Error("--baseline requires --holdout include: a baseline recorded on a tuning subset is not a baseline");
+    }
     const loaded = await loadFixtures(args.fixtures);
     const specs = filterByHoldout(loaded, args.holdout);
     const work = buildWorkList(specs, args.draws);
@@ -329,6 +423,7 @@ async function main(): Promise<void> {
       const slots: (DrawResult | null)[] = new Array(work.length).fill(null);
       const results = await runWork(args, work, slots);
       const report = writeReport(args, results, specs);
+      cheatAlert(report);
       compare(args.compare, report);
       return;
     }
@@ -348,6 +443,7 @@ async function main(): Promise<void> {
     const results = await runWork(args, work, slots, onDrawComplete);
 
     const report = writeReport(args, results, specs);
+    cheatAlert(report);
     process.stderr.write(`report: ${args.report}\n`);
     process.stdout.write(JSON.stringify({ promptHash: report.promptHash, aggregates: report.aggregates }, null, 2) + "\n");
   } finally {

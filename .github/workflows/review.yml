@@ -9,8 +9,9 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, or opencode"
+        description: "Model runner: codex, claude, opencode, or pi"
         required: false
+        default: codex
       model:
         description: Optional model id for the selected runner
         required: false
@@ -38,9 +39,10 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, or opencode"
+        description: "Model runner: codex, claude, opencode, or pi"
         type: string
         required: false
+        default: codex
       model:
         description: Optional model id for the selected runner
         type: string
@@ -177,10 +179,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
-          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner }}
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          # Deliberate on this disposable runner; the read-only toolset is probe-verified.
+          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
+          # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
+          # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
+          PI_PROVIDER: cliproxy
+          # npm-global bin is not on the runner service PATH.
+          PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: |
           if [ ! -x "$HOME/.local/bin/needlefish" ]; then
@@ -188,6 +197,9 @@ jobs:
             exit 1
           fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
+          if { [ "$NEEDLEFISH_RUNNER_INPUT" = "pi" ] || [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; } && [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
+            NEEDLEFISH_MODEL_INPUT="gpt-5.6-sol"
+          fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi

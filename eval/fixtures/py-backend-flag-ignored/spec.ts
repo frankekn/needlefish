@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "py-backend-flag-ignored",
   kind: "positive",
+  tier: 2,
   defectClass: "spec-impl-drift-flag-ignored",
   description: "Agent adds a limit parameter to build per spec, but the loop still iterates over a hardcoded max_count and never reads limit.",
   baseFiles: {

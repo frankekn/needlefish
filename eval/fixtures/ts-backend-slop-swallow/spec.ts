@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "ts-backend-slop-swallow",
   kind: "positive",
+  tier: 2,
   defectClass: "ai-slop-error-swallow",
   description: "Agent wraps a lookup in a defensive try/catch that swallows the missing-key error and returns an empty string, silently masking real failures for callers.",
   baseFiles: {
@@ -36,7 +37,7 @@ export function loadAll(keys: string[], store: Map<string, string>): string[] {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "swallow|catch|silent|mask|suppress|hide|default|empty.*string|missing" },
+      { pattern: "swallow|silent|mask|suppress|empty.{0,16}string|ignor.{0,20}(err|exception)|hid.{0,20}(err|fail)" },
     ],
     anchorFile: "src/store.ts",
     anchorLineRange: [6, 8],

@@ -1,0 +1,246 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "codex",
+  "model": "gpt-5.5",
+  "effort": "medium",
+  "draws": 3,
+  "createdAt": "2026-07-10T03:11:49.683Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "real-pr10",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 75843,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 92907,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 67077,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 84915,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 68192,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 65060,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 67429,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 76805,
+      "calls": 2,
+      "retries": 0
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false
+      },
+      "durationMs": 74572,
+      "calls": 2,
+      "retries": 0
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 74755.55555555556,
+    "recallByFixture": {
+      "real-pr10": 1,
+      "real-pr8": 1,
+      "real-pr9": 1
+    },
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1,
+      "t3": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0
+  },
+  "gitSha": "f30a5231451d8f42e00ff5c9304a71506131e985",
+  "fixtureSetHash": "7b68903e7122c2df",
+  "fixtureTiers": {
+    "real-pr10": 2,
+    "real-pr8": 3,
+    "real-pr9": 2
+  }
+}

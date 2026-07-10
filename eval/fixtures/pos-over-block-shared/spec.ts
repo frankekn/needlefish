@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "pos-over-block-shared",
   kind: "positive",
+  tier: 2,
   defectClass: "over-block-shared-predicate",
   description: "A shared canProceed predicate is tightened for paid submission, correctly blocking submit-order but wrongly blocking save-draft.",
   baseFiles: {

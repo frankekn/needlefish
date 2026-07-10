@@ -1,5 +1,8 @@
 # Weekly eval regression: full fixture set x 3 draws on the self-hosted
-# runner. Opens an issue when recall drops or the run itself fails.
+# runner. Alerting is done by eval/weekly-compare.ts (exit 2 = alert): stable
+# per-fixture regressions, new stable false positives, honeypot cheat
+# detection — not a raw recall threshold, which is below the one-fixture
+# noise floor of this fixture set.
 name: needlefish-weekly-eval
 on:
   schedule:
@@ -19,28 +22,46 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run full eval
+        env:
+          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
+          # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
+          PI_PROVIDER: cliproxy
+          PI_BIN: /home/termtek/.npm-global/bin/pi
         run: |
-          corepack enable
+          # corepack enable defaults to the node prefix bin (/usr/bin on this
+          # runner's system node) and dies with EACCES; install shims to a
+          # user-writable dir instead.
+          mkdir -p "$HOME/.local/bin"
+          corepack enable --install-directory "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --effort medium --draws 3 --concurrency 4 \
+          node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          export PATH="$HOME/.local/bin:$PATH"
           latest="$(find eval/results/weekly -name '*.json' | sort | tail -1)"
           prev="$(find eval/results/weekly -name '*.json' | sort | tail -2 | head -1)"
-          recall="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).aggregates.recall)' "$latest")"
-          echo "recall=$recall"
-          if [ "$prev" != "$latest" ]; then
-            prev_recall="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).aggregates.recall)' "$prev")"
-            drop="$(node -e 'console.log((Number(process.argv[1]) - Number(process.argv[2])) > 0.05 ? "yes" : "no")' "$prev_recall" "$recall")"
-            if [ "$drop" = "yes" ]; then
-              gh issue create -R "${{ github.repository }}" \
-                --title "Weekly eval: recall dropped ($prev_recall -> $recall)" \
-                --body "Weekly eval recall fell by more than 5pp. Reports: $prev vs $latest."
-            fi
+          if [ "$prev" = "$latest" ]; then prev=""; fi
+          compare_args=("$latest")
+          if [ -n "$prev" ]; then compare_args+=("$prev"); fi
+          set +e
+          summary="$(node --import tsx eval/weekly-compare.ts "${compare_args[@]}")"
+          status=$?
+          set -e
+          echo "$summary"
+          if [ "$status" -eq 2 ]; then
+            # Single quotes preserve the Markdown backticks in the printf format.
+            # shellcheck disable=SC2016
+            gh issue create -R "${{ github.repository }}" \
+              --title "Weekly eval regression ($(date -u +%Y-%m-%d))" \
+              --body "$(printf 'Reports: %s vs %s\n\n```\n%s\n```' "$prev" "$latest" "$summary")"
+          elif [ "$status" -ne 0 ]; then
+            echo "weekly-compare failed with status $status" >&2
+            exit "$status"
           fi
           git config user.name "needlefish-weekly"
           git config user.email "actions@github.com"

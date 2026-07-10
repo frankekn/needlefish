@@ -3,6 +3,7 @@ import type { FixtureSpec } from "../../shared/types";
 const spec: FixtureSpec = {
   id: "rs-ownership-use-after-move",
   kind: "positive",
+  tier: 2,
   defectClass: "use-after-move",
   description: "Agent adds a dbg! print of items with a semicolon, which moves and drops the Vec; the subsequent items.len() then uses a moved value.",
   baseFiles: {
