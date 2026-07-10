@@ -27,6 +27,9 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
     writeFiles(tmp, spec.baseFiles);
     git(["add", "-A"], tmp);
     git([...IDENTITY, "commit", "--quiet", "-m", "base"], tmp);
+    for (const rel of spec.deletedFiles ?? []) {
+      rmSync(path.join(tmp, rel), { force: true });
+    }
     writeFiles(tmp, spec.headFiles);
     git(["add", "-A"], tmp);
     git([...IDENTITY, "commit", "--quiet", "-m", "head"], tmp);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,59 @@ test("loadFixture materializes a git repo and builds a bundle with the defect di
     assert.ok(loaded.bundle.patch.includes('req.role === "viewer"'), "patch must contain the over-block guard");
     assert.ok(loaded.bundle.changedFiles.some((f) => f.path === "src/handler.ts"));
     assert.equal(loaded.bundle.deep, false);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
+test("loadFixture materializes a renamed file", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "rename-materialization",
+    baseFiles: { "src/old.ts": "export const value = 1;\n" },
+    deletedFiles: ["src/old.ts"],
+    headFiles: { "src/new.ts": "export const value = 1;\n" },
+  });
+  try {
+    assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/old.ts")), false);
+    assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/new.ts")), true);
+    assert.match(loaded.bundle.patch, /rename from src\/old\.ts/);
+    assert.match(loaded.bundle.patch, /rename to src\/new\.ts/);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
+test("loadFixture materializes a deleted file", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "deletion-materialization",
+    baseFiles: { "src/deleted.ts": "export const deleted = true;\n" },
+    deletedFiles: ["src/deleted.ts"],
+    headFiles: {},
+  });
+  try {
+    assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/deleted.ts")), false);
+    assert.match(loaded.bundle.patch, /deleted file mode/);
+    assert.match(loaded.bundle.patch, /-export const deleted = true;/);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
+test("loadFixture preserves unchanged base-only files when deletedFiles is omitted", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "overlay-materialization",
+    baseFiles: {
+      "src/context.ts": "export const context = true;\n",
+      "src/changed.ts": "export const value = 1;\n",
+    },
+    headFiles: { "src/changed.ts": "export const value = 2;\n" },
+  });
+  try {
+    assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/context.ts")), true);
+    assert.doesNotMatch(loaded.bundle.patch, /src\/context\.ts/);
   } finally {
     loaded.cleanup();
   }
@@ -347,6 +400,14 @@ test("fixtureSetHash: unset provenance hashes identically whether the key is omi
   const implicit = holdoutSpec("prov-b", false);
   const explicit: FixtureSpec = { ...implicit, provenance: undefined };
   assert.equal(fixtureSetHash([implicit]), fixtureSetHash([explicit]));
+});
+
+test("fixtureSetHash: changes when deletion metadata changes", () => {
+  const withoutDeletion = holdoutSpec("deletion-hash", false);
+  const withEmptyDeletion: FixtureSpec = { ...withoutDeletion, deletedFiles: [] };
+  const withDeletion: FixtureSpec = { ...withoutDeletion, deletedFiles: ["src/old.ts"] };
+  assert.equal(fixtureSetHash([withoutDeletion]), fixtureSetHash([withEmptyDeletion]));
+  assert.notEqual(fixtureSetHash([withoutDeletion]), fixtureSetHash([withDeletion]));
 });
 
 test("compare: rejects a legacy baseline without fixtureSetHash", () => {

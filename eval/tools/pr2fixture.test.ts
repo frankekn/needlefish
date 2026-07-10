@@ -139,6 +139,7 @@ test("buildSpecSource: positive skeleton contains placeholder pattern and curato
     prTitle: "Fix the thing",
     prUrl: "https://example.com/pr/42",
     baseFiles: { "src/a.ts": "old" },
+    deletedFiles: [],
     headFiles: { "src/a.ts": "new" },
   });
   assert.match(src, /kind: "positive"/);
@@ -155,6 +156,7 @@ test("buildSpecSource: negative skeleton has noBlockingFindings, no curator patt
     prTitle: "Safe refactor",
     prUrl: "https://example.com/pr/7",
     baseFiles: {},
+    deletedFiles: [],
     headFiles: {},
   });
   assert.match(src, /kind: "negative"/);
@@ -184,7 +186,7 @@ if (endpoint === "repos/owner/name/pulls/7") {
     process.stderr.write("files request must use --paginate --slurp\\n");
     process.exit(2);
   }
-  const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }]];
+  const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
   process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : pages));
 } else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
   process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("old content").toString("base64") }));
@@ -197,6 +199,8 @@ if (endpoint === "repos/owner/name/pulls/7") {
   else process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("new content").toString("base64") }));
 } else if (endpoint.includes("/contents/src/added.ts?ref=head")) {
   process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("added content").toString("base64") }));
+} else if (endpoint.includes("/contents/src/removed.ts?ref=base")) {
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("removed content").toString("base64") }));
 } else {
   process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
   process.exit(3);
@@ -225,6 +229,7 @@ test("CLI: slurps paginated files and preserves both paths for a rename", () => 
   const result = runTool("success");
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/old\.ts","src\/removed\.ts"\]/);
   assert.match(result.source ?? "", /"src\/new\.ts": "new content"/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
 });

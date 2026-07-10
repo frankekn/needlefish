@@ -107,6 +107,7 @@ export interface SpecSkeletonInput {
   readonly prTitle: string;
   readonly prUrl: string;
   readonly baseFiles: Readonly<Record<string, string>>;
+  readonly deletedFiles: readonly string[];
   readonly headFiles: Readonly<Record<string, string>>;
 }
 
@@ -157,7 +158,7 @@ const spec: FixtureSpec = {
   defectClass: "TODO-CURATOR-DEFECT-CLASS",
   description: ${JSON.stringify(description)},
   baseFiles: ${fileRecordSource(input.baseFiles)},
-  headFiles: ${fileRecordSource(input.headFiles)},
+${input.deletedFiles.length > 0 ? `  deletedFiles: ${JSON.stringify(input.deletedFiles)},\n` : ""}  headFiles: ${fileRecordSource(input.headFiles)},
   expected: ${expected},
   provenance: ${provenanceSource(input.provenance)},
 };
@@ -259,10 +260,19 @@ async function main(): Promise<void> {
   const files = fetchPrFiles(repo, pr);
 
   const baseFiles: Record<string, string> = {};
+  const deletedFiles: string[] = [];
   const headFiles: Record<string, string> = {};
   const capFiles: CapCheckFile[] = [];
 
   for (const file of files) {
+    if (file.status === "removed") {
+      deletedFiles.push(file.filename);
+    } else if (file.status === "renamed") {
+      if (file.previousFilename === undefined) {
+        throw new Error("renamed PR file entry missing previous_filename");
+      }
+      deletedFiles.push(file.previousFilename);
+    }
     if (file.status !== "added") {
       const baseFilename = file.previousFilename ?? file.filename;
       const buf = fetchFileContent(repo, baseFilename, prMeta.baseSha);
@@ -294,6 +304,7 @@ async function main(): Promise<void> {
     prTitle: prMeta.title,
     prUrl: prMeta.url,
     baseFiles,
+    deletedFiles,
     headFiles,
   });
 

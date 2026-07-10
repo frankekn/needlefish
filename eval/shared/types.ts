@@ -62,6 +62,9 @@ export interface FixtureSpec {
   readonly defectClass: string;
   readonly description: string;
   readonly baseFiles: Readonly<Record<string, string>>;
+  // The only deletion signal. headFiles overlays the base tree; omission from
+  // headFiles means the base file is unchanged, not deleted.
+  readonly deletedFiles?: readonly string[];
   readonly headFiles: Readonly<Record<string, string>>;
   readonly expected: Expected;
   readonly holdout?: boolean;
