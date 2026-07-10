@@ -347,18 +347,20 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
   return report;
 }
 
-function compare(baselinePath: string, candidate: Report): void {
+export function compare(baselinePath: string, candidate: Report): void {
   const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
   if (baseline.promptHash !== candidate.promptHash) {
     throw new Error(
       `prompt hash mismatch: baseline ${baseline.promptHash} vs candidate ${candidate.promptHash}. Re-run baseline after prompt changes.`
     );
   }
-  if (
-    baseline.fixtureSetHash !== undefined &&
-    candidate.fixtureSetHash !== undefined &&
-    baseline.fixtureSetHash !== candidate.fixtureSetHash
-  ) {
+  if (baseline.fixtureSetHash === undefined) {
+    throw new Error("baseline report is missing fixtureSetHash. Re-run baseline with the current eval harness.");
+  }
+  if (candidate.fixtureSetHash === undefined) {
+    throw new Error("candidate report is missing fixtureSetHash. Re-run candidate with the current eval harness.");
+  }
+  if (baseline.fixtureSetHash !== candidate.fixtureSetHash) {
     throw new Error(
       `fixture set hash mismatch: baseline ${baseline.fixtureSetHash} vs candidate ${candidate.fixtureSetHash}. Re-run baseline after fixture changes.`
     );

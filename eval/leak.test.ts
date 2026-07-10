@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import type { FixtureSpec } from "./shared/types";
+import { fileURLToPath } from "node:url";
+import { loadFixtures } from "./run";
 
 // Anti-overfitting lint: the prompts under test must never reference the
 // exam. A prompt that names a fixture id or embeds a mustFind pattern is
@@ -11,23 +11,7 @@ import type { FixtureSpec } from "./shared/types";
 // quality. (Same class of ban as AGENTS.md "no target-repo customization".)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURES_DIR = path.join(__dirname, "fixtures");
 const PROMPTS_DIR = path.join(__dirname, "..", "prompts");
-
-async function loadAll(): Promise<FixtureSpec[]> {
-  const dirs = readdirSync(FIXTURES_DIR, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .sort();
-  const specs: FixtureSpec[] = [];
-  for (const dir of dirs) {
-    const specPath = path.join(FIXTURES_DIR, dir, "spec.ts");
-    if (!existsSync(specPath)) continue;
-    const mod = await import(pathToFileURL(specPath).href);
-    if (mod.default) specs.push(mod.default as FixtureSpec);
-  }
-  return specs;
-}
 
 function promptTexts(): Array<[string, string]> {
   return readdirSync(PROMPTS_DIR)
@@ -36,7 +20,7 @@ function promptTexts(): Array<[string, string]> {
 }
 
 test("prompts never mention a fixture id", async () => {
-  const specs = await loadAll();
+  const specs = await loadFixtures(null);
   const prompts = promptTexts();
   for (const spec of specs) {
     for (const [file, text] of prompts) {
@@ -45,8 +29,16 @@ test("prompts never mention a fixture id", async () => {
   }
 });
 
+test("anti-leakage fixture source includes fixtures-real", async () => {
+  const specs = await loadFixtures(null);
+  assert.ok(
+    specs.some((spec) => spec.id === "real-pr1-token-leak"),
+    "eval/fixtures-real must be included in anti-leakage checks"
+  );
+});
+
 test("prompts never embed a mustFind/trap pattern verbatim", async () => {
-  const specs = await loadAll();
+  const specs = await loadFixtures(null);
   const prompts = promptTexts();
   for (const spec of specs) {
     const patterns = [...(spec.expected.mustFind ?? []), ...(spec.expected.trap ?? [])].map((m) => m.pattern);

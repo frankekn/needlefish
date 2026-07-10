@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout } from "./run";
+import { compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
-import type { Expected, FixtureSpec } from "./shared/types";
+import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
 
@@ -346,6 +347,44 @@ test("fixtureSetHash: unset provenance hashes identically whether the key is omi
   const implicit = holdoutSpec("prov-b", false);
   const explicit: FixtureSpec = { ...implicit, provenance: undefined };
   assert.equal(fixtureSetHash([implicit]), fixtureSetHash([explicit]));
+});
+
+test("compare: rejects a legacy baseline without fixtureSetHash", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const candidate: Report = {
+    promptHash: "prompt-hash",
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-10T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    results: [],
+    aggregates: {
+      recall: 0,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 0,
+      lineAnchorValidRate: 0,
+      meanDurationMs: 0,
+      recallByFixture: {},
+      criticPruneErrorRate: 0,
+      recallByTier: {},
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+    fixtureSetHash: "fixture-hash",
+  };
+  const legacyBaseline = { ...candidate, baseline: true };
+  delete legacyBaseline.fixtureSetHash;
+  writeFileSync(baselinePath, JSON.stringify(legacyBaseline));
+  try {
+    assert.throws(() => compare(baselinePath, candidate), /baseline report is missing fixtureSetHash/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("loadFixtures: discovers a fixture placed in eval/fixtures-real/", async () => {

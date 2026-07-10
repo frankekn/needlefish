@@ -9,16 +9,16 @@ function collectTests(dir) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       tests.push(...collectTests(path));
-    } else if (entry.isFile() && entry.name.endsWith(".test.ts")) {
+    } else if (entry.isFile() && (entry.name.endsWith(".test.ts") || entry.name.endsWith(".test.mjs"))) {
       tests.push(path);
     }
   }
   return tests;
 }
 
-const files = [...collectTests("src"), ...collectTests("eval")].sort();
+const files = [...collectTests("src"), ...collectTests("eval"), ...collectTests("scripts")].sort();
 if (files.length === 0) {
-  process.stderr.write("No test files found under src or eval.\n");
+  process.stderr.write("No test files found under src, eval, or scripts.\n");
   process.exit(1);
 }
 

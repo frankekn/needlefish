@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -159,4 +160,96 @@ test("buildSpecSource: negative skeleton has noBlockingFindings, no curator patt
   assert.match(src, /kind: "negative"/);
   assert.match(src, /noBlockingFindings: true/);
   assert.ok(!src.includes("TODO-CURATOR-PATTERN"));
+});
+
+interface ToolRun {
+  readonly status: number | null;
+  readonly stderr: string;
+  readonly source: string | null;
+}
+
+function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json"): ToolRun {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
+  const binDir = path.join(tmp, "bin");
+  const outDir = path.join(tmp, "renamed-fixture");
+  try {
+    writeFileSync(path.join(tmp, "gh"), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const endpoint = args[1] ?? "";
+const mode = ${JSON.stringify(mode)};
+if (endpoint === "repos/owner/name/pulls/7") {
+  process.stdout.write(JSON.stringify({ base: { sha: "base" }, head: { sha: "head" }, title: "Rename", html_url: "https://example.test/pr/7" }));
+} else if (endpoint.endsWith("/pulls/7/files")) {
+  if (!args.includes("--paginate") || !args.includes("--slurp")) {
+    process.stderr.write("files request must use --paginate --slurp\\n");
+    process.exit(2);
+  }
+  const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }]];
+  process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : pages));
+} else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("old content").toString("base64") }));
+} else if (endpoint.includes("/contents/src/new.ts?ref=head")) {
+  if (mode === "404" || mode === "500") {
+    process.stderr.write(mode === "404" ? "gh: Not Found (HTTP 404)\\n" : "gh: server failed (HTTP 500)\\n");
+    process.exit(1);
+  }
+  if (mode === "invalid-json") process.stdout.write("not json");
+  else process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("new content").toString("base64") }));
+} else if (endpoint.includes("/contents/src/added.ts?ref=head")) {
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("added content").toString("base64") }));
+} else {
+  process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
+  process.exit(3);
+}
+`);
+    mkdirSync(binDir);
+    renameSync(path.join(tmp, "gh"), path.join(binDir, "gh"));
+    chmodSync(path.join(binDir, "gh"), 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", path.resolve("eval/tools/pr2fixture.ts"), "--repo", "owner/name", "--pr", "7", "--out", outDir, "--kind", "review-finding"],
+      { encoding: "utf8", env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` } }
+    );
+    const specPath = path.join(outDir, "spec.ts");
+    return {
+      status: result.status,
+      stderr: result.stderr,
+      source: result.status === 0 ? readFileSync(specPath, "utf8") : null,
+    };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+test("CLI: slurps paginated files and preserves both paths for a rename", () => {
+  const result = runTool("success");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
+  assert.match(result.source ?? "", /"src\/new\.ts": "new content"/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: accepts gh versions that return one merged array with pagination", () => {
+  const result = runTool("flat-pages");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: a missing file response is skipped", () => {
+  const result = runTool("404");
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.source ?? "", /"src\/new\.ts"/);
+});
+
+test("CLI: non-404 gh failures abort fixture generation", () => {
+  const result = runTool("500");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /HTTP 500/);
+});
+
+test("CLI: malformed contents JSON aborts fixture generation", () => {
+  const result = runTool("invalid-json");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unexpected token|JSON/);
 });

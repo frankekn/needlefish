@@ -171,6 +171,7 @@ export default spec;
 interface PrFile {
   readonly filename: string;
   readonly status: string;
+  readonly previousFilename?: string;
 }
 
 function assertRecord(value: unknown, what: string): Record<string, unknown> {
@@ -196,12 +197,19 @@ function fetchPrMeta(repo: string, pr: number): { baseSha: string; headSha: stri
 }
 
 function fetchPrFiles(repo: string, pr: number): PrFile[] {
-  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/pulls/${pr}/files`, "--paginate"]));
+  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/pulls/${pr}/files`, "--paginate", "--slurp"]));
   if (!Array.isArray(raw)) throw new Error("expected PR files response to be a JSON array");
-  return raw.map((entry) => {
+  const entries: unknown[] = raw.every(Array.isArray) ? raw.flat() : raw;
+  return entries.map((entry) => {
     const obj = assertRecord(entry, "PR file entry");
     if (typeof obj.filename !== "string" || typeof obj.status !== "string") {
       throw new Error("PR file entry missing filename/status");
+    }
+    if (obj.status === "renamed") {
+      if (typeof obj.previous_filename !== "string") {
+        throw new Error("renamed PR file entry missing previous_filename");
+      }
+      return { filename: obj.filename, status: obj.status, previousFilename: obj.previous_filename };
     }
     return { filename: obj.filename, status: obj.status };
   });
@@ -218,13 +226,15 @@ function fetchFileContent(repo: string, filename: string, ref: string): Buffer |
   try {
     raw = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
   } catch (err) {
-    console.warn(`skipping ${filename}@${ref}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+    if (err instanceof Error && /\bHTTP 404\b/.test(err.message)) {
+      console.warn(`skipping missing file: ${filename}@${ref}`);
+      return null;
+    }
+    throw err;
   }
   const obj = assertRecord(raw, "contents response");
   if (obj.encoding !== "base64" || typeof obj.content !== "string") {
-    console.warn(`skipping ${filename}@${ref}: unexpected contents encoding`);
-    return null;
+    throw new Error(`unexpected contents encoding for ${filename}@${ref}`);
   }
   const buf = Buffer.from(obj.content.replace(/\n/g, ""), "base64");
   if (isBinaryContent(buf)) {
@@ -254,10 +264,11 @@ async function main(): Promise<void> {
 
   for (const file of files) {
     if (file.status !== "added") {
-      const buf = fetchFileContent(repo, file.filename, prMeta.baseSha);
+      const baseFilename = file.previousFilename ?? file.filename;
+      const buf = fetchFileContent(repo, baseFilename, prMeta.baseSha);
       if (buf) {
-        baseFiles[file.filename] = buf.toString("utf8");
-        capFiles.push({ path: `${file.filename} (base)`, bytes: buf.length });
+        baseFiles[baseFilename] = buf.toString("utf8");
+        capFiles.push({ path: `${baseFilename} (base)`, bytes: buf.length });
       }
     }
     if (file.status !== "removed") {
