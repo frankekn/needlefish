@@ -1,148 +1,226 @@
-import type { Finding, ReviewResult, Severity } from "./schema.js";
+import type { Finding, ReviewResult, Severity, Verdict } from "./schema.js";
 
 const SEV_ORDER: Record<Severity, number> = {
-  P0: 0,
-  P1: 1,
-  P2: 2,
-  P3: 3,
+	P0: 0,
+	P1: 1,
+	P2: 2,
+	P3: 3,
 };
 
-const VERDICT_BADGE: Record<string, string> = {
-  pass: "✅ pass",
-  changes_requested: "⛔ changes_requested",
-  needs_human: "👀 needs_human",
+const SEVERITY_LABEL: Record<Severity, string> = {
+	P0: "🔴 P0",
+	P1: "🟠 P1",
+	P2: "🟡 P2",
+	P3: "⚪ P3",
+};
+
+const VERDICT_HEADLINE: Record<Verdict, string> = {
+	pass: "LGTM ✅",
+	changes_requested: "CHANGES REQUESTED ⚠️",
+	needs_human: "NEEDS HUMAN 👀",
 };
 
 export function renderMarkdown(
-  result: ReviewResult,
-  opts?: {
-    inlinedFindings?: ReadonlySet<Finding>;
-    openFindings?: readonly Finding[];
-    resolvedCount?: number;
-    stateMarker?: string;
-  }
+	result: ReviewResult,
+	opts?: {
+		inlinedFindings?: ReadonlySet<Finding>;
+		openFindings?: readonly Finding[];
+		resolvedCount?: number;
+		newCount?: number;
+		repoSlug?: string;
+		stateMarker?: string;
+	},
 ): string {
-  const lines: string[] = [];
-  lines.push("# Needlefish PR Review");
-  lines.push("");
-  lines.push(`**Verdict:** ${VERDICT_BADGE[result.verdict] ?? result.verdict}`);
-  lines.push(`**Base:** ${result.baseSha}  →  **Head:** ${result.headSha}`);
-  if (result.reviewTarget) lines.push(...result.reviewTarget.split("\n"));
-  if (result.summary) lines.push("");
-  if (result.summary) lines.push(result.summary);
-  lines.push("");
+	const lines: string[] = [];
+	const summary = firstSentence(result.summary);
+	lines.push(
+		`${VERDICT_HEADLINE[result.verdict]}${summary ? ` — ${summary}` : ""}`,
+	);
 
-  const findings = [...result.findings].sort(
-    (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]
-  );
+	const blockingCount = result.findings.filter(
+		(finding) => finding.severity !== "P3",
+	).length;
+	const nitCount = result.findings.length - blockingCount;
+	const findingCounts: string[] = [];
+	if (blockingCount > 0) findingCounts.push(`**${blockingCount} blocking**`);
+	if (nitCount > 0) {
+		findingCounts.push(`${nitCount} ${nitCount === 1 ? "nit" : "nits"}`);
+	}
+	if (findingCounts.length > 0) lines.push(findingCounts.join(" · "));
 
-  const inlinedSet = opts?.inlinedFindings;
-  const inlined =
-    inlinedSet && inlinedSet.size > 0
-      ? findings.filter((f) => inlinedSet.has(f))
-      : [];
+	const delta: string[] = [];
+	if (opts?.resolvedCount && opts.resolvedCount > 0) {
+		delta.push(`✅ ${opts.resolvedCount} resolved`);
+	}
+	if (opts?.newCount && opts.newCount > 0) {
+		delta.push(`🆕 ${opts.newCount} new`);
+	}
+	if (delta.length > 0) lines.push(delta.join(" · "));
 
-  if (findings.length === 0) {
-    lines.push("## Findings");
-    lines.push("");
-    lines.push("No actionable findings. Prefer this over padding weak ones.");
-  } else if (inlined.length === 0) {
-    lines.push("## Findings");
-    lines.push("");
-    for (const f of findings) pushFindingBlock(lines, f);
-  } else {
-    lines.push("## Findings");
-    lines.push("");
-    for (const f of inlined) {
-      lines.push(`- **${f.severity}** ${f.title} — ${findingLoc(f)}`);
-    }
-    const outside = findings.filter((f) => !inlinedSet!.has(f));
-    if (outside.length > 0) {
-      lines.push("");
-      lines.push("## Findings outside the diff");
-      lines.push("");
-      for (const f of outside) pushFindingBlock(lines, f);
-    } else {
-      lines.push("");
-    }
-  }
+	if (result.reviewTarget) {
+		lines.push("");
+		lines.push(...result.reviewTarget.split("\n"));
+	}
 
-  if (opts?.openFindings && opts.openFindings.length > 0) {
-    lines.push("");
-    lines.push(`## Still open (${opts.openFindings.length})`);
-    lines.push("");
-    for (const f of opts.openFindings) {
-      lines.push(`- **${f.severity}** ${f.title} — ${findingLoc(f)}`);
-    }
-  }
+	const findings = [...result.findings].sort(
+		(a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity],
+	);
+	const inlinedSet = opts?.inlinedFindings;
 
-  if (opts?.resolvedCount && opts.resolvedCount > 0) {
-    lines.push("");
-    lines.push(
-      `✅ ${opts.resolvedCount} finding${opts.resolvedCount === 1 ? "" : "s"} from the previous round no longer ${opts.resolvedCount === 1 ? "applies" : "apply"}.`
-    );
-  }
+	lines.push("");
+	lines.push("## Findings");
+	lines.push("");
+	if (findings.length === 0) {
+		lines.push("No actionable findings. Prefer this over padding weak ones.");
+	} else {
+		lines.push("| # | Severity | Finding | Location |");
+		lines.push("|---|----------|---------|----------|");
+		findings.forEach((finding, index) => {
+			const inlineMarker = inlinedSet?.has(finding)
+				? " <sub>(inline comment)</sub>"
+				: "";
+			lines.push(
+				`| ${index + 1} | ${SEVERITY_LABEL[finding.severity]} | ${tableText(finding.title)}${inlineMarker} | ${tableLocation(finding, opts?.repoSlug, result.headSha)} |`,
+			);
+		});
 
-  if (result.checked.length > 0) {
-    lines.push("## Checked");
-    lines.push("");
-    for (const c of result.checked) lines.push(`- ${c}`);
-    lines.push("");
-  }
+		const detailed = findings
+			.map((finding, index) => ({ finding, number: index + 1 }))
+			.filter(({ finding }) => !inlinedSet?.has(finding));
+		if (detailed.length > 0) {
+			lines.push("");
+			lines.push("<details>");
+			lines.push("<summary>Finding details</summary>");
+			lines.push("");
+			detailed.forEach(({ finding, number }, index) => {
+				if (index > 0) lines.push("");
+				lines.push(
+					`### ${SEVERITY_LABEL[finding.severity]} F${number}: ${oneLine(finding.title)}`,
+				);
+				lines.push("");
+				lines.push(`**Problem:** ${finding.whyItBreaks}`);
+				lines.push("");
+				lines.push(`**Fix:** ${finding.suggestedFix}`);
+				if (finding.validation) {
+					lines.push("");
+					lines.push(`**Validation:** ${finding.validation}`);
+				}
+			});
+			lines.push("");
+			lines.push("</details>");
+		}
+	}
 
-  if (result.residualRisks.length > 0) {
-    lines.push("## Residual Risk");
-    lines.push("");
-    for (const r of result.residualRisks) {
-      lines.push(`- ${r.blocks ? "⛔ " : ""}${r.text}`);
-    }
-  }
+	if (opts?.openFindings && opts.openFindings.length > 0) {
+		lines.push("");
+		lines.push("<details>");
+		lines.push(`<summary>Still open (${opts.openFindings.length})</summary>`);
+		lines.push("");
+		for (const finding of opts.openFindings) {
+			lines.push(
+				`- **${finding.severity}** ${oneLine(finding.title)} — ${plainLocation(finding)}`,
+			);
+		}
+		lines.push("");
+		lines.push("</details>");
+	}
 
-  if (result.stats && result.stats.length > 0) {
-    const retries = result.stats.reduce((sum, s) => sum + (s.attempts - 1), 0);
-    const calls = result.stats
-      .map((s) => `${s.label} ${formatDuration(s.durationMs)}${s.ok ? "" : " ✗"}`)
-      .join(" → ");
-    const parts = [`${result.stats.length} call${result.stats.length === 1 ? "" : "s"}`, calls];
-    if (retries > 0) parts.push(`${retries} ${retries === 1 ? "retry" : "retries"}`);
-    if (result.totalDurationMs !== undefined) {
-      parts.push(`total ${formatDuration(result.totalDurationMs)}`);
-    }
-    lines.push("");
-    lines.push(parts.join(" · "));
-  }
+	if (result.checked.length > 0) {
+		lines.push("");
+		lines.push("<details>");
+		lines.push(`<summary>Checked (${result.checked.length})</summary>`);
+		lines.push("");
+		for (const checked of result.checked) lines.push(`- ${checked}`);
+		lines.push("");
+		lines.push("</details>");
+	}
 
-  let out = lines.join("\n").trim() + "\n";
-  if (opts?.stateMarker) {
-    out += "\n" + opts.stateMarker + "\n";
-  }
-  return out;
+	if (result.residualRisks.length > 0) {
+		lines.push("");
+		lines.push("<details>");
+		lines.push(
+			`<summary>Residual risk (${result.residualRisks.length})</summary>`,
+		);
+		lines.push("");
+		for (const risk of result.residualRisks) {
+			lines.push(`- ${risk.blocks ? "⛔ " : ""}${risk.text}`);
+		}
+		lines.push("");
+		lines.push("</details>");
+	}
+
+	if (result.stats && result.stats.length > 0) {
+		const retries = result.stats.reduce(
+			(sum, stat) => sum + (stat.attempts - 1),
+			0,
+		);
+		const calls = result.stats
+			.map(
+				(stat) =>
+					`${stat.label} ${formatDuration(stat.durationMs)}${stat.ok ? "" : " ✗"}`,
+			)
+			.join(" → ");
+		const parts = [
+			`${result.stats.length} call${result.stats.length === 1 ? "" : "s"}`,
+			calls,
+		];
+		if (retries > 0)
+			parts.push(`${retries} ${retries === 1 ? "retry" : "retries"}`);
+		if (result.totalDurationMs !== undefined) {
+			parts.push(`total ${formatDuration(result.totalDurationMs)}`);
+		}
+		lines.push("");
+		lines.push(`<sub>${parts.join(" · ")}</sub>`);
+	}
+
+	let output = `${lines.join("\n").trim()}\n`;
+	if (opts?.stateMarker) output += `\n${opts.stateMarker}\n`;
+	return output;
 }
 
-function findingLoc(f: Finding): string {
-  return `${f.file || "(no file)"}:${f.lineStart}`;
+function firstSentence(summary: string): string {
+	const normalized = oneLine(summary).trim();
+	if (!normalized) return "";
+	const sentenceEnd = /[.!?](?=\s|$)/.exec(normalized);
+	const sentence = sentenceEnd
+		? normalized.slice(0, sentenceEnd.index + 1)
+		: normalized;
+	return sentence.slice(0, 180).trimEnd();
 }
 
-function pushFindingBlock(lines: string[], f: Finding): void {
-  lines.push(`### ${f.severity}: ${f.title}`);
-  lines.push(
-    `${f.file || "(no file)"}:${f.lineStart}${
-      f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ""
-    }`
-  );
-  lines.push("");
-  lines.push(`**Why this breaks:** ${f.whyItBreaks}`);
-  lines.push("");
-  lines.push(`**Suggested fix:** ${f.suggestedFix}`);
-  if (f.validation) {
-    lines.push("");
-    lines.push(`**Validation:** \`${f.validation}\``);
-  }
-  lines.push("");
+function oneLine(text: string): string {
+	return text.replace(/\s*\r?\n\s*/g, " ");
+}
+
+function tableText(text: string): string {
+	return oneLine(text).replace(/\|/g, "\\|");
+}
+
+function tableLocation(
+	finding: Finding,
+	repoSlug?: string,
+	headSha?: string,
+): string {
+	if (!finding.file) return "—";
+	const location = tableText(plainLocation(finding));
+	if (!repoSlug || !headSha) return `\`${location}\``;
+	const encodedPath = finding.file
+		.split("/")
+		.map((segment) => encodeURIComponent(segment))
+		.join("/");
+	const end =
+		finding.lineEnd !== finding.lineStart ? `-L${finding.lineEnd}` : "";
+	return `[\`${location}\`](https://github.com/${repoSlug}/blob/${headSha}/${encodedPath}#L${finding.lineStart}${end})`;
+}
+
+function plainLocation(finding: Finding): string {
+	const end =
+		finding.lineEnd !== finding.lineStart ? `-${finding.lineEnd}` : "";
+	return `${finding.file || "(no file)"}:${finding.lineStart}${end}`;
 }
 
 function formatDuration(ms: number): string {
-  const totalSeconds = Math.round(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  return minutes > 0 ? `${minutes}m ${totalSeconds % 60}s` : `${totalSeconds}s`;
+	const totalSeconds = Math.round(ms / 1000);
+	const minutes = Math.floor(totalSeconds / 60);
+	return minutes > 0 ? `${minutes}m ${totalSeconds % 60}s` : `${totalSeconds}s`;
 }
