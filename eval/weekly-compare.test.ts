@@ -146,3 +146,31 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
   assert.ok(v.reasons.some((r) => r.includes("prompt/fixture set changed")));
 });
+
+for (const [name, prevHash, latestHash] of [
+  ["previous hash missing", undefined, "fff"],
+  ["latest hash missing", "fff", undefined],
+  ["fixture hashes empty", "", ""],
+] as const) {
+  test(`compareWeekly: ${name} skips week-over-week comparison`, () => {
+    const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+      fixtureSetHash: prevHash,
+    });
+    const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+      fixtureSetHash: latestHash,
+    });
+    const v = compareWeekly(prev, latest);
+    assert.equal(v.alert, false, "incomparable reports must not emit a regression alert");
+    assert.ok(v.reasons.some((r) => r.includes("skipping regression comparison")));
+    assert.ok(v.reasons.every((r) => !r.includes("fixtures regressed")));
+  });
+}
+
+test("compareWeekly: latest-only checks still alert when a fixture hash is missing", () => {
+  const prev = report(drawsFor("t1-fix", [true, true, true]), { fixtureSetHash: undefined });
+  const latest = report(drawsFor("t1-fix", [false, false, false]), { fixtureTiers: { "t1-fix": 1 } });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.ok(v.reasons.some((r) => r.includes("tier-1")));
+  assert.ok(v.reasons.some((r) => r.includes("skipping regression comparison")));
+});

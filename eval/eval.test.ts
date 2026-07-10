@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout } from "./run";
+import { compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -474,6 +474,52 @@ test("fixtureSetHash: deletion order is canonical but deletion content remains s
   const different: FixtureSpec = { ...spec, deletedFiles: ["src/a.ts", "src/c.ts"] };
   assert.equal(fixtureSetHash([forward]), fixtureSetHash([reversed]));
   assert.notEqual(fixtureSetHash([forward]), fixtureSetHash([different]));
+});
+
+test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "legacy.json");
+  const spec = holdoutSpec("legacy-resume", false);
+  const existing: Report = {
+    promptHash: promptHash(),
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-10T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    results: [{
+      fixtureId: spec.id,
+      draw: 0,
+      score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id),
+      durationMs: 1,
+      calls: 1,
+      retries: 0,
+    }],
+    aggregates: {
+      recall: 1,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 1,
+      lineAnchorValidRate: 1,
+      meanDurationMs: 1,
+      recallByFixture: { [spec.id]: 1 },
+      criticPruneErrorRate: 0,
+      recallByTier: { t2: 1 },
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+  };
+  writeFileSync(resumePath, JSON.stringify(existing));
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("compare: rejects a legacy baseline without fixtureSetHash", () => {

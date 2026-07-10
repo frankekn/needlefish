@@ -182,7 +182,7 @@ function completedResults(slots: readonly (DrawResult | null)[]): DrawResult[] {
   return slots.filter((r): r is DrawResult => r !== null);
 }
 
-function resumeSlots(
+export function resumeSlots(
   args: RunArgs,
   specs: readonly FixtureSpec[],
   work: readonly DrawWork[]
@@ -201,7 +201,7 @@ function resumeSlots(
       return { slots, skipped };
     }
     const currentFixtureHash = fixtureSetHash(specs);
-    if (existing.fixtureSetHash !== undefined && existing.fixtureSetHash !== currentFixtureHash) {
+    if (existing.fixtureSetHash !== currentFixtureHash) {
       process.stderr.write(
         `resume: fixture set hash mismatch (${existing.fixtureSetHash} vs ${currentFixtureHash}), ignoring resume file\n`
       );
