@@ -71,11 +71,11 @@ export function loadFixture(spec: FixtureSpec): LoadedFixture {
     const headSha = git(["rev-parse", "HEAD"], tmp);
     const explicitRenamePaths = renamedFiles.flatMap((rename) => [rename.from, rename.to]);
     const renderOrdinarySegment = (formatArgs: readonly string[]): string => {
-      const ordinaryPathspecs = explicitRenamePaths.map((rel) => `:(exclude)${rel}`);
+      const ordinaryPathspecs = explicitRenamePaths.map((rel) => `:(exclude,literal)${rel}`);
       return git(["diff", "--no-renames", ...formatArgs, baseSha, headSha, "--", ".", ...ordinaryPathspecs], tmp);
     };
     const renderRenameSegment = (rename: { readonly from: string; readonly to: string }, formatArgs: readonly string[]): string =>
-      git(["diff", "-M1%", ...formatArgs, baseSha, headSha, "--", rename.from, rename.to], tmp);
+      git(["diff", "-M1%", ...formatArgs, baseSha, headSha, "--", `:(literal)${rename.from}`, `:(literal)${rename.to}`], tmp);
     const renamePatchSegments = renamedFiles.map((rename) => {
       const segment = renderRenameSegment(rename, []);
       if (!/^rename from /m.test(segment) || !/^rename to /m.test(segment)) {

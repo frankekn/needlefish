@@ -268,6 +268,42 @@ test("loadFixture canonicalizes disjoint explicit rename order without mutating 
   }
 });
 
+test("loadFixture treats a leading-colon rename path as a literal Git pathspec", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "literal-colon-rename",
+    baseFiles: { ":weird.ts": "same\n", "src/ordinary.ts": "old\n" },
+    deletedFiles: [":weird.ts"],
+    renamedFiles: [{ from: ":weird.ts", to: "weird.ts" }],
+    headFiles: { "weird.ts": "same\n", "src/ordinary.ts": "new\n" },
+  });
+  try {
+    assert.match(loaded.bundle.patch, /^rename from :weird\.ts$/m);
+    assert.match(loaded.bundle.patch, /^rename to weird\.ts$/m);
+    assert.match(loaded.bundle.patch, /^diff --git a\/src\/ordinary\.ts b\/src\/ordinary\.ts$/m);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
+test("loadFixture isolates character-class rename paths from ordinary changes", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "literal-character-class-rename",
+    baseFiles: { "lib[util].ts": "same\n", "libu.ts": "old\n" },
+    deletedFiles: ["lib[util].ts"],
+    renamedFiles: [{ from: "lib[util].ts", to: "lib_util.ts" }],
+    headFiles: { "lib_util.ts": "same\n", "libu.ts": "new\n" },
+  });
+  try {
+    assert.match(loaded.bundle.patch, /^rename from lib\[util\]\.ts$/m);
+    assert.match(loaded.bundle.patch, /^rename to lib_util\.ts$/m);
+    assert.match(loaded.bundle.patch, /^diff --git a\/libu\.ts b\/libu\.ts$/m);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
 test("loadFixture preserves unchanged base-only files when deletedFiles is omitted", () => {
   const loaded = loadFixture({
     ...posOverBlock,
