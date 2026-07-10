@@ -23,11 +23,18 @@ export interface LoadedFixture {
 export function loadFixture(spec: FixtureSpec): LoadedFixture {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-eval-"));
   try {
+    const deletedFiles = spec.deletedFiles ?? [];
+    const seenDeletedFiles = new Set<string>();
+    for (const rel of deletedFiles) {
+      if (seenDeletedFiles.has(rel)) throw new Error(`duplicate deletedFiles path: ${rel}`);
+      seenDeletedFiles.add(rel);
+    }
+
     git(["init", "--quiet"], tmp);
     writeFiles(tmp, spec.baseFiles);
     git(["add", "-A"], tmp);
-    git([...IDENTITY, "commit", "--quiet", "-m", "base"], tmp);
-    for (const rel of spec.deletedFiles ?? []) {
+    git([...IDENTITY, "commit", "--quiet", "--allow-empty", "-m", "base"], tmp);
+    for (const rel of deletedFiles) {
       rmSync(path.join(tmp, rel));
     }
     writeFiles(tmp, spec.headFiles);

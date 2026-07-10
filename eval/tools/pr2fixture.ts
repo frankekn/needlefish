@@ -283,7 +283,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (files.length > 0 && capFiles.length === 0) {
+  if (capFiles.length === 0) {
     throw new Error("PR has no reviewable text files");
   }
 

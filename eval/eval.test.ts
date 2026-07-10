@@ -90,6 +90,34 @@ test("loadFixture materializes a deleted file", () => {
   }
 });
 
+test("loadFixture materializes a pure-add fixture from an empty base commit", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "pure-add-materialization",
+    baseFiles: {},
+    headFiles: { "src/added.ts": "export const added = true;\n" },
+  });
+  try {
+    assert.match(loaded.bundle.patch, /new file mode/);
+    assert.match(loaded.bundle.patch, /\+export const added = true;/);
+  } finally {
+    loaded.cleanup();
+  }
+});
+
+test("loadFixture rejects duplicate deletedFiles before materialization", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "duplicate-deletion",
+      baseFiles: { "src/deleted.ts": "export const deleted = true;\n" },
+      deletedFiles: ["src/deleted.ts", "src/deleted.ts"],
+      headFiles: {},
+    }),
+    /duplicate deletedFiles path: src\/deleted\.ts/
+  );
+});
+
 test("loadFixture rejects a deletedFiles path that is absent from the base tree", () => {
   assert.throws(
     () => loadFixture({
@@ -437,6 +465,15 @@ test("fixtureSetHash: changes when deletion metadata changes", () => {
   const withDeletion: FixtureSpec = { ...withoutDeletion, deletedFiles: ["src/old.ts"] };
   assert.equal(fixtureSetHash([withoutDeletion]), fixtureSetHash([withEmptyDeletion]));
   assert.notEqual(fixtureSetHash([withoutDeletion]), fixtureSetHash([withDeletion]));
+});
+
+test("fixtureSetHash: deletion order is canonical but deletion content remains significant", () => {
+  const spec = holdoutSpec("deletion-order-hash", false);
+  const forward: FixtureSpec = { ...spec, deletedFiles: ["src/a.ts", "src/b.ts"] };
+  const reversed: FixtureSpec = { ...spec, deletedFiles: ["src/b.ts", "src/a.ts"] };
+  const different: FixtureSpec = { ...spec, deletedFiles: ["src/a.ts", "src/c.ts"] };
+  assert.equal(fixtureSetHash([forward]), fixtureSetHash([reversed]));
+  assert.notEqual(fixtureSetHash([forward]), fixtureSetHash([different]));
 });
 
 test("compare: rejects a legacy baseline without fixtureSetHash", () => {

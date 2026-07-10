@@ -171,7 +171,7 @@ interface ToolRun {
   readonly source: string | null;
 }
 
-function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file"): ToolRun {
+function runTool(mode: "success" | "flat-pages" | "empty-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file"): ToolRun {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
   const binDir = path.join(tmp, "bin");
   const outDir = path.join(tmp, "renamed-fixture");
@@ -188,7 +188,7 @@ if (endpoint === "repos/owner/name/pulls/7") {
     process.exit(2);
   }
   const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
-  process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : pages));
+  process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : mode === "empty-pages" ? [[]] : pages));
 } else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("old content");
   process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
@@ -249,6 +249,13 @@ test("CLI: accepts gh versions that return one merged array with pagination", ()
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: an empty paginated files response aborts without writing a fixture", () => {
+  const result = runTool("empty-pages");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no reviewable text files/i);
+  assert.equal(result.specExists, false);
 });
 
 test("CLI: a missing required file aborts without writing a fixture", () => {
