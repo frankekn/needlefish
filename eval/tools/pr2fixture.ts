@@ -220,19 +220,9 @@ function encodePath(filename: string): string {
   return filename.split("/").map(encodeURIComponent).join("/");
 }
 
-// Returns the file's decoded content, or null if it doesn't exist at that ref
-// (404) or is binary (skipped).
+// Returns the file's decoded content, or null when it is binary (skipped).
 function fetchFileContent(repo: string, filename: string, ref: string): Buffer | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
-  } catch (err) {
-    if (err instanceof Error && /\bHTTP 404\b/.test(err.message)) {
-      console.warn(`skipping missing file: ${filename}@${ref}`);
-      return null;
-    }
-    throw err;
-  }
+  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
   const obj = assertRecord(raw, "contents response");
   if (obj.encoding !== "base64" || typeof obj.content !== "string") {
     throw new Error(`unexpected contents encoding for ${filename}@${ref}`);
@@ -265,29 +255,29 @@ async function main(): Promise<void> {
   const capFiles: CapCheckFile[] = [];
 
   for (const file of files) {
+    const baseFilename = file.previousFilename ?? file.filename;
+    const baseBuf = file.status === "added" ? null : fetchFileContent(repo, baseFilename, prMeta.baseSha);
+    const headBuf = file.status === "removed" ? null : fetchFileContent(repo, file.filename, prMeta.headSha);
+
+    if ((file.status !== "added" && baseBuf === null) || (file.status !== "removed" && headBuf === null)) continue;
+
+    if (baseBuf !== null) {
+      baseFiles[baseFilename] = baseBuf.toString("utf8");
+      capFiles.push({ path: `${baseFilename} (base)`, bytes: baseBuf.length });
+    }
+    if (headBuf !== null) {
+      headFiles[file.filename] = headBuf.toString("utf8");
+      capFiles.push({ path: `${file.filename} (head)`, bytes: headBuf.length });
+    }
     if (file.status === "removed") {
       deletedFiles.push(file.filename);
     } else if (file.status === "renamed") {
-      if (file.previousFilename === undefined) {
-        throw new Error("renamed PR file entry missing previous_filename");
-      }
-      deletedFiles.push(file.previousFilename);
+      deletedFiles.push(baseFilename);
     }
-    if (file.status !== "added") {
-      const baseFilename = file.previousFilename ?? file.filename;
-      const buf = fetchFileContent(repo, baseFilename, prMeta.baseSha);
-      if (buf) {
-        baseFiles[baseFilename] = buf.toString("utf8");
-        capFiles.push({ path: `${baseFilename} (base)`, bytes: buf.length });
-      }
-    }
-    if (file.status !== "removed") {
-      const buf = fetchFileContent(repo, file.filename, prMeta.headSha);
-      if (buf) {
-        headFiles[file.filename] = buf.toString("utf8");
-        capFiles.push({ path: `${file.filename} (head)`, bytes: buf.length });
-      }
-    }
+  }
+
+  if (files.length > 0 && capFiles.length === 0) {
+    throw new Error("PR has no reviewable text files");
   }
 
   const capResult = checkCaps(capFiles);

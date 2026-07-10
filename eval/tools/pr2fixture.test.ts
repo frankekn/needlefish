@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -167,10 +167,11 @@ test("buildSpecSource: negative skeleton has noBlockingFindings, no curator patt
 interface ToolRun {
   readonly status: number | null;
   readonly stderr: string;
+  readonly specExists: boolean;
   readonly source: string | null;
 }
 
-function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json"): ToolRun {
+function runTool(mode: "success" | "flat-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary"): ToolRun {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
   const binDir = path.join(tmp, "bin");
   const outDir = path.join(tmp, "renamed-fixture");
@@ -189,18 +190,24 @@ if (endpoint === "repos/owner/name/pulls/7") {
   const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
   process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : pages));
 } else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("old content").toString("base64") }));
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("old content");
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
 } else if (endpoint.includes("/contents/src/new.ts?ref=head")) {
   if (mode === "404" || mode === "500") {
     process.stderr.write(mode === "404" ? "gh: Not Found (HTTP 404)\\n" : "gh: server failed (HTTP 500)\\n");
     process.exit(1);
   }
   if (mode === "invalid-json") process.stdout.write("not json");
-  else process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("new content").toString("base64") }));
+  else {
+    const content = mode === "binary-rename" || mode === "all-binary" ? Buffer.from([0]) : Buffer.from("new content");
+    process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
+  }
 } else if (endpoint.includes("/contents/src/added.ts?ref=head")) {
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("added content").toString("base64") }));
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("added content");
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
 } else if (endpoint.includes("/contents/src/removed.ts?ref=base")) {
-  process.stdout.write(JSON.stringify({ encoding: "base64", content: Buffer.from("removed content").toString("base64") }));
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("removed content");
+  process.stdout.write(JSON.stringify({ encoding: "base64", content: content.toString("base64") }));
 } else {
   process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
   process.exit(3);
@@ -218,7 +225,8 @@ if (endpoint === "repos/owner/name/pulls/7") {
     return {
       status: result.status,
       stderr: result.stderr,
-      source: result.status === 0 ? readFileSync(specPath, "utf8") : null,
+      specExists: existsSync(specPath),
+      source: existsSync(specPath) ? readFileSync(specPath, "utf8") : null,
     };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -241,10 +249,27 @@ test("CLI: accepts gh versions that return one merged array with pagination", ()
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
 });
 
-test("CLI: a missing file response is skipped", () => {
+test("CLI: a missing required file aborts without writing a fixture", () => {
   const result = runTool("404");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /HTTP 404/);
+  assert.equal(result.specExists, false);
+});
+
+test("CLI: a binary rename side omits the entire rename while keeping text changes", () => {
+  const result = runTool("binary-rename");
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.source ?? "", /"src\/new\.ts"/);
+  assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+  assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
+});
+
+test("CLI: an all-binary PR aborts without writing an empty fixture", () => {
+  const result = runTool("all-binary");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no reviewable text files/i);
+  assert.equal(result.specExists, false);
 });
 
 test("CLI: non-404 gh failures abort fixture generation", () => {
