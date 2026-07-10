@@ -22,6 +22,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run full eval
+        env:
+          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
+          # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
+          PI_PROVIDER: cliproxy
+          PI_BIN: /home/termtek/.npm-global/bin/pi
         run: |
           # corepack enable defaults to the node prefix bin (/usr/bin on this
           # runner's system node) and dies with EACCES; install shims to a
@@ -31,7 +36,7 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --effort medium --draws 3 --concurrency 4 \
+          node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:
@@ -41,12 +46,16 @@ jobs:
           latest="$(find eval/results/weekly -name '*.json' | sort | tail -1)"
           prev="$(find eval/results/weekly -name '*.json' | sort | tail -2 | head -1)"
           if [ "$prev" = "$latest" ]; then prev=""; fi
+          compare_args=("$latest")
+          if [ -n "$prev" ]; then compare_args+=("$prev"); fi
           set +e
-          summary="$(node --import tsx eval/weekly-compare.ts "$latest" $prev)"
+          summary="$(node --import tsx eval/weekly-compare.ts "${compare_args[@]}")"
           status=$?
           set -e
           echo "$summary"
           if [ "$status" -eq 2 ]; then
+            # Single quotes preserve the Markdown backticks in the printf format.
+            # shellcheck disable=SC2016
             gh issue create -R "${{ github.repository }}" \
               --title "Weekly eval regression ($(date -u +%Y-%m-%d))" \
               --body "$(printf 'Reports: %s vs %s\n\n```\n%s\n```' "$prev" "$latest" "$summary")"

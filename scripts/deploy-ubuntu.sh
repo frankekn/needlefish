@@ -12,11 +12,11 @@ tmp=$(mktemp -d "$releases/.tmp.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 validate_release() {
-  if [ ! -f "$release/release.json" ]; then
-    echo "existing release is missing release.json: $release" >&2
-    exit 1
-  fi
-  node - "$release/release.json" "$sha" <<'NODE'
+	if [ ! -f "$release/release.json" ]; then
+		echo "existing release is missing release.json: $release" >&2
+		exit 1
+	fi
+	node - "$release/release.json" "$sha" <<'NODE'
 const metadata = require(process.argv[2]);
 const expectedSha = process.argv[3];
 for (const key of ["sha", "version", "repoUrl", "deployedAt", "node"]) {
@@ -24,7 +24,7 @@ for (const key of ["sha", "version", "repoUrl", "deployedAt", "node"]) {
 }
 if (metadata.sha !== expectedSha) process.exit(1);
 NODE
-  "$release/bin/needlefish" --version
+	"$release/bin/needlefish" --version
 }
 
 git init "$tmp/repo"
@@ -35,28 +35,33 @@ git checkout --detach FETCH_HEAD
 
 sha=$(git rev-parse HEAD)
 release="$releases/$sha"
-if [ -e "$release" ]; then
-  validate_release
-else
 if ! command -v pnpm >/dev/null 2>&1; then
-  pnpm_version=$(node -p "require('./package.json').packageManager")
-  corepack enable
-  corepack prepare "$pnpm_version" --activate
+	pnpm_version=$(node -p "require('./package.json').packageManager")
+	corepack enable
+	corepack prepare "$pnpm_version" --activate
 fi
-pnpm install --frozen-lockfile
+command -v pi >/dev/null 2>&1 || npm install -g @mariozechner/pi
+if [ ! -f "$HOME/.pi/agent/auth.json" ]; then
+	echo "WARNING: pi runner needs ~/.pi/agent/auth.json with an openai-codex entry — see action.yml PI_AUTH_JSON pattern" >&2
+fi
 
-version=$(node -p "require('./package.json').version")
-node_version=$(node -p "process.version")
-deployed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-node - "$tmp/repo/release.json" "$sha" "$version" "$NEEDLEFISH_REPO_URL" "$deployed_at" "$node_version" <<'NODE'
+if [ -e "$release" ]; then
+	validate_release
+else
+	pnpm install --frozen-lockfile
+
+	version=$(node -p "require('./package.json').version")
+	node_version=$(node -p "process.version")
+	deployed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	node - "$tmp/repo/release.json" "$sha" "$version" "$NEEDLEFISH_REPO_URL" "$deployed_at" "$node_version" <<'NODE'
 const fs = require("node:fs");
 const [path, sha, version, repoUrl, deployedAt, node] = process.argv.slice(2);
 fs.writeFileSync(path, `${JSON.stringify({ sha, version, repoUrl, deployedAt, node }, null, 2)}\n`);
 NODE
-  "$tmp/repo/bin/needlefish" --version
-  if ! mv "$tmp/repo" "$release"; then
-    validate_release
-  fi
+	"$tmp/repo/bin/needlefish" --version
+	if ! mv "$tmp/repo" "$release"; then
+		validate_release
+	fi
 fi
 
 ln -sfn "$release" "$root/current"
