@@ -52,9 +52,10 @@ test("loadFixture forces deterministic rename detection when git config disables
     loaded = loadFixture({
       ...posOverBlock,
       id: "rename-materialization",
-      baseFiles: { "src/old.ts": "export const value = 1;\n" },
+      baseFiles: { "src/old.ts": "export const one = 1;\nexport const two = 2;\nexport const changed = 3;\nexport const four = 4;\n" },
       deletedFiles: ["src/old.ts"],
-      headFiles: { "src/new.ts": "export const value = 1;\n" },
+      renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }],
+      headFiles: { "src/new.ts": "export const one = 1;\nexport const two = 2;\nexport const changed = 30;\nexport const four = 4;\n" },
     });
     assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/old.ts")), false);
     assert.equal(existsSync(path.join(loaded.bundle.repoPath, "src/new.ts")), true);
@@ -70,6 +71,52 @@ test("loadFixture forces deterministic rename detection when git config disables
     else process.env.GIT_CONFIG_KEY_0 = previousKey;
     if (previousValue === undefined) delete process.env.GIT_CONFIG_VALUE_0;
     else process.env.GIT_CONFIG_VALUE_0 = previousValue;
+  }
+});
+
+test("loadFixture rejects an explicit rename with zero content similarity", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "zero-similarity-rename",
+      baseFiles: { "src/old.ts": "export const oldOnly = true;\n" },
+      deletedFiles: ["src/old.ts"],
+      renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }],
+      headFiles: { "src/new.ts": "completely unrelated prose\n" },
+    }),
+    /explicit rename did not render as a rename: src\/old\.ts -> src\/new\.ts/
+  );
+});
+
+test("loadFixture rejects a rename destination that already exists in the base tree", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "preexisting-rename-destination",
+      baseFiles: { "src/old.ts": "old\n", "src/new.ts": "preexisting\n" },
+      deletedFiles: ["src/old.ts"],
+      renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }],
+      headFiles: { "src/new.ts": "old\n" },
+    }),
+    /renamedFiles to path already exists in baseFiles: src\/new\.ts/
+  );
+});
+
+test("loadFixture does not synthesize an independent delete and add into a rename", () => {
+  const loaded = loadFixture({
+    ...posOverBlock,
+    id: "independent-delete-add",
+    baseFiles: { "src/old.ts": "export const value = 1;\n" },
+    deletedFiles: ["src/old.ts"],
+    headFiles: { "src/new.ts": "export const value = 1;\n" },
+  });
+  try {
+    assert.match(loaded.bundle.patch, /deleted file mode/);
+    assert.match(loaded.bundle.patch, /new file mode/);
+    assert.doesNotMatch(loaded.bundle.patch, /rename from|rename to/);
+    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts", "src/old.ts"]);
+  } finally {
+    loaded.cleanup();
   }
 });
 
@@ -128,6 +175,56 @@ test("loadFixture rejects a deletedFiles path that is absent from the base tree"
       headFiles: {},
     }),
     /ENOENT|no such file or directory/
+  );
+});
+
+test("loadFixture validates explicit rename metadata", () => {
+  const fixture: FixtureSpec = {
+    ...posOverBlock,
+    id: "invalid-rename",
+    baseFiles: { "src/old.ts": "old\n" },
+    deletedFiles: ["src/old.ts"],
+    headFiles: { "src/new.ts": "new\n" },
+  };
+  assert.throws(
+    () => loadFixture({ ...fixture, renamedFiles: [{ from: "src/missing.ts", to: "src/new.ts" }] }),
+    /renamedFiles from path is not deleted: src\/missing\.ts/
+  );
+  assert.throws(
+    () => loadFixture({ ...fixture, renamedFiles: [{ from: "src/old.ts", to: "src/missing.ts" }] }),
+    /renamedFiles to path is absent from headFiles: src\/missing\.ts/
+  );
+  assert.throws(
+    () => loadFixture({ ...fixture, renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }, { from: "src/old.ts", to: "src/other.ts" }] }),
+    /duplicate renamedFiles from path: src\/old\.ts/
+  );
+});
+
+test("loadFixture rejects overlapping explicit rename endpoints", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "overlapping-renames",
+      baseFiles: { "src/a.ts": "a\n", "src/b.ts": "b\n" },
+      deletedFiles: ["src/a.ts", "src/b.ts"],
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }, { from: "src/b.ts", to: "src/c.ts" }],
+      headFiles: { "src/b.ts": "a\n", "src/c.ts": "b\n" },
+    }),
+    /duplicate renamedFiles endpoint path: src\/b\.ts/
+  );
+});
+
+test("loadFixture rejects a rename source that remains in the head tree", () => {
+  assert.throws(
+    () => loadFixture({
+      ...posOverBlock,
+      id: "rename-source-retained",
+      baseFiles: { "src/old.ts": "old\n" },
+      deletedFiles: ["src/old.ts"],
+      renamedFiles: [{ from: "src/old.ts", to: "src/new.ts" }],
+      headFiles: { "src/old.ts": "old\n", "src/new.ts": "old\n" },
+    }),
+    /renamedFiles from path still exists in headFiles: src\/old\.ts/
   );
 });
 
@@ -474,6 +571,18 @@ test("fixtureSetHash: deletion order is canonical but deletion content remains s
   const different: FixtureSpec = { ...spec, deletedFiles: ["src/a.ts", "src/c.ts"] };
   assert.equal(fixtureSetHash([forward]), fixtureSetHash([reversed]));
   assert.notEqual(fixtureSetHash([forward]), fixtureSetHash([different]));
+});
+
+test("fixtureSetHash: rename metadata matters, while omission, emptiness, and order are canonical", () => {
+  const spec = holdoutSpec("rename-hash", false);
+  const first = { from: "src/a.ts", to: "src/b.ts" };
+  const second = { from: "src/c.ts", to: "src/d.ts" };
+  assert.equal(fixtureSetHash([spec]), fixtureSetHash([{ ...spec, renamedFiles: [] }]));
+  assert.notEqual(fixtureSetHash([spec]), fixtureSetHash([{ ...spec, renamedFiles: [first] }]));
+  assert.equal(
+    fixtureSetHash([{ ...spec, renamedFiles: [first, second] }]),
+    fixtureSetHash([{ ...spec, renamedFiles: [second, first] }])
+  );
 });
 
 test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", () => {

@@ -108,6 +108,7 @@ export interface SpecSkeletonInput {
   readonly prUrl: string;
   readonly baseFiles: Readonly<Record<string, string>>;
   readonly deletedFiles: readonly string[];
+  readonly renamedFiles: readonly { readonly from: string; readonly to: string }[];
   readonly headFiles: Readonly<Record<string, string>>;
 }
 
@@ -138,6 +139,17 @@ function provenanceSource(p: FixtureProvenance): string {
 
 // Pure string builder — no file I/O. Emits the literal spec.ts source text.
 export function buildSpecSource(input: SpecSkeletonInput): string {
+  const seenRenameEndpoints = new Set<string>();
+  for (const rename of input.renamedFiles) {
+    if (seenRenameEndpoints.has(rename.from)) throw new Error(`duplicate renamedFiles endpoint path: ${rename.from}`);
+    if (seenRenameEndpoints.has(rename.to) || rename.to === rename.from) throw new Error(`duplicate renamedFiles endpoint path: ${rename.to}`);
+    seenRenameEndpoints.add(rename.from);
+    seenRenameEndpoints.add(rename.to);
+  }
+  for (const rename of input.renamedFiles) {
+    if (Object.hasOwn(input.headFiles, rename.from)) throw new Error(`renamedFiles from path still exists in headFiles: ${rename.from}`);
+    if (Object.hasOwn(input.baseFiles, rename.to)) throw new Error(`renamedFiles to path already exists in baseFiles: ${rename.to}`);
+  }
   const description = `TODO-CURATOR: describe the defect and where it lives. Source: ${input.prUrl} — "${input.prTitle}".`;
   const expected =
     input.kind === "positive"
@@ -158,7 +170,7 @@ const spec: FixtureSpec = {
   defectClass: "TODO-CURATOR-DEFECT-CLASS",
   description: ${JSON.stringify(description)},
   baseFiles: ${fileRecordSource(input.baseFiles)},
-${input.deletedFiles.length > 0 ? `  deletedFiles: ${JSON.stringify(input.deletedFiles)},\n` : ""}  headFiles: ${fileRecordSource(input.headFiles)},
+${input.deletedFiles.length > 0 ? `  deletedFiles: ${JSON.stringify(input.deletedFiles)},\n` : ""}${input.renamedFiles.length > 0 ? `  renamedFiles: ${JSON.stringify(input.renamedFiles)},\n` : ""}  headFiles: ${fileRecordSource(input.headFiles)},
   expected: ${expected},
   provenance: ${provenanceSource(input.provenance)},
 };
@@ -258,15 +270,16 @@ async function main(): Promise<void> {
 
   const baseFiles: Record<string, string> = {};
   const deletedFiles: string[] = [];
+  const renamedFiles: { from: string; to: string }[] = [];
   const headFiles: Record<string, string> = {};
   const capFiles: CapCheckFile[] = [];
 
   for (const file of files) {
     const baseFilename = file.previousFilename ?? file.filename;
-    const baseBuf = file.status === "added" ? null : fetchFileContent(repo, baseFilename, prMeta.baseSha);
+    const baseBuf = file.status === "added" || file.status === "copied" ? null : fetchFileContent(repo, baseFilename, prMeta.baseSha);
     const headBuf = file.status === "removed" ? null : fetchFileContent(repo, file.filename, prMeta.headSha);
 
-    if ((file.status !== "added" && baseBuf === null) || (file.status !== "removed" && headBuf === null)) continue;
+    if ((file.status !== "added" && file.status !== "copied" && baseBuf === null) || (file.status !== "removed" && headBuf === null)) continue;
 
     if (baseBuf !== null) {
       baseFiles[baseFilename] = baseBuf.toString("utf8");
@@ -280,6 +293,7 @@ async function main(): Promise<void> {
       deletedFiles.push(file.filename);
     } else if (file.status === "renamed") {
       deletedFiles.push(baseFilename);
+      renamedFiles.push({ from: baseFilename, to: file.filename });
     }
   }
 
@@ -302,6 +316,7 @@ async function main(): Promise<void> {
     prUrl: prMeta.url,
     baseFiles,
     deletedFiles,
+    renamedFiles,
     headFiles,
   });
 

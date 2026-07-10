@@ -264,7 +264,7 @@ async function runWork(
 export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
   const canonical = [...specs]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, ...(s.deletedFiles && s.deletedFiles.length > 0 ? { deletedFiles: [...s.deletedFiles].sort() } : {}), headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
+    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, ...(s.deletedFiles && s.deletedFiles.length > 0 ? { deletedFiles: [...s.deletedFiles].sort() } : {}), ...(s.renamedFiles && s.renamedFiles.length > 0 ? { renamedFiles: s.renamedFiles.map(({ from, to }) => ({ from, to })).sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)) } : {}), headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
 }
 

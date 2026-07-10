@@ -140,6 +140,7 @@ test("buildSpecSource: positive skeleton contains placeholder pattern and curato
     prUrl: "https://example.com/pr/42",
     baseFiles: { "src/a.ts": "old" },
     deletedFiles: [],
+    renamedFiles: [],
     headFiles: { "src/a.ts": "new" },
   });
   assert.match(src, /kind: "positive"/);
@@ -157,11 +158,57 @@ test("buildSpecSource: negative skeleton has noBlockingFindings, no curator patt
     prUrl: "https://example.com/pr/7",
     baseFiles: {},
     deletedFiles: [],
+    renamedFiles: [],
     headFiles: {},
   });
   assert.match(src, /kind: "negative"/);
   assert.match(src, /noBlockingFindings: true/);
   assert.ok(!src.includes("TODO-CURATOR-PATTERN"));
+});
+
+test("buildSpecSource: rejects invalid explicit rename tree shapes", () => {
+  const common = {
+    id: "invalid-rename", kind: "positive" as const,
+    provenance: { repo: "owner/name", pr: 42, kind: "review-finding" as const },
+    prTitle: "Invalid rename", prUrl: "https://example.com/pr/42",
+    deletedFiles: ["src/a.ts", "src/b.ts"],
+  };
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "b" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }, { from: "src/b.ts", to: "src/c.ts" }],
+      headFiles: { "src/b.ts": "a", "src/c.ts": "b" },
+    }),
+    /duplicate renamedFiles endpoint path: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "b" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }, { from: "src/b.ts", to: "src/a.ts" }],
+      headFiles: { "src/a.ts": "b", "src/b.ts": "a" },
+    }),
+    /duplicate renamedFiles endpoint path: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "preexisting" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }],
+      headFiles: { "src/b.ts": "a" },
+    }),
+    /renamedFiles to path already exists in baseFiles: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }],
+      headFiles: { "src/a.ts": "a", "src/b.ts": "a" },
+    }),
+    /renamedFiles from path still exists in headFiles: src\/a\.ts/
+  );
 });
 
 interface ToolRun {
@@ -171,7 +218,7 @@ interface ToolRun {
   readonly source: string | null;
 }
 
-function runTool(mode: "success" | "flat-pages" | "empty-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file"): ToolRun {
+function runTool(mode: "success" | "flat-pages" | "empty-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file" | "copied"): ToolRun {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
   const binDir = path.join(tmp, "bin");
   const outDir = path.join(tmp, "renamed-fixture");
@@ -187,7 +234,9 @@ if (endpoint === "repos/owner/name/pulls/7") {
     process.stderr.write("files request must use --paginate --slurp\\n");
     process.exit(2);
   }
-  const pages = [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
+  const pages = mode === "copied"
+    ? [[{ filename: "src/copied.ts", previous_filename: "src/source.ts", status: "copied" }]]
+    : [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
   process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : mode === "empty-pages" ? [[]] : pages));
 } else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("old content");
@@ -209,6 +258,9 @@ if (endpoint === "repos/owner/name/pulls/7") {
   process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
 } else if (endpoint.includes("/contents/src/removed.ts?ref=base")) {
   const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("removed content");
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+} else if (endpoint.includes("/contents/src/copied.ts?ref=head")) {
+  const content = Buffer.from("copied content");
   process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
 } else {
   process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
@@ -240,6 +292,7 @@ test("CLI: slurps paginated files and preserves both paths for a rename", () => 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
   assert.match(result.source ?? "", /deletedFiles: \["src\/old\.ts","src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /renamedFiles: \[{"from":"src\/old\.ts","to":"src\/new\.ts"}\]/);
   assert.match(result.source ?? "", /"src\/new\.ts": "new content"/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
 });
@@ -249,6 +302,14 @@ test("CLI: accepts gh versions that return one merged array with pagination", ()
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: materializes a copied file like an addition without deleting its source", () => {
+  const result = runTool("copied");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /baseFiles: \{\s*\}/);
+  assert.doesNotMatch(result.source ?? "", /deletedFiles|renamedFiles|src\/source\.ts/);
+  assert.match(result.source ?? "", /"src\/copied\.ts": "copied content"/);
 });
 
 test("CLI: an empty paginated files response aborts without writing a fixture", () => {
@@ -269,6 +330,7 @@ test("CLI: a binary rename side omits the entire rename while keeping text chang
   const result = runTool("binary-rename");
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /renamedFiles/);
   assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
   assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
@@ -279,6 +341,7 @@ test("CLI: a known non-file rename side is skipped atomically while text changes
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stderr, /skipping symlink: src\/new\.ts/);
   assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /renamedFiles/);
   assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
   assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
   assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
