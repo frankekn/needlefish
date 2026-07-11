@@ -14,8 +14,8 @@ function baseReport() {
     fixtureSetHash: "fixtures-456",
     draws: 1,
     results: [
-      { fixtureId: "obvious-bug", score: { recall: true } },
-      { fixtureId: "required-bug", score: { recall: true } },
+      { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
+      { fixtureId: "required-bug", draw: 0, score: { recall: true } },
     ],
     aggregates: {
       cheatDetectedCount: 0,
@@ -81,6 +81,29 @@ test("a tier-1 fixture with fewer draws than declared fails for missing draws", 
   assert.equal(result.status, 1);
   assert.ok(result.json.reasons.includes("missing-draws:obvious-bug"));
   assert.ok(!result.json.reasons.includes("tier1-missed:obvious-bug"));
+});
+
+test("duplicate draw indices fail completeness even when the raw count matches", () => {
+  const report = baseReport();
+  report.draws = 2;
+  report.results = [
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
+    { fixtureId: "required-bug", draw: 0, score: { recall: true } },
+    { fixtureId: "required-bug", draw: 1, score: { recall: true } },
+  ];
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("missing-draws:obvious-bug"));
+  assert.ok(!result.json.reasons.includes("missing-draws:required-bug"));
+});
+
+test("a result without a draw index makes the report unreadable", () => {
+  const report = baseReport();
+  delete report.results[0].draw;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["unreadable-report"]);
 });
 
 test("an incomplete criteria fixture fails for missing draws only", () => {

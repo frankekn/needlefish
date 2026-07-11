@@ -43,6 +43,7 @@ function validReport(value) {
     .every(([id, tier]) => id.length > 0 && Number.isInteger(tier) && tier >= 1 && tier <= 3)) return false;
   return value.results.every((result) => isRecord(result)
     && typeof result.fixtureId === "string" && result.fixtureId.length > 0
+    && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws
     && isRecord(result.score)
     && typeof result.score.recall === "boolean");
 }
@@ -67,8 +68,9 @@ export function evaluateGate(report, criteria) {
     ...criteria.fixtures,
   ]);
   for (const fixtureId of requiredFixtures) {
-    const drawCount = report.results.filter((result) => result.fixtureId === fixtureId).length;
-    if (drawCount !== report.draws) {
+    const fixtureResults = report.results.filter((result) => result.fixtureId === fixtureId);
+    const uniqueDraws = new Set(fixtureResults.map((result) => result.draw));
+    if (fixtureResults.length !== report.draws || uniqueDraws.size !== report.draws) {
       reasons.push(`missing-draws:${fixtureId}`);
       incompleteFixtures.add(fixtureId);
     }
