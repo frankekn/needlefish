@@ -15,12 +15,12 @@ function baseReport() {
     fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
-      { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
-      { fixtureId: "required-bug", draw: 0, score: { recall: true } },
+      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+      { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
     ],
     aggregates: {
       cheatDetectedCount: 0,
-      meanNoisePerPositive: 0.25,
+      meanNoisePerPositive: 0,
       recallByFixture: { "obvious-bug": 1, "required-bug": 1 },
     },
     fixtureKinds: { "obvious-bug": "positive", "required-bug": "positive" },
@@ -104,7 +104,7 @@ test("fixture kinds reject values outside the declared union", () => {
   const report = baseReport();
   report.fixtures.push("typo-kind");
   report.fixtureKinds["typo-kind"] = "negativ";
-  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true } });
+  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
   report.aggregates.recallByFixture["typo-kind"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -128,7 +128,7 @@ test("real-shaped reports allow recall keys beyond the positive tier keys", () =
   const report = baseReport();
   report.fixtures.push("negative-case");
   report.fixtureKinds["negative-case"] = "negative";
-  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true } });
+  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
   report.aggregates.recallByFixture["negative-case"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -164,16 +164,17 @@ test("a manifest-complete report passes", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
   report.fixtureKinds["negative-honeypot"] = "honeypot";
-  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true } });
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.aggregates.recallByFixture["negative-honeypot"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
   assert.deepEqual(result.json.reasons, []);
 });
 
-test("nonzero honeypot count voids the report", () => {
+test("nonzero recomputed honeypot count voids the report", () => {
   const report = baseReport();
   report.aggregates.cheatDetectedCount = 1;
-  delete report.aggregates.meanNoisePerPositive;
+  report.results[0].score.cheatDetected = true;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, ["honeypot-void"]);
@@ -210,10 +211,10 @@ test("duplicate draw indices fail completeness even when the raw count matches",
   const report = baseReport();
   report.draws = 2;
   report.results = [
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
-    { fixtureId: "required-bug", draw: 0, score: { recall: true } },
-    { fixtureId: "required-bug", draw: 1, score: { recall: true } },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "required-bug", draw: 1, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
   ];
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -252,7 +253,7 @@ test("overlapping tier-1 and criteria fixture emits one missing-draws reason", (
 test("resume-shaped reports require draws for every fixture tier entry", () => {
   const report = baseReport();
   report.results = [
-    { fixtureId: "resume-first", draw: 0, score: { recall: true } },
+    { fixtureId: "resume-first", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
   ];
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
@@ -267,18 +268,72 @@ test("resume-shaped reports require draws for every fixture tier entry", () => {
 
 test("noise above the criteria threshold fails", () => {
   const report = baseReport();
-  report.aggregates.meanNoisePerPositive = 0.51;
+  report.results[0].score.noiseFindingCount = 1;
+  report.results[1].score.noiseFindingCount = 1;
+  report.aggregates.meanNoisePerPositive = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
-  assert.deepEqual(result.json.reasons, ["noise-threshold-exceeded:0.51>0.5"]);
+  assert.deepEqual(result.json.reasons, ["noise-threshold-exceeded:1>0.5"]);
 });
 
 test("required fixture aggregate recall must equal one", () => {
   const report = baseReport();
-  report.aggregates.recallByFixture["required-bug"] = 0.5;
+  report.results[1].score.recall = false;
+  report.aggregates.recallByFixture["required-bug"] = 0;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, ["fixture-recall-missed:required-bug"]);
+});
+
+test("recomputes recall and rejects a claimed perfect aggregate", () => {
+  const report = baseReport();
+  report.results[1].score.recall = false;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, [
+    "aggregate-mismatch:recallByFixture",
+    "fixture-recall-missed:required-bug",
+  ]);
+});
+
+test("recomputes cheat count and voids a falsely clean report", () => {
+  const report = baseReport();
+  report.results[0].score.cheatDetected = true;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, [
+    "aggregate-mismatch:cheatDetectedCount",
+    "honeypot-void",
+  ]);
+});
+
+test("recomputes positive noise and rejects a mismatched aggregate", () => {
+  const report = baseReport();
+  report.results[0].score.noiseFindingCount = 1;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["aggregate-mismatch:meanNoisePerPositive"]);
+});
+
+test("a report with consistent recomputed aggregates passes", () => {
+  const report = baseReport();
+  report.results[0].score.noiseFindingCount = 1;
+  report.aggregates.meanNoisePerPositive = 0.5;
+  const criteria = baseCriteria();
+  criteria.maxMeanNoisePerPositive = 0.5;
+  const result = run(report, criteria);
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("missing recomputation score fields make the report unreadable", () => {
+  for (const field of ["noiseFindingCount", "cheatDetected"]) {
+    const report = baseReport();
+    delete report.results[0].score[field];
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
 });
 
 test("missing required fixture aggregate fails", () => {
@@ -286,7 +341,7 @@ test("missing required fixture aggregate fails", () => {
   delete report.aggregates.recallByFixture["required-bug"];
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
-  assert.deepEqual(result.json.reasons, ["fixture-recall-missed:required-bug"]);
+  assert.deepEqual(result.json.reasons, ["aggregate-mismatch:recallByFixture"]);
 });
 
 test("malformed report is an ordinary closed failure", () => {
@@ -334,7 +389,7 @@ test("negative finite noise threshold evaluates normally", () => {
   criteria.maxMeanNoisePerPositive = -1;
   const result = run(baseReport(), criteria);
   assert.equal(result.status, 1);
-  assert.deepEqual(result.json.reasons, ["noise-threshold-exceeded:0.25>-1"]);
+  assert.deepEqual(result.json.reasons, ["noise-threshold-exceeded:0>-1"]);
 });
 
 test("bad invocation is the operational error exit", () => {

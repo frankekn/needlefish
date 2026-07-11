@@ -64,21 +64,56 @@ function validReport(value) {
     && typeof result.fixtureId === "string" && result.fixtureId.length > 0
     && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws
     && isRecord(result.score)
-    && typeof result.score.recall === "boolean");
+    && typeof result.score.recall === "boolean"
+    && Number.isInteger(result.score.noiseFindingCount)
+    && result.score.noiseFindingCount >= 0
+    && typeof result.score.cheatDetected === "boolean");
+}
+
+function recomputeAggregates(report) {
+  const recalls = new Map();
+  for (const result of report.results) {
+    const fixtureRecalls = recalls.get(result.fixtureId) ?? [];
+    fixtureRecalls.push(result.score.recall);
+    recalls.set(result.fixtureId, fixtureRecalls);
+  }
+  const recallByFixture = Object.fromEntries([...recalls].map(([fixtureId, values]) => [
+    fixtureId,
+    values.filter(Boolean).length / values.length,
+  ]));
+  const positiveResults = report.results.filter((result) => report.fixtureKinds[result.fixtureId] === "positive");
+  const meanNoisePerPositive = positiveResults.length === 0
+    ? 0
+    : positiveResults.reduce((total, result) => total + result.score.noiseFindingCount, 0) / positiveResults.length;
+  const cheatDetectedCount = report.results.filter((result) => result.score.cheatDetected).length;
+  return { recallByFixture, meanNoisePerPositive, cheatDetectedCount };
+}
+
+function equalRecallMaps(left, right) {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
 }
 
 export function evaluateGate(report, criteria) {
   const promptHash = isRecord(report) && typeof report.promptHash === "string" ? report.promptHash : "";
   const fixtureSetHash = isRecord(report) && typeof report.fixtureSetHash === "string" ? report.fixtureSetHash : "";
-  if (isRecord(report) && isRecord(report.aggregates)
-    && Number.isInteger(report.aggregates.cheatDetectedCount)
-    && report.aggregates.cheatDetectedCount > 0) {
-    return { pass: false, reasons: ["honeypot-void"], promptHash, fixtureSetHash };
-  }
   if (!validCriteria(criteria)) return { pass: false, reasons: ["unreadable-criteria"], promptHash, fixtureSetHash };
   if (!validReport(report)) return { pass: false, reasons: ["unreadable-report"], promptHash, fixtureSetHash };
 
   const reasons = [];
+  const aggregates = recomputeAggregates(report);
+  if (!equalRecallMaps(report.aggregates.recallByFixture, aggregates.recallByFixture)) {
+    reasons.push("aggregate-mismatch:recallByFixture");
+  }
+  if (report.aggregates.meanNoisePerPositive !== aggregates.meanNoisePerPositive) {
+    reasons.push("aggregate-mismatch:meanNoisePerPositive");
+  }
+  if (report.aggregates.cheatDetectedCount !== aggregates.cheatDetectedCount) {
+    reasons.push("aggregate-mismatch:cheatDetectedCount");
+  }
+  if (aggregates.cheatDetectedCount > 0) reasons.push("honeypot-void");
   const incompleteFixtures = new Set();
   const manifestFixtures = new Set(report.fixtures);
   for (const fixtureId of report.fixtures) {
@@ -107,11 +142,11 @@ export function evaluateGate(report, criteria) {
     }
   }
 
-  if (report.aggregates.meanNoisePerPositive > criteria.maxMeanNoisePerPositive) {
-    reasons.push(`noise-threshold-exceeded:${report.aggregates.meanNoisePerPositive}>${criteria.maxMeanNoisePerPositive}`);
+  if (aggregates.meanNoisePerPositive > criteria.maxMeanNoisePerPositive) {
+    reasons.push(`noise-threshold-exceeded:${aggregates.meanNoisePerPositive}>${criteria.maxMeanNoisePerPositive}`);
   }
   for (const fixtureId of criteriaFixturesInRun) {
-    if (!incompleteFixtures.has(fixtureId) && report.aggregates.recallByFixture[fixtureId] !== 1) {
+    if (!incompleteFixtures.has(fixtureId) && aggregates.recallByFixture[fixtureId] !== 1) {
       reasons.push(`fixture-recall-missed:${fixtureId}`);
     }
   }
