@@ -240,6 +240,41 @@ test("detects a computed runtime holdout from a named spec export without leakin
   assert.doesNotMatch(result.stdout, new RegExp(directoryId));
 });
 
+test("classifies holdouts without executing fixture specs", async (t) => {
+  const secretId = "side-effect-sealed-case";
+  const markerPath = join(tmpdir(), `needlefish-brief-lint-canary-${process.pid}-${Date.now()}`);
+  t.after(() => rm(markerPath, { force: true }));
+  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [secretId]: {
+      spec: `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(markerPath)}, "executed"); export default { id: ${JSON.stringify(secretId)}, holdout: true };`,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  await assert.rejects(readFile(markerPath, "utf8"), { code: "ENOENT" });
+});
+
+test("classifies literal, quoted, false, absent, computed, and spread holdout properties", async (t) => {
+  const fixtures = {
+    "ordinary-case": {},
+    "literal-true-case": { spec: `const spec: FixtureSpec = { id: "literal-true-case", holdout: true }; export default spec;` },
+    "quoted-true-case": { spec: `export default { id: "quoted-true-case", "holdout": true };` },
+    "literal-false-case": { spec: `export const spec = { id: "literal-false-case", holdout: false };` },
+    "absent-case": { spec: `export default { id: "absent-case" };` },
+    "computed-case": { spec: `export default { id: "computed-case", ["holdout"]: false };` },
+    "spread-case": { spec: `export default { id: "spread-case", ...shared };` },
+  };
+  const contents = `${brief()}\n${Object.keys(fixtures).slice(1).join(" ")}\n`;
+  const { result, output } = await run(t, contents, fixtures);
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak", "holdout-leak", "holdout-leak", "holdout-leak"]);
+  assert.equal(output.failures.every(({ detail }) => /offset \d+/.test(detail)), true);
+});
+
 test("returns exit 2 without emitting criteria or leaking identifiers for an unloadable spec", async (t) => {
   const privateId = "broken-private-case";
   const repo = await fixtureRepo(t, {

@@ -231,8 +231,7 @@ async function findTextualHoldoutIds(repoPath) {
 
 function findStructuralHoldoutIds(repoPath) {
   const helperPath = fileURLToPath(new URL("./brief-lint-holdouts.mjs", import.meta.url));
-  const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
-  const result = spawnSync(process.execPath, ["--import", tsxLoader, helperPath, repoPath], {
+  const result = spawnSync(process.execPath, [helperPath, repoPath], {
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
