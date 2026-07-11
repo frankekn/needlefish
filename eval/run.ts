@@ -322,12 +322,16 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
   };
 }
 
-function writeReport(args: RunArgs, results: readonly DrawResult[], specs: readonly FixtureSpec[]): Report {
+function writeReport(
+  args: RunArgs,
+  results: readonly DrawResult[],
+  specs: readonly FixtureSpec[]
+): Report & { readonly fixtures: readonly string[] } {
   const fixtureTiers: Record<string, number> = {};
   for (const s of specs) {
     if (s.kind === "positive") fixtureTiers[s.id] = s.tier ?? 2;
   }
-  const report: Report = {
+  const report = {
     promptHash: promptHash(),
     runner: args.runner,
     model: args.model,
@@ -341,7 +345,8 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
     gitSha: repoGitSha(),
     fixtureSetHash: fixtureSetHash(specs),
     fixtureTiers,
-  };
+    fixtures: specs.map((spec) => spec.id),
+  } satisfies Report & { readonly fixtures: readonly string[] };
   mkdirSync(path.dirname(path.resolve(args.report)), { recursive: true });
   writeFileSync(args.report, JSON.stringify(report, null, 2));
   return report;

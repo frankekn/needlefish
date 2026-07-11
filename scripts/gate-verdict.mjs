@@ -29,6 +29,10 @@ function validReport(value) {
     || typeof value.promptHash !== "string" || value.promptHash.length === 0
     || typeof value.fixtureSetHash !== "string" || value.fixtureSetHash.length === 0
     || !Number.isInteger(value.draws) || value.draws < 1
+    || !Array.isArray(value.fixtures)
+    || value.fixtures.length === 0
+    || !value.fixtures.every((id) => typeof id === "string" && id.length > 0)
+    || new Set(value.fixtures).size !== value.fixtures.length
     || !Array.isArray(value.results)
     || !isRecord(value.aggregates)
     || !isRecord(value.aggregates.recallByFixture)
@@ -37,10 +41,11 @@ function validReport(value) {
     || value.aggregates.cheatDetectedCount < 0
     || !isRecord(value.fixtureTiers)) return false;
 
+  const fixtureIds = new Set(value.fixtures);
   if (!Object.entries(value.aggregates.recallByFixture)
-    .every(([id, recall]) => id.length > 0 && Number.isFinite(recall) && recall >= 0 && recall <= 1)) return false;
+    .every(([id, recall]) => fixtureIds.has(id) && Number.isFinite(recall) && recall >= 0 && recall <= 1)) return false;
   if (!Object.entries(value.fixtureTiers)
-    .every(([id, tier]) => id.length > 0 && Number.isInteger(tier) && tier >= 1 && tier <= 3)) return false;
+    .every(([id, tier]) => fixtureIds.has(id) && Number.isInteger(tier) && tier >= 1 && tier <= 3)) return false;
   return value.results.every((result) => isRecord(result)
     && typeof result.fixtureId === "string" && result.fixtureId.length > 0
     && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws
@@ -61,18 +66,23 @@ export function evaluateGate(report, criteria) {
 
   const reasons = [];
   const incompleteFixtures = new Set();
-  const requiredFixtures = new Set([
-    ...Object.keys(report.fixtureTiers),
-    ...Object.keys(report.aggregates.recallByFixture),
-    ...criteria.fixtures,
-  ]);
-  for (const fixtureId of requiredFixtures) {
+  const manifestFixtures = new Set(report.fixtures);
+  for (const fixtureId of report.fixtures) {
     const fixtureResults = report.results.filter((result) => result.fixtureId === fixtureId);
     const uniqueDraws = new Set(fixtureResults.map((result) => result.draw));
     if (fixtureResults.length !== report.draws || uniqueDraws.size !== report.draws) {
       reasons.push(`missing-draws:${fixtureId}`);
       incompleteFixtures.add(fixtureId);
     }
+  }
+
+  const criteriaFixturesInRun = [];
+  for (const fixtureId of criteria.fixtures) {
+    if (!manifestFixtures.has(fixtureId)) {
+      reasons.push(`fixture-not-in-run:${fixtureId}`);
+      continue;
+    }
+    criteriaFixturesInRun.push(fixtureId);
   }
 
   for (const [fixtureId, tier] of Object.entries(report.fixtureTiers)) {
@@ -86,7 +96,7 @@ export function evaluateGate(report, criteria) {
   if (report.aggregates.meanNoisePerPositive > criteria.maxMeanNoisePerPositive) {
     reasons.push(`noise-threshold-exceeded:${report.aggregates.meanNoisePerPositive}>${criteria.maxMeanNoisePerPositive}`);
   }
-  for (const fixtureId of criteria.fixtures) {
+  for (const fixtureId of criteriaFixturesInRun) {
     if (!incompleteFixtures.has(fixtureId) && report.aggregates.recallByFixture[fixtureId] !== 1) {
       reasons.push(`fixture-recall-missed:${fixtureId}`);
     }

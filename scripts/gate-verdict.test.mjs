@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ function baseReport() {
   return {
     promptHash: "prompt-123",
     fixtureSetHash: "fixtures-456",
+    fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
       { fixtureId: "obvious-bug", draw: 0, score: { recall: true } },
@@ -45,6 +46,67 @@ test("passes and echoes report hashes", () => {
   const result = run(baseReport(), baseCriteria());
   assert.equal(result.status, 0);
   assert.deepEqual(result.json, { pass: true, reasons: [], promptHash: "prompt-123", fixtureSetHash: "fixtures-456" });
+});
+
+test("a report without a fixture manifest is unreadable", () => {
+  const report = baseReport();
+  delete report.fixtures;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+});
+
+test("an old real report without a fixture manifest is unreadable", () => {
+  const report = readFileSync(new URL("../eval/results/2026-07-10-realpr-full-gpt-5.5.json", import.meta.url), "utf8");
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+});
+
+test("fixture manifests require unique non-empty strings", () => {
+  for (const fixtures of [[], ["obvious-bug", ""], ["obvious-bug", "obvious-bug"]]) {
+    const report = baseReport();
+    report.fixtures = fixtures;
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
+test("fixture tier and aggregate keys must exist in the manifest", () => {
+  for (const field of ["fixtureTiers", "recallByFixture"]) {
+    const report = baseReport();
+    const target = field === "fixtureTiers" ? report.fixtureTiers : report.aggregates.recallByFixture;
+    target["outside-manifest"] = field === "fixtureTiers" ? 2 : 1;
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
+test("a criteria fixture absent from the manifest emits only fixture-not-in-run", () => {
+  const criteria = baseCriteria();
+  criteria.fixtures = ["not-run"];
+  const result = run(baseReport(), criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["fixture-not-in-run:not-run"]);
+});
+
+test("a manifest fixture absent from results fails for missing draws", () => {
+  const report = baseReport();
+  report.fixtures.push("negative-honeypot");
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["missing-draws:negative-honeypot"]);
+});
+
+test("a manifest-complete report passes", () => {
+  const report = baseReport();
+  report.fixtures.push("negative-honeypot");
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true } });
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
 });
 
 test("nonzero honeypot count voids the report", () => {
@@ -133,6 +195,7 @@ test("resume-shaped reports require draws for every fixture tier entry", () => {
   ];
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
+  report.fixtures = ["resume-first", "resume-second"];
   const criteria = baseCriteria();
   criteria.fixtures = ["resume-first"];
   const result = run(report, criteria);

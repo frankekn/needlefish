@@ -2,6 +2,8 @@
 
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const JSON_FENCE = /^```json[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
 // Fixture specs are TypeScript object literals. This accepts bare or quoted
@@ -199,7 +201,7 @@ async function validateFixtures(criteria, repoPath, failures) {
   }
 }
 
-async function findHoldoutIds(repoPath) {
+async function findTextualHoldoutIds(repoPath) {
   const ids = [];
   for (const relativeRoot of [join("eval", "fixtures"), join("eval", "fixtures-real")]) {
     const root = join(repoPath, relativeRoot);
@@ -227,6 +229,26 @@ async function findHoldoutIds(repoPath) {
   return ids;
 }
 
+function findStructuralHoldoutIds(repoPath) {
+  const helperPath = fileURLToPath(new URL("./brief-lint-holdouts.mjs", import.meta.url));
+  const tsxLoader = fileURLToPath(import.meta.resolve("tsx"));
+  const result = spawnSync(process.execPath, ["--import", tsxLoader, helperPath, repoPath], {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0 || result.error !== undefined) {
+    throw new Error("holdout structural scan failed");
+  }
+  try {
+    const ids = JSON.parse(result.stdout);
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) throw new Error();
+    return ids;
+  } catch {
+    throw new Error("holdout structural scan returned invalid output");
+  }
+}
+
 async function main() {
   let args;
   try {
@@ -239,7 +261,11 @@ async function main() {
     if (criteria !== undefined) await validateFixtures(criteria, repoPath, failures);
     const decodedCriteria = criteria === undefined ? undefined : JSON.stringify(criteria);
 
-    for (const holdoutId of await findHoldoutIds(repoPath)) {
+    const holdoutIds = new Set([
+      ...(await findTextualHoldoutIds(repoPath)),
+      ...findStructuralHoldoutIds(repoPath),
+    ]);
+    for (const holdoutId of holdoutIds) {
       const offset = brief.indexOf(holdoutId);
       if (offset !== -1) {
         failures.push(failure("holdout-leak", `holdout fixture reference at offset ${offset}`));

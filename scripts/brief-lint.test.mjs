@@ -10,7 +10,7 @@ const script = join(process.cwd(), "scripts", "brief-lint.mjs");
 async function fixtureRepo(t, fixtures = {}) {
   const root = await mkdtemp(join(tmpdir(), "needlefish-brief-lint-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  for (const [id, { real = false, spec = "export default {};" }] of Object.entries(fixtures)) {
+  for (const [id, { real = false, spec = `export default { id: ${JSON.stringify(id)} };` }] of Object.entries(fixtures)) {
     const directory = join(root, "eval", real ? "fixtures-real" : "fixtures", id);
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "spec.ts"), spec);
@@ -137,7 +137,7 @@ test("detects spaced multiline holdout syntax without leaking its id", async (t)
   const contents = `${brief()}\nDo not use ${secretId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [secretId]: { real: true, spec: "export default { holdout\n :\n true };" },
+    [secretId]: { real: true, spec: `export default { id: ${JSON.stringify(secretId)}, holdout\n :\n true };` },
   });
 
   assert.equal(result.status, 1);
@@ -151,7 +151,7 @@ test("detects a double-quoted holdout property without leaking its id", async (t
   const contents = `${brief()}\nDo not use ${secretId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [secretId]: { spec: 'export default { "holdout": true };' },
+    [secretId]: { spec: `export default { id: ${JSON.stringify(secretId)}, "holdout": true };` },
   });
 
   assert.equal(result.status, 1);
@@ -165,7 +165,7 @@ test("detects a single-quoted holdout property without leaking its id", async (t
   const contents = `${brief()}\nDo not use ${secretId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [secretId]: { spec: "export default { 'holdout': true };" },
+    [secretId]: { spec: `export default { id: ${JSON.stringify(secretId)}, 'holdout': true };` },
   });
 
   assert.equal(result.status, 1);
@@ -179,7 +179,7 @@ test("ignores a holdout marker that appears only in a line comment", async (t) =
   const contents = `${brief()}\nReview ${commentOnlyId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [commentOnlyId]: { spec: "export default { enabled: true }; // holdout: true" },
+    [commentOnlyId]: { spec: `export default { id: ${JSON.stringify(commentOnlyId)}, enabled: true }; // holdout: true` },
   });
 
   assert.equal(result.status, 0);
@@ -191,7 +191,7 @@ test("ignores a holdout marker that appears only in a block comment", async (t) 
   const contents = `${brief()}\nReview ${commentOnlyId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [commentOnlyId]: { spec: "export default { enabled: true }; /* 'holdout': true */" },
+    [commentOnlyId]: { spec: `export default { id: ${JSON.stringify(commentOnlyId)}, enabled: true }; /* 'holdout': true */` },
   });
 
   assert.equal(result.status, 0);
@@ -203,7 +203,7 @@ test("ignores a holdout marker inside a string value", async (t) => {
   const contents = `${brief()}\nReview ${stringOnlyId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [stringOnlyId]: { spec: 'export default { note: "holdout: true" };' },
+    [stringOnlyId]: { spec: `export default { id: ${JSON.stringify(stringOnlyId)}, note: "holdout: true" };` },
   });
 
   assert.equal(result.status, 0);
@@ -215,7 +215,7 @@ test("detects a bare holdout property after a URL string on the same line", asyn
   const contents = `${brief()}\nDo not use ${secretId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
-    [secretId]: { spec: 'export default { source: "https://example.test/path", holdout: true };' },
+    [secretId]: { spec: `export default { id: ${JSON.stringify(secretId)}, source: "https://example.test/path", holdout: true };` },
   });
 
   assert.equal(result.status, 1);
@@ -223,12 +223,75 @@ test("detects a bare holdout property after a URL string on the same line", asyn
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
 });
 
+test("detects a computed runtime holdout from a named spec export without leaking its id", async (t) => {
+  const secretId = "computed-sealed-case";
+  const directoryId = "computed-fixture-directory";
+  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [directoryId]: {
+      spec: `const sealed = true; export const spec = { id: ${JSON.stringify(secretId)}, holdout: sealed };`,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+  assert.doesNotMatch(result.stdout, new RegExp(directoryId));
+});
+
+test("returns exit 2 without emitting criteria or leaking identifiers for an unloadable spec", async (t) => {
+  const privateId = "broken-private-case";
+  const repo = await fixtureRepo(t, {
+    "ordinary-case": {},
+    [privateId]: { spec: `export default { id: ${JSON.stringify(privateId)}, holdout: true,, };` },
+  });
+  const briefPath = join(repo, "brief.md");
+  const emittedPath = join(repo, "criteria.json");
+  await writeFile(briefPath, brief());
+
+  const result = spawnSync(
+    process.execPath,
+    [script, briefPath, "--repo", repo, "--emit-criteria", emittedPath],
+    { encoding: "utf8" },
+  );
+
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(codes(JSON.parse(result.stdout)), ["internal-error"]);
+  assert.doesNotMatch(result.stdout, new RegExp(privateId));
+  assert.doesNotMatch(result.stdout, /spec\.ts|needlefish-brief-lint/);
+  await assert.rejects(readFile(emittedPath, "utf8"), { code: "ENOENT" });
+});
+
+test("returns exit 2 without emitting criteria or leaking identifiers when a fixture spec is missing", async (t) => {
+  const privateId = "missing-private-case";
+  const repo = await fixtureRepo(t, { "ordinary-case": {} });
+  await mkdir(join(repo, "eval", "fixtures", privateId), { recursive: true });
+  const briefPath = join(repo, "brief.md");
+  const emittedPath = join(repo, "criteria.json");
+  await writeFile(briefPath, brief());
+
+  const result = spawnSync(
+    process.execPath,
+    [script, briefPath, "--repo", repo, "--emit-criteria", emittedPath],
+    { encoding: "utf8" },
+  );
+
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(codes(JSON.parse(result.stdout)), ["internal-error"]);
+  assert.doesNotMatch(result.stdout, new RegExp(privateId));
+  assert.doesNotMatch(result.stdout, /spec\.ts|needlefish-brief-lint/);
+  await assert.rejects(readFile(emittedPath, "utf8"), { code: "ENOENT" });
+});
+
 test("detects a unicode-escaped holdout id in decoded criteria without emitting criteria", async (t) => {
   const secretId = "sealed-case-xyz";
   const escapedId = secretId.replace("x", "\\u0078");
   const contents = brief(validCriteria({ fixtures: [secretId] })).replace(secretId, escapedId);
   const repo = await fixtureRepo(t, {
-    [secretId]: { spec: "export default { holdout: true };" },
+    [secretId]: { spec: `export default { id: ${JSON.stringify(secretId)}, holdout: true };` },
   });
   const briefPath = join(repo, "brief.md");
   const emittedPath = join(repo, "criteria.json");
@@ -252,7 +315,7 @@ test("redacts paths when a holdout spec cannot be read", async (t) => {
   const privateId = "private-scan-case";
   const repo = await fixtureRepo(t, {
     "ordinary-case": {},
-    [privateId]: { spec: "export default { holdout: true };" },
+    [privateId]: { spec: `export default { id: ${JSON.stringify(privateId)}, holdout: true };` },
   });
   const briefPath = join(repo, "brief.md");
   const specPath = join(repo, "eval", "fixtures", privateId, "spec.ts");
