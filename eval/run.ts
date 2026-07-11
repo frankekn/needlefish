@@ -182,7 +182,7 @@ function completedResults(slots: readonly (DrawResult | null)[]): DrawResult[] {
   return slots.filter((r): r is DrawResult => r !== null);
 }
 
-function resumeSlots(
+export function resumeSlots(
   args: RunArgs,
   specs: readonly FixtureSpec[],
   work: readonly DrawWork[]
@@ -201,7 +201,7 @@ function resumeSlots(
       return { slots, skipped };
     }
     const currentFixtureHash = fixtureSetHash(specs);
-    if (existing.fixtureSetHash !== undefined && existing.fixtureSetHash !== currentFixtureHash) {
+    if (existing.fixtureSetHash !== currentFixtureHash) {
       process.stderr.write(
         `resume: fixture set hash mismatch (${existing.fixtureSetHash} vs ${currentFixtureHash}), ignoring resume file\n`
       );
@@ -264,7 +264,7 @@ async function runWork(
 export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
   const canonical = [...specs]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
+    .map((s) => ({ id: s.id, kind: s.kind, tier: s.tier ?? null, baseFiles: s.baseFiles, ...(s.deletedFiles && s.deletedFiles.length > 0 ? { deletedFiles: [...s.deletedFiles].sort() } : {}), ...(s.renamedFiles && s.renamedFiles.length > 0 ? { renamedFiles: s.renamedFiles.map(({ from, to }) => ({ from, to })).sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)) } : {}), headFiles: s.headFiles, expected: s.expected, holdout: s.holdout ?? false, provenance: s.provenance }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
 }
 
@@ -347,18 +347,20 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
   return report;
 }
 
-function compare(baselinePath: string, candidate: Report): void {
+export function compare(baselinePath: string, candidate: Report): void {
   const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
   if (baseline.promptHash !== candidate.promptHash) {
     throw new Error(
       `prompt hash mismatch: baseline ${baseline.promptHash} vs candidate ${candidate.promptHash}. Re-run baseline after prompt changes.`
     );
   }
-  if (
-    baseline.fixtureSetHash !== undefined &&
-    candidate.fixtureSetHash !== undefined &&
-    baseline.fixtureSetHash !== candidate.fixtureSetHash
-  ) {
+  if (baseline.fixtureSetHash === undefined) {
+    throw new Error("baseline report is missing fixtureSetHash. Re-run baseline with the current eval harness.");
+  }
+  if (candidate.fixtureSetHash === undefined) {
+    throw new Error("candidate report is missing fixtureSetHash. Re-run candidate with the current eval harness.");
+  }
+  if (baseline.fixtureSetHash !== candidate.fixtureSetHash) {
     throw new Error(
       `fixture set hash mismatch: baseline ${baseline.fixtureSetHash} vs candidate ${candidate.fixtureSetHash}. Re-run baseline after fixture changes.`
     );

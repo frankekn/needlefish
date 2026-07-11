@@ -63,7 +63,12 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
   }
 
   if (prev) {
-    if (prev.promptHash !== latest.promptHash || (prev.fixtureSetHash && latest.fixtureSetHash && prev.fixtureSetHash !== latest.fixtureSetHash)) {
+    if (
+      prev.promptHash !== latest.promptHash ||
+      !prev.fixtureSetHash ||
+      !latest.fixtureSetHash ||
+      prev.fixtureSetHash !== latest.fixtureSetHash
+    ) {
       // Different prompt or fixture set: week-over-week deltas are meaningless.
       return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set changed since last week; skipping regression comparison"] };
     }

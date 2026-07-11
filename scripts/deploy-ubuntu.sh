@@ -40,11 +40,6 @@ if ! command -v pnpm >/dev/null 2>&1; then
 	corepack enable
 	corepack prepare "$pnpm_version" --activate
 fi
-command -v pi >/dev/null 2>&1 || npm install -g @mariozechner/pi
-if [ ! -f "$HOME/.pi/agent/auth.json" ]; then
-	echo "WARNING: pi runner needs ~/.pi/agent/auth.json with an openai-codex entry — see action.yml PI_AUTH_JSON pattern" >&2
-fi
-
 if [ -e "$release" ]; then
 	validate_release
 else

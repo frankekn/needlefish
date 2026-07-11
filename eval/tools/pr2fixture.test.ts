@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -138,6 +139,8 @@ test("buildSpecSource: positive skeleton contains placeholder pattern and curato
     prTitle: "Fix the thing",
     prUrl: "https://example.com/pr/42",
     baseFiles: { "src/a.ts": "old" },
+    deletedFiles: [],
+    renamedFiles: [],
     headFiles: { "src/a.ts": "new" },
   });
   assert.match(src, /kind: "positive"/);
@@ -154,9 +157,218 @@ test("buildSpecSource: negative skeleton has noBlockingFindings, no curator patt
     prTitle: "Safe refactor",
     prUrl: "https://example.com/pr/7",
     baseFiles: {},
+    deletedFiles: [],
+    renamedFiles: [],
     headFiles: {},
   });
   assert.match(src, /kind: "negative"/);
   assert.match(src, /noBlockingFindings: true/);
   assert.ok(!src.includes("TODO-CURATOR-PATTERN"));
+});
+
+test("buildSpecSource: rejects invalid explicit rename tree shapes", () => {
+  const common = {
+    id: "invalid-rename", kind: "positive" as const,
+    provenance: { repo: "owner/name", pr: 42, kind: "review-finding" as const },
+    prTitle: "Invalid rename", prUrl: "https://example.com/pr/42",
+    deletedFiles: ["src/a.ts", "src/b.ts"],
+  };
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "b" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }, { from: "src/b.ts", to: "src/c.ts" }],
+      headFiles: { "src/b.ts": "a", "src/c.ts": "b" },
+    }),
+    /duplicate renamedFiles endpoint path: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "b" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }, { from: "src/b.ts", to: "src/a.ts" }],
+      headFiles: { "src/a.ts": "b", "src/b.ts": "a" },
+    }),
+    /duplicate renamedFiles endpoint path: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a", "src/b.ts": "preexisting" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }],
+      headFiles: { "src/b.ts": "a" },
+    }),
+    /renamedFiles to path already exists in baseFiles: src\/b\.ts/
+  );
+  assert.throws(
+    () => buildSpecSource({
+      ...common,
+      baseFiles: { "src/a.ts": "a" },
+      renamedFiles: [{ from: "src/a.ts", to: "src/b.ts" }],
+      headFiles: { "src/a.ts": "a", "src/b.ts": "a" },
+    }),
+    /renamedFiles from path still exists in headFiles: src\/a\.ts/
+  );
+});
+
+interface ToolRun {
+  readonly status: number | null;
+  readonly stderr: string;
+  readonly specExists: boolean;
+  readonly source: string | null;
+}
+
+function runTool(mode: "success" | "flat-pages" | "empty-pages" | "404" | "500" | "invalid-json" | "binary-rename" | "all-binary" | "non-file" | "malformed-file" | "copied"): ToolRun {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "pr2fixture-cli-test-"));
+  const binDir = path.join(tmp, "bin");
+  const outDir = path.join(tmp, "renamed-fixture");
+  try {
+    writeFileSync(path.join(tmp, "gh"), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const endpoint = args[1] ?? "";
+const mode = ${JSON.stringify(mode)};
+if (endpoint === "repos/owner/name/pulls/7") {
+  process.stdout.write(JSON.stringify({ base: { sha: "base" }, head: { sha: "head" }, title: "Rename", html_url: "https://example.test/pr/7" }));
+} else if (endpoint.endsWith("/pulls/7/files")) {
+  if (!args.includes("--paginate") || !args.includes("--slurp")) {
+    process.stderr.write("files request must use --paginate --slurp\\n");
+    process.exit(2);
+  }
+  const pages = mode === "copied"
+    ? [[{ filename: "src/copied.ts", previous_filename: "src/source.ts", status: "copied" }]]
+    : [[{ filename: "src/new.ts", previous_filename: "src/old.ts", status: "renamed" }], [{ filename: "src/added.ts", status: "added" }, { filename: "src/removed.ts", status: "removed" }]];
+  process.stdout.write(JSON.stringify(mode === "flat-pages" ? pages.flat() : mode === "empty-pages" ? [[]] : pages));
+} else if (endpoint.includes("/contents/src/old.ts?ref=base")) {
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("old content");
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+} else if (endpoint.includes("/contents/src/new.ts?ref=head")) {
+  if (mode === "404" || mode === "500") {
+    process.stderr.write(mode === "404" ? "gh: Not Found (HTTP 404)\\n" : "gh: server failed (HTTP 500)\\n");
+    process.exit(1);
+  }
+  if (mode === "invalid-json") process.stdout.write("not json");
+  else if (mode === "non-file") process.stdout.write(JSON.stringify({ type: "symlink", target: "../outside" }));
+  else if (mode === "malformed-file") process.stdout.write(JSON.stringify({ type: "file", encoding: "utf-8", content: "new content" }));
+  else {
+    const content = mode === "binary-rename" || mode === "all-binary" ? Buffer.from([0]) : Buffer.from("new content");
+    process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+  }
+} else if (endpoint.includes("/contents/src/added.ts?ref=head")) {
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("added content");
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+} else if (endpoint.includes("/contents/src/removed.ts?ref=base")) {
+  const content = mode === "all-binary" ? Buffer.from([0]) : Buffer.from("removed content");
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+} else if (endpoint.includes("/contents/src/copied.ts?ref=head")) {
+  const content = Buffer.from("copied content");
+  process.stdout.write(JSON.stringify({ type: "file", encoding: "base64", content: content.toString("base64") }));
+} else {
+  process.stderr.write("unexpected gh invocation: " + args.join(" ") + "\\n");
+  process.exit(3);
+}
+`);
+    mkdirSync(binDir);
+    renameSync(path.join(tmp, "gh"), path.join(binDir, "gh"));
+    chmodSync(path.join(binDir, "gh"), 0o755);
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", path.resolve("eval/tools/pr2fixture.ts"), "--repo", "owner/name", "--pr", "7", "--out", outDir, "--kind", "review-finding"],
+      { encoding: "utf8", env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` } }
+    );
+    const specPath = path.join(outDir, "spec.ts");
+    return {
+      status: result.status,
+      stderr: result.stderr,
+      specExists: existsSync(specPath),
+      source: existsSync(specPath) ? readFileSync(specPath, "utf8") : null,
+    };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+test("CLI: slurps paginated files and preserves both paths for a rename", () => {
+  const result = runTool("success");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/old\.ts","src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /renamedFiles: \[{"from":"src\/old\.ts","to":"src\/new\.ts"}\]/);
+  assert.match(result.source ?? "", /"src\/new\.ts": "new content"/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: accepts gh versions that return one merged array with pagination", () => {
+  const result = runTool("flat-pages");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /"src\/old\.ts": "old content"/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+});
+
+test("CLI: materializes a copied file like an addition without deleting its source", () => {
+  const result = runTool("copied");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.source ?? "", /baseFiles: \{\s*\}/);
+  assert.doesNotMatch(result.source ?? "", /deletedFiles|renamedFiles|src\/source\.ts/);
+  assert.match(result.source ?? "", /"src\/copied\.ts": "copied content"/);
+});
+
+test("CLI: an empty paginated files response aborts without writing a fixture", () => {
+  const result = runTool("empty-pages");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no reviewable text files/i);
+  assert.equal(result.specExists, false);
+});
+
+test("CLI: a missing required file aborts without writing a fixture", () => {
+  const result = runTool("404");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /HTTP 404/);
+  assert.equal(result.specExists, false);
+});
+
+test("CLI: a binary rename side omits the entire rename while keeping text changes", () => {
+  const result = runTool("binary-rename");
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /renamedFiles/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+  assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
+});
+
+test("CLI: a known non-file rename side is skipped atomically while text changes remain", () => {
+  const result = runTool("non-file");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /skipping symlink: src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /src\/old\.ts|src\/new\.ts/);
+  assert.doesNotMatch(result.source ?? "", /renamedFiles/);
+  assert.match(result.source ?? "", /deletedFiles: \["src\/removed\.ts"\]/);
+  assert.match(result.source ?? "", /"src\/added\.ts": "added content"/);
+  assert.match(result.source ?? "", /"src\/removed\.ts": "removed content"/);
+});
+
+test("CLI: malformed file contents abort fixture generation", () => {
+  const result = runTool("malformed-file");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /unexpected contents encoding for src\/new\.ts@head/);
+  assert.equal(result.specExists, false);
+});
+
+test("CLI: an all-binary PR aborts without writing an empty fixture", () => {
+  const result = runTool("all-binary");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /no reviewable text files/i);
+  assert.equal(result.specExists, false);
+});
+
+test("CLI: non-404 gh failures abort fixture generation", () => {
+  const result = runTool("500");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /HTTP 500/);
+});
+
+test("CLI: malformed contents JSON aborts fixture generation", () => {
+  const result = runTool("invalid-json");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Unexpected token|JSON/);
 });

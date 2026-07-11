@@ -107,6 +107,8 @@ export interface SpecSkeletonInput {
   readonly prTitle: string;
   readonly prUrl: string;
   readonly baseFiles: Readonly<Record<string, string>>;
+  readonly deletedFiles: readonly string[];
+  readonly renamedFiles: readonly { readonly from: string; readonly to: string }[];
   readonly headFiles: Readonly<Record<string, string>>;
 }
 
@@ -137,6 +139,17 @@ function provenanceSource(p: FixtureProvenance): string {
 
 // Pure string builder — no file I/O. Emits the literal spec.ts source text.
 export function buildSpecSource(input: SpecSkeletonInput): string {
+  const seenRenameEndpoints = new Set<string>();
+  for (const rename of input.renamedFiles) {
+    if (seenRenameEndpoints.has(rename.from)) throw new Error(`duplicate renamedFiles endpoint path: ${rename.from}`);
+    if (seenRenameEndpoints.has(rename.to) || rename.to === rename.from) throw new Error(`duplicate renamedFiles endpoint path: ${rename.to}`);
+    seenRenameEndpoints.add(rename.from);
+    seenRenameEndpoints.add(rename.to);
+  }
+  for (const rename of input.renamedFiles) {
+    if (Object.hasOwn(input.headFiles, rename.from)) throw new Error(`renamedFiles from path still exists in headFiles: ${rename.from}`);
+    if (Object.hasOwn(input.baseFiles, rename.to)) throw new Error(`renamedFiles to path already exists in baseFiles: ${rename.to}`);
+  }
   const description = `TODO-CURATOR: describe the defect and where it lives. Source: ${input.prUrl} — "${input.prTitle}".`;
   const expected =
     input.kind === "positive"
@@ -157,7 +170,7 @@ const spec: FixtureSpec = {
   defectClass: "TODO-CURATOR-DEFECT-CLASS",
   description: ${JSON.stringify(description)},
   baseFiles: ${fileRecordSource(input.baseFiles)},
-  headFiles: ${fileRecordSource(input.headFiles)},
+${input.deletedFiles.length > 0 ? `  deletedFiles: ${JSON.stringify(input.deletedFiles)},\n` : ""}${input.renamedFiles.length > 0 ? `  renamedFiles: ${JSON.stringify(input.renamedFiles)},\n` : ""}  headFiles: ${fileRecordSource(input.headFiles)},
   expected: ${expected},
   provenance: ${provenanceSource(input.provenance)},
 };
@@ -171,6 +184,7 @@ export default spec;
 interface PrFile {
   readonly filename: string;
   readonly status: string;
+  readonly previousFilename?: string;
 }
 
 function assertRecord(value: unknown, what: string): Record<string, unknown> {
@@ -196,12 +210,19 @@ function fetchPrMeta(repo: string, pr: number): { baseSha: string; headSha: stri
 }
 
 function fetchPrFiles(repo: string, pr: number): PrFile[] {
-  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/pulls/${pr}/files`, "--paginate"]));
+  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/pulls/${pr}/files`, "--paginate", "--slurp"]));
   if (!Array.isArray(raw)) throw new Error("expected PR files response to be a JSON array");
-  return raw.map((entry) => {
+  const entries: unknown[] = raw.every(Array.isArray) ? raw.flat() : raw;
+  return entries.map((entry) => {
     const obj = assertRecord(entry, "PR file entry");
     if (typeof obj.filename !== "string" || typeof obj.status !== "string") {
       throw new Error("PR file entry missing filename/status");
+    }
+    if (obj.status === "renamed") {
+      if (typeof obj.previous_filename !== "string") {
+        throw new Error("renamed PR file entry missing previous_filename");
+      }
+      return { filename: obj.filename, status: obj.status, previousFilename: obj.previous_filename };
     }
     return { filename: obj.filename, status: obj.status };
   });
@@ -211,20 +232,19 @@ function encodePath(filename: string): string {
   return filename.split("/").map(encodeURIComponent).join("/");
 }
 
-// Returns the file's decoded content, or null if it doesn't exist at that ref
-// (404) or is binary (skipped).
+// Returns the file's decoded content, or null when it is binary (skipped).
 function fetchFileContent(repo: string, filename: string, ref: string): Buffer | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
-  } catch (err) {
-    console.warn(`skipping ${filename}@${ref}: ${err instanceof Error ? err.message : String(err)}`);
+  const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
+  const obj = assertRecord(raw, "contents response");
+  if (obj.type === "symlink" || obj.type === "submodule") {
+    console.warn(`skipping ${obj.type}: ${filename}`);
     return null;
   }
-  const obj = assertRecord(raw, "contents response");
+  if (obj.type !== "file") {
+    throw new Error(`unexpected contents type for ${filename}@${ref}`);
+  }
   if (obj.encoding !== "base64" || typeof obj.content !== "string") {
-    console.warn(`skipping ${filename}@${ref}: unexpected contents encoding`);
-    return null;
+    throw new Error(`unexpected contents encoding for ${filename}@${ref}`);
   }
   const buf = Buffer.from(obj.content.replace(/\n/g, ""), "base64");
   if (isBinaryContent(buf)) {
@@ -249,24 +269,36 @@ async function main(): Promise<void> {
   const files = fetchPrFiles(repo, pr);
 
   const baseFiles: Record<string, string> = {};
+  const deletedFiles: string[] = [];
+  const renamedFiles: { from: string; to: string }[] = [];
   const headFiles: Record<string, string> = {};
   const capFiles: CapCheckFile[] = [];
 
   for (const file of files) {
-    if (file.status !== "added") {
-      const buf = fetchFileContent(repo, file.filename, prMeta.baseSha);
-      if (buf) {
-        baseFiles[file.filename] = buf.toString("utf8");
-        capFiles.push({ path: `${file.filename} (base)`, bytes: buf.length });
-      }
+    const baseFilename = file.previousFilename ?? file.filename;
+    const baseBuf = file.status === "added" || file.status === "copied" ? null : fetchFileContent(repo, baseFilename, prMeta.baseSha);
+    const headBuf = file.status === "removed" ? null : fetchFileContent(repo, file.filename, prMeta.headSha);
+
+    if ((file.status !== "added" && file.status !== "copied" && baseBuf === null) || (file.status !== "removed" && headBuf === null)) continue;
+
+    if (baseBuf !== null) {
+      baseFiles[baseFilename] = baseBuf.toString("utf8");
+      capFiles.push({ path: `${baseFilename} (base)`, bytes: baseBuf.length });
     }
-    if (file.status !== "removed") {
-      const buf = fetchFileContent(repo, file.filename, prMeta.headSha);
-      if (buf) {
-        headFiles[file.filename] = buf.toString("utf8");
-        capFiles.push({ path: `${file.filename} (head)`, bytes: buf.length });
-      }
+    if (headBuf !== null) {
+      headFiles[file.filename] = headBuf.toString("utf8");
+      capFiles.push({ path: `${file.filename} (head)`, bytes: headBuf.length });
     }
+    if (file.status === "removed") {
+      deletedFiles.push(file.filename);
+    } else if (file.status === "renamed") {
+      deletedFiles.push(baseFilename);
+      renamedFiles.push({ from: baseFilename, to: file.filename });
+    }
+  }
+
+  if (capFiles.length === 0) {
+    throw new Error("PR has no reviewable text files");
   }
 
   const capResult = checkCaps(capFiles);
@@ -283,6 +315,8 @@ async function main(): Promise<void> {
     prTitle: prMeta.title,
     prUrl: prMeta.url,
     baseFiles,
+    deletedFiles,
+    renamedFiles,
     headFiles,
   });
 
