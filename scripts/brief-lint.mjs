@@ -128,7 +128,7 @@ async function findHoldoutIds(repoPath) {
       entries = await readdir(root, { withFileTypes: true });
     } catch (error) {
       if (error?.code === "ENOENT") continue;
-      throw error;
+      throw new Error(`holdout-scan-error: ${error?.code ?? "unknown"}`);
     }
 
     for (const entry of entries) {
@@ -139,7 +139,7 @@ async function findHoldoutIds(repoPath) {
         source = await readFile(specPath, "utf8");
       } catch (error) {
         if (error?.code === "ENOENT") continue;
-        throw error;
+        throw new Error(`holdout-scan-error: ${error?.code ?? "unknown"}`);
       }
       if (HOLDOUT_TRUE.test(source)) ids.push(basename(join(root, entry.name)));
     }

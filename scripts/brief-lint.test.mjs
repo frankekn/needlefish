@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -144,6 +144,36 @@ test("detects spaced multiline holdout syntax without leaking its id", async (t)
   assert.deepEqual(codes(output), ["holdout-leak"]);
   assert.match(output.failures[0].detail, /offset \d+/);
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
+});
+
+test("redacts paths when a holdout spec cannot be read", async (t) => {
+  const privateId = "private-scan-case";
+  const repo = await fixtureRepo(t, {
+    "ordinary-case": {},
+    [privateId]: { spec: "export default { holdout: true };" },
+  });
+  const briefPath = join(repo, "brief.md");
+  const specPath = join(repo, "eval", "fixtures", privateId, "spec.ts");
+  await writeFile(briefPath, brief());
+  await chmod(specPath, 0o000);
+  t.after(() => chmod(specPath, 0o600).catch(() => {}));
+
+  try {
+    await readFile(specPath, "utf8");
+    t.skip("effective permissions still allow reading a mode-000 file");
+    return;
+  } catch (error) {
+    assert.equal(error?.code, "EACCES");
+  }
+
+  const result = spawnSync(process.execPath, [script, briefPath, "--repo", repo], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(codes(JSON.parse(result.stdout)), ["internal-error"]);
+  assert.doesNotMatch(result.stdout, new RegExp(privateId));
 });
 
 test("returns exit 2 and JSON for invocation errors", () => {
