@@ -442,3 +442,54 @@ Same 69-fixture set (holdout excluded), 3 draws, same model/effort; only the run
 pi's agentic loop invents extra findings (false positives) and drifts verdicts; codex exec's single-shot discipline is strictly cleaner. Decision (Frank): production runner switched back to **codex** (review.yml / weekly-eval.yml defaults, model gpt-5.6-sol medium); pi remains a gated fallback lane.
 
 Prompt-tuning round on the pi lane (rev1: multi-defect enumeration + broadened triggers C/D) was rejected: none of the 4 target misses improved, FP worsened 10.6% → 13.6%. Original prompts retained. Reports: eval/results/tune-0-pi-sol.json, tune-1-pi-sol.json (pi lane), tune-*-sol/synth.json (codex lane).
+
+## 2026-07-10 — tuning round 2 (commander-run), codex + pi lanes in parallel
+
+**codex lane, rev2 = original + TRIGGER E (pipeline misreport):** REJECTED. Full-set recall 92.6% → 88.1%; the three stable real misses (bundle-basesha, hotspot-truncation, neutral-conclusion) stayed at 0 (neutral lost its occasional 0.33); four synthetic fixtures regressed (ts-backend-slop-swallow 1.00→0.33 worst). FP unchanged. Lesson: additive trigger text still dilutes attention on this lane; production prompts remain the committed originals (reverted).
+
+**pi lane, rev2 + "Harness discipline" compensation section** (restates the 5.6 base-prompt rules pi never injects — evidence-led, read-only, refactor-is-not-a-defect, clean-diff⇒PASS): recall 86.7% → 91.1% (best pi-lane result), FP unchanged at 13.6%. The three negative-fixture false positives (go-harmless-variadic, neg-hard-dead-code-delete, neg-hard-refactor-move) are stable 3/3 across both lanes and all prompt versions — model-inherent for gpt-5.6-sol, not prompt-fixable at reasonable cost. Variant prompts archived (not adopted; pi is a fallback lane). Reports: eval/results/tune-2-sol-full.json, tune-2-pi-sol.json.
+
+Standing conclusions: (1) prompts are lane artifacts — a lane switch requires re-tuning on that lane; (2) pi cannot receive OpenAI's per-model instructions_template (pi-ai openai-codex adapter overwrites `instructions` with pi's generic prompt), so a pi promotion must first port the missing discipline into our own prompts.
+
+## 2026-07-10 — high-effort matrix: terra@xhigh, luna@xhigh (codex lane, full set, 3 draws, holdout excluded)
+
+| | sol medium (prod) | terra xhigh | luna xhigh |
+|---|---|---|---|
+| recall | **92.6%** | 86.7% | 89.6% |
+| FP rate | 12.1% | **4.5%** | 7.6% |
+| verdict match | 95.2% | 96.1% | 94.7% |
+| mean draw | 74s | 81s | 80s |
+| wall time (207 draws, conc 3) | — | ~93 min | ~93 min |
+
+- Higher effort buys FP reduction, not recall: terra@xhigh nearly clears the negative-fixture false positives (2/9 draws vs sol's 8/9) but loses 6 recall points, including missing yml-infra-token-leak (security) entirely; luna@xhigh sits in between with many new 0.67 instabilities.
+- The three stubborn real misses (bundle-basesha-mismatch, neutral-conclusion, hotspot-truncation) fail under EVERY 5.6 model × effort combination tested (only luna@xhigh scores hotspot 0.33) — 5.6-family blind spot; not addressable by prompt (round-2 evidence) or effort (this round). Revisit with gpt-5.7-nova when available or harness-side self-checks.
+- luna@max was started and aborted after 1 draw (149s/draw, ~3× cost; superseded by luna@xhigh per Frank).
+- Decision: production stays gpt-5.6-sol medium (recall-first: missed real bugs cost more than two known low-frequency FP patterns). Candidate next probe: sol@high as an FP/recall midpoint.
+- Reports: eval/results/2026-07-10-terra-xhigh.json, 2026-07-10-luna-xhigh.json.
+
+## 2026-07-11 — tuning round 3 (commander-run): critic self-inconsistency exception, codex lane
+
+Trigger: first manifest-bearing baseline (2026-07-11-sol-manifest-baseline.json, 80 fixtures with kinds) confirmed 4 real tier-3 misses via x3 (bundle-basesha 0/3, lenient-candidate-parse, neutral-conclusion 1/3, hotspot-truncation 1/3; docker-infra-supply-chain / go-backend-slop-swallow / real-pr10 were single-draw flicker, 3/3 on confirm).
+
+New evidence on bundle-basesha (EVAL_TRACE captures): the miss is DUAL-cause, not a pure model blind spot as round-2 concluded. When generation produces the candidate ("Keep bundle baseSha aligned with the patch base", P2, conf 0.96, correct anchor), the critic deletes it under the cross-file citation rule (rule 8) because whyItBreaks names consumers generically — even though the defect is a single-file self-inconsistency (rule 9 territory). A critic.md EXCEPTION ("self-inconsistent outputs are single-file evidence") demonstrably rescued the finding in the 1/1 traced draw where generation produced it.
+
+Result vs pre-declared criteria (target ≥2/3 recall): FAILED — generation produced the candidate in only ~1/5 new-prompt draws; eval x3 = 0/3. Generation silence dominates; the critic fix alone cannot clear the bar. REVERTED per criteria (promptHash of the tried revision: b6f9afd6088c4ea0; target-only report in session scratchpad, not retained).
+
+Standing conclusions: (1) the critic-prune component of bundle-basesha is real and fixable — next round should first author a GENERIC synthetic fixture where generation reliably surfaces a self-inconsistent-output finding, so the fixture isolates the critic (miss-museum discipline), then re-propose the same exception against that target; (2) "not addressable by prompt" from round 2 needs the trace-level split (candidate vs final) before being trusted — report-level recall alone cannot distinguish generation silence from critic pruning.
+
+Process note: the round's investigation brief named a sealed holdout fixture id before brief-lint existed in the flow (content never entered the tuning context; investigator redacted it). All needlefish dispatch briefs now pass scripts/brief-lint.mjs before sending.
+
+## 2026-07-12 — tuning round 4 (commander-run): critic-isolation fixtures — exception NOT justified, prompt untouched
+
+Goal (round-3 recommendation): author a generic synthetic fixture where generation reliably surfaces a self-inconsistent-output finding, isolating the critic; then re-propose the round-3 critic.md exception against it under fresh pre-declared criteria (session scratchpad tune4-criteria.md, instrument gate declared before any prompt edit).
+
+Instrument attempts (codex gpt-5.6-sol medium, x3 each, current prompt, criticPruneError from EVAL_TRACE candidate-vs-final):
+1. `manifest-count-drift` — arithmetic self-inconsistency (emitted count header vs filtered rows): 3/3 recall, 0 prunes. Rule 9 (single-file observability) already protects this flavor.
+2. `snapshot-ref-drift` — metadata-label drift WITH an in-file contract comment: 3/3 recall, 0 prunes. Rule 6 (contract drift) / rule 9 already protect it.
+3. `publish-commit-drift` — metadata-label drift with NO in-file contract statement + haystack second file (the exact round-3 trigger shape: justification must appeal to unseen downstream consumers): 3/3 recall, 0 prunes.
+
+Verdict: 9/9 draws across three escalating designs — the current critic correctly keeps this defect class in synthetic isolation. The round-3 real-pr1 prune does not reproduce outside the original large real-diff context. Per eval discipline (a prompt change requires a fixture that failed before and passes after), the critic exception is UNJUSTIFIED — prompts/critic.md untouched this round; two-round instrument cap reached, no further redesigns.
+
+Standing conclusions: (1) round-3's "critic-prune component is fixable by exception" is downgraded: the prune is context-dependent (large-diff conditions), not a stable critic policy defect; (2) the remaining lever for bundle-basesha stays generation-side (round-2/3: gpt-5.7-nova or harness self-checks), plus optionally a real-history fixture mined from the original PR via pr2fixture if reproducing the large-diff prune context is ever worth the cost; (3) the three new fixtures are kept as GUARD positives pinning the protections rules 6/9 give this class (any future critic edit that starts pruning them is a regression), and one new sealed holdout of the same class was added per holdout discipline.
+
+Fixture set delta (uncommitted with this entry): +manifest-count-drift, +snapshot-ref-drift, +publish-commit-drift (tier-2 positives, guards), +1 sealed holdout. anchor/leak tests green (10/10). fixtureSetHash changes; next full-set baseline must be re-recorded before aggregate comparisons.
