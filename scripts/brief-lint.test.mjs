@@ -271,7 +271,7 @@ test("classifies literal, quoted, false, absent, computed, and spread holdout pr
   const { result, output } = await run(t, contents, fixtures);
 
   assert.equal(result.status, 1);
-  assert.deepEqual(codes(output), ["holdout-leak", "holdout-leak", "holdout-leak", "holdout-leak"]);
+  assert.deepEqual(codes(output), ["holdout-leak", "holdout-leak", "holdout-leak"]);
   assert.equal(output.failures.every(({ detail }) => /offset \d+/.test(detail)), true);
 });
 
@@ -289,7 +289,7 @@ test("ignores complex values under literal non-holdout properties and accepts a 
   assert.deepEqual(output, { pass: true, failures: [] });
 });
 
-test("fails closed for computed property keys and spreads", async (t) => {
+test("honors folded computed false and fails closed for spreads", async (t) => {
   const fixtures = {
     "ordinary-case": {},
     "computed-key-case": {
@@ -300,6 +300,37 @@ test("fails closed for computed property keys and spreads", async (t) => {
     },
   };
   const contents = `${brief()}\ncomputed-key-case spread-ambiguity-case\n`;
+  const { result, output } = await run(t, contents, fixtures);
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+});
+
+test("folds static computed property keys before classifying holdouts", async (t) => {
+  const fixtureId = "static-computed-non-holdout-case";
+  const contents = `${brief()}\nReview ${fixtureId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [fixtureId]: {
+      spec: `export default { id: ${JSON.stringify(fixtureId)}, ['ti' + 'er']: 3 };`,
+    },
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("classifies folded and dynamic computed holdout keys conservatively", async (t) => {
+  const fixtures = {
+    "ordinary-case": {},
+    "folded-holdout-case": {
+      spec: `export default { id: "folded-holdout-case", [\`hold\` + ('out')]: true };`,
+    },
+    "dynamic-holdout-case": {
+      spec: `export default { id: "dynamic-holdout-case", [dynamicName()]: true };`,
+    },
+  };
+  const contents = `${brief()}\nfolded-holdout-case dynamic-holdout-case\n`;
   const { result, output } = await run(t, contents, fixtures);
 
   assert.equal(result.status, 1);

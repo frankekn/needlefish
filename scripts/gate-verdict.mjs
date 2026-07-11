@@ -4,6 +4,8 @@ import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const FIXTURE_KINDS = new Set(["positive", "negative", "parity", "honeypot"]);
+
 function output(pass, reasons, promptHash = "", fixtureSetHash = "") {
   process.stdout.write(`${JSON.stringify({ pass, reasons, promptHash, fixtureSetHash })}\n`);
 }
@@ -45,7 +47,7 @@ function validReport(value) {
   const fixtureIds = new Set(value.fixtures);
   const fixtureKindEntries = Object.entries(value.fixtureKinds);
   if (fixtureKindEntries.length !== fixtureIds.size
-    || !fixtureKindEntries.every(([id, kind]) => fixtureIds.has(id) && typeof kind === "string" && kind.length > 0)) return false;
+    || !fixtureKindEntries.every(([id, kind]) => fixtureIds.has(id) && FIXTURE_KINDS.has(kind))) return false;
   if (!Object.entries(value.aggregates.recallByFixture)
     .every(([id, recall]) => fixtureIds.has(id) && Number.isFinite(recall) && recall >= 0 && recall <= 1)) return false;
   const fixtureTierEntries = Object.entries(value.fixtureTiers);

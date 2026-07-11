@@ -18,6 +18,22 @@ function staticStringValue(node) {
   return undefined;
 }
 
+function foldStaticString(expression) {
+  if (ts.isParenthesizedExpression(expression)) return foldStaticString(expression.expression);
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+    return expression.text;
+  }
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    const left = foldStaticString(expression.left);
+    const right = foldStaticString(expression.right);
+    if (left !== undefined && right !== undefined) return left + right;
+  }
+  return undefined;
+}
+
 function resolveExportedObjects(sourceFile) {
   const declarations = new Map();
   const exported = [];
@@ -70,7 +86,17 @@ function classifySpec(object) {
       ambiguous = true;
       continue;
     }
-    const name = literalPropertyName(member.name);
+    let name;
+    if (ts.isComputedPropertyName(member.name)) {
+      name = foldStaticString(member.name.expression);
+      if (name === undefined) {
+        ambiguous = true;
+        continue;
+      }
+      if (name !== "holdout") continue;
+    } else {
+      name = literalPropertyName(member.name);
+    }
     if (name === undefined) {
       ambiguous = true;
       continue;

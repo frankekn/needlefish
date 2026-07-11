@@ -100,6 +100,17 @@ test("fixture kinds must exactly cover the manifest with non-empty strings", () 
   }
 });
 
+test("fixture kinds reject values outside the declared union", () => {
+  const report = baseReport();
+  report.fixtures.push("typo-kind");
+  report.fixtureKinds["typo-kind"] = "negativ";
+  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true } });
+  report.aggregates.recallByFixture["typo-kind"] = 1;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+});
+
 test("positive fixture kinds and fixture tiers require identical keys", () => {
   for (const mutate of [
     (report) => { delete report.fixtureTiers["required-bug"]; },
