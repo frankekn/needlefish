@@ -157,11 +157,14 @@ async function main() {
     const criteria = parseCriteria(brief, failures);
 
     if (criteria !== undefined) await validateFixtures(criteria, repoPath, failures);
+    const decodedCriteria = criteria === undefined ? undefined : JSON.stringify(criteria);
 
     for (const holdoutId of await findHoldoutIds(repoPath)) {
       const offset = brief.indexOf(holdoutId);
       if (offset !== -1) {
         failures.push(failure("holdout-leak", `holdout fixture reference at offset ${offset}`));
+      } else if (decodedCriteria?.includes(holdoutId)) {
+        failures.push(failure("holdout-leak", "holdout fixture reference in criteria"));
       }
     }
 

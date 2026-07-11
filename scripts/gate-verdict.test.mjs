@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const script = new URL("./gate-verdict.mjs", import.meta.url);
 
@@ -11,6 +12,7 @@ function baseReport() {
   return {
     promptHash: "prompt-123",
     fixtureSetHash: "fixtures-456",
+    draws: 1,
     results: [
       { fixtureId: "obvious-bug", score: { recall: true } },
       { fixtureId: "required-bug", score: { recall: true } },
@@ -56,18 +58,49 @@ test("nonzero honeypot count voids the report", () => {
 
 test("a failed tier-1 draw fails the whole report", () => {
   const report = baseReport();
-  report.results.push({ fixtureId: "obvious-bug", score: { recall: false } });
+  report.results[0].score.recall = false;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.ok(result.json.reasons.includes("tier1-missed:obvious-bug"));
 });
 
-test("a tier-1 fixture with no draw fails closed", () => {
+test("an incomplete tier-1 fixture fails for missing draws only", () => {
   const report = baseReport();
+  report.draws = 3;
   report.results = report.results.filter((result) => result.fixtureId !== "obvious-bug");
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
-  assert.ok(result.json.reasons.includes("tier1-missed:obvious-bug"));
+  assert.ok(result.json.reasons.includes("missing-draws:obvious-bug"));
+  assert.ok(!result.json.reasons.includes("tier1-missed:obvious-bug"));
+});
+
+test("a tier-1 fixture with fewer draws than declared fails for missing draws", () => {
+  const report = baseReport();
+  report.draws = 3;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("missing-draws:obvious-bug"));
+  assert.ok(!result.json.reasons.includes("tier1-missed:obvious-bug"));
+});
+
+test("an incomplete criteria fixture fails for missing draws only", () => {
+  const report = baseReport();
+  report.draws = 2;
+  report.aggregates.recallByFixture["required-bug"] = 0.5;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("missing-draws:required-bug"));
+  assert.ok(!result.json.reasons.includes("fixture-recall-missed:required-bug"));
+});
+
+test("overlapping tier-1 and criteria fixture emits one missing-draws reason", () => {
+  const report = baseReport();
+  report.draws = 2;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["obvious-bug"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.equal(result.json.reasons.filter((reason) => reason === "missing-draws:obvious-bug").length, 1);
 });
 
 test("noise above the criteria threshold fails", () => {
@@ -108,6 +141,16 @@ test("missing report metrics fail closed without crashing", () => {
   assert.deepEqual(result.json.reasons, ["unreadable-report"]);
 });
 
+test("draws must be a positive integer", () => {
+  for (const draws of [0, 1.5]) {
+    const report = baseReport();
+    report.draws = draws;
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
 test("malformed criteria fails closed", () => {
   const criteria = baseCriteria();
   criteria.fixtures = [];
@@ -134,6 +177,17 @@ test("negative finite noise threshold evaluates normally", () => {
 
 test("bad invocation is the operational error exit", () => {
   const result = spawnSync(process.execPath, [script.pathname], { encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /^usage:/);
+  assert.equal(result.stdout, "");
+});
+
+test("entrypoint runs from a path containing a space", () => {
+  const dir = mkdtempSync(join(process.cwd(), ".needlefish gate "));
+  const copiedScript = join(dir, "gate verdict.mjs");
+  copyFileSync(fileURLToPath(script), copiedScript);
+  const result = spawnSync(process.execPath, [copiedScript], { encoding: "utf8" });
+  rmSync(dir, { recursive: true, force: true });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /^usage:/);
   assert.equal(result.stdout, "");

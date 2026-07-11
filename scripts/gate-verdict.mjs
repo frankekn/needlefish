@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function output(pass, reasons, promptHash = "", fixtureSetHash = "") {
   process.stdout.write(`${JSON.stringify({ pass, reasons, promptHash, fixtureSetHash })}\n`);
@@ -26,6 +28,7 @@ function validReport(value) {
   if (!isRecord(value)
     || typeof value.promptHash !== "string" || value.promptHash.length === 0
     || typeof value.fixtureSetHash !== "string" || value.fixtureSetHash.length === 0
+    || !Number.isInteger(value.draws) || value.draws < 1
     || !Array.isArray(value.results)
     || !isRecord(value.aggregates)
     || !isRecord(value.aggregates.recallByFixture)
@@ -56,10 +59,25 @@ export function evaluateGate(report, criteria) {
   if (!validReport(report)) return { pass: false, reasons: ["unreadable-report"], promptHash, fixtureSetHash };
 
   const reasons = [];
+  const incompleteFixtures = new Set();
+  const requiredFixtures = new Set([
+    ...Object.entries(report.fixtureTiers)
+      .filter(([, tier]) => tier === 1)
+      .map(([fixtureId]) => fixtureId),
+    ...criteria.fixtures,
+  ]);
+  for (const fixtureId of requiredFixtures) {
+    const drawCount = report.results.filter((result) => result.fixtureId === fixtureId).length;
+    if (drawCount !== report.draws) {
+      reasons.push(`missing-draws:${fixtureId}`);
+      incompleteFixtures.add(fixtureId);
+    }
+  }
+
   for (const [fixtureId, tier] of Object.entries(report.fixtureTiers)) {
-    if (tier !== 1) continue;
+    if (tier !== 1 || incompleteFixtures.has(fixtureId)) continue;
     const draws = report.results.filter((result) => result.fixtureId === fixtureId);
-    if (draws.length === 0 || draws.some((draw) => draw.score.recall !== true)) {
+    if (draws.some((draw) => draw.score.recall !== true)) {
       reasons.push(`tier1-missed:${fixtureId}`);
     }
   }
@@ -68,7 +86,9 @@ export function evaluateGate(report, criteria) {
     reasons.push(`noise-threshold-exceeded:${report.aggregates.meanNoisePerPositive}>${criteria.maxMeanNoisePerPositive}`);
   }
   for (const fixtureId of criteria.fixtures) {
-    if (report.aggregates.recallByFixture[fixtureId] !== 1) reasons.push(`fixture-recall-missed:${fixtureId}`);
+    if (!incompleteFixtures.has(fixtureId) && report.aggregates.recallByFixture[fixtureId] !== 1) {
+      reasons.push(`fixture-recall-missed:${fixtureId}`);
+    }
   }
   return { pass: reasons.length === 0, reasons, promptHash, fixtureSetHash };
 }
@@ -98,6 +118,6 @@ function main(argv) {
   return verdict.pass ? 0 : 1;
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   process.exitCode = main(process.argv.slice(2));
 }

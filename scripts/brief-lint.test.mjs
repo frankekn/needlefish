@@ -146,6 +146,31 @@ test("detects spaced multiline holdout syntax without leaking its id", async (t)
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
 });
 
+test("detects a unicode-escaped holdout id in decoded criteria without emitting criteria", async (t) => {
+  const secretId = "sealed-case-xyz";
+  const escapedId = secretId.replace("x", "\\u0078");
+  const contents = brief(validCriteria({ fixtures: [secretId] })).replace(secretId, escapedId);
+  const repo = await fixtureRepo(t, {
+    [secretId]: { spec: "export default { holdout: true };" },
+  });
+  const briefPath = join(repo, "brief.md");
+  const emittedPath = join(repo, "criteria.json");
+  await writeFile(briefPath, contents);
+
+  const result = spawnSync(
+    process.execPath,
+    [script, briefPath, "--repo", repo, "--emit-criteria", emittedPath],
+    { encoding: "utf8" },
+  );
+  const output = JSON.parse(result.stdout);
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  assert.equal(output.failures[0].detail, "holdout fixture reference in criteria");
+  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+  await assert.rejects(readFile(emittedPath, "utf8"), { code: "ENOENT" });
+});
+
 test("redacts paths when a holdout spec cannot be read", async (t) => {
   const privateId = "private-scan-case";
   const repo = await fixtureRepo(t, {
