@@ -23,6 +23,7 @@ function baseReport() {
       meanNoisePerPositive: 0.25,
       recallByFixture: { "obvious-bug": 1, "required-bug": 1 },
     },
+    fixtureKinds: { "obvious-bug": "positive", "required-bug": "positive" },
     fixtureTiers: { "obvious-bug": 1, "required-bug": 2 },
   };
 }
@@ -84,6 +85,53 @@ test("fixture tier and aggregate keys must exist in the manifest", () => {
   }
 });
 
+test("fixture kinds must exactly cover the manifest with non-empty strings", () => {
+  for (const mutate of [
+    (report) => { delete report.fixtureKinds; },
+    (report) => { delete report.fixtureKinds["required-bug"]; },
+    (report) => { report.fixtureKinds["outside-manifest"] = "positive"; },
+    (report) => { report.fixtureKinds["required-bug"] = ""; },
+  ]) {
+    const report = baseReport();
+    mutate(report);
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
+test("positive fixture kinds and fixture tiers require identical keys", () => {
+  for (const mutate of [
+    (report) => { delete report.fixtureTiers["required-bug"]; },
+    (report) => { report.fixtureKinds["required-bug"] = "negative"; },
+  ]) {
+    const report = baseReport();
+    mutate(report);
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
+test("real-shaped reports allow recall keys beyond the positive tier keys", () => {
+  const report = baseReport();
+  report.fixtures.push("negative-case");
+  report.fixtureKinds["negative-case"] = "negative";
+  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true } });
+  report.aggregates.recallByFixture["negative-case"] = 1;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("an old report without fixture kinds is unreadable", () => {
+  const report = baseReport();
+  delete report.fixtureKinds;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+});
+
 test("a criteria fixture absent from the manifest emits only fixture-not-in-run", () => {
   const criteria = baseCriteria();
   criteria.fixtures = ["not-run"];
@@ -95,6 +143,7 @@ test("a criteria fixture absent from the manifest emits only fixture-not-in-run"
 test("a manifest fixture absent from results fails for missing draws", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
+  report.fixtureKinds["negative-honeypot"] = "honeypot";
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, ["missing-draws:negative-honeypot"]);
@@ -103,6 +152,7 @@ test("a manifest fixture absent from results fails for missing draws", () => {
 test("a manifest-complete report passes", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
+  report.fixtureKinds["negative-honeypot"] = "honeypot";
   report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true } });
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -196,6 +246,7 @@ test("resume-shaped reports require draws for every fixture tier entry", () => {
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
   report.fixtures = ["resume-first", "resume-second"];
+  report.fixtureKinds = { "resume-first": "positive", "resume-second": "positive" };
   const criteria = baseCriteria();
   criteria.fixtures = ["resume-first"];
   const result = run(report, criteria);

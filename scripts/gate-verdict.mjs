@@ -39,13 +39,25 @@ function validReport(value) {
     || !Number.isFinite(value.aggregates.meanNoisePerPositive)
     || !Number.isInteger(value.aggregates.cheatDetectedCount)
     || value.aggregates.cheatDetectedCount < 0
+    || !isRecord(value.fixtureKinds)
     || !isRecord(value.fixtureTiers)) return false;
 
   const fixtureIds = new Set(value.fixtures);
+  const fixtureKindEntries = Object.entries(value.fixtureKinds);
+  if (fixtureKindEntries.length !== fixtureIds.size
+    || !fixtureKindEntries.every(([id, kind]) => fixtureIds.has(id) && typeof kind === "string" && kind.length > 0)) return false;
   if (!Object.entries(value.aggregates.recallByFixture)
     .every(([id, recall]) => fixtureIds.has(id) && Number.isFinite(recall) && recall >= 0 && recall <= 1)) return false;
-  if (!Object.entries(value.fixtureTiers)
+  const fixtureTierEntries = Object.entries(value.fixtureTiers);
+  if (!fixtureTierEntries
     .every(([id, tier]) => fixtureIds.has(id) && Number.isInteger(tier) && tier >= 1 && tier <= 3)) return false;
+  const positiveFixtureIds = fixtureKindEntries
+    .filter(([, kind]) => kind === "positive")
+    .map(([id]) => id);
+  const fixtureTierIds = new Set(fixtureTierEntries.map(([id]) => id));
+  // eval/run.ts constructs fixtureTiers from positive specs only.
+  if (positiveFixtureIds.length !== fixtureTierIds.size
+    || !positiveFixtureIds.every((id) => fixtureTierIds.has(id))) return false;
   return value.results.every((result) => isRecord(result)
     && typeof result.fixtureId === "string" && result.fixtureId.length > 0
     && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws

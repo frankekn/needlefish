@@ -13,6 +13,11 @@ function literalPropertyName(name) {
   return undefined;
 }
 
+function staticStringValue(node) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  return undefined;
+}
+
 function resolveExportedObjects(sourceFile) {
   const declarations = new Map();
   const exported = [];
@@ -75,10 +80,11 @@ function classifySpec(object) {
       continue;
     }
     if (name === "id") {
-      if (!ts.isStringLiteral(member.initializer) || member.initializer.text.trim().length === 0) {
+      const id = staticStringValue(member.initializer);
+      if (id === undefined || id.trim().length === 0) {
         throw new Error("invalid spec id");
       }
-      ids.push(member.initializer.text);
+      ids.push(id);
     }
     if (name === "holdout" && member.initializer.kind !== ts.SyntaxKind.FalseKeyword) holdout = true;
   }

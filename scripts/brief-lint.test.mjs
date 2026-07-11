@@ -275,6 +275,37 @@ test("classifies literal, quoted, false, absent, computed, and spread holdout pr
   assert.equal(output.failures.every(({ detail }) => /offset \d+/.test(detail)), true);
 });
 
+test("ignores complex values under literal non-holdout properties and accepts a static template id", async (t) => {
+  const fixtureId = "complex-non-holdout-case";
+  const contents = `${brief()}\nReview ${fixtureId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [fixtureId]: {
+      spec: "export default { id: `complex-non-holdout-case`, tier: 1 + 1, patterns: [/x/] };",
+    },
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("fails closed for computed property keys and spreads", async (t) => {
+  const fixtures = {
+    "ordinary-case": {},
+    "computed-key-case": {
+      spec: `export default { id: "computed-key-case", ['hold' + 'out']: false };`,
+    },
+    "spread-ambiguity-case": {
+      spec: `export default { id: "spread-ambiguity-case", ...shared };`,
+    },
+  };
+  const contents = `${brief()}\ncomputed-key-case spread-ambiguity-case\n`;
+  const { result, output } = await run(t, contents, fixtures);
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak", "holdout-leak"]);
+});
+
 test("returns exit 2 without emitting criteria or leaking identifiers for an unloadable spec", async (t) => {
   const privateId = "broken-private-case";
   const repo = await fixtureRepo(t, {
