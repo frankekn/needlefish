@@ -126,6 +126,20 @@ test("overlapping tier-1 and criteria fixture emits one missing-draws reason", (
   assert.equal(result.json.reasons.filter((reason) => reason === "missing-draws:obvious-bug").length, 1);
 });
 
+test("resume-shaped reports require draws for every fixture tier entry", () => {
+  const report = baseReport();
+  report.results = [
+    { fixtureId: "resume-first", draw: 0, score: { recall: true } },
+  ];
+  report.aggregates.recallByFixture = { "resume-first": 1 };
+  report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
+  const criteria = baseCriteria();
+  criteria.fixtures = ["resume-first"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["missing-draws:resume-second"]);
+});
+
 test("noise above the criteria threshold fails", () => {
   const report = baseReport();
   report.aggregates.meanNoisePerPositive = 0.51;

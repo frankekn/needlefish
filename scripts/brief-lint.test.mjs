@@ -174,6 +174,55 @@ test("detects a single-quoted holdout property without leaking its id", async (t
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
 });
 
+test("ignores a holdout marker that appears only in a line comment", async (t) => {
+  const commentOnlyId = "comment-only-line-case";
+  const contents = `${brief()}\nReview ${commentOnlyId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [commentOnlyId]: { spec: "export default { enabled: true }; // holdout: true" },
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("ignores a holdout marker that appears only in a block comment", async (t) => {
+  const commentOnlyId = "comment-only-block-case";
+  const contents = `${brief()}\nReview ${commentOnlyId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [commentOnlyId]: { spec: "export default { enabled: true }; /* 'holdout': true */" },
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("ignores a holdout marker inside a string value", async (t) => {
+  const stringOnlyId = "string-value-only-case";
+  const contents = `${brief()}\nReview ${stringOnlyId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [stringOnlyId]: { spec: 'export default { note: "holdout: true" };' },
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("detects a bare holdout property after a URL string on the same line", async (t) => {
+  const secretId = "url-before-holdout-case";
+  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [secretId]: { spec: 'export default { source: "https://example.test/path", holdout: true };' },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+});
+
 test("detects a unicode-escaped holdout id in decoded criteria without emitting criteria", async (t) => {
   const secretId = "sealed-case-xyz";
   const escapedId = secretId.replace("x", "\\u0078");

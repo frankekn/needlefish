@@ -8,6 +8,86 @@ const JSON_FENCE = /^```json[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
 // property names and spacing or line breaks without trying to parse TypeScript.
 const HOLDOUT_TRUE = /(?:\bholdout\b|"holdout"|'holdout')\s*:\s*true\b/;
 
+function maskCharacter(characters, index) {
+  if (characters[index] !== "\n" && characters[index] !== "\r") characters[index] = " ";
+}
+
+function sanitizeForHoldoutScan(source) {
+  const sanitized = source.split("");
+  let state = "code";
+  let index = 0;
+
+  while (index < source.length) {
+    if (state === "code") {
+      if (source[index] === "/" && source[index + 1] === "/") {
+        state = "line-comment";
+        continue;
+      }
+      if (source[index] === "/" && source[index + 1] === "*") {
+        state = "block-comment";
+        continue;
+      }
+      if (source[index] === "'" || source[index] === '"') {
+        state = source[index] === "'" ? "single-string" : "double-string";
+        continue;
+      }
+      if (source[index] === "`") {
+        state = "template-literal";
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (state === "line-comment") {
+      maskCharacter(sanitized, index);
+      if (source[index] === "\n" || source[index] === "\r") state = "code";
+      index += 1;
+      continue;
+    }
+
+    if (state === "block-comment") {
+      const closesComment = source[index] === "*" && source[index + 1] === "/";
+      maskCharacter(sanitized, index);
+      if (closesComment) {
+        maskCharacter(sanitized, index + 1);
+        index += 2;
+        state = "code";
+      } else {
+        index += 1;
+      }
+      continue;
+    }
+
+    const quote = state === "single-string" ? "'" : state === "double-string" ? '"' : "`";
+    const start = index;
+    index += 1;
+    while (index < source.length) {
+      if (source[index] === "\\") {
+        index = Math.min(index + 2, source.length);
+        continue;
+      }
+      if (source[index] === quote) {
+        index += 1;
+        break;
+      }
+      index += 1;
+    }
+
+    let lookahead = index;
+    while (lookahead < source.length && /\s/.test(source[lookahead])) lookahead += 1;
+    const isQuotedProperty = state !== "template-literal" && source[index - 1] === quote && source[lookahead] === ":";
+    if (!isQuotedProperty) {
+      for (let maskedIndex = start; maskedIndex < index; maskedIndex += 1) {
+        maskCharacter(sanitized, maskedIndex);
+      }
+    }
+    state = "code";
+  }
+
+  return sanitized.join("");
+}
+
 function output(pass, failures, exitCode) {
   process.stdout.write(`${JSON.stringify({ pass, failures })}\n`);
   process.exitCode = exitCode;
@@ -141,7 +221,7 @@ async function findHoldoutIds(repoPath) {
         if (error?.code === "ENOENT") continue;
         throw new Error(`holdout-scan-error: ${error?.code ?? "unknown"}`);
       }
-      if (HOLDOUT_TRUE.test(source)) ids.push(basename(join(root, entry.name)));
+      if (HOLDOUT_TRUE.test(sanitizeForHoldoutScan(source))) ids.push(basename(join(root, entry.name)));
     }
   }
   return ids;

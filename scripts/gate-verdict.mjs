@@ -62,9 +62,8 @@ export function evaluateGate(report, criteria) {
   const reasons = [];
   const incompleteFixtures = new Set();
   const requiredFixtures = new Set([
-    ...Object.entries(report.fixtureTiers)
-      .filter(([, tier]) => tier === 1)
-      .map(([fixtureId]) => fixtureId),
+    ...Object.keys(report.fixtureTiers),
+    ...Object.keys(report.aggregates.recallByFixture),
     ...criteria.fixtures,
   ]);
   for (const fixtureId of requiredFixtures) {
