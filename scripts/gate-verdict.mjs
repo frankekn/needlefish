@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -118,6 +118,19 @@ function main(argv) {
   return verdict.pass ? 0 : 1;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+function realpathOrInput(path) {
+  try {
+    return { path: realpathSync(path), succeeded: true };
+  } catch {
+    return { path, succeeded: false };
+  }
+}
+
+const modulePath = realpathOrInput(fileURLToPath(import.meta.url));
+const argvPath = process.argv[1] ? realpathOrInput(resolve(process.argv[1])) : undefined;
+if (!argvPath
+  || !modulePath.succeeded
+  || !argvPath.succeeded
+  || modulePath.path === argvPath.path) {
   process.exitCode = main(process.argv.slice(2));
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -188,6 +188,29 @@ test("entrypoint runs from a path containing a space", () => {
   copyFileSync(fileURLToPath(script), copiedScript);
   const result = spawnSync(process.execPath, [copiedScript], { encoding: "utf8" });
   rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /^usage:/);
+  assert.equal(result.stdout, "");
+});
+
+test("entrypoint runs when invoked through a symlinked directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "needlefish-gate-real-"));
+  const linkedDir = `${dir}-link`;
+  const copiedScript = join(dir, "gate-verdict.mjs");
+  copyFileSync(fileURLToPath(script), copiedScript);
+  symlinkSync(dir, linkedDir, "dir");
+  const result = spawnSync(process.execPath, [join(linkedDir, "gate-verdict.mjs")], { encoding: "utf8" });
+  rmSync(linkedDir, { force: true });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /^usage:/);
+  assert.equal(result.stdout, "");
+});
+
+test("entrypoint runs when the argv path cannot be canonicalized", () => {
+  const missingPath = join(tmpdir(), `missing-gate-verdict-${process.pid}.mjs`);
+  const source = `process.argv[1] = ${JSON.stringify(missingPath)}; await import(${JSON.stringify(script.href)});`;
+  const result = spawnSync(process.execPath, ["--input-type=module", "--eval", source], { encoding: "utf8" });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /^usage:/);
   assert.equal(result.stdout, "");
