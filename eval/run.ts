@@ -12,6 +12,7 @@ import { score } from "./shared/score";
 import type {
   Aggregates,
   DrawResult,
+  FixtureKind,
   FixtureSpec,
   HoldoutMode,
   Report,
@@ -322,12 +323,21 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
   };
 }
 
-function writeReport(args: RunArgs, results: readonly DrawResult[], specs: readonly FixtureSpec[]): Report {
+function writeReport(
+  args: RunArgs,
+  results: readonly DrawResult[],
+  specs: readonly FixtureSpec[]
+): Report & {
+  readonly fixtures: readonly string[];
+  readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+} {
   const fixtureTiers: Record<string, number> = {};
+  const fixtureKinds: Record<string, FixtureKind> = {};
   for (const s of specs) {
     if (s.kind === "positive") fixtureTiers[s.id] = s.tier ?? 2;
+    fixtureKinds[s.id] = s.kind;
   }
-  const report: Report = {
+  const report = {
     promptHash: promptHash(),
     runner: args.runner,
     model: args.model,
@@ -341,6 +351,11 @@ function writeReport(args: RunArgs, results: readonly DrawResult[], specs: reado
     gitSha: repoGitSha(),
     fixtureSetHash: fixtureSetHash(specs),
     fixtureTiers,
+    fixtures: specs.map((spec) => spec.id),
+    fixtureKinds,
+  } satisfies Report & {
+    readonly fixtures: readonly string[];
+    readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
   };
   mkdirSync(path.dirname(path.resolve(args.report)), { recursive: true });
   writeFileSync(args.report, JSON.stringify(report, null, 2));
