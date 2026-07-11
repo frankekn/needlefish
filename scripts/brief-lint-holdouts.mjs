@@ -13,11 +13,6 @@ function literalPropertyName(name) {
   return undefined;
 }
 
-function staticStringValue(node) {
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  return undefined;
-}
-
 function foldStaticString(expression) {
   if (ts.isParenthesizedExpression(expression)) return foldStaticString(expression.expression);
   if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
@@ -77,7 +72,6 @@ function resolveExportedObjects(sourceFile) {
 }
 
 function classifySpec(object) {
-  const ids = [];
   let holdout = false;
   let ambiguous = false;
 
@@ -102,33 +96,19 @@ function classifySpec(object) {
       continue;
     }
     if (!ts.isPropertyAssignment(member)) {
-      if (name === "id" || name === "holdout") ambiguous = true;
+      if (name === "holdout") ambiguous = true;
       continue;
-    }
-    if (name === "id") {
-      const id = staticStringValue(member.initializer);
-      if (id === undefined || id.trim().length === 0) {
-        throw new Error("invalid spec id");
-      }
-      ids.push(id);
     }
     if (name === "holdout" && member.initializer.kind !== ts.SyntaxKind.FalseKeyword) holdout = true;
   }
 
-  if (ids.length !== 1) throw new Error("ambiguous spec id");
-  return { id: ids[0], holdout: ambiguous || holdout };
+  return ambiguous || holdout;
 }
 
 function parseSpec(path, source) {
   const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   if (sourceFile.parseDiagnostics.length > 0) throw new Error("invalid spec syntax");
-  const classifications = resolveExportedObjects(sourceFile).map(classifySpec);
-  const ids = new Set(classifications.map(({ id }) => id));
-  if (ids.size !== 1) throw new Error("ambiguous spec export");
-  return {
-    id: classifications[0].id,
-    holdout: classifications.some(({ holdout }) => holdout),
-  };
+  return resolveExportedObjects(sourceFile).some(classifySpec);
 }
 
 async function collect(repoPath) {
@@ -147,8 +127,8 @@ async function collect(repoPath) {
       if (!entry.isDirectory()) continue;
       const specPath = join(root, entry.name, "spec.ts");
       if (!(await stat(specPath)).isFile()) throw new Error("invalid spec path");
-      const spec = parseSpec(specPath, await readFile(specPath, "utf8"));
-      if (spec.holdout) holdouts.push(spec.id);
+      const holdout = parseSpec(specPath, await readFile(specPath, "utf8"));
+      if (holdout) holdouts.push(entry.name);
     }
   }
   return holdouts;

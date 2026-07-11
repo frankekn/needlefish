@@ -10,6 +10,14 @@ const JSON_FENCE = /^```json[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
 // property names and spacing or line breaks without trying to parse TypeScript.
 const HOLDOUT_TRUE = /(?:\bholdout\b|"holdout"|'holdout')\s*:\s*true\b/;
 
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findCompleteIdentifier(source, identifier) {
+  return source.search(new RegExp(`(?<![A-Za-z0-9_-])${escapeRegex(identifier)}(?![A-Za-z0-9_-])`));
+}
+
 function maskCharacter(characters, index) {
   if (characters[index] !== "\n" && characters[index] !== "\r") characters[index] = " ";
 }
@@ -265,10 +273,10 @@ async function main() {
       ...findStructuralHoldoutIds(repoPath),
     ]);
     for (const holdoutId of holdoutIds) {
-      const offset = brief.indexOf(holdoutId);
+      const offset = findCompleteIdentifier(brief, holdoutId);
       if (offset !== -1) {
         failures.push(failure("holdout-leak", `holdout fixture reference at offset ${offset}`));
-      } else if (decodedCriteria?.includes(holdoutId)) {
+      } else if (decodedCriteria !== undefined && findCompleteIdentifier(decodedCriteria, holdoutId) !== -1) {
         failures.push(failure("holdout-leak", "holdout fixture reference in criteria"));
       }
     }

@@ -223,21 +223,44 @@ test("detects a bare holdout property after a URL string on the same line", asyn
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
 });
 
-test("detects a computed runtime holdout from a named spec export without leaking its id", async (t) => {
-  const secretId = "computed-sealed-case";
+test("detects a computed runtime holdout from a named spec export by directory identity", async (t) => {
+  const specId = "computed-sealed-case";
   const directoryId = "computed-fixture-directory";
-  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const contents = `${brief()}\nDo not use ${directoryId}.\n`;
   const { result, output } = await run(t, contents, {
     "ordinary-case": {},
     [directoryId]: {
-      spec: `const sealed = true; export const spec = { id: ${JSON.stringify(secretId)}, holdout: sealed };`,
+      spec: `const sealed = true; export const spec = { id: ${JSON.stringify(specId)}, holdout: sealed };`,
     },
   });
 
   assert.equal(result.status, 1);
   assert.deepEqual(codes(output), ["holdout-leak"]);
-  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+  assert.doesNotMatch(result.stdout, new RegExp(specId));
   assert.doesNotMatch(result.stdout, new RegExp(directoryId));
+});
+
+test("uses the fixture directory as the only holdout identity when spec.id differs", async (t) => {
+  const fixtures = {
+    "ordinary-case": {},
+    "dir-seal": { spec: `export default { id: "other-name", holdout: true };` },
+  };
+
+  const directoryReference = await run(t, `${brief()}\nReview dir-seal.\n`, fixtures);
+  assert.equal(directoryReference.result.status, 1);
+  assert.deepEqual(codes(directoryReference.output), ["holdout-leak"]);
+
+  const specIdProse = await run(t, `${brief()}\nReview other-name.\n`, fixtures);
+  assert.equal(specIdProse.result.status, 0);
+  assert.deepEqual(specIdProse.output, { pass: true, failures: [] });
+
+  const specIdCriteria = await run(
+    t,
+    brief(validCriteria({ fixtures: ["other-name"] })),
+    fixtures,
+  );
+  assert.equal(specIdCriteria.result.status, 1);
+  assert.deepEqual(codes(specIdCriteria.output), ["fixture-not-found"]);
 });
 
 test("classifies holdouts without executing fixture specs", async (t) => {
@@ -406,6 +429,46 @@ test("detects a unicode-escaped holdout id in decoded criteria without emitting 
   assert.equal(output.failures[0].detail, "holdout fixture reference in criteria");
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
   await assert.rejects(readFile(emittedPath, "utf8"), { code: "ENOENT" });
+});
+
+test("allows a longer fixture identifier that contains a holdout identifier prefix", async (t) => {
+  const contents = `${brief(validCriteria({ fixtures: ["foo-bar-baz"] }))}\nReview foo-bar-baz.\n`;
+  const { result, output } = await run(t, contents, {
+    "foo-bar": { spec: `export default { id: "foo-bar", holdout: true };` },
+    "foo-bar-baz": {},
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("allows a decoded criteria identifier with a holdout identifier prefix", async (t) => {
+  const contents = brief(validCriteria({ fixtures: ["foo-bar-baz"] })).replace("foo-bar-baz", "foo-bar-b\\u0061z");
+  const { result, output } = await run(t, contents, {
+    "foo-bar": { spec: `export default { id: "foo-bar", holdout: true };` },
+    "foo-bar-baz": {},
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(output, { pass: true, failures: [] });
+});
+
+test("blocks complete holdout identifiers in plain, punctuated, and backtick-delimited text", async (t) => {
+  const fixtures = {
+    "ordinary-case": {},
+    "foo-bar": { spec: `export default { id: "foo-bar", holdout: true };` },
+  };
+  for (const reference of ["foo-bar", "(foo-bar),", "`foo-bar`"]) {
+    await t.test(reference, async (t) => {
+      const contents = `${brief()}\nReview ${reference}.\n`;
+      const expectedOffset = contents.indexOf("foo-bar");
+      const { result, output } = await run(t, contents, fixtures);
+
+      assert.equal(result.status, 1);
+      assert.deepEqual(codes(output), ["holdout-leak"]);
+      assert.equal(output.failures[0].detail, `holdout fixture reference at offset ${expectedOffset}`);
+    });
+  }
 });
 
 test("redacts paths when a holdout spec cannot be read", async (t) => {
