@@ -146,6 +146,34 @@ test("detects spaced multiline holdout syntax without leaking its id", async (t)
   assert.doesNotMatch(result.stdout, new RegExp(secretId));
 });
 
+test("detects a double-quoted holdout property without leaking its id", async (t) => {
+  const secretId = "sealed-double-quoted-case";
+  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [secretId]: { spec: 'export default { "holdout": true };' },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  assert.match(output.failures[0].detail, /offset \d+/);
+  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+});
+
+test("detects a single-quoted holdout property without leaking its id", async (t) => {
+  const secretId = "sealed-single-quoted-case";
+  const contents = `${brief()}\nDo not use ${secretId}.\n`;
+  const { result, output } = await run(t, contents, {
+    "ordinary-case": {},
+    [secretId]: { spec: "export default { 'holdout': true };" },
+  });
+
+  assert.equal(result.status, 1);
+  assert.deepEqual(codes(output), ["holdout-leak"]);
+  assert.match(output.failures[0].detail, /offset \d+/);
+  assert.doesNotMatch(result.stdout, new RegExp(secretId));
+});
+
 test("detects a unicode-escaped holdout id in decoded criteria without emitting criteria", async (t) => {
   const secretId = "sealed-case-xyz";
   const escapedId = secretId.replace("x", "\\u0078");

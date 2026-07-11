@@ -4,9 +4,9 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 
 const JSON_FENCE = /^```json[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
-// Fixture specs are TypeScript object literals. This accepts spacing and line
-// breaks around the property separator without trying to parse TypeScript.
-const HOLDOUT_TRUE = /\bholdout\s*:\s*true\b/;
+// Fixture specs are TypeScript object literals. This accepts bare or quoted
+// property names and spacing or line breaks without trying to parse TypeScript.
+const HOLDOUT_TRUE = /(?:\bholdout\b|"holdout"|'holdout')\s*:\s*true\b/;
 
 function output(pass, failures, exitCode) {
   process.stdout.write(`${JSON.stringify({ pass, failures })}\n`);
