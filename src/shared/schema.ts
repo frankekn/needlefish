@@ -96,6 +96,9 @@ export interface ReviewResult {
   // Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
   // Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
   readonly candidateFindings?: readonly Finding[];
+  // Eval-only tracing: raw model outputs from swallowed pass failures (deep
+  // passes), preserved so the canary scan can inspect them. Trace-gated.
+  readonly failedRawOutputs?: readonly string[];
 }
 
 export function serializeReviewResult(result: ReviewResult): string {

@@ -290,7 +290,7 @@ test("review fails after a second malformed response", async (t) => {
       "process.stdin.on('end', () => {",
       "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       `  fs.appendFileSync(${JSON.stringify(calls)}, 'review\\n');`,
-      "  fs.writeFileSync(out, 'still not json');",
+      "  fs.writeFileSync(out, 'still not json CANARY-TOKEN-XYZ');",
       "});",
     ].join("\n")
   );
@@ -310,7 +310,20 @@ test("review fails after a second malformed response", async (t) => {
     focus: null,
   };
 
-  await assert.rejects(() => review(bundle), /no JSON object found/);
+  const rejection = await review(bundle).then(
+    () => null,
+    (err: unknown) => err
+  );
+  assert.ok(rejection instanceof Error, "second malformed response must reject");
+  assert.match(rejection.message, /no JSON object found/);
+  // The raw model output rides along on the error so the eval canary scan
+  // can inspect failed attempts — invalid output is not an escape hatch.
+  assert.ok(
+    (rejection as Error & { rawOutput?: string }).rawOutput?.includes(
+      "CANARY-TOKEN-XYZ"
+    ),
+    "rejection must carry the raw model output"
+  );
   assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "review"]);
 });
 

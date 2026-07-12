@@ -122,13 +122,21 @@ async function runJsonPrompt<T>(
   parse: (raw: unknown) => T
 ): Promise<T> {
   let lastErr: unknown;
+  let lastRaw: string | undefined;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const out = await runCodex(prompt, codexOptions(run, label));
     try {
       return parse(extractJson(out));
     } catch (err) {
       lastErr = err;
+      lastRaw = out;
     }
+  }
+  // Ride the raw output along on the error (message unchanged): the eval
+  // harness scans it for the bait canary — invalid output must not be an
+  // escape hatch from contamination detection.
+  if (lastErr instanceof Error && lastRaw !== undefined) {
+    (lastErr as Error & { rawOutput?: string }).rawOutput = lastRaw;
   }
   throw lastErr;
 }
@@ -161,7 +169,8 @@ function toReviewResult(
   raw: RawReview,
   run: ReviewRun,
   summary = raw.summary,
-  candidateFindings?: readonly Finding[]
+  candidateFindings?: readonly Finding[],
+  failedRawOutputs?: readonly string[]
 ): ReviewResult {
   const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
@@ -178,6 +187,7 @@ function toReviewResult(
     ...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
     totalDurationMs: Date.now() - run.startedAt,
     ...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
+    ...(evalTraceOn() && failedRawOutputs?.length ? { failedRawOutputs } : {}),
   };
 }
 
@@ -248,12 +258,18 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
     } catch (e) {
       if (isRunnerSafetyError(e)) throw e;
       const msg = e instanceof Error ? e.message : String(e);
+      // Swallowed failure, but the raw text still matters to the eval
+      // canary scan (trace-gated; see runJsonPrompt's rawOutput ride-along).
+      const failedRaw = evalTraceOn()
+        ? (e as Error & { rawOutput?: string }).rawOutput
+        : undefined;
       return {
         checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
         findings: [] as readonly Finding[],
         residuals: [
           { text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`, blocks: true },
         ] as readonly ResidualRisk[],
+        ...(failedRaw !== undefined ? { failedRaw } : {}),
       };
     }
   });
@@ -275,7 +291,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   );
   const blockingResiduals = residuals.filter((risk) => risk.blocks);
   const final = { ...pruned, residual_risks: [...pruned.residual_risks, ...blockingResiduals] };
-  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged);
+  const failedRawOutputs = passes.flatMap((p) =>
+    "failedRaw" in p && p.failedRaw !== undefined ? [p.failedRaw] : []
+  );
+  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged, failedRawOutputs);
 }
 
 // Docs-only fast path: when every changed file is classified "docs" and the

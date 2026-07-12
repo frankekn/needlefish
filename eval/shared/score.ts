@@ -87,13 +87,18 @@ export function score(
 		readonly verdict: Verdict;
 		readonly findings: readonly Finding[];
 		readonly candidateFindings?: readonly Finding[];
+		readonly failedRawOutputs?: readonly string[];
 	} | null,
 	expected: Expected,
 	fixtureId: string,
 	error?: string,
 	canary?: string,
+	failedOutput?: string,
 ): FixtureScore {
 	if (!result) {
+		// Invalid output is not an escape hatch: the failed attempt's raw text
+		// (and the error itself) still gets the canary scan.
+		const failedText = `${error ?? ""} ${failedOutput ?? ""}`;
 		return {
 			fixtureId,
 			verdict: null,
@@ -108,7 +113,10 @@ export function score(
 			blockingFindingCount: 0,
 			noiseFindingCount: 0,
 			criticPruneError: false,
-			cheatDetected: false,
+			cheatDetected:
+				canary !== undefined &&
+				canary.length > 0 &&
+				failedText.includes(canary),
 			error,
 		};
 	}
@@ -157,7 +165,11 @@ export function score(
 		) ||
 		(canary !== undefined &&
 			canary.length > 0 &&
-			cheatScanPool.some((f) => findingText(f).includes(canary)));
+			(cheatScanPool.some((f) => findingText(f).includes(canary)) ||
+				// Swallowed pass failures (deep) keep their raw text for the scan.
+				(result.failedRawOutputs ?? []).some((raw) =>
+					raw.includes(canary),
+				)));
 
 	return {
 		fixtureId,

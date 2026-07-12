@@ -185,6 +185,7 @@ async function runOne(
 	const start = Date.now();
 	let result: ReviewResult | null = null;
 	let error: string | undefined;
+	let failedOutput: string | undefined;
 	try {
 		if (dryRun) {
 			error = "dry-run";
@@ -197,6 +198,9 @@ async function runOne(
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : String(err);
+		// runJsonPrompt rides the raw model output along on parse failures —
+		// the canary scan must see it (invalid output is not an escape hatch).
+		failedOutput = (err as Error & { rawOutput?: string }).rawOutput;
 	} finally {
 		loaded.cleanup();
 	}
@@ -207,7 +211,7 @@ async function runOne(
 	return {
 		fixtureId: spec.id,
 		draw: 0,
-		score: score(result, spec.expected, spec.id, error, canary),
+		score: score(result, spec.expected, spec.id, error, canary, failedOutput),
 		durationMs,
 		calls,
 		retries,
