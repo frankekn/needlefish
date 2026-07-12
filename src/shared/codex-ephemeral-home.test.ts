@@ -695,12 +695,21 @@ test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
 		/required auth source is missing/,
 	);
 
-	// Traversal and absolute entries are rejected outright.
-	for (const bad of ["../escape.json", "/etc/passwd"]) {
+	// Traversal and absolute entries are rejected outright — in BOTH separator
+	// forms: on Windows `..\` traverses and `C:\` is absolute, and staging
+	// resolves paths platform-natively.
+	for (const bad of [
+		"../escape.json",
+		"/etc/passwd",
+		"..\\secret.json",
+		"C:\\secret.json",
+		"nested/..\\..\\secret.json",
+	]) {
 		process.env.NEEDLEFISH_ACP_AUTH_FILES = bad;
 		assert.throws(
 			() => prepareEphemeralHome("acp", tmp),
 			/HOME-relative without/,
+			`entry must be rejected: ${bad}`,
 		);
 	}
 });

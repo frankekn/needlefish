@@ -202,9 +202,13 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			.map((entry) => entry.trim())
 			.filter((entry) => entry.length > 0);
 		for (const entry of required) {
-			const normalized = path.posix.normalize(entry);
+			// Validate with BOTH separator forms: on Windows `..\` traverses and
+			// `C:\` is absolute, and the later staging join is platform-native.
+			const unified = entry.replace(/\\/g, "/");
+			const normalized = path.posix.normalize(unified);
 			if (
 				path.posix.isAbsolute(normalized) ||
+				/^[A-Za-z]:/.test(normalized) ||
 				normalized === ".." ||
 				normalized.startsWith("../")
 			) {
@@ -264,7 +268,20 @@ export function prepareEphemeralHome(
 		...required.map((rel) => ({ rel, required: true })),
 		...optional.map((rel) => ({ rel, required: false })),
 	];
+	const homeRoot = path.resolve(realHome);
 	for (const { rel, required: isRequired } of stage) {
+		// Containment backstop for every runner's staging list (operator-supplied
+		// acp entries included): the platform-native resolution of rel must stay
+		// beneath the real HOME, whatever separators or '..' survived upstream.
+		const resolvedSrc = path.resolve(realHome, rel);
+		if (
+			resolvedSrc !== homeRoot &&
+			!resolvedSrc.startsWith(homeRoot + path.sep)
+		) {
+			throw new Error(
+				`NEEDLEFISH_EPHEMERAL_HOME auth staging path escapes HOME: ${rel}`,
+			);
+		}
 		const src = path.join(realHome, rel);
 		if (!existsSync(src)) {
 			if (!isRequired) continue;
