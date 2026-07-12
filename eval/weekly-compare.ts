@@ -59,15 +59,25 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       ],
     };
   }
-  if (latest.anticheatVersion !== ANTICHEAT_VERSION) {
+  // Reports come from unvalidated JSON: a missing cheatDetectedCount cannot
+  // establish a clean report, so it fails closed as unguarded (same contract
+  // as gen-results' `=== 0`). Read through a widened type — the schema says
+  // number, the disk may disagree.
+  const latestCheatCount: number | undefined =
+    latest.aggregates.cheatDetectedCount;
+  if (
+    latest.anticheatVersion !== ANTICHEAT_VERSION ||
+    typeof latestCheatCount !== "number"
+  ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
-    // detection never covered these draws, so no metric may be published and
-    // the weekly lane itself needs fixing — that is alert-worthy on its own.
+    // detection never covered (or never recorded) these draws, so no metric
+    // may be published and the weekly lane itself needs fixing — that is
+    // alert-worthy on its own.
     return {
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION} — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}) or its cheatDetectedCount is missing — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -96,8 +106,11 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // Cross-anti-cheat-generation draws are declared incomparable (see
       // compare() in run.ts): the previous week must have run under the
       // CURRENT generation, same as the latest (gated above), not merely a
-      // matching obsolete one.
-      prev.anticheatVersion !== ANTICHEAT_VERSION
+      // matching obsolete one. A missing cheatDetectedCount fails closed too
+      // — absence of the canary result cannot establish a clean report.
+      prev.anticheatVersion !== ANTICHEAT_VERSION ||
+      typeof (prev.aggregates.cheatDetectedCount as number | undefined) !==
+        "number"
     ) {
       // Different prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.

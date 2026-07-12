@@ -28,6 +28,11 @@ interface ReviewRun {
   // a retry later succeeds — the eval canary scan must see emit-then-clean-up
   // sequences. Mutable accumulator, same pattern as stats.
   readonly failedRawOutputs: string[];
+  // Raw text of every SUCCESSFUL attempt (trace-gated collection): some pass
+  // outputs are consumed but not retained in the final result (map hotspot
+  // why/edges, critic-pruned residual text) — the canary scan needs the full
+  // transcript, not just what survived into ReviewResult.
+  readonly rawOutputs: string[];
   readonly startedAt: number;
 }
 
@@ -152,7 +157,9 @@ async function runJsonPrompt<T>(
       throw err;
     }
     try {
-      return parse(extractJson(out));
+      const parsed = parse(extractJson(out));
+      if (evalTraceOn()) run.rawOutputs.push(out);
+      return parsed;
     } catch (err) {
       lastErr = err;
       run.failedRawOutputs.push(out);
@@ -209,6 +216,9 @@ function toReviewResult(
     ...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
     ...(evalTraceOn() && run.failedRawOutputs.length > 0
       ? { failedRawOutputs: [...run.failedRawOutputs] }
+      : {}),
+    ...(evalTraceOn() && run.rawOutputs.length > 0
+      ? { rawOutputs: [...run.rawOutputs] }
       : {}),
   };
 }
@@ -346,6 +356,6 @@ export async function review(
     };
   }
 
-  const run: ReviewRun = { bundle, runnerOptions, stats: [], failedRawOutputs: [], startedAt };
+  const run: ReviewRun = { bundle, runnerOptions, stats: [], failedRawOutputs: [], rawOutputs: [], startedAt };
   return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);
 }

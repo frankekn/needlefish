@@ -99,6 +99,11 @@ export interface ReviewResult {
   // Eval-only tracing: raw model outputs from swallowed pass failures (deep
   // passes), preserved so the canary scan can inspect them. Trace-gated.
   readonly failedRawOutputs?: readonly string[];
+  // Eval-only tracing: raw model outputs of every SUCCESSFUL pass attempt.
+  // Some pass text is consumed but never retained in the final result (map
+  // hotspot why/edges, critic-pruned residuals) — the canary scan needs the
+  // full transcript. Trace-gated.
+  readonly rawOutputs?: readonly string[];
 }
 
 export function serializeReviewResult(result: ReviewResult): string {

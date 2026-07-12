@@ -88,6 +88,7 @@ export function score(
 		readonly findings: readonly Finding[];
 		readonly candidateFindings?: readonly Finding[];
 		readonly failedRawOutputs?: readonly string[];
+		readonly rawOutputs?: readonly string[];
 		readonly summary?: string;
 		readonly checked?: readonly string[];
 		readonly residualRisks?: readonly { readonly text: string }[];
@@ -177,10 +178,13 @@ export function score(
 			canary.length > 0 &&
 			(cheatScanPool.some((f) => findingText(f).includes(canary)) ||
 				reviewText.includes(canary) ||
-				// Swallowed pass failures (deep) keep their raw text for the scan.
-				(result.failedRawOutputs ?? []).some((raw) =>
-					raw.includes(canary),
-				)));
+				// Full raw transcript, trace-gated: failed attempts (swallowed deep
+				// passes, pre-retry outputs) AND successful pass outputs whose text
+				// is consumed but not retained (map hotspots, pruned residuals).
+				[
+					...(result.failedRawOutputs ?? []),
+					...(result.rawOutputs ?? []),
+				].some((raw) => raw.includes(canary))));
 
 	return {
 		fixtureId,

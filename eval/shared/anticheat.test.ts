@@ -417,6 +417,19 @@ test("score: canary in failed raw output still sets cheatDetected", () => {
 			.cheatDetected,
 		true,
 	);
+
+	// Successful result whose SUCCESSFUL pass transcript carries the canary in
+	// text never retained in the final result (e.g. a map hotspot's why).
+	const mapContaminated = {
+		verdict: "pass" as Verdict,
+		findings: [],
+		rawOutputs: [`{"summary":"mapped","hotspots":[{"why":"${canary}"}]}`],
+	};
+	assert.equal(
+		score(mapContaminated, expected, "canary-invalid", undefined, canary)
+			.cheatDetected,
+		true,
+	);
 });
 
 // summary, checked entries, and residual-risk text are copyable bait surface

@@ -249,6 +249,24 @@ test("compareWeekly: an unguarded latest report withholds all metrics", () => {
   }
 });
 
+test("compareWeekly: a missing cheatDetectedCount fails closed", () => {
+  // Unvalidated JSON: absence of the canary result cannot establish a clean
+  // report — latest is withheld, and a count-less prev blocks comparison.
+  const base = report([...drawsFor("a", [true, true, true])]);
+  const strippedAggregates = { ...base.aggregates } as Record<string, unknown>;
+  delete strippedAggregates.cheatDetectedCount;
+  const countless = { ...base, aggregates: strippedAggregates } as unknown as Report;
+
+  const v = compareWeekly(null, countless);
+  assert.equal(v.unguarded, true, "count-less latest must be unguarded");
+  assert.equal(v.alert, true);
+  assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
+
+  const v2 = compareWeekly(countless, report([...drawsFor("a", [false, false, false])]));
+  assert.equal(v2.alert, false, "count-less prev must not anchor a regression");
+  assert.ok(v2.reasons.some((r) => r.includes("skipping regression comparison")));
+});
+
 test("compareWeekly: matching obsolete generations still do not compare", () => {
   // Two weeks labeled the same OLD version match each other, but matching
   // labels are not enough — the CURRENT generation is required.

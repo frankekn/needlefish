@@ -14,14 +14,18 @@ test("review preserves deep evidence through tail coverage", async (t) => {
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
     else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
     rmSync(tmp, { recursive: true, force: true });
   });
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
   writeFileSync(
     bin,
     [
@@ -36,7 +40,9 @@ test("review preserves deep evidence through tail coverage", async (t) => {
       "  const evidence = 'EVIDENCE finding:Deep bug changed=src/app.ts:1 effect=bad path';",
       "  if (input.includes('review-MAP pass')) {",
       "    if (!input.includes('Review body') || !input.includes('review comment')) { process.stderr.write('missing map PR metadata'); process.exit(1); }",
-      "    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'consumer', files: ['src/unchanged.ts'], why: 'consumer only', risk: 'high', edges: [] }] }));",
+      // The canary lands ONLY in the map hotspot's why — text that is
+      // consumed for hotspot selection but never retained in ReviewResult.
+      "    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'consumer', files: ['src/unchanged.ts'], why: 'consumer only CANARY-TOKEN-XYZ', risk: 'high', edges: [] }] }));",
       "    return;",
       "  }",
       "  if (input.includes('doing a DEEP review')) {",
@@ -85,6 +91,13 @@ test("review preserves deep evidence through tail coverage", async (t) => {
   assert.deepEqual(result.checked, [
     "EVIDENCE finding:Deep bug changed=src/app.ts:1 effect=bad path",
   ]);
+  // Successful pass outputs are retained under eval tracing: the map's
+  // hotspot text is consumed for selection but never lands in the final
+  // result — the canary scan needs the full transcript.
+  assert.ok(
+    result.rawOutputs?.some((raw) => raw.includes("CANARY-TOKEN-XYZ")),
+    "successful map output must be retained for the canary scan"
+  );
 });
 
 test("review aborts deep fallback when a non-codex runner dirties the sandbox", async (t) => {
