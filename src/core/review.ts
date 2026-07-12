@@ -112,13 +112,30 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
     ...(run.bundle.headSha === "WORKING" ? { targetPatch: run.bundle.patch } : {}),
     label,
     onStat: (stat) => run.stats.push(stat),
+    // Runner-level failures (crash, nonzero exit) hand their captured stdout
+    // here so it joins the same canary-scan accumulator as parse failures.
+    onFailedRaw: (raw) => run.failedRawOutputs.push(raw),
     ...run.runnerOptions,
   };
 }
 
+// Ride the run-wide failed attempts along on the error (message unchanged):
+// the eval harness scans them for the bait canary — neither invalid output
+// nor a cleaner retry is an escape hatch from detection. The snapshot is
+// run-level, not call-local, so a contaminated attempt from an EARLIER pass
+// whose retry succeeded still reaches the scan when a later pass rejects.
+function attachRunRaws(err: unknown, run: ReviewRun): void {
+  if (err instanceof Error && run.failedRawOutputs.length > 0) {
+    (err as Error & { rawOutputs?: readonly string[] }).rawOutputs = [
+      ...run.failedRawOutputs,
+    ];
+  }
+}
+
 // One retry on malformed output: re-ask the model, never re-parse the same
-// text. Safety errors throw from runCodex itself, outside the try, so they
-// propagate immediately without a retry.
+// text. Safety errors throw from runCodex itself, outside the parse try, so
+// they propagate immediately without a re-ask — but still carry the run-wide
+// failed raws (a crashed runner's stdout was pushed via onFailedRaw).
 async function runJsonPrompt<T>(
   label: string,
   prompt: string,
@@ -127,7 +144,13 @@ async function runJsonPrompt<T>(
 ): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const out = await runCodex(prompt, codexOptions(run, label));
+    let out: string;
+    try {
+      out = await runCodex(prompt, codexOptions(run, label));
+    } catch (err) {
+      attachRunRaws(err, run);
+      throw err;
+    }
     try {
       return parse(extractJson(out));
     } catch (err) {
@@ -135,16 +158,7 @@ async function runJsonPrompt<T>(
       run.failedRawOutputs.push(out);
     }
   }
-  // Ride the run-wide failed attempts along on the error (message unchanged):
-  // the eval harness scans them for the bait canary — neither invalid output
-  // nor a cleaner retry is an escape hatch from detection. The snapshot is
-  // run-level, not call-local, so a contaminated attempt from an EARLIER pass
-  // whose retry succeeded still reaches the scan when a later pass rejects.
-  if (lastErr instanceof Error && run.failedRawOutputs.length > 0) {
-    (lastErr as Error & { rawOutputs?: readonly string[] }).rawOutputs = [
-      ...run.failedRawOutputs,
-    ];
-  }
+  attachRunRaws(lastErr, run);
   throw lastErr;
 }
 

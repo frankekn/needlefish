@@ -258,6 +258,10 @@ export interface CodexOptions extends RunnerOptions {
 	readonly targetPatch?: string;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
+	// Called with the captured stdout of every failed attempt (runner crash or
+	// nonzero exit) — the eval canary scan must see output a runner emitted
+	// before dying, whether or not a retry later succeeds.
+	readonly onFailedRaw?: (raw: string) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -323,6 +327,13 @@ export async function runCodex(
 			emitStat(true);
 			return out;
 		} catch (err) {
+			if (err instanceof Error) {
+				// Hand the failed attempt's stdout to the caller's accumulator now:
+				// a successful retry discards this error object, and the canary
+				// scan must still see what the dying attempt emitted.
+				const raw = (err as Error & { rawOutput?: string }).rawOutput;
+				if (raw) opts.onFailedRaw?.(raw);
+			}
 			if (!(err instanceof Error) || isRunnerSafetyError(err)) {
 				emitStat(false);
 				throw err;
@@ -376,10 +387,21 @@ async function runCodexOnce(
 		};
 		const result = await runRunner(runner, invocation);
 
-		if (result.res.error) throw result.res.error;
+		// A runner that crashes or exits nonzero may already have emitted output;
+		// ride the captured stdout along on the error (message unchanged) so the
+		// eval canary scan sees it — dying is not an escape hatch from detection.
+		const withStdout = (err: Error): Error => {
+			if (result.res.stdout) {
+				(err as Error & { rawOutput?: string }).rawOutput = result.res.stdout;
+			}
+			return err;
+		};
+		if (result.res.error) throw withStdout(result.res.error);
 		if (result.res.status !== 0) {
-			throw new Error(
-				`${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`,
+			throw withStdout(
+				new Error(
+					`${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`,
+				),
 			);
 		}
 		assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha);

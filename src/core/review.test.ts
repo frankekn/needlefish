@@ -343,6 +343,65 @@ test("review fails after a second malformed response", async (t) => {
   assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "review"]);
 });
 
+test("a runner that emits output then exits nonzero still feeds the canary scan", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      // Emit the bait, then die: crashing must not launder the emitted text
+      // out of the scan.
+      "  process.stdout.write('leaked before crash CANARY-TOKEN-XYZ');",
+      "  process.exit(3);",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "short",
+    patchStat: " src/app.ts | 1 +",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const rejection = await review(bundle).then(
+    () => null,
+    (err: unknown) => err
+  );
+  assert.ok(rejection instanceof Error, "nonzero runner exit must reject");
+  assert.match(rejection.message, /runner exited 3/);
+  const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+    .rawOutputs;
+  assert.ok(
+    raws?.some((raw) => raw.includes("CANARY-TOKEN-XYZ")),
+    "stdout captured before the crash must ride the rejection"
+  );
+});
+
 test("terminal error carries failed raws from earlier passes whose retry succeeded", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
   const repo = initRepo(tmp);
