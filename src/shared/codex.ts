@@ -130,6 +130,19 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
+// A provider credential supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH is a
+// supported auth mode that never reads the runner's HOME files. Only actual
+// credential variables count (model/endpoint vars configure, they don't
+// authenticate), and only when non-empty.
+function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
+	const passthrough = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+		.split(",")
+		.map((name) => name.trim());
+	return passthrough.some(
+		(name) => credentialVars.includes(name) && !!process.env[name],
+	);
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
@@ -138,31 +151,23 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly required: readonly string[];
 	readonly optional: readonly string[];
 } {
-	// codex: the invocation always passes --ignore-user-config, so the config
-	// file cannot be a requirement — an auth.json-only OAuth setup is valid.
 	if (runner === "codex") {
+		// CODEX_API_KEY through the passthrough authenticates without auth.json.
+		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
+			return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.codex };
+		}
+		// The invocation always passes --ignore-user-config, so the config
+		// file cannot be a requirement — an auth.json-only OAuth setup is valid.
 		return {
 			required: [".codex/auth.json"],
 			optional: [".codex/config.toml"],
 		};
 	}
-	// grok: a provider credential supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH
-	// is a supported auth mode that never reads ~/.grok — with one present and
-	// non-empty, the HOME files become optional config. Only actual credential
-	// variables count: GROK_MODEL/XAI_BASE_URL and friends configure, not
-	// authenticate.
-	if (runner === "grok") {
-		const GROK_CREDENTIAL_VARS = ["GROK_API_KEY", "XAI_API_KEY"];
-		const passthrough = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
-			.split(",")
-			.map((name) => name.trim());
-		const hasProviderKey = passthrough.some(
-			(name) =>
-				GROK_CREDENTIAL_VARS.includes(name) && !!process.env[name],
-		);
-		if (hasProviderKey) {
-			return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
-		}
+	if (
+		runner === "grok" &&
+		hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"])
+	) {
+		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
 	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST); with it set, the HOME files are optional config.

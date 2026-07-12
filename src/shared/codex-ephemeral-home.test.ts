@@ -640,3 +640,46 @@ test("prepareEphemeralHome resolves auth sources from USERPROFILE when HOME is u
 		/neither HOME nor USERPROFILE/,
 	);
 });
+
+// codex analog of the grok provider-key mode: a non-empty CODEX_API_KEY in
+// the passthrough authenticates without auth.json.
+test("prepareEphemeralHome: codex API key via passthrough makes HOME files optional", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		key: process.env.CODEX_API_KEY,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		process.env.HOME = previous.home;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.key === undefined) delete process.env.CODEX_API_KEY;
+		else process.env.CODEX_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	// No ~/.codex files planted.
+
+	// Key set and named in passthrough → empty HOME accepted.
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CODEX_API_KEY";
+	process.env.CODEX_API_KEY = "ck-test";
+	assert.ok(prepareEphemeralHome("codex", tmp), "API-key mode must pass");
+
+	// Empty key → back to fail-closed file requirement.
+	process.env.CODEX_API_KEY = "";
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("codex", tmp2),
+		/required auth source is missing: .*auth\.json/,
+	);
+});
