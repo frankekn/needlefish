@@ -95,6 +95,9 @@ export function renderMarkdown(
 	}
 
 	if (result.coverage) {
+		// Blank line first: without it this line lazy-continues the preceding
+		// ⛔ bullet list (or counts paragraph) in GFM.
+		lines.push("");
 		lines.push(`Coverage: ${result.coverage}`);
 	}
 

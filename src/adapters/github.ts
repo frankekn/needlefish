@@ -575,8 +575,8 @@ function minimizePreviousRoundComments(
 		const nodeId = stringField(item, "node_id");
 		if (!nodeId) continue;
 		const query =
-			`mutation { minimizeComment(input: {subjectId: "${nodeId}", classifier: OUTDATED}) { minimizedComment { isMinimized } } }`;
-		ghJson(["api", "graphql", "-f", `query=${query}`]);
+			"mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }";
+		ghJson(["api", "graphql", "-f", `query=${query}`, "-f", `id=${nodeId}`]);
 	}
 }
 
@@ -707,8 +707,15 @@ export async function runGithub(
 				stateMarker: renderState(headSha, result.findings),
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
-			// S4: notify the timeline (body edits don't notify), then minimize
-			// prior round comments so the latest round is what surfaces.
+			// S4: minimize prior round comments FIRST, then post this round's
+			// comment (body edits don't notify). Minimizing after posting would
+			// sweep up the fresh comment too — it carries the same marker.
+			try {
+				minimizePreviousRoundComments(repo, prNumber);
+			} catch (minErr) {
+				const mm = minErr instanceof Error ? minErr.message : String(minErr);
+				process.stderr.write(`needlefish: could not minimize previous round comments: ${mm}\n`);
+			}
 			postRoundComment(
 				repo,
 				prNumber,
@@ -720,12 +727,6 @@ export async function runGithub(
 					renderOpts.newCount,
 				),
 			);
-			try {
-				minimizePreviousRoundComments(repo, prNumber);
-			} catch (minErr) {
-				const mm = minErr instanceof Error ? minErr.message : String(minErr);
-				process.stderr.write(`needlefish: could not minimize previous round comments: ${mm}\n`);
-			}
 			if (freshComments.length > 0) {
 				postReview(repo, prNumber, headSha, "", freshComments);
 			}

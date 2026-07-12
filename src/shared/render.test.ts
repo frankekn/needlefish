@@ -280,11 +280,17 @@ test("renderMarkdown needs_human headline carries the blocking residual and a vi
 	const markdown = renderMarkdown({
 		...baseResult([], "needs_human"),
 		residualRisks: [
-			{ text: "deep review of the auth hotspot failed; not fully covered", blocks: true },
+			{
+				text: "deep review of the auth hotspot failed; not fully covered",
+				blocks: true,
+			},
 		],
 	});
 	const firstLine = markdown.split("\n")[0];
-	assert.match(firstLine, /NEEDS HUMAN 👀 — deep review of the auth hotspot failed/);
+	assert.match(
+		firstLine,
+		/NEEDS HUMAN 👀 — deep review of the auth hotspot failed/,
+	);
 	// A non-collapsed ⛔ line must appear before the first <details>.
 	const detailsIdx = markdown.indexOf("<details>");
 	assert.ok(detailsIdx > 0, "expected a collapsed details section");
@@ -296,9 +302,14 @@ test("renderMarkdown needs_human headline carries the blocking residual and a vi
 test("renderMarkdown renders the coverage line visibly outside any collapsed section", () => {
 	const markdown = renderMarkdown({
 		...baseResult([], "pass"),
-		coverage: "3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage",
+		coverage:
+			"3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage",
 	});
 	const detailsIdx = markdown.indexOf("<details>");
-	const beforeDetails = detailsIdx > 0 ? markdown.slice(0, detailsIdx) : markdown;
+	const beforeDetails =
+		detailsIdx > 0 ? markdown.slice(0, detailsIdx) : markdown;
 	assert.match(beforeDetails, /^Coverage: 3\/3 changed files/m);
+	// Preceded by a blank line: otherwise GFM lazy-continues the previous
+	// bullet list / paragraph and the coverage line is absorbed into it.
+	assert.match(markdown, /\n\nCoverage: /);
 });

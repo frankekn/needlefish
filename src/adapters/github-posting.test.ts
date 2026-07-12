@@ -234,13 +234,17 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.exit(0);",
 			"}",
 			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
-		`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
-		`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
-		"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
-		"  process.stdout.write(JSON.stringify(issueComments));",
-		"  process.exit(0);",
-		"}",
-		"if (args[1] === 'graphql') { process.stdout.write('{}'); process.exit(0); }",
+			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
+			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
+			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
+			"  process.stdout.write(JSON.stringify(issueComments));",
+			"  process.exit(0);",
+			"}",
+			"if (args[1] === 'graphql') {",
+			`  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload: '' }) + '\\n');`,
+			"  process.stdout.write('{}');",
+			"  process.exit(0);",
+			"}",
 			"process.stderr.write(`unexpected gh args ${args.join(' ')}`);",
 			"process.exit(2);",
 		].join("\n"),
@@ -919,12 +923,12 @@ test("runGithub posts a FAILED TO RUN PR comment when the review errors", async 
 	const issueCommentPost = readPosts(fixture.postLog).find(
 		(p) =>
 			p.args.includes("POST") &&
-			p.args.some(
-				(a) => a === "repos/frankekn/needlefish/issues/40/comments",
-			),
+			p.args.some((a) => a === "repos/frankekn/needlefish/issues/40/comments"),
 	);
 	assert.ok(issueCommentPost, "error path should post an issue comment");
-	const body = String((parseJson(issueCommentPost.payload) as { body?: unknown }).body ?? "");
+	const body = String(
+		(parseJson(issueCommentPost.payload) as { body?: unknown }).body ?? "",
+	);
 	assert.match(body, /FAILED TO RUN/);
 	assert.match(body, /<!-- needlefish-error -->/);
 });
@@ -967,16 +971,52 @@ test("runGithub posts a re-review round comment with counts on the second round"
 	const roundCommentPost = round2Posts.find(
 		(p) =>
 			p.args.includes("POST") &&
-			p.args.some(
-				(a) => a === "repos/frankekn/needlefish/issues/41/comments",
-			),
+			p.args.some((a) => a === "repos/frankekn/needlefish/issues/41/comments"),
 	);
 	assert.ok(roundCommentPost, "re-review should post a round comment");
-	const body = String((parseJson(roundCommentPost.payload) as { body?: unknown }).body ?? "");
+	const body = String(
+		(parseJson(roundCommentPost.payload) as { body?: unknown }).body ?? "",
+	);
 	assert.match(body, /Needlefish re-review/);
 	// 1 resolved (to-be-fixed), 1 still open (persisting), 1 new (new issue).
 	assert.match(body, /✅ 1 resolved/);
 	assert.match(body, /❌ 1 still open/);
 	assert.match(body, /🆕 1 new/);
 	assert.match(body, /<!-- needlefish-round -->/);
+
+	// Round 2 had no prior round comment, so nothing may be minimized — a
+	// minimize call here means the round swept up its own fresh comment.
+	const round2Minimize = round2Posts.filter((p) =>
+		p.args.some((a) => a.includes("minimizeComment")),
+	);
+	assert.equal(round2Minimize.length, 0, "round 2 must not minimize anything");
+
+	// Round 3: the round-2 comment (IC_node_1) must be minimized, and the
+	// minimize must happen BEFORE this round's comment is posted (posting
+	// first would minimize the fresh comment on the next round's scan).
+	await runGithub(fixture.repo, 41, { timeoutMs: 1000 }, true);
+	const round3Posts = readPosts(fixture.postLog).slice(
+		round1Count + round2Posts.length,
+	);
+	const minimizeIdx = round3Posts.findIndex(
+		(p) =>
+			p.args.some((a) => a.includes("minimizeComment")) &&
+			p.args.some((a) => a === "id=IC_node_1"),
+	);
+	const roundCommentIdx = round3Posts.findIndex(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some(
+				(a) => a === "repos/frankekn/needlefish/issues/41/comments",
+			) &&
+			String(
+				(parseJson(p.payload) as { body?: unknown }).body ?? "",
+			).includes("<!-- needlefish-round -->"),
+	);
+	assert.ok(minimizeIdx >= 0, "round 3 should minimize the round-2 comment");
+	assert.ok(roundCommentIdx >= 0, "round 3 should post a round comment");
+	assert.ok(
+		minimizeIdx < roundCommentIdx,
+		"minimize must run before the new round comment is posted",
+	);
 });
