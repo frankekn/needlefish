@@ -93,6 +93,9 @@ export interface ReviewResult {
   readonly reviewTarget?: string;
   readonly stats?: readonly RunStat[];
   readonly totalDurationMs?: number;
+  // Preformatted one-line coverage summary rendered visibly below the counts
+  // (e.g. "3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage").
+  readonly coverage?: string;
   // Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
   // Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
   readonly candidateFindings?: readonly Finding[];

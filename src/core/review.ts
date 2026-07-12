@@ -161,7 +161,8 @@ function toReviewResult(
   raw: RawReview,
   run: ReviewRun,
   summary = raw.summary,
-  candidateFindings?: readonly Finding[]
+  candidateFindings?: readonly Finding[],
+  coverage?: string
 ): ReviewResult {
   const { bundle } = run;
   const verdict = deriveVerdict(raw.findings, raw.residual_risks);
@@ -177,6 +178,7 @@ function toReviewResult(
     ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
     ...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
     totalDurationMs: Date.now() - run.startedAt,
+    ...(coverage ? { coverage } : {}),
     ...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
   };
 }
@@ -191,7 +193,8 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
     .replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
     .replace("{{PATCH}}", () => patch);
   const candidate = await runJsonPrompt("review", reviewPrompt, run, parseUsableReview("review"));
-  return toReviewResult(await runCritic(candidate, bundle.patch, run), run, undefined, candidate.findings);
+  const coverage = `full diff reviewed in one pass (${bundle.changedFiles.length} file${bundle.changedFiles.length === 1 ? "" : "s"})`;
+  return toReviewResult(await runCritic(candidate, bundle.patch, run), run, undefined, candidate.findings, coverage);
 }
 
 // Large PR: map (blast-radius survey, no diff text) -> deep per hotspot -> merge -> critic.
@@ -216,7 +219,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   // hotspot so it still gets deep-reviewed (never silently skip a changed file).
   const covered = new Set(hotspots.flatMap((h) => h.files));
   const uncovered = bundle.changedFiles.map((f) => f.path).filter((p) => !covered.has(p));
+  let tailAdded = false;
   if (uncovered.length > 0) {
+    tailAdded = true;
     hotspots.push({
       name: "tail-coverage (files not mapped to a surface)",
       files: uncovered,
@@ -275,7 +280,13 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   );
   const blockingResiduals = residuals.filter((risk) => risk.blocks);
   const final = { ...pruned, residual_risks: [...pruned.residual_risks, ...blockingResiduals] };
-  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged);
+  // Compute coverage from the hotspots actually deep-reviewed (includes the tail
+  // backstop): unique changed-file paths that landed in any hotspot. By
+  // construction of the tail backstop this equals changedFiles.length, but we
+  // compute it rather than assume it.
+  const coveredFileCount = new Set(hotspots.flatMap((h) => h.files)).size;
+  const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${hotspots.length} hotspot${hotspots.length === 1 ? "" : "s"}${tailAdded ? ", incl. tail-coverage" : ""}`;
+  return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged, coverage);
 }
 
 // Docs-only fast path: when every changed file is classified "docs" and the

@@ -57,6 +57,10 @@ export function renderMarkdown(
 	}
 	if (delta.length > 0) lines.push(delta.join(" · "));
 
+	if (result.coverage) {
+		lines.push(`Coverage: ${result.coverage}`);
+	}
+
 	if (result.reviewTarget) {
 		lines.push("");
 		lines.push(...result.reviewTarget.split("\n"));
