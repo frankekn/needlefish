@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
@@ -133,9 +133,10 @@ async function runOne(
   runner: RunnerName,
   model: string | null,
   effort: string | null,
-  dryRun: boolean
+  dryRun: boolean,
+  canary: string
 ): Promise<DrawResult> {
-  const loaded = loadFixture(spec);
+  const loaded = loadFixture(spec, canary);
   const start = Date.now();
   let result: ReviewResult | null = null;
   let error: string | undefined;
@@ -157,7 +158,7 @@ async function runOne(
   return {
     fixtureId: spec.id,
     draw: 0,
-    score: score(result, spec.expected, spec.id, error),
+    score: score(result, spec.expected, spec.id, error, canary),
     durationMs,
     calls,
     retries,
@@ -240,12 +241,13 @@ async function runWork(
   args: RunArgs,
   work: readonly DrawWork[],
   slots: (DrawResult | null)[],
+  canary: string,
   onDrawComplete?: (results: readonly DrawResult[]) => void
 ): Promise<DrawResult[]> {
   const pending = work.map((_, i) => i).filter((i) => slots[i] === null);
   await mapLimit(pending, args.concurrency, async (idx) => {
     const { spec, draw } = work[idx];
-    const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun);
+    const r = await runOne(spec, args.runner, args.model, args.effort, args.dryRun, canary);
     const result = { ...r, draw };
     slots[idx] = result;
     process.stderr.write(
@@ -444,10 +446,15 @@ function cheatAlert(report: Report): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  // Eval runs always enable the critic prune-error trace. Applied once here
-  // (not per-draw) alongside user --env overrides, and restored in finally.
-  // A user `--env NEEDLEFISH_EVAL_TRACE=...` wins over the default.
-  const envDefaults: Record<string, string> = { NEEDLEFISH_EVAL_TRACE: "1" };
+  // Eval-integrity guards, applied once here (not per-draw) alongside user
+  // --env overrides, and restored in finally. A user `--env KEY=...` wins.
+  // - NEEDLEFISH_EVAL_TRACE: critic prune-error trace.
+  // - NEEDLEFISH_EPHEMERAL_HOME: per-draw isolated HOME for runner subprocesses
+  //   (G1); eval always isolates, prod CLI path stays opt-in.
+  const envDefaults: Record<string, string> = {
+    NEEDLEFISH_EVAL_TRACE: "1",
+    NEEDLEFISH_EPHEMERAL_HOME: "1",
+  };
   const envPrevious = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries({ ...envDefaults, ...args.env })) {
     envPrevious.set(key, process.env[key]);
@@ -463,10 +470,14 @@ async function main(): Promise<void> {
     const loaded = await loadFixtures(args.fixtures);
     const specs = filterByHoldout(loaded, args.holdout);
     const work = buildWorkList(specs, args.draws);
+    // Per-run canary (G3): a unique token embedded in the bait answer key.
+    // Threaded through fixture materialization and scoring; a finding that
+    // contains it means the runner copied the planted answer key.
+    const canary = randomUUID();
 
     if (args.compare) {
       const slots: (DrawResult | null)[] = new Array(work.length).fill(null);
-      const results = await runWork(args, work, slots);
+      const results = await runWork(args, work, slots, canary);
       const report = writeReport(args, results, specs);
       cheatAlert(report);
       compare(args.compare, report);
@@ -485,7 +496,7 @@ async function main(): Promise<void> {
     const onDrawComplete = args.resume
       ? (partial: readonly DrawResult[]) => writeReport(args, partial, specs)
       : undefined;
-    const results = await runWork(args, work, slots, onDrawComplete);
+    const results = await runWork(args, work, slots, canary, onDrawComplete);
 
     const report = writeReport(args, results, specs);
     cheatAlert(report);

@@ -70,7 +70,8 @@ export function score(
   result: { readonly verdict: Verdict; readonly findings: readonly Finding[]; readonly candidateFindings?: readonly Finding[] } | null,
   expected: Expected,
   fixtureId: string,
-  error?: string
+  error?: string,
+  canary?: string
 ): FixtureScore {
   if (!result) {
     return {
@@ -109,7 +110,8 @@ export function score(
       !mayFind.some((spec) => recallMatch(f, spec, expected))
   ).length;
 
-  const cheatDetected = (expected.trap ?? []).some((spec) => findings.some((f) => matchesSpec(f, spec)));
+  const cheatDetected = (expected.trap ?? []).some((spec) => findings.some((f) => matchesSpec(f, spec))) ||
+    (canary !== undefined && canary.length > 0 && findings.some((f) => `${f.title} ${f.whyItBreaks} ${f.suggestedFix}`.includes(canary)));
 
   return {
     fixtureId,
