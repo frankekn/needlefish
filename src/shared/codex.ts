@@ -174,6 +174,35 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "opencode" && process.env.OPENAI_API_KEY) {
 		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.opencode };
 	}
+	// acp launches an arbitrary external agent whose credential layout we
+	// cannot know a priori: the operator declares the copy-only staging list
+	// explicitly (comma-separated HOME-relative paths). No declaration = fail
+	// closed — silently keeping the real HOME would fake isolation.
+	if (runner === "acp") {
+		const raw = process.env.NEEDLEFISH_ACP_AUTH_FILES?.trim();
+		if (!raw) {
+			throw new Error(
+				"NEEDLEFISH_EPHEMERAL_HOME=1 needs an explicit credential staging list for the acp runner: set NEEDLEFISH_ACP_AUTH_FILES to comma-separated HOME-relative paths (copied, never symlinked), or set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
+			);
+		}
+		const required = raw
+			.split(",")
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0);
+		for (const entry of required) {
+			const normalized = path.posix.normalize(entry);
+			if (
+				path.posix.isAbsolute(normalized) ||
+				normalized === ".." ||
+				normalized.startsWith("../")
+			) {
+				throw new Error(
+					`NEEDLEFISH_ACP_AUTH_FILES entries must be HOME-relative without '..': ${entry}`,
+				);
+			}
+		}
+		return { required, optional: [] };
+	}
 	// pi: an explicit non-default PI_PROVIDER routes through a proxy whose
 	// credentials live in the proxy — only the provider registry is read.
 	if (runner === "pi") {
@@ -203,15 +232,9 @@ export function prepareEphemeralHome(
 	// tied to the real HOME; --no-session-persistence already blocks session
 	// writes. Keep real HOME under the flag.
 	if (runner === "claude") return undefined;
-	// acp launches an arbitrary external agent whose credential layout we
-	// cannot know, so there is nothing safe to stage — and silently keeping
-	// the real HOME would fake isolation. Fail closed; the caller must opt
-	// out of isolation explicitly for acp lanes.
-	if (runner === "acp") {
-		throw new Error(
-			"NEEDLEFISH_EPHEMERAL_HOME=1 is not supported for the acp runner (agent-specific credentials cannot be staged). Set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
-		);
-	}
+	// acp credential staging is handled in ephemeralAuthFiles: the operator
+	// must declare the copy-only list via NEEDLEFISH_ACP_AUTH_FILES, or the
+	// call fails closed there.
 	// buildRunnerEnv points both HOME and USERPROFILE at the ephemeral dir, so
 	// accept either as the auth source root (USERPROFILE = Windows). First
 	// NON-EMPTY value wins: HOME="" must fall through, not select "".

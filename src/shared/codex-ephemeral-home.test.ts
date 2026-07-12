@@ -578,23 +578,87 @@ test("prepareEphemeralHome: grok provider key via passthrough makes HOME files o
 	}
 });
 
-// acp launches arbitrary agents with unknowable credential layouts: under
-// the isolation flag there is nothing safe to stage, so it must fail closed
-// rather than silently keep the real HOME.
-test("prepareEphemeralHome: acp refuses ephemeral isolation", (t) => {
+// acp launches arbitrary agents with unknowable credential layouts: without
+// an explicit operator-declared staging list there is nothing safe to stage,
+// so it must fail closed rather than silently keep the real HOME.
+test("prepareEphemeralHome: acp without a declared staging list fails closed", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const previous = { ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME };
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
 			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
 		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.acpFiles === undefined)
+			delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+		else process.env.NEEDLEFISH_ACP_AUTH_FILES = previous.acpFiles;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
 	assert.throws(
 		() => prepareEphemeralHome("acp", tmp),
-		/not supported for the acp runner/,
+		/NEEDLEFISH_ACP_AUTH_FILES/,
 	);
+});
+
+// With a declared list, acp stages exactly those files (copy-only) into the
+// isolated HOME — the supported eval path keeps its anti-cheat generation.
+test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		home: process.env.HOME,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.acpFiles === undefined)
+			delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+		else process.env.NEEDLEFISH_ACP_AUTH_FILES = previous.acpFiles;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(fakeHome, ".myagent"));
+	writeFileSync(path.join(fakeHome, ".myagent", "cred.json"), '{"k":"v"}');
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_ACP_AUTH_FILES = ".myagent/cred.json";
+
+	const home = prepareEphemeralHome("acp", tmp);
+	assert.ok(home, "isolation must stay on for a declared acp staging list");
+	assert.equal(
+		readFileSync(path.join(home!, ".myagent", "cred.json"), "utf8"),
+		'{"k":"v"}',
+	);
+	// Copy, not symlink.
+	assert.equal(
+		lstatSync(path.join(home!, ".myagent", "cred.json")).isSymbolicLink(),
+		false,
+	);
+
+	// A declared file that does not exist keeps the fail-closed contract.
+	process.env.NEEDLEFISH_ACP_AUTH_FILES = ".myagent/missing.json";
+	assert.throws(
+		() => prepareEphemeralHome("acp", tmp),
+		/required auth source is missing/,
+	);
+
+	// Traversal and absolute entries are rejected outright.
+	for (const bad of ["../escape.json", "/etc/passwd"]) {
+		process.env.NEEDLEFISH_ACP_AUTH_FILES = bad;
+		assert.throws(
+			() => prepareEphemeralHome("acp", tmp),
+			/HOME-relative without/,
+		);
+	}
 });
 
 // Windows parity: buildRunnerEnv overrides both HOME and USERPROFILE, so the
