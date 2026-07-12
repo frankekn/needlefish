@@ -213,8 +213,10 @@ export function prepareEphemeralHome(
 		);
 	}
 	// buildRunnerEnv points both HOME and USERPROFILE at the ephemeral dir, so
-	// accept either as the auth source root (USERPROFILE = Windows).
-	const realHome = process.env.HOME ?? process.env.USERPROFILE;
+	// accept either as the auth source root (USERPROFILE = Windows). First
+	// NON-EMPTY value wins: HOME="" must fall through, not select "".
+	const realHome =
+		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	if (!realHome) {
 		throw new Error(
 			"NEEDLEFISH_EPHEMERAL_HOME=1 but neither HOME nor USERPROFILE is set: cannot locate auth source files",

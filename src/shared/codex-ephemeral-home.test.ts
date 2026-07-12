@@ -683,3 +683,38 @@ test("prepareEphemeralHome: codex API key via passthrough makes HOME files optio
 		/required auth source is missing: .*auth\.json/,
 	);
 });
+
+// HOME="" (sanitized environments) must fall through to USERPROFILE, not be
+// selected as an empty path root.
+test("prepareEphemeralHome falls back to USERPROFILE when HOME is empty", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		profile: process.env.USERPROFILE,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		if (previous.profile === undefined) delete process.env.USERPROFILE;
+		else process.env.USERPROFILE = previous.profile;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(path.join(fakeHome, ".codex", "auth.json"), '{"token":"x"}');
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.HOME = "";
+	process.env.USERPROFILE = fakeHome;
+
+	const home = prepareEphemeralHome("codex", tmp);
+	assert.ok(home, "empty HOME must fall through to USERPROFILE");
+	assert.ok(
+		existsSync(path.join(home, ".codex", "auth.json")),
+		"auth must be staged from the USERPROFILE root",
+	);
+});

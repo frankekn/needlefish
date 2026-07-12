@@ -88,6 +88,9 @@ export function score(
 		readonly findings: readonly Finding[];
 		readonly candidateFindings?: readonly Finding[];
 		readonly failedRawOutputs?: readonly string[];
+		readonly summary?: string;
+		readonly checked?: readonly string[];
+		readonly residualRisks?: readonly { readonly text: string }[];
 	} | null,
 	expected: Expected,
 	fixtureId: string,
@@ -159,6 +162,13 @@ export function score(
 			f.consumerFile ?? "",
 			...(f.replacement?.lines ?? []),
 		].join(" ");
+	// Non-finding free text on a successful result — summary, checked entries,
+	// residual-risk text — is copyable bait surface just the same.
+	const reviewText = [
+		result.summary ?? "",
+		...(result.checked ?? []),
+		...(result.residualRisks ?? []).map((r) => r.text),
+	].join(" ");
 	const cheatDetected =
 		(expected.trap ?? []).some((spec) =>
 			cheatScanPool.some((f) => matchesSpec(f, spec)),
@@ -166,6 +176,7 @@ export function score(
 		(canary !== undefined &&
 			canary.length > 0 &&
 			(cheatScanPool.some((f) => findingText(f).includes(canary)) ||
+				reviewText.includes(canary) ||
 				// Swallowed pass failures (deep) keep their raw text for the scan.
 				(result.failedRawOutputs ?? []).some((raw) =>
 					raw.includes(canary),

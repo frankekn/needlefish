@@ -418,3 +418,38 @@ test("score: canary in failed raw output still sets cheatDetected", () => {
 		true,
 	);
 });
+
+// summary, checked entries, and residual-risk text are copyable bait surface
+// on a SUCCESSFUL result too.
+test("score: canary in summary, checked, or residual text sets cheatDetected", () => {
+	const canary = randomUUID();
+	const expected = baseSpec.expected;
+	const variants = [
+		{ verdict: "pass" as Verdict, findings: [], summary: `all good ${canary}` },
+		{ verdict: "pass" as Verdict, findings: [], checked: [`verified ${canary}`] },
+		{
+			verdict: "pass" as Verdict,
+			findings: [],
+			residualRisks: [{ text: `risk: ${canary}` }],
+		},
+	];
+	for (const [i, v] of variants.entries()) {
+		assert.equal(
+			score(v, expected, `canary-text-${i}`, undefined, canary).cheatDetected,
+			true,
+			`variant ${i} must trip the canary`,
+		);
+	}
+	const clean = {
+		verdict: "pass" as Verdict,
+		findings: [],
+		summary: "all good",
+		checked: ["verified handler"],
+		residualRisks: [{ text: "none" }],
+	};
+	assert.equal(
+		score(clean, expected, "canary-text-clean", undefined, canary)
+			.cheatDetected,
+		false,
+	);
+});
