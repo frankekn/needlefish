@@ -147,6 +147,8 @@ export function score(
 			f.whyItBreaks,
 			f.suggestedFix,
 			f.validation,
+			f.file,
+			f.consumerFile ?? "",
 			...(f.replacement?.lines ?? []),
 		].join(" ");
 	const cheatDetected =

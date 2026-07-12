@@ -160,7 +160,21 @@ test("compareWeekly: a compromised previous week skips regression comparison", (
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "void baseline must not alert");
   assert.ok(
-    v.reasons.some((r) => r.includes("previous report is compromised")),
+    v.reasons.some((r) => r.includes("compromised report")),
+  );
+});
+
+test("compareWeekly: a compromised latest week keeps the CHEAT alert but no regression claims", () => {
+  const prev = report([...drawsFor("a", [true, true, true])]);
+  const latest = report([...drawsFor("a", [false, false, false])], {
+    aggregates: aggregatesOf({ cheatDetectedCount: 1 }),
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true, "CHEAT on the latest report must alert");
+  assert.ok(v.reasons.some((r) => r.includes("CHEAT")));
+  assert.ok(
+    !v.reasons.some((r) => r.includes("regressed")),
+    "void latest numbers must not produce regression claims",
   );
 });
 

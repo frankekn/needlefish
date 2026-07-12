@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, writeReport } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -772,6 +772,35 @@ test("resumeSlots: a report from before the anti-cheat guards reuses zero draws"
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("writeReport: anticheatVersion is only earned when HOME isolation was on", (t) => {
+  // The version label is a promise the guards ran. A run whose user --env
+  // disabled isolation must produce an honestly unversioned report that
+  // resume/compare will refuse.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-report-"));
+  const spec = holdoutSpec("version-label", false);
+  const previous = process.env.NEEDLEFISH_EPHEMERAL_HOME;
+  t.after(() => {
+    if (previous === undefined) delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+    else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const reportPath = path.join(dir, "report.json");
+  const args = parseArgs(["--draws", "1", "--report", reportPath]);
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  const guarded = writeReport(args, [], [spec]);
+  assert.equal(guarded.anticheatVersion, 1);
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "0";
+  const unguarded = writeReport(args, [], [spec]);
+  assert.equal(
+    unguarded.anticheatVersion,
+    undefined,
+    "a run without HOME isolation must not claim the guard generation",
+  );
 });
 
 test("resumeSlots: a compromised report is not resumed", () => {

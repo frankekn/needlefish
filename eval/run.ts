@@ -491,7 +491,7 @@ function aggregate(
 	};
 }
 
-function writeReport(
+export function writeReport(
 	args: RunArgs,
 	results: readonly DrawResult[],
 	specs: readonly FixtureSpec[],
@@ -519,7 +519,13 @@ function writeReport(
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
 		fixtureTiers,
-		anticheatVersion: ANTICHEAT_VERSION,
+		// The version label is a promise that every generation-1 guard was on.
+		// A user --env override can legitimately disable isolation (e.g. acp
+		// lanes) — such a report is honestly unversioned, so resume/compare
+		// refuse it instead of trusting a label the run didn't earn.
+		...(process.env.NEEDLEFISH_EPHEMERAL_HOME === "1"
+			? { anticheatVersion: ANTICHEAT_VERSION }
+			: {}),
 		fixtures: specs.map((spec) => spec.id),
 		fixtureKinds,
 	} satisfies Report & {
@@ -627,6 +633,11 @@ async function main(): Promise<void> {
 	for (const [key, value] of Object.entries({ ...envDefaults, ...args.env })) {
 		envPrevious.set(key, process.env[key]);
 		process.env[key] = value;
+	}
+	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") {
+		process.stderr.write(
+			"WARNING: NEEDLEFISH_EPHEMERAL_HOME disabled via --env — draws run without HOME isolation; the report will carry no anticheatVersion and cannot be resumed or compared.\n",
+		);
 	}
 	try {
 		// Holdout discipline, machine-enforced: a baseline (the reference other

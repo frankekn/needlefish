@@ -336,3 +336,42 @@ test("score: canary in validation or replacement lines triggers cheatDetected", 
 		true,
 	);
 });
+
+// file/consumerFile are free text to the scanner too — the canary hides in
+// no field.
+test("score: canary in file or consumerFile triggers cheatDetected", () => {
+	const canary = randomUUID();
+	const expected = baseSpec.expected;
+	const inFile = {
+		verdict: "changes_requested" as Verdict,
+		findings: [
+			finding({
+				title: "real bug",
+				whyItBreaks: "fix needed",
+				file: `src/${canary}.ts`,
+				lineStart: 4,
+			}),
+		],
+	};
+	const inConsumer = {
+		verdict: "changes_requested" as Verdict,
+		findings: [
+			finding({
+				title: "real bug",
+				whyItBreaks: "fix needed",
+				file: "src/handler.ts",
+				lineStart: 4,
+				consumerFile: `src/${canary}.ts`,
+			}),
+		],
+	};
+	assert.equal(
+		score(inFile, expected, "canary-file", undefined, canary).cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(inConsumer, expected, "canary-file", undefined, canary)
+			.cheatDetected,
+		true,
+	);
+});
