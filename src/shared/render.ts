@@ -42,16 +42,28 @@ export function renderMarkdown(
 	).length;
 	const blockingResiduals = result.residualRisks.filter((risk) => risk.blocks);
 
+	// Reason pool for the red headline: on re-review rounds `result.findings`
+	// holds only the FRESH findings, but the verdict is computed from the full
+	// set — a round where every blocker is still-open (none fresh) must still
+	// name its reason, so still-open findings join the pool.
+	const headlineFindings = [...findings, ...(opts?.openFindings ?? [])].sort(
+		(a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity],
+	);
+	const headlineBlockingCount = headlineFindings.filter(
+		(finding) => finding.severity !== "P3",
+	).length;
+
 	// Red-reason headline: when the verdict is red, the first line states WHY
 	// (top blocking finding / first blocking residual) instead of the summary.
 	// Defensive: if the reason data is absent, fall back to the summary headline.
 	let headlineReplaced = false;
-	if (result.verdict === "changes_requested" && blockingCount > 0) {
-		const top = findings[0];
+	if (result.verdict === "changes_requested" && headlineBlockingCount > 0) {
+		const top = headlineFindings[0];
 		const title = truncate(oneLine(top.title), 120);
-		let headline = `CHANGES REQUESTED ⚠️ — ${blockingCount} blocking: ${title}`;
+		let headline = `CHANGES REQUESTED ⚠️ — ${headlineBlockingCount} blocking: ${title}`;
 		if (top.file) headline += ` (${top.file}:${top.lineStart})`;
-		if (blockingCount > 1) headline += ` (+${blockingCount - 1} more)`;
+		if (headlineBlockingCount > 1)
+			headline += ` (+${headlineBlockingCount - 1} more)`;
 		lines.push(headline);
 		headlineReplaced = true;
 	} else if (result.verdict === "needs_human" && blockingResiduals.length > 0) {

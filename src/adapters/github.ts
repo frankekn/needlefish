@@ -565,13 +565,18 @@ function minimizePreviousRoundComments(
 	repo: string,
 	prNumber: number,
 ): void {
+	// --slurp: --paginate alone emits one JSON document PER PAGE (concatenated,
+	// unparseable); --slurp wraps the pages into a single outer array.
 	const raw = ghJson([
 		"api",
 		"--paginate",
+		"--slurp",
 		`repos/${repo}/issues/${prNumber}/comments`,
 	]);
 	if (!Array.isArray(raw)) return;
-	for (const item of raw) {
+	// Each element is a page (an array of comments); flat(1) also tolerates a
+	// plain comment list from stubs or older gh versions.
+	for (const item of raw.flat(1)) {
 		if (!isRecord(item)) continue;
 		const body = stringField(item, "body");
 		if (!body.includes("<!-- needlefish-round -->")) continue;

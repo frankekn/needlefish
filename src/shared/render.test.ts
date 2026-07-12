@@ -245,7 +245,12 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 		stateMarker: "<!-- state -->",
 	});
 
-	assert.match(markdown, /^CHANGES REQUESTED ⚠️[^\n]*\n✅ 1 resolved\n/);
+	// The still-open blocker now feeds the red-reason headline (fresh set is
+	// empty); summary drops to line 2, delta follows.
+	assert.match(
+		markdown,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n✅ 1 resolved\n/,
+	);
 	assert.match(markdown, /Review target: local base\.\.head/);
 	assert.match(markdown, /PR context: #24 metadata only/);
 	assert.match(markdown, /<summary>Still open \(1\)<\/summary>/);
@@ -312,4 +317,22 @@ test("renderMarkdown renders the coverage line visibly outside any collapsed sec
 	// Preceded by a blank line: otherwise GFM lazy-continues the previous
 	// bullet list / paragraph and the coverage line is absorbed into it.
 	assert.match(markdown, /\n\nCoverage: /);
+});
+
+test("renderMarkdown re-review headline keeps the reason when all blockers are still open (none fresh)", () => {
+	// Re-review rounds render with findings = FRESH only; when every blocker
+	// is still-open the verdict stays red and the first line must still name
+	// the reason from the open set instead of falling back to the summary.
+	const open = finding("P1", "auth bypass persists", "src/auth.ts", {
+		lineStart: 42,
+		lineEnd: 42,
+	});
+	const markdown = renderMarkdown(baseResult([], "changes_requested"), {
+		openFindings: [open],
+	});
+	const first = markdown.split("\n")[0];
+	assert.match(
+		first,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: auth bypass persists \(src\/auth\.ts:42\)/,
+	);
 });

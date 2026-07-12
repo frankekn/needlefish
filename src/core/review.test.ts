@@ -219,6 +219,10 @@ test("review keeps deep failure residuals after critic pruning", async (t) => {
 		result.residualRisks[0]?.text ?? "",
 		/deep review of "changed" failed/,
 	);
+	// Coverage must NOT count the failed hotspot's files as deep-reviewed:
+	// the single hotspot failed, so 0/1 — an overstated coverage line would
+	// contradict the blocking residual right below it.
+	assert.match(result.coverage ?? "", /^0\/1 changed files deep-reviewed/);
 });
 
 test("review re-asks once when the model emits malformed JSON", async (t) => {

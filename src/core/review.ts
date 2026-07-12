@@ -297,6 +297,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 				(raw) => normalizeReview(raw),
 			);
 			return {
+				ok: true,
 				checked: [
 					`[${h.name}] ${res.summary || "(no summary)"}`,
 					...res.checked,
@@ -308,6 +309,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			if (isRunnerSafetyError(e)) throw e;
 			const msg = e instanceof Error ? e.message : String(e);
 			return {
+				ok: false,
 				checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
 				findings: [] as readonly Finding[],
 				residuals: [
@@ -340,11 +342,13 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		...pruned,
 		residual_risks: [...pruned.residual_risks, ...blockingResiduals],
 	};
-	// Compute coverage from the hotspots actually deep-reviewed (includes the tail
-	// backstop): unique changed-file paths that landed in any hotspot. By
-	// construction of the tail backstop this equals changedFiles.length, but we
-	// compute it rather than assume it.
-	const coveredFileCount = new Set(hotspots.flatMap((h) => h.files)).size;
+	// Compute coverage from the hotspots whose deep pass actually SUCCEEDED
+	// (includes the tail backstop). A failed pass's files were not reviewed —
+	// counting them would make the coverage line overstate exactly when it
+	// matters most; the failure itself is already a blocking residual.
+	const coveredFileCount = new Set(
+		hotspots.filter((_, i) => passes[i].ok).flatMap((h) => h.files),
+	).size;
 	const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${hotspots.length} hotspot${hotspots.length === 1 ? "" : "s"}${tailAdded ? ", incl. tail-coverage" : ""}`;
 	return toReviewResult(
 		final,

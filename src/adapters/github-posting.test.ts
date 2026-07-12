@@ -238,7 +238,15 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.exit(0);",
 			"}",
 			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
-			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)} || (args[1] === '--paginate' && args[2] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)})) {`,
+			// Paginated GET must come with --slurp (page-wrapped array of arrays);
+			// the stub emulates the slurped shape to pin the flat(1) handling.
+			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
+			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
+			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
+			"  process.stdout.write(JSON.stringify([issueComments]));",
+			"  process.exit(0);",
+			"}",
+			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
 			"  process.stdout.write(JSON.stringify(issueComments));",
