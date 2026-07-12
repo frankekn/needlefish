@@ -124,16 +124,16 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
   };
 }
 
-// Ride the run-wide failed attempts along on the error (message unchanged):
-// the eval harness scans them for the bait canary — neither invalid output
-// nor a cleaner retry is an escape hatch from detection. The snapshot is
-// run-level, not call-local, so a contaminated attempt from an EARLIER pass
-// whose retry succeeded still reaches the scan when a later pass rejects.
+// Ride the run-wide transcript along on the error (message unchanged): the
+// eval harness scans it for the bait canary — neither invalid output nor a
+// cleaner retry is an escape hatch from detection. The snapshot is run-level,
+// not call-local, and includes SUCCESSFUL pass outputs too: when a later pass
+// rejects there is no ReviewResult, so a canary in an earlier successful map
+// or deep transcript would otherwise never reach the scan.
 function attachRunRaws(err: unknown, run: ReviewRun): void {
-  if (err instanceof Error && run.failedRawOutputs.length > 0) {
-    (err as Error & { rawOutputs?: readonly string[] }).rawOutputs = [
-      ...run.failedRawOutputs,
-    ];
+  const raws = [...run.failedRawOutputs, ...run.rawOutputs];
+  if (err instanceof Error && raws.length > 0) {
+    (err as Error & { rawOutputs?: readonly string[] }).rawOutputs = raws;
   }
 }
 

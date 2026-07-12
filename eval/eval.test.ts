@@ -775,6 +775,40 @@ test("resumeSlots: a report from before the anti-cheat guards reuses zero draws"
   }
 });
 
+test("resumeSlots and compare fail closed on a missing cheatDetectedCount", () => {
+  // Unvalidated JSON: a current-version report omitting the count cannot be
+  // established clean — resume reuses nothing, compare throws.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-countless-"));
+  const spec = holdoutSpec("countless-gate", false);
+  const base = resumeReport(spec, { anticheatVersion: 1 });
+  const strippedAggregates = { ...base.aggregates } as Record<string, unknown>;
+  delete strippedAggregates.cheatDetectedCount;
+  const countless = { ...base, aggregates: strippedAggregates };
+  try {
+    const resumePath = path.join(dir, "countless.json");
+    writeFileSync(resumePath, JSON.stringify(countless));
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0, "count-less draws must not be reused");
+    assert.deepEqual(resumed.slots, [null]);
+
+    const cleanPath = path.join(dir, "clean.json");
+    writeFileSync(cleanPath, JSON.stringify(base));
+    assert.throws(
+      () => compare(resumePath, base),
+      /compromised or unverifiable/,
+      "a count-less baseline must not anchor a comparison",
+    );
+    assert.throws(
+      () => compare(cleanPath, countless as unknown as Report),
+      /compromised or unverifiable/,
+      "a count-less candidate must not pass a comparison",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("renderResults: legacy and compromised reports are excluded from baseline and deltas", () => {
   // The published results table honors the same comparability contract as
   // resume/compare/weekly: pre-guard or canary-positive reports are listed
@@ -1030,7 +1064,7 @@ test("compare: rejects reports from another anti-cheat generation", () => {
     writeFileSync(baselinePath, JSON.stringify(compromisedBaseline));
     assert.throws(
       () => compare(baselinePath, current),
-      /baseline report is compromised \(cheatDetectedCount=1\)/,
+      /baseline report is compromised or unverifiable \(cheatDetectedCount=1\)/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

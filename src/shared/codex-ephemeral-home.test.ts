@@ -604,6 +604,50 @@ test("prepareEphemeralHome: acp without a declared staging list fails closed", (
 	);
 });
 
+// Environment-authenticated acp: credentials declared via the passthrough
+// mechanism need no HOME files — isolation stays on with an empty staging.
+test("prepareEphemeralHome: acp accepts passthrough-declared env credentials", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		token: process.env.MY_AGENT_TOKEN,
+		home: process.env.HOME,
+	};
+	t.after(() => {
+		for (const [key, value] of [
+			["NEEDLEFISH_EPHEMERAL_HOME", previous.ephemeral],
+			["NEEDLEFISH_ACP_AUTH_FILES", previous.acpFiles],
+			["NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", previous.passthrough],
+			["MY_AGENT_TOKEN", previous.token],
+			["HOME", previous.home],
+		] as const) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.HOME = fakeHome;
+	delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MY_AGENT_TOKEN";
+
+	// Passthrough named but the var is empty: still nothing declared — refuse.
+	process.env.MY_AGENT_TOKEN = "";
+	assert.throws(
+		() => prepareEphemeralHome("acp", tmp),
+		/NEEDLEFISH_ACP_AUTH_FILES/,
+	);
+
+	// Non-empty passthrough credential: isolation on, empty staging.
+	process.env.MY_AGENT_TOKEN = "tok";
+	const home = prepareEphemeralHome("acp", tmp);
+	assert.ok(home, "env-authenticated acp must keep isolation on");
+});
+
 // With a declared list, acp stages exactly those files (copy-only) into the
 // isolated HOME — the supported eval path keeps its anti-cheat generation.
 test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {

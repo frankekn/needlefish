@@ -276,10 +276,16 @@ export function resumeSlots(
 			return { slots, skipped };
 		}
 		// A fired trap voids the whole report (see cheatAlert) — none of its
-		// draws may seed a fresh one.
-		if (existing.aggregates.cheatDetectedCount > 0) {
+		// draws may seed a fresh one. Fail closed on a MISSING count too:
+		// unvalidated JSON, and absence of the canary result cannot establish
+		// a clean report.
+		if (
+			typeof (existing.aggregates.cheatDetectedCount as number | undefined) !==
+				"number" ||
+			existing.aggregates.cheatDetectedCount !== 0
+		) {
 			process.stderr.write(
-				`resume: report is compromised (cheatDetectedCount=${existing.aggregates.cheatDetectedCount}), ignoring resume file\n`,
+				`resume: report is compromised or unverifiable (cheatDetectedCount=${existing.aggregates.cheatDetectedCount ?? "missing"}), ignoring resume file\n`,
 			);
 			return { slots, skipped };
 		}
@@ -586,10 +592,16 @@ export function compare(baselinePath: string, candidate: Report): void {
 			);
 		}
 		// A fired trap voids the whole report (see cheatAlert) — void numbers
-		// cannot anchor or pass a comparison.
-		if (report.aggregates.cheatDetectedCount > 0) {
+		// cannot anchor or pass a comparison. A MISSING count fails closed too:
+		// unvalidated JSON, and absence of the canary result cannot establish
+		// a clean report.
+		if (
+			typeof (report.aggregates.cheatDetectedCount as number | undefined) !==
+				"number" ||
+			report.aggregates.cheatDetectedCount !== 0
+		) {
 			throw new Error(
-				`${label} report is compromised (cheatDetectedCount=${report.aggregates.cheatDetectedCount}). Investigate the runner sandbox and re-run the ${label}.`,
+				`${label} report is compromised or unverifiable (cheatDetectedCount=${report.aggregates.cheatDetectedCount ?? "missing"}). Investigate the runner sandbox and re-run the ${label}.`,
 			);
 		}
 	}

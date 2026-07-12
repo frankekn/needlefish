@@ -484,14 +484,18 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
     else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
     rmSync(tmp, { recursive: true, force: true });
   });
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
   writeFileSync(
     bin,
     [
@@ -545,14 +549,19 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
     "critic",
     "critic",
   ]);
-  // Run-level snapshot: the review pass's contaminated first attempt plus
-  // both critic attempts — a successful mid-run retry is not an escape hatch.
+  // Run-level snapshot: the review pass's contaminated first attempt, both
+  // critic attempts, AND (trace on) the successful review retry — neither a
+  // successful mid-run retry nor a successful pass is an escape hatch.
   const raws = (rejection as Error & { rawOutputs?: readonly string[] })
     .rawOutputs;
-  assert.equal(raws?.length, 3, "all failed attempts across passes must ride the error");
+  assert.equal(raws?.length, 4, "all attempts across passes must ride the error");
   assert.ok(
     raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
     "earlier pass's contaminated attempt must survive its own successful retry"
+  );
+  assert.ok(
+    raws?.some((raw) => raw.includes('"summary":"clean"')),
+    "the successful pass transcript must ride terminal errors too"
   );
 });
 

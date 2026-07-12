@@ -181,8 +181,20 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "acp") {
 		const raw = process.env.NEEDLEFISH_ACP_AUTH_FILES?.trim();
 		if (!raw) {
+			// Environment-authenticated mode: the operator already declared the
+			// agent's credential vars via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH; with
+			// at least one set and non-empty, nothing needs to live in HOME.
+			const passthroughAuthed = (
+				process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? ""
+			)
+				.split(",")
+				.map((name) => name.trim())
+				.some((name) => name.length > 0 && !!process.env[name]);
+			if (passthroughAuthed) {
+				return { required: [], optional: [] };
+			}
 			throw new Error(
-				"NEEDLEFISH_EPHEMERAL_HOME=1 needs an explicit credential staging list for the acp runner: set NEEDLEFISH_ACP_AUTH_FILES to comma-separated HOME-relative paths (copied, never symlinked), or set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
+				"NEEDLEFISH_EPHEMERAL_HOME=1 needs an explicit credential declaration for the acp runner: set NEEDLEFISH_ACP_AUTH_FILES to comma-separated HOME-relative paths (copied, never symlinked), pass env credentials via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH, or set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
 			);
 		}
 		const required = raw
