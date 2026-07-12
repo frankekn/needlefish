@@ -793,7 +793,7 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
     aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
   };
   const md = renderResults(
-    [],
+    [spec],
     [
       { stem: "legacy-run", report: legacy },
       { stem: "clean-codex-xhigh", report: clean },
@@ -808,7 +808,20 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   assert.match(row("legacy-run"), /🚫/, "pre-guard report is marked");
   assert.match(row("legacy-run"), /n\/a/, "pre-guard report gets no delta");
   assert.match(row("cheat-run"), /🚫/, "compromised report is marked");
+  assert.match(row("cheat-run"), /COMPROMISED/, "compromised report is labeled");
   assert.match(row("cheat-run"), /n\/a/, "compromised report gets no delta");
+  assert.ok(
+    !row("cheat-run").includes("%"),
+    "a compromised report publishes no aggregate metric values",
+  );
+  // Fixture-level cells for the compromised column are withheld too: the
+  // 4th cell (cheat-run's) is "—" while the others carry hit counts.
+  const fixtureRow = md.split("\n").find((l) => l.startsWith(`| ${spec.id} |`)) ?? "";
+  assert.equal(
+    fixtureRow.split("|").map((c) => c.trim())[5],
+    "—",
+    "compromised report's fixture-level recall is withheld",
+  );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
 });

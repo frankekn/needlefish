@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Report } from "./shared/types";
+import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
 // ~20 positives, one fixture is ~5pp of recall and single draws flicker, so
@@ -15,6 +15,9 @@ export interface WeeklyVerdict {
   // Set when the latest report's trap fired: its numbers are void and no
   // consumer may print or act on them.
   readonly compromised?: boolean;
+  // Set when the latest report did not run under the current anti-cheat
+  // generation: its numbers are unguarded and must be withheld too.
+  readonly unguarded?: boolean;
 }
 
 function stableRecallByFixture(report: Report): Map<string, "hit" | "miss" | "mixed"> {
@@ -56,6 +59,18 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       ],
     };
   }
+  if (latest.anticheatVersion !== ANTICHEAT_VERSION) {
+    // Not proven void (unlike CHEAT), but unguarded: the current generation's
+    // detection never covered these draws, so no metric may be published and
+    // the weekly lane itself needs fixing — that is alert-worthy on its own.
+    return {
+      alert: true,
+      unguarded: true,
+      reasons: [
+        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION} — metrics withheld; re-run the weekly lane under the current guards`,
+      ],
+    };
+  }
   if (latest.aggregates.invalidJsonRate > 0.1) {
     reasons.push(`invalidJsonRate ${(latest.aggregates.invalidJsonRate * 100).toFixed(0)}% exceeds 10%`);
   }
@@ -79,9 +94,10 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       !latest.fixtureSetHash ||
       prev.fixtureSetHash !== latest.fixtureSetHash ||
       // Cross-anti-cheat-generation draws are declared incomparable (see
-      // compare() in run.ts): a pre-guard week must not anchor a guarded one.
-      prev.anticheatVersion !== latest.anticheatVersion ||
-      prev.anticheatVersion === undefined
+      // compare() in run.ts): the previous week must have run under the
+      // CURRENT generation, same as the latest (gated above), not merely a
+      // matching obsolete one.
+      prev.anticheatVersion !== ANTICHEAT_VERSION
     ) {
       // Different prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
@@ -119,9 +135,9 @@ function main(): void {
   const prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
   const verdict = compareWeekly(prev, latest);
   const a = latest.aggregates;
-  // A compromised report's numbers are void: print only the reasons (CHEAT
-  // + withholding note), never the aggregate or tier metric lines.
-  const metricLines = verdict.compromised
+  // A compromised report's numbers are void, an unguarded one's unprotected:
+  // print only the reasons, never the aggregate or tier metric lines.
+  const metricLines = verdict.compromised || verdict.unguarded
     ? []
     : [
         `recall ${(a.recall * 100).toFixed(0)}% | fp ${(a.falsePositiveRate * 100).toFixed(0)}% | verdict ${(a.verdictMatchRate * 100).toFixed(0)}% | noise ${a.meanNoisePerPositive.toFixed(1)}/positive`,

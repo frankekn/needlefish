@@ -234,6 +234,35 @@ test("compareWeekly: a pre-guard previous week skips regression comparison", () 
   );
 });
 
+test("compareWeekly: an unguarded latest report withholds all metrics", () => {
+  // Absent or obsolete generation on the LATEST report: its numbers never
+  // faced the current guards, so nothing may be published — and the weekly
+  // lane itself is broken, which is alert-worthy on its own.
+  for (const version of [undefined, 99]) {
+    const latest = report([...drawsFor("a", [true, true, true])], {
+      anticheatVersion: version,
+    });
+    const v = compareWeekly(null, latest);
+    assert.equal(v.unguarded, true, `version ${version} must be unguarded`);
+    assert.equal(v.alert, true, "an unguarded weekly lane must alert");
+    assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
+  }
+});
+
+test("compareWeekly: matching obsolete generations still do not compare", () => {
+  // Two weeks labeled the same OLD version match each other, but matching
+  // labels are not enough — the CURRENT generation is required.
+  const prev = report([...drawsFor("a", [true, true, true])], {
+    anticheatVersion: 99,
+  });
+  const latest = report([...drawsFor("a", [false, false, false])], {
+    anticheatVersion: 99,
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
+});
+
 for (const [name, prevHash, latestHash] of [
   ["previous hash missing", undefined, "fff"],
   ["latest hash missing", "fff", undefined],

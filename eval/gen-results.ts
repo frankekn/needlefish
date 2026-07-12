@@ -38,6 +38,13 @@ function guarded(r: Report): boolean {
   );
 }
 
+// A fired canary voids the WHOLE report: unlike merely pre-guard (unguarded
+// history, shown but incomparable), a compromised report's numbers must not
+// be published at all.
+function compromised(r: Report): boolean {
+  return (r.aggregates.cheatDetectedCount ?? 0) > 0;
+}
+
 export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): string {
   const positives = specs.filter((s) => s.kind === "positive");
   const negatives = specs.filter((s) => s.kind === "negative");
@@ -57,7 +64,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const lines: string[] = [];
   lines.push(`# Eval Results — all runs`);
   lines.push(``);
-  lines.push(`All runs share promptHash \`${reports[0]?.report.promptHash ?? "(none)"}\`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns.`);
+  lines.push(`All runs share promptHash \`${reports[0]?.report.promptHash ?? "(none)"}\`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
   lines.push(``);
   lines.push(`## Aggregates (delta vs codex-xhigh baseline; full runs only)`);
   lines.push(``);
@@ -66,6 +73,10 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   for (const { stem, report: r } of reports) {
     const a = r.aggregates;
     const draws = r.results.length;
+    if (compromised(r)) {
+      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | ${draws}/102 | COMPROMISED | n/a | — | — | — | — |`);
+      continue;
+    }
     const partial = draws < 102;
     const d =
       baseline && r === baseline.report
@@ -85,6 +96,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`|---|${reports.map(() => "---").join("|")}|`);
   for (const p of positives) {
     const cells = reports.map(({ report: r }) => {
+      if (compromised(r)) return "—";
       const draws = r.results.filter((x) => x.fixtureId === p.id);
       const hits = draws.filter((x) => x.score.recall).length;
       return `${hits}/${draws.length}`;
@@ -95,6 +107,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`## Stable misses (recall=false on all 3 draws) — by model`);
   lines.push(``);
   for (const { stem, report: r } of reports) {
+    if (compromised(r)) continue;
     const stable = positives.filter((p) => {
       const draws = r.results.filter((x) => x.fixtureId === p.id);
       return draws.length === 3 && draws.every((x) => !x.score.recall);
@@ -106,6 +119,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`## False positives (fp=true on any draw) — by model`);
   lines.push(``);
   for (const { stem, report: r } of reports) {
+    if (compromised(r)) continue;
     const fps = negatives.filter((n) => r.results.some((x) => x.fixtureId === n.id && x.score.falsePositive));
     if (fps.length === 0) continue;
     lines.push(`**${stem}**: ${fps.map((n) => n.id).join(", ")}`);
