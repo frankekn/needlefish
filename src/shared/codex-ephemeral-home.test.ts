@@ -554,6 +554,28 @@ test("prepareEphemeralHome: grok provider key via passthrough makes HOME files o
 		() => prepareEphemeralHome("grok", tmp3),
 		/required auth source is missing/,
 	);
+
+	// Non-credential GROK_*/XAI_* vars (config, endpoints) and EMPTY keys do
+	// not count either — only a non-empty supported credential variable does.
+	for (const [name, value] of [
+		["GROK_MODEL", "grok-4.5"],
+		["XAI_BASE_URL", "https://proxy.example"],
+		["XAI_API_KEY", ""],
+	] as const) {
+		process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = name;
+		process.env[name] = value;
+		const tmpN = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+		t.after(() => {
+			delete process.env[name];
+			rmSync(tmpN, { recursive: true, force: true });
+		});
+		assert.throws(
+			() => prepareEphemeralHome("grok", tmpN),
+			/required auth source is missing/,
+			`${name}=${JSON.stringify(value)} must not unlock provider-key mode`,
+		);
+		delete process.env[name];
+	}
 });
 
 // acp launches arbitrary agents with unknowable credential layouts: under

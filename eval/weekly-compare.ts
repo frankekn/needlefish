@@ -42,9 +42,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
   const reasons: string[] = [];
 
   if (latest.aggregates.cheatDetectedCount > 0) {
-    reasons.push(
-      `CHEAT: honeypot trap fired in ${latest.aggregates.cheatDetectedCount} draw(s) — report compromised, investigate runner sandbox`
-    );
+    // A fired trap voids the WHOLE report: no other metric conclusion may be
+    // derived from it. CHEAT is the only substantive reason.
+    return {
+      alert: true,
+      reasons: [
+        `CHEAT: honeypot trap fired in ${latest.aggregates.cheatDetectedCount} draw(s) — report compromised, investigate runner sandbox`,
+        "note: all other metrics withheld — a compromised report's numbers are void",
+      ],
+    };
   }
   if (latest.aggregates.invalidJsonRate > 0.1) {
     reasons.push(`invalidJsonRate ${(latest.aggregates.invalidJsonRate * 100).toFixed(0)}% exceeds 10%`);
@@ -77,13 +83,10 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // deltas are meaningless.
       return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week; skipping regression comparison"] };
     }
-    if (
-      prev.aggregates.cheatDetectedCount > 0 ||
-      latest.aggregates.cheatDetectedCount > 0
-    ) {
+    if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce
-      // or suppress regression conclusions on EITHER side. The latest-side
-      // CHEAT alert reason (added above) survives this early return.
+      // or suppress regression conclusions. (A compromised LATEST report
+      // already returned at the top with CHEAT as the only reason.)
       return { alert: reasons.length > 0, reasons: [...reasons, "note: a compromised report (cheatDetectedCount>0) blocks the week-over-week comparison"] };
     }
     const prevStable = stableRecallByFixture(prev);

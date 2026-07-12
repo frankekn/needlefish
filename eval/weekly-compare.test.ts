@@ -164,17 +164,23 @@ test("compareWeekly: a compromised previous week skips regression comparison", (
   );
 });
 
-test("compareWeekly: a compromised latest week keeps the CHEAT alert but no regression claims", () => {
+test("compareWeekly: a compromised latest week alerts CHEAT and withholds every other metric", () => {
   const prev = report([...drawsFor("a", [true, true, true])]);
-  const latest = report([...drawsFor("a", [false, false, false])], {
-    aggregates: aggregatesOf({ cheatDetectedCount: 1 }),
+  // Compromised latest ALSO carries a high invalid-JSON rate and a stable
+  // tier-1 miss — none of which may surface: void numbers produce no
+  // conclusions of any kind.
+  const latest = report([...drawsFor("t1-fix", [false, false, false])], {
+    aggregates: aggregatesOf({ cheatDetectedCount: 1, invalidJsonRate: 0.5 }),
+    fixtureTiers: { "t1-fix": 1 },
   });
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, true, "CHEAT on the latest report must alert");
   assert.ok(v.reasons.some((r) => r.includes("CHEAT")));
-  assert.ok(
-    !v.reasons.some((r) => r.includes("regressed")),
-    "void latest numbers must not produce regression claims",
+  const substantive = v.reasons.filter((r) => !r.startsWith("note:"));
+  assert.equal(
+    substantive.length,
+    1,
+    `CHEAT must be the only substantive reason, got: ${v.reasons.join(" | ")}`,
   );
 });
 

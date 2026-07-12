@@ -146,16 +146,19 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			optional: [".codex/config.toml"],
 		};
 	}
-	// grok: a provider key supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH
-	// (GROK_*/XAI_*) is a supported auth mode that never reads ~/.grok —
-	// with one present, the HOME files become optional config.
+	// grok: a provider credential supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH
+	// is a supported auth mode that never reads ~/.grok — with one present and
+	// non-empty, the HOME files become optional config. Only actual credential
+	// variables count: GROK_MODEL/XAI_BASE_URL and friends configure, not
+	// authenticate.
 	if (runner === "grok") {
+		const GROK_CREDENTIAL_VARS = ["GROK_API_KEY", "XAI_API_KEY"];
 		const passthrough = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 			.split(",")
 			.map((name) => name.trim());
 		const hasProviderKey = passthrough.some(
 			(name) =>
-				/^(GROK|XAI)_/.test(name) && process.env[name] !== undefined,
+				GROK_CREDENTIAL_VARS.includes(name) && !!process.env[name],
 		);
 		if (hasProviderKey) {
 			return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
