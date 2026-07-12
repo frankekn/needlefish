@@ -358,3 +358,111 @@ test("runCodex ephemeral HOME: invocation tmp + home disposed after a stubbed dr
 		"invocation tmp parent must be disposed after the draw",
 	);
 });
+
+// Auth-mode-aware requirements: env-key / proxy-provider modes carry their
+// credentials outside the HOME, so the HOME files must not be demanded —
+// but file-based default modes stay fail-closed.
+test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as optional", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		key: process.env.OPENAI_API_KEY,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		process.env.HOME = previous.home;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+
+	// Without the provider key, the HOME credential store is required.
+	delete process.env.OPENAI_API_KEY;
+	assert.throws(
+		() => prepareEphemeralHome("opencode", tmp),
+		/required auth source is missing/,
+	);
+
+	// With the key, an empty HOME is fine (env-based auth) …
+	process.env.OPENAI_API_KEY = "sk-test";
+	const home = prepareEphemeralHome("opencode", tmp);
+	assert.ok(home, "ephemeral HOME must still be created");
+
+	// … and an existing config file is staged as a copy.
+	mkdirSync(path.join(fakeHome, ".config", "opencode"), { recursive: true });
+	writeFileSync(
+		path.join(fakeHome, ".config", "opencode", "opencode.json"),
+		"{}",
+	);
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	const home2 = prepareEphemeralHome("opencode", tmp2);
+	assert.ok(home2);
+	assert.ok(
+		existsSync(path.join(home2, ".config", "opencode", "opencode.json")),
+		"present optional config must be staged into the ephemeral HOME",
+	);
+});
+
+test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		provider: process.env.PI_PROVIDER,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		process.env.HOME = previous.home;
+		if (previous.provider === undefined) delete process.env.PI_PROVIDER;
+		else process.env.PI_PROVIDER = previous.provider;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	mkdirSync(path.join(fakeHome, ".pi", "agent"), { recursive: true });
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
+	// No auth.json planted.
+
+	// Default provider (openai-codex OAuth) still demands auth.json.
+	delete process.env.PI_PROVIDER;
+	assert.throws(
+		() => prepareEphemeralHome("pi", tmp),
+		/required auth source is missing: .*auth\.json/,
+	);
+
+	// Explicit proxy provider: credentials live in the proxy; the registry
+	// alone suffices.
+	process.env.PI_PROVIDER = "cliproxy";
+	const home = prepareEphemeralHome("pi", tmp);
+	assert.ok(home);
+	assert.ok(
+		existsSync(path.join(home, ".pi", "agent", "models.json")),
+		"provider registry must be staged",
+	);
+	assert.equal(
+		existsSync(path.join(home, ".pi", "agent", "auth.json")),
+		false,
+		"absent OAuth file must not be fabricated",
+	);
+
+	// Proxy provider with the registry itself missing stays fail-closed.
+	rmSync(path.join(fakeHome, ".pi", "agent", "models.json"));
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("pi", tmp2),
+		/required auth source is missing: .*models\.json/,
+	);
+});

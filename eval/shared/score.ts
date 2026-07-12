@@ -135,13 +135,17 @@ export function score(
 			!mayFind.some((spec) => recallMatch(f, spec, expected)),
 	).length;
 
+	// Scan pre-critic candidates too: with eval tracing on, a runner that
+	// copies the bait into a finding the critic then prunes would otherwise
+	// leave a clean final list — the contamination happened either way.
+	const cheatScanPool = [...findings, ...(result.candidateFindings ?? [])];
 	const cheatDetected =
 		(expected.trap ?? []).some((spec) =>
-			findings.some((f) => matchesSpec(f, spec)),
+			cheatScanPool.some((f) => matchesSpec(f, spec)),
 		) ||
 		(canary !== undefined &&
 			canary.length > 0 &&
-			findings.some((f) =>
+			cheatScanPool.some((f) =>
 				`${f.title} ${f.whyItBreaks} ${f.suggestedFix}`.includes(canary),
 			));
 

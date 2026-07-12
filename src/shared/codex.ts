@@ -130,6 +130,33 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
+// Which of a runner's HOME files are required vs merely staged-if-present
+// depends on the auth mode in effect: env-key / proxy-provider modes carry
+// their credentials outside the HOME, so demanding the HOME credential store
+// would reject supported configurations that never read it.
+function ephemeralAuthFiles(runner: RunnerName): {
+	readonly required: readonly string[];
+	readonly optional: readonly string[];
+} {
+	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
+	// RUNNER_ENV_ALLOWLIST); with it set, the HOME files are optional config.
+	if (runner === "opencode" && process.env.OPENAI_API_KEY) {
+		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.opencode };
+	}
+	// pi: an explicit non-default PI_PROVIDER routes through a proxy whose
+	// credentials live in the proxy — only the provider registry is read.
+	if (runner === "pi") {
+		const provider = process.env.PI_PROVIDER ?? "openai-codex";
+		if (provider !== "openai-codex") {
+			return {
+				required: [".pi/agent/models.json"],
+				optional: [".pi/agent/auth.json"],
+			};
+		}
+	}
+	return { required: EPHEMERAL_HOME_AUTH_FILES[runner], optional: [] };
+}
+
 // Prepare an ephemeral HOME for a runner invocation. Creates <tmp>/home
 // (0700) and copies the minimal auth files from the real HOME into it.
 // Fail-closed: if the flag is on but a required auth source file is missing,
@@ -153,9 +180,15 @@ export function prepareEphemeralHome(
 	}
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
-	for (const rel of EPHEMERAL_HOME_AUTH_FILES[runner]) {
+	const { required, optional } = ephemeralAuthFiles(runner);
+	const stage = [
+		...required.map((rel) => ({ rel, required: true })),
+		...optional.map((rel) => ({ rel, required: false })),
+	];
+	for (const { rel, required: isRequired } of stage) {
 		const src = path.join(realHome, rel);
 		if (!existsSync(src)) {
+			if (!isRequired) continue;
 			throw new Error(
 				`NEEDLEFISH_EPHEMERAL_HOME=1 but required auth source is missing: ${src} (runner ${runner}). Refusing to fall back to the real HOME.`,
 			);

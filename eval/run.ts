@@ -550,6 +550,20 @@ export function compare(baselinePath: string, candidate: Report): void {
 			`holdout mode mismatch: baseline ran '${baseline.holdout}', candidate ran '${candidate.holdout}'. Deltas across different subsets are meaningless.`,
 		);
 	}
+	// Draws from another anti-cheat generation never faced the same guards —
+	// presenting them as comparable would let an unguarded baseline anchor a
+	// guarded candidate (or vice versa). Deliberate cross-generation studies
+	// read the reports directly instead of using --compare.
+	for (const [label, report] of [
+		["baseline", baseline],
+		["candidate", candidate],
+	] as const) {
+		if (report.anticheatVersion !== ANTICHEAT_VERSION) {
+			throw new Error(
+				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,
+			);
+		}
+	}
 	const b = baseline.aggregates;
 	const c = candidate.aggregates;
 	const delta = (x: number, y: number) => y - x;

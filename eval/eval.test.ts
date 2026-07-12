@@ -848,6 +848,61 @@ test("compare: rejects a legacy baseline without fixtureSetHash", () => {
   }
 });
 
+test("compare: rejects reports from another anti-cheat generation", () => {
+  // An unguarded baseline is not comparable to a guarded candidate — its
+  // draws never faced the canary. Same for an unguarded candidate.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const current: Report = {
+    promptHash: "prompt-hash",
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-13T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    results: [],
+    aggregates: {
+      recall: 0,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 0,
+      lineAnchorValidRate: 0,
+      meanDurationMs: 0,
+      recallByFixture: {},
+      criticPruneErrorRate: 0,
+      recallByTier: {},
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+    fixtureSetHash: "fixture-hash",
+    anticheatVersion: 1,
+  };
+  try {
+    const unguardedBaseline = { ...current, baseline: true };
+    delete unguardedBaseline.anticheatVersion;
+    writeFileSync(baselinePath, JSON.stringify(unguardedBaseline));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report anti-cheat version is none/,
+    );
+
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    const unguardedCandidate = { ...current };
+    delete unguardedCandidate.anticheatVersion;
+    assert.throws(
+      () => compare(baselinePath, unguardedCandidate),
+      /candidate report anti-cheat version is none/,
+    );
+
+    // Matching current-generation reports still compare cleanly.
+    compare(baselinePath, current);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("loadFixtures: discovers a fixture placed in eval/fixtures-real/", async () => {
   const realDir = path.join(__dirname, "fixtures-real");
   const tmpFixtureDir = path.join(realDir, "tmp-discovery-test");
