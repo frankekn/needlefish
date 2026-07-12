@@ -774,16 +774,22 @@ test("resumeSlots: a report from before the anti-cheat guards reuses zero draws"
   }
 });
 
-test("writeReport: anticheatVersion is only earned when HOME isolation was on", (t) => {
+test("writeReport: anticheatVersion is only earned when HOME isolation AND tracing were on", (t) => {
   // The version label is a promise the guards ran. A run whose user --env
-  // disabled isolation must produce an honestly unversioned report that
-  // resume/compare will refuse.
+  // disabled isolation OR the eval trace (which feeds critic-pruned
+  // candidates and failed raws to the canary scan) must produce an honestly
+  // unversioned report that resume/compare will refuse.
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-report-"));
   const spec = holdoutSpec("version-label", false);
-  const previous = process.env.NEEDLEFISH_EPHEMERAL_HOME;
+  const previous = {
+    home: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
+  };
   t.after(() => {
-    if (previous === undefined) delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
-    else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous;
+    if (previous.home === undefined) delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+    else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.home;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -791,6 +797,7 @@ test("writeReport: anticheatVersion is only earned when HOME isolation was on", 
   const args = parseArgs(["--draws", "1", "--report", reportPath]);
 
   process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
   const guarded = writeReport(args, [], [spec]);
   assert.equal(guarded.anticheatVersion, 1);
 
@@ -800,6 +807,15 @@ test("writeReport: anticheatVersion is only earned when HOME isolation was on", 
     unguarded.anticheatVersion,
     undefined,
     "a run without HOME isolation must not claim the guard generation",
+  );
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "0";
+  const untraced = writeReport(args, [], [spec]);
+  assert.equal(
+    untraced.anticheatVersion,
+    undefined,
+    "a run without eval tracing must not claim the guard generation",
   );
 });
 

@@ -526,11 +526,14 @@ export function writeReport(
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
 		fixtureTiers,
-		// The version label is a promise that every generation-1 guard was on.
-		// A user --env override can legitimately disable isolation (e.g. acp
-		// lanes) — such a report is honestly unversioned, so resume/compare
-		// refuse it instead of trusting a label the run didn't earn.
-		...(process.env.NEEDLEFISH_EPHEMERAL_HOME === "1"
+		// The version label is a promise that every generation-1 guard was on:
+		// HOME isolation AND eval tracing (without the trace, critic-pruned
+		// candidates and failed raw outputs never reach the canary scan). A user
+		// --env override can legitimately disable either (e.g. acp lanes) — such
+		// a report is honestly unversioned, so resume/compare refuse it instead
+		// of trusting a label the run didn't earn.
+		...(process.env.NEEDLEFISH_EPHEMERAL_HOME === "1" &&
+		process.env.NEEDLEFISH_EVAL_TRACE === "1"
 			? { anticheatVersion: ANTICHEAT_VERSION }
 			: {}),
 		fixtures: specs.map((spec) => spec.id),
@@ -644,6 +647,11 @@ async function main(): Promise<void> {
 	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") {
 		process.stderr.write(
 			"WARNING: NEEDLEFISH_EPHEMERAL_HOME disabled via --env — draws run without HOME isolation; the report will carry no anticheatVersion and cannot be resumed or compared.\n",
+		);
+	}
+	if (process.env.NEEDLEFISH_EVAL_TRACE !== "1") {
+		process.stderr.write(
+			"WARNING: NEEDLEFISH_EVAL_TRACE disabled via --env — critic-pruned candidates and failed raw outputs are invisible to the canary scan; the report will carry no anticheatVersion and cannot be resumed or compared.\n",
 		);
 	}
 	try {
