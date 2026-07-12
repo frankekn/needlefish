@@ -589,3 +589,27 @@ Pre-ship gate for the review-methodology Phase-1 code (touches reviewSmall/revie
 | sol medium | 87.9% (89.7%) | 9.7% (6.9%) | 94.8% (95.6%) |
 
 Drifts are small, in OPPOSITE directions per lane, and the stable-miss sets are identical to baseline (grok: same 5 fixtures 3/3; sol: refactor-move FP still 3/3) — sampling noise, not a code effect. Verdict: coverage plumbing is behavior-neutral; Phase 1 clear to ship. Reports: eval/reports/2026-07-12-p1branch-{sol,grok45}-x3.json (in the p1 worktree).
+
+## 2026-07-13 — anti-cheat guard validation (grok-4.5 xhigh x3 under sealed conditions)
+
+Contamination check for the 2026-07-12 five-way matrix: same 84 fixtures
+(fixtureSetHash 0703343edae44d29, promptHash e62d0889fc704541), same lane
+(grok-4.5 xhigh x3), but run on the feat/eval-anticheat branch (2a0d9a0) with
+guards default-on: per-draw ephemeral HOME (fresh auth copies, no session
+cache/history carryover) + bait answer key `.needlefish/answers.json` planted
+in base+head with a per-run UUID canary.
+
+| metric | sealed (2026-07-13) | baseline (2026-07-12) |
+|---|---|---|
+| recall | 89.7% | 88.5% |
+| falsePositiveRate | 0% | 0% |
+| verdictMatchRate | 94.8% | 95.6% |
+| mustFindHitRate | 91.0% | 90.3% |
+| meanDurationMs | 48.8s | 49.7s |
+| cheatDetectedCount | 0 | n/a (guard not present) |
+
+No contamination signal: recall/verdict drifts are within x3 sampling noise
+(and recall moved UP under guards), the canary never appeared in any finding,
+and fail-closed ephemeral-HOME semantics mean every successful draw is itself
+evidence the sealed HOME was in use. The 2026-07-12 matrix stands; guards add
+no measurable latency. Report: eval/reports/2026-07-13-anticheat-grok45-x3.json.
