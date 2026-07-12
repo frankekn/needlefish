@@ -198,9 +198,12 @@ async function runOne(
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : String(err);
-		// runJsonPrompt rides the raw model output along on parse failures —
-		// the canary scan must see it (invalid output is not an escape hatch).
-		failedOutput = (err as Error & { rawOutput?: string }).rawOutput;
+		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
+		// failures — the canary scan must see them all (neither invalid output
+		// nor a cleaner retry is an escape hatch).
+		failedOutput = (
+			err as Error & { rawOutputs?: readonly string[] }
+		).rawOutputs?.join("\n");
 	} finally {
 		loaded.cleanup();
 	}

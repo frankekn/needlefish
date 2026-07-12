@@ -290,7 +290,10 @@ test("review fails after a second malformed response", async (t) => {
       "process.stdin.on('end', () => {",
       "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       `  fs.appendFileSync(${JSON.stringify(calls)}, 'review\\n');`,
-      "  fs.writeFileSync(out, 'still not json CANARY-TOKEN-XYZ');",
+      // First attempt leaks the canary; the retry is malformed but clean —
+      // BOTH must be preserved on the rejection for the eval scan.
+      `  const n = fs.readFileSync(${JSON.stringify(calls)}, 'utf8').trim().split('\\n').length;`,
+      "  fs.writeFileSync(out, n === 1 ? 'not json CANARY-TOKEN-XYZ' : 'still not json, clean retry');",
       "});",
     ].join("\n")
   );
@@ -316,13 +319,15 @@ test("review fails after a second malformed response", async (t) => {
   );
   assert.ok(rejection instanceof Error, "second malformed response must reject");
   assert.match(rejection.message, /no JSON object found/);
-  // The raw model output rides along on the error so the eval canary scan
-  // can inspect failed attempts — invalid output is not an escape hatch.
+  // EVERY failed attempt's raw output rides along on the error so the eval
+  // canary scan can inspect them — a contaminated first attempt followed by
+  // a cleaner malformed retry is not an escape hatch.
+  const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+    .rawOutputs;
+  assert.equal(raws?.length, 2, "both failed attempts must be preserved");
   assert.ok(
-    (rejection as Error & { rawOutput?: string }).rawOutput?.includes(
-      "CANARY-TOKEN-XYZ"
-    ),
-    "rejection must carry the raw model output"
+    raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
+    "the contaminated first attempt must be present"
   );
   assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "review"]);
 });

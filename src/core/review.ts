@@ -122,21 +122,22 @@ async function runJsonPrompt<T>(
   parse: (raw: unknown) => T
 ): Promise<T> {
   let lastErr: unknown;
-  let lastRaw: string | undefined;
+  const failedRaws: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
     const out = await runCodex(prompt, codexOptions(run, label));
     try {
       return parse(extractJson(out));
     } catch (err) {
       lastErr = err;
-      lastRaw = out;
+      failedRaws.push(out);
     }
   }
-  // Ride the raw output along on the error (message unchanged): the eval
-  // harness scans it for the bait canary — invalid output must not be an
-  // escape hatch from contamination detection.
-  if (lastErr instanceof Error && lastRaw !== undefined) {
-    (lastErr as Error & { rawOutput?: string }).rawOutput = lastRaw;
+  // Ride EVERY failed attempt's raw output along on the error (message
+  // unchanged): the eval harness scans them for the bait canary — neither
+  // invalid output nor a cleaner retry is an escape hatch from detection.
+  if (lastErr instanceof Error && failedRaws.length > 0) {
+    (lastErr as Error & { rawOutputs?: readonly string[] }).rawOutputs =
+      failedRaws;
   }
   throw lastErr;
 }
@@ -259,9 +260,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
       if (isRunnerSafetyError(e)) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       // Swallowed failure, but the raw text still matters to the eval
-      // canary scan (trace-gated; see runJsonPrompt's rawOutput ride-along).
+      // canary scan (trace-gated; see runJsonPrompt's rawOutputs ride-along).
       const failedRaw = evalTraceOn()
-        ? (e as Error & { rawOutput?: string }).rawOutput
+        ? (e as Error & { rawOutputs?: readonly string[] }).rawOutputs
         : undefined;
       return {
         checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
@@ -292,7 +293,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
   const blockingResiduals = residuals.filter((risk) => risk.blocks);
   const final = { ...pruned, residual_risks: [...pruned.residual_risks, ...blockingResiduals] };
   const failedRawOutputs = passes.flatMap((p) =>
-    "failedRaw" in p && p.failedRaw !== undefined ? [p.failedRaw] : []
+    "failedRaw" in p && p.failedRaw !== undefined ? [...p.failedRaw] : []
   );
   return toReviewResult(final, run, `${mapResult.summary} — ${pruned.summary}`, merged, failedRawOutputs);
 }
