@@ -135,10 +135,12 @@ test("renderMarkdown adds blocking and nit counts directly below the headline", 
 			finding("P3", "three", "d.ts"),
 		]),
 	);
-	assert.match(four, /^[^\n]+\n\*\*3 blocking\*\* · 1 nit\n/);
+	// Red-reason headline replaces the summary on line 1; the summary
+	// first-sentence then carries to line 2, counts follow on line 3.
+	assert.match(four, /^[^\n]+\nFirst sentence\.\n\*\*3 blocking\*\* · 1 nit\n/);
 
 	const blocking = renderMarkdown(baseResult([finding("P2", "one", "a.ts")]));
-	assert.match(blocking, /^[^\n]+\n\*\*1 blocking\*\*\n/);
+	assert.match(blocking, /^[^\n]+\nFirst sentence\.\n\*\*1 blocking\*\*\n/);
 
 	const nits = renderMarkdown(
 		baseResult([finding("P3", "one", "a.ts"), finding("P3", "two", "b.ts")]),
@@ -151,17 +153,18 @@ test("renderMarkdown adds blocking and nit counts directly below the headline", 
 
 test("renderMarkdown shows compact re-review deltas only for positive counts", () => {
 	const result = baseResult([finding("P2", "one", "a.ts")]);
+	// Summary occupies line 2 (reason replaced the headline); counts then delta.
 	assert.match(
 		renderMarkdown(result, { resolvedCount: 2 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { newCount: 1 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n🆕 1 new\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🆕 1 new\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { resolvedCount: 2, newCount: 1 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
 	);
 	assert.doesNotMatch(
 		renderMarkdown(result, { resolvedCount: 0, newCount: 0 }),
