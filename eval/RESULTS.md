@@ -539,3 +539,21 @@ Both vs sol-medium baseline (recall 93.1% / FP 12.5%). Single draw each; promptH
 | meanDurationMs | 52s | 53s |
 
 Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=cliproxy for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
+
+## 2026-07-12 — challenger lanes x3 confirm: grok-4.5 @ xhigh, opus-4.8 @ xhigh (pi/cliproxy) — full set, 84 fixtures, 252 draws each, holdout include
+
+x3 confirms the x1 headline: **both challengers hold 0% FP across all 108 negative draws** (sol baseline 12.5%). x3 also inverts the x1 recall order (opus 89.7 > grok 86.2 at x1; grok 88.5 > opus 86.2 at x3) — single-draw ranking is noise, as suspected.
+
+| metric | grok-4.5 xhigh x3 | opus-4.8 xhigh (pi) x3 | sol-medium x1 |
+|---|---|---|---|
+| recall | 88.5% (t1 100 / t2 91 / t3 78) | 86.2% (t1 95 / t2 88 / t3 78) | 93.1% |
+| mustFindHitRate | 90.3% | 88.2% | — |
+| falsePositiveRate | 0% | 0% | 12.5% |
+| invalidJsonRate | 0% | 2.8% | 0% |
+| verdictMatchRate | 95.6% | 90.1% | 95.2% |
+| lineAnchorValidRate | 91.3% | 85.7% | 95.2% |
+| meanDurationMs | 50s | 53s | 46s |
+
+Stable misses (3/3) shared by both: go-backend-slop-swallow, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, real-pr4-hotspot-truncation. grok adds partials on ts-data-duplicate (1/3), real-pr1-bundle-basesha (2/3), real-pr10 (2/3). opus adds real-pr4-options-not-forwarded (3/3) plus 1/3 flakes incl. one t1 (yml-infra-token-leak). opus formatFail is a stable negative-set pattern (neg-hard-timing-hardening 2/3, neg-hard-txn-equivalent 2/3, ts-frontend-style-refactor 2/3, neg-missing-tests-no-bug 1/3), not random flake.
+
+Read: grok-4.5 xhigh dominates opus-4.8-via-pi on every aggregate at equal FP. vs prod (sol medium): grok trades −4.6pt recall for −12.5pt FP with equal verdict match — a real prod-lane candidate; the decision needs a sol-medium x3 on this fixture set for a fair same-N comparison (current baseline is x1). Reports: eval/reports/2026-07-12-grok45-xhigh-x3.json, eval/reports/2026-07-12-pi-opus48-xhigh-x3.json.
