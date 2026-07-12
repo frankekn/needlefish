@@ -42,6 +42,9 @@ type FixtureOptions = {
 	readonly prNumber: number;
 	readonly rawReview: string;
 	readonly staleHeadAfterReview?: boolean;
+	// Make POSTs to the issue-comments endpoint exit 1 (after logging the
+	// attempt) to exercise the fail-soft paths around cosmetic comments.
+	readonly failIssueCommentPosts?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -204,6 +207,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			`  const issueCommentsEndpoint = ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)};`,
 			"  if (apiPath === issueCommentsEndpoint && method === 'POST') {",
+			`    if (${JSON.stringify(opts.failIssueCommentPosts === true)} === true) { process.stderr.write('simulated comment POST failure'); process.exit(1); }`,
 			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
 			"    const parsed = JSON.parse(payload);",
 			"    const nextId = issueComments.length + 1;",
@@ -234,7 +238,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.exit(0);",
 			"}",
 			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
-			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
+			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)} || (args[1] === '--paginate' && args[2] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)})) {`,
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
 			"  process.stdout.write(JSON.stringify(issueComments));",
@@ -1019,4 +1023,52 @@ test("runGithub posts a re-review round comment with counts on the second round"
 		minimizeIdx < roundCommentIdx,
 		"minimize must run before the new round comment is posted",
 	);
+
+	// Check-run title carries the red reason (top blocking finding title).
+	const checkPost = round3Posts.find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some((a) => a === "repos/frankekn/needlefish/check-runs"),
+	);
+	assert.ok(checkPost, "round 3 should post a check run");
+	const checkPayload = parseJson(checkPost.payload) as {
+		output?: { title?: unknown };
+	};
+	assert.match(
+		String(checkPayload.output?.title ?? ""),
+		/^Needlefish: changes_requested — persisting/,
+	);
+});
+
+test("a failing round-comment POST does not replace the verdict check with a failure", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 43,
+		rawReview: JSON.stringify({
+			summary: "clean",
+			findings: [],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+		failIssueCommentPosts: true,
+	});
+
+	await runGithub(fixture.repo, 43, { timeoutMs: 1000 });
+	const round1Count = readPosts(fixture.postLog).length;
+	await runGithub(fixture.repo, 43, { timeoutMs: 1000 }, true);
+	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+	const checkPosts = round2Posts.filter(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some((a) => a === "repos/frankekn/needlefish/check-runs"),
+	);
+	assert.equal(checkPosts.length, 1, "exactly one check run posted");
+	const payload = parseJson(checkPosts[0].payload) as {
+		conclusion?: unknown;
+		output?: { title?: unknown };
+	};
+	// The cosmetic comment failed, but the computed verdict must survive:
+	// success conclusion, not a red "review failed" check.
+	assert.equal(payload.conclusion, "success");
+	assert.doesNotMatch(String(payload.output?.title ?? ""), /review failed/);
 });

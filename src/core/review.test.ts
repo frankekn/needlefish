@@ -871,6 +871,11 @@ test("review records candidateFindings when NEEDLEFISH_EVAL_TRACE is set (small 
 	assert.equal(result.candidateFindings![0].title, "Echo bug");
 	assert.equal(result.findings.length, 1);
 	assert.equal(result.findings[0].title, "Echo bug");
+	// S2: the small path states its coverage guarantee.
+	assert.match(
+		result.coverage ?? "",
+		/^full diff reviewed in one pass \(\d+ files?\)$/,
+	);
 });
 
 test("review omits candidateFindings when NEEDLEFISH_EVAL_TRACE is unset (small path)", async (t) => {

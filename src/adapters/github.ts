@@ -565,7 +565,11 @@ function minimizePreviousRoundComments(
 	repo: string,
 	prNumber: number,
 ): void {
-	const raw = ghJson(["api", `repos/${repo}/issues/${prNumber}/comments`]);
+	const raw = ghJson([
+		"api",
+		"--paginate",
+		`repos/${repo}/issues/${prNumber}/comments`,
+	]);
 	if (!Array.isArray(raw)) return;
 	for (const item of raw) {
 		if (!isRecord(item)) continue;
@@ -716,17 +720,27 @@ export async function runGithub(
 				const mm = minErr instanceof Error ? minErr.message : String(minErr);
 				process.stderr.write(`needlefish: could not minimize previous round comments: ${mm}\n`);
 			}
-			postRoundComment(
-				repo,
-				prNumber,
-				buildRoundCommentBody(
-					result,
-					headSha,
-					resolvedCount,
-					open,
-					renderOpts.newCount,
-				),
-			);
+			// Fail-soft: the round comment is cosmetic; a transient POST failure
+			// must not throw to the outer catch, which would replace a computed
+			// verdict check-run with a red "review failed" one.
+			try {
+				postRoundComment(
+					repo,
+					prNumber,
+					buildRoundCommentBody(
+						result,
+						headSha,
+						resolvedCount,
+						open,
+						renderOpts.newCount,
+					),
+				);
+			} catch (roundErr) {
+				const rm = roundErr instanceof Error ? roundErr.message : String(roundErr);
+				process.stderr.write(
+					`needlefish: could not post round comment: ${rm}\n`,
+				);
+			}
 			if (freshComments.length > 0) {
 				postReview(repo, prNumber, headSha, "", freshComments);
 			}
