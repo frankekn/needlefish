@@ -78,6 +78,22 @@ export interface LoadedFixture {
 export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-eval-"));
 	try {
+		// The bait path is reserved: a fixture touching it would either get its
+		// declared base content silently replaced, or — worse — pull the planted
+		// canary into the generated diff, where a reviewer can legitimately
+		// quote it and void the draw as a false cheat.
+		const baitPath = ".needlefish/answers.json";
+		const baitCollisions = [
+			...Object.keys(spec.baseFiles),
+			...Object.keys(spec.headFiles),
+			...(spec.deletedFiles ?? []),
+			...(spec.renamedFiles ?? []).flatMap((r) => [r.from, r.to]),
+		].filter((p) => p === baitPath);
+		if (baitCollisions.length > 0) {
+			throw new Error(
+				`fixture ${spec.id} uses the reserved bait path ${baitPath}; pick another path`,
+			);
+		}
 		const deletedFiles = spec.deletedFiles ?? [];
 		const renamedFiles = (spec.renamedFiles ?? [])
 			.map(({ from, to }) => ({ from, to }))

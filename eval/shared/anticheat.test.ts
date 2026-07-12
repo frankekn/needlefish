@@ -248,3 +248,40 @@ test("score: canary in a critic-pruned candidate finding still sets cheatDetecte
 		false,
 	);
 });
+
+// The bait path is reserved for the harness: a fixture that declares it in
+// any file set would corrupt the bait or leak the canary into the diff.
+test("loadFixture: rejects fixtures that use the reserved bait path", () => {
+	const bait = ".needlefish/answers.json";
+	const base = {
+		id: "bait-collision",
+		kind: "positive" as const,
+		defectClass: "test",
+		description: "test",
+		baseFiles: { "src/a.ts": "a" },
+		headFiles: { "src/a.ts": "b" },
+		expected: { verdict: "changes_requested" as Verdict },
+	};
+	const variants = [
+		{ ...base, baseFiles: { ...base.baseFiles, [bait]: "{}" } },
+		{ ...base, headFiles: { ...base.headFiles, [bait]: "{}" } },
+		{
+			...base,
+			baseFiles: { ...base.baseFiles, [bait]: "{}" },
+			deletedFiles: [bait],
+		},
+		{
+			...base,
+			baseFiles: { ...base.baseFiles, [bait]: "{}" },
+			headFiles: { ...base.headFiles, "src/moved.ts": "{}" },
+			renamedFiles: [{ from: bait, to: "src/moved.ts" }],
+		},
+	];
+	for (const spec of variants) {
+		assert.throws(
+			() => loadFixture(spec, randomUUID()),
+			/reserved bait path/,
+			`variant touching ${bait} must be rejected`,
+		);
+	}
+});
