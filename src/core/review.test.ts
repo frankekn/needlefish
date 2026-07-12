@@ -213,12 +213,15 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
     else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
     rmSync(tmp, { recursive: true, force: true });
   });
   writeFileSync(
@@ -240,13 +243,14 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
       "  }",
       "  fs.appendFileSync(calls, 'review\\n');",
       "  const reviews = fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line === 'review').length;",
-      "  fs.writeFileSync(out, reviews === 1 ? 'not json at all' : JSON.stringify(review));",
+      "  fs.writeFileSync(out, reviews === 1 ? 'not json at all CANARY-TOKEN-XYZ' : JSON.stringify(review));",
       "});",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
   process.env.CODEX_RETRY_MS = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
 
   const bundle: Bundle = {
     repoPath: repo,
@@ -268,6 +272,13 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
   assert.deepEqual(result.stats?.map((s) => s.label), ["review", "review", "critic"]);
   assert.ok(result.stats?.every((s) => s.ok && s.attempts === 1 && s.durationMs > 0));
   assert.ok((result.totalDurationMs ?? 0) > 0);
+  // A successful retry is not an escape hatch: the malformed FIRST attempt
+  // (carrying the canary) must still surface for the eval scan.
+  assert.equal(result.failedRawOutputs?.length, 1);
+  assert.ok(
+    result.failedRawOutputs?.[0]?.includes("CANARY-TOKEN-XYZ"),
+    "contaminated first attempt must survive a clean successful retry"
+  );
 });
 
 test("review fails after a second malformed response", async (t) => {
