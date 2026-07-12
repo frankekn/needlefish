@@ -126,23 +126,24 @@ async function runJsonPrompt<T>(
   parse: (raw: unknown) => T
 ): Promise<T> {
   let lastErr: unknown;
-  const failedRaws: string[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
     const out = await runCodex(prompt, codexOptions(run, label));
     try {
       return parse(extractJson(out));
     } catch (err) {
       lastErr = err;
-      failedRaws.push(out);
       run.failedRawOutputs.push(out);
     }
   }
-  // Ride EVERY failed attempt's raw output along on the error (message
-  // unchanged): the eval harness scans them for the bait canary — neither
-  // invalid output nor a cleaner retry is an escape hatch from detection.
-  if (lastErr instanceof Error && failedRaws.length > 0) {
-    (lastErr as Error & { rawOutputs?: readonly string[] }).rawOutputs =
-      failedRaws;
+  // Ride the run-wide failed attempts along on the error (message unchanged):
+  // the eval harness scans them for the bait canary — neither invalid output
+  // nor a cleaner retry is an escape hatch from detection. The snapshot is
+  // run-level, not call-local, so a contaminated attempt from an EARLIER pass
+  // whose retry succeeded still reaches the scan when a later pass rejects.
+  if (lastErr instanceof Error && run.failedRawOutputs.length > 0) {
+    (lastErr as Error & { rawOutputs?: readonly string[] }).rawOutputs = [
+      ...run.failedRawOutputs,
+    ];
   }
   throw lastErr;
 }

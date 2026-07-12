@@ -343,6 +343,86 @@ test("review fails after a second malformed response", async (t) => {
   assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review", "review"]);
 });
 
+test("terminal error carries failed raws from earlier passes whose retry succeeded", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const calls = path.join(tmp, "calls.log");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      `  const calls = ${JSON.stringify(calls)};`,
+      "  const review = { summary: 'clean', findings: [], checked: ['looked at diff'], residual_risks: [] };",
+      // Critic fails BOTH attempts with clean malformed text — the terminal
+      // rejection must still expose the review pass's contaminated attempt.
+      "  if (input.includes('adversarial critic')) {",
+      "    fs.appendFileSync(calls, 'critic\\n');",
+      "    fs.writeFileSync(out, 'critic not json, clean');",
+      "    return;",
+      "  }",
+      "  fs.appendFileSync(calls, 'review\\n');",
+      "  const reviews = fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line === 'review').length;",
+      "  fs.writeFileSync(out, reviews === 1 ? 'not json CANARY-TOKEN-XYZ' : JSON.stringify(review));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "short",
+    patchStat: " src/app.ts | 1 +",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const rejection = await review(bundle).then(
+    () => null,
+    (err: unknown) => err
+  );
+  assert.ok(rejection instanceof Error, "critic double failure must reject");
+  assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+    "review",
+    "review",
+    "critic",
+    "critic",
+  ]);
+  // Run-level snapshot: the review pass's contaminated first attempt plus
+  // both critic attempts — a successful mid-run retry is not an escape hatch.
+  const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+    .rawOutputs;
+  assert.equal(raws?.length, 3, "all failed attempts across passes must ride the error");
+  assert.ok(
+    raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
+    "earlier pass's contaminated attempt must survive its own successful retry"
+  );
+});
+
 test("review does not re-ask after a runner safety error", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
   const repo = initRepo(tmp);
