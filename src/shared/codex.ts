@@ -1,8 +1,10 @@
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -74,6 +76,7 @@ const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
 function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
+	ephemeralHome?: string,
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_ENV_ALLOWLIST[runner]];
@@ -85,7 +88,83 @@ function buildRunnerEnv(
 		const value = process.env[name];
 		if (value !== undefined) env[name] = value;
 	}
+	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
+	// runner requested isolation, point HOME/USERPROFILE at a per-invocation
+	// throwaway dir inside the rmSync'd tmp. Every session/cache/log the CLI
+	// writes dies with the draw; nothing accumulates under the real HOME.
+	if (ephemeralHome !== undefined) {
+		env.HOME = ephemeralHome;
+		env.USERPROFILE = ephemeralHome;
+	}
 	return env;
+}
+
+// Minimal auth material each runner needs to authenticate from an isolated
+// HOME. We symlink INDIVIDUAL FILES (never a whole directory) from the real
+// HOME so sessions/history/logs/cache never land in the ephemeral HOME.
+// Filenames suggesting mutable state (sessions, history, log, cache) are
+// deliberately excluded — they must not exist in the isolated HOME.
+//
+// Empirically determined by smoking each CLI under an isolated HOME and
+// adding files until auth worked (2026-07-12):
+//   - codex:    ~/.codex/auth.json (OAuth token) + ~/.codex/config.toml
+//   - grok:     ~/.grok/auth.json (credentials); ~/.grok/config.toml (model
+//               routing / provider) — both are files, not the whole dir
+//   - pi:       ~/.pi/agent/auth.json (OAuth) + ~/.pi/agent/models.json
+//               (provider/model registry, incl. CLIProxyAPI routing)
+//   - opencode: XDG-based, not ~/.opencode: ~/.config/opencode/opencode.json
+//               (config + auth) + ~/.local/share/opencode/auth.json
+//               (account/credential store)
+// claude is exempt: its credentials live in the macOS Keychain tied to the
+// real HOME, so it keeps the real HOME under the flag (see runCodexOnce).
+const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
+	codex: [".codex/auth.json", ".codex/config.toml"],
+	claude: [],
+	opencode: [
+		".config/opencode/opencode.json",
+		".local/share/opencode/auth.json",
+	],
+	grok: [".grok/auth.json", ".grok/config.toml"],
+	pi: [".pi/agent/auth.json", ".pi/agent/models.json"],
+	openai: [],
+	acp: [],
+};
+
+// Prepare an ephemeral HOME for a runner invocation. Creates <tmp>/home
+// (0700) and symlinks the minimal auth files from the real HOME into it.
+// Fail-closed: if the flag is on but a required auth source file is missing,
+// throw naming the file — NEVER silently fall back to the real HOME.
+// Returns undefined when isolation is off (caller then keeps real HOME).
+// Exported for direct unit testing of the linking/fail-closed invariants.
+export function prepareEphemeralHome(
+	runner: RunnerName,
+	tmp: string,
+): string | undefined {
+	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
+	// claude exemption: its credential lookup goes through the macOS Keychain
+	// tied to the real HOME; --no-session-persistence already blocks session
+	// writes. Keep real HOME under the flag.
+	if (runner === "claude") return undefined;
+	const realHome = process.env.HOME;
+	if (!realHome) {
+		throw new Error(
+			"NEEDLEFISH_EPHEMERAL_HOME=1 but HOME is unset: cannot locate auth source files",
+		);
+	}
+	const home = path.join(tmp, "home");
+	mkdirSync(home, { recursive: true, mode: 0o700 });
+	for (const rel of EPHEMERAL_HOME_AUTH_FILES[runner]) {
+		const src = path.join(realHome, rel);
+		if (!existsSync(src)) {
+			throw new Error(
+				`NEEDLEFISH_EPHEMERAL_HOME=1 but required auth source is missing: ${src} (runner ${runner}). Refusing to fall back to the real HOME.`,
+			);
+		}
+		const dest = path.join(home, rel);
+		mkdirSync(path.dirname(dest), { recursive: true });
+		symlinkSync(src, dest);
+	}
+	return home;
 }
 
 export interface CodexOptions extends RunnerOptions {
@@ -188,7 +267,8 @@ async function runCodexOnce(
 	const ghConfigDir = path.join(tmp, "gh-empty");
 	mkdirSync(ghConfigDir, { recursive: true });
 
-	const env = buildRunnerEnv(runner, ghConfigDir);
+	const ephemeralHome = prepareEphemeralHome(runner, tmp);
+	const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
 
 	try {
 		const sandbox = prepareRunnerSandbox({
