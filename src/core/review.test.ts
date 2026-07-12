@@ -228,6 +228,81 @@ test("review keeps deep failure residuals after critic pruning", async (t) => {
 	);
 });
 
+test("review treats a degenerate deep response as a failed pass", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  if (input.includes('review-MAP pass')) {",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'changed', files: ['src/app.ts'], why: 'changed file', risk: 'high', edges: [] }] }));",
+			"    return;",
+			"  }",
+			"  if (input.includes('doing a DEEP review')) {",
+			// Valid JSON shape, zero evidence: empty summary AND empty checked.
+			// normalizeReview accepts this; only the usability gate rejects it.
+			"    fs.writeFileSync(out, JSON.stringify({ summary: '', findings: [], checked: [], residual_risks: [] }));",
+			"    return;",
+			"  }",
+			"  if (input.includes('adversarial critic')) {",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic pruned', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    return;",
+			"  }",
+			"  process.stderr.write('unexpected prompt');",
+			"  process.exit(1);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: true,
+		focus: null,
+	};
+
+	const result = await review(bundle);
+
+	assert.equal(result.verdict, "needs_human");
+	assert.match(
+		result.residualRisks[0]?.text ?? "",
+		/deep review of "changed" failed/,
+	);
+	// A response with no summary and no checked list is not deep-review
+	// evidence — its hotspot must be excluded from coverage, same as a crash.
+	assert.match(
+		result.coverage ?? "",
+		/^0\/1 changed files deep-reviewed across 0 hotspots/,
+	);
+});
+
 test("review re-asks once when the model emits malformed JSON", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);

@@ -294,7 +294,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 				`deep:${h.name}`,
 				deepPrompt,
 				run,
-				(raw) => normalizeReview(raw),
+				parseUsableReview(`deep:${h.name}`),
 			);
 			return {
 				ok: true,
