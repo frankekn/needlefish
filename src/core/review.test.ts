@@ -402,6 +402,67 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
   );
 });
 
+test("canary written only to the output file of a crashed runner still feeds the scan", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      // codex resolves its model output from --output-last-message, not
+      // stdout: the bait lands ONLY in that file before the nonzero exit.
+      "  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "  fs.writeFileSync(out, 'final message CANARY-TOKEN-XYZ');",
+      "  process.exit(2);",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.CODEX_RETRY_MS = "1";
+
+  const bundle: Bundle = {
+    repoPath: repo,
+    baseSha: "base",
+    headSha: headSha(repo),
+    patch: "short",
+    patchStat: " src/app.ts | 1 +",
+    changedFiles: [{ path: "src/app.ts", surface: "source" }],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  };
+
+  const rejection = await review(bundle).then(
+    () => null,
+    (err: unknown) => err
+  );
+  assert.ok(rejection instanceof Error, "nonzero runner exit must reject");
+  assert.match(rejection.message, /runner exited 2/);
+  const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+    .rawOutputs;
+  assert.ok(
+    raws?.some((raw) => raw.includes("CANARY-TOKEN-XYZ")),
+    "the resolved output file of a crashed runner must ride the rejection"
+  );
+});
+
 test("terminal error carries failed raws from earlier passes whose retry succeeded", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
   const repo = initRepo(tmp);

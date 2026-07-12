@@ -15,21 +15,19 @@ import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { score } from "./shared/score";
-import type {
-	Aggregates,
-	DrawResult,
-	FixtureKind,
-	FixtureSpec,
-	HoldoutMode,
-	Report,
+import {
+	ANTICHEAT_VERSION,
+	type Aggregates,
+	type DrawResult,
+	type FixtureKind,
+	type FixtureSpec,
+	type HoldoutMode,
+	type Report,
 } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
 const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
-// Bump when the anti-cheat guards change enough that draws from older runs
-// are no longer comparable. Resume refuses reports from other generations.
-const ANTICHEAT_VERSION = 1;
 
 interface RunArgs {
 	runner: RunnerName;

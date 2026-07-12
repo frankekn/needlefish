@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
 import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, writeReport } from "./run";
+import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -772,6 +773,44 @@ test("resumeSlots: a report from before the anti-cheat guards reuses zero draws"
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("renderResults: legacy and compromised reports are excluded from baseline and deltas", () => {
+  // The published results table honors the same comparability contract as
+  // resume/compare/weekly: pre-guard or canary-positive reports are listed
+  // but never selected as baseline nor given a delta.
+  const spec = holdoutSpec("gen-results-gate", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1, effort: "xhigh" });
+  const grokClean = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    effort: "low",
+  });
+  const legacy = resumeReport(spec, { effort: "xhigh" });
+  const compromisedBase = resumeReport(spec, { anticheatVersion: 1 });
+  const compromised = {
+    ...compromisedBase,
+    aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
+  };
+  const md = renderResults(
+    [],
+    [
+      { stem: "legacy-run", report: legacy },
+      { stem: "clean-codex-xhigh", report: clean },
+      { stem: "clean-grok-low", report: grokClean },
+      { stem: "cheat-run", report: compromised },
+    ],
+  );
+  const row = (stem: string): string =>
+    md.split("\n").find((l) => l.includes(`| ${stem} |`) || l.includes(`${stem} |`)) ?? "";
+  assert.match(row("clean-codex-xhigh"), /\(baseline\)/, "guarded codex-xhigh is the baseline");
+  assert.ok(!row("clean-codex-xhigh").includes("🚫"));
+  assert.match(row("legacy-run"), /🚫/, "pre-guard report is marked");
+  assert.match(row("legacy-run"), /n\/a/, "pre-guard report gets no delta");
+  assert.match(row("cheat-run"), /🚫/, "compromised report is marked");
+  assert.match(row("cheat-run"), /n\/a/, "compromised report gets no delta");
+  assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
+  assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
 });
 
 test("writeReport: anticheatVersion is only earned when HOME isolation AND tracing were on", (t) => {

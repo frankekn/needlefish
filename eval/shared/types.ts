@@ -126,6 +126,11 @@ export interface Aggregates {
   readonly cheatDetectedCount: number;
 }
 
+// Bump when the anti-cheat guards change enough that draws from older runs
+// are no longer comparable. Every report consumer (resume, compare, weekly,
+// generated results) refuses reports from other generations.
+export const ANTICHEAT_VERSION = 1;
+
 export interface Report {
   readonly promptHash: string;
   readonly runner: RunnerName;

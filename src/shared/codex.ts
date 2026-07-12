@@ -388,17 +388,22 @@ async function runCodexOnce(
 		const result = await runRunner(runner, invocation);
 
 		// A runner that crashes or exits nonzero may already have emitted output;
-		// ride the captured stdout along on the error (message unchanged) so the
-		// eval canary scan sees it — dying is not an escape hatch from detection.
-		const withStdout = (err: Error): Error => {
-			if (result.res.stdout) {
-				(err as Error & { rawOutput?: string }).rawOutput = result.res.stdout;
+		// ride it along on the error (message unchanged) so the eval canary scan
+		// sees it — dying is not an escape hatch from detection. Both surfaces
+		// matter: result.out is the resolved model output (codex writes it to
+		// --output-last-message, not stdout), result.res.stdout the raw stream.
+		const withRunnerOutput = (err: Error): Error => {
+			const raw = [...new Set([result.out, result.res.stdout])]
+				.filter(Boolean)
+				.join("\n");
+			if (raw) {
+				(err as Error & { rawOutput?: string }).rawOutput = raw;
 			}
 			return err;
 		};
-		if (result.res.error) throw withStdout(result.res.error);
+		if (result.res.error) throw withRunnerOutput(result.res.error);
 		if (result.res.status !== 0) {
-			throw withStdout(
+			throw withRunnerOutput(
 				new Error(
 					`${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`,
 				),
