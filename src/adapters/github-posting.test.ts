@@ -48,6 +48,10 @@ type FixtureOptions = {
 	// Make POSTs to the check-runs endpoint exit 1 (after logging the attempt)
 	// to exercise independence of the failure check and the error comment.
 	readonly failCheckRunPosts?: boolean;
+	// Login the stub reports for `gh api user` AND stamps on posted issue
+	// comments — set to a plain user login to simulate a PAT-authenticated
+	// runner. Defaults to a bot-shaped login.
+	readonly authorLogin?: string;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -215,7 +219,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
 			"    const parsed = JSON.parse(payload);",
 			"    const nextId = issueComments.length + 1;",
-			"    issueComments.push({ id: nextId, node_id: 'IC_node_' + nextId, body: parsed.body || '', user: { login: 'github-actions[bot]' } });",
+			`    issueComments.push({ id: nextId, node_id: 'IC_node_' + nextId, body: parsed.body || '', user: { login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} } });`,
 			"    fs.writeFileSync(issueCommentsPath, JSON.stringify(issueComments));",
 			"  }",
 			"  process.stdout.write('{}');",
@@ -256,6 +260,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.stdout.write(JSON.stringify(issueComments));",
 			"  process.exit(0);",
 			"}",
+			`if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} })); process.exit(0); }`,
 			"if (args[1] === 'graphql') {",
 			`  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload: '' }) + '\\n');`,
 			"  process.stdout.write('{}');",
@@ -1074,6 +1079,38 @@ test("runGithub posts a re-review round comment with counts on the second round"
 	assert.match(
 		String(checkPayload.output?.title ?? ""),
 		/^Needlefish: changes_requested — persisting/,
+	);
+});
+
+test("round comments posted under a PAT login are still minimized", async (t) => {
+	// Self-hosted runners authenticate gh with a PAT: round comments are
+	// authored by a plain user login, not a bot-shaped one. They must still
+	// be recognized as ours (via `gh api user`) and minimized on later rounds.
+	const fixture = setupFixture(t, {
+		prNumber: 46,
+		authorLogin: "frank-pat",
+		rawReview: JSON.stringify({
+			summary: "one finding",
+			findings: [mkFinding({ title: "persisting", lineStart: 1 })],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 });
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
+	const beforeRound3 = readPosts(fixture.postLog).length;
+
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
+	const round3Posts = readPosts(fixture.postLog).slice(beforeRound3);
+	const minimized = round3Posts.some(
+		(p) =>
+			p.args.some((a) => a.includes("minimizeComment")) &&
+			p.args.some((a) => a === "id=IC_node_1"),
+	);
+	assert.ok(
+		minimized,
+		"round 3 must minimize the PAT-authored round-2 comment",
 	);
 });
 

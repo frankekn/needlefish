@@ -558,6 +558,18 @@ function isBotAuthor(item: JsonRecord): boolean {
 	return login.includes("github-actions") || /\[bot\]$/.test(login);
 }
 
+// Self-hosted runners often authenticate gh with a PAT, so Needlefish's own
+// round comments carry a plain user login rather than a bot-shaped one.
+// Fail-soft: an empty string just narrows recognition back to bot authors.
+function authenticatedLogin(): string {
+	try {
+		const user = ghJson(["api", "user"]);
+		return isRecord(user) ? stringField(user, "login") : "";
+	} catch {
+		return "";
+	}
+}
+
 // S4.2: minimize prior round comments (classifier OUTDATED) so the timeline
 // surfaces only the latest round. Fail-soft: a minimize failure never fails
 // the review.
@@ -574,13 +586,17 @@ function minimizePreviousRoundComments(
 		`repos/${repo}/issues/${prNumber}/comments`,
 	]);
 	if (!Array.isArray(raw)) return;
+	const selfLogin = authenticatedLogin();
 	// Each element is a page (an array of comments); flat(1) also tolerates a
 	// plain comment list from stubs or older gh versions.
 	for (const item of raw.flat(1)) {
 		if (!isRecord(item)) continue;
 		const body = stringField(item, "body");
 		if (!body.includes("<!-- needlefish-round -->")) continue;
-		if (!isBotAuthor(item)) continue;
+		// Ours = bot-shaped author, or the identity this run posts as (PAT).
+		// The author check keeps humans quoting the marker from being swept.
+		const author = nestedString(item, "user", "login");
+		if (!isBotAuthor(item) && !(selfLogin && author === selfLogin)) continue;
 		const nodeId = stringField(item, "node_id");
 		if (!nodeId) continue;
 		const query =
