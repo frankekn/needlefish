@@ -61,12 +61,26 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
   const delta = (b: number, c: number) => `${(c - b) * 100 >= 0 ? "+" : ""}${((c - b) * 100).toFixed(0)}pp`;
 
+  // Provenance must be computed, not asserted: historical results mix prompt
+  // generations, and the gated baseline may be absent or not the codex-xhigh
+  // run the old prose hardcoded.
+  const promptHashes = [...new Set(reports.map((r) => r.report.promptHash))];
+  const hashLine =
+    promptHashes.length === 1
+      ? `All runs share promptHash \`${promptHashes[0]}\`.`
+      : promptHashes.length === 0
+        ? `No reports loaded.`
+        : `⚠️ Mixed prompt hashes across reports (${promptHashes.length} distinct: ${promptHashes.map((h) => `\`${h}\``).join(", ")}); rows whose promptHash differs from the baseline's are not comparable (Δ = n/a).`;
+  const baselineLine = baseline
+    ? `Baseline = ${baseline.stem} (@${baseline.report.effort ?? "?"}).`
+    : `No guarded report qualifies as a baseline — all Δ columns are n/a.`;
+
   const lines: string[] = [];
   lines.push(`# Eval Results — all runs`);
   lines.push(``);
-  lines.push(`All runs share promptHash \`${reports[0]?.report.promptHash ?? "(none)"}\`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
+  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
   lines.push(``);
-  lines.push(`## Aggregates (delta vs codex-xhigh baseline; full runs only)`);
+  lines.push(`## Aggregates (delta vs the baseline above; full runs only)`);
   lines.push(``);
   lines.push(`| model | @effort | draws | recall | Δrecall | fp | invalidJson | mean dur | fail |`);
   lines.push(`|---|---|---|---|---|---|---|---|---|`);

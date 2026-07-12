@@ -860,6 +860,30 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
 });
 
+test("renderResults: mixed prompt hashes are reported, not asserted shared", () => {
+  const spec = holdoutSpec("gen-results-hashes", false);
+  const a = resumeReport(spec, { anticheatVersion: 1, effort: "xhigh" });
+  const b = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    promptHash: "different-prompt-generation",
+  });
+  const md = renderResults(
+    [],
+    [
+      { stem: "a-current", report: a },
+      { stem: "b-other-prompt", report: b },
+    ],
+  );
+  assert.ok(
+    !md.includes("All runs share promptHash"),
+    "mixed hashes must not claim a shared hash",
+  );
+  assert.match(md, /Mixed prompt hashes/);
+  const row = md.split("\n").find((l) => l.includes("b-other-prompt")) ?? "";
+  assert.match(row, /n\/a/, "a cross-prompt row is not comparable");
+});
+
 test("writeReport: anticheatVersion is only earned when HOME isolation AND tracing were on", (t) => {
   // The version label is a promise the guards ran. A run whose user --env
   // disabled isolation OR the eval trace (which feeds critic-pruned
