@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -719,6 +719,94 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
     assert.deepEqual(resumed.slots, [null]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
+  return {
+    promptHash: promptHash(),
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-13T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    fixtureSetHash: fixtureSetHash([spec]),
+    results: [{
+      fixtureId: spec.id,
+      draw: 0,
+      score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id),
+      durationMs: 1,
+      calls: 1,
+      retries: 0,
+    }],
+    aggregates: {
+      recall: 1,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 1,
+      lineAnchorValidRate: 1,
+      meanDurationMs: 1,
+      recallByFixture: { [spec.id]: 1 },
+      criticPruneErrorRate: 0,
+      recallByTier: { t2: 1 },
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+    ...overrides,
+  };
+}
+
+test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
+  // Draws that never faced canary detection must not populate a new report.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "pre-anticheat.json");
+  const spec = holdoutSpec("pre-anticheat-resume", false);
+  writeFileSync(resumePath, JSON.stringify(resumeReport(spec, {})));
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots: a current-generation anti-cheat report reuses its draws", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "current.json");
+  const spec = holdoutSpec("current-anticheat-resume", false);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(resumeReport(spec, { anticheatVersion: 1 })),
+  );
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 1);
+    assert.notEqual(resumed.slots[0], null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cheatAlert: a detected canary fails the command, a clean report does not", () => {
+  const spec = holdoutSpec("cheat-alert-exit", false);
+  const previousExitCode = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    cheatAlert(resumeReport(spec, {}));
+    assert.equal(process.exitCode, undefined, "clean report must not set exitCode");
+    const compromised = resumeReport(spec, {});
+    cheatAlert({
+      ...compromised,
+      aggregates: { ...compromised.aggregates, cheatDetectedCount: 1 },
+    });
+    assert.equal(process.exitCode, 1, "compromised report must fail the command");
+  } finally {
+    process.exitCode = previousExitCode;
   }
 });
 

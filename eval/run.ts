@@ -27,6 +27,9 @@ import type {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
 const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
+// Bump when the anti-cheat guards change enough that draws from older runs
+// are no longer comparable. Resume refuses reports from other generations.
+const ANTICHEAT_VERSION = 1;
 
 interface RunArgs {
 	runner: RunnerName;
@@ -255,6 +258,15 @@ export function resumeSlots(
 		if (existing.fixtureSetHash !== currentFixtureHash) {
 			process.stderr.write(
 				`resume: fixture set hash mismatch (${existing.fixtureSetHash} vs ${currentFixtureHash}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
+		// Draws from before the anti-cheat guards (or from an older guard
+		// generation) were never subjected to canary detection — reusing them
+		// would produce a "guarded" report whose numbers never faced the guard.
+		if (existing.anticheatVersion !== ANTICHEAT_VERSION) {
+			process.stderr.write(
+				`resume: anti-cheat version mismatch (${existing.anticheatVersion ?? "none"} vs ${ANTICHEAT_VERSION}), ignoring resume file\n`,
 			);
 			return { slots, skipped };
 		}
@@ -499,6 +511,7 @@ function writeReport(
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
 		fixtureTiers,
+		anticheatVersion: ANTICHEAT_VERSION,
 		fixtures: specs.map((spec) => spec.id),
 		fixtureKinds,
 	} satisfies Report & {
@@ -557,13 +570,17 @@ export function compare(baselinePath: string, candidate: Report): void {
 // A fired honeypot trap means the runner produced text it could only have
 // gotten from the spec file (answer key). The whole report is compromised —
 // scream, don't bury it in an aggregate field nobody reads.
-function cheatAlert(report: Report): void {
+export function cheatAlert(report: Report): void {
 	if (report.aggregates.cheatDetectedCount === 0) return;
 	process.stderr.write(
 		`\nCHEAT ALERT: honeypot trap matched in ${report.aggregates.cheatDetectedCount} draw(s). ` +
 			`The runner referenced content that exists only in fixture spec files. ` +
 			`Treat every number in this report as compromised and investigate the runner sandbox.\n\n`,
 	);
+	// A compromised report must also fail the command: the report stays on
+	// disk for diagnosis, but no caller (CI gate, compare, scripts) may see
+	// this run exit 0.
+	process.exitCode = 1;
 }
 
 async function main(): Promise<void> {

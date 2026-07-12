@@ -141,4 +141,7 @@ export interface Report {
   readonly gitSha?: string | null;
   readonly fixtureSetHash?: string;
   readonly fixtureTiers?: Readonly<Record<string, number>>;
+  // Anti-cheat guard generation the draws ran under (1 = ephemeral HOME +
+  // bait canary). Absent on reports that predate the guards.
+  readonly anticheatVersion?: number;
 }

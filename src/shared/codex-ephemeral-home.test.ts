@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -192,6 +193,58 @@ test("prepareEphemeralHome fail-closed: missing auth source throws naming the fi
 	// (The <tmp>/home dir may have been created before the throw; it is inside
 	// the per-invocation tmp which the caller rmSync's, so no separate cleanup
 	// is needed — the disposability invariant holds.)
+});
+
+// Disposability under failure: a fail-closed preparation throw inside runCodex
+// must still dispose the per-invocation tmp dir — a leaked dir would leave any
+// already-copied credentials on disk.
+test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir behind", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	// Fake HOME with NO codex auth files → prepareEphemeralHome throws.
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	// Redirect os.tmpdir() to a test-owned dir so the invocation dir (and any
+	// leak) is observable in isolation from parallel tests.
+	const scratchTmp = path.join(tmp, "scratch-tmpdir");
+	mkdirSync(scratchTmp);
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		retry: process.env.NEEDLEFISH_NO_RETRY,
+		home: process.env.HOME,
+		tmpdir: process.env.TMPDIR,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.retry;
+		process.env.HOME = previous.home;
+		if (previous.tmpdir === undefined) delete process.env.TMPDIR;
+		else process.env.TMPDIR = previous.tmpdir;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	process.env.TMPDIR = scratchTmp;
+
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				runner: "codex",
+				targetHeadSha: headSha(repo),
+				timeoutMs: 1000,
+			}),
+		/required auth source is missing/,
+	);
+	assert.deepEqual(
+		readdirSync(scratchTmp),
+		[],
+		"a failed preparation must not leak its invocation dir",
+	);
 });
 
 // S3.4: claude exemption — flag on + runner claude → real HOME retained.

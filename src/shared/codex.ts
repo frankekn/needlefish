@@ -272,13 +272,14 @@ async function runCodexOnce(
 		return runOpenAIDirect(prompt, model, timeoutMs);
 	}
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
-	const ghConfigDir = path.join(tmp, "gh-empty");
-	mkdirSync(ghConfigDir, { recursive: true });
-
-	const ephemeralHome = prepareEphemeralHome(runner, tmp);
-	const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
-
+	// Everything after mkdtemp lives inside the try: a preparation failure
+	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
+	// the finally cleanup, or it leaks the dir — with copied credentials in it.
 	try {
+		const ghConfigDir = path.join(tmp, "gh-empty");
+		mkdirSync(ghConfigDir, { recursive: true });
+		const ephemeralHome = prepareEphemeralHome(runner, tmp);
+		const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
 		const sandbox = prepareRunnerSandbox({
 			runner,
 			repoPath: opts.repoPath,
