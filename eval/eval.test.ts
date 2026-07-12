@@ -898,6 +898,19 @@ test("compare: rejects reports from another anti-cheat generation", () => {
 
     // Matching current-generation reports still compare cleanly.
     compare(baselinePath, current);
+
+    // A current-generation report whose trap fired is void: it must not
+    // anchor (or pass) a comparison even though its version matches.
+    const compromisedBaseline = {
+      ...current,
+      baseline: true,
+      aggregates: { ...current.aggregates, cheatDetectedCount: 1 },
+    };
+    writeFileSync(baselinePath, JSON.stringify(compromisedBaseline));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report is compromised \(cheatDetectedCount=1\)/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

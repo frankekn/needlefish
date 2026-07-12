@@ -563,6 +563,13 @@ export function compare(baselinePath: string, candidate: Report): void {
 				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,
 			);
 		}
+		// A fired trap voids the whole report (see cheatAlert) — void numbers
+		// cannot anchor or pass a comparison.
+		if (report.aggregates.cheatDetectedCount > 0) {
+			throw new Error(
+				`${label} report is compromised (cheatDetectedCount=${report.aggregates.cheatDetectedCount}). Investigate the runner sandbox and re-run the ${label}.`,
+			);
+		}
 	}
 	const b = baseline.aggregates;
 	const c = candidate.aggregates;
