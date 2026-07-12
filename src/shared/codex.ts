@@ -1,10 +1,10 @@
 import {
 	existsSync,
+	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
-	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -100,7 +100,7 @@ function buildRunnerEnv(
 }
 
 // Minimal auth material each runner needs to authenticate from an isolated
-// HOME. We symlink INDIVIDUAL FILES (never a whole directory) from the real
+// HOME. We copy INDIVIDUAL FILES (never a whole directory) from the real
 // HOME so sessions/history/logs/cache never land in the ephemeral HOME.
 // Filenames suggesting mutable state (sessions, history, log, cache) are
 // deliberately excluded — they must not exist in the isolated HOME.
@@ -131,7 +131,7 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 };
 
 // Prepare an ephemeral HOME for a runner invocation. Creates <tmp>/home
-// (0700) and symlinks the minimal auth files from the real HOME into it.
+// (0700) and copies the minimal auth files from the real HOME into it.
 // Fail-closed: if the flag is on but a required auth source file is missing,
 // throw naming the file — NEVER silently fall back to the real HOME.
 // Returns undefined when isolation is off (caller then keeps real HOME).
@@ -162,7 +162,15 @@ export function prepareEphemeralHome(
 		}
 		const dest = path.join(home, rel);
 		mkdirSync(path.dirname(dest), { recursive: true });
-		symlinkSync(src, dest);
+		// COPY, never symlink: a symlink is a write-through channel into the
+		// real HOME (a runner could persist config edits future runs load, and
+		// parallel draws refreshing tokens in place would corrupt the shared
+		// file). The copy dies with the draw; a token refresh written to it is
+		// discarded — accepted cost (plan 008). Note the isolation boundary:
+		// this only stops default-path resolution; a same-uid child that
+		// hunts absolute paths can still read the real HOME. Detection of
+		// that behavior is G3's job (bait + canary), not G1's.
+		copyFileSync(src, dest);
 	}
 	return home;
 }
