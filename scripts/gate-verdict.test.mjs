@@ -49,6 +49,33 @@ test("passes and echoes report hashes", () => {
   assert.deepEqual(result.json, { pass: true, reasons: [], promptHash: "prompt-123", fixtureSetHash: "fixtures-456" });
 });
 
+test("cross-checks optional partial mustFind aggregates while accepting old reports", () => {
+  const oldShape = run(baseReport(), baseCriteria());
+  assert.equal(oldShape.status, 0);
+
+  const report = baseReport();
+  report.results[0].score.mustFindHits = 1;
+  report.results[0].score.mustFindTotal = 3;
+  report.results[1].score.mustFindHits = 2;
+  report.results[1].score.mustFindTotal = 3;
+  report.aggregates.mustFindHitRateByFixture = { "obvious-bug": 1 / 3, "required-bug": 2 / 3 };
+  report.aggregates.mustFindHitRate = 1 / 2;
+  assert.equal(run(report, baseCriteria()).status, 0);
+
+  const mapOnly = structuredClone(report);
+  delete mapOnly.aggregates.mustFindHitRate;
+  assert.equal(run(mapOnly, baseCriteria()).status, 0);
+
+  const overallOnly = structuredClone(report);
+  delete overallOnly.aggregates.mustFindHitRateByFixture;
+  assert.equal(run(overallOnly, baseCriteria()).status, 0);
+
+  report.aggregates.mustFindHitRateByFixture["required-bug"] = 1;
+  const tampered = run(report, baseCriteria());
+  assert.equal(tampered.status, 1);
+  assert.deepEqual(tampered.json.reasons, ["aggregate-mismatch:mustFindHitRateByFixture"]);
+});
+
 test("a report without a fixture manifest is unreadable", () => {
   const report = baseReport();
   delete report.fixtures;

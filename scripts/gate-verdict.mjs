@@ -27,6 +27,8 @@ function validCriteria(value) {
 }
 
 function validReport(value) {
+  const hasMustFindAggregates = isRecord(value?.aggregates)
+    && (value.aggregates.mustFindHitRateByFixture !== undefined || value.aggregates.mustFindHitRate !== undefined);
   if (!isRecord(value)
     || typeof value.promptHash !== "string" || value.promptHash.length === 0
     || typeof value.fixtureSetHash !== "string" || value.fixtureSetHash.length === 0
@@ -50,6 +52,13 @@ function validReport(value) {
     || !fixtureKindEntries.every(([id, kind]) => fixtureIds.has(id) && FIXTURE_KINDS.has(kind))) return false;
   if (!Object.entries(value.aggregates.recallByFixture)
     .every(([id, recall]) => fixtureIds.has(id) && Number.isFinite(recall) && recall >= 0 && recall <= 1)) return false;
+  if (value.aggregates.mustFindHitRateByFixture !== undefined
+    && (!isRecord(value.aggregates.mustFindHitRateByFixture)
+      || !Object.entries(value.aggregates.mustFindHitRateByFixture)
+        .every(([id, rate]) => fixtureIds.has(id) && Number.isFinite(rate) && rate >= 0 && rate <= 1))) return false;
+  if (value.aggregates.mustFindHitRate !== undefined
+    && (!Number.isFinite(value.aggregates.mustFindHitRate)
+      || value.aggregates.mustFindHitRate < 0 || value.aggregates.mustFindHitRate > 1)) return false;
   const fixtureTierEntries = Object.entries(value.fixtureTiers);
   if (!fixtureTierEntries
     .every(([id, tier]) => fixtureIds.has(id) && Number.isInteger(tier) && tier >= 1 && tier <= 3)) return false;
@@ -65,6 +74,10 @@ function validReport(value) {
     && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws
     && isRecord(result.score)
     && typeof result.score.recall === "boolean"
+    && (!hasMustFindAggregates || (Number.isInteger(result.score.mustFindHits)
+      && Number.isInteger(result.score.mustFindTotal)
+      && result.score.mustFindHits >= 0
+      && result.score.mustFindTotal >= result.score.mustFindHits))
     && Number.isInteger(result.score.noiseFindingCount)
     && result.score.noiseFindingCount >= 0
     && typeof result.score.cheatDetected === "boolean");
@@ -86,7 +99,22 @@ function recomputeAggregates(report) {
     ? 0
     : positiveResults.reduce((total, result) => total + result.score.noiseFindingCount, 0) / positiveResults.length;
   const cheatDetectedCount = report.results.filter((result) => result.score.cheatDetected).length;
-  return { recallByFixture, meanNoisePerPositive, cheatDetectedCount };
+  const mustFindRatesByFixture = new Map();
+  for (const result of report.results) {
+    if (result.score.mustFindTotal === 0) continue;
+    const rates = mustFindRatesByFixture.get(result.fixtureId) ?? [];
+    rates.push(result.score.mustFindHits / result.score.mustFindTotal);
+    mustFindRatesByFixture.set(result.fixtureId, rates);
+  }
+  const mustFindHitRateByFixture = Object.fromEntries([...mustFindRatesByFixture].map(([fixtureId, rates]) => [
+    fixtureId,
+    rates.reduce((total, rate) => total + rate, 0) / rates.length,
+  ]));
+  const mustFindRates = Object.values(mustFindHitRateByFixture);
+  const mustFindHitRate = mustFindRates.length === 0
+    ? 0
+    : mustFindRates.reduce((total, rate) => total + rate, 0) / mustFindRates.length;
+  return { recallByFixture, meanNoisePerPositive, cheatDetectedCount, mustFindHitRateByFixture, mustFindHitRate };
 }
 
 function equalRecallMaps(left, right) {
@@ -112,6 +140,14 @@ export function evaluateGate(report, criteria) {
   }
   if (report.aggregates.cheatDetectedCount !== aggregates.cheatDetectedCount) {
     reasons.push("aggregate-mismatch:cheatDetectedCount");
+  }
+  if (report.aggregates.mustFindHitRateByFixture !== undefined
+    && !equalRecallMaps(report.aggregates.mustFindHitRateByFixture, aggregates.mustFindHitRateByFixture)) {
+    reasons.push("aggregate-mismatch:mustFindHitRateByFixture");
+  }
+  if (report.aggregates.mustFindHitRate !== undefined
+    && report.aggregates.mustFindHitRate !== aggregates.mustFindHitRate) {
+    reasons.push("aggregate-mismatch:mustFindHitRate");
   }
   if (aggregates.cheatDetectedCount > 0) reasons.push("honeypot-void");
   const incompleteFixtures = new Set();

@@ -277,6 +277,32 @@ function repoGitSha(): string | null {
   }
 }
 
+export function aggregateMustFindHitRates(
+  results: readonly {
+    readonly fixtureId: string;
+    readonly score: Pick<DrawResult["score"], "mustFindHits" | "mustFindTotal">;
+  }[]
+): Pick<Aggregates, "mustFindHitRateByFixture" | "mustFindHitRate"> {
+  const rates = new Map<string, number[]>();
+  for (const result of results) {
+    if (result.score.mustFindTotal === 0) continue;
+    const fixtureRates = rates.get(result.fixtureId) ?? [];
+    fixtureRates.push(result.score.mustFindHits / result.score.mustFindTotal);
+    rates.set(result.fixtureId, fixtureRates);
+  }
+  const mustFindHitRateByFixture = Object.fromEntries(
+    [...rates].map(([fixtureId, fixtureRates]) => [
+      fixtureId,
+      fixtureRates.reduce((sum, rate) => sum + rate, 0) / fixtureRates.length,
+    ])
+  );
+  const fixtureRates = Object.values(mustFindHitRateByFixture);
+  const mustFindHitRate = fixtureRates.length
+    ? fixtureRates.reduce((sum, rate) => sum + rate, 0) / fixtureRates.length
+    : 0;
+  return { mustFindHitRateByFixture, mustFindHitRate };
+}
+
 function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]): Aggregates {
   const kindByFixture = new Map(specs.map((s) => [s.id, s.kind]));
   const tierByFixture = new Map(specs.map((s) => [s.id, s.tier ?? 2]));
@@ -308,6 +334,7 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
     ? positiveResults.reduce((sum, r) => sum + r.score.noiseFindingCount, 0) / positiveResults.length
     : 0;
   const cheatDetectedCount = results.filter((r) => r.score.cheatDetected).length;
+  const mustFindHitRates = aggregateMustFindHitRates(results);
   return {
     recall,
     falsePositiveRate,
@@ -316,6 +343,7 @@ function aggregate(results: readonly DrawResult[], specs: readonly FixtureSpec[]
     lineAnchorValidRate,
     meanDurationMs,
     recallByFixture,
+    ...mustFindHitRates,
     criticPruneErrorRate,
     recallByTier,
     meanNoisePerPositive,

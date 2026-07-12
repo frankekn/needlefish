@@ -115,6 +115,8 @@ export interface Aggregates {
   readonly lineAnchorValidRate: number;
   readonly meanDurationMs: number;
   readonly recallByFixture: Readonly<Record<string, number>>;
+  readonly mustFindHitRateByFixture?: Readonly<Record<string, number>>;
+  readonly mustFindHitRate?: number;
   readonly criticPruneErrorRate: number;
   // Recall per difficulty tier, keys "t1"|"t2"|"t3". Untiered positives
   // (legacy) count as t2.

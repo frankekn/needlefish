@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
+import { aggregateMustFindHitRates, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -26,6 +26,21 @@ function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreak
     ...partial,
   };
 }
+
+test("aggregateMustFindHitRates averages partial hits by fixture and excludes zero totals", () => {
+  const score = (mustFindHits: number, mustFindTotal: number) => ({ mustFindHits, mustFindTotal });
+  const result = aggregateMustFindHitRates([
+    { fixtureId: "multi", score: score(1, 3) },
+    { fixtureId: "multi", score: score(2, 3) },
+    { fixtureId: "multi", score: score(3, 3) },
+    { fixtureId: "varying", score: score(1, 2) },
+    { fixtureId: "varying", score: score(1, 4) },
+    { fixtureId: "excluded", score: score(0, 0) },
+  ]);
+
+  assert.deepEqual(result.mustFindHitRateByFixture, { multi: 2 / 3, varying: (1 / 2 + 1 / 4) / 2 });
+  assert.equal(result.mustFindHitRate, ((2 / 3) + ((1 / 2 + 1 / 4) / 2)) / 2);
+});
 
 test("loadFixture materializes a git repo and builds a bundle with the defect diff", () => {
   const loaded = loadFixture(posOverBlock);
