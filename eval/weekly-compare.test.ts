@@ -57,6 +57,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     aggregates: aggregatesOf(partial.aggregates ? { ...partial.aggregates } : {}),
     fixtureSetHash: "fff",
     fixtureTiers: {},
+    anticheatVersion: 1,
     ...partial,
   };
 }
@@ -144,7 +145,23 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   const latest = report([...drawsFor("a", [false, false, false])]);
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
-  assert.ok(v.reasons.some((r) => r.includes("prompt/fixture set changed")));
+  assert.ok(
+    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation changed")),
+  );
+});
+
+test("compareWeekly: a pre-guard previous week skips regression comparison", () => {
+  // Same prompt/fixture hashes, but the previous report predates the
+  // anti-cheat guards — its draws are declared incomparable.
+  const prev = report([...drawsFor("a", [true, true, true])], {
+    anticheatVersion: undefined,
+  });
+  const latest = report([...drawsFor("a", [false, false, false])]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false, "cross-generation regression must not alert");
+  assert.ok(
+    v.reasons.some((r) => r.includes("anti-cheat generation changed")),
+  );
 });
 
 for (const [name, prevHash, latestHash] of [

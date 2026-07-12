@@ -67,10 +67,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       prev.promptHash !== latest.promptHash ||
       !prev.fixtureSetHash ||
       !latest.fixtureSetHash ||
-      prev.fixtureSetHash !== latest.fixtureSetHash
+      prev.fixtureSetHash !== latest.fixtureSetHash ||
+      // Cross-anti-cheat-generation draws are declared incomparable (see
+      // compare() in run.ts): a pre-guard week must not anchor a guarded one.
+      prev.anticheatVersion !== latest.anticheatVersion ||
+      prev.anticheatVersion === undefined
     ) {
-      // Different prompt or fixture set: week-over-week deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set changed since last week; skipping regression comparison"] };
+      // Different prompt, fixture set, or guard generation: week-over-week
+      // deltas are meaningless.
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week; skipping regression comparison"] };
     }
     const prevStable = stableRecallByFixture(prev);
     const regressed = [...latestStableAll]

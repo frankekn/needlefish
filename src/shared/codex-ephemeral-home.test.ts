@@ -466,3 +466,39 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 		/required auth source is missing: .*models\.json/,
 	);
 });
+
+// codex passes --ignore-user-config on every invocation, so config.toml is
+// staged when present but never demanded: an auth.json-only OAuth setup runs.
+test("prepareEphemeralHome: codex requires auth.json but not the ignored config.toml", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		process.env.HOME = previous.home;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(path.join(fakeHome, ".codex", "auth.json"), '{"token":"x"}');
+	// No config.toml planted.
+
+	const home = prepareEphemeralHome("codex", tmp);
+	assert.ok(home, "auth.json-only OAuth setup must be accepted");
+	assert.ok(
+		existsSync(path.join(home, ".codex", "auth.json")),
+		"auth.json must be staged",
+	);
+	assert.equal(
+		existsSync(path.join(home, ".codex", "config.toml")),
+		false,
+		"absent config.toml must not be fabricated",
+	);
+});

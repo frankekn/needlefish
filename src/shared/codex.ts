@@ -138,6 +138,14 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly required: readonly string[];
 	readonly optional: readonly string[];
 } {
+	// codex: the invocation always passes --ignore-user-config, so the config
+	// file cannot be a requirement — an auth.json-only OAuth setup is valid.
+	if (runner === "codex") {
+		return {
+			required: [".codex/auth.json"],
+			optional: [".codex/config.toml"],
+		};
+	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST); with it set, the HOME files are optional config.
 	if (runner === "opencode" && process.env.OPENAI_API_KEY) {
