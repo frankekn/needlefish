@@ -557,3 +557,24 @@ x3 confirms the x1 headline: **both challengers hold 0% FP across all 108 negati
 Stable misses (3/3) shared by both: go-backend-slop-swallow, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, real-pr4-hotspot-truncation. grok adds partials on ts-data-duplicate (1/3), real-pr1-bundle-basesha (2/3), real-pr10 (2/3). opus adds real-pr4-options-not-forwarded (3/3) plus 1/3 flakes incl. one t1 (yml-infra-token-leak). opus formatFail is a stable negative-set pattern (neg-hard-timing-hardening 2/3, neg-hard-txn-equivalent 2/3, ts-frontend-style-refactor 2/3, neg-missing-tests-no-bug 1/3), not random flake.
 
 Read: grok-4.5 xhigh dominates opus-4.8-via-pi on every aggregate at equal FP. vs prod (sol medium): grok trades −4.6pt recall for −12.5pt FP with equal verdict match — a real prod-lane candidate; the decision needs a sol-medium x3 on this fixture set for a fair same-N comparison (current baseline is x1). Reports: eval/reports/2026-07-12-grok45-xhigh-x3.json, eval/reports/2026-07-12-pi-opus48-xhigh-x3.json.
+
+## 2026-07-12 — x3 matrix completed: sol medium, gpt-5.5 medium, luna max (codex lane) — full set, 84 fixtures, 252 draws each, holdout include
+
+Completes the five-way x3 matrix (grok-4.5 / opus-4.8 recorded above). promptHash e62d0889fc704541.
+
+| metric | grok-4.5 xhigh | sol medium (prod) | gpt-5.5 medium | luna max | opus-4.8 xhigh (pi) |
+|---|---|---|---|---|---|
+| recall | 88.5% | 89.7% | **90.8%** | 88.5% | 86.2% |
+| mustFindHitRate | 90.3% | 91.3% | **92.9%** | 90.3% | 88.2% |
+| falsePositiveRate | **0%** | 6.9% | 9.7% | 9.7% | **0%** |
+| invalidJsonRate | 0% | 0% | 0% | 0.4% | 2.8% |
+| verdictMatchRate | 95.6% | 95.6% | 95.2% | 95.2% | 90.1% |
+| lineAnchorValidRate | 91.3% | 91.3% | 93.7% | 91.3% | 85.7% |
+| meanDurationMs | 50s | 53s | 58s | **134s** | 53s |
+
+Key reads:
+- **GPT-family stable-FP blind spot**: neg-hard-refactor-move (behavior-preserving move) FPs 3/3 on sol, 5.5, AND luna; neg-hard-dead-code-delete 3/3 on 5.5 and luna. grok/opus: zero FPs in 108 negative draws each. This is a family-level pattern, not a model quirk.
+- **luna max is dominated**: same FP as 5.5-medium, equal-or-lower recall, 2.3x slower, and it misses holdout-spec-drift 3/3 plus a t1 (hardcoded-secret) once. Not a candidate at any effort.
+- **x1 rankings did not survive x3** (opus>grok at x1 inverted; sol FP 12.5%→6.9%). N=3 is the floor for any ranking claim.
+- Head-to-head for prod: grok-4.5 xhigh trades −1.2pt recall for −6.9pt FP vs sol medium at identical verdict match/anchor/speed; sol's one STABLE FP (refactor-move 3/3) is exactly the class that erodes reviewer trust. Open question before any prod switch: grok lane needs NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (no effective CLI sandbox) — a sandbox-risk acceptance, not an eval question.
+Reports: eval/reports/2026-07-12-{sol-medium,gpt55-medium,luna-max}-x3.json.
