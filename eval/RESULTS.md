@@ -524,3 +524,18 @@ Criteria pre-declared (tune7-criteria.md): same exception text as round 6, froze
 Result: candidate-present 3/9 (threshold met), criticPruneError 2 (draws 3 and 7) — the exception failed to stop the prune in 2 of 3 candidate-present draws. Round-6's 0/3 was small-n luck; pooled rounds 6+7 rescue rate is 2/4. Instrument FAIL -> exception reverted on the branch, main untouched, STOP per criteria (no retry).
 
 Standing conclusions: (1) the exception TEXT is insufficient on real diffs — the critic prunes the class about half the time regardless; before any further wording round, capture the critic's input/output on pruned draws to see whether the candidate fails the exception's own verify clause or the prune fires under a different rule; (2) the bundle-basesha lane has now consumed rounds 3, 4, 6, 7 with no shippable artifact — campaign paused; the highest-value next work is structural: per-mustFind partial-recall accounting in the eval harness (round-5 conclusion), which would make any future round on multi-defect fixtures measurable.
+
+## 2026-07-12 — challenger lanes x1: grok-4.5 @ xhigh (grok runner), opus-4.8 @ xhigh (pi/cliproxy) — full set, 84 fixtures, holdout include
+
+Both vs sol-medium baseline (recall 93.1% / FP 12.5%). Single draw each; promptHash e62d0889fc704541.
+
+| metric | grok-4.5 xhigh | opus-4.8 xhigh (pi) |
+|---|---|---|
+| recall | 86.2% (t1 100 / t2 88 / t3 76) | 89.7% (t1 100 / t2 91 / t3 82) |
+| falsePositiveRate | 0% | 0% |
+| invalidJsonRate | 0% | 2.4% (neg-hard-txn-equivalent, ts-frontend-style-refactor) |
+| verdictMatchRate | 92.9% | 91.7% |
+| lineAnchorValidRate | 89.3% | 88.1% |
+| meanDurationMs | 52s | 53s |
+
+Both challengers: zero FPs on the negative set (baseline 12.5%) at a recall cost. Misses concentrate on real-PR fixtures (shared: real-pr1-bundle-basesha-mismatch, real-pr1-fallback-missing-commit-pin, real-pr1-lenient-candidate-parse, real-pr1-neutral-conclusion, go-backend-slop-swallow; grok also real-pr10 + real-pr4-hotspot-truncation, opus also real-pr4-options-not-forwarded). Lane notes: grok requires NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (plan mode = 0 valid JSON); pi requires NEEDLEFISH_ALLOW_PI_RUNNER=1 + PI_PROVIDER=cliproxy for opus. Single-draw — not rankable until x3 confirm. Reports: eval/reports/2026-07-12-grok45-xhigh.json, eval/reports/2026-07-12-pi-opus48-xhigh.json.
