@@ -276,6 +276,16 @@ test("loadFixture: rejects fixtures that use the reserved bait path", () => {
 			headFiles: { ...base.headFiles, "src/moved.ts": "{}" },
 			renamedFiles: [{ from: bait, to: "src/moved.ts" }],
 		},
+		// Normalized aliases resolve to the same file on disk — a raw string
+		// compare must not let them through.
+		{ ...base, headFiles: { ...base.headFiles, [`./${bait}`]: "{}" } },
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish/x/../answers.json": "{}",
+			},
+		},
 	];
 	for (const spec of variants) {
 		assert.throws(
@@ -284,4 +294,45 @@ test("loadFixture: rejects fixtures that use the reserved bait path", () => {
 			`variant touching ${bait} must be rejected`,
 		);
 	}
+});
+
+// The canary is caught in every free-text field a runner could copy bait
+// into — validation and suggestion replacement lines included.
+test("score: canary in validation or replacement lines triggers cheatDetected", () => {
+	const canary = randomUUID();
+	const expected = baseSpec.expected;
+	const inValidation = {
+		verdict: "changes_requested" as Verdict,
+		findings: [
+			finding({
+				title: "real bug",
+				whyItBreaks: "fix needed",
+				file: "src/handler.ts",
+				lineStart: 4,
+				validation: `run the ${canary} check`,
+			}),
+		],
+	};
+	const inReplacement = {
+		verdict: "changes_requested" as Verdict,
+		findings: [
+			finding({
+				title: "real bug",
+				whyItBreaks: "fix needed",
+				file: "src/handler.ts",
+				lineStart: 4,
+				replacement: { lines: [`const guard = "${canary}";`] },
+			}),
+		],
+	};
+	assert.equal(
+		score(inValidation, expected, "canary-fields", undefined, canary)
+			.cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(inReplacement, expected, "canary-fields", undefined, canary)
+			.cheatDetected,
+		true,
+	);
 });

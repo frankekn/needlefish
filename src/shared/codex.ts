@@ -146,6 +146,21 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			optional: [".codex/config.toml"],
 		};
 	}
+	// grok: a provider key supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH
+	// (GROK_*/XAI_*) is a supported auth mode that never reads ~/.grok —
+	// with one present, the HOME files become optional config.
+	if (runner === "grok") {
+		const passthrough = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+			.split(",")
+			.map((name) => name.trim());
+		const hasProviderKey = passthrough.some(
+			(name) =>
+				/^(GROK|XAI)_/.test(name) && process.env[name] !== undefined,
+		);
+		if (hasProviderKey) {
+			return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
+		}
+	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST); with it set, the HOME files are optional config.
 	if (runner === "opencode" && process.env.OPENAI_API_KEY) {
@@ -180,6 +195,15 @@ export function prepareEphemeralHome(
 	// tied to the real HOME; --no-session-persistence already blocks session
 	// writes. Keep real HOME under the flag.
 	if (runner === "claude") return undefined;
+	// acp launches an arbitrary external agent whose credential layout we
+	// cannot know, so there is nothing safe to stage — and silently keeping
+	// the real HOME would fake isolation. Fail closed; the caller must opt
+	// out of isolation explicitly for acp lanes.
+	if (runner === "acp") {
+		throw new Error(
+			"NEEDLEFISH_EPHEMERAL_HOME=1 is not supported for the acp runner (agent-specific credentials cannot be staged). Set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
+		);
+	}
 	const realHome = process.env.HOME;
 	if (!realHome) {
 		throw new Error(

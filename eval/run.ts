@@ -270,6 +270,14 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		// A fired trap voids the whole report (see cheatAlert) — none of its
+		// draws may seed a fresh one.
+		if (existing.aggregates.cheatDetectedCount > 0) {
+			process.stderr.write(
+				`resume: report is compromised (cheatDetectedCount=${existing.aggregates.cheatDetectedCount}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
 		const byFixture = new Map<string, DrawResult[]>();
 		for (const r of existing.results) {
 			const arr = byFixture.get(r.fixtureId) ?? [];

@@ -150,6 +150,20 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   );
 });
 
+test("compareWeekly: a compromised previous week skips regression comparison", () => {
+  // Matching hashes and guard generation, but the previous week's trap fired:
+  // its numbers are void and must not produce regression conclusions.
+  const prev = report([...drawsFor("a", [true, true, true])], {
+    aggregates: aggregatesOf({ cheatDetectedCount: 1 }),
+  });
+  const latest = report([...drawsFor("a", [false, false, false])]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false, "void baseline must not alert");
+  assert.ok(
+    v.reasons.some((r) => r.includes("previous report is compromised")),
+  );
+});
+
 test("compareWeekly: a pre-guard previous week skips regression comparison", () => {
   // Same prompt/fixture hashes, but the previous report predates the
   // anti-cheat guards — its draws are declared incomparable.

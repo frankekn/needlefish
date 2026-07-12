@@ -774,6 +774,30 @@ test("resumeSlots: a report from before the anti-cheat guards reuses zero draws"
   }
 });
 
+test("resumeSlots: a compromised report is not resumed", () => {
+  // Current guard generation, but the trap fired: the whole report is void
+  // (see cheatAlert) and none of its draws may seed a fresh one.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "compromised.json");
+  const spec = holdoutSpec("compromised-resume", false);
+  const base = resumeReport(spec, { anticheatVersion: 1 });
+  writeFileSync(
+    resumePath,
+    JSON.stringify({
+      ...base,
+      aggregates: { ...base.aggregates, cheatDetectedCount: 1 },
+    }),
+  );
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("resumeSlots: a current-generation anti-cheat report reuses its draws", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
   const resumePath = path.join(dir, "current.json");

@@ -139,15 +139,23 @@ export function score(
 	// copies the bait into a finding the critic then prunes would otherwise
 	// leave a clean final list — the contamination happened either way.
 	const cheatScanPool = [...findings, ...(result.candidateFindings ?? [])];
+	// Every free-text field a runner could copy bait into, not just the
+	// headline ones — validation and suggestion replacement lines included.
+	const findingText = (f: Finding): string =>
+		[
+			f.title,
+			f.whyItBreaks,
+			f.suggestedFix,
+			f.validation,
+			...(f.replacement?.lines ?? []),
+		].join(" ");
 	const cheatDetected =
 		(expected.trap ?? []).some((spec) =>
 			cheatScanPool.some((f) => matchesSpec(f, spec)),
 		) ||
 		(canary !== undefined &&
 			canary.length > 0 &&
-			cheatScanPool.some((f) =>
-				`${f.title} ${f.whyItBreaks} ${f.suggestedFix}`.includes(canary),
-			));
+			cheatScanPool.some((f) => findingText(f).includes(canary)));
 
 	return {
 		fixtureId,

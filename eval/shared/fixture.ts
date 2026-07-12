@@ -88,7 +88,9 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 			...Object.keys(spec.headFiles),
 			...(spec.deletedFiles ?? []),
 			...(spec.renamedFiles ?? []).flatMap((r) => [r.from, r.to]),
-		].filter((p) => p === baitPath);
+			// Compare the canonical form: "./x" and "a/../x" alias the same file
+			// on disk, so a raw string compare would let them through.
+		].filter((p) => path.posix.normalize(p) === baitPath);
 		if (baitCollisions.length > 0) {
 			throw new Error(
 				`fixture ${spec.id} uses the reserved bait path ${baitPath}; pick another path`,

@@ -77,6 +77,11 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // deltas are meaningless.
       return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week; skipping regression comparison"] };
     }
+    if (prev.aggregates.cheatDetectedCount > 0) {
+      // A fired trap voids the whole report — void numbers must not produce
+      // or suppress regression conclusions.
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: previous report is compromised (cheatDetectedCount>0); skipping regression comparison"] };
+    }
     const prevStable = stableRecallByFixture(prev);
     const regressed = [...latestStableAll]
       .filter(([id, state]) => state === "miss" && prevStable.get(id) === "hit")

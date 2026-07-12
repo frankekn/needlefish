@@ -502,3 +502,75 @@ test("prepareEphemeralHome: codex requires auth.json but not the ignored config.
 		"absent config.toml must not be fabricated",
 	);
 });
+
+// grok with a provider key passed through NEEDLEFISH_RUNNER_ENV_PASSTHROUGH
+// never reads ~/.grok — the HOME files become optional config.
+test("prepareEphemeralHome: grok provider key via passthrough makes HOME files optional", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		key: process.env.XAI_API_KEY,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		process.env.HOME = previous.home;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.key === undefined) delete process.env.XAI_API_KEY;
+		else process.env.XAI_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	// No ~/.grok files planted.
+
+	// Without a provider key, grok HOME files stay required.
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	delete process.env.XAI_API_KEY;
+	assert.throws(
+		() => prepareEphemeralHome("grok", tmp),
+		/required auth source is missing/,
+	);
+
+	// Passthrough naming a set provider key → HOME files optional.
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "XAI_API_KEY";
+	process.env.XAI_API_KEY = "xai-test";
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	assert.ok(prepareEphemeralHome("grok", tmp2), "provider-key mode must pass");
+
+	// Passthrough naming an UNSET key does not count as provider-key auth.
+	delete process.env.XAI_API_KEY;
+	const tmp3 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp3, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("grok", tmp3),
+		/required auth source is missing/,
+	);
+});
+
+// acp launches arbitrary agents with unknowable credential layouts: under
+// the isolation flag there is nothing safe to stage, so it must fail closed
+// rather than silently keep the real HOME.
+test("prepareEphemeralHome: acp refuses ephemeral isolation", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const previous = { ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME };
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	assert.throws(
+		() => prepareEphemeralHome("acp", tmp),
+		/not supported for the acp runner/,
+	);
+});
