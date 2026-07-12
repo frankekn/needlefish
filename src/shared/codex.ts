@@ -207,10 +207,12 @@ export function prepareEphemeralHome(
 			"NEEDLEFISH_EPHEMERAL_HOME=1 is not supported for the acp runner (agent-specific credentials cannot be staged). Set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
 		);
 	}
-	const realHome = process.env.HOME;
+	// buildRunnerEnv points both HOME and USERPROFILE at the ephemeral dir, so
+	// accept either as the auth source root (USERPROFILE = Windows).
+	const realHome = process.env.HOME ?? process.env.USERPROFILE;
 	if (!realHome) {
 		throw new Error(
-			"NEEDLEFISH_EPHEMERAL_HOME=1 but HOME is unset: cannot locate auth source files",
+			"NEEDLEFISH_EPHEMERAL_HOME=1 but neither HOME nor USERPROFILE is set: cannot locate auth source files",
 		);
 	}
 	const home = path.join(tmp, "home");

@@ -1,5 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
 
@@ -175,6 +180,7 @@ test("compareWeekly: a compromised latest week alerts CHEAT and withholds every 
   });
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, true, "CHEAT on the latest report must alert");
+  assert.equal(v.compromised, true, "verdict must expose the compromised state");
   assert.ok(v.reasons.some((r) => r.includes("CHEAT")));
   const substantive = v.reasons.filter((r) => !r.startsWith("note:"));
   assert.equal(
@@ -182,6 +188,36 @@ test("compareWeekly: a compromised latest week alerts CHEAT and withholds every 
     1,
     `CHEAT must be the only substantive reason, got: ${v.reasons.join(" | ")}`,
   );
+});
+
+test("weekly-compare CLI: a compromised report prints CHEAT and no metric lines", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-weekly-cli-"));
+  const latestPath = path.join(dir, "latest.json");
+  writeFileSync(
+    latestPath,
+    JSON.stringify(
+      report([...drawsFor("a", [true, true, true])], {
+        aggregates: aggregatesOf({ cheatDetectedCount: 1 }),
+      }),
+    ),
+  );
+  try {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const res = spawnSync(
+      "npx",
+      ["tsx", path.join("eval", "weekly-compare.ts"), latestPath],
+      { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+    );
+    assert.equal(res.status, 2, `alert exit expected, stderr: ${res.stderr}`);
+    assert.match(res.stdout, /CHEAT/);
+    assert.doesNotMatch(
+      res.stdout,
+      /recall|fp |verdict \d|noise/,
+      "void metrics must not be printed",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("compareWeekly: a pre-guard previous week skips regression comparison", () => {

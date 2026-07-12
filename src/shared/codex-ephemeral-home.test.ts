@@ -596,3 +596,47 @@ test("prepareEphemeralHome: acp refuses ephemeral isolation", (t) => {
 		/not supported for the acp runner/,
 	);
 });
+
+// Windows parity: buildRunnerEnv overrides both HOME and USERPROFILE, so the
+// auth source root accepts either — HOME unset + USERPROFILE set must work.
+test("prepareEphemeralHome resolves auth sources from USERPROFILE when HOME is unset", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		profile: process.env.USERPROFILE,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		if (previous.profile === undefined) delete process.env.USERPROFILE;
+		else process.env.USERPROFILE = previous.profile;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(path.join(fakeHome, ".codex", "auth.json"), '{"token":"x"}');
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.HOME;
+	process.env.USERPROFILE = fakeHome;
+
+	const home = prepareEphemeralHome("codex", tmp);
+	assert.ok(home, "USERPROFILE-only environment must be accepted");
+	assert.ok(
+		existsSync(path.join(home, ".codex", "auth.json")),
+		"auth must be staged from the USERPROFILE root",
+	);
+
+	// Neither set → fail closed.
+	delete process.env.USERPROFILE;
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("codex", tmp2),
+		/neither HOME nor USERPROFILE/,
+	);
+});

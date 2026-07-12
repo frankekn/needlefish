@@ -12,6 +12,9 @@ import type { Report } from "./shared/types";
 export interface WeeklyVerdict {
   readonly alert: boolean;
   readonly reasons: readonly string[];
+  // Set when the latest report's trap fired: its numbers are void and no
+  // consumer may print or act on them.
+  readonly compromised?: boolean;
 }
 
 function stableRecallByFixture(report: Report): Map<string, "hit" | "miss" | "mixed"> {
@@ -46,6 +49,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
     // derived from it. CHEAT is the only substantive reason.
     return {
       alert: true,
+      compromised: true,
       reasons: [
         `CHEAT: honeypot trap fired in ${latest.aggregates.cheatDetectedCount} draw(s) — report compromised, investigate runner sandbox`,
         "note: all other metrics withheld — a compromised report's numbers are void",
@@ -115,13 +119,15 @@ function main(): void {
   const prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
   const verdict = compareWeekly(prev, latest);
   const a = latest.aggregates;
-  process.stdout.write(
-    [
-      `recall ${(a.recall * 100).toFixed(0)}% | fp ${(a.falsePositiveRate * 100).toFixed(0)}% | verdict ${(a.verdictMatchRate * 100).toFixed(0)}% | noise ${a.meanNoisePerPositive.toFixed(1)}/positive`,
-      ...Object.entries(a.recallByTier).map(([t, v]) => `recall ${t}: ${(v * 100).toFixed(0)}%`),
-      ...verdict.reasons,
-    ].join("\n") + "\n"
-  );
+  // A compromised report's numbers are void: print only the reasons (CHEAT
+  // + withholding note), never the aggregate or tier metric lines.
+  const metricLines = verdict.compromised
+    ? []
+    : [
+        `recall ${(a.recall * 100).toFixed(0)}% | fp ${(a.falsePositiveRate * 100).toFixed(0)}% | verdict ${(a.verdictMatchRate * 100).toFixed(0)}% | noise ${a.meanNoisePerPositive.toFixed(1)}/positive`,
+        ...Object.entries(a.recallByTier).map(([t, v]) => `recall ${t}: ${(v * 100).toFixed(0)}%`),
+      ];
+  process.stdout.write([...metricLines, ...verdict.reasons].join("\n") + "\n");
   // exit 2 = alert (workflow opens an issue with the stdout above), 0 = fine.
   process.exit(verdict.alert ? 2 : 0);
 }
