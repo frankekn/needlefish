@@ -127,6 +127,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const claude = path.join(fakeBin, "claude");
 	const postLog = path.join(tmp, "posts.jsonl");
 	const reviewsState = path.join(tmp, "reviews-state.json");
+	const issueCommentsState = path.join(tmp, "issue-comments-state.json");
 	const previous = {
 		path: process.env.PATH,
 		repository: process.env.GITHUB_REPOSITORY,
@@ -200,6 +201,15 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    if (review) review.body = parsed.body || '';",
 			"    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
 			"  }",
+			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
+			`  const issueCommentsEndpoint = ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)};`,
+			"  if (apiPath === issueCommentsEndpoint && method === 'POST') {",
+			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
+			"    const parsed = JSON.parse(payload);",
+			"    const nextId = issueComments.length + 1;",
+			"    issueComments.push({ id: nextId, node_id: 'IC_node_' + nextId, body: parsed.body || '', user: { login: 'github-actions[bot]' } });",
+			"    fs.writeFileSync(issueCommentsPath, JSON.stringify(issueComments));",
+			"  }",
 			"  process.stdout.write('{}');",
 			"  process.exit(0);",
 			"}",
@@ -224,6 +234,13 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.exit(0);",
 			"}",
 			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
+		`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
+		`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
+		"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
+		"  process.stdout.write(JSON.stringify(issueComments));",
+		"  process.exit(0);",
+		"}",
+		"if (args[1] === 'graphql') { process.stdout.write('{}'); process.exit(0); }",
 			"process.stderr.write(`unexpected gh args ${args.join(' ')}`);",
 			"process.exit(2);",
 		].join("\n"),
@@ -887,4 +904,79 @@ test("runGithub re-reviews same head when recheck is true", async (t) => {
 		putPost,
 		"round 2 with --recheck should still review and PUT-update",
 	);
+});
+
+// --- S5 invariant: error path posts a PR comment ---
+
+test("runGithub posts a FAILED TO RUN PR comment when the review errors", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 40,
+		rawReview: "definitely not json",
+	});
+
+	await runGithub(fixture.repo, 40, { timeoutMs: 1000 });
+
+	const issueCommentPost = readPosts(fixture.postLog).find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some(
+				(a) => a === "repos/frankekn/needlefish/issues/40/comments",
+			),
+	);
+	assert.ok(issueCommentPost, "error path should post an issue comment");
+	const body = String((parseJson(issueCommentPost.payload) as { body?: unknown }).body ?? "");
+	assert.match(body, /FAILED TO RUN/);
+	assert.match(body, /<!-- needlefish-error -->/);
+});
+
+// --- S5 invariant: re-review posts a round comment ---
+
+test("runGithub posts a re-review round comment with counts on the second round", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 41,
+		rawReview: JSON.stringify({
+			summary: "two findings",
+			findings: [
+				mkFinding({ title: "persisting", lineStart: 1 }),
+				mkFinding({ title: "to-be-fixed", lineStart: 1 }),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 41, { timeoutMs: 1000 });
+	const round1Count = readPosts(fixture.postLog).length;
+
+	writeFileSync(
+		fixture.reviewOutput,
+		JSON.stringify({
+			summary: "one fixed and one new",
+			findings: [
+				mkFinding({ title: "persisting", lineStart: 1 }),
+				mkFinding({ title: "new issue", lineStart: 1 }),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	);
+
+	await runGithub(fixture.repo, 41, { timeoutMs: 1000 }, true);
+	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+	const roundCommentPost = round2Posts.find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some(
+				(a) => a === "repos/frankekn/needlefish/issues/41/comments",
+			),
+	);
+	assert.ok(roundCommentPost, "re-review should post a round comment");
+	const body = String((parseJson(roundCommentPost.payload) as { body?: unknown }).body ?? "");
+	assert.match(body, /Needlefish re-review/);
+	// 1 resolved (to-be-fixed), 1 still open (persisting), 1 new (new issue).
+	assert.match(body, /✅ 1 resolved/);
+	assert.match(body, /❌ 1 still open/);
+	assert.match(body, /🆕 1 new/);
+	assert.match(body, /<!-- needlefish-round -->/);
 });

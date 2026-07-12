@@ -256,3 +256,49 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	);
 	assert.match(markdown, /<!-- state -->\n$/);
 });
+
+test("renderMarkdown red-reason headline names the top blocking finding and its location", () => {
+	const markdown = renderMarkdown(
+		baseResult([
+			finding("P3", "nit only", "nit.ts"),
+			finding("P1", "Top blocking bug", "src/auth.ts", {
+				lineStart: 88,
+				lineEnd: 90,
+			}),
+			finding("P2", "other blocker", "src/util.ts", { lineStart: 4 }),
+		]),
+	);
+	const firstLine = markdown.split("\n")[0];
+	// The most severe (P1) finding is the top after the severity sort.
+	assert.match(firstLine, /Top blocking bug/);
+	assert.match(firstLine, /src\/auth\.ts:88/);
+	// Multiple blocking findings get the (+N more) suffix.
+	assert.match(firstLine, /\(\+1 more\)/);
+});
+
+test("renderMarkdown needs_human headline carries the blocking residual and a visible why-not-green line", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "needs_human"),
+		residualRisks: [
+			{ text: "deep review of the auth hotspot failed; not fully covered", blocks: true },
+		],
+	});
+	const firstLine = markdown.split("\n")[0];
+	assert.match(firstLine, /NEEDS HUMAN 👀 — deep review of the auth hotspot failed/);
+	// A non-collapsed ⛔ line must appear before the first <details>.
+	const detailsIdx = markdown.indexOf("<details>");
+	assert.ok(detailsIdx > 0, "expected a collapsed details section");
+	const beforeDetails = markdown.slice(0, detailsIdx);
+	assert.match(beforeDetails, /^- ⛔ .*not fully covered/m);
+	assert.match(beforeDetails, /\*\*⛔ Why not green:\*\*/);
+});
+
+test("renderMarkdown renders the coverage line visibly outside any collapsed section", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		coverage: "3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage",
+	});
+	const detailsIdx = markdown.indexOf("<details>");
+	const beforeDetails = detailsIdx > 0 ? markdown.slice(0, detailsIdx) : markdown;
+	assert.match(beforeDetails, /^Coverage: 3\/3 changed files/m);
+});

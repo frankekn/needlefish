@@ -85,6 +85,12 @@ test("review preserves deep evidence through tail coverage", async (t) => {
   assert.deepEqual(result.checked, [
     "EVIDENCE finding:Deep bug changed=src/app.ts:1 effect=bad path",
   ]);
+  // S5: coverage string counts the tail backstop hotspot that deep-reviewed
+  // the one changed file the map pass left uncovered.
+  assert.equal(
+    result.coverage,
+    "1/1 changed files deep-reviewed across 1 hotspot, incl. tail-coverage",
+  );
 });
 
 test("review aborts deep fallback when a non-codex runner dirties the sandbox", async (t) => {
