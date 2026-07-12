@@ -789,14 +789,25 @@ export async function runGithub(
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (isCurrentOpenHead(repo, prNumber, headSha)) {
-			postCheck(
-				repo,
-				headSha,
-				null,
-				"failure",
-				"Needlefish: review failed",
-				`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
-			);
+			// Check run and error comment are independent fail-soft attempts: a
+			// failure of either GitHub endpoint must not suppress the other, nor
+			// the stderr line and exit code below.
+			try {
+				postCheck(
+					repo,
+					headSha,
+					null,
+					"failure",
+					"Needlefish: review failed",
+					`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
+				);
+			} catch (checkErr) {
+				const cm =
+					checkErr instanceof Error ? checkErr.message : String(checkErr);
+				process.stderr.write(
+					`needlefish: could not post failure check: ${cm}\n`,
+				);
+			}
 			// S3: post a PR comment so a red X always has something to read.
 			postErrorComment(repo, prNumber, msg);
 		}

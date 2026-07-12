@@ -45,6 +45,9 @@ type FixtureOptions = {
 	// Make POSTs to the issue-comments endpoint exit 1 (after logging the
 	// attempt) to exercise the fail-soft paths around cosmetic comments.
 	readonly failIssueCommentPosts?: boolean;
+	// Make POSTs to the check-runs endpoint exit 1 (after logging the attempt)
+	// to exercise independence of the failure check and the error comment.
+	readonly failCheckRunPosts?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -206,6 +209,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  }",
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			`  const issueCommentsEndpoint = ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)};`,
+			`  if (apiPath === 'repos/frankekn/needlefish/check-runs' && method === 'POST' && ${JSON.stringify(opts.failCheckRunPosts === true)} === true) { process.stderr.write('simulated check POST failure'); process.exit(1); }`,
 			"  if (apiPath === issueCommentsEndpoint && method === 'POST') {",
 			`    if (${JSON.stringify(opts.failIssueCommentPosts === true)} === true) { process.stderr.write('simulated comment POST failure'); process.exit(1); }`,
 			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
@@ -943,6 +947,31 @@ test("runGithub posts a FAILED TO RUN PR comment when the review errors", async 
 	);
 	assert.match(body, /FAILED TO RUN/);
 	assert.match(body, /<!-- needlefish-error -->/);
+});
+
+test("a failing check-run POST does not suppress the FAILED TO RUN comment", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 44,
+		rawReview: "definitely not json",
+		failCheckRunPosts: true,
+	});
+	await runGithub(fixture.repo, 44, { timeoutMs: 1000 });
+	const posts = readPosts(fixture.postLog);
+	const issueCommentPost = posts.find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.some((a) => a === "repos/frankekn/needlefish/issues/44/comments"),
+	);
+	assert.ok(
+		issueCommentPost,
+		"error comment must post even when the check-run POST fails",
+	);
+	const body = String(
+		(parseJson(issueCommentPost.payload) as { body?: unknown }).body ?? "",
+	);
+	assert.match(body, /FAILED TO RUN/);
+	assert.equal(process.exitCode, 1, "exit code must still be set");
+	process.exitCode = undefined;
 });
 
 // --- S5 invariant: re-review posts a round comment ---
