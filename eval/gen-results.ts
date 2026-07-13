@@ -1,6 +1,10 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  isCompleteReport,
+  reportExpectedResultCount,
+} from "./shared/report-completeness";
 import { ANTICHEAT_VERSION, type FixtureSpec, type Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -48,54 +52,6 @@ function compromised(r: Report): boolean {
 export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): string {
   const positives = specs.filter((s) => s.kind === "positive");
   const negatives = specs.filter((s) => s.kind === "negative");
-  const fixtureManifest = (r: Report): readonly string[] | undefined => {
-    const fixtures: unknown = r.fixtures;
-    if (!Array.isArray(fixtures) || fixtures.length === 0) return undefined;
-    const seen = new Set<string>();
-    for (const fixtureId of fixtures) {
-      if (
-        typeof fixtureId !== "string" ||
-        fixtureId.length === 0 ||
-        seen.has(fixtureId)
-      ) {
-        return undefined;
-      }
-      seen.add(fixtureId);
-    }
-    return fixtures;
-  };
-  const expectedResultCount = (r: Report): number | undefined => {
-    const fixtures = fixtureManifest(r);
-    return Number.isInteger(r.draws) && r.draws > 0 && fixtures !== undefined
-      ? fixtures.length * r.draws
-      : undefined;
-  };
-  const complete = (r: Report): boolean => {
-    const fixtures = fixtureManifest(r);
-    if (
-      fixtures === undefined ||
-      !Number.isInteger(r.draws) ||
-      r.draws <= 0
-    ) {
-      return false;
-    }
-    const fixtureIds = new Set(fixtures);
-    const covered = new Set<string>();
-    for (const result of r.results) {
-      if (
-        !fixtureIds.has(result.fixtureId) ||
-        !Number.isInteger(result.draw) ||
-        result.draw < 0 ||
-        result.draw >= r.draws
-      ) {
-        return false;
-      }
-      const pair = JSON.stringify([result.fixtureId, result.draw]);
-      if (covered.has(pair)) return false;
-      covered.add(pair);
-    }
-    return covered.size === fixtures.length * r.draws;
-  };
 
   // Reports come from unvalidated disk JSON: a missing/empty hash must not
   // anchor or join a comparison — `undefined === undefined` would publish
@@ -103,7 +59,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const hashed = ({ report: r }: NamedReport): boolean =>
     Boolean(r.promptHash) && Boolean(r.fixtureSetHash);
   const comparablePool = reports.filter(
-    (nr) => guarded(nr.report) && hashed(nr) && complete(nr.report),
+    (nr) => guarded(nr.report) && hashed(nr) && isCompleteReport(nr.report),
   );
   const baseline =
     comparablePool.find((r) => r.report.runner === "codex" && r.report.effort === "xhigh") ??
@@ -148,9 +104,9 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
       lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | COMPROMISED | n/a | — | — | — | — |`);
       continue;
     }
-    const expectedDraws = expectedResultCount(r);
+    const expectedDraws = reportExpectedResultCount(r);
     const expectedDrawsLabel = expectedDraws ?? "?";
-    const partial = !complete(r);
+    const partial = !isCompleteReport(r);
     const d =
       baseline && r === baseline.report
         ? "(baseline)"

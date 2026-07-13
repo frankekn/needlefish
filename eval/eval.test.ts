@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -976,24 +976,130 @@ test("renderResults: report manifests determine completeness and baseline eligib
   assert.equal(cells("complete-grok-medium")[3], "4/4");
 });
 
-test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {
-  // The baseline reference doc is a report consumer like any other: legacy
-  // (no anticheatVersion) and canary-positive reports must abort before
-  // rendering, exit nonzero, and write nothing.
+test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-baseline-doc-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const spec = holdoutSpec("baseline-doc-gate", false);
-  const legacy = resumeReport(spec, {});
-  const compromisedBase = resumeReport(spec, { anticheatVersion: 1 });
-  const compromised = {
-    ...compromisedBase,
-    aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
+  const specs = await loadFixtures(null);
+  const fixtureIds = specs.map((spec) => spec.id);
+  const seed = resumeReport(specs[0]!, { anticheatVersion: 1 });
+  const template = seed.results[0]!;
+  const complete: Report = {
+    ...seed,
+    fixtures: fixtureIds,
+    results: fixtureIds.map((fixtureId) => ({ ...template, fixtureId })),
   };
-  const repoRoot = path.resolve(__dirname, "..");
-  for (const [name, report] of [
-    ["legacy", legacy],
+  const { fixtures: _fixtures, ...missingManifest } = complete;
+  const duplicatePair: Report = {
+    ...complete,
+    results: [complete.results[0]!, ...complete.results.slice(0, -1)],
+  };
+  const foreignFixture: Report = {
+    ...complete,
+    results: [
+      { ...complete.results[0]!, fixtureId: "outside-manifest" },
+      ...complete.results.slice(1),
+    ],
+  };
+  const outOfRangeDraw: Report = {
+    ...complete,
+    results: [
+      { ...complete.results[0]!, draw: 1 },
+      ...complete.results.slice(1),
+    ],
+  };
+  const compromised: Report = {
+    ...complete,
+    aggregates: { ...complete.aggregates, cheatDetectedCount: 1 },
+  };
+  const { cheatDetectedCount: _cheatDetectedCount, ...missingCheatCount } =
+    complete.aggregates;
+  const hostileReports: readonly (readonly [string, Report])[] = [
+    ["legacy", { ...complete, anticheatVersion: undefined }],
     ["compromised", compromised],
-  ] as const) {
+    [
+      "missing-cheat-count",
+      { ...complete, aggregates: missingCheatCount as Report["aggregates"] },
+    ],
+    [
+      "non-numeric-cheat-count",
+      {
+        ...complete,
+        aggregates: {
+          ...complete.aggregates,
+          cheatDetectedCount: "0" as unknown as number,
+        },
+      },
+    ],
+    ["missing-manifest", missingManifest],
+    ["empty-manifest", { ...complete, fixtures: [] }],
+    ["empty-fixture-id", { ...complete, fixtures: [""] }],
+    [
+      "non-string-fixture-id",
+      { ...complete, fixtures: [123 as unknown as string] },
+    ],
+    [
+      "duplicate-manifest",
+      { ...complete, fixtures: [fixtureIds[0]!, fixtureIds[0]!] },
+    ],
+    ["zero-draws", { ...complete, draws: 0 }],
+    ["fractional-draws", { ...complete, draws: 1.5 }],
+    ["partial-coverage", { ...complete, results: complete.results.slice(0, -1) }],
+    ["duplicate-pair", duplicatePair],
+    ["foreign-fixture", foreignFixture],
+    ["out-of-range-draw", outOfRangeDraw],
+    [
+      "fractional-result-draw",
+      {
+        ...complete,
+        results: [{ ...complete.results[0]!, draw: 0.5 }, ...complete.results.slice(1)],
+      },
+    ],
+    [
+      "filtered-subset",
+      { ...complete, fixtures: fixtureIds.slice(0, 1), results: complete.results.slice(0, 1) },
+    ],
+  ];
+  const repoRoot = path.resolve(__dirname, "..");
+  const baselineDocPath = path.join(repoRoot, "eval", "BASELINE.md");
+  const baselineBefore = readFileSync(baselineDocPath);
+  t.after(() => writeFileSync(baselineDocPath, baselineBefore));
+
+  const multiDrawReport: Report = {
+    ...complete,
+    draws: 2,
+    results: fixtureIds.flatMap((fixtureId) => [0, 1].map((draw) => ({
+      ...template,
+      fixtureId,
+      draw,
+    }))),
+  };
+  const multiDrawPath = path.join(dir, "multi-draw.json");
+  writeFileSync(multiDrawPath, JSON.stringify(multiDrawReport));
+  const multiDrawResult = spawnSync(
+    "npx",
+    ["tsx", path.join("eval", "gen-baseline-doc.ts"), multiDrawPath],
+    { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+  );
+  try {
+    assert.equal(
+      multiDrawResult.status,
+      0,
+      `complete multi-draw report must generate, stderr: ${multiDrawResult.stderr}`,
+    );
+    const generated = readFileSync(baselineDocPath, "utf8");
+    assert.match(
+      generated,
+      new RegExp(`^- \\*\\*fixtures:\\*\\* ${fixtureIds.length} \\(`, "m"),
+    );
+    assert.doesNotMatch(
+      generated,
+      new RegExp(`^- \\*\\*fixtures:\\*\\* ${multiDrawReport.results.length} \\(`, "m"),
+    );
+  } finally {
+    writeFileSync(baselineDocPath, baselineBefore);
+  }
+
+  for (const [name, report] of hostileReports) {
     const reportPath = path.join(dir, `${name}.json`);
     writeFileSync(reportPath, JSON.stringify(report));
     const res = spawnSync(
@@ -1004,6 +1110,11 @@ test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {
     assert.equal(res.status, 1, `${name} must exit 1, stderr: ${res.stderr}`);
     assert.match(res.stderr, /refusing to generate baseline doc/);
     assert.doesNotMatch(res.stderr, /wrote eval\/BASELINE\.md/);
+    assert.deepEqual(
+      readFileSync(baselineDocPath),
+      baselineBefore,
+      `${name} must not alter BASELINE.md`,
+    );
   }
 
   // No default report: every committed baseline predates the guards and

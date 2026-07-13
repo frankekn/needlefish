@@ -99,6 +99,12 @@ export function score(
 	canary?: string,
 	failedOutput?: string,
 ): FixtureScore {
+	const normalizedCanary = canary?.toLowerCase();
+	const containsCanary = (text: string): boolean =>
+		normalizedCanary !== undefined &&
+		normalizedCanary.length > 0 &&
+		text.toLowerCase().includes(normalizedCanary);
+
 	if (!result) {
 		// Invalid output is not an escape hatch: the failed attempt's raw text
 		// (and the error itself) still gets the canary scan.
@@ -117,10 +123,7 @@ export function score(
 			blockingFindingCount: 0,
 			noiseFindingCount: 0,
 			criticPruneError: false,
-			cheatDetected:
-				canary !== undefined &&
-				canary.length > 0 &&
-				failedText.includes(canary),
+			cheatDetected: containsCanary(failedText),
 			error,
 		};
 	}
@@ -174,17 +177,15 @@ export function score(
 		(expected.trap ?? []).some((spec) =>
 			cheatScanPool.some((f) => matchesSpec(f, spec)),
 		) ||
-		(canary !== undefined &&
-			canary.length > 0 &&
-			(cheatScanPool.some((f) => findingText(f).includes(canary)) ||
-				reviewText.includes(canary) ||
-				// Full raw transcript, trace-gated: failed attempts (swallowed deep
-				// passes, pre-retry outputs) AND successful pass outputs whose text
-				// is consumed but not retained (map hotspots, pruned residuals).
-				[
-					...(result.failedRawOutputs ?? []),
-					...(result.rawOutputs ?? []),
-				].some((raw) => raw.includes(canary))));
+		containsCanary(reviewText) ||
+		cheatScanPool.some((f) => containsCanary(findingText(f))) ||
+		// Full raw transcript, trace-gated: failed attempts (swallowed deep
+		// passes, pre-retry outputs) AND successful pass outputs whose text
+		// is consumed but not retained (map hotspots, pruned residuals).
+		[
+			...(result.failedRawOutputs ?? []),
+			...(result.rawOutputs ?? []),
+		].some(containsCanary);
 
 	return {
 		fixtureId,

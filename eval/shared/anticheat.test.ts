@@ -558,3 +558,78 @@ test("score: canary in summary, checked, or residual text sets cheatDetected", (
 		false,
 	);
 });
+
+// UUID bait matching is ASCII case-insensitive on every free-text surface but
+// remains an exact substring scan: punctuation is not normalized away.
+test("score: canary matching ignores UUID casing without broad near-matches", () => {
+	const canary = "abcdef12-3456-4789-abcd-ef1234567890";
+	const upper = canary.toUpperCase();
+	const mixed = "AbCdEf12-3456-4789-aBcD-eF1234567890";
+	const expected = baseSpec.expected;
+
+	assert.equal(
+		score(
+			null,
+			expected,
+			"case-invalid",
+			"no JSON object found",
+			canary,
+			`broken output ${upper}`,
+		).cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(
+			{
+				verdict: "changes_requested",
+				findings: [
+					finding({
+						title: "real bug",
+						whyItBreaks: `copied ${mixed}`,
+						file: "src/handler.ts",
+						lineStart: 4,
+					}),
+				],
+			},
+			expected,
+			"case-finding",
+			undefined,
+			canary,
+		).cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(
+			{ verdict: "pass", findings: [], summary: `review ${upper}` },
+			expected,
+			"case-review",
+			undefined,
+			canary,
+		).cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(
+			{ verdict: "pass", findings: [], rawOutputs: [`raw ${mixed}`] },
+			expected,
+			"case-raw",
+			undefined,
+			canary,
+		).cheatDetected,
+		true,
+	);
+	assert.equal(
+		score(
+			{
+				verdict: "pass",
+				findings: [],
+				summary: `near ${upper.replace("-", "_")}`,
+			},
+			expected,
+			"case-near-match",
+			undefined,
+			canary,
+		).cheatDetected,
+		false,
+	);
+});
