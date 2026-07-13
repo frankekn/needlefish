@@ -320,6 +320,11 @@ export interface CodexOptions extends RunnerOptions {
 	// nonzero exit) — the eval canary scan must see output a runner emitted
 	// before dying, whether or not a retry later succeeds.
 	readonly onFailedRaw?: (raw: string) => void;
+	// Called with the FULL transcript (resolved output + raw stdout + stderr,
+	// deduped) of every SUCCESSFUL attempt. A status-0 runner can emit the
+	// canary on a stream while writing a clean final message — the resolved
+	// output alone is not the transcript.
+	readonly onRaw?: (raw: string) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -415,7 +420,7 @@ async function runCodexOnce(
 	const model = resolveModel(opts, runner);
 	const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
 	if (runner === "openai") {
-		return runOpenAIDirect(prompt, model, timeoutMs);
+		return runOpenAIDirect(prompt, model, timeoutMs, opts.onRaw);
 	}
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
 	// Everything after mkdtemp lives inside the try: a preparation failure
@@ -487,7 +492,17 @@ async function runCodexOnce(
 		// Output normalization can throw too (e.g. malformed opencode envelope
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
-			return outputFor(runner, result);
+			const out = outputFor(runner, result);
+			// Success is not an escape hatch either: the raw streams of a
+			// status-0 attempt (codex prints noise to stdout while the model
+			// output lands in the out-file) must reach the scan whole.
+			const raw = [
+				...new Set([out, result.out, result.res.stdout, result.res.stderr]),
+			]
+				.filter(Boolean)
+				.join("\n");
+			if (raw) opts.onRaw?.(raw);
+			return out;
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
@@ -803,6 +818,7 @@ async function runOpenAIDirect(
 	prompt: string,
 	model: string | undefined,
 	timeoutMs: number,
+	onRaw?: (raw: string) => void,
 ): Promise<string> {
 	const baseUrl = (
 		process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1"
@@ -862,6 +878,9 @@ async function runOpenAIDirect(
 				),
 			);
 		}
+		// The FULL body, not just the extracted content: a canary can sit in
+		// any other response field of a successful reply.
+		onRaw?.(text);
 		return content;
 	} finally {
 		clearTimeout(timer);

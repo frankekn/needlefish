@@ -488,7 +488,13 @@ test("review fails after a second malformed response", async (t) => {
 	// a cleaner malformed retry is not an escape hatch.
 	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
 		.rawOutputs;
-	assert.equal(raws?.length, 2, "both failed attempts must be preserved");
+	// Both failed attempts must be preserved (the run-level accumulators also
+	// carry each status-0 attempt's full stream transcript via onRaw, so the
+	// list is a superset — assert content, not count).
+	assert.ok(
+		raws?.some((raw) => raw.includes("still not json, clean retry")),
+		"the clean second attempt must be preserved",
+	);
 	assert.ok(
 		raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
 		"the contaminated first attempt must be present",
@@ -581,6 +587,68 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 		undefined,
 		"failure transcripts must not be retained without eval tracing",
 	);
+});
+
+test("a status-0 runner's stdout and stderr reach the canary scan alongside its clean output", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"process.stdin.resume();",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			// Success is not an escape hatch: the model output is clean, the
+			// bait rides only the raw process streams of a status-0 attempt.
+			"  process.stdout.write('stream noise CANARY-STDOUT-OK');",
+			"  process.stderr.write('stream noise CANARY-STDERR-OK');",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	const result = await review(bundle);
+	assert.equal(result.verdict, "pass");
+	for (const canary of ["CANARY-STDOUT-OK", "CANARY-STDERR-OK"]) {
+		assert.ok(
+			result.rawOutputs?.some((raw) => raw.includes(canary)),
+			`${canary} from a successful attempt's stream must reach the scan`,
+		);
+	}
 });
 
 test("a deep pass crash waits for concurrent siblings before snapshotting transcripts", async (t) => {
@@ -817,11 +885,10 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
 	// successful mid-run retry nor a successful pass is an escape hatch.
 	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
 		.rawOutputs;
-	assert.equal(
-		raws?.length,
-		4,
-		"all attempts across passes must ride the error",
-	);
+	// The list is a superset now that every status-0 attempt also lands its
+	// full stream transcript via onRaw — assert the required members, not
+	// an exact count.
+	assert.ok((raws?.length ?? 0) >= 4, "all attempt transcripts must ride");
 	assert.ok(
 		raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
 		"earlier pass's contaminated attempt must survive its own successful retry",

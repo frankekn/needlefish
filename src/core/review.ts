@@ -163,6 +163,12 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
 		onFailedRaw: (raw) => {
 			if (evalTraceOn()) run.failedRawOutputs.push(raw);
 		},
+		// Successful attempts hand over their FULL transcript (resolved output
+		// + raw stdout/stderr): a status-0 runner emitting the canary on a
+		// stream while writing a clean final message must still reach the scan.
+		onRaw: (raw) => {
+			if (evalTraceOn()) run.rawOutputs.push(raw);
+		},
 		...run.runnerOptions,
 	};
 }
@@ -200,9 +206,9 @@ async function runJsonPrompt<T>(
 			throw err;
 		}
 		try {
-			const parsed = parse(extractJson(out));
-			if (evalTraceOn()) run.rawOutputs.push(out);
-			return parsed;
+			// The successful attempt's full transcript (out + raw streams) was
+			// already accumulated via onRaw at the runner layer.
+			return parse(extractJson(out));
 		} catch (err) {
 			lastErr = err;
 			if (evalTraceOn()) run.failedRawOutputs.push(out);

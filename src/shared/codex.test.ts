@@ -436,3 +436,53 @@ test("onFailedRaw fires once per failed attempt", async (t) => {
 	assert.ok(rejection instanceof Error);
 	assert.equal(failedRaws.length, 2, "one capture per failed attempt");
 });
+
+test("openai runner success hands the FULL response body to the canary scan", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+	};
+	// The extracted content is clean; the bait sits in ANOTHER field of the
+	// successful response body — content alone is not the transcript.
+	const server = createServer((_req, res) => {
+		res.statusCode = 200;
+		res.end(
+			JSON.stringify({
+				system_fingerprint: "CANARY-BODY-FIELD",
+				choices: [{ message: { content: '{"clean": true}' } }],
+			}),
+		);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+
+	const raws: string[] = [];
+	const out = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onRaw: (raw) => raws.push(raw),
+	});
+	assert.equal(out, '{"clean": true}');
+	assert.ok(
+		raws.some((raw) => raw.includes("CANARY-BODY-FIELD")),
+		"a successful response body must reach the scan whole",
+	);
+});
