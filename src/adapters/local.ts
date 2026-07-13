@@ -92,7 +92,8 @@ function fetchPrMeta(cwd: string, prNumber: number) {
   } catch (err) {
     if (err instanceof Error) {
       throw new Error(
-        `--pr ${prNumber} requested, but PR metadata could not be fetched: ${err.message}. Check gh auth or remove --pr for local-only review.`
+        `--pr ${prNumber} requested, but PR metadata could not be fetched: ${err.message}. Check gh auth or remove --pr for local-only review.`,
+        { cause: err }
       );
     }
     throw err;

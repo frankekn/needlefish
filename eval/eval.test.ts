@@ -988,7 +988,9 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     fixtures: fixtureIds,
     results: fixtureIds.map((fixtureId) => ({ ...template, fixtureId })),
   };
-  const { fixtures: _fixtures, ...missingManifest } = complete;
+  const missingManifest = { ...complete };
+  Reflect.deleteProperty(missingManifest, "fixtures");
+  assert.equal("fixtures" in missingManifest, false);
   const duplicatePair: Report = {
     ...complete,
     results: [complete.results[0]!, ...complete.results.slice(0, -1)],
@@ -1011,8 +1013,9 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     ...complete,
     aggregates: { ...complete.aggregates, cheatDetectedCount: 1 },
   };
-  const { cheatDetectedCount: _cheatDetectedCount, ...missingCheatCount } =
-    complete.aggregates;
+  const missingCheatCount = { ...complete.aggregates };
+  Reflect.deleteProperty(missingCheatCount, "cheatDetectedCount");
+  assert.equal("cheatDetectedCount" in missingCheatCount, false);
   const hostileReports: readonly (readonly [string, Report])[] = [
     ["legacy", { ...complete, anticheatVersion: undefined }],
     ["compromised", compromised],
@@ -1159,13 +1162,17 @@ test("renderResults: hashless reports neither anchor nor join comparisons", () =
   // fixtureSetHash would compare `undefined === undefined` and publish
   // deltas across unknown fixture sets. Hash presence is part of the gate.
   const spec = holdoutSpec("gen-results-hashless", false);
-  const { fixtureSetHash: _a, ...a } = resumeReport(spec, {
+  const a = resumeReport(spec, {
     anticheatVersion: 1,
     effort: "xhigh",
   });
-  const { fixtureSetHash: _b, ...b } = resumeReport(spec, {
+  Reflect.deleteProperty(a, "fixtureSetHash");
+  assert.equal("fixtureSetHash" in a, false);
+  const b = resumeReport(spec, {
     anticheatVersion: 1,
   });
+  Reflect.deleteProperty(b, "fixtureSetHash");
+  assert.equal("fixtureSetHash" in b, false);
   const md = renderResults(
     [],
     [

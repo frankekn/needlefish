@@ -96,11 +96,7 @@ test("runCodex acp times out silent runner and kills process group", { timeout: 
     assert.throws(() => process.kill(-groupId, 0), isMissingProcess);
   } finally {
     if (pgid !== undefined) {
-      try {
-        process.kill(-pgid, "SIGKILL");
-      } catch (error) {
-        if (!isMissingProcess(error)) throw error;
-      }
+      killProcessIfRunning(-pgid);
     }
   }
 });
@@ -259,4 +255,12 @@ async function waitForMissingProcessGroup(pgid: number, timeoutMs: number): Prom
 
 function isMissingProcess(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ESRCH";
+}
+
+function killProcessIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error) {
+    if (!isMissingProcess(error)) throw error;
+  }
 }
