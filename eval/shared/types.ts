@@ -145,6 +145,7 @@ export interface Report {
   // Optional so reports written before these fields existed still parse.
   readonly gitSha?: string | null;
   readonly fixtureSetHash?: string;
+  readonly fixtures?: readonly string[];
   readonly fixtureTiers?: Readonly<Record<string, number>>;
   // Anti-cheat guard generation the draws ran under (1 = ephemeral HOME +
   // bait canary). Absent on reports that predate the guards, that disabled a

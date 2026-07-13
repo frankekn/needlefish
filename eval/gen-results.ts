@@ -48,11 +48,54 @@ function compromised(r: Report): boolean {
 export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): string {
   const positives = specs.filter((s) => s.kind === "positive");
   const negatives = specs.filter((s) => s.kind === "negative");
-  const expectedResultCount = (r: Report): number => specs.length * r.draws;
-  const complete = (r: Report): boolean =>
-    Number.isInteger(r.draws) &&
-    r.draws > 0 &&
-    r.results.length === expectedResultCount(r);
+  const fixtureManifest = (r: Report): readonly string[] | undefined => {
+    const fixtures: unknown = r.fixtures;
+    if (!Array.isArray(fixtures) || fixtures.length === 0) return undefined;
+    const seen = new Set<string>();
+    for (const fixtureId of fixtures) {
+      if (
+        typeof fixtureId !== "string" ||
+        fixtureId.length === 0 ||
+        seen.has(fixtureId)
+      ) {
+        return undefined;
+      }
+      seen.add(fixtureId);
+    }
+    return fixtures;
+  };
+  const expectedResultCount = (r: Report): number | undefined => {
+    const fixtures = fixtureManifest(r);
+    return Number.isInteger(r.draws) && r.draws > 0 && fixtures !== undefined
+      ? fixtures.length * r.draws
+      : undefined;
+  };
+  const complete = (r: Report): boolean => {
+    const fixtures = fixtureManifest(r);
+    if (
+      fixtures === undefined ||
+      !Number.isInteger(r.draws) ||
+      r.draws <= 0
+    ) {
+      return false;
+    }
+    const fixtureIds = new Set(fixtures);
+    const covered = new Set<string>();
+    for (const result of r.results) {
+      if (
+        !fixtureIds.has(result.fixtureId) ||
+        !Number.isInteger(result.draw) ||
+        result.draw < 0 ||
+        result.draw >= r.draws
+      ) {
+        return false;
+      }
+      const pair = JSON.stringify([result.fixtureId, result.draw]);
+      if (covered.has(pair)) return false;
+      covered.add(pair);
+    }
+    return covered.size === fixtures.length * r.draws;
+  };
 
   // Reports come from unvalidated disk JSON: a missing/empty hash must not
   // anchor or join a comparison — `undefined === undefined` would publish
@@ -92,7 +135,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const lines: string[] = [];
   lines.push(`# Eval Results — all runs`);
   lines.push(``);
-  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (results.length differs from specs.length × report.draws); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
+  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial or unverifiable (the report lacks a unique non-empty fixture manifest, or results do not cover every manifest fixture × draw index exactly once); its recall/fp are over a biased or unknown subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
   lines.push(``);
   lines.push(`## Aggregates (delta vs the baseline above; full runs only)`);
   lines.push(``);
@@ -106,6 +149,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
       continue;
     }
     const expectedDraws = expectedResultCount(r);
+    const expectedDrawsLabel = expectedDraws ?? "?";
     const partial = !complete(r);
     const d =
       baseline && r === baseline.report
@@ -116,7 +160,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
             ? "—"
             : delta(baseline!.report.aggregates.recall, a.recall);
     const mark = `${guarded(r) ? "" : "🚫 "}${partial ? "⚠️ " : ""}`;
-    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/${expectedDraws} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
+    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/${expectedDrawsLabel} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
   }
   lines.push(``);
   lines.push(`## Recall by positive fixture (hit rate over 3 draws)`);

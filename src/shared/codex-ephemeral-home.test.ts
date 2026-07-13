@@ -411,7 +411,7 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	);
 });
 
-test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic key", async (t) => {
+test("runCodex ephemeral HOME: opencode accepts explicitly passed provider API keys", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "opencode-bin.js");
@@ -425,7 +425,10 @@ test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic k
 		home: process.env.HOME,
 		userProfile: process.env.USERPROFILE,
 		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		openAiKey: process.env.OPENAI_API_KEY,
 		anthropicKey: process.env.ANTHROPIC_API_KEY,
+		mistralKey: process.env.MISTRAL_API_KEY,
+		baseUrl: process.env.OPENAI_BASE_URL,
 	};
 	t.after(() => {
 		for (const [name, value] of Object.entries({
@@ -436,7 +439,10 @@ test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic k
 			HOME: previous.home,
 			USERPROFILE: previous.userProfile,
 			NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: previous.passthrough,
+			OPENAI_API_KEY: previous.openAiKey,
 			ANTHROPIC_API_KEY: previous.anthropicKey,
+			MISTRAL_API_KEY: previous.mistralKey,
+			OPENAI_BASE_URL: previous.baseUrl,
 		})) {
 			if (value === undefined) delete process.env[name];
 			else process.env[name] = value;
@@ -449,7 +455,7 @@ test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic k
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
-			`fs.writeFileSync(${JSON.stringify(envDump)}, JSON.stringify({ home: process.env.HOME, userProfile: process.env.USERPROFILE, key: process.env.ANTHROPIC_API_KEY }));`,
+			`fs.writeFileSync(${JSON.stringify(envDump)}, JSON.stringify({ home: process.env.HOME, userProfile: process.env.USERPROFILE, key: process.env.ANTHROPIC_API_KEY ?? process.env.MISTRAL_API_KEY }));`,
 			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
 		].join("\n"),
 	);
@@ -460,40 +466,72 @@ test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic k
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	process.env.HOME = fakeHome;
 	delete process.env.USERPROFILE;
+	delete process.env.OPENAI_API_KEY;
 	process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+	process.env.MISTRAL_API_KEY = "sk-mistral-test";
 
-	// A key that is not explicitly passed through must not disable the
-	// file-auth guard. A declared-but-empty key must not disable it either.
+	// Undeclared and declared-but-empty API keys must not disable the
+	// file-auth guard. Configuration variables are not credentials either.
 	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
 	assert.throws(
 		() => prepareEphemeralHome("opencode", path.join(tmp, "undeclared")),
 		/required auth source is missing/,
 	);
-	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "ANTHROPIC_API_KEY";
-	process.env.ANTHROPIC_API_KEY = "";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MISTRAL_API_KEY";
+	process.env.MISTRAL_API_KEY = "";
 	assert.throws(
 		() => prepareEphemeralHome("opencode", path.join(tmp, "empty")),
 		/required auth source is missing/,
 	);
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "OPENAI_BASE_URL";
+	process.env.OPENAI_BASE_URL = "https://example.invalid";
+	assert.throws(
+		() => prepareEphemeralHome("opencode", path.join(tmp, "config-only")),
+		/required auth source is missing/,
+	);
 
-	process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-	const output = await runCodex("prompt", {
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "ANTHROPIC_API_KEY";
+	const anthropicOutput = await runCodex("prompt", {
 		repoPath: repo,
 		runner: "opencode",
 		targetHeadSha: headSha(repo),
 		timeoutMs: 1000,
 	});
-	assert.equal(output, '{"ok":true}');
-	const dump = JSON.parse(readFileSync(envDump, "utf8")) as {
+	assert.equal(anthropicOutput, '{"ok":true}');
+	const anthropicDump = JSON.parse(readFileSync(envDump, "utf8")) as {
 		home: string;
 		userProfile: string;
 		key: string;
 	};
-	assert.equal(dump.key, "sk-ant-test");
-	assert.equal(dump.home, dump.userProfile);
-	assert.notEqual(dump.home, fakeHome);
-	assert.ok(dump.home.endsWith(`${path.sep}home`));
-	assert.equal(existsSync(dump.home), false, "isolated HOME must be disposed");
+	assert.equal(anthropicDump.key, "sk-ant-test");
+	assert.equal(anthropicDump.home, anthropicDump.userProfile);
+	assert.notEqual(anthropicDump.home, fakeHome);
+	assert.ok(anthropicDump.home.endsWith(`${path.sep}home`));
+	assert.equal(
+		existsSync(anthropicDump.home),
+		false,
+		"isolated HOME must be disposed",
+	);
+
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MISTRAL_API_KEY";
+	process.env.MISTRAL_API_KEY = "sk-mistral-test";
+	const mistralOutput = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "opencode",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+	});
+	assert.equal(mistralOutput, '{"ok":true}');
+	const mistralDump = JSON.parse(readFileSync(envDump, "utf8")) as {
+		home: string;
+		userProfile: string;
+		key: string;
+	};
+	assert.equal(mistralDump.key, "sk-mistral-test");
+	assert.equal(mistralDump.home, mistralDump.userProfile);
+	assert.notEqual(mistralDump.home, fakeHome);
+	assert.ok(mistralDump.home.endsWith(`${path.sep}home`));
+	assert.equal(existsSync(mistralDump.home), false, "isolated HOME must be disposed");
 });
 
 test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {

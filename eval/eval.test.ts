@@ -735,6 +735,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     baseline: false,
     holdout: "include",
     fixtureSetHash: fixtureSetHash([spec]),
+    fixtures: [spec.id],
     results: [{
       fixtureId: spec.id,
       draw: 0,
@@ -866,29 +867,84 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
 });
 
-test("renderResults: partial reports cannot anchor the baseline", () => {
+test("renderResults: report manifests determine completeness and baseline eligibility", () => {
   const spec = holdoutSpec("gen-results-partial-baseline", false);
-  const partial = resumeReport(spec, {
+  const extraSpec = holdoutSpec("gen-results-manifest-extra", false);
+  const fixtures = [spec.id, extraSpec.id];
+  const setHash = fixtureSetHash([spec, extraSpec]);
+  const partialBase = resumeReport(spec, {
     anticheatVersion: 1,
     effort: "xhigh",
-    draws: 3,
+    draws: 2,
+    fixtures,
+    fixtureSetHash: setHash,
   });
   const completeBase = resumeReport(spec, {
     anticheatVersion: 1,
     runner: "grok",
     effort: "medium",
-    draws: 3,
+    draws: 2,
+    fixtures,
+    fixtureSetHash: setHash,
   });
+  const missingManifestBase = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+    draws: 2,
+    fixtureSetHash: setHash,
+  });
+  const { fixtures: removedFixtures, ...missingManifest } = missingManifestBase;
+  assert.deepEqual(removedFixtures, [spec.id]);
+
   const template = completeBase.results[0];
   assert.ok(template);
-  const complete: Report = {
-    ...completeBase,
-    results: [0, 1, 2].map((draw) => ({ ...template, draw })),
+  const fullResults = [
+    { ...template, fixtureId: spec.id, draw: 0 },
+    { ...template, fixtureId: spec.id, draw: 1 },
+    { ...template, fixtureId: extraSpec.id, draw: 0 },
+    { ...template, fixtureId: extraSpec.id, draw: 1 },
+  ];
+  const partial: Report = { ...partialBase, results: fullResults.slice(0, 3) };
+  const duplicatePair: Report = {
+    ...partialBase,
+    results: [fullResults[0]!, fullResults[1]!, fullResults[2]!, fullResults[2]!],
   };
+  const outsideFixture: Report = {
+    ...partialBase,
+    results: [
+      fullResults[0]!,
+      fullResults[1]!,
+      fullResults[2]!,
+      { ...fullResults[3]!, fixtureId: "outside-manifest" },
+    ],
+  };
+  const duplicateManifest: Report = {
+    ...partialBase,
+    fixtures: [spec.id, spec.id],
+    results: fullResults,
+  };
+  const outOfRangeDraw: Report = {
+    ...partialBase,
+    results: [
+      fullResults[0]!,
+      fullResults[1]!,
+      fullResults[2]!,
+      { ...fullResults[3]!, draw: 2 },
+    ],
+  };
+  const complete: Report = { ...completeBase, results: fullResults };
+
+  // The renderer sees one display spec, while both current reports declare two
+  // fixtures. Completeness must come from each report's own manifest.
   const md = renderResults(
     [spec],
     [
+      { stem: "missing-manifest-codex", report: missingManifest },
       { stem: "partial-codex-xhigh", report: partial },
+      { stem: "duplicate-pair-codex", report: duplicatePair },
+      { stem: "outside-fixture-codex", report: outsideFixture },
+      { stem: "duplicate-manifest-codex", report: duplicateManifest },
+      { stem: "out-of-range-draw-codex", report: outOfRangeDraw },
       { stem: "complete-grok-medium", report: complete },
     ],
   );
@@ -897,11 +953,27 @@ test("renderResults: partial reports cannot anchor the baseline", () => {
   const cells = (stem: string): string[] =>
     row(stem).split("|").map((cell) => cell.trim());
 
+  assert.doesNotMatch(row("missing-manifest-codex"), /\(baseline\)/);
+  assert.equal(cells("missing-manifest-codex")[3], "1/?");
   assert.doesNotMatch(row("partial-codex-xhigh"), /\(baseline\)/);
-  assert.equal(cells("partial-codex-xhigh")[3], "1/3");
+  assert.equal(cells("partial-codex-xhigh")[3], "3/4");
   assert.equal(cells("partial-codex-xhigh")[5], "—");
+  for (const stem of [
+    "duplicate-pair-codex",
+    "outside-fixture-codex",
+    "out-of-range-draw-codex",
+  ]) {
+    assert.doesNotMatch(row(stem), /\(baseline\)/, `${stem} must not anchor`);
+    assert.match(row(stem), /⚠️/, `${stem} must be marked incomplete`);
+    assert.equal(cells(stem)[3], "4/4", `${stem} keeps its valid denominator`);
+    assert.equal(cells(stem)[5], "—", `${stem} gets no delta`);
+  }
+  assert.doesNotMatch(row("duplicate-manifest-codex"), /\(baseline\)/);
+  assert.match(row("duplicate-manifest-codex"), /⚠️/);
+  assert.equal(cells("duplicate-manifest-codex")[3], "4/?");
+  assert.equal(cells("duplicate-manifest-codex")[5], "—");
   assert.match(row("complete-grok-medium"), /\(baseline\)/);
-  assert.equal(cells("complete-grok-medium")[3], "3/3");
+  assert.equal(cells("complete-grok-medium")[3], "4/4");
 });
 
 test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {

@@ -130,25 +130,29 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
+function passthroughNames(): readonly string[] {
+	return (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+		.split(",")
+		.map((name) => name.trim())
+		.filter(Boolean);
+}
+
 // A provider credential supplied via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH is a
 // supported auth mode that never reads the runner's HOME files. Only actual
 // credential variables count (model/endpoint vars configure, they don't
 // authenticate), and only when non-empty.
 function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
-	const passthrough = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
-		.split(",")
-		.map((name) => name.trim());
-	return passthrough.some(
+	return passthroughNames().some(
 		(name) => credentialVars.includes(name) && !!process.env[name],
 	);
 }
 
-const OPENCODE_PASSTHROUGH_CREDENTIALS = ["ANTHROPIC_API_KEY"] as const;
-
 function hasOpenCodeEnvCredential(): boolean {
 	return (
 		!!process.env.OPENAI_API_KEY ||
-		hasPassthroughCredential(OPENCODE_PASSTHROUGH_CREDENTIALS)
+		passthroughNames().some(
+			(name) => name.endsWith("_API_KEY") && !!process.env[name],
+		)
 	);
 }
 
@@ -179,8 +183,8 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
 	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
-	// RUNNER_ENV_ALLOWLIST). Additional provider credentials must be explicitly
-	// supported, named in the passthrough, and non-empty.
+	// RUNNER_ENV_ALLOWLIST). Other provider API keys must be explicitly named
+	// in the passthrough and non-empty.
 	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
 		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.opencode };
 	}
