@@ -96,7 +96,7 @@ export interface ReviewResult {
 	// (e.g. "3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage").
 	readonly coverage?: string;
 	// Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
-	// Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
+	// Populated only when NEEDLEFISH_EVAL_TRACE=1; never shipped to users.
 	readonly candidateFindings?: readonly Finding[];
 	// Eval-only tracing: raw model outputs from swallowed pass failures (deep
 	// passes), preserved so the canary scan can inspect them. Trace-gated.

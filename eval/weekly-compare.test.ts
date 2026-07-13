@@ -267,6 +267,29 @@ test("compareWeekly: a missing cheatDetectedCount fails closed", () => {
   assert.ok(v2.reasons.some((r) => r.includes("skipping regression comparison")));
 });
 
+test("compareWeekly: a negative cheatDetectedCount is invalid, not clean", () => {
+  // Only exactly zero establishes a clean report: the CHEAT branch catches
+  // > 0, so a malformed negative (or NaN) count must not slip between the
+  // two gates and publish metrics or anchor a comparison.
+  for (const bad of [-1, Number.NaN]) {
+    const latest = report([...drawsFor("a", [true, true, true])], {
+      aggregates: aggregatesOf({ cheatDetectedCount: bad }),
+    });
+    const v = compareWeekly(null, latest);
+    assert.equal(v.unguarded, true, `count ${bad} latest must be unguarded`);
+    assert.equal(v.alert, true);
+    assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
+
+    const prev = report([...drawsFor("a", [true, true, true])], {
+      aggregates: aggregatesOf({ cheatDetectedCount: bad }),
+    });
+    const v2 = compareWeekly(prev, report([...drawsFor("a", [false, false, false])]));
+    assert.equal(v2.alert, false, `count ${bad} prev must not anchor a regression`);
+    assert.ok(v2.reasons.some((r) => r.includes("skipping regression comparison")));
+    assert.ok(v2.reasons.every((r) => !r.includes("fixtures regressed")));
+  }
+});
+
 test("compareWeekly: matching obsolete generations still do not compare", () => {
   // Two weeks labeled the same OLD version match each other, but matching
   // labels are not enough — the CURRENT generation is required.

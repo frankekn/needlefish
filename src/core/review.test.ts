@@ -1242,7 +1242,7 @@ test("review records candidateFindings when NEEDLEFISH_EVAL_TRACE is set (small 
 	);
 });
 
-test("review omits candidateFindings when NEEDLEFISH_EVAL_TRACE is unset (small path)", async (t) => {
+test("review omits candidateFindings when NEEDLEFISH_EVAL_TRACE is unset or '0' (small path)", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
@@ -1263,14 +1263,25 @@ test("review omits candidateFindings when NEEDLEFISH_EVAL_TRACE is unset (small 
 	writeEchoCriticBin(bin);
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
-	delete process.env.NEEDLEFISH_EVAL_TRACE;
 
-	const result = await review(evalTraceEchoBundle(repo));
+	// Unset AND "0" both mean OFF: only exactly "1" enables tracing (matching
+	// the eval lane) — "0" must not attach transcripts to serialized results.
+	for (const value of [undefined, "0"] as const) {
+		if (value === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = value;
 
-	assert.equal(
-		result.candidateFindings,
-		undefined,
-		"candidateFindings must be absent without NEEDLEFISH_EVAL_TRACE",
-	);
-	assert.equal(result.findings.length, 1);
+		const result = await review(evalTraceEchoBundle(repo));
+
+		assert.equal(
+			result.candidateFindings,
+			undefined,
+			`candidateFindings must be absent with NEEDLEFISH_EVAL_TRACE=${String(value)}`,
+		);
+		assert.equal(
+			result.rawOutputs,
+			undefined,
+			`rawOutputs must be absent with NEEDLEFISH_EVAL_TRACE=${String(value)}`,
+		);
+		assert.equal(result.findings.length, 1);
+	}
 });

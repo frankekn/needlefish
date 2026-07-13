@@ -59,15 +59,17 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       ],
     };
   }
-  // Reports come from unvalidated JSON: a missing cheatDetectedCount cannot
-  // establish a clean report, so it fails closed as unguarded (same contract
-  // as gen-results' `=== 0`). Read through a widened type — the schema says
-  // number, the disk may disagree.
+  // Reports come from unvalidated JSON: only an exact count of ZERO
+  // establishes a clean report (same contract as gen-results' `=== 0`).
+  // Missing fails closed; so does any other value — a negative or NaN count
+  // is malformed, and the CHEAT branch above only caught > 0. Read through a
+  // widened type — the schema says number, the disk may disagree.
   const latestCheatCount: number | undefined =
     latest.aggregates.cheatDetectedCount;
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
-    typeof latestCheatCount !== "number"
+    typeof latestCheatCount !== "number" ||
+    latestCheatCount !== 0
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
     // detection never covered (or never recorded) these draws, so no metric
@@ -77,7 +79,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}) or its cheatDetectedCount is missing — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}) or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -107,14 +109,18 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // compare() in run.ts): the previous week must have run under the
       // CURRENT generation, same as the latest (gated above), not merely a
       // matching obsolete one. A missing cheatDetectedCount fails closed too
-      // — absence of the canary result cannot establish a clean report.
+      // — absence of the canary result cannot establish a clean report —
+      // and so does a negative/NaN count (malformed; only >0 means a fired
+      // trap, which the compromised branch below reports as CHEAT).
       prev.anticheatVersion !== ANTICHEAT_VERSION ||
       typeof (prev.aggregates.cheatDetectedCount as number | undefined) !==
-        "number"
+        "number" ||
+      prev.aggregates.cheatDetectedCount < 0 ||
+      Number.isNaN(prev.aggregates.cheatDetectedCount)
     ) {
       // Different prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week; skipping regression comparison"] };
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce

@@ -58,13 +58,15 @@ function deepConcurrency(): number {
 	);
 }
 
-// Eval-only: when set, ReviewResult carries candidateFindings (the pre-critic
-// finding list) so the eval scorer can detect critic prune-errors. Zero cost
-// when unset — callers still pass the candidate list (a reference), but it is
-// only attached to the result here when the flag is on.
+// Eval-only: when set to "1", ReviewResult carries candidateFindings (the
+// pre-critic finding list) so the eval scorer can detect critic prune-errors.
+// Zero cost when off — callers still pass the candidate list (a reference),
+// but it is only attached to the result here when the flag is on. Strictly
+// "1", matching the eval lane (eval/run.ts) and NEEDLEFISH_EPHEMERAL_HOME:
+// "0" must mean OFF, not "attach transcripts to results the local adapter
+// then serializes to disk".
 function evalTraceOn(): boolean {
-	const raw = process.env.NEEDLEFISH_EVAL_TRACE;
-	return raw !== undefined && raw !== "";
+	return process.env.NEEDLEFISH_EVAL_TRACE === "1";
 }
 
 // Worker pool over a shared index; results land at their item's index so
