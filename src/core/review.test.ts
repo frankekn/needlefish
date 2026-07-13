@@ -1130,6 +1130,7 @@ test("review isolates trace observers across concurrent deep passes and classifi
 			"  if (input.includes('adversarial critic')) {",
 			`    fs.appendFileSync(${JSON.stringify(calls)}, 'critic\\n');`,
 			"    const candidate = input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat'));",
+			"    if (candidate.includes('observer-mutated')) { process.stderr.write('observer mutated critic input'); process.exit(1); }",
 			"    const parsed = JSON.parse(candidate);",
 			"    const finding = { severity: 'P2', title: 'critic-only marker', category: 'bug', file: 'src/a.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
 			"    fs.writeFileSync(out, JSON.stringify({ ...parsed, summary: 'critic-only marker', findings: [finding] }));",
@@ -1169,6 +1170,14 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		{},
 		(event: ReviewTraceEvent) => {
 			events.push(event);
+			Reflect.set(event, "passIndex", 99);
+			if (
+				event.surface === "candidate_finding" ||
+				event.surface === "final_finding"
+			) {
+				Reflect.set(event.finding, "title", "observer-mutated");
+				Reflect.set(event.finding, "severity", "P3");
+			}
 			throw new Error("observer delivery failed");
 		},
 	);
@@ -1879,7 +1888,7 @@ test("review traces prompt and runner attempts through candidate and final surfa
 	assert.equal(finalFinding?.finding?.title, "final finding marker");
 });
 
-test("review isolates observer errors from small review semantics", async (t) => {
+test("review isolates observer mutation and errors from small review semantics", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
@@ -1904,7 +1913,8 @@ test("review isolates observer errors from small review semantics", async (t) =>
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`  fs.appendFileSync(${JSON.stringify(calls)}, 'call\\n');`,
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['checked'], residual_risks: [] }));",
+			"  const finding = { severity: 'P2', title: 'production finding', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [finding], checked: ['checked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -1925,9 +1935,23 @@ test("review isolates observer errors from small review semantics", async (t) =>
 		focus: null,
 	};
 	const baseline = await review(bundle);
-	const result = await review(bundle, {}, () => {
-		throw new Error("observer stopped review");
-	});
+	const events: ReviewTraceEvent[] = [];
+	const result = await review(
+		bundle,
+		{},
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+			Reflect.set(event, "passIndex", 99);
+			if (
+				event.surface === "candidate_finding" ||
+				event.surface === "final_finding"
+			) {
+				Reflect.set(event.finding, "title", "observer-mutated");
+				Reflect.set(event.finding, "severity", "P3");
+			}
+			throw new Error("observer stopped review");
+		},
+	);
 
 	assert.deepEqual(
 		{
@@ -1947,7 +1971,38 @@ test("review isolates observer errors from small review semantics", async (t) =>
 			coverage: baseline.coverage,
 		},
 	);
+	assert.equal(result.schemaVersion, baseline.schemaVersion);
+	assert.equal(result.baseSha, baseline.baseSha);
+	assert.equal(result.headSha, baseline.headSha);
+	assert.deepEqual(
+		result.stats?.map((stat) => ({ ...stat, durationMs: 0 })),
+		baseline.stats?.map((stat) => ({ ...stat, durationMs: 0 })),
+	);
+	assert.equal(typeof result.totalDurationMs, "number");
+	assert.equal(typeof baseline.totalDurationMs, "number");
+	assert.equal(result.findings[0]?.severity, "P2");
 	assert.deepEqual(result.residualRisks, []);
+	const finalFindingEvent = events.find(
+		(event) => event.surface === "final_finding",
+	);
+	assert.ok(finalFindingEvent?.finding);
+	assert.notStrictEqual(finalFindingEvent?.finding, result.findings[0]);
+	for (const event of events) {
+		assert.equal(Object.isFrozen(event), true);
+		if (
+			event.surface === "candidate_finding" ||
+			event.surface === "final_finding"
+		) {
+			assert.equal(Object.isFrozen(event.finding), true);
+			assert.deepEqual(Object.keys(event.finding), [
+				"category",
+				"file",
+				"lineStart",
+				"title",
+				"whyItBreaks",
+			]);
+		}
+	}
 	assert.equal(
 		readFileSync(calls, "utf8").trim().split("\n").length,
 		4,

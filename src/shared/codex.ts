@@ -914,7 +914,6 @@ async function runOpenAIDirect(
 			throw withBody(
 				new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
 			);
-		onRaw?.(text);
 		let json: { choices?: { message?: { content?: string } }[] };
 		try {
 			json = JSON.parse(text) as {
@@ -935,6 +934,7 @@ async function runOpenAIDirect(
 				),
 			);
 		}
+		onRaw?.(text);
 		return content;
 	} finally {
 		clearTimeout(timer);

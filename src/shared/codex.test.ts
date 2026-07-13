@@ -473,32 +473,22 @@ function processExists(pid: number): boolean {
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
     throw error;
-  }
+	}
 }
 
-test("openai runner failures ride the full response body for the canary scan", async (t) => {
+test("openai non-2xx attempt emits failure callbacks only", async (t) => {
 	const { createServer } = await import("node:http");
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const previous = {
 		base: process.env.OPENAI_BASE_URL,
 		key: process.env.OPENAI_API_KEY,
-		retry: process.env.CODEX_RETRY_MS,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
 	};
-	// Attempt 1: HTTP 500 whose body parks the canary PAST the 2000-char clip
-	// the error message applies. Attempt 2 (retry): HTTP 200 with a non-JSON
-	// body — the parse-failure path. Both bodies must reach onFailedRaw whole;
-	// the direct-HTTP runner has no stdout/out-file surfaces to fall back on.
-	let calls = 0;
+	const failedBody = `${"x".repeat(2500)} CANARY-HTTP-500`;
 	const server = createServer((_req, res) => {
-		calls += 1;
-		if (calls === 1) {
-			res.statusCode = 500;
-			res.end(`${"x".repeat(2500)} CANARY-HTTP-500`);
-			return;
-		}
-		res.statusCode = 200;
-		res.end("not json at all CANARY-HTTP-BODY");
+		res.statusCode = 500;
+		res.end(failedBody);
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const address = server.address();
@@ -510,43 +500,164 @@ test("openai runner failures ride the full response body for the canary scan", a
 		else process.env.OPENAI_BASE_URL = previous.base;
 		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
 		else process.env.OPENAI_API_KEY = previous.key;
-		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
-		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
 	process.env.OPENAI_API_KEY = "test-key";
-	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
 
-	const failedRaws: string[] = [];
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
 	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
-	const rejection = await runCodex("prompt", {
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				runner: "openai",
+				model: "test-model",
+				targetHeadSha: headSha(repo),
+				timeoutMs: 5000,
+				onFailedAttempt: (runnerAttempt, raw) =>
+					failedAttempts.push({ runnerAttempt, raw }),
+				onFailedRaw: (raw, runnerAttempt) =>
+					failedRaws.push({ raw, runnerAttempt }),
+				onRaw: (raw, runnerAttempt) =>
+					successfulRaws.push({ raw, runnerAttempt }),
+			}),
+		/openai runner HTTP 500/,
+	);
+
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, []);
+});
+
+test("openai non-JSON attempt is failed-only before a valid retry", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.NEEDLEFISH_RETRY_MS,
+	};
+	const failedBody = `${"x".repeat(2500)} CANARY-HTTP-BODY`;
+	const successBody = JSON.stringify({
+		choices: [{ message: { content: '{"clean":true}' } }],
+	});
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		if (calls === 1) {
+			res.statusCode = 200;
+			res.end(failedBody);
+			return;
+		}
+		res.statusCode = 200;
+		res.end(successBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
+		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_RETRY_MS = "1";
+
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const output = await runCodex("prompt", {
 		repoPath: repo,
 		runner: "openai",
 		model: "test-model",
 		targetHeadSha: headSha(repo),
 		timeoutMs: 5000,
-		onFailedRaw: (raw) => failedRaws.push(raw),
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw, runnerAttempt) =>
+			failedRaws.push({ raw, runnerAttempt }),
 		onRaw: (raw, runnerAttempt) =>
 			successfulRaws.push({ raw, runnerAttempt }),
-	}).then(
-		() => null,
-		(err: unknown) => err,
-	);
-	assert.ok(rejection instanceof Error, "both attempts failing must reject");
-	assert.match(rejection.message, /non-JSON response body/);
+	});
+	assert.equal(output, '{"clean":true}');
 	assert.equal(calls, 2, "the runner must have retried once");
-	assert.ok(
-		failedRaws.some((raw) => raw.includes("CANARY-HTTP-500")),
-		"the HTTP-error body past the message clip must reach the scan",
-	);
-	assert.ok(
-		failedRaws.some((raw) => raw.includes("CANARY-HTTP-BODY")),
-		"the non-JSON 200 body must reach the scan",
-	);
-	assert.deepEqual(successfulRaws, [
-		{ raw: "not json at all CANARY-HTTP-BODY", runnerAttempt: 2 },
-	]);
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, [{ raw: successBody, runnerAttempt: 2 }]);
+});
+
+test("openai missing-content attempt is failed-only before a valid retry", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.NEEDLEFISH_RETRY_MS,
+	};
+	const failedBody = JSON.stringify({ choices: [{ message: {} }] });
+	const successBody = JSON.stringify({
+		choices: [{ message: { content: '{"clean":true}' } }],
+	});
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		res.statusCode = 200;
+		res.end(calls === 1 ? failedBody : successBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
+		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_RETRY_MS = "1";
+
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw, runnerAttempt) =>
+			failedRaws.push({ raw, runnerAttempt }),
+		onRaw: (raw, runnerAttempt) =>
+			successfulRaws.push({ raw, runnerAttempt }),
+	});
+
+	assert.equal(output, '{"clean":true}');
+	assert.equal(calls, 2);
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, [{ raw: successBody, runnerAttempt: 2 }]);
 });
 
 test("onFailedRaw fires once per failed attempt", async (t) => {
@@ -599,7 +710,7 @@ test("onFailedRaw fires once per failed attempt", async (t) => {
 	assert.equal(failedRaws.length, 2, "one capture per failed attempt");
 });
 
-test("openai runner success hands the FULL response body to the canary scan", async (t) => {
+test("openai valid first attempt emits one full-body success only", async (t) => {
 	const { createServer } = await import("node:http");
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
@@ -609,14 +720,15 @@ test("openai runner success hands the FULL response body to the canary scan", as
 	};
 	// The extracted content is clean; the bait sits in ANOTHER field of the
 	// successful response body — content alone is not the transcript.
+	let calls = 0;
+	const responseBody = JSON.stringify({
+		system_fingerprint: "CANARY-BODY-FIELD",
+		choices: [{ message: { content: '{"clean": true}' } }],
+	});
 	const server = createServer((_req, res) => {
+		calls += 1;
 		res.statusCode = 200;
-		res.end(
-			JSON.stringify({
-				system_fingerprint: "CANARY-BODY-FIELD",
-				choices: [{ message: { content: '{"clean": true}' } }],
-			}),
-		);
+		res.end(responseBody);
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	const address = server.address();
@@ -633,20 +745,25 @@ test("openai runner success hands the FULL response body to the canary scan", as
 	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
 	process.env.OPENAI_API_KEY = "test-key";
 
-	const raws: string[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const failedAttempts: number[] = [];
+	const failedRaws: string[] = [];
 	const out = await runCodex("prompt", {
 		repoPath: repo,
 		runner: "openai",
 		model: "test-model",
 		targetHeadSha: headSha(repo),
 		timeoutMs: 5000,
-		onRaw: (raw) => raws.push(raw),
+		onRaw: (raw, runnerAttempt) =>
+			successfulRaws.push({ raw, runnerAttempt }),
+		onFailedAttempt: (runnerAttempt) => failedAttempts.push(runnerAttempt),
+		onFailedRaw: (raw) => failedRaws.push(raw),
 	});
 	assert.equal(out, '{"clean": true}');
-	assert.ok(
-		raws.some((raw) => raw.includes("CANARY-BODY-FIELD")),
-		"a successful response body must reach the scan whole",
-	);
+	assert.equal(calls, 1);
+	assert.deepEqual(successfulRaws, [{ raw: responseBody, runnerAttempt: 1 }]);
+	assert.deepEqual(failedAttempts, []);
+	assert.deepEqual(failedRaws, []);
 });
 
 test("openai runner reports one raw event for an empty successful HTTP attempt", async (t) => {
@@ -703,7 +820,7 @@ test("openai runner reports one raw event for an empty successful HTTP attempt",
 	);
 
 	assert.equal(calls, 1);
-	assert.deepEqual(rawEvents, [{ raw: "", runnerAttempt: 1 }]);
+	assert.deepEqual(rawEvents, []);
 	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: undefined }]);
 	assert.deepEqual(failedRaws, []);
 });

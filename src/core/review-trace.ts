@@ -15,6 +15,11 @@ export type ReviewTraceOutcome =
 	| "parse_failed"
 	| "runner_failed";
 
+export type ReviewTraceFindingSnapshot = Pick<
+	Finding,
+	"category" | "file" | "lineStart" | "title" | "whyItBreaks"
+>;
+
 interface ReviewTraceEventBase {
 	readonly content: string;
 	readonly passKind: ReviewTracePassKind;
@@ -26,7 +31,7 @@ interface ReviewTraceEventBase {
 
 export interface ReviewTraceFindingEvent extends ReviewTraceEventBase {
 	readonly surface: "candidate_finding" | "final_finding";
-	readonly finding: Finding;
+	readonly finding: ReviewTraceFindingSnapshot;
 }
 
 export interface ReviewTraceTextEvent extends ReviewTraceEventBase {
@@ -73,11 +78,21 @@ export function observeReviewTrace(
 ): void {
 	if (!observer) return;
 	try {
-		observer(event);
+		observer(Object.freeze(event));
 	} catch {
 		// Phase 1 isolates delivery failures. V2 certification must later fail
 		// closed on telemetry health once that gate exists.
 	}
+}
+
+function snapshotFinding(finding: Finding): ReviewTraceFindingSnapshot {
+	return Object.freeze({
+		category: finding.category,
+		file: finding.file,
+		lineStart: finding.lineStart,
+		title: finding.title,
+		whyItBreaks: finding.whyItBreaks,
+	});
 }
 
 export function observeCandidateReviewTrace({
@@ -90,7 +105,7 @@ export function observeCandidateReviewTrace({
 		observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "candidate_finding",
-			finding,
+			finding: snapshotFinding(finding),
 			outcome: "parsed",
 			...provenance,
 		});
@@ -132,7 +147,7 @@ export function observeFinalReviewTrace({
 		observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "final_finding",
-			finding,
+			finding: snapshotFinding(finding),
 			outcome: "parsed",
 			...provenance,
 		});
