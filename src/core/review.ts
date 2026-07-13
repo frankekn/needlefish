@@ -22,6 +22,17 @@ import {
 import { normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { deriveVerdict } from "./verdict.js";
 import { loadPrompt } from "./prompts.js";
+import {
+	observeCandidateReviewTrace,
+	observeFinalReviewTrace,
+	observeMapCandidateTrace,
+	observeReviewTrace,
+} from "./review-trace.js";
+import type {
+	ReviewTraceObserver,
+	ReviewTracePassKind,
+	ReviewTraceProvenance,
+} from "./review-trace.js";
 
 const LARGE_PATCH_CHARS = 30000;
 const LARGE_FILE_COUNT = 10;
@@ -42,7 +53,33 @@ interface ReviewRun {
 	// why/edges, critic-pruned residual text) — the canary scan needs the full
 	// transcript, not just what survived into ReviewResult.
 	readonly rawOutputs: string[];
+	readonly onTrace?: ReviewTraceObserver;
 	readonly startedAt: number;
+}
+
+interface ReviewPass {
+	readonly passKind: ReviewTracePassKind;
+	readonly passIndex: number;
+}
+
+interface PromptSpec<T> extends ReviewPass {
+	readonly label: string;
+	readonly prompt: string;
+	readonly parse: (raw: unknown) => T;
+}
+
+interface PromptResult<T> extends ReviewTraceProvenance {
+	readonly value: T;
+}
+
+interface SuccessfulRaw {
+	readonly content: string;
+	readonly runnerAttempt: number;
+}
+
+interface TraceAttempt extends ReviewPass {
+	readonly promptAttempt: number;
+	readonly onSuccessfulRaw: (raw: string, runnerAttempt: number) => void;
 }
 
 function envPositiveInt(name: string, fallback: number): number {
@@ -146,7 +183,11 @@ function sortByRisk(hotspots: readonly Hotspot[]): Hotspot[] {
 	return [...hotspots].sort((a, b) => rank[a.risk] - rank[b.risk]);
 }
 
-function codexOptions(run: ReviewRun, label: string): CodexOptions {
+function codexOptions(
+	run: ReviewRun,
+	label: string,
+	traceAttempt: TraceAttempt,
+): CodexOptions {
 	return {
 		repoPath: run.bundle.repoPath,
 		targetHeadSha: run.bundle.headSha,
@@ -155,6 +196,19 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
 			: {}),
 		label,
 		onStat: (stat) => run.stats.push(stat),
+		onFailedAttempt: (runnerAttempt, raw) => {
+			if (run.onTrace) {
+				observeReviewTrace(run.onTrace, {
+					content: raw ?? "",
+					surface: "raw_failure",
+					passKind: traceAttempt.passKind,
+					passIndex: traceAttempt.passIndex,
+					promptAttempt: traceAttempt.promptAttempt,
+					runnerAttempt,
+					outcome: "runner_failed",
+				});
+			}
+		},
 		// Runner-level failures (crash, nonzero exit) hand their captured stdout
 		// here so it joins the same canary-scan accumulator as parse failures.
 		// Retention is trace-gated like every other transcript surface: the
@@ -166,8 +220,9 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
-		onRaw: (raw) => {
+		onRaw: (raw, runnerAttempt) => {
 			if (evalTraceOn()) run.rawOutputs.push(raw);
+			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		...run.runnerOptions,
 	};
@@ -191,28 +246,72 @@ function attachRunRaws(err: unknown, run: ReviewRun): void {
 // they propagate immediately without a re-ask — but still carry the run-wide
 // failed raws (a crashed runner's stdout was pushed via onFailedRaw).
 async function runJsonPrompt<T>(
-	label: string,
-	prompt: string,
+	spec: PromptSpec<T>,
 	run: ReviewRun,
-	parse: (raw: unknown) => T,
-): Promise<T> {
+): Promise<PromptResult<T>> {
 	let lastErr: unknown;
-	for (let attempt = 1; attempt <= 2; attempt++) {
+	for (let promptAttempt = 1; promptAttempt <= 2; promptAttempt++) {
 		let out: string;
+		let successfulRunnerAttempt = 1;
+		const successfulRaws: SuccessfulRaw[] = [];
 		try {
-			out = await runCodex(prompt, codexOptions(run, label));
+			out = await runCodex(
+				spec.prompt,
+				codexOptions(run, spec.label, {
+					passKind: spec.passKind,
+					passIndex: spec.passIndex,
+					promptAttempt,
+					onSuccessfulRaw: (content, runnerAttempt) => {
+						successfulRunnerAttempt = runnerAttempt;
+						if (run.onTrace) {
+							successfulRaws.push({ content, runnerAttempt });
+						}
+					},
+				}),
+			);
 		} catch (err) {
 			attachRunRaws(err, run);
 			throw err;
 		}
+		let value: T;
 		try {
-			// The successful attempt's full transcript (out + raw streams) was
-			// already accumulated via onRaw at the runner layer.
-			return parse(extractJson(out));
-		} catch (err) {
+			value = spec.parse(extractJson(out));
+		} catch (err) { // no-excuse-ok: catch
 			lastErr = err;
+			for (const raw of successfulRaws) {
+				observeReviewTrace(run.onTrace, {
+					content: raw.content,
+					surface: "raw_success",
+					passKind: spec.passKind,
+					passIndex: spec.passIndex,
+					promptAttempt,
+					runnerAttempt: raw.runnerAttempt,
+					outcome: "parse_failed",
+				});
+			}
 			if (evalTraceOn()) run.failedRawOutputs.push(out);
+			continue;
 		}
+		// The successful attempt's full transcript (out + raw streams) was
+		// already accumulated via onRaw at the runner layer.
+		for (const raw of successfulRaws) {
+			observeReviewTrace(run.onTrace, {
+				content: raw.content,
+				surface: "raw_success",
+				passKind: spec.passKind,
+				passIndex: spec.passIndex,
+				promptAttempt,
+				runnerAttempt: raw.runnerAttempt,
+				outcome: "parsed",
+			});
+		}
+		return {
+			value,
+			passKind: spec.passKind,
+			passIndex: spec.passIndex,
+			promptAttempt,
+			runnerAttempt: successfulRunnerAttempt,
+		};
 	}
 	attachRunRaws(lastErr, run);
 	throw lastErr;
@@ -238,19 +337,29 @@ async function runCritic(
 	candidate: RawReview,
 	patchText: string,
 	run: ReviewRun,
-): Promise<RawReview> {
+): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
 	const criticPrompt = loadPrompt("critic.md")
 		.replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
 		.replace("{{PATCH}}", () => patchText)
 		.replace("{{BASE}}", bundle.baseSha)
 		.replace("{{HEAD}}", bundle.headSha);
-	return runJsonPrompt(
-		"critic",
-		criticPrompt,
+	const result = await runJsonPrompt(
+		{
+			label: "critic",
+			prompt: criticPrompt,
+			passKind: "critic",
+			passIndex: 0,
+			parse: parseUsableReview("critic"),
+		},
 		run,
-		parseUsableReview("critic"),
 	);
+	observeCandidateReviewTrace({
+		observer: run.onTrace,
+		review: result.value,
+		provenance: result,
+	});
+	return result;
 }
 
 function toReviewResult(
@@ -295,17 +404,33 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
 		.replace("{{PATCH}}", () => patch);
 	const candidate = await runJsonPrompt(
-		"review",
-		reviewPrompt,
+		{
+			label: "review",
+			prompt: reviewPrompt,
+			passKind: "review",
+			passIndex: 0,
+			parse: parseUsableReview("review"),
+		},
 		run,
-		parseUsableReview("review"),
 	);
+	observeCandidateReviewTrace({
+		observer: run.onTrace,
+		review: candidate.value,
+		provenance: candidate,
+	});
 	const coverage = `full diff reviewed in one pass (${bundle.changedFiles.length} file${bundle.changedFiles.length === 1 ? "" : "s"})`;
+	const critic = await runCritic(candidate.value, bundle.patch, run);
+	observeFinalReviewTrace({
+		observer: run.onTrace,
+		review: critic.value,
+		summary: critic.value.summary,
+		provenance: critic,
+	});
 	return toReviewResult(
-		await runCritic(candidate, bundle.patch, run),
+		critic.value,
 		run,
 		undefined,
-		candidate.findings,
+		candidate.value.findings,
 		coverage,
 	);
 }
@@ -326,8 +451,22 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () =>
 		JSON.stringify(mapBundle, null, 2),
 	);
-	const mapResult = await runJsonPrompt("map", mapPrompt, run, normalizeMap);
-	const mappedHotspots = changedHotspots(mapResult.hotspots, bundle);
+	const mapResult = await runJsonPrompt(
+		{
+			label: "map",
+			prompt: mapPrompt,
+			passKind: "map",
+			passIndex: 0,
+			parse: normalizeMap,
+		},
+		run,
+	);
+	observeMapCandidateTrace({
+		observer: run.onTrace,
+		mapResult: mapResult.value,
+		provenance: mapResult,
+	});
+	const mappedHotspots = changedHotspots(mapResult.value.hotspots, bundle);
 	const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
 	// Coverage backstop: any changed file not in a selected hotspot goes into a tail
@@ -358,48 +497,65 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// runJsonPrompt is stale by then.
 	let passes;
 	try {
-		passes = await mapLimit(hotspots, deepConcurrency(), async (h) => {
-			const deepPrompt = loadPrompt("deep.md")
-				.replace("{{AGENTS}}", () => agents)
-				.replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2))
-				.replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
-				.replace("{{FOCUS}}", bundle.focus ?? "(none)")
-				.replace("{{BASE}}", bundle.baseSha)
-				.replace("{{HEAD}}", bundle.headSha);
-			try {
-				const res = await runJsonPrompt(
-					`deep:${h.name}`,
-					deepPrompt,
-					run,
-					parseUsableReview(`deep:${h.name}`),
-				);
-				return {
-					ok: true,
-					checked: [
-						`[${h.name}] ${res.summary || "(no summary)"}`,
-						...res.checked,
-					],
-					findings: res.findings,
-					residuals: res.residual_risks,
-				};
-			} catch (e) {
-				if (isRunnerSafetyError(e)) throw e;
-				const msg = e instanceof Error ? e.message : String(e);
-				// Swallowed failure; its raw attempts are already in run.failedRawOutputs
-				// (runJsonPrompt accumulates every failed parse there for the eval scan).
-				return {
-					ok: false,
-					checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
-					findings: [] as readonly Finding[],
-					residuals: [
+		passes = await mapLimit(
+			hotspots,
+			deepConcurrency(),
+			async (h, passIndex) => {
+				const deepPrompt = loadPrompt("deep.md")
+					.replace("{{AGENTS}}", () => agents)
+					.replace("{{PR_META}}", () =>
+						JSON.stringify(bundle.prMeta, null, 2),
+					)
+					.replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
+					.replace("{{FOCUS}}", bundle.focus ?? "(none)")
+					.replace("{{BASE}}", bundle.baseSha)
+					.replace("{{HEAD}}", bundle.headSha);
+				try {
+					const res = await runJsonPrompt(
 						{
-							text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`,
-							blocks: true,
+							label: `deep:${h.name}`,
+							prompt: deepPrompt,
+							passKind: "deep",
+							passIndex,
+							parse: parseUsableReview(`deep:${h.name}`),
 						},
-					] as readonly ResidualRisk[],
-				};
-			}
-		});
+						run,
+					);
+					observeCandidateReviewTrace({
+						observer: run.onTrace,
+						review: res.value,
+						provenance: res,
+					});
+					return {
+						ok: true,
+						checked: [
+							`[${h.name}] ${res.value.summary || "(no summary)"}`,
+							...res.value.checked,
+						],
+						findings: res.value.findings,
+						residuals: res.value.residual_risks,
+					};
+				} catch (e) {
+					if (isRunnerSafetyError(e)) throw e;
+					const msg = e instanceof Error ? e.message : String(e);
+					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
+					// (runJsonPrompt accumulates every failed parse there for the eval scan).
+					return {
+						ok: false,
+						checked: [
+							`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`,
+						],
+						findings: [] as readonly Finding[],
+						residuals: [
+							{
+								text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`,
+								blocks: true,
+							},
+						] as readonly ResidualRisk[],
+					};
+				}
+			},
+		);
 	} catch (err) {
 		attachRunRaws(err, run);
 		throw err;
@@ -410,7 +566,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 
 	const merged = dedup(all);
 	const candidateMerged: RawReview = {
-		summary: mapResult.summary,
+		summary: mapResult.value.summary,
 		findings: merged,
 		checked,
 		residual_risks: residuals,
@@ -422,8 +578,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	);
 	const blockingResiduals = residuals.filter((risk) => risk.blocks);
 	const final = {
-		...pruned,
-		residual_risks: [...pruned.residual_risks, ...blockingResiduals],
+		...pruned.value,
+		residual_risks: [...pruned.value.residual_risks, ...blockingResiduals],
 	};
 	// Compute coverage from the hotspots whose deep pass actually SUCCEEDED
 	// (includes the tail backstop). A failed pass's files were not reviewed —
@@ -433,10 +589,17 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const coveredFileCount = new Set(okHotspots.flatMap((h) => h.files)).size;
 	const tailOk = tailAdded && passes[passes.length - 1].ok;
 	const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${okHotspots.length} hotspot${okHotspots.length === 1 ? "" : "s"}${tailOk ? ", incl. tail-coverage" : ""}`;
+	const summary = `${mapResult.value.summary} — ${pruned.value.summary}`;
+	observeFinalReviewTrace({
+		observer: run.onTrace,
+		review: final,
+		summary,
+		provenance: pruned,
+	});
 	return toReviewResult(
 		final,
 		run,
-		`${mapResult.summary} — ${pruned.summary}`,
+		summary,
 		merged,
 		coverage,
 	);
@@ -457,6 +620,7 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
+	onTrace?: ReviewTraceObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
 
@@ -482,6 +646,7 @@ export async function review(
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],
+		...(onTrace ? { onTrace } : {}),
 		startedAt,
 	};
 	return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);

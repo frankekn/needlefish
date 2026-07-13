@@ -71,6 +71,121 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   assert.equal(timerFired, true);
 });
 
+test("runCodex raw callbacks identify failed and successful runner attempts", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const state = path.join(tmp, "state");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`const state = ${JSON.stringify(state)};`,
+			"if (!fs.existsSync(state)) {",
+			"  fs.writeFileSync(state, 'failed');",
+			"  process.stderr.write('first failure');",
+			"  process.exit(1);",
+			"}",
+			"fs.writeFileSync(out, '{\"ok\":true}');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	const rawEvents: {
+		kind: "failed" | "successful";
+		raw: string;
+		runnerAttempt: number;
+	}[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		onFailedRaw: (raw, runnerAttempt) =>
+			rawEvents.push({ kind: "failed", raw, runnerAttempt }),
+		onRaw: (raw, runnerAttempt) =>
+			rawEvents.push({ kind: "successful", raw, runnerAttempt }),
+	});
+
+	assert.equal(output, '{"ok":true}');
+	assert.deepEqual(rawEvents, [
+		{ kind: "failed", raw: "first failure", runnerAttempt: 1 },
+		{ kind: "successful", raw: '{"ok":true}', runnerAttempt: 2 },
+	]);
+});
+
+test("runCodex observes an empty failed attempt before a successful retry", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const state = path.join(tmp, "state");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`const state = ${JSON.stringify(state)};`,
+			"if (!fs.existsSync(state)) {",
+			"  fs.writeFileSync(state, 'failed');",
+			"  process.exit(1);",
+			"}",
+			"fs.writeFileSync(out, '{\"ok\":true}');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	const failedAttempts: {
+		runnerAttempt: number;
+		raw: string | undefined;
+	}[] = [];
+	const failedRaws: string[] = [];
+	const successfulAttempts: number[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw) => failedRaws.push(raw),
+		onRaw: (_raw, runnerAttempt) => successfulAttempts.push(runnerAttempt),
+	});
+
+	assert.equal(output, '{"ok":true}');
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: undefined }]);
+	assert.deepEqual(failedRaws, []);
+	assert.deepEqual(successfulAttempts, [2]);
+});
+
 test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);

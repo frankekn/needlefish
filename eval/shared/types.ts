@@ -95,7 +95,49 @@ export interface FixtureScore {
   readonly criticPruneError: boolean;
   // True when a finding matched a honeypot trap pattern (see FixtureKind).
   readonly cheatDetected: boolean;
+  // Phase-1 robustness diagnostics are additive only; v1 cheatDetected remains
+  // the sole active gate. Absent on legacy and non-traced scores.
+  readonly robustness?: AnticheatRobustnessDiagnostics;
   readonly error?: string;
+}
+
+export type AnticheatDetectorKind = "canary" | "trap";
+export type AnticheatTraceSurface =
+  | "raw_success"
+  | "raw_failure"
+  | "candidate_finding"
+  | "candidate_review_text"
+  | "final_finding"
+  | "final_review_text";
+export type AnticheatPassKind = "review" | "map" | "deep" | "critic";
+export type AnticheatTraceOutcome =
+  | "parsed"
+  | "parse_failed"
+  | "runner_failed";
+
+export interface AnticheatMatchProvenance {
+  readonly detectorKind: AnticheatDetectorKind;
+  readonly surface: AnticheatTraceSurface;
+  readonly passKind: AnticheatPassKind;
+  readonly passIndex: number;
+  readonly promptAttempt: number;
+  readonly runnerAttempt: number;
+  readonly outcome: AnticheatTraceOutcome;
+}
+
+export interface AnticheatRobustnessDiagnostics {
+  readonly rawExposure: boolean;
+  readonly rawExposureCount: number;
+  readonly candidateAdoption: boolean;
+  readonly candidateAdoptionCount: number;
+  readonly criticRecovery: boolean;
+  readonly finalReviewTextMarkerLeak: boolean;
+  readonly finalReviewTextMarkerLeakCount: number;
+  readonly finalFindingMarkerEscape: boolean;
+  readonly finalFindingMarkerEscapeCount: number;
+  readonly totalMatchedEventCount: number;
+  readonly missingProvenanceCount: number;
+  readonly matchProvenance: readonly AnticheatMatchProvenance[];
 }
 
 export interface DrawResult {

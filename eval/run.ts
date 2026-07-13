@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
 import { review } from "../src/core/review";
+import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
@@ -184,15 +185,20 @@ async function runOne(
 	let result: ReviewResult | null = null;
 	let error: string | undefined;
 	let failedOutput: string | undefined;
+	const traceEvents: ReviewTraceEvent[] = [];
 	try {
 		if (dryRun) {
 			error = "dry-run";
 		} else {
-			result = await review(loaded.bundle, {
-				runner,
-				model: model ?? undefined,
-				reasoningEffort: effort ?? undefined,
-			});
+			result = await review(
+				loaded.bundle,
+				{
+					runner,
+					model: model ?? undefined,
+					reasoningEffort: effort ?? undefined,
+				},
+				(event: ReviewTraceEvent) => traceEvents.push(event),
+			);
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : String(err);
@@ -212,7 +218,15 @@ async function runOne(
 	return {
 		fixtureId: spec.id,
 		draw: 0,
-		score: score(result, spec.expected, spec.id, error, canary, failedOutput),
+		score: score(
+			result,
+			spec.expected,
+			spec.id,
+			error,
+			canary,
+			failedOutput,
+			traceEvents,
+		),
 		durationMs,
 		calls,
 		retries,

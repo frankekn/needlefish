@@ -361,15 +361,19 @@ export interface CodexOptions extends RunnerOptions {
 	readonly targetPatch?: string;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
+	readonly onFailedAttempt?: (
+		runnerAttempt: number,
+		raw: string | undefined,
+	) => void;
 	// Called with the captured stdout of every failed attempt (runner crash or
 	// nonzero exit) — the eval canary scan must see output a runner emitted
 	// before dying, whether or not a retry later succeeds.
-	readonly onFailedRaw?: (raw: string) => void;
+	readonly onFailedRaw?: (raw: string, runnerAttempt: number) => void;
 	// Called with the FULL transcript (resolved output + raw stdout + stderr,
 	// deduped) of every SUCCESSFUL attempt. A status-0 runner can emit the
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
-	readonly onRaw?: (raw: string) => void;
+	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -431,16 +435,20 @@ export async function runCodex(
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		attempts = attempt;
 		try {
-			const out = await runCodexOnce(prompt, opts, runner);
+			const out = await runCodexOnce(prompt, opts, runner, attempt);
 			emitStat(true);
 			return out;
 		} catch (err) {
-			if (err instanceof Error) {
+			const raw =
+				err instanceof Error
+					? (err as Error & { rawOutput?: string }).rawOutput
+					: undefined;
+			opts.onFailedAttempt?.(attempt, raw);
+			if (raw) {
 				// Hand the failed attempt's stdout to the caller's accumulator now:
 				// a successful retry discards this error object, and the canary
 				// scan must still see what the dying attempt emitted.
-				const raw = (err as Error & { rawOutput?: string }).rawOutput;
-				if (raw) opts.onFailedRaw?.(raw);
+				opts.onFailedRaw?.(raw, attempt);
 			}
 			if (!(err instanceof Error) || isRunnerSafetyError(err)) {
 				emitStat(false);
@@ -461,11 +469,14 @@ async function runCodexOnce(
 	prompt: string,
 	opts: CodexOptions,
 	runner: RunnerName,
+	runnerAttempt: number,
 ): Promise<string> {
 	const model = resolveModel(opts, runner);
 	const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
 	if (runner === "openai") {
-		return runOpenAIDirect(prompt, model, timeoutMs, opts.onRaw);
+		return runOpenAIDirect(prompt, model, timeoutMs, (raw) =>
+			opts.onRaw?.(raw, runnerAttempt),
+		);
 	}
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
 	// Everything after mkdtemp lives inside the try: a preparation failure
@@ -546,7 +557,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			if (raw) opts.onRaw?.(raw);
+			if (raw) opts.onRaw?.(raw, runnerAttempt);
 			return out;
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);

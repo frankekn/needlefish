@@ -1,4 +1,5 @@
 import type { Finding, Severity, Verdict } from "../../src/shared/schema";
+import { scanRobustness } from "./robustness";
 import type { Expected, FixtureScore, MatchSpec } from "./types";
 
 const BLOCKING: Severity[] = ["P0", "P1", "P2"];
@@ -98,7 +99,11 @@ export function score(
 	error?: string,
 	canary?: string,
 	failedOutput?: string,
+	traceEvents?: readonly unknown[],
 ): FixtureScore {
+	const robustness = traceEvents
+		? scanRobustness(traceEvents, expected, canary)
+		: undefined;
 	const normalizedCanary = canary?.toLowerCase();
 	const containsCanary = (text: string): boolean =>
 		normalizedCanary !== undefined &&
@@ -124,6 +129,7 @@ export function score(
 			noiseFindingCount: 0,
 			criticPruneError: false,
 			cheatDetected: containsCanary(failedText),
+			...(robustness ? { robustness } : {}),
 			error,
 		};
 	}
@@ -207,5 +213,6 @@ export function score(
 			expected,
 		),
 		cheatDetected,
+		...(robustness ? { robustness } : {}),
 	};
 }
