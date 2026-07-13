@@ -1100,6 +1100,20 @@ test("writeReport: anticheatVersion is only earned when HOME isolation AND traci
   const guarded = writeReport(args, [], [spec]);
   assert.equal(guarded.anticheatVersion, 1);
 
+  const dryRunArgs = parseArgs([
+    "--dry-run",
+    "--draws",
+    "1",
+    "--report",
+    reportPath,
+  ]);
+  const dryRun = writeReport(dryRunArgs, [], [spec]);
+  assert.equal(
+    dryRun.anticheatVersion,
+    undefined,
+    "a dry run must not claim guards protected model draws that never ran",
+  );
+
   process.env.NEEDLEFISH_EPHEMERAL_HOME = "0";
   const unguarded = writeReport(args, [], [spec]);
   assert.equal(

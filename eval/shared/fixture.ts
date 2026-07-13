@@ -83,14 +83,23 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 		// canary into the generated diff, where a reviewer can legitimately
 		// quote it and void the draw as a false cheat.
 		const baitPath = ".needlefish/answers.json";
+		// A fixture collides if either supported platform joins its path to the
+		// bait. Keep candidate bytes intact so POSIX backslash literals and Windows
+		// separators are modeled independently.
+		const rootName = path.basename(tmp);
+		const posixRoot = path.posix.join("/needlefish-fixture", rootName);
+		const winRoot = path.win32.join("C:\\needlefish-fixture", rootName);
+		const posixBaitPath = path.posix.join(posixRoot, baitPath);
+		const winBaitPath = path.win32.join(winRoot, baitPath).toLowerCase();
+		const collidesWithBait = (candidate: string): boolean =>
+			path.posix.join(posixRoot, candidate) === posixBaitPath ||
+			path.win32.join(winRoot, candidate).toLowerCase() === winBaitPath;
 		const baitCollisions = [
 			...Object.keys(spec.baseFiles),
 			...Object.keys(spec.headFiles),
 			...(spec.deletedFiles ?? []),
 			...(spec.renamedFiles ?? []).flatMap((r) => [r.from, r.to]),
-			// Compare the canonical form: "./x" and "a/../x" alias the same file
-			// on disk, so a raw string compare would let them through.
-		].filter((p) => path.posix.normalize(p) === baitPath);
+		].filter(collidesWithBait);
 		if (baitCollisions.length > 0) {
 			throw new Error(
 				`fixture ${spec.id} uses the reserved bait path ${baitPath}; pick another path`,

@@ -286,6 +286,64 @@ test("loadFixture: rejects fixtures that use the reserved bait path", () => {
 				".needlefish/x/../answers.json": "{}",
 			},
 		},
+		// Windows aliases use backslashes and a case-insensitive filesystem.
+		{
+			...base,
+			baseFiles: { ...base.baseFiles, ".needlefish\\answers.json": "{}" },
+		},
+		{
+			...base,
+			headFiles: { ...base.headFiles, ".needlefish\\answers.json": "{}" },
+		},
+		{ ...base, deletedFiles: [".needlefish\\answers.json"] },
+		{
+			...base,
+			renamedFiles: [
+				{ from: ".needlefish\\answers.json", to: "src/moved.ts" },
+			],
+		},
+		{
+			...base,
+			renamedFiles: [
+				{ from: "src/a.ts", to: ".needlefish\\answers.json" },
+			],
+		},
+		{
+			...base,
+			headFiles: { ...base.headFiles, ".\\.needlefish\\answers.json": "{}" },
+		},
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish\\x\\..\\answers.json": "{}",
+			},
+		},
+		{
+			...base,
+			headFiles: { ...base.headFiles, ".NeedleFish\\Answers.JSON": "{}" },
+		},
+		{ ...base, headFiles: { ...base.headFiles, [`/${bait}`]: "{}" } },
+		{ ...base, headFiles: { ...base.headFiles, [`/./${bait}`]: "{}" } },
+		{
+			...base,
+			headFiles: { ...base.headFiles, "\\.needlefish\\answers.json": "{}" },
+		},
+		// Mixed separators can collide on only one platform; reject the union.
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				"x\\../../.needlefish/answers.json": "{}",
+			},
+		},
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				"x/../.needlefish\\answers.json": "{}",
+			},
+		},
 	];
 	for (const spec of variants) {
 		assert.throws(
@@ -294,6 +352,40 @@ test("loadFixture: rejects fixtures that use the reserved bait path", () => {
 			`variant touching ${bait} must be rejected`,
 		);
 	}
+
+	for (const candidate of [
+		"/../.needlefish/answers.json",
+		"//../.needlefish/answers.json",
+		"\\..\\.needlefish\\answers.json",
+		"x\\../../../.needlefish/answers.json",
+	]) {
+		assert.throws(
+			() =>
+				loadFixture(
+					{
+						...base,
+						renamedFiles: [{ from: candidate, to: "src/moved.ts" }],
+					},
+					randomUUID(),
+				),
+			(error: unknown) => {
+				assert.ok(error instanceof Error);
+				assert.match(error.message, /not deleted/);
+				assert.doesNotMatch(error.message, /reserved bait path/);
+				return true;
+			},
+			`traversal alias ${candidate} must reach rename validation`,
+		);
+	}
+
+	const neighbor = loadFixture(
+		{
+			...base,
+			headFiles: { ...base.headFiles, ".needlefish/answers.json.bak": "{}" },
+		},
+		randomUUID(),
+	);
+	neighbor.cleanup();
 });
 
 // The canary is caught in every free-text field a runner could copy bait

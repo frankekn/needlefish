@@ -538,10 +538,12 @@ export function writeReport(
 		// of trusting a label the run didn't earn. The claude runner is exempt
 		// from HOME isolation by design (Keychain auth cannot be staged), so a
 		// claude lane never earns the label either — certifying it would promise
-		// a G1 guarantee its draws did not have.
-		...(args.runner !== "claude" &&
-		process.env.NEEDLEFISH_EPHEMERAL_HOME === "1" &&
-		process.env.NEEDLEFISH_EVAL_TRACE === "1"
+		// a G1 guarantee its draws did not have. Dry runs never invoke a model,
+		// so they cannot earn a generation label even when both flags are set.
+		...(!args.dryRun &&
+			args.runner !== "claude" &&
+			process.env.NEEDLEFISH_EPHEMERAL_HOME === "1" &&
+			process.env.NEEDLEFISH_EVAL_TRACE === "1"
 			? { anticheatVersion: ANTICHEAT_VERSION }
 			: {}),
 		fixtures: specs.map((spec) => spec.id),
