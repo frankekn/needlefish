@@ -1,3 +1,4 @@
+import type { Finding } from "../../src/shared/schema";
 import type {
 	AnticheatDetectorKind,
 	AnticheatMatchProvenance,
@@ -6,10 +7,40 @@ import type {
 	AnticheatTraceOutcome,
 	AnticheatTraceSurface,
 	Expected,
+	MatchSpec,
 } from "./types";
+
+export type FindingMatchFields = Pick<
+	Finding,
+	"category" | "file" | "lineStart" | "title" | "whyItBreaks"
+>;
+
+type TrapMatcher = (finding: FindingMatchFields, spec: MatchSpec) => boolean;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 	return typeof value === "object" && value !== null;
+}
+
+function isFindingCategory(value: unknown): value is Finding["category"] {
+	return (
+		value === "bug" ||
+		value === "contract" ||
+		value === "duplicate" ||
+		value === "runtime" ||
+		value === "security" ||
+		value === "validation"
+	);
+}
+
+function isFindingMatchFields(value: unknown): value is FindingMatchFields {
+	return (
+		isRecord(value) &&
+		typeof value.title === "string" &&
+		typeof value.whyItBreaks === "string" &&
+		isFindingCategory(value.category) &&
+		typeof value.file === "string" &&
+		typeof value.lineStart === "number"
+	);
 }
 
 function isSurface(value: unknown): value is AnticheatTraceSurface {
@@ -76,6 +107,7 @@ export function scanRobustness(
 	events: readonly unknown[],
 	expected: Expected,
 	canary: string | undefined,
+	trapMatcher: TrapMatcher,
 ): AnticheatRobustnessDiagnostics {
 	const normalizedCanary = canary?.toLowerCase();
 	let rawExposureCount = 0;
@@ -92,9 +124,15 @@ export function scanRobustness(
 			normalizedCanary !== undefined &&
 			normalizedCanary.length > 0 &&
 			content.toLowerCase().includes(normalizedCanary);
-		const trapMatch = (expected.trap ?? []).some((spec) =>
-			new RegExp(spec.pattern, "i").test(content),
-		);
+		const traceFinding =
+			(event.surface === "candidate_finding" ||
+				event.surface === "final_finding") &&
+			isFindingMatchFields(event.finding)
+				? event.finding
+				: undefined;
+		const trapMatch =
+			traceFinding !== undefined &&
+			(expected.trap ?? []).some((spec) => trapMatcher(traceFinding, spec));
 		const detectorKind: AnticheatDetectorKind | undefined = canaryMatch
 			? "canary"
 			: trapMatch

@@ -1077,10 +1077,11 @@ test("review does not re-ask after a runner safety error", async (t) => {
 	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["review"]);
 });
 
-test("review runs deep passes concurrently and keeps hotspot order", async (t) => {
+test("review isolates trace observers across concurrent deep passes and classifies critic output as final only", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.log");
 	const previous = {
 		bin: process.env.CODEX_BIN,
 		retry: process.env.CODEX_RETRY_MS,
@@ -1109,23 +1110,29 @@ test("review runs deep passes concurrently and keeps hotspot order", async (t) =
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			"  if (input.includes('review-MAP pass')) {",
+			`    fs.appendFileSync(${JSON.stringify(calls)}, 'map\\n');`,
 			"    const hotspot = (name, file) => ({ name, files: [file], why: 'changed', risk: 'high', edges: [] });",
 			"    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [hotspot('h1', 'src/a.ts'), hotspot('h2', 'src/b.ts'), hotspot('h3', 'src/c.ts')] }));",
 			"    return;",
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			'    const name = /"name": "(h\\d)"/.exec(input)[1];',
+			`    fs.appendFileSync(${JSON.stringify(calls)}, \`deep-\${name}\\n\`);`,
 			"    const delays = { h1: 800, h2: 500, h3: 200 };",
 			"    const start = Date.now();",
 			"    setTimeout(() => {",
+			"      const finding = { severity: 'P2', title: `deep candidate marker ${name}`, category: 'bug', file: `src/${name}.ts`, lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
 			"      fs.writeFileSync(path.join(tmp, `deep-${name}.json`), JSON.stringify({ start, end: Date.now() }));",
-			"      fs.writeFileSync(out, JSON.stringify({ summary: `deep ${name}`, findings: [], checked: [`checked ${name}`], residual_risks: [] }));",
+			"      fs.writeFileSync(out, JSON.stringify({ summary: `deep ${name}`, findings: [finding], checked: [`checked ${name}`], residual_risks: [] }));",
 			"    }, delays[name]);",
 			"    return;",
 			"  }",
 			"  if (input.includes('adversarial critic')) {",
+			`    fs.appendFileSync(${JSON.stringify(calls)}, 'critic\\n');`,
 			"    const candidate = input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat'));",
-			"    fs.writeFileSync(out, JSON.stringify(JSON.parse(candidate)));",
+			"    const parsed = JSON.parse(candidate);",
+			"    const finding = { severity: 'P2', title: 'critic-only marker', category: 'bug', file: 'src/a.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
+			"    fs.writeFileSync(out, JSON.stringify({ ...parsed, summary: 'critic-only marker', findings: [finding] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -1155,13 +1162,35 @@ test("review runs deep passes concurrently and keeps hotspot order", async (t) =
 		focus: null,
 	};
 
+	const baseline = await review(bundle);
 	const events: ReviewTraceEvent[] = [];
 	const result = await review(
 		bundle,
 		{},
-		(event: ReviewTraceEvent) => events.push(event),
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+			throw new Error("observer delivery failed");
+		},
 	);
 
+	assert.deepEqual(
+		{
+			verdict: result.verdict,
+			summary: result.summary,
+			findings: result.findings,
+			checked: result.checked,
+			residualRisks: result.residualRisks,
+			coverage: result.coverage,
+		},
+		{
+			verdict: baseline.verdict,
+			summary: baseline.summary,
+			findings: baseline.findings,
+			checked: baseline.checked,
+			residualRisks: baseline.residualRisks,
+			coverage: baseline.coverage,
+		},
+	);
 	assert.deepEqual(result.checked, [
 		"[h1] deep h1",
 		"checked h1",
@@ -1181,6 +1210,11 @@ test("review runs deep passes concurrently and keeps hotspot order", async (t) =
 		windows.some((b, j) => i < j && a.start < b.end && b.start < a.end),
 	);
 	assert.ok(overlaps, "expected at least two deep passes to overlap in time");
+	assert.equal(
+		readFileSync(calls, "utf8").trim().split("\n").length,
+		10,
+		"observer delivery errors must not add model calls",
+	);
 	for (const [marker, passIndex] of [
 		["deep h1", 0],
 		["deep h2", 1],
@@ -1197,6 +1231,52 @@ test("review runs deep passes concurrently and keeps hotspot order", async (t) =
 			`${marker} must retain source index ${passIndex}`,
 		);
 	}
+	const deepFindingEvent = events.find(
+		(event) =>
+			event.surface === "candidate_finding" &&
+			event.content.includes("deep candidate marker h1"),
+	);
+	assert.equal(deepFindingEvent?.finding?.title, "deep candidate marker h1");
+	assert.equal(
+		events.filter(
+			(event) =>
+				event.surface.startsWith("candidate_") &&
+				event.content.includes("critic-only marker"),
+		).length,
+		0,
+		"critic-only output must never be emitted as a candidate surface",
+	);
+	assert.ok(
+		events.some(
+			(event) =>
+				event.surface === "final_finding" &&
+				event.content.includes("critic-only marker"),
+		),
+	);
+	assert.ok(
+		events.some(
+			(event) =>
+				event.surface === "final_review_text" &&
+				event.content.includes("critic-only marker"),
+		),
+	);
+	assert.ok(
+		events.some(
+			(event) =>
+				event.surface === "candidate_finding" &&
+				event.content.includes("deep candidate marker"),
+		),
+		"pre-critic deep output must remain a candidate",
+	);
+	assert.equal(
+		events.filter(
+			(event) =>
+				event.surface.startsWith("final_") &&
+				event.content.includes("deep candidate marker"),
+		).length,
+		0,
+		"critic-pruned candidate output must not survive on final surfaces",
+	);
 	const labels = new Set(result.stats?.map((s) => s.label));
 	for (const expected of ["map", "deep:h1", "deep:h2", "deep:h3", "critic"]) {
 		assert.ok(labels.has(expected), `missing stat label ${expected}`);
@@ -1758,17 +1838,61 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			`missing ${surface}`,
 		);
 	}
+	assert.equal(
+		events.filter(
+			(event) =>
+				event.surface.startsWith("candidate_") &&
+				event.content.includes("final finding marker"),
+		).length,
+		0,
+		"critic-only findings must not be candidate findings",
+	);
+	assert.equal(
+		events.filter(
+			(event) =>
+				event.surface.startsWith("candidate_") &&
+				event.content.includes("final review marker"),
+		).length,
+		0,
+		"critic-only review text must not be candidate review text",
+	);
+	assert.equal(
+		events.filter(
+			(event) =>
+				event.surface.startsWith("final_") &&
+				event.content.includes("candidate finding marker"),
+		).length,
+		0,
+		"critic-pruned candidate findings must not be final findings",
+	);
+	const candidateFinding = events.find(
+		(event) =>
+			event.surface === "candidate_finding" &&
+			event.content.includes("candidate finding marker"),
+	);
+	const finalFinding = events.find(
+		(event) =>
+			event.surface === "final_finding" &&
+			event.content.includes("final finding marker"),
+	);
+	assert.equal(candidateFinding?.finding?.title, "candidate finding marker");
+	assert.equal(finalFinding?.finding?.title, "final finding marker");
 });
 
-test("review does not classify observer errors as parse failures", async (t) => {
+test("review isolates observer errors from small review semantics", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
 	const calls = path.join(tmp, "calls.log");
-	const previous = process.env.CODEX_BIN;
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
 	t.after(() => {
-		if (previous === undefined) delete process.env.CODEX_BIN;
-		else process.env.CODEX_BIN = previous;
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	writeFileSync(
@@ -1786,30 +1910,149 @@ test("review does not classify observer errors as parse failures", async (t) => 
 	);
 	chmodSync(bin, 0o755);
 	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
 
-	await assert.rejects(
-		() =>
-			review(
-				{
-					repoPath: repo,
-					baseSha: "base",
-					headSha: headSha(repo),
-					patch: "short",
-					patchStat: " src/app.ts | 1 +",
-					changedFiles: [{ path: "src/app.ts", surface: "source" }],
-					agentsMd: "(none)",
-					prMeta: null,
-					deep: false,
-					focus: null,
-				},
-				{},
-				(event) => {
-					if (event.surface === "raw_success") {
-						throw new Error("observer stopped review");
-					}
-				},
-			),
-		/observer stopped review/,
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+	const baseline = await review(bundle);
+	const result = await review(bundle, {}, () => {
+		throw new Error("observer stopped review");
+	});
+
+	assert.deepEqual(
+		{
+			verdict: result.verdict,
+			summary: result.summary,
+			findings: result.findings,
+			checked: result.checked,
+			residualRisks: result.residualRisks,
+			coverage: result.coverage,
+		},
+		{
+			verdict: baseline.verdict,
+			summary: baseline.summary,
+			findings: baseline.findings,
+			checked: baseline.checked,
+			residualRisks: baseline.residualRisks,
+			coverage: baseline.coverage,
+		},
 	);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["call"]);
+	assert.deepEqual(result.residualRisks, []);
+	assert.equal(
+		readFileSync(calls, "utf8").trim().split("\n").length,
+		4,
+		"observer delivery errors must not add review or critic calls",
+	);
+});
+
+test("review traces one parse-failed raw event for an empty successful runner attempt", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`  const calls = ${JSON.stringify(calls)};`,
+			"  if (input.includes('adversarial critic')) {",
+			"    fs.appendFileSync(calls, 'critic\\n');",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic clean', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    return;",
+			"  }",
+			"  const reviewCalls = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line.startsWith('review')).length : 0;",
+			"  if (reviewCalls === 0) {",
+			"    fs.appendFileSync(calls, 'review-empty\\n');",
+			"    fs.writeFileSync(out, '');",
+			"    return;",
+			"  }",
+			"  fs.appendFileSync(calls, 'review-valid\\n');",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'review clean', findings: [], checked: ['review checked'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
+
+	const events: ReviewTraceEvent[] = [];
+	const result = await review(
+		{
+			repoPath: repo,
+			baseSha: "base",
+			headSha: headSha(repo),
+			patch: "short",
+			patchStat: " src/app.ts | 1 +",
+			changedFiles: [{ path: "src/app.ts", surface: "source" }],
+			agentsMd: "(none)",
+			prMeta: null,
+			deep: false,
+			focus: null,
+		},
+		{},
+		(event) => events.push(event),
+	);
+
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+		"review-empty",
+		"review-valid",
+		"critic",
+	]);
+	assert.deepEqual(
+		events.filter(
+			(event) =>
+				event.surface === "raw_success" &&
+				event.passKind === "review" &&
+				event.promptAttempt === 1,
+		),
+		[
+			{
+				content: "",
+				surface: "raw_success",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parse_failed",
+			},
+		],
+	);
+	assert.ok(result.rawOutputs, "nonempty successful raws remain retained");
+	assert.equal(
+		result.rawOutputs.includes(""),
+		false,
+		"the empty successful raw is transient trace data only",
+	);
 });

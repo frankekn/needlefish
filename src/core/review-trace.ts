@@ -1,4 +1,4 @@
-import type { MapResult, RawReview } from "../shared/schema.js";
+import type { Finding, MapResult, RawReview } from "../shared/schema.js";
 
 export type ReviewTraceSurface =
 	| "raw_success"
@@ -15,15 +15,32 @@ export type ReviewTraceOutcome =
 	| "parse_failed"
 	| "runner_failed";
 
-export interface ReviewTraceEvent {
+interface ReviewTraceEventBase {
 	readonly content: string;
-	readonly surface: ReviewTraceSurface;
 	readonly passKind: ReviewTracePassKind;
 	readonly passIndex: number;
 	readonly promptAttempt: number;
 	readonly runnerAttempt: number;
 	readonly outcome: ReviewTraceOutcome;
 }
+
+export interface ReviewTraceFindingEvent extends ReviewTraceEventBase {
+	readonly surface: "candidate_finding" | "final_finding";
+	readonly finding: Finding;
+}
+
+export interface ReviewTraceTextEvent extends ReviewTraceEventBase {
+	readonly surface:
+		| "raw_success"
+		| "raw_failure"
+		| "candidate_review_text"
+		| "final_review_text";
+	readonly finding?: never;
+}
+
+export type ReviewTraceEvent =
+	| ReviewTraceFindingEvent
+	| ReviewTraceTextEvent;
 
 export type ReviewTraceObserver = (event: ReviewTraceEvent) => void;
 
@@ -54,7 +71,13 @@ export function observeReviewTrace(
 	observer: ReviewTraceObserver | undefined,
 	event: ReviewTraceEvent,
 ): void {
-	observer?.(event);
+	if (!observer) return;
+	try {
+		observer(event);
+	} catch {
+		// Phase 1 isolates delivery failures. V2 certification must later fail
+		// closed on telemetry health once that gate exists.
+	}
 }
 
 export function observeCandidateReviewTrace({
@@ -67,6 +90,7 @@ export function observeCandidateReviewTrace({
 		observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "candidate_finding",
+			finding,
 			outcome: "parsed",
 			...provenance,
 		});
@@ -108,6 +132,7 @@ export function observeFinalReviewTrace({
 		observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "final_finding",
+			finding,
 			outcome: "parsed",
 			...provenance,
 		});

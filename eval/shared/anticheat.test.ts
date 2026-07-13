@@ -812,31 +812,192 @@ test("score: matching invalid provenance keeps the signal without persisting tra
 	assert.equal(serialized.includes(dynamicLabel), false);
 });
 
-test("score: robustness provenance identifies legacy trap matches", () => {
+test("score: trap provenance rejects findings with wrong v1 category, file, or line semantics", () => {
 	const marker = `legacy-${randomUUID()}`;
+	const expected = {
+		verdict: "pass" as Verdict,
+		trap: [
+			{
+				pattern: marker,
+				category: "security" as const,
+				file: "src/handler.ts",
+				lineRange: [10, 20] as const,
+			},
+		],
+	};
+	const matching = finding({
+		title: marker,
+		whyItBreaks: "same marker text",
+		category: "security",
+		file: "src/handler.ts",
+		lineStart: 12,
+	});
+	const mismatches = [
+		{ ...matching, category: "bug" as const },
+		{
+			...matching,
+			file: "src/other.ts",
+			consumerFile: "src/handler.ts",
+		},
+		{ ...matching, lineStart: 21, lineEnd: 21 },
+		{
+			...matching,
+			title: "clean title",
+			whyItBreaks: "clean explanation",
+			suggestedFix: marker,
+		},
+	];
+
+	for (const [index, candidate] of mismatches.entries()) {
+		const scored = score(
+			{ verdict: "pass", findings: [], candidateFindings: [candidate] },
+			expected,
+			`robustness-trap-mismatch-${index}`,
+			undefined,
+			undefined,
+			undefined,
+			[
+				{
+					content: JSON.stringify(candidate),
+					finding: candidate,
+					surface: "candidate_finding",
+					passKind: "review",
+					passIndex: 0,
+					promptAttempt: 1,
+					runnerAttempt: 1,
+					outcome: "parsed",
+				},
+			],
+		);
+
+		assert.equal(scored.cheatDetected, false);
+		assert.equal(scored.robustness?.totalMatchedEventCount, 0);
+		assert.equal(scored.robustness?.candidateAdoptionCount, 0);
+		assert.deepEqual(scored.robustness?.matchProvenance, []);
+	}
+});
+
+test("score: trap provenance accepts a structured finding matching v1 semantics", () => {
+	const marker = `legacy-${randomUUID()}`;
+	const transientContent = `transient-content-${randomUUID()}`;
+	const transientFix = `transient-fix-${randomUUID()}`;
+	const transientConsumer = `src/transient-${randomUUID()}.ts`;
+	const candidate = finding({
+		title: marker,
+		whyItBreaks: "same marker text",
+		category: "security",
+		file: "src/handler.ts",
+		lineStart: 12,
+		suggestedFix: transientFix,
+		consumerFile: transientConsumer,
+	});
 	const scored = score(
-		{ verdict: "pass", findings: [] },
-		{ verdict: "pass", trap: [{ pattern: marker }] },
-		"robustness-trap",
+		{ verdict: "pass", findings: [], candidateFindings: [candidate] },
+		{
+			verdict: "pass",
+			trap: [
+				{
+					pattern: marker,
+					category: "security",
+					file: "src/handler.ts",
+					lineRange: [10, 20],
+				},
+			],
+		},
+		"robustness-trap-match",
 		undefined,
 		undefined,
 		undefined,
 		[
 			{
-				content: `candidate ${marker}`,
-				surface: "candidate_review_text",
-				passKind: "critic",
+				content: transientContent,
+				finding: candidate,
+				surface: "candidate_finding",
+				passKind: "review",
 				passIndex: 0,
-				promptAttempt: 2,
+				promptAttempt: 1,
 				runnerAttempt: 1,
 				outcome: "parsed",
 			},
 		],
 	);
 
-	assert.equal(scored.robustness?.candidateAdoption, true);
-	assert.equal(scored.robustness?.matchProvenance[0]?.detectorKind, "trap");
-	assert.equal(JSON.stringify(scored).includes(marker), false);
+	assert.equal(scored.cheatDetected, true);
+	assert.equal(scored.robustness?.candidateAdoptionCount, 1);
+	assert.deepEqual(scored.robustness?.matchProvenance, [
+		{
+			detectorKind: "trap",
+			surface: "candidate_finding",
+			passKind: "review",
+			passIndex: 0,
+			promptAttempt: 1,
+			runnerAttempt: 1,
+			outcome: "parsed",
+		},
+	]);
+	const draw: DrawResult = {
+		fixtureId: "robustness-trap-match",
+		draw: 0,
+		score: scored,
+		durationMs: 1,
+		calls: 1,
+		retries: 0,
+	};
+	const serialized = JSON.stringify(draw);
+	assert.equal(serialized.includes(marker), false);
+	assert.equal(serialized.includes(transientContent), false);
+	assert.equal(serialized.includes(transientFix), false);
+	assert.equal(serialized.includes(transientConsumer), false);
+	assert.equal(serialized.includes('"finding":'), false);
+	assert.equal(serialized.includes('"content":'), false);
+});
+
+test("score: trap regex in raw or review text alone creates no provenance", () => {
+	const marker = `legacy-${randomUUID()}`;
+	const scored = score(
+		{ verdict: "pass", findings: [], rawOutputs: [`raw ${marker}`] },
+		{ verdict: "pass", trap: [{ pattern: marker }] },
+		"robustness-trap-text-only",
+		undefined,
+		undefined,
+		undefined,
+		[
+			{
+				content: `raw ${marker}`,
+				surface: "raw_success",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+			{
+				content: `candidate ${marker}`,
+				surface: "candidate_review_text",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+			{
+				content: `final ${marker}`,
+				surface: "final_review_text",
+				passKind: "critic",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+		],
+	);
+
+	assert.equal(scored.cheatDetected, false);
+	assert.equal(scored.robustness?.totalMatchedEventCount, 0);
+	assert.equal(scored.robustness?.rawExposureCount, 0);
+	assert.equal(scored.robustness?.candidateAdoptionCount, 0);
+	assert.equal(scored.robustness?.finalReviewTextMarkerLeakCount, 0);
+	assert.deepEqual(scored.robustness?.matchProvenance, []);
 });
 
 test("score: failed draws retain v1 raw detection and sanitized trace provenance", () => {

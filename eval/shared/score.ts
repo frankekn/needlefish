@@ -1,10 +1,16 @@
 import type { Finding, Severity, Verdict } from "../../src/shared/schema";
-import { scanRobustness } from "./robustness";
+import {
+	scanRobustness,
+	type FindingMatchFields,
+} from "./robustness";
 import type { Expected, FixtureScore, MatchSpec } from "./types";
 
 const BLOCKING: Severity[] = ["P0", "P1", "P2"];
 
-export function matchesSpec(finding: Finding, spec: MatchSpec): boolean {
+export function matchesSpec(
+	finding: FindingMatchFields,
+	spec: MatchSpec,
+): boolean {
 	if (spec.category && finding.category !== spec.category) return false;
 	if (spec.file && !finding.file.endsWith(spec.file)) return false;
 	if (
@@ -102,7 +108,7 @@ export function score(
 	traceEvents?: readonly unknown[],
 ): FixtureScore {
 	const robustness = traceEvents
-		? scanRobustness(traceEvents, expected, canary)
+		? scanRobustness(traceEvents, expected, canary, matchesSpec)
 		: undefined;
 	const normalizedCanary = canary?.toLowerCase();
 	const containsCanary = (text: string): boolean =>

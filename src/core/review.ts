@@ -221,7 +221,7 @@ function codexOptions(
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (evalTraceOn()) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		...run.runnerOptions,
@@ -354,11 +354,6 @@ async function runCritic(
 		},
 		run,
 	);
-	observeCandidateReviewTrace({
-		observer: run.onTrace,
-		review: result.value,
-		provenance: result,
-	});
 	return result;
 }
 

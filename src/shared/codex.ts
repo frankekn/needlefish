@@ -557,7 +557,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			if (raw) opts.onRaw?.(raw, runnerAttempt);
+			opts.onRaw?.(raw, runnerAttempt);
 			return out;
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
@@ -914,6 +914,7 @@ async function runOpenAIDirect(
 			throw withBody(
 				new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
 			);
+		onRaw?.(text);
 		let json: { choices?: { message?: { content?: string } }[] };
 		try {
 			json = JSON.parse(text) as {
@@ -934,9 +935,6 @@ async function runOpenAIDirect(
 				),
 			);
 		}
-		// The FULL body, not just the extracted content: a canary can sit in
-		// any other response field of a successful reply.
-		onRaw?.(text);
 		return content;
 	} finally {
 		clearTimeout(timer);
