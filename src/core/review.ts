@@ -78,16 +78,32 @@ async function mapLimit<T, R>(
 ): Promise<R[]> {
 	const results = new Array<R>(items.length);
 	let next = 0;
-	const workers = Array.from(
-		{ length: Math.max(1, Math.min(limit, items.length)) },
-		async () => {
-			while (next < items.length) {
-				const i = next++;
-				results[i] = await fn(items[i], i);
-			}
-		},
+	let failed = false;
+	// Drain before throwing: on a failure, no NEW items start, but every
+	// in-flight worker settles before the first rejection propagates. A
+	// fail-fast Promise.all would reject while sibling passes are still
+	// emitting — anything they produce after the rejection (including a
+	// canary) would be lost to the terminal error's transcript snapshot.
+	const settled = await Promise.allSettled(
+		Array.from(
+			{ length: Math.max(1, Math.min(limit, items.length)) },
+			async () => {
+				while (!failed && next < items.length) {
+					const i = next++;
+					try {
+						results[i] = await fn(items[i], i);
+					} catch (err) {
+						failed = true;
+						throw err;
+					}
+				}
+			},
+		),
 	);
-	await Promise.all(workers);
+	const rejection = settled.find(
+		(s): s is PromiseRejectedResult => s.status === "rejected",
+	);
+	if (rejection) throw rejection.reason;
 	return results;
 }
 
@@ -330,6 +346,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 
 	const agents = bundle.agentsMd;
+	// mapLimit drains every in-flight deep pass before rethrowing, so the
+	// snapshot refresh in the catch below sees transcripts siblings emitted
+	// AFTER the first rejection — the per-pass snapshot attached inside
+	// runJsonPrompt is stale by then.
 	const passes = await mapLimit(hotspots, deepConcurrency(), async (h) => {
 		const deepPrompt = loadPrompt("deep.md")
 			.replace("{{AGENTS}}", () => agents)
@@ -371,6 +391,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 				] as readonly ResidualRisk[],
 			};
 		}
+	}).catch((err: unknown) => {
+		attachRunRaws(err, run);
+		throw err;
 	});
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);

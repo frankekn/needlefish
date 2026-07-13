@@ -583,6 +583,97 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 	);
 });
 
+test("a deep pass crash waits for concurrent siblings before snapshotting transcripts", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  if (input.includes('review-MAP pass')) {",
+			// Two hotspots so the deep stage runs concurrently: 'dies' rejects
+			// fast with a SAFETY error (dirties the sandbox worktree — plain
+			// nonzero exits are swallowed into residuals and would not reject),
+			// 'slow' emits the canary in a SUCCESSFUL response 500ms later.
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'dies', files: ['src/app.ts'], why: 'crashy', risk: 'high', edges: [] }, { name: 'slow', files: ['src/app.ts'], why: 'slow sibling', risk: 'med', edges: [] }] }));",
+			"    return;",
+			"  }",
+			"  if (input.includes('doing a DEEP review')) {",
+			"    if (input.includes('\"dies\"')) {",
+			"      fs.writeFileSync('runner-wrote.txt', 'dirty');",
+			"      fs.writeFileSync(out, JSON.stringify({ summary: 'dies done', findings: [], checked: ['dies checked'], residual_risks: [] }));",
+			"      process.exit(0);",
+			"    }",
+			"    setTimeout(() => {",
+			"      fs.writeFileSync(out, JSON.stringify({ summary: 'slow sibling done CANARY-SIBLING-B', findings: [], checked: ['slow checked'], residual_risks: [] }));",
+			"      process.exit(0);",
+			"    }, 500);",
+			"    return;",
+			"  }",
+			"  process.stderr.write('unexpected prompt');",
+			"  process.exit(1);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: true,
+		focus: null,
+	};
+
+	const rejection = await review(bundle).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error, "the crashing deep pass must reject");
+	assert.match(
+		rejection.message,
+		/runner changed the review sandbox worktree/,
+	);
+	// The terminal snapshot is refreshed AFTER the worker pool drains: the
+	// slow sibling's output — emitted after the first rejection — must be in
+	// it, or emit-while-a-sibling-dies becomes a canary escape hatch.
+	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+		.rawOutputs;
+	assert.ok(
+		raws?.some((raw) => raw.includes("CANARY-SIBLING-B")),
+		"a sibling transcript emitted after the first rejection must ride the terminal error",
+	);
+});
+
 test("canary written only to the output file of a crashed runner still feeds the scan", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);

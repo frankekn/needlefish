@@ -49,13 +49,22 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const positives = specs.filter((s) => s.kind === "positive");
   const negatives = specs.filter((s) => s.kind === "negative");
 
-  const comparablePool = reports.filter(({ report: r }) => guarded(r));
+  // Reports come from unvalidated disk JSON: a missing/empty hash must not
+  // anchor or join a comparison — `undefined === undefined` would publish
+  // deltas across unknown fixture sets. Hash presence is part of the gate.
+  const hashed = ({ report: r }: NamedReport): boolean =>
+    Boolean(r.promptHash) && Boolean(r.fixtureSetHash);
+  const comparablePool = reports.filter(
+    (nr) => guarded(nr.report) && hashed(nr),
+  );
   const baseline =
     comparablePool.find((r) => r.report.runner === "codex" && r.report.effort === "xhigh") ??
     comparablePool[0];
   const comparableWith = (r: Report): boolean =>
     baseline !== undefined &&
     guarded(r) &&
+    Boolean(r.promptHash) &&
+    Boolean(r.fixtureSetHash) &&
     r.promptHash === baseline.report.promptHash &&
     r.fixtureSetHash === baseline.report.fixtureSetHash;
   const pct = (n: number) => `${(n * 100).toFixed(0)}%`;

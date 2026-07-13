@@ -928,6 +928,36 @@ test("renderResults: mixed prompt hashes are reported, not asserted shared", () 
   assert.match(row, /n\/a/, "a cross-prompt row is not comparable");
 });
 
+test("renderResults: hashless reports neither anchor nor join comparisons", () => {
+  // Reports come from unvalidated disk JSON: two reports both missing
+  // fixtureSetHash would compare `undefined === undefined` and publish
+  // deltas across unknown fixture sets. Hash presence is part of the gate.
+  const spec = holdoutSpec("gen-results-hashless", false);
+  const { fixtureSetHash: _a, ...a } = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+  });
+  const { fixtureSetHash: _b, ...b } = resumeReport(spec, {
+    anticheatVersion: 1,
+  });
+  const md = renderResults(
+    [],
+    [
+      { stem: "a-hashless", report: a },
+      { stem: "b-hashless", report: b },
+    ],
+  );
+  assert.match(
+    md,
+    /No guarded report qualifies as a baseline/,
+    "a hashless report must not be selected as baseline",
+  );
+  for (const stem of ["a-hashless", "b-hashless"]) {
+    const row = md.split("\n").find((l) => l.includes(stem)) ?? "";
+    assert.match(row, /n\/a/, `${stem} must not publish a delta`);
+  }
+});
+
 test("writeReport: anticheatVersion is only earned when HOME isolation AND tracing were on", (t) => {
   // The version label is a promise the guards ran. A run whose user --env
   // disabled isolation OR the eval trace (which feeds critic-pruned
