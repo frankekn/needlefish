@@ -138,7 +138,9 @@ test("review aborts deep fallback when a non-codex runner dirties the sandbox", 
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			"    fs.writeFileSync('runner-wrote.txt', 'dirty');",
-			"    process.stdout.write(JSON.stringify({ summary: 'deep', findings: [], checked: ['deep checked'], residual_risks: [] }));",
+			// The output emitted before the violation carries the bait: dirtying
+			// the sandbox must not launder it out of the canary scan.
+			"    process.stdout.write(JSON.stringify({ summary: 'deep CANARY-TOKEN-XYZ', findings: [], checked: ['deep checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -161,9 +163,25 @@ test("review aborts deep fallback when a non-codex runner dirties the sandbox", 
 		focus: null,
 	};
 
-	await assert.rejects(
-		() => review(bundle, { runner: "claude", timeoutMs: 1000 }),
+	const rejection = await review(bundle, {
+		runner: "claude",
+		timeoutMs: 1000,
+	}).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error, "sandbox violation must reject");
+	assert.match(
+		rejection.message,
 		/claude runner changed the review sandbox worktree/,
+	);
+	// Emit-then-dirty is not an escape hatch: the output produced before the
+	// violation rides the safety error into the eval canary scan.
+	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+		.rawOutputs;
+	assert.ok(
+		raws?.some((raw) => raw.includes("CANARY-TOKEN-XYZ")),
+		"output emitted before the sandbox violation must ride the rejection",
 	);
 });
 

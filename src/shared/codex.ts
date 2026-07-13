@@ -461,7 +461,19 @@ async function runCodexOnce(
 				),
 			);
 		}
-		assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha);
+		// A sandbox violation is itself loud, but the output emitted before the
+		// violation still matters to the canary scan — a runner must not be able
+		// to emit the bait and then launder it by dirtying the sandbox.
+		try {
+			assertRunnerSandboxClean(
+				runner,
+				sandbox.repoPath,
+				sandbox.expectedHeadSha,
+			);
+		} catch (err) {
+			if (err instanceof Error) throw withRunnerOutput(err);
+			throw err;
+		}
 		return outputFor(runner, result);
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });
