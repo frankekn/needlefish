@@ -411,6 +411,91 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	);
 });
 
+test("runCodex ephemeral HOME: opencode accepts an explicitly passed Anthropic key", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "opencode-bin.js");
+	const envDump = path.join(tmp, "opencode-env.json");
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		allowOpenCode: process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER,
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		retry: process.env.NEEDLEFISH_NO_RETRY,
+		home: process.env.HOME,
+		userProfile: process.env.USERPROFILE,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		anthropicKey: process.env.ANTHROPIC_API_KEY,
+	};
+	t.after(() => {
+		for (const [name, value] of Object.entries({
+			OPENCODE_BIN: previous.bin,
+			NEEDLEFISH_ALLOW_OPENCODE_RUNNER: previous.allowOpenCode,
+			NEEDLEFISH_EPHEMERAL_HOME: previous.ephemeral,
+			NEEDLEFISH_NO_RETRY: previous.retry,
+			HOME: previous.home,
+			USERPROFILE: previous.userProfile,
+			NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: previous.passthrough,
+			ANTHROPIC_API_KEY: previous.anthropicKey,
+		})) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`fs.writeFileSync(${JSON.stringify(envDump)}, JSON.stringify({ home: process.env.HOME, userProfile: process.env.USERPROFILE, key: process.env.ANTHROPIC_API_KEY }));`,
+			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.OPENCODE_BIN = bin;
+	process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = "1";
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	process.env.HOME = fakeHome;
+	delete process.env.USERPROFILE;
+	process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+
+	// A key that is not explicitly passed through must not disable the
+	// file-auth guard. A declared-but-empty key must not disable it either.
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	assert.throws(
+		() => prepareEphemeralHome("opencode", path.join(tmp, "undeclared")),
+		/required auth source is missing/,
+	);
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "ANTHROPIC_API_KEY";
+	process.env.ANTHROPIC_API_KEY = "";
+	assert.throws(
+		() => prepareEphemeralHome("opencode", path.join(tmp, "empty")),
+		/required auth source is missing/,
+	);
+
+	process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "opencode",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+	});
+	assert.equal(output, '{"ok":true}');
+	const dump = JSON.parse(readFileSync(envDump, "utf8")) as {
+		home: string;
+		userProfile: string;
+		key: string;
+	};
+	assert.equal(dump.key, "sk-ant-test");
+	assert.equal(dump.home, dump.userProfile);
+	assert.notEqual(dump.home, fakeHome);
+	assert.ok(dump.home.endsWith(`${path.sep}home`));
+	assert.equal(existsSync(dump.home), false, "isolated HOME must be disposed");
+});
+
 test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));

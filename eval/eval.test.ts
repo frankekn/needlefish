@@ -849,6 +849,11 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
     !row("cheat-run").includes("%"),
     "a compromised report publishes no aggregate metric values",
   );
+  assert.equal(
+    row("cheat-run").split("|").map((c) => c.trim())[3],
+    "—",
+    "a compromised report withholds its draw count",
+  );
   // Fixture-level cells for the compromised column are withheld too: the
   // 4th cell (cheat-run's) is "—" while the others carry hit counts.
   const fixtureRow = md.split("\n").find((l) => l.startsWith(`| ${spec.id} |`)) ?? "";
@@ -859,6 +864,44 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("renderResults: partial reports cannot anchor the baseline", () => {
+  const spec = holdoutSpec("gen-results-partial-baseline", false);
+  const partial = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+    draws: 3,
+  });
+  const completeBase = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    effort: "medium",
+    draws: 3,
+  });
+  const template = completeBase.results[0];
+  assert.ok(template);
+  const complete: Report = {
+    ...completeBase,
+    results: [0, 1, 2].map((draw) => ({ ...template, draw })),
+  };
+  const md = renderResults(
+    [spec],
+    [
+      { stem: "partial-codex-xhigh", report: partial },
+      { stem: "complete-grok-medium", report: complete },
+    ],
+  );
+  const row = (stem: string): string =>
+    md.split("\n").find((line) => line.includes(`${stem} |`)) ?? "";
+  const cells = (stem: string): string[] =>
+    row(stem).split("|").map((cell) => cell.trim());
+
+  assert.doesNotMatch(row("partial-codex-xhigh"), /\(baseline\)/);
+  assert.equal(cells("partial-codex-xhigh")[3], "1/3");
+  assert.equal(cells("partial-codex-xhigh")[5], "—");
+  assert.match(row("complete-grok-medium"), /\(baseline\)/);
+  assert.equal(cells("complete-grok-medium")[3], "3/3");
 });
 
 test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {

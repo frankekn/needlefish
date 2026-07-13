@@ -48,6 +48,11 @@ function compromised(r: Report): boolean {
 export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): string {
   const positives = specs.filter((s) => s.kind === "positive");
   const negatives = specs.filter((s) => s.kind === "negative");
+  const expectedResultCount = (r: Report): number => specs.length * r.draws;
+  const complete = (r: Report): boolean =>
+    Number.isInteger(r.draws) &&
+    r.draws > 0 &&
+    r.results.length === expectedResultCount(r);
 
   // Reports come from unvalidated disk JSON: a missing/empty hash must not
   // anchor or join a comparison — `undefined === undefined` would publish
@@ -55,7 +60,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const hashed = ({ report: r }: NamedReport): boolean =>
     Boolean(r.promptHash) && Boolean(r.fixtureSetHash);
   const comparablePool = reports.filter(
-    (nr) => guarded(nr.report) && hashed(nr),
+    (nr) => guarded(nr.report) && hashed(nr) && complete(nr.report),
   );
   const baseline =
     comparablePool.find((r) => r.report.runner === "codex" && r.report.effort === "xhigh") ??
@@ -87,7 +92,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const lines: string[] = [];
   lines.push(`# Eval Results — all runs`);
   lines.push(``);
-  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
+  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (results.length differs from specs.length × report.draws); its recall/fp are over a biased subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
   lines.push(``);
   lines.push(`## Aggregates (delta vs the baseline above; full runs only)`);
   lines.push(``);
@@ -97,10 +102,11 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
     const a = r.aggregates;
     const draws = r.results.length;
     if (compromised(r)) {
-      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | ${draws}/102 | COMPROMISED | n/a | — | — | — | — |`);
+      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | COMPROMISED | n/a | — | — | — | — |`);
       continue;
     }
-    const partial = draws < 102;
+    const expectedDraws = expectedResultCount(r);
+    const partial = !complete(r);
     const d =
       baseline && r === baseline.report
         ? "(baseline)"
@@ -110,7 +116,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
             ? "—"
             : delta(baseline!.report.aggregates.recall, a.recall);
     const mark = `${guarded(r) ? "" : "🚫 "}${partial ? "⚠️ " : ""}`;
-    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/102 | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
+    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/${expectedDraws} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
   }
   lines.push(``);
   lines.push(`## Recall by positive fixture (hit rate over 3 draws)`);

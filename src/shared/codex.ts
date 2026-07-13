@@ -143,6 +143,15 @@ function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
 	);
 }
 
+const OPENCODE_PASSTHROUGH_CREDENTIALS = ["ANTHROPIC_API_KEY"] as const;
+
+function hasOpenCodeEnvCredential(): boolean {
+	return (
+		!!process.env.OPENAI_API_KEY ||
+		hasPassthroughCredential(OPENCODE_PASSTHROUGH_CREDENTIALS)
+	);
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
@@ -170,8 +179,9 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
 	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
-	// RUNNER_ENV_ALLOWLIST); with it set, the HOME files are optional config.
-	if (runner === "opencode" && process.env.OPENAI_API_KEY) {
+	// RUNNER_ENV_ALLOWLIST). Additional provider credentials must be explicitly
+	// supported, named in the passthrough, and non-empty.
+	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
 		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.opencode };
 	}
 	// acp launches an arbitrary external agent whose credential layout we
