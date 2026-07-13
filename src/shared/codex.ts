@@ -474,7 +474,14 @@ async function runCodexOnce(
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
 		}
-		return outputFor(runner, result);
+		// Output normalization can throw too (e.g. malformed opencode envelope
+		// from a zero-exit process) — that text is still canary-scan material.
+		try {
+			return outputFor(runner, result);
+		} catch (err) {
+			if (err instanceof Error) throw withRunnerOutput(err);
+			throw err;
+		}
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });
 	}

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -858,6 +859,37 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {
+  // The baseline reference doc is a report consumer like any other: legacy
+  // (no anticheatVersion) and canary-positive reports must abort before
+  // rendering, exit nonzero, and write nothing.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-baseline-doc-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const spec = holdoutSpec("baseline-doc-gate", false);
+  const legacy = resumeReport(spec, {});
+  const compromisedBase = resumeReport(spec, { anticheatVersion: 1 });
+  const compromised = {
+    ...compromisedBase,
+    aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
+  };
+  const repoRoot = path.resolve(__dirname, "..");
+  for (const [name, report] of [
+    ["legacy", legacy],
+    ["compromised", compromised],
+  ] as const) {
+    const reportPath = path.join(dir, `${name}.json`);
+    writeFileSync(reportPath, JSON.stringify(report));
+    const res = spawnSync(
+      "npx",
+      ["tsx", path.join("eval", "gen-baseline-doc.ts"), reportPath],
+      { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+    );
+    assert.equal(res.status, 1, `${name} must exit 1, stderr: ${res.stderr}`);
+    assert.match(res.stderr, /refusing to generate baseline doc/);
+    assert.doesNotMatch(res.stderr, /wrote eval\/BASELINE\.md/);
+  }
 });
 
 test("renderResults: mixed prompt hashes are reported, not asserted shared", () => {
