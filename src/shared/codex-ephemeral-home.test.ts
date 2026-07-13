@@ -578,6 +578,59 @@ test("prepareEphemeralHome: grok provider key via passthrough makes HOME files o
 	}
 });
 
+// Env-authenticated runners (provider key via passthrough) need no source
+// HOME at all — CI containers legitimately run without HOME/USERPROFILE.
+// Only runners that still REQUIRE auth files fail on a missing HOME.
+test("prepareEphemeralHome: no HOME/USERPROFILE is fine when auth is env-borne, fatal when files are required", (t) => {
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		profile: process.env.USERPROFILE,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		key: process.env.XAI_API_KEY,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		if (previous.profile === undefined) delete process.env.USERPROFILE;
+		else process.env.USERPROFILE = previous.profile;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.key === undefined) delete process.env.XAI_API_KEY;
+		else process.env.XAI_API_KEY = previous.key;
+	});
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.HOME;
+	delete process.env.USERPROFILE;
+
+	// grok authed via provider key: no required files → no HOME needed.
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "XAI_API_KEY";
+	process.env.XAI_API_KEY = "xai-test";
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp, { recursive: true, force: true }));
+	const home = prepareEphemeralHome("grok", tmp);
+	assert.ok(home, "env-authenticated runner must not need a source HOME");
+	assert.ok(
+		home.startsWith(tmp),
+		"ephemeral home must live under the run tmp dir",
+	);
+
+	// codex still requires auth files: with no HOME to copy from, fail loudly
+	// (fail-closed) instead of launching an unauthenticated runner.
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	delete process.env.XAI_API_KEY;
+	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("codex", tmp2),
+		/neither HOME nor USERPROFILE/,
+	);
+});
+
 // acp launches arbitrary agents with unknowable credential layouts: without
 // an explicit operator-declared staging list there is nothing safe to stage,
 // so it must fail closed rather than silently keep the real HOME.

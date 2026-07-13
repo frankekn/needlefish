@@ -256,14 +256,20 @@ export function prepareEphemeralHome(
 	// NON-EMPTY value wins: HOME="" must fall through, not select "".
 	const realHome =
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
-	if (!realHome) {
-		throw new Error(
-			"NEEDLEFISH_EPHEMERAL_HOME=1 but neither HOME nor USERPROFILE is set: cannot locate auth source files",
-		);
-	}
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
 	const { required, optional } = ephemeralAuthFiles(runner);
+	if (!realHome) {
+		// No source HOME is only a problem when something must be staged from
+		// it: an env-authenticated mode (required empty) is independently valid,
+		// and optional config files simply don't exist without a HOME.
+		if (required.length > 0) {
+			throw new Error(
+				"NEEDLEFISH_EPHEMERAL_HOME=1 but neither HOME nor USERPROFILE is set: cannot locate auth source files",
+			);
+		}
+		return home;
+	}
 	const stage = [
 		...required.map((rel) => ({ rel, required: true })),
 		...optional.map((rel) => ({ rel, required: false })),
@@ -441,11 +447,15 @@ async function runCodexOnce(
 
 		// A runner that crashes or exits nonzero may already have emitted output;
 		// ride it along on the error (message unchanged) so the eval canary scan
-		// sees it — dying is not an escape hatch from detection. Both surfaces
-		// matter: result.out is the resolved model output (codex writes it to
-		// --output-last-message, not stdout), result.res.stdout the raw stream.
+		// sees it — dying is not an escape hatch from detection. All three
+		// surfaces matter: result.out is the resolved model output (codex writes
+		// it to --output-last-message, not stdout), result.res.stdout the raw
+		// stream, and stderr rides UNTRUNCATED (the error message clips it at
+		// 2000 chars — a canary parked past the clip must still reach the scan).
 		const withRunnerOutput = (err: Error): Error => {
-			const raw = [...new Set([result.out, result.res.stdout])]
+			const raw = [
+				...new Set([result.out, result.res.stdout, result.res.stderr]),
+			]
 				.filter(Boolean)
 				.join("\n");
 			if (raw) {

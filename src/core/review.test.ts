@@ -509,8 +509,10 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 			"process.stdin.resume();",
 			"process.stdin.on('end', () => {",
 			// Emit the bait, then die: crashing must not launder the emitted text
-			// out of the scan.
+			// out of the scan. The stderr bait sits past the 2000-char clip the
+			// error MESSAGE applies — the rider must carry stderr untruncated.
 			"  process.stdout.write('leaked before crash CANARY-TOKEN-XYZ');",
+			"  process.stderr.write('x'.repeat(2500) + ' CANARY-STDERR-QRS');",
 			"  process.exit(3);",
 			"});",
 		].join("\n"),
@@ -543,6 +545,10 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 	assert.ok(
 		raws?.some((raw) => raw.includes("CANARY-TOKEN-XYZ")),
 		"stdout captured before the crash must ride the rejection",
+	);
+	assert.ok(
+		raws?.some((raw) => raw.includes("CANARY-STDERR-QRS")),
+		"stderr past the message clip must ride the rejection untruncated",
 	);
 });
 
