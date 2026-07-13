@@ -135,10 +135,12 @@ test("renderMarkdown adds blocking and nit counts directly below the headline", 
 			finding("P3", "three", "d.ts"),
 		]),
 	);
-	assert.match(four, /^[^\n]+\n\*\*3 blocking\*\* · 1 nit\n/);
+	// Red-reason headline replaces the summary on line 1; the summary
+	// first-sentence then carries to line 2, counts follow on line 3.
+	assert.match(four, /^[^\n]+\nFirst sentence\.\n\*\*3 blocking\*\* · 1 nit\n/);
 
 	const blocking = renderMarkdown(baseResult([finding("P2", "one", "a.ts")]));
-	assert.match(blocking, /^[^\n]+\n\*\*1 blocking\*\*\n/);
+	assert.match(blocking, /^[^\n]+\nFirst sentence\.\n\*\*1 blocking\*\*\n/);
 
 	const nits = renderMarkdown(
 		baseResult([finding("P3", "one", "a.ts"), finding("P3", "two", "b.ts")]),
@@ -151,17 +153,18 @@ test("renderMarkdown adds blocking and nit counts directly below the headline", 
 
 test("renderMarkdown shows compact re-review deltas only for positive counts", () => {
 	const result = baseResult([finding("P2", "one", "a.ts")]);
+	// Summary occupies line 2 (reason replaced the headline); counts then delta.
 	assert.match(
 		renderMarkdown(result, { resolvedCount: 2 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { newCount: 1 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n🆕 1 new\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🆕 1 new\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { resolvedCount: 2, newCount: 1 }),
-		/^([^\n]+\n)\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
 	);
 	assert.doesNotMatch(
 		renderMarkdown(result, { resolvedCount: 0, newCount: 0 }),
@@ -242,7 +245,12 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 		stateMarker: "<!-- state -->",
 	});
 
-	assert.match(markdown, /^CHANGES REQUESTED ⚠️[^\n]*\n✅ 1 resolved\n/);
+	// The still-open blocker now feeds the red-reason headline (fresh set is
+	// empty); summary drops to line 2, delta follows.
+	assert.match(
+		markdown,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n✅ 1 resolved\n/,
+	);
 	assert.match(markdown, /Review target: local base\.\.head/);
 	assert.match(markdown, /PR context: #24 metadata only/);
 	assert.match(markdown, /<summary>Still open \(1\)<\/summary>/);
@@ -252,4 +260,79 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 		/<sub>2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
 	);
 	assert.match(markdown, /<!-- state -->\n$/);
+});
+
+test("renderMarkdown red-reason headline names the top blocking finding and its location", () => {
+	const markdown = renderMarkdown(
+		baseResult([
+			finding("P3", "nit only", "nit.ts"),
+			finding("P1", "Top blocking bug", "src/auth.ts", {
+				lineStart: 88,
+				lineEnd: 90,
+			}),
+			finding("P2", "other blocker", "src/util.ts", { lineStart: 4 }),
+		]),
+	);
+	const firstLine = markdown.split("\n")[0];
+	// The most severe (P1) finding is the top after the severity sort.
+	assert.match(firstLine, /Top blocking bug/);
+	assert.match(firstLine, /src\/auth\.ts:88/);
+	// Multiple blocking findings get the (+N more) suffix.
+	assert.match(firstLine, /\(\+1 more\)/);
+});
+
+test("renderMarkdown needs_human headline carries the blocking residual and a visible why-not-green line", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "needs_human"),
+		residualRisks: [
+			{
+				text: "deep review of the auth hotspot failed; not fully covered",
+				blocks: true,
+			},
+		],
+	});
+	const firstLine = markdown.split("\n")[0];
+	assert.match(
+		firstLine,
+		/NEEDS HUMAN 👀 — deep review of the auth hotspot failed/,
+	);
+	// A non-collapsed ⛔ line must appear before the first <details>.
+	const detailsIdx = markdown.indexOf("<details>");
+	assert.ok(detailsIdx > 0, "expected a collapsed details section");
+	const beforeDetails = markdown.slice(0, detailsIdx);
+	assert.match(beforeDetails, /^- ⛔ .*not fully covered/m);
+	assert.match(beforeDetails, /\*\*⛔ Why not green:\*\*/);
+});
+
+test("renderMarkdown renders the coverage line visibly outside any collapsed section", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		coverage:
+			"3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage",
+	});
+	const detailsIdx = markdown.indexOf("<details>");
+	const beforeDetails =
+		detailsIdx > 0 ? markdown.slice(0, detailsIdx) : markdown;
+	assert.match(beforeDetails, /^Coverage: 3\/3 changed files/m);
+	// Preceded by a blank line: otherwise GFM lazy-continues the previous
+	// bullet list / paragraph and the coverage line is absorbed into it.
+	assert.match(markdown, /\n\nCoverage: /);
+});
+
+test("renderMarkdown re-review headline keeps the reason when all blockers are still open (none fresh)", () => {
+	// Re-review rounds render with findings = FRESH only; when every blocker
+	// is still-open the verdict stays red and the first line must still name
+	// the reason from the open set instead of falling back to the summary.
+	const open = finding("P1", "auth bypass persists", "src/auth.ts", {
+		lineStart: 42,
+		lineEnd: 42,
+	});
+	const markdown = renderMarkdown(baseResult([], "changes_requested"), {
+		openFindings: [open],
+	});
+	const first = markdown.split("\n")[0];
+	assert.match(
+		first,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: auth bypass persists \(src\/auth\.ts:42\)/,
+	);
 });

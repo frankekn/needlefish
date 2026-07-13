@@ -33,14 +33,54 @@ export function renderMarkdown(
 ): string {
 	const lines: string[] = [];
 	const summary = firstSentence(result.summary);
-	lines.push(
-		`${VERDICT_HEADLINE[result.verdict]}${summary ? ` — ${summary}` : ""}`,
-	);
 
-	const blockingCount = result.findings.filter(
+	const findings = [...result.findings].sort(
+		(a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity],
+	);
+	const blockingCount = findings.filter(
 		(finding) => finding.severity !== "P3",
 	).length;
-	const nitCount = result.findings.length - blockingCount;
+	const blockingResiduals = result.residualRisks.filter((risk) => risk.blocks);
+
+	// Reason pool for the red headline: on re-review rounds `result.findings`
+	// holds only the FRESH findings, but the verdict is computed from the full
+	// set — a round where every blocker is still-open (none fresh) must still
+	// name its reason, so still-open findings join the pool.
+	const headlineFindings = [...findings, ...(opts?.openFindings ?? [])].sort(
+		(a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity],
+	);
+	const headlineBlockingCount = headlineFindings.filter(
+		(finding) => finding.severity !== "P3",
+	).length;
+
+	// Red-reason headline: when the verdict is red, the first line states WHY
+	// (top blocking finding / first blocking residual) instead of the summary.
+	// Defensive: if the reason data is absent, fall back to the summary headline.
+	let headlineReplaced = false;
+	if (result.verdict === "changes_requested" && headlineBlockingCount > 0) {
+		const top = headlineFindings[0];
+		const title = truncate(oneLine(top.title), 120);
+		let headline = `CHANGES REQUESTED ⚠️ — ${headlineBlockingCount} blocking: ${title}`;
+		if (top.file) headline += ` (${top.file}:${top.lineStart})`;
+		if (headlineBlockingCount > 1)
+			headline += ` (+${headlineBlockingCount - 1} more)`;
+		lines.push(headline);
+		headlineReplaced = true;
+	} else if (result.verdict === "needs_human" && blockingResiduals.length > 0) {
+		const text = truncate(oneLine(blockingResiduals[0].text), 160);
+		lines.push(`NEEDS HUMAN 👀 — ${text}`);
+		headlineReplaced = true;
+	} else {
+		lines.push(
+			`${VERDICT_HEADLINE[result.verdict]}${summary ? ` — ${summary}` : ""}`,
+		);
+	}
+
+	// When the headline carried the reason, the summary first-sentence goes on
+	// its own line so the information is not lost.
+	if (headlineReplaced && summary) lines.push(summary);
+
+	const nitCount = findings.length - blockingCount;
 	const findingCounts: string[] = [];
 	if (blockingCount > 0) findingCounts.push(`**${blockingCount} blocking**`);
 	if (nitCount > 0) {
@@ -57,14 +97,27 @@ export function renderMarkdown(
 	}
 	if (delta.length > 0) lines.push(delta.join(" · "));
 
+	// Visible (non-collapsed) explanation of why the verdict is not green.
+	if (blockingResiduals.length > 0) {
+		lines.push("");
+		lines.push("**⛔ Why not green:**");
+		for (const risk of blockingResiduals) {
+			lines.push(`- ⛔ ${oneLine(risk.text)}`);
+		}
+	}
+
+	if (result.coverage) {
+		// Blank line first: without it this line lazy-continues the preceding
+		// ⛔ bullet list (or counts paragraph) in GFM.
+		lines.push("");
+		lines.push(`Coverage: ${result.coverage}`);
+	}
+
 	if (result.reviewTarget) {
 		lines.push("");
 		lines.push(...result.reviewTarget.split("\n"));
 	}
 
-	const findings = [...result.findings].sort(
-		(a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity],
-	);
 	const inlinedSet = opts?.inlinedFindings;
 
 	lines.push("");
@@ -190,6 +243,10 @@ function firstSentence(summary: string): string {
 
 function oneLine(text: string): string {
 	return text.replace(/\s*\r?\n\s*/g, " ");
+}
+
+function truncate(text: string, max: number): string {
+	return text.length > max ? text.slice(0, max) : text;
 }
 
 function tableText(text: string): string {
