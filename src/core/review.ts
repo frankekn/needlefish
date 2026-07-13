@@ -289,7 +289,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (evalTraceOn()) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn()) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was

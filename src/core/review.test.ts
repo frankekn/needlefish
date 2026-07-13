@@ -2110,4 +2110,14 @@ test("review traces one parse-failed raw event for an empty successful runner at
 		false,
 		"the empty successful raw is transient trace data only",
 	);
+	assert.deepEqual(
+		result.failedRawOutputs ?? [],
+		[],
+		"an empty parse failure must not be retained as a failed raw",
+	);
+	assert.equal(
+		result.failedRawOutputs?.includes("") ?? false,
+		false,
+		"failed raw outputs must never contain an empty string",
+	);
 });
