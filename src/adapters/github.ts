@@ -435,6 +435,176 @@ function postCheck(
 	);
 }
 
+const SEV_RANK: Record<Finding["severity"], number> = {
+	P0: 0,
+	P1: 1,
+	P2: 2,
+	P3: 3,
+};
+
+const VERDICT_HEADLINE_WORD: Record<Verdict, string> = {
+	pass: "LGTM",
+	changes_requested: "CHANGES REQUESTED",
+	needs_human: "NEEDS HUMAN",
+};
+
+function oneLine(text: string): string {
+	return text.replace(/\s*\r?\n\s*/g, " ");
+}
+
+function truncateLine(text: string, max: number): string {
+	return text.length > max ? text.slice(0, max) : text;
+}
+
+function sortBySeverity(findings: readonly Finding[]): Finding[] {
+	return [...findings].sort((a, b) => SEV_RANK[a.severity] - SEV_RANK[b.severity]);
+}
+
+function topBlockingFinding(
+	findings: readonly Finding[],
+): Finding | undefined {
+	return sortBySeverity(findings).find((f) => f.severity !== "P3");
+}
+
+function firstBlockingResidual(
+	result: ReviewResult,
+): string | undefined {
+	return result.residualRisks.find((r) => r.blocks)?.text;
+}
+
+// Check-run title carries the reason on red verdicts: the top blocking finding
+// title (changes_requested) or the first blocking residual (needs_human).
+// pass keeps the plain `Needlefish: pass` title.
+function checkRunTitle(result: ReviewResult): string {
+	const base = `Needlefish: ${result.verdict}`;
+	if (result.verdict === "changes_requested") {
+		const top = topBlockingFinding(result.findings);
+		if (top) return truncateLine(`${base} — ${oneLine(top.title)}`, 120);
+	} else if (result.verdict === "needs_human") {
+		const text = firstBlockingResidual(result);
+		if (text) return truncateLine(`${base} — ${oneLine(text)}`, 120);
+	}
+	return base;
+}
+
+function postIssueComment(repo: string, prNumber: number, body: string): void {
+	ghJson(
+		[
+			"api",
+			"-X",
+			"POST",
+			`repos/${repo}/issues/${prNumber}/comments`,
+			"--input",
+			"-",
+		],
+		JSON.stringify({ body }),
+	);
+}
+
+// S3: infra-failure comment posted alongside the red check so a red X always
+// has something to read in the PR timeline. Fail-soft: never blocks the check.
+function postErrorComment(repo: string, prNumber: number, msg: string): void {
+	const body =
+		`⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n` +
+		"```\n" +
+		`${msg.slice(0, 2000)}\n` +
+		"```\n\n" +
+		"Re-trigger: push a new commit or re-run with --recheck.\n" +
+		"<!-- needlefish-error -->";
+	try {
+		postIssueComment(repo, prNumber, body);
+	} catch (commentErr) {
+		const cm = commentErr instanceof Error ? commentErr.message : String(commentErr);
+		process.stderr.write(`needlefish: could not post error comment: ${cm}\n`);
+	}
+}
+
+// S4.1: round comment notifies the PR timeline on re-review (GitHub does not
+// notify on review-body edits). Rendered from the full result so the reason
+// line stays in sync with the review body's S1 first line.
+function buildRoundCommentBody(
+	result: ReviewResult,
+	headSha: string,
+	resolvedCount: number,
+	open: readonly Finding[],
+	newCount: number,
+): string {
+	const lines: string[] = [];
+	lines.push(
+		`**Needlefish re-review** @ ${headSha.slice(0, 7)} — ✅ ${resolvedCount} resolved · ❌ ${open.length} still open · 🆕 ${newCount} new → ${VERDICT_HEADLINE_WORD[result.verdict]}`,
+	);
+	if (open.length > 0) {
+		const top = sortBySeverity(open)[0];
+		const loc = top.file ? ` (${top.file}:${top.lineStart})` : "";
+		lines.push(`Top open: ${top.severity} ${truncateLine(oneLine(top.title), 120)}${loc}`);
+	}
+	if (result.verdict !== "pass") {
+		lines.push(renderMarkdown(result).split("\n")[0]);
+	}
+	lines.push("<!-- needlefish-round -->");
+	return lines.join("\n");
+}
+
+function postRoundComment(
+	repo: string,
+	prNumber: number,
+	body: string,
+): void {
+	postIssueComment(repo, prNumber, body);
+}
+
+function isBotAuthor(item: JsonRecord): boolean {
+	const login = nestedString(item, "user", "login");
+	return login.includes("github-actions") || /\[bot\]$/.test(login);
+}
+
+// Self-hosted runners often authenticate gh with a PAT, so Needlefish's own
+// round comments carry a plain user login rather than a bot-shaped one.
+// Fail-soft: an empty string just narrows recognition back to bot authors.
+function authenticatedLogin(): string {
+	try {
+		const user = ghJson(["api", "user"]);
+		return isRecord(user) ? stringField(user, "login") : "";
+	} catch {
+		return "";
+	}
+}
+
+// S4.2: minimize prior round comments (classifier OUTDATED) so the timeline
+// surfaces only the latest round. Fail-soft: a minimize failure never fails
+// the review.
+function minimizePreviousRoundComments(
+	repo: string,
+	prNumber: number,
+): void {
+	// --slurp: --paginate alone emits one JSON document PER PAGE (concatenated,
+	// unparseable); --slurp wraps the pages into a single outer array.
+	const raw = ghJson([
+		"api",
+		"--paginate",
+		"--slurp",
+		`repos/${repo}/issues/${prNumber}/comments`,
+	]);
+	if (!Array.isArray(raw)) return;
+	const selfLogin = authenticatedLogin();
+	// Each element is a page (an array of comments); flat(1) also tolerates a
+	// plain comment list from stubs or older gh versions.
+	for (const item of raw.flat(1)) {
+		if (!isRecord(item)) continue;
+		const body = stringField(item, "body");
+		if (!body.includes("<!-- needlefish-round -->")) continue;
+		// Ours = bot-shaped author, or the identity this run posts as (PAT).
+		// The author check keeps humans quoting the marker from being swept.
+		const author = nestedString(item, "user", "login");
+		if (!isBotAuthor(item) && !(selfLogin && author === selfLogin)) continue;
+		const nodeId = stringField(item, "node_id");
+		if (!nodeId) continue;
+		const query =
+			"mutation($id: ID!) { minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) { minimizedComment { isMinimized } } }";
+		ghJson(["api", "graphql", "-f", `query=${query}`, "-f", `id=${nodeId}`]);
+	}
+}
+
 function isCurrentOpenHead(
 	repo: string,
 	prNumber: number,
@@ -562,6 +732,36 @@ export async function runGithub(
 				stateMarker: renderState(headSha, result.findings),
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
+			// S4: minimize prior round comments FIRST, then post this round's
+			// comment (body edits don't notify). Minimizing after posting would
+			// sweep up the fresh comment too — it carries the same marker.
+			try {
+				minimizePreviousRoundComments(repo, prNumber);
+			} catch (minErr) {
+				const mm = minErr instanceof Error ? minErr.message : String(minErr);
+				process.stderr.write(`needlefish: could not minimize previous round comments: ${mm}\n`);
+			}
+			// Fail-soft: the round comment is cosmetic; a transient POST failure
+			// must not throw to the outer catch, which would replace a computed
+			// verdict check-run with a red "review failed" one.
+			try {
+				postRoundComment(
+					repo,
+					prNumber,
+					buildRoundCommentBody(
+						result,
+						headSha,
+						resolvedCount,
+						open,
+						renderOpts.newCount,
+					),
+				);
+			} catch (roundErr) {
+				const rm = roundErr instanceof Error ? roundErr.message : String(roundErr);
+				process.stderr.write(
+					`needlefish: could not post round comment: ${rm}\n`,
+				);
+			}
 			if (freshComments.length > 0) {
 				postReview(repo, prNumber, headSha, "", freshComments);
 			}
@@ -572,7 +772,7 @@ export async function runGithub(
 				headSha,
 				result,
 				conclusion,
-				`Needlefish: ${result.verdict}`,
+				checkRunTitle(result),
 				summary,
 			);
 			process.stdout.write(summary);
@@ -597,7 +797,7 @@ export async function runGithub(
 				headSha,
 				result,
 				conclusion,
-				`Needlefish: ${result.verdict}`,
+				checkRunTitle(result),
 				summary,
 			);
 			process.stdout.write(summary);
@@ -605,14 +805,27 @@ export async function runGithub(
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (isCurrentOpenHead(repo, prNumber, headSha)) {
-			postCheck(
-				repo,
-				headSha,
-				null,
-				"failure",
-				"Needlefish: review failed",
-				`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
-			);
+			// Check run and error comment are independent fail-soft attempts: a
+			// failure of either GitHub endpoint must not suppress the other, nor
+			// the stderr line and exit code below.
+			try {
+				postCheck(
+					repo,
+					headSha,
+					null,
+					"failure",
+					"Needlefish: review failed",
+					`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
+				);
+			} catch (checkErr) {
+				const cm =
+					checkErr instanceof Error ? checkErr.message : String(checkErr);
+				process.stderr.write(
+					`needlefish: could not post failure check: ${cm}\n`,
+				);
+			}
+			// S3: post a PR comment so a red X always has something to read.
+			postErrorComment(repo, prNumber, msg);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;

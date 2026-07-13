@@ -578,3 +578,14 @@ Key reads:
 - **x1 rankings did not survive x3** (opus>grok at x1 inverted; sol FP 12.5%→6.9%). N=3 is the floor for any ranking claim.
 - Head-to-head for prod: grok-4.5 xhigh trades −1.2pt recall for −6.9pt FP vs sol medium at identical verdict match/anchor/speed; sol's one STABLE FP (refactor-move 3/3) is exactly the class that erodes reviewer trust. Open question before any prod switch: grok lane needs NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1 (no effective CLI sandbox) — a sandbox-risk acceptance, not an eval question.
 Reports: eval/reports/2026-07-12-{sol-medium,gpt55-medium,luna-max}-x3.json.
+
+## 2026-07-13 — Phase-1 branch regression (plans/007 M1+M5+M6, feat/review-red-reason-p1) — PASS, no behavior drift
+
+Pre-ship gate for the review-methodology Phase-1 code (touches reviewSmall/reviewLarge coverage plumbing, in the eval path). Full set x3 on the branch, both lanes, vs same-lane 2026-07-12 baselines:
+
+| lane | recall (base) | FP (base) | verdictMatch (base) |
+|---|---|---|---|
+| grok-4.5 xhigh | 91.4% (88.5%) | 1.4% (0%) | 95.2% (95.6%) |
+| sol medium | 87.9% (89.7%) | 9.7% (6.9%) | 94.8% (95.6%) |
+
+Drifts are small, in OPPOSITE directions per lane, and the stable-miss sets are identical to baseline (grok: same 5 fixtures 3/3; sol: refactor-move FP still 3/3) — sampling noise, not a code effect. Verdict: coverage plumbing is behavior-neutral; Phase 1 clear to ship. Reports: eval/reports/2026-07-12-p1branch-{sol,grok45}-x3.json (in the p1 worktree).
