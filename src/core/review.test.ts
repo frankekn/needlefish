@@ -113,6 +113,91 @@ test("review preserves deep evidence through tail coverage", async (t) => {
 	);
 });
 
+test("review attaches map transcripts when concurrency validation fails", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.txt");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+		concurrency: process.env.NEEDLEFISH_DEEP_CONCURRENCY,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+		if (previous.concurrency === undefined)
+			delete process.env.NEEDLEFISH_DEEP_CONCURRENCY;
+		else process.env.NEEDLEFISH_DEEP_CONCURRENCY = previous.concurrency;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  if (input.includes('review-MAP pass')) {",
+			`    fs.appendFileSync(${JSON.stringify(calls)}, 'map\\n');`,
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'changed', files: ['src/app.ts'], why: 'CANARY-CONCURRENCY-MAP-XYZ', risk: 'high', edges: [] }] }));",
+			"    return;",
+			"  }",
+			"  if (input.includes('doing a DEEP review')) {",
+			`    fs.appendFileSync(${JSON.stringify(calls)}, 'deep\\n');`,
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'deep clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"    return;",
+			"  }",
+			"  process.stderr.write('unexpected prompt');",
+			"  process.exit(1);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
+	process.env.NEEDLEFISH_DEEP_CONCURRENCY = "0";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: true,
+		focus: null,
+	};
+
+	const rejection = await review(bundle).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error, "invalid concurrency must reject");
+	assert.match(
+		rejection.message,
+		/NEEDLEFISH_DEEP_CONCURRENCY requires a positive integer/,
+	);
+	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
+		.rawOutputs;
+	assert.ok(
+		raws?.some((raw) => raw.includes("CANARY-CONCURRENCY-MAP-XYZ")),
+		"successful map transcript must ride the concurrency rejection",
+	);
+	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), ["map"]);
+});
+
 test("review aborts deep fallback when a non-codex runner dirties the sandbox", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);

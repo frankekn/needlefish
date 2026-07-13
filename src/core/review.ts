@@ -356,51 +356,54 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// snapshot refresh in the catch below sees transcripts siblings emitted
 	// AFTER the first rejection — the per-pass snapshot attached inside
 	// runJsonPrompt is stale by then.
-	const passes = await mapLimit(hotspots, deepConcurrency(), async (h) => {
-		const deepPrompt = loadPrompt("deep.md")
-			.replace("{{AGENTS}}", () => agents)
-			.replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2))
-			.replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
-			.replace("{{FOCUS}}", bundle.focus ?? "(none)")
-			.replace("{{BASE}}", bundle.baseSha)
-			.replace("{{HEAD}}", bundle.headSha);
-		try {
-			const res = await runJsonPrompt(
-				`deep:${h.name}`,
-				deepPrompt,
-				run,
-				parseUsableReview(`deep:${h.name}`),
-			);
-			return {
-				ok: true,
-				checked: [
-					`[${h.name}] ${res.summary || "(no summary)"}`,
-					...res.checked,
-				],
-				findings: res.findings,
-				residuals: res.residual_risks,
-			};
-		} catch (e) {
-			if (isRunnerSafetyError(e)) throw e;
-			const msg = e instanceof Error ? e.message : String(e);
-			// Swallowed failure; its raw attempts are already in run.failedRawOutputs
-			// (runJsonPrompt accumulates every failed parse there for the eval scan).
-			return {
-				ok: false,
-				checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
-				findings: [] as readonly Finding[],
-				residuals: [
-					{
-						text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`,
-						blocks: true,
-					},
-				] as readonly ResidualRisk[],
-			};
-		}
-	}).catch((err: unknown) => {
+	let passes;
+	try {
+		passes = await mapLimit(hotspots, deepConcurrency(), async (h) => {
+			const deepPrompt = loadPrompt("deep.md")
+				.replace("{{AGENTS}}", () => agents)
+				.replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2))
+				.replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
+				.replace("{{FOCUS}}", bundle.focus ?? "(none)")
+				.replace("{{BASE}}", bundle.baseSha)
+				.replace("{{HEAD}}", bundle.headSha);
+			try {
+				const res = await runJsonPrompt(
+					`deep:${h.name}`,
+					deepPrompt,
+					run,
+					parseUsableReview(`deep:${h.name}`),
+				);
+				return {
+					ok: true,
+					checked: [
+						`[${h.name}] ${res.summary || "(no summary)"}`,
+						...res.checked,
+					],
+					findings: res.findings,
+					residuals: res.residual_risks,
+				};
+			} catch (e) {
+				if (isRunnerSafetyError(e)) throw e;
+				const msg = e instanceof Error ? e.message : String(e);
+				// Swallowed failure; its raw attempts are already in run.failedRawOutputs
+				// (runJsonPrompt accumulates every failed parse there for the eval scan).
+				return {
+					ok: false,
+					checked: [`[${h.name}] DEEP PASS FAILED: ${msg.slice(0, 200)}`],
+					findings: [] as readonly Finding[],
+					residuals: [
+						{
+							text: `deep review of "${h.name}" failed (${msg.slice(0, 150)}); ${h.files.length} file(s) not deep-reviewed`,
+							blocks: true,
+						},
+					] as readonly ResidualRisk[],
+				};
+			}
+		});
+	} catch (err) {
 		attachRunRaws(err, run);
 		throw err;
-	});
+	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
 	const residuals = passes.flatMap((p) => p.residuals);
