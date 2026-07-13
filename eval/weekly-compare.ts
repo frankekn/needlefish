@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isCompleteReport } from "./shared/report-completeness";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
@@ -18,6 +19,9 @@ export interface WeeklyVerdict {
   // Set when the latest report did not run under the current anti-cheat
   // generation: its numbers are unguarded and must be withheld too.
   readonly unguarded?: boolean;
+  // Set when the latest report lacks exact fixture-by-draw coverage: partial
+  // rows cannot support any metric or stability conclusion.
+  readonly incomplete?: boolean;
 }
 
 function stableRecallByFixture(report: Report): Map<string, "hit" | "miss" | "mixed"> {
@@ -83,6 +87,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       ],
     };
   }
+  if (!isCompleteReport(latest)) {
+    return {
+      alert: true,
+      incomplete: true,
+      reasons: [
+        "latest report fixture/draw coverage is incomplete — metrics withheld; re-run the weekly lane",
+      ],
+    };
+  }
   if (latest.aggregates.invalidJsonRate > 0.1) {
     reasons.push(`invalidJsonRate ${(latest.aggregates.invalidJsonRate * 100).toFixed(0)}% exceeds 10%`);
   }
@@ -128,6 +141,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // already returned at the top with CHEAT as the only reason.)
       return { alert: reasons.length > 0, reasons: [...reasons, "note: a compromised report (cheatDetectedCount>0) blocks the week-over-week comparison"] };
     }
+    if (!isCompleteReport(prev)) {
+      return {
+        alert: reasons.length > 0,
+        reasons: [
+          ...reasons,
+          "note: previous report fixture/draw coverage is incomplete; skipping regression comparison",
+        ],
+      };
+    }
     const prevStable = stableRecallByFixture(prev);
     const regressed = [...latestStableAll]
       .filter(([id, state]) => state === "miss" && prevStable.get(id) === "hit")
@@ -154,9 +176,10 @@ function main(): void {
   const prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
   const verdict = compareWeekly(prev, latest);
   const a = latest.aggregates;
-  // A compromised report's numbers are void, an unguarded one's unprotected:
-  // print only the reasons, never the aggregate or tier metric lines.
-  const metricLines = verdict.compromised || verdict.unguarded
+  // A compromised report's numbers are void, an unguarded one's unprotected,
+  // and an incomplete one's insufficient: print only the reasons, never the
+  // aggregate or tier metric lines.
+  const metricLines = verdict.compromised || verdict.unguarded || verdict.incomplete
     ? []
     : [
         `recall ${(a.recall * 100).toFixed(0)}% | fp ${(a.falsePositiveRate * 100).toFixed(0)}% | verdict ${(a.verdictMatchRate * 100).toFixed(0)}% | noise ${a.meanNoisePerPositive.toFixed(1)}/positive`,

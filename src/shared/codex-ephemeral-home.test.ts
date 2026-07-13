@@ -762,6 +762,7 @@ test("prepareEphemeralHome: acp without a declared staging list fails closed", (
 	const previous = {
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		authEnv: process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -770,34 +771,42 @@ test("prepareEphemeralHome: acp without a declared staging list fails closed", (
 		if (previous.acpFiles === undefined)
 			delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
 		else process.env.NEEDLEFISH_ACP_AUTH_FILES = previous.acpFiles;
+		if (previous.authEnv === undefined)
+			delete process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS;
+		else process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = previous.authEnv;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+	delete process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS;
 	assert.throws(
 		() => prepareEphemeralHome("acp", tmp),
 		/NEEDLEFISH_ACP_AUTH_FILES/,
 	);
 });
 
-// Environment-authenticated acp: credentials declared via the passthrough
-// mechanism need no HOME files — isolation stays on with an empty staging.
-test("prepareEphemeralHome: acp accepts passthrough-declared env credentials", (t) => {
+// Environment-authenticated acp requires an explicit credential classification
+// in addition to the general passthrough authorization.
+test("prepareEphemeralHome: acp validates explicitly declared env credentials", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
 	const previous = {
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		authEnv: process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS,
 		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
 		token: process.env.MY_AGENT_TOKEN,
+		baseUrl: process.env.OPENAI_BASE_URL,
 		home: process.env.HOME,
 	};
 	t.after(() => {
 		for (const [key, value] of [
 			["NEEDLEFISH_EPHEMERAL_HOME", previous.ephemeral],
 			["NEEDLEFISH_ACP_AUTH_FILES", previous.acpFiles],
+			["NEEDLEFISH_ACP_AUTH_ENV_VARS", previous.authEnv],
 			["NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", previous.passthrough],
 			["MY_AGENT_TOKEN", previous.token],
+			["OPENAI_BASE_URL", previous.baseUrl],
 			["HOME", previous.home],
 		] as const) {
 			if (value === undefined) delete process.env[key];
@@ -809,19 +818,142 @@ test("prepareEphemeralHome: acp accepts passthrough-declared env credentials", (
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.HOME = fakeHome;
 	delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
-	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MY_AGENT_TOKEN";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "OPENAI_BASE_URL";
+	process.env.OPENAI_BASE_URL = "https://config-only.invalid";
 
-	// Passthrough named but the var is empty: still nothing declared — refuse.
+	assert.throws(
+		() => prepareEphemeralHome("acp", path.join(tmp, "missing")),
+		/NEEDLEFISH_ACP_AUTH_ENV_VARS/,
+		"general passthrough config alone must not prove authentication",
+	);
+	process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = " , ";
+	assert.throws(
+		() => prepareEphemeralHome("acp", path.join(tmp, "blank")),
+		/NEEDLEFISH_ACP_AUTH_ENV_VARS/,
+	);
+	process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "BAD-NAME";
+	assert.throws(
+		() => prepareEphemeralHome("acp", path.join(tmp, "malformed")),
+		/valid environment variable names/,
+	);
+	process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "MY_AGENT_TOKEN,MY_AGENT_TOKEN";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MY_AGENT_TOKEN";
+	process.env.MY_AGENT_TOKEN = "tok";
+	assert.throws(
+		() => prepareEphemeralHome("acp", path.join(tmp, "duplicate")),
+		/must be unique/,
+	);
+	process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "MY_AGENT_TOKEN";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "OPENAI_BASE_URL";
+	assert.throws(
+		() => prepareEphemeralHome("acp", path.join(tmp, "not-passed")),
+		/must also appear in NEEDLEFISH_RUNNER_ENV_PASSTHROUGH/,
+	);
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MY_AGENT_TOKEN";
 	process.env.MY_AGENT_TOKEN = "";
 	assert.throws(
-		() => prepareEphemeralHome("acp", tmp),
-		/NEEDLEFISH_ACP_AUTH_FILES/,
+		() => prepareEphemeralHome("acp", path.join(tmp, "empty")),
+		/missing or empty/,
 	);
 
-	// Non-empty passthrough credential: isolation on, empty staging.
 	process.env.MY_AGENT_TOKEN = "tok";
-	const home = prepareEphemeralHome("acp", tmp);
+	const home = prepareEphemeralHome("acp", path.join(tmp, "valid"));
 	assert.ok(home, "env-authenticated acp must keep isolation on");
+});
+
+// Empty comma-list segments are never credentials. Exercise the real runCodex
+// path so a regression proves it fails before the ACP child can launch.
+test("runCodex ephemeral HOME: acp rejects empty auth-list entries before launch", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "acp-bin.js");
+	const launchDump = path.join(tmp, "acp-launched");
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		bin: process.env.NEEDLEFISH_ACP_BIN,
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		retry: process.env.NEEDLEFISH_NO_RETRY,
+		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		authEnv: process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		baseUrl: process.env.OPENAI_BASE_URL,
+		home: process.env.HOME,
+	};
+	t.after(() => {
+		for (const [key, value] of [
+			["NEEDLEFISH_ACP_BIN", previous.bin],
+			["NEEDLEFISH_EPHEMERAL_HOME", previous.ephemeral],
+			["NEEDLEFISH_NO_RETRY", previous.retry],
+			["NEEDLEFISH_ACP_AUTH_FILES", previous.acpFiles],
+			["NEEDLEFISH_ACP_AUTH_ENV_VARS", previous.authEnv],
+			["NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", previous.passthrough],
+			["OPENAI_BASE_URL", previous.baseUrl],
+			["HOME", previous.home],
+		] as const) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`fs.writeFileSync(${JSON.stringify(launchDump)}, "launched");`,
+			"process.exit(1);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.NEEDLEFISH_ACP_BIN = bin;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	process.env.HOME = fakeHome;
+	process.env.OPENAI_BASE_URL = "https://config-only.invalid";
+
+	const cases = [
+		{ label: "file comma-only", files: ",", authEnv: "BAD-NAME" },
+		{ label: "file leading comma", files: ",.agent/auth.json", authEnv: "BAD-NAME" },
+		{ label: "file trailing comma", files: ".agent/auth.json,", authEnv: "BAD-NAME" },
+		{
+			label: "file doubled comma",
+			files: ".agent/auth.json,,.agent/other.json",
+			authEnv: "BAD-NAME",
+		},
+		{ label: "env comma-only", authEnv: "," },
+		{ label: "env leading comma", authEnv: ",MY_AGENT_TOKEN" },
+		{ label: "env trailing comma", authEnv: "MY_AGENT_TOKEN," },
+		{
+			label: "env doubled comma",
+			authEnv: "MY_AGENT_TOKEN,,OTHER_TOKEN",
+		},
+	] as const;
+
+	for (const scenario of cases) {
+		if ("files" in scenario)
+			process.env.NEEDLEFISH_ACP_AUTH_FILES = scenario.files;
+		else delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+		process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = scenario.authEnv;
+		process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "OPENAI_BASE_URL";
+
+		await assert.rejects(
+			() =>
+				runCodex("prompt", {
+					repoPath: repo,
+					runner: "acp",
+					targetHeadSha: headSha(repo),
+					timeoutMs: 1000,
+				}),
+			/entries must not be empty/,
+			scenario.label,
+		);
+		assert.equal(
+			existsSync(launchDump),
+			false,
+			`${scenario.label} must fail before child launch`,
+		);
+	}
 });
 
 // With a declared list, acp stages exactly those files (copy-only) into the
@@ -832,6 +964,7 @@ test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
 	const previous = {
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		acpFiles: process.env.NEEDLEFISH_ACP_AUTH_FILES,
+		authEnv: process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS,
 		home: process.env.HOME,
 	};
 	t.after(() => {
@@ -841,6 +974,9 @@ test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
 		if (previous.acpFiles === undefined)
 			delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
 		else process.env.NEEDLEFISH_ACP_AUTH_FILES = previous.acpFiles;
+		if (previous.authEnv === undefined)
+			delete process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS;
+		else process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = previous.authEnv;
 		if (previous.home === undefined) delete process.env.HOME;
 		else process.env.HOME = previous.home;
 		rmSync(tmp, { recursive: true, force: true });
@@ -851,6 +987,7 @@ test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_ACP_AUTH_FILES = ".myagent/cred.json";
+	process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "BAD-NAME";
 
 	const home = prepareEphemeralHome("acp", tmp);
 	assert.ok(home, "isolation must stay on for a declared acp staging list");

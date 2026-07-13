@@ -58,6 +58,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     createdAt: "2026-07-09T00:00:00.000Z",
     baseline: false,
     holdout: "include",
+    fixtures: [...new Set(results.map((result) => result.fixtureId))],
     results,
     aggregates: aggregatesOf(partial.aggregates ? { ...partial.aggregates } : {}),
     fixtureSetHash: "fff",
@@ -218,6 +219,64 @@ test("weekly-compare CLI: a compromised report prints CHEAT and no metric lines"
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("compareWeekly: an incomplete latest report withholds every metric conclusion", () => {
+  const latest = report([draw("t1-fix", 0, { recall: false, falsePositive: true })], {
+    aggregates: aggregatesOf({ invalidJsonRate: 0.5 }),
+    fixtureTiers: { "t1-fix": 1 },
+  });
+  const v = compareWeekly(null, latest);
+  assert.equal(v.alert, true);
+  assert.equal(v.incomplete, true);
+  assert.deepEqual(v.reasons, [
+    "latest report fixture/draw coverage is incomplete — metrics withheld; re-run the weekly lane",
+  ]);
+  assert.ok(v.reasons.every((reason) => !/tier-1|false positive|invalidJsonRate/.test(reason)));
+});
+
+test("weekly-compare CLI: an incomplete latest report prints no metric lines", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-weekly-incomplete-"));
+  const latestPath = path.join(dir, "latest.json");
+  writeFileSync(
+    latestPath,
+    JSON.stringify(
+      report([draw("t1-fix", 0, { recall: false })], {
+        fixtureTiers: { "t1-fix": 1 },
+      }),
+    ),
+  );
+  try {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const res = spawnSync(
+      "npx",
+      ["tsx", path.join("eval", "weekly-compare.ts"), latestPath],
+      { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+    );
+    assert.equal(res.status, 2, `alert exit expected, stderr: ${res.stderr}`);
+    assert.match(res.stdout, /coverage is incomplete/);
+    assert.doesNotMatch(res.stdout, /recall \d|fp |verdict \d|noise|recall t\d/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("compareWeekly: an incomplete previous report cannot anchor deltas", () => {
+  const prev = report([
+    draw("a", 0, { recall: true }),
+    draw("b", 0, { recall: true, falsePositive: false }),
+  ]);
+  const latest = report([
+    ...drawsFor("a", [false, false, false]),
+    ...drawsFor("b", [false, false, false], true),
+  ], {
+    aggregates: aggregatesOf({ invalidJsonRate: 0.2 }),
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true, "valid latest-only alert reasons remain actionable");
+  assert.ok(v.reasons.some((reason) => reason.includes("invalidJsonRate")));
+  assert.ok(v.reasons.some((reason) => reason.includes("coverage is incomplete")));
+  assert.ok(v.reasons.every((reason) => !/fixtures regressed|false positive/.test(reason)));
 });
 
 test("compareWeekly: a pre-guard previous week skips regression comparison", () => {

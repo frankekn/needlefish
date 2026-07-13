@@ -156,6 +156,50 @@ function hasOpenCodeEnvCredential(): boolean {
 	);
 }
 
+function strictCommaList(raw: string, envName: string): string[] {
+	const entries = raw.split(",").map((entry) => entry.trim());
+	if (entries.some((entry) => entry.length === 0)) {
+		throw new Error(`${envName} entries must not be empty`);
+	}
+	return entries;
+}
+
+function requireAcpEnvCredentials(): void {
+	const raw = process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS;
+	if (raw === undefined || raw.trim().length === 0) {
+		throw new Error(
+			"NEEDLEFISH_EPHEMERAL_HOME=1 needs explicit ACP credentials: set NEEDLEFISH_ACP_AUTH_FILES to HOME-relative files or NEEDLEFISH_ACP_AUTH_ENV_VARS to credential variable names also authorized by NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+		);
+	}
+	const names = strictCommaList(raw, "NEEDLEFISH_ACP_AUTH_ENV_VARS");
+
+	const passthrough = new Set(passthroughNames());
+	const seen = new Set<string>();
+	for (const name of names) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+			throw new Error(
+				`NEEDLEFISH_ACP_AUTH_ENV_VARS entries must be valid environment variable names: ${name}`,
+			);
+		}
+		if (seen.has(name)) {
+			throw new Error(
+				`NEEDLEFISH_ACP_AUTH_ENV_VARS entries must be unique: ${name}`,
+			);
+		}
+		seen.add(name);
+		if (!passthrough.has(name)) {
+			throw new Error(
+				`NEEDLEFISH_ACP_AUTH_ENV_VARS credential must also appear in NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: ${name}`,
+			);
+		}
+		if (!process.env[name]) {
+			throw new Error(
+				`NEEDLEFISH_ACP_AUTH_ENV_VARS credential is missing or empty: ${name}`,
+			);
+		}
+	}
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
@@ -195,26 +239,13 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "acp") {
 		const raw = process.env.NEEDLEFISH_ACP_AUTH_FILES?.trim();
 		if (!raw) {
-			// Environment-authenticated mode: the operator already declared the
-			// agent's credential vars via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH; with
-			// at least one set and non-empty, nothing needs to live in HOME.
-			const passthroughAuthed = (
-				process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? ""
-			)
-				.split(",")
-				.map((name) => name.trim())
-				.some((name) => name.length > 0 && !!process.env[name]);
-			if (passthroughAuthed) {
-				return { required: [], optional: [] };
-			}
-			throw new Error(
-				"NEEDLEFISH_EPHEMERAL_HOME=1 needs an explicit credential declaration for the acp runner: set NEEDLEFISH_ACP_AUTH_FILES to comma-separated HOME-relative paths (copied, never symlinked), pass env credentials via NEEDLEFISH_RUNNER_ENV_PASSTHROUGH, or set NEEDLEFISH_EPHEMERAL_HOME=0 explicitly for acp lanes.",
-			);
+			// Environment-authenticated mode uses a separate declaration to classify
+			// credentials. Passthrough only authorizes forwarding and may also carry
+			// non-secret configuration, so it cannot prove authentication by itself.
+			requireAcpEnvCredentials();
+			return { required: [], optional: [] };
 		}
-		const required = raw
-			.split(",")
-			.map((entry) => entry.trim())
-			.filter((entry) => entry.length > 0);
+		const required = strictCommaList(raw, "NEEDLEFISH_ACP_AUTH_FILES");
 		for (const entry of required) {
 			// Validate with BOTH separator forms: on Windows `..\` traverses and
 			// `C:\` is absolute, and the later staging join is platform-native.
