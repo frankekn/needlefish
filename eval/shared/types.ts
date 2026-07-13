@@ -147,6 +147,8 @@ export interface Report {
   readonly fixtureSetHash?: string;
   readonly fixtureTiers?: Readonly<Record<string, number>>;
   // Anti-cheat guard generation the draws ran under (1 = ephemeral HOME +
-  // bait canary). Absent on reports that predate the guards.
+  // bait canary). Absent on reports that predate the guards, that disabled a
+  // guard via --env, or whose runner cannot honor one (claude is exempt from
+  // HOME isolation, so claude lanes are never certified).
   readonly anticheatVersion?: number;
 }

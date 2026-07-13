@@ -141,7 +141,12 @@ function codexOptions(run: ReviewRun, label: string): CodexOptions {
 		onStat: (stat) => run.stats.push(stat),
 		// Runner-level failures (crash, nonzero exit) hand their captured stdout
 		// here so it joins the same canary-scan accumulator as parse failures.
-		onFailedRaw: (raw) => run.failedRawOutputs.push(raw),
+		// Retention is trace-gated like every other transcript surface: the
+		// eval lane always runs with tracing on, and a prod review must not
+		// accumulate up to 64 MiB per failed stream for a scan that never runs.
+		onFailedRaw: (raw) => {
+			if (evalTraceOn()) run.failedRawOutputs.push(raw);
+		},
 		...run.runnerOptions,
 	};
 }
@@ -184,7 +189,7 @@ async function runJsonPrompt<T>(
 			return parsed;
 		} catch (err) {
 			lastErr = err;
-			run.failedRawOutputs.push(out);
+			if (evalTraceOn()) run.failedRawOutputs.push(out);
 		}
 	}
 	attachRunRaws(lastErr, run);

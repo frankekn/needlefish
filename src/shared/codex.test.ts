@@ -319,3 +319,120 @@ function processExists(pid: number): boolean {
     throw error;
   }
 }
+
+test("openai runner failures ride the full response body for the canary scan", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	// Attempt 1: HTTP 500 whose body parks the canary PAST the 2000-char clip
+	// the error message applies. Attempt 2 (retry): HTTP 200 with a non-JSON
+	// body — the parse-failure path. Both bodies must reach onFailedRaw whole;
+	// the direct-HTTP runner has no stdout/out-file surfaces to fall back on.
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		if (calls === 1) {
+			res.statusCode = 500;
+			res.end(`${"x".repeat(2500)} CANARY-HTTP-500`);
+			return;
+		}
+		res.statusCode = 200;
+		res.end("not json at all CANARY-HTTP-BODY");
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.CODEX_RETRY_MS = "1";
+
+	const failedRaws: string[] = [];
+	const rejection = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedRaw: (raw) => failedRaws.push(raw),
+	}).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error, "both attempts failing must reject");
+	assert.match(rejection.message, /non-JSON response body/);
+	assert.equal(calls, 2, "the runner must have retried once");
+	assert.ok(
+		failedRaws.some((raw) => raw.includes("CANARY-HTTP-500")),
+		"the HTTP-error body past the message clip must reach the scan",
+	);
+	assert.ok(
+		failedRaws.some((raw) => raw.includes("CANARY-HTTP-BODY")),
+		"the non-JSON 200 body must reach the scan",
+	);
+});
+
+test("onFailedRaw fires once per failed attempt", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"process.stdin.resume();",
+			"process.stdin.on('end', () => {",
+			"  process.stdout.write('crash output');",
+			"  process.exit(3);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	// The rider itself still carries the last attempt's output (it rides the
+	// error object, not an accumulator) — but the caller-side accumulator is
+	// the review layer's, and review gates retention on evalTraceOn(). Here we
+	// assert the plumbing contract: onFailedRaw still fires; what the caller
+	// DOES with it is the trace-gated part (covered in review.test.ts).
+	const failedRaws: string[] = [];
+	const rejection = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedRaw: (raw) => failedRaws.push(raw),
+	}).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error);
+	assert.equal(failedRaws.length, 2, "one capture per failed attempt");
+});

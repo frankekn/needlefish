@@ -890,6 +890,18 @@ test("gen-baseline-doc refuses unguarded and compromised reports", (t) => {
     assert.match(res.stderr, /refusing to generate baseline doc/);
     assert.doesNotMatch(res.stderr, /wrote eval\/BASELINE\.md/);
   }
+
+  // No default report: every committed baseline predates the guards and
+  // would deterministically fail the gate — the no-arg invocation must print
+  // usage before reading anything, not chase a stale hardcoded path.
+  const noArg = spawnSync("npx", ["tsx", path.join("eval", "gen-baseline-doc.ts")], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.equal(noArg.status, 1, `no-arg must exit 1, stderr: ${noArg.stderr}`);
+  assert.match(noArg.stderr, /usage: /);
+  assert.doesNotMatch(noArg.stderr, /refusing to generate baseline doc/);
 });
 
 test("renderResults: mixed prompt hashes are reported, not asserted shared", () => {
@@ -958,6 +970,25 @@ test("writeReport: anticheatVersion is only earned when HOME isolation AND traci
     untraced.anticheatVersion,
     undefined,
     "a run without eval tracing must not claim the guard generation",
+  );
+
+  // claude is exempt from HOME isolation by design (Keychain auth): its lanes
+  // never earn the label, even with both guard flags on — certifying one
+  // would promise a G1 guarantee its draws did not have.
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
+  const claudeArgs = parseArgs([
+    "--runner",
+    "claude",
+    "--draws",
+    "1",
+    "--report",
+    reportPath,
+  ]);
+  const claudeLane = writeReport(claudeArgs, [], [spec]);
+  assert.equal(
+    claudeLane.anticheatVersion,
+    undefined,
+    "a claude lane must not be certified as HOME-isolated",
   );
 });
 

@@ -830,17 +830,36 @@ async function runOpenAIDirect(
 			signal: controller.signal,
 		});
 		const text = await res.text();
-		if (!res.ok)
-			throw new Error(
-				`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`,
-			);
-		const json = JSON.parse(text) as {
-			choices?: { message?: { content?: string } }[];
+		// Every failure path rides the FULL response body on the error (the
+		// message stays clipped): the eval canary scan must see what the API
+		// actually returned — a clipped message is not the transcript, and the
+		// direct-HTTP runner has no stdout/out-file surfaces to fall back on.
+		const withBody = (err: Error): Error => {
+			if (text) (err as Error & { rawOutput?: string }).rawOutput = text;
+			return err;
 		};
+		if (!res.ok)
+			throw withBody(
+				new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
+			);
+		let json: { choices?: { message?: { content?: string } }[] };
+		try {
+			json = JSON.parse(text) as {
+				choices?: { message?: { content?: string } }[];
+			};
+		} catch {
+			throw withBody(
+				new Error(
+					`openai runner: non-JSON response body: ${text.slice(0, 500)}`,
+				),
+			);
+		}
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
-			throw new Error(
-				`openai runner: empty content in response: ${text.slice(0, 500)}`,
+			throw withBody(
+				new Error(
+					`openai runner: empty content in response: ${text.slice(0, 500)}`,
+				),
 			);
 		}
 		return content;

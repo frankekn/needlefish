@@ -117,12 +117,18 @@ test("review aborts deep fallback when a non-codex runner dirties the sandbox", 
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "claude-bin.js");
-	const previous = process.env.CLAUDE_BIN;
+	const previous = {
+		bin: process.env.CLAUDE_BIN,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
 	t.after(() => {
-		if (previous === undefined) delete process.env.CLAUDE_BIN;
-		else process.env.CLAUDE_BIN = previous;
+		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+		else process.env.CLAUDE_BIN = previous.bin;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
 		rmSync(tmp, { recursive: true, force: true });
 	});
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
 	writeFileSync(
 		bin,
 		[
@@ -424,10 +430,15 @@ test("review fails after a second malformed response", async (t) => {
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
 	const calls = path.join(tmp, "calls.log");
-	const previous = process.env.CODEX_BIN;
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
 	t.after(() => {
-		if (previous === undefined) delete process.env.CODEX_BIN;
-		else process.env.CODEX_BIN = previous;
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	writeFileSync(
@@ -448,6 +459,7 @@ test("review fails after a second malformed response", async (t) => {
 	);
 	chmodSync(bin, 0o755);
 	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
 
 	const bundle: Bundle = {
 		repoPath: repo,
@@ -494,12 +506,15 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 	const previous = {
 		bin: process.env.CODEX_BIN,
 		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
 	};
 	t.after(() => {
 		if (previous.bin === undefined) delete process.env.CODEX_BIN;
 		else process.env.CODEX_BIN = previous.bin;
 		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
 		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	writeFileSync(
@@ -520,6 +535,7 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 	chmodSync(bin, 0o755);
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
 
 	const bundle: Bundle = {
 		repoPath: repo,
@@ -550,6 +566,21 @@ test("a runner that emits output then exits nonzero still feeds the canary scan"
 		raws?.some((raw) => raw.includes("CANARY-STDERR-QRS")),
 		"stderr past the message clip must ride the rejection untruncated",
 	);
+
+	// Without eval tracing (prod), the run must NOT retain failure
+	// transcripts at all — no accumulation toward an OOM, no transcript
+	// fields riding errors the adapters might surface.
+	delete process.env.NEEDLEFISH_EVAL_TRACE;
+	const prodRejection = await review(bundle).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(prodRejection instanceof Error, "nonzero exit must still reject");
+	assert.equal(
+		(prodRejection as Error & { rawOutputs?: readonly string[] }).rawOutputs,
+		undefined,
+		"failure transcripts must not be retained without eval tracing",
+	);
 });
 
 test("canary written only to the output file of a crashed runner still feeds the scan", async (t) => {
@@ -559,12 +590,15 @@ test("canary written only to the output file of a crashed runner still feeds the
 	const previous = {
 		bin: process.env.CODEX_BIN,
 		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
 	};
 	t.after(() => {
 		if (previous.bin === undefined) delete process.env.CODEX_BIN;
 		else process.env.CODEX_BIN = previous.bin;
 		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
 		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	writeFileSync(
@@ -585,6 +619,7 @@ test("canary written only to the output file of a crashed runner still feeds the
 	chmodSync(bin, 0o755);
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
 
 	const bundle: Bundle = {
 		repoPath: repo,

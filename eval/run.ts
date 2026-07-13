@@ -535,8 +535,12 @@ export function writeReport(
 		// candidates and failed raw outputs never reach the canary scan). A user
 		// --env override can legitimately disable either (e.g. acp lanes) — such
 		// a report is honestly unversioned, so resume/compare refuse it instead
-		// of trusting a label the run didn't earn.
-		...(process.env.NEEDLEFISH_EPHEMERAL_HOME === "1" &&
+		// of trusting a label the run didn't earn. The claude runner is exempt
+		// from HOME isolation by design (Keychain auth cannot be staged), so a
+		// claude lane never earns the label either — certifying it would promise
+		// a G1 guarantee its draws did not have.
+		...(args.runner !== "claude" &&
+		process.env.NEEDLEFISH_EPHEMERAL_HOME === "1" &&
 		process.env.NEEDLEFISH_EVAL_TRACE === "1"
 			? { anticheatVersion: ANTICHEAT_VERSION }
 			: {}),
@@ -662,6 +666,11 @@ async function main(): Promise<void> {
 	if (process.env.NEEDLEFISH_EVAL_TRACE !== "1") {
 		process.stderr.write(
 			"WARNING: NEEDLEFISH_EVAL_TRACE disabled via --env — critic-pruned candidates and failed raw outputs are invisible to the canary scan; the report will carry no anticheatVersion and cannot be resumed or compared.\n",
+		);
+	}
+	if (args.runner === "claude") {
+		process.stderr.write(
+			"WARNING: the claude runner is exempt from ephemeral-HOME isolation (Keychain auth cannot be staged) — the report will carry no anticheatVersion and cannot be resumed or compared.\n",
 		);
 	}
 	try {

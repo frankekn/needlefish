@@ -25,9 +25,18 @@ async function loadAll(): Promise<FixtureSpec[]> {
 	return specs;
 }
 
-const baselinePath =
-	process.argv[2] ??
-	path.join(__dirname, "baselines", "codex-2d82256f1bb7da69.json");
+// No default report: every committed baseline predates the anti-cheat guards
+// and would deterministically fail the gate below. The caller names the
+// guarded baseline explicitly (see the invocation recorded at the bottom of
+// eval/BASELINE.md) — a hardcoded default would just go stale again the next
+// time the baseline is re-recorded.
+const baselinePath = process.argv[2];
+if (!baselinePath) {
+	process.stderr.write(
+		"usage: node --import tsx eval/gen-baseline-doc.ts <eval/baselines/<report>.json>\n",
+	);
+	process.exit(1);
+}
 const report = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
 // Comparability contract, same as resume/compare/weekly/gen-results: baseline
 // documentation must never be generated from an unguarded or compromised
