@@ -95,6 +95,10 @@ function buildRunnerEnv(
 	if (ephemeralHome !== undefined) {
 		env.HOME = ephemeralHome;
 		env.USERPROFILE = ephemeralHome;
+		if (runner === "opencode") {
+			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
+			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
+		}
 	}
 	return env;
 }
@@ -321,11 +325,25 @@ export function prepareEphemeralHome(
 	];
 	const homeRoot = path.resolve(realHome);
 	for (const { rel, required: isRequired } of stage) {
-		// Containment backstop for every runner's staging list (operator-supplied
-		// acp entries included): the platform-native resolution of rel must stay
-		// beneath the real HOME, whatever separators or '..' survived upstream.
-		const resolvedSrc = path.resolve(realHome, rel);
+		const xdgSource =
+			runner === "opencode" && rel.startsWith(".config/")
+				? path.join(
+						process.env.XDG_CONFIG_HOME?.trim() || path.join(realHome, ".config"),
+						rel.slice(".config/".length),
+					)
+				: runner === "opencode" && rel.startsWith(".local/share/")
+					? path.join(
+							process.env.XDG_DATA_HOME?.trim() ||
+								path.join(realHome, ".local", "share"),
+							rel.slice(".local/share/".length),
+						)
+					: undefined;
+		// Containment backstop for HOME-relative staging entries (operator-supplied
+		// acp entries included). OpenCode's fixed filenames may instead live under
+		// an explicitly configured XDG root outside HOME.
+		const resolvedSrc = xdgSource ?? path.resolve(realHome, rel);
 		if (
+			xdgSource === undefined &&
 			resolvedSrc !== homeRoot &&
 			!resolvedSrc.startsWith(homeRoot + path.sep)
 		) {
@@ -333,7 +351,7 @@ export function prepareEphemeralHome(
 				`NEEDLEFISH_EPHEMERAL_HOME auth staging path escapes HOME: ${rel}`,
 			);
 		}
-		const src = path.join(realHome, rel);
+		const src = xdgSource ?? path.join(realHome, rel);
 		if (!existsSync(src)) {
 			if (!isRequired) continue;
 			throw new Error(

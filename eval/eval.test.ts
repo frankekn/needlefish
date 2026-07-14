@@ -811,6 +811,28 @@ test("resumeSlots and compare fail closed on a missing cheatDetectedCount", () =
   }
 });
 
+test("compare: rejects a report whose clean aggregate contradicts a detected draw", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-inconsistent-cheat-count-"));
+  const spec = holdoutSpec("inconsistent-cheat-count", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1 });
+  const detected: Report = {
+    ...clean,
+    results: clean.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
+  const baselinePath = path.join(dir, "baseline.json");
+  writeFileSync(baselinePath, JSON.stringify(clean));
+  try {
+    assert.throws(
+      () => compare(baselinePath, detected),
+      /compromised or unverifiable/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("renderResults: legacy and compromised reports are excluded from baseline and deltas", () => {
   // The published results table honors the same comparability contract as
   // resume/compare/weekly: pre-guard or canary-positive reports are listed
@@ -1179,6 +1201,30 @@ test("renderResults: mixed prompt hashes are reported, not asserted shared", () 
   assert.match(md, /Mixed prompt hashes/);
   const row = md.split("\n").find((l) => l.includes("b-other-prompt")) ?? "";
   assert.match(row, /n\/a/, "a cross-prompt row is not comparable");
+});
+
+test("renderResults: hashless reports do not assert shared prompt provenance", () => {
+  const spec = holdoutSpec("gen-results-prompt-hashless", false);
+  const hashless = (runner: "codex" | "grok") => {
+    const report = resumeReport(spec, { anticheatVersion: 1, runner });
+    Reflect.deleteProperty(report, "promptHash");
+    return report;
+  };
+  const one = renderResults(
+    [],
+    [{ stem: "one-hashless", report: hashless("codex") }],
+  );
+  const multiple = renderResults(
+    [],
+    [
+      { stem: "first-hashless", report: hashless("codex") },
+      { stem: "second-hashless", report: hashless("grok") },
+    ],
+  );
+  for (const md of [one, multiple]) {
+    assert.doesNotMatch(md, /All runs share promptHash/);
+    assert.match(md, /Prompt provenance is missing/);
+  }
 });
 
 test("renderResults: hashless reports neither anchor nor join comparisons", () => {

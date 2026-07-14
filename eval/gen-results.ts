@@ -77,12 +77,23 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   // Provenance must be computed, not asserted: historical results mix prompt
   // generations, and the gated baseline may be absent or not the codex-xhigh
   // run the old prose hardcoded.
-  const promptHashes = [...new Set(reports.map((r) => r.report.promptHash))];
+  const promptHashes = [
+    ...new Set(
+      reports
+        .map((r) => r.report.promptHash)
+        .filter((hash): hash is string => typeof hash === "string" && hash.length > 0),
+    ),
+  ];
+  const missingPromptHash = reports.some(
+    ({ report }) => typeof report.promptHash !== "string" || report.promptHash.length === 0,
+  );
   const hashLine =
-    promptHashes.length === 1
+    reports.length === 0
+      ? `No reports loaded.`
+      : promptHashes.length === 1 && !missingPromptHash
       ? `All runs share promptHash \`${promptHashes[0]}\`.`
       : promptHashes.length === 0
-        ? `No reports loaded.`
+        ? `⚠️ Prompt provenance is missing from all reports; shared promptHash cannot be verified.`
         : `⚠️ Mixed prompt hashes across reports (${promptHashes.length} distinct: ${promptHashes.map((h) => `\`${h}\``).join(", ")}); rows whose promptHash differs from the baseline's are not comparable (Δ = n/a).`;
   const baselineLine = baseline
     ? `Baseline = ${baseline.stem} (@${baseline.report.effort ?? "?"}).`

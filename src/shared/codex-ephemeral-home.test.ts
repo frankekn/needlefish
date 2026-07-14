@@ -534,6 +534,85 @@ test("runCodex ephemeral HOME: opencode accepts explicitly passed provider API k
 	assert.equal(existsSync(mistralDump.home), false, "isolated HOME must be disposed");
 });
 
+test("runCodex ephemeral HOME: opencode stages custom XDG auth roots into disposable roots", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "opencode-bin.js");
+	const envDump = path.join(tmp, "opencode-xdg.json");
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const configRoot = mkdtempSync(path.join(os.tmpdir(), "needlefish-xdg-config-"));
+	const dataRoot = mkdtempSync(path.join(os.tmpdir(), "needlefish-xdg-data-"));
+	const previous = Object.fromEntries(
+		[
+			"OPENCODE_BIN",
+			"NEEDLEFISH_ALLOW_OPENCODE_RUNNER",
+			"NEEDLEFISH_EPHEMERAL_HOME",
+			"NEEDLEFISH_NO_RETRY",
+			"HOME",
+			"USERPROFILE",
+			"XDG_CONFIG_HOME",
+			"XDG_DATA_HOME",
+			"OPENAI_API_KEY",
+			"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+		].map((name) => [name, process.env[name]]),
+	);
+	t.after(() => {
+		for (const [name, value] of Object.entries(previous)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+		for (const dir of [tmp, fakeHome, configRoot, dataRoot])
+			rmSync(dir, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(configRoot, "opencode"), { recursive: true });
+	mkdirSync(path.join(dataRoot, "opencode"), { recursive: true });
+	writeFileSync(path.join(configRoot, "opencode", "opencode.json"), '{"config":true}');
+	writeFileSync(path.join(dataRoot, "opencode", "auth.json"), '{"token":"xdg"}');
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const path = require('node:path');",
+			`fs.writeFileSync(${JSON.stringify(envDump)}, JSON.stringify({ home: process.env.HOME, config: process.env.XDG_CONFIG_HOME, data: process.env.XDG_DATA_HOME, auth: fs.readFileSync(path.join(process.env.XDG_DATA_HOME, 'opencode', 'auth.json'), 'utf8') }));`,
+			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.OPENCODE_BIN = bin;
+	process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = "1";
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	process.env.HOME = fakeHome;
+	process.env.XDG_CONFIG_HOME = configRoot;
+	process.env.XDG_DATA_HOME = dataRoot;
+	delete process.env.USERPROFILE;
+	delete process.env.OPENAI_API_KEY;
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+
+	assert.equal(
+		await runCodex("prompt", {
+			repoPath: repo,
+			runner: "opencode",
+			targetHeadSha: headSha(repo),
+			timeoutMs: 1000,
+		}),
+		'{"ok":true}',
+	);
+	const dump = JSON.parse(readFileSync(envDump, "utf8")) as {
+		home: string;
+		config: string;
+		data: string;
+		auth: string;
+	};
+	assert.equal(dump.config, path.join(dump.home, ".config"));
+	assert.equal(dump.data, path.join(dump.home, ".local", "share"));
+	assert.equal(dump.auth, '{"token":"xdg"}');
+	assert.notEqual(dump.config, configRoot);
+	assert.notEqual(dump.data, dataRoot);
+	assert.equal(existsSync(dump.home), false, "disposable XDG roots must be removed");
+});
+
 test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));

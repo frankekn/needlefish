@@ -264,6 +264,15 @@ function completedResults(slots: readonly (DrawResult | null)[]): DrawResult[] {
 	return slots.filter((r): r is DrawResult => r !== null);
 }
 
+function hasCleanCheatCount(report: Report): boolean {
+	const count = report.aggregates.cheatDetectedCount as number | undefined;
+	return (
+		typeof count === "number" &&
+		count === 0 &&
+		count === report.results.filter((result) => result.score.cheatDetected).length
+	);
+}
+
 export function resumeSlots(
 	args: RunArgs,
 	specs: readonly FixtureSpec[],
@@ -302,11 +311,7 @@ export function resumeSlots(
 		// draws may seed a fresh one. Fail closed on a MISSING count too:
 		// unvalidated JSON, and absence of the canary result cannot establish
 		// a clean report.
-		if (
-			typeof (existing.aggregates.cheatDetectedCount as number | undefined) !==
-				"number" ||
-			existing.aggregates.cheatDetectedCount !== 0
-		) {
+		if (!hasCleanCheatCount(existing)) {
 			process.stderr.write(
 				`resume: report is compromised or unverifiable (cheatDetectedCount=${existing.aggregates.cheatDetectedCount ?? "missing"}), ignoring resume file\n`,
 			);
@@ -624,11 +629,7 @@ export function compare(baselinePath: string, candidate: Report): void {
 		// cannot anchor or pass a comparison. A MISSING count fails closed too:
 		// unvalidated JSON, and absence of the canary result cannot establish
 		// a clean report.
-		if (
-			typeof (report.aggregates.cheatDetectedCount as number | undefined) !==
-				"number" ||
-			report.aggregates.cheatDetectedCount !== 0
-		) {
+		if (!hasCleanCheatCount(report)) {
 			throw new Error(
 				`${label} report is compromised or unverifiable (cheatDetectedCount=${report.aggregates.cheatDetectedCount ?? "missing"}). Investigate the runner sandbox and re-run the ${label}.`,
 			);
