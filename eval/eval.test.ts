@@ -1372,6 +1372,15 @@ test("compare: rejects reports from another anti-cheat generation", () => {
   // draws never faced the canary. Same for an unguarded candidate.
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-"));
   const baselinePath = path.join(dir, "baseline.json");
+  const draw = (fixtureId: string, drawIndex: number) => ({
+    fixtureId,
+    draw: drawIndex,
+    score: score({ verdict: "pass", findings: [] }, { verdict: "pass" }, fixtureId),
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+  });
+  // Complete fixture × draw coverage so the success path reaches metrics.
   const current: Report = {
     promptHash: "prompt-hash",
     runner: "codex",
@@ -1381,7 +1390,8 @@ test("compare: rejects reports from another anti-cheat generation", () => {
     createdAt: "2026-07-13T00:00:00.000Z",
     baseline: false,
     holdout: "include",
-    results: [],
+    fixtures: ["fx-a", "fx-b"],
+    results: [draw("fx-a", 0), draw("fx-b", 0)],
     aggregates: {
       recall: 0,
       falsePositiveRate: 0,
@@ -1429,6 +1439,23 @@ test("compare: rejects reports from another anti-cheat generation", () => {
     assert.throws(
       () => compare(baselinePath, current),
       /baseline report is compromised or unverifiable \(cheatDetectedCount=1\)/,
+    );
+
+    // Partial coverage (3/4 draws) must not print comparison metrics.
+    const incomplete = {
+      ...current,
+      draws: 2,
+      results: [draw("fx-a", 0), draw("fx-b", 0), draw("fx-a", 1)],
+    };
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    assert.throws(
+      () => compare(baselinePath, incomplete),
+      /candidate report is incomplete/,
+    );
+    writeFileSync(baselinePath, JSON.stringify({ ...incomplete, baseline: true }));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report is incomplete/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

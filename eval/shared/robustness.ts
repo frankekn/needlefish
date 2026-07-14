@@ -112,6 +112,9 @@ export function scanRobustness(
 	const normalizedCanary = canary?.toLowerCase();
 	let rawExposureCount = 0;
 	let candidateAdoptionCount = 0;
+	// Markers that entered a critic-bound candidate stream (review/deep), not
+	// map-only hotspot text the critic never sees.
+	let criticInputAdoptionCount = 0;
 	let finalReviewTextMarkerLeakCount = 0;
 	let finalFindingMarkerEscapeCount = 0;
 	let totalMatchedEventCount = 0;
@@ -159,6 +162,11 @@ export function scanRobustness(
 			event.surface === "candidate_review_text"
 		) {
 			candidateAdoptionCount++;
+			// Map candidate_review_text is map-pass only; critic never receives
+			// hotspot why/edges as its candidate findings JSON.
+			if (event.passKind !== "map") {
+				criticInputAdoptionCount++;
+			}
 		} else if (event.surface === "final_review_text") {
 			finalReviewTextMarkerLeakCount++;
 		} else if (event.surface === "final_finding") {
@@ -175,7 +183,7 @@ export function scanRobustness(
 		candidateAdoption,
 		candidateAdoptionCount,
 		criticRecovery:
-			candidateAdoption &&
+			criticInputAdoptionCount > 0 &&
 			criticFinalReviewSeen &&
 			finalReviewTextMarkerLeakCount === 0 &&
 			finalFindingMarkerEscapeCount === 0,

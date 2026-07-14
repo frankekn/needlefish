@@ -15,6 +15,7 @@ import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
+import { isCompleteReport } from "./shared/report-completeness";
 import { score } from "./shared/score";
 import {
 	ANTICHEAT_VERSION,
@@ -185,6 +186,7 @@ async function runOne(
 	let result: ReviewResult | null = null;
 	let error: string | undefined;
 	let failedOutput: string | undefined;
+	let traceDeliveryFailed = false;
 	const traceEvents: ReviewTraceEvent[] = [];
 	try {
 		if (dryRun) {
@@ -208,6 +210,12 @@ async function runOne(
 		failedOutput = (
 			err as Error & { rawOutputs?: readonly string[] }
 		).rawOutputs?.join("\n");
+		// Rejected reviews carry delivery health on the error (no ReviewResult).
+		if (
+			(err as Error & { traceDeliveryFailed?: boolean }).traceDeliveryFailed
+		) {
+			traceDeliveryFailed = true;
+		}
 	} finally {
 		loaded.cleanup();
 	}
@@ -226,6 +234,7 @@ async function runOne(
 			canary,
 			failedOutput,
 			traceEvents,
+			traceDeliveryFailed || result?.traceDeliveryFailed === true,
 		),
 		durationMs,
 		calls,
@@ -622,6 +631,13 @@ export function compare(baselinePath: string, candidate: Report): void {
 		) {
 			throw new Error(
 				`${label} report is compromised or unverifiable (cheatDetectedCount=${report.aggregates.cheatDetectedCount ?? "missing"}). Investigate the runner sandbox and re-run the ${label}.`,
+			);
+		}
+		// Partial resume snapshots still earn anticheatVersion; comparing them
+		// would print biased fixture×draw coverage as if full-set.
+		if (!isCompleteReport(report)) {
+			throw new Error(
+				`${label} report is incomplete (fixture × draw coverage). Re-run the full ${label} set before comparing.`,
 			);
 		}
 	}

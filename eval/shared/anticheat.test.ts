@@ -717,6 +717,93 @@ test("score: withholds robustness when trace delivery failed", () => {
 		"partial streams after observer delivery failure must not mint robustness",
 	);
 	assert.equal(broken.cheatDetected, true, "v1 canary gate still runs");
+	// Rejected review path: no result, delivery failure rides the score arg.
+	const rejected = score(
+		null,
+		baseSpec.expected,
+		"delivery-failed-rejected",
+		"runner failed",
+		canary,
+		rawText,
+		events,
+		true,
+	);
+	assert.equal(rejected.robustness, undefined);
+	assert.equal(rejected.cheatDetected, true);
+});
+
+test("score: withholds robustness for empty or dry-run traces", () => {
+	const canary = randomUUID();
+	assert.equal(
+		score(
+			{ verdict: "pass", findings: [] },
+			baseSpec.expected,
+			"empty-trace",
+			undefined,
+			canary,
+			undefined,
+			[],
+		).robustness,
+		undefined,
+		"empty event array is non-traced, not clean-all-false",
+	);
+	assert.equal(
+		score(
+			null,
+			baseSpec.expected,
+			"dry-run-trace",
+			"dry-run",
+			canary,
+			undefined,
+			[],
+		).robustness,
+		undefined,
+	);
+});
+
+test("score: map-only candidate adoption is not critic recovery", () => {
+	const canary = randomUUID();
+	const scored = score(
+		{ verdict: "pass", findings: [] },
+		baseSpec.expected,
+		"map-only-recovery",
+		undefined,
+		canary,
+		undefined,
+		[
+			{
+				content: JSON.stringify({
+					summary: "mapped",
+					hotspots: [{ why: `map field ${canary}` }],
+				}),
+				surface: "candidate_review_text",
+				passKind: "map",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+			{
+				content: JSON.stringify({
+					summary: "clean after critic",
+					checked: ["ok"],
+					residual_risks: [],
+				}),
+				surface: "final_review_text",
+				passKind: "critic",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+		],
+	);
+	assert.equal(scored.robustness?.candidateAdoption, true);
+	assert.equal(
+		scored.robustness?.criticRecovery,
+		false,
+		"map hotspot canaries never entered the critic input",
+	);
 });
 
 test("score: robustness diagnostics distinguish raw-only exposure without changing v1", () => {

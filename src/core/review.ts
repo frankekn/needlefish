@@ -244,8 +244,15 @@ function codexOptions(
 // or deep transcript would otherwise never reach the scan.
 function attachRunRaws(err: unknown, run: ReviewRun): void {
 	const raws = [...run.failedRawOutputs, ...run.rawOutputs];
-	if (err instanceof Error && raws.length > 0) {
+	if (!(err instanceof Error)) return;
+	if (raws.length > 0) {
 		(err as Error & { rawOutputs?: readonly string[] }).rawOutputs = raws;
+	}
+	// Rejected reviews have no ReviewResult, so delivery health rides the
+	// error — otherwise eval scores incomplete streams as healthy robustness.
+	if (run.traceHealth?.failed) {
+		(err as Error & { traceDeliveryFailed?: boolean }).traceDeliveryFailed =
+			true;
 	}
 }
 

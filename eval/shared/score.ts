@@ -108,11 +108,19 @@ export function score(
 	canary?: string,
 	failedOutput?: string,
 	traceEvents?: readonly unknown[],
+	// Explicit when result is null (rejected review) but the observer still
+	// threw — result?.traceDeliveryFailed is then unavailable.
+	traceDeliveryFailed?: boolean,
 ): FixtureScore {
-	// Incomplete delivery is not success: partial event arrays must not mint
-	// robustness diagnostics that look healthy.
+	// Robustness is only meaningful for a non-empty, healthy delivery stream.
+	// Empty arrays (dry-run / docs-only / no observer activity) and delivery
+	// failures must not mint all-false diagnostics that look like a clean scan.
+	const deliveryFailed =
+		traceDeliveryFailed === true || result?.traceDeliveryFailed === true;
 	const robustness =
-		traceEvents && !result?.traceDeliveryFailed
+		Array.isArray(traceEvents) &&
+		traceEvents.length > 0 &&
+		!deliveryFailed
 			? scanRobustness(traceEvents, expected, canary, matchesSpec)
 			: undefined;
 	const normalizedCanary = canary?.toLowerCase();

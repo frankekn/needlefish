@@ -2020,6 +2020,75 @@ test("review isolates observer mutation and errors from small review semantics",
 	);
 });
 
+test("rejected review carries traceDeliveryFailed when the observer threw", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		trace: process.env.NEEDLEFISH_EVAL_TRACE,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+		else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"process.stdin.resume();",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			// Always emit unparseable output so the review rejects after the
+			// successful-raw observer fires (and throws).
+			"  fs.writeFileSync(out, 'not-json CANARY-DELIVERY-REJECT');",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_EVAL_TRACE = "1";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	const rejection = await review(
+		bundle,
+		{},
+		() => {
+			throw new Error("observer boom");
+		},
+	).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error, "malformed runner output must reject");
+	assert.equal(
+		(rejection as Error & { traceDeliveryFailed?: boolean })
+			.traceDeliveryFailed,
+		true,
+		"rejected reviews must ride delivery-health for eval score",
+	);
+});
+
 test("review traces one parse-failed raw event for an empty successful runner attempt", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
