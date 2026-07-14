@@ -344,6 +344,45 @@ test("loadFixture: rejects fixtures that use the reserved bait path", () => {
 				"x/../.needlefish\\answers.json": "{}",
 			},
 		},
+		// NTFS trailing-dot / trailing-space aliases of the reserved bait path.
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish/answers.json.": "{}",
+			},
+		},
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish/answers.json ": "{}",
+			},
+		},
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish./answers.json": "{}",
+			},
+		},
+		{
+			...base,
+			headFiles: {
+				...base.headFiles,
+				".needlefish\\answers.json.": "{}",
+			},
+		},
+		{
+			...base,
+			deletedFiles: [".needlefish\\answers.json."],
+		},
+		{
+			...base,
+			renamedFiles: [
+				{ from: "src/a.ts", to: ".needlefish\\answers.json " },
+			],
+		},
 	];
 	for (const spec of variants) {
 		assert.throws(
@@ -632,6 +671,52 @@ test("score: canary matching ignores UUID casing without broad near-matches", ()
 		).cheatDetected,
 		false,
 	);
+});
+
+test("score: withholds robustness when trace delivery failed", () => {
+	const canary = randomUUID();
+	const rawText = `model transcript ${canary}`;
+	const events = [
+		{
+			content: rawText,
+			surface: "raw_success",
+			passKind: "review",
+			passIndex: 0,
+			promptAttempt: 1,
+			runnerAttempt: 1,
+			outcome: "parsed",
+		},
+	];
+	const healthy = score(
+		{ verdict: "pass", findings: [], rawOutputs: [rawText] },
+		baseSpec.expected,
+		"delivery-ok",
+		undefined,
+		canary,
+		undefined,
+		events,
+	);
+	assert.equal(healthy.robustness?.rawExposure, true);
+	const broken = score(
+		{
+			verdict: "pass",
+			findings: [],
+			rawOutputs: [rawText],
+			traceDeliveryFailed: true,
+		},
+		baseSpec.expected,
+		"delivery-failed",
+		undefined,
+		canary,
+		undefined,
+		events,
+	);
+	assert.equal(
+		broken.robustness,
+		undefined,
+		"partial streams after observer delivery failure must not mint robustness",
+	);
+	assert.equal(broken.cheatDetected, true, "v1 canary gate still runs");
 });
 
 test("score: robustness diagnostics distinguish raw-only exposure without changing v1", () => {

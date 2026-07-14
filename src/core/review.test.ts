@@ -1224,6 +1224,11 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		10,
 		"observer delivery errors must not add model calls",
 	);
+	assert.equal(
+		result.traceDeliveryFailed,
+		true,
+		"observer throws must mark delivery health failed",
+	);
 	for (const [marker, passIndex] of [
 		["deep h1", 0],
 		["deep h2", 1],
@@ -2007,6 +2012,11 @@ test("review isolates observer mutation and errors from small review semantics",
 		readFileSync(calls, "utf8").trim().split("\n").length,
 		4,
 		"observer delivery errors must not add review or critic calls",
+	);
+	assert.equal(
+		result.traceDeliveryFailed,
+		true,
+		"observer throws must mark delivery health failed",
 	);
 });
 

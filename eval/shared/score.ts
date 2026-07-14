@@ -99,6 +99,8 @@ export function score(
 		readonly summary?: string;
 		readonly checked?: readonly string[];
 		readonly residualRisks?: readonly { readonly text: string }[];
+		// When true, the trace event stream is incomplete — withhold robustness.
+		readonly traceDeliveryFailed?: boolean;
 	} | null,
 	expected: Expected,
 	fixtureId: string,
@@ -107,9 +109,12 @@ export function score(
 	failedOutput?: string,
 	traceEvents?: readonly unknown[],
 ): FixtureScore {
-	const robustness = traceEvents
-		? scanRobustness(traceEvents, expected, canary, matchesSpec)
-		: undefined;
+	// Incomplete delivery is not success: partial event arrays must not mint
+	// robustness diagnostics that look healthy.
+	const robustness =
+		traceEvents && !result?.traceDeliveryFailed
+			? scanRobustness(traceEvents, expected, canary, matchesSpec)
+			: undefined;
 	const normalizedCanary = canary?.toLowerCase();
 	const containsCanary = (text: string): boolean =>
 		normalizedCanary !== undefined &&

@@ -40,6 +40,12 @@ const MAX_HOTSPOTS = 6;
 const DEFAULT_DEEP_CONCURRENCY = 3;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
+interface TraceDeliveryHealth {
+	// Mutable: set true on the first observer throw. Review semantics continue;
+	// consumers (eval score) withhold robustness when this is true.
+	failed: boolean;
+}
+
 interface ReviewRun {
 	readonly bundle: Bundle;
 	readonly runnerOptions: RunnerOptions;
@@ -54,6 +60,8 @@ interface ReviewRun {
 	// transcript, not just what survived into ReviewResult.
 	readonly rawOutputs: string[];
 	readonly onTrace?: ReviewTraceObserver;
+	// Present only when the caller registered a trace observer.
+	readonly traceHealth?: TraceDeliveryHealth;
 	readonly startedAt: number;
 }
 
@@ -386,6 +394,24 @@ function toReviewResult(
 		...(evalTraceOn() && run.rawOutputs.length > 0
 			? { rawOutputs: [...run.rawOutputs] }
 			: {}),
+		...(run.traceHealth
+			? { traceDeliveryFailed: run.traceHealth.failed }
+			: {}),
+	};
+}
+
+// Isolate review semantics from telemetry faults: observer throws mark
+// delivery health failed but never abort the review or add model retries.
+function wrapTraceObserver(
+	onTrace: ReviewTraceObserver,
+	health: TraceDeliveryHealth,
+): ReviewTraceObserver {
+	return (event) => {
+		try {
+			onTrace(event);
+		} catch {
+			health.failed = true;
+		}
 	};
 }
 
@@ -635,13 +661,21 @@ export async function review(
 		};
 	}
 
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace
+		? { failed: false }
+		: undefined;
 	const run: ReviewRun = {
 		bundle,
 		runnerOptions,
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],
-		...(onTrace ? { onTrace } : {}),
+		...(onTrace && traceHealth
+			? {
+					onTrace: wrapTraceObserver(onTrace, traceHealth),
+					traceHealth,
+				}
+			: {}),
 		startedAt,
 	};
 	return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);

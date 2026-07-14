@@ -106,6 +106,10 @@ export interface ReviewResult {
 	// hotspot why/edges, critic-pruned residuals) — the canary scan needs the
 	// full transcript. Trace-gated.
 	readonly rawOutputs?: readonly string[];
+	// Present only when a trace observer was registered. true means at least
+	// one observer callback threw; consumers must treat the event stream as
+	// incomplete and withhold robustness diagnostics derived from it.
+	readonly traceDeliveryFailed?: boolean;
 }
 
 export function serializeReviewResult(result: ReviewResult): string {

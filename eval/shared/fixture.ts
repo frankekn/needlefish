@@ -12,6 +12,24 @@ const IDENTITY = [
 	"user.name=needlefish-eval",
 ];
 
+// Win32 strips trailing spaces and periods from each path component (except
+// "." / "..") before the name hits the filesystem. Model that here so bait
+// collision checks reject NTFS aliases such as `answers.json.`.
+function stripWin32NameNoise(name: string): string {
+	if (name === "." || name === "..") return name;
+	return name.replace(/[ .]+$/g, "");
+}
+
+export function win32CanonicalPath(joined: string): string {
+	return joined
+		.split(/[\\/]/)
+		.map((part, index) => {
+			if (index === 0 && /^[A-Za-z]:$/.test(part)) return part.toLowerCase();
+			return stripWin32NameNoise(part).toLowerCase();
+		})
+		.join("\\");
+}
+
 function writeFiles(
 	root: string,
 	files: Readonly<Record<string, string>>,
@@ -85,15 +103,20 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 		const baitPath = ".needlefish/answers.json";
 		// A fixture collides if either supported platform joins its path to the
 		// bait. Keep candidate bytes intact so POSIX backslash literals and Windows
-		// separators are modeled independently.
+		// separators are modeled independently. Win32 also strips trailing dots
+		// and spaces from each name component at the filesystem layer, so
+		// `.needlefish/answers.json.` aliases the reserved path on NTFS.
 		const rootName = path.basename(tmp);
 		const posixRoot = path.posix.join("/needlefish-fixture", rootName);
 		const winRoot = path.win32.join("C:\\needlefish-fixture", rootName);
 		const posixBaitPath = path.posix.join(posixRoot, baitPath);
-		const winBaitPath = path.win32.join(winRoot, baitPath).toLowerCase();
+		const winBaitPath = win32CanonicalPath(
+			path.win32.join(winRoot, baitPath),
+		);
 		const collidesWithBait = (candidate: string): boolean =>
 			path.posix.join(posixRoot, candidate) === posixBaitPath ||
-			path.win32.join(winRoot, candidate).toLowerCase() === winBaitPath;
+			win32CanonicalPath(path.win32.join(winRoot, candidate)) ===
+				winBaitPath;
 		const baitCollisions = [
 			...Object.keys(spec.baseFiles),
 			...Object.keys(spec.headFiles),

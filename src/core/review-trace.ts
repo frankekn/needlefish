@@ -72,17 +72,16 @@ interface FinalReviewTrace extends CandidateReviewTrace {
 	readonly summary: string;
 }
 
+// Delivers a frozen event. Errors propagate: callers that must isolate review
+// semantics from telemetry faults (review()) wrap the observer and record
+// delivery health instead of swallowing here. Silent discard made incomplete
+// robustness streams indistinguishable from healthy ones.
 export function observeReviewTrace(
 	observer: ReviewTraceObserver | undefined,
 	event: ReviewTraceEvent,
 ): void {
 	if (!observer) return;
-	try {
-		observer(Object.freeze(event));
-	} catch {
-		// Phase 1 isolates delivery failures. V2 certification must later fail
-		// closed on telemetry health once that gate exists.
-	}
+	observer(Object.freeze(event));
 }
 
 function snapshotFinding(finding: Finding): ReviewTraceFindingSnapshot {
