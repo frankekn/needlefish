@@ -11,6 +11,8 @@ import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 // per-fixture regressions (hit on all draws last week, missed on all draws
 // this week), which single-draw variance cannot produce at draws>=3.
 
+const MIN_WEEKLY_DRAWS = 3;
+
 export interface WeeklyVerdict {
   readonly alert: boolean;
   readonly reasons: readonly string[];
@@ -89,12 +91,12 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       ],
     };
   }
-  if (!isCompleteReport(latest)) {
+  if (!isCompleteReport(latest) || latest.draws < MIN_WEEKLY_DRAWS) {
     return {
       alert: true,
       incomplete: true,
       reasons: [
-        "latest report fixture/draw coverage is incomplete — metrics withheld; re-run the weekly lane",
+        "latest report fixture/draw coverage is incomplete or has fewer than 3 draws — metrics withheld; re-run the weekly lane",
       ],
     };
   }
@@ -152,12 +154,12 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
         ],
       };
     }
-    if (!isCompleteReport(prev)) {
+    if (!isCompleteReport(prev) || prev.draws < MIN_WEEKLY_DRAWS) {
       return {
         alert: reasons.length > 0,
         reasons: [
           ...reasons,
-          "note: previous report fixture/draw coverage is incomplete; skipping regression comparison",
+          "note: previous report fixture/draw coverage is incomplete or has fewer than 3 draws; skipping regression comparison",
         ],
       };
     }

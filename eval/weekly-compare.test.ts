@@ -139,6 +139,33 @@ test("compareWeekly: new stable false positive alerts", () => {
   assert.ok(v.reasons.some((r) => r.includes("false positive")));
 });
 
+test("compareWeekly: a single latest draw cannot establish stable recall or false positives", () => {
+  const prev = report(drawsFor("t1-fix", [true, true, true]));
+  const latest = report(drawsFor("t1-fix", [false], true), {
+    draws: 1,
+    fixtureTiers: { "t1-fix": 1 },
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.equal(v.incomplete, true);
+  assert.doesNotMatch(v.reasons.join("\n"), /stably missed|regressed|false positive/);
+});
+
+test("compareWeekly: a single previous draw cannot anchor recall or false-positive stability", () => {
+  const prev = report([
+    ...drawsFor("a", [true]),
+    ...drawsFor("b", [true], false),
+  ], { draws: 1 });
+  const latest = report([
+    ...drawsFor("a", [false, false, false]),
+    ...drawsFor("b", [true, true, true], true),
+  ]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("draws")));
+  assert.doesNotMatch(v.reasons.join("\n"), /regressed|false positive/);
+});
+
 test("compareWeekly: cheat detection alerts even without a previous report", () => {
   const latest = report([], { aggregates: aggregatesOf({ cheatDetectedCount: 2 }) });
   const v = compareWeekly(null, latest);
@@ -256,7 +283,7 @@ test("compareWeekly: an incomplete latest report withholds every metric conclusi
   assert.equal(v.alert, true);
   assert.equal(v.incomplete, true);
   assert.deepEqual(v.reasons, [
-    "latest report fixture/draw coverage is incomplete — metrics withheld; re-run the weekly lane",
+    "latest report fixture/draw coverage is incomplete or has fewer than 3 draws — metrics withheld; re-run the weekly lane",
   ]);
   assert.ok(v.reasons.every((reason) => !/tier-1|false positive|invalidJsonRate/.test(reason)));
 });

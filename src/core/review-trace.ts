@@ -81,9 +81,9 @@ interface FinalReviewTrace extends CandidateReviewTrace {
 export function observeReviewTrace(
 	observer: ReviewTraceObserver | undefined,
 	event: ReviewTraceEvent,
-): void {
+): void | Promise<void> {
 	if (!observer) return;
-	observer(Object.freeze(event));
+	return observer(Object.freeze(event));
 }
 
 function snapshotFinding(finding: Finding): ReviewTraceFindingSnapshot {
@@ -96,22 +96,23 @@ function snapshotFinding(finding: Finding): ReviewTraceFindingSnapshot {
 	});
 }
 
-export function observeCandidateReviewTrace({
+export async function observeCandidateReviewTrace({
 	observer,
 	review,
 	provenance,
-}: CandidateReviewTrace): void {
+}: CandidateReviewTrace): Promise<void> {
 	if (!observer) return;
+	const deliveries: Array<void | Promise<void>> = [];
 	for (const finding of review.findings) {
-		observeReviewTrace(observer, {
+		deliveries.push(observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "candidate_finding",
 			finding: snapshotFinding(finding),
 			outcome: "parsed",
 			...provenance,
-		});
+		}));
 	}
-	observeReviewTrace(observer, {
+	deliveries.push(observeReviewTrace(observer, {
 		content: JSON.stringify({
 			summary: review.summary,
 			checked: review.checked,
@@ -120,16 +121,17 @@ export function observeCandidateReviewTrace({
 		surface: "candidate_review_text",
 		outcome: "parsed",
 		...provenance,
-	});
+	}));
+	await Promise.all(deliveries);
 }
 
-export function observeMapCandidateTrace({
+export async function observeMapCandidateTrace({
 	observer,
 	mapResult,
 	provenance,
-}: MapCandidateTrace): void {
+}: MapCandidateTrace): Promise<void> {
 	if (!observer) return;
-	observeReviewTrace(observer, {
+	await observeReviewTrace(observer, {
 		content: JSON.stringify(mapResult),
 		surface: "candidate_review_text",
 		outcome: "parsed",
@@ -137,23 +139,24 @@ export function observeMapCandidateTrace({
 	});
 }
 
-export function observeFinalReviewTrace({
+export async function observeFinalReviewTrace({
 	observer,
 	review,
 	summary,
 	provenance,
-}: FinalReviewTrace): void {
+}: FinalReviewTrace): Promise<void> {
 	if (!observer) return;
+	const deliveries: Array<void | Promise<void>> = [];
 	for (const finding of review.findings) {
-		observeReviewTrace(observer, {
+		deliveries.push(observeReviewTrace(observer, {
 			content: JSON.stringify(finding),
 			surface: "final_finding",
 			finding: snapshotFinding(finding),
 			outcome: "parsed",
 			...provenance,
-		});
+		}));
 	}
-	observeReviewTrace(observer, {
+	deliveries.push(observeReviewTrace(observer, {
 		content: JSON.stringify({
 			summary,
 			checked: review.checked,
@@ -162,5 +165,6 @@ export function observeFinalReviewTrace({
 		surface: "final_review_text",
 		outcome: "parsed",
 		...provenance,
-	});
+	}));
+	await Promise.all(deliveries);
 }

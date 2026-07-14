@@ -456,14 +456,14 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 		},
 		run,
 	);
-	observeCandidateReviewTrace({
+	await observeCandidateReviewTrace({
 		observer: run.onTrace,
 		review: candidate.value,
 		provenance: candidate,
 	});
 	const coverage = `full diff reviewed in one pass (${bundle.changedFiles.length} file${bundle.changedFiles.length === 1 ? "" : "s"})`;
 	const critic = await runCritic(candidate.value, bundle.patch, run);
-	observeFinalReviewTrace({
+	await observeFinalReviewTrace({
 		observer: run.onTrace,
 		review: critic.value,
 		summary: critic.value.summary,
@@ -504,7 +504,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		},
 		run,
 	);
-	observeMapCandidateTrace({
+	await observeMapCandidateTrace({
 		observer: run.onTrace,
 		mapResult: mapResult.value,
 		provenance: mapResult,
@@ -564,7 +564,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						},
 						run,
 					);
-					observeCandidateReviewTrace({
+					await observeCandidateReviewTrace({
 						observer: run.onTrace,
 						review: res.value,
 						provenance: res,
@@ -633,7 +633,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const tailOk = tailAdded && passes[passes.length - 1].ok;
 	const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${okHotspots.length} hotspot${okHotspots.length === 1 ? "" : "s"}${tailOk ? ", incl. tail-coverage" : ""}`;
 	const summary = `${mapResult.value.summary} — ${pruned.value.summary}`;
-	observeFinalReviewTrace({
+	await observeFinalReviewTrace({
 		observer: run.onTrace,
 		review: final,
 		summary,
