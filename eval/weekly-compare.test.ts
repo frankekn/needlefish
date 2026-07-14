@@ -287,6 +287,42 @@ test("weekly-compare CLI: an incomplete latest report prints no metric lines", (
   }
 });
 
+test("weekly-compare CLI: malformed result shapes fail closed without crashing", () => {
+  const malformedResults: readonly [string, unknown][] = [
+    ["null results", null],
+    ["null result", [null]],
+    ["missing score", [{ fixtureId: "a", draw: 0 }]],
+  ];
+
+  for (const [name, results] of malformedResults) {
+    const dir = mkdtempSync(path.join(tmpdir(), "needlefish-weekly-malformed-"));
+    const latestPath = path.join(dir, "latest.json");
+    const malformed = report([...drawsFor("a", [true, true, true])]) as unknown as {
+      results: unknown;
+    };
+    malformed.results = results;
+    writeFileSync(latestPath, JSON.stringify(malformed));
+    try {
+      const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+      const res = spawnSync(
+        "npx",
+        ["tsx", path.join("eval", "weekly-compare.ts"), latestPath],
+        { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+      );
+      assert.equal(res.status, 2, `${name}: alert exit expected, stderr: ${res.stderr}`);
+      assert.match(res.stdout, /metrics withheld/, name);
+      assert.doesNotMatch(
+        res.stdout,
+        /recall \d|fp |verdict \d|noise|recall t\d/,
+        `${name}: malformed metrics must not be printed`,
+      );
+      assert.doesNotMatch(res.stderr, /TypeError|Cannot read properties/, `${name}: malformed input must not throw`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("compareWeekly: an incomplete previous report cannot anchor deltas", () => {
   const prev = report([
     draw("a", 0, { recall: true }),
