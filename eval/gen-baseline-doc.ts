@@ -36,16 +36,18 @@ const fixtureHashOk =
 	typeof report.fixtureSetHash === "string" &&
 	report.fixtureSetHash.length > 0 &&
 	report.fixtureSetHash === expectedFixtureHash;
+const runnerOk = report.runner === "codex";
 if (
 	report.anticheatVersion !== ANTICHEAT_VERSION ||
 	typeof cheatCount !== "number" ||
 	cheatCount !== 0 ||
 	!complete ||
 	!promptHashOk ||
-	!fixtureHashOk
+	!fixtureHashOk ||
+	!runnerOk
 ) {
 	process.stderr.write(
-		`refusing to generate baseline doc: anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete}, promptHash=${promptHashOk ? "ok" : "missing"}, fixtureSetHash=${fixtureHashOk ? "ok" : report.fixtureSetHash ?? "missing"} — re-run the full baseline under the current guards\n`,
+		`refusing to generate baseline doc: runner=${runnerOk ? "codex" : report.runner ?? "missing"}, anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete}, promptHash=${promptHashOk ? "ok" : "missing"}, fixtureSetHash=${fixtureHashOk ? "ok" : report.fixtureSetHash ?? "missing"} — re-run the full Codex baseline under the current guards\n`,
 	);
 	process.exit(1);
 }

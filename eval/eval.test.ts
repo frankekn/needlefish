@@ -1018,6 +1018,7 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
   Reflect.deleteProperty(missingCheatCount, "cheatDetectedCount");
   assert.equal("cheatDetectedCount" in missingCheatCount, false);
   const hostileReports: readonly (readonly [string, Report])[] = [
+    ["non-codex-runner", { ...complete, runner: "grok" }],
     ["legacy", { ...complete, anticheatVersion: undefined }],
     ["compromised", compromised],
     [
