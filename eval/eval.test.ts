@@ -833,6 +833,44 @@ test("compare: rejects a report whose clean aggregate contradicts a detected dra
   }
 });
 
+test("resumeSlots and compare reject malformed per-draw cheat detection values", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-malformed-cheat-detection-"));
+  const spec = holdoutSpec("malformed-cheat-detection", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1 });
+  const cleanPath = path.join(dir, "clean.json");
+  writeFileSync(cleanPath, JSON.stringify(clean));
+  try {
+    for (const [name, value] of [
+      ["missing", undefined],
+      ["null", null],
+      ["string", "false"],
+      ["numeric", 0],
+    ] as const) {
+      const malformed = {
+        ...clean,
+        results: clean.results.map((result) => {
+          const score = { ...result.score } as Record<string, unknown>;
+          if (value === undefined) delete score.cheatDetected;
+          else score.cheatDetected = value;
+          return { ...result, score };
+        }),
+      } as unknown as Report;
+      const malformedPath = path.join(dir, `${name}.json`);
+      writeFileSync(malformedPath, JSON.stringify(malformed));
+      const args = parseArgs(["--draws", "1", "--resume", malformedPath]);
+      assert.equal(
+        resumeSlots(args, [spec], [{ spec, draw: 0 }]).skipped,
+        0,
+        `${name} detection must not be reused`,
+      );
+      assert.throws(() => compare(cleanPath, malformed), /compromised or unverifiable/);
+      assert.throws(() => compare(malformedPath, clean), /compromised or unverifiable/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("renderResults: legacy and compromised reports are excluded from baseline and deltas", () => {
   // The published results table honors the same comparability contract as
   // resume/compare/weekly: pre-guard or canary-positive reports are listed
@@ -895,8 +933,68 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
     "—",
     "compromised report's fixture-level recall is withheld",
   );
+  assert.equal(
+    fixtureRow.split("|").map((c) => c.trim())[6],
+    "—",
+    "unverifiable report's fixture-level recall is withheld",
+  );
+  assert.doesNotMatch(
+    md.slice(md.indexOf("## Stable misses"), md.indexOf("## False positives")),
+    /contradictory-run/,
+    "unverifiable stable misses are withheld",
+  );
+  assert.doesNotMatch(
+    md.slice(md.indexOf("## False positives"), md.indexOf("## Notes")),
+    /contradictory-run/,
+    "unverifiable false positives are withheld",
+  );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("renderResults withholds secondary metrics for malformed per-draw cheat detection", () => {
+  const positive = holdoutSpec("malformed-render-positive", false);
+  const negative = { ...holdoutSpec("malformed-render-negative", false), kind: "negative" as const };
+  const seed = resumeReport(positive, { anticheatVersion: 1, draws: 3 });
+  for (const [name, value] of [
+    ["missing", undefined],
+    ["null", null],
+    ["string", "false"],
+    ["numeric", 0],
+  ] as const) {
+    const results = [positive.id, negative.id].flatMap((fixtureId) =>
+      [0, 1, 2].map((draw) => {
+        const score = {
+          ...seed.results[0]!.score,
+          recall: false,
+          falsePositive: fixtureId === negative.id,
+        } as Record<string, unknown>;
+        if (value === undefined) delete score.cheatDetected;
+        else score.cheatDetected = value;
+        return { ...seed.results[0]!, fixtureId, draw, score };
+      }),
+    );
+    const report = {
+      ...seed,
+      fixtures: [positive.id, negative.id],
+      results,
+    } as unknown as Report;
+    const stem = `malformed-${name}`;
+    const md = renderResults([positive, negative], [{ stem, report }]);
+    const fixtureSection = md.slice(
+      md.indexOf("## Recall by positive fixture"),
+      md.indexOf("## Stable misses"),
+    );
+    assert.match(fixtureSection, new RegExp(`\\| ${positive.id} \\| — \\|`));
+    assert.doesNotMatch(
+      md.slice(md.indexOf("## Stable misses"), md.indexOf("## False positives")),
+      new RegExp(stem),
+    );
+    assert.doesNotMatch(
+      md.slice(md.indexOf("## False positives"), md.indexOf("## Notes")),
+      new RegExp(stem),
+    );
+  }
 });
 
 test("renderResults: report manifests determine completeness and baseline eligibility", () => {
@@ -1052,6 +1150,12 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
       ? { ...result, score: { ...result.score, cheatDetected: true } }
       : result),
   };
+  const malformedDetections = [
+    ["missing-draw-cheat-detection", undefined],
+    ["null-draw-cheat-detection", null],
+    ["string-draw-cheat-detection", "false"],
+    ["numeric-draw-cheat-detection", 0],
+  ] as const;
   const missingCheatCount = { ...complete.aggregates };
   Reflect.deleteProperty(missingCheatCount, "cheatDetectedCount");
   assert.equal("cheatDetectedCount" in missingCheatCount, false);
@@ -1060,6 +1164,18 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     ["legacy", { ...complete, anticheatVersion: undefined }],
     ["compromised", compromised],
     ["contradictory-cheat-count", contradictory],
+    ...malformedDetections.map(([name, value]) => {
+      const malformed = {
+        ...complete,
+        results: complete.results.map((result) => {
+          const score = { ...result.score } as Record<string, unknown>;
+          if (value === undefined) delete score.cheatDetected;
+          else score.cheatDetected = value;
+          return { ...result, score };
+        }),
+      } as unknown as Report;
+      return [name, malformed] as const;
+    }),
     [
       "missing-cheat-count",
       { ...complete, aggregates: missingCheatCount as Report["aggregates"] },

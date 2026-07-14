@@ -143,7 +143,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`|---|${reports.map(() => "---").join("|")}|`);
   for (const p of positives) {
     const cells = reports.map(({ report: r }) => {
-      if (compromised(r)) return "—";
+      if (compromised(r) || unverifiable(r)) return "—";
       const draws = r.results.filter((x) => x.fixtureId === p.id);
       const hits = draws.filter((x) => x.score.recall).length;
       return `${hits}/${draws.length}`;
@@ -154,7 +154,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`## Stable misses (recall=false on all 3 draws) — by model`);
   lines.push(``);
   for (const { stem, report: r } of reports) {
-    if (compromised(r)) continue;
+    if (compromised(r) || unverifiable(r)) continue;
     const stable = positives.filter((p) => {
       const draws = r.results.filter((x) => x.fixtureId === p.id);
       return draws.length === 3 && draws.every((x) => !x.score.recall);
@@ -166,7 +166,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(`## False positives (fp=true on any draw) — by model`);
   lines.push(``);
   for (const { stem, report: r } of reports) {
-    if (compromised(r)) continue;
+    if (compromised(r) || unverifiable(r)) continue;
     const fps = negatives.filter((n) => r.results.some((x) => x.fixtureId === n.id && x.score.falsePositive));
     if (fps.length === 0) continue;
     lines.push(`**${stem}**: ${fps.map((n) => n.id).join(", ")}`);
