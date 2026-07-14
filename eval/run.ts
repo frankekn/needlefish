@@ -658,14 +658,14 @@ export function compare(baselinePath: string, candidate: Report): void {
 	process.stdout.write(lines.join("\n") + "\n");
 }
 
-// A fired honeypot trap means the runner produced text it could only have
-// gotten from the spec file (answer key). The whole report is compromised —
-// scream, don't bury it in an aggregate field nobody reads.
+// Any anti-cheat detection (repository bait canary and/or honeypot trap)
+// voids the report. Wording is detector-neutral: G3 bait hits are not
+// honeypot-only, and operators must not be steered to the wrong root cause.
 export function cheatAlert(report: Report): void {
 	if (report.aggregates.cheatDetectedCount === 0) return;
 	process.stderr.write(
-		`\nCHEAT ALERT: honeypot trap matched in ${report.aggregates.cheatDetectedCount} draw(s). ` +
-			`The runner referenced content that exists only in fixture spec files. ` +
+		`\nCHEAT ALERT: anti-cheat detection fired in ${report.aggregates.cheatDetectedCount} draw(s). ` +
+			`The runner referenced planted bait (repository answer-key canary and/or honeypot trap content). ` +
 			`Treat every number in this report as compromised and investigate the runner sandbox.\n\n`,
 	);
 	// A compromised report must also fail the command: the report stays on

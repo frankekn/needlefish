@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadFixtures } from "./run";
+import { fixtureSetHash, loadFixtures } from "./run";
 import { isCompleteReport } from "./shared/report-completeness";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
@@ -23,20 +23,29 @@ const report = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
 const specs = await loadFixtures(null);
 // Comparability contract, same as resume/compare/weekly/gen-results: baseline
 // documentation must never be generated from an unguarded, compromised,
-// incomplete, or filtered report. Unvalidated JSON fails closed.
+// incomplete, hashless, or filtered report. Unvalidated JSON fails closed.
 const cheatCount = report.aggregates?.cheatDetectedCount as number | undefined;
 const complete = isCompleteReport(
 	report,
 	specs.map((spec) => spec.id),
 );
+const expectedFixtureHash = fixtureSetHash(specs);
+const promptHashOk =
+	typeof report.promptHash === "string" && report.promptHash.length > 0;
+const fixtureHashOk =
+	typeof report.fixtureSetHash === "string" &&
+	report.fixtureSetHash.length > 0 &&
+	report.fixtureSetHash === expectedFixtureHash;
 if (
 	report.anticheatVersion !== ANTICHEAT_VERSION ||
 	typeof cheatCount !== "number" ||
 	cheatCount !== 0 ||
-	!complete
+	!complete ||
+	!promptHashOk ||
+	!fixtureHashOk
 ) {
 	process.stderr.write(
-		`refusing to generate baseline doc: anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete} — re-run the full baseline under the current guards\n`,
+		`refusing to generate baseline doc: anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete}, promptHash=${promptHashOk ? "ok" : "missing"}, fixtureSetHash=${fixtureHashOk ? "ok" : report.fixtureSetHash ?? "missing"} — re-run the full baseline under the current guards\n`,
 	);
 	process.exit(1);
 }

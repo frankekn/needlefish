@@ -986,6 +986,7 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
   const complete: Report = {
     ...seed,
     fixtures: fixtureIds,
+    fixtureSetHash: fixtureSetHash(specs),
     results: fixtureIds.map((fixtureId) => ({ ...template, fixtureId })),
   };
   const missingManifest = { ...complete };
@@ -1060,6 +1061,28 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     [
       "filtered-subset",
       { ...complete, fixtures: fixtureIds.slice(0, 1), results: complete.results.slice(0, 1) },
+    ],
+    ["missing-prompt-hash", { ...complete, promptHash: "" }],
+    [
+      "absent-prompt-hash",
+      (() => {
+        const r = { ...complete };
+        Reflect.deleteProperty(r, "promptHash");
+        return r as Report;
+      })(),
+    ],
+    ["missing-fixture-set-hash", { ...complete, fixtureSetHash: "" }],
+    [
+      "absent-fixture-set-hash",
+      (() => {
+        const r = { ...complete };
+        Reflect.deleteProperty(r, "fixtureSetHash");
+        return r as Report;
+      })(),
+    ],
+    [
+      "wrong-fixture-set-hash",
+      { ...complete, fixtureSetHash: "deadbeefdeadbeef" },
     ],
   ];
   const repoRoot = path.resolve(__dirname, "..");
@@ -1314,17 +1337,31 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
 test("cheatAlert: a detected canary fails the command, a clean report does not", () => {
   const spec = holdoutSpec("cheat-alert-exit", false);
   const previousExitCode = process.exitCode;
+  const previousWrite = process.stderr.write.bind(process.stderr);
+  let alertText = "";
   try {
     process.exitCode = undefined;
     cheatAlert(resumeReport(spec, {}));
     assert.equal(process.exitCode, undefined, "clean report must not set exitCode");
     const compromised = resumeReport(spec, {});
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      alertText += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    }) as typeof process.stderr.write;
     cheatAlert({
       ...compromised,
       aggregates: { ...compromised.aggregates, cheatDetectedCount: 1 },
     });
     assert.equal(process.exitCode, 1, "compromised report must fail the command");
+    assert.match(alertText, /anti-cheat detection fired/);
+    assert.match(alertText, /repository answer-key canary and\/or honeypot/);
+    assert.doesNotMatch(
+      alertText,
+      /honeypot trap matched/,
+      "canary-only hits must not be diagnosed as honeypot-only",
+    );
   } finally {
+    process.stderr.write = previousWrite;
     process.exitCode = previousExitCode;
   }
 });
