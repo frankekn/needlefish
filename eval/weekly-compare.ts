@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCompleteReport } from "./shared/report-completeness";
+import { hasConsistentCheatDetection } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
@@ -73,7 +74,8 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
     typeof latestCheatCount !== "number" ||
-    latestCheatCount !== 0
+    latestCheatCount !== 0 ||
+    !hasConsistentCheatDetection(latest)
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
     // detection never covered (or never recorded) these draws, so no metric
@@ -140,6 +142,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // or suppress regression conclusions. (A compromised LATEST report
       // already returned at the top with CHEAT as the only reason.)
       return { alert: reasons.length > 0, reasons: [...reasons, "note: a compromised report (cheatDetectedCount>0) blocks the week-over-week comparison"] };
+    }
+    if (!hasConsistentCheatDetection(prev)) {
+      return {
+        alert: reasons.length > 0,
+        reasons: [
+          ...reasons,
+          "note: previous report has inconsistent anti-cheat detections; skipping regression comparison",
+        ],
+      };
     }
     if (!isCompleteReport(prev)) {
       return {

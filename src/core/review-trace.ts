@@ -47,7 +47,9 @@ export type ReviewTraceEvent =
 	| ReviewTraceFindingEvent
 	| ReviewTraceTextEvent;
 
-export type ReviewTraceObserver = (event: ReviewTraceEvent) => void;
+export type ReviewTraceObserver = (
+	event: ReviewTraceEvent,
+) => void | Promise<void>;
 
 export interface ReviewTraceProvenance {
 	readonly passKind: ReviewTracePassKind;

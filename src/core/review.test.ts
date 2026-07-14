@@ -185,7 +185,9 @@ test("review attaches map transcripts when concurrency validation fails", async 
 	const rejection = await review(
 		bundle,
 		{},
-		(event: ReviewTraceEvent) => events.push(event),
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+		},
 	).then(
 		() => null,
 		(err: unknown) => err,
@@ -578,7 +580,9 @@ test("review fails after a second malformed response", async (t) => {
 	const rejection = await review(
 		bundle,
 		{},
-		(event: ReviewTraceEvent) => events.push(event),
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+		},
 	).then(
 		() => null,
 		(err: unknown) => err,
@@ -842,7 +846,9 @@ test("a deep pass crash waits for concurrent siblings before snapshotting transc
 	const rejection = await review(
 		bundle,
 		{},
-		(event: ReviewTraceEvent) => events.push(event),
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+		},
 	).then(
 		() => null,
 		(err: unknown) => err,
@@ -1788,7 +1794,9 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			focus: null,
 		},
 		{},
-		(event: ReviewTraceEvent) => events.push(event),
+		(event: ReviewTraceEvent) => {
+			events.push(event);
+		},
 	);
 
 	assert.equal(result.findings[0]?.title, "final finding marker");
@@ -1893,7 +1901,7 @@ test("review traces prompt and runner attempts through candidate and final surfa
 	assert.equal(finalFinding?.finding?.title, "final finding marker");
 });
 
-test("review isolates observer mutation and errors from small review semantics", async (t) => {
+test("review awaits and isolates async observer errors from small review semantics", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
@@ -1944,7 +1952,7 @@ test("review isolates observer mutation and errors from small review semantics",
 	const result = await review(
 		bundle,
 		{},
-		(event: ReviewTraceEvent) => {
+		async (event: ReviewTraceEvent) => {
 			events.push(event);
 			Reflect.set(event, "passIndex", 99);
 			if (
@@ -1954,6 +1962,7 @@ test("review isolates observer mutation and errors from small review semantics",
 				Reflect.set(event.finding, "title", "observer-mutated");
 				Reflect.set(event.finding, "severity", "P3");
 			}
+			await Promise.resolve();
 			throw new Error("observer stopped review");
 		},
 	);
@@ -2155,7 +2164,9 @@ test("review traces one parse-failed raw event for an empty successful runner at
 			focus: null,
 		},
 		{},
-		(event) => events.push(event),
+		(event) => {
+			events.push(event);
+		},
 	);
 
 	assert.equal(result.verdict, "pass");

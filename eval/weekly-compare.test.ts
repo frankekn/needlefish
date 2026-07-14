@@ -146,6 +146,32 @@ test("compareWeekly: cheat detection alerts even without a previous report", () 
   assert.ok(v.reasons.some((r) => r.includes("CHEAT")));
 });
 
+test("compareWeekly: a clean aggregate contradicting a detected draw withholds metrics", () => {
+  const latest = report([
+    draw("t1-fix", 0, { recall: false, falsePositive: true, cheatDetected: true }),
+    draw("t1-fix", 1, { recall: false, falsePositive: true }),
+    draw("t1-fix", 2, { recall: false, falsePositive: true }),
+  ], { fixtureTiers: { "t1-fix": 1 } });
+  const v = compareWeekly(null, latest);
+  assert.equal(v.alert, true);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("metrics withheld")));
+  assert.doesNotMatch(v.reasons.join("\n"), /tier-1|false positive/);
+});
+
+test("compareWeekly: a contradictory previous report cannot anchor deltas", () => {
+  const prev = report([
+    draw("a", 0, { recall: true, cheatDetected: true }),
+    draw("a", 1, { recall: true }),
+    draw("a", 2, { recall: true }),
+  ]);
+  const latest = report(drawsFor("a", [false, false, false]));
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("inconsistent anti-cheat")));
+  assert.doesNotMatch(v.reasons.join("\n"), /regressed/);
+});
+
 test("compareWeekly: prompt change skips regression comparison but keeps cheat alert", () => {
   const prev = report([...drawsFor("a", [true, true, true])], { promptHash: "old" });
   const latest = report([...drawsFor("a", [false, false, false])]);

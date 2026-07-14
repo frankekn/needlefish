@@ -5,6 +5,7 @@ import {
   isCompleteReport,
   reportExpectedResultCount,
 } from "./shared/report-completeness";
+import { hasConsistentCheatDetection } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type FixtureSpec, type Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,7 +39,8 @@ export interface NamedReport {
 function guarded(r: Report): boolean {
   return (
     r.anticheatVersion === ANTICHEAT_VERSION &&
-    r.aggregates.cheatDetectedCount === 0
+    r.aggregates.cheatDetectedCount === 0 &&
+    hasConsistentCheatDetection(r)
   );
 }
 
@@ -47,6 +49,10 @@ function guarded(r: Report): boolean {
 // be published at all.
 function compromised(r: Report): boolean {
   return (r.aggregates.cheatDetectedCount ?? 0) > 0;
+}
+
+function unverifiable(r: Report): boolean {
+  return !hasConsistentCheatDetection(r);
 }
 
 export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): string {
@@ -111,8 +117,9 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   for (const { stem, report: r } of reports) {
     const a = r.aggregates;
     const draws = r.results.length;
-    if (compromised(r)) {
-      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | COMPROMISED | n/a | — | — | — | — |`);
+    if (compromised(r) || unverifiable(r)) {
+      const state = compromised(r) ? "COMPROMISED" : "UNVERIFIABLE";
+      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | ${state} | n/a | — | — | — | — |`);
       continue;
     }
     const expectedDraws = reportExpectedResultCount(r);

@@ -26,6 +26,7 @@ import {
 	type HoldoutMode,
 	type Report,
 } from "./shared/types";
+import { hasConsistentCheatDetection } from "./shared/report-integrity";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
@@ -199,7 +200,9 @@ async function runOne(
 					model: model ?? undefined,
 					reasoningEffort: effort ?? undefined,
 				},
-				(event: ReviewTraceEvent) => traceEvents.push(event),
+				(event: ReviewTraceEvent) => {
+					traceEvents.push(event);
+				},
 			);
 		}
 	} catch (err) {
@@ -266,11 +269,7 @@ function completedResults(slots: readonly (DrawResult | null)[]): DrawResult[] {
 
 function hasCleanCheatCount(report: Report): boolean {
 	const count = report.aggregates.cheatDetectedCount as number | undefined;
-	return (
-		typeof count === "number" &&
-		count === 0 &&
-		count === report.results.filter((result) => result.score.cheatDetected).length
-	);
+	return count === 0 && hasConsistentCheatDetection(report);
 }
 
 export function resumeSlots(

@@ -44,6 +44,7 @@ interface TraceDeliveryHealth {
 	// Mutable: set true on the first observer throw. Review semantics continue;
 	// consumers (eval score) withhold robustness when this is true.
 	failed: boolean;
+	readonly pending: Set<Promise<void>>;
 }
 
 interface ReviewRun {
@@ -415,11 +416,25 @@ function wrapTraceObserver(
 ): ReviewTraceObserver {
 	return (event) => {
 		try {
-			onTrace(event);
+			const delivery = Promise.resolve(onTrace(event))
+				.catch(() => {
+					health.failed = true;
+				})
+				.finally(() => {
+					health.pending.delete(delivery);
+				});
+			health.pending.add(delivery);
 		} catch {
 			health.failed = true;
 		}
 	};
+}
+
+async function drainTraceDeliveries(
+	health: TraceDeliveryHealth | undefined,
+): Promise<void> {
+	if (!health) return;
+	await Promise.all([...health.pending]);
 }
 
 // Small PR: one review call over the full diff. The diff goes in as raw text
@@ -669,7 +684,7 @@ export async function review(
 	}
 
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace
-		? { failed: false }
+		? { failed: false, pending: new Set() }
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
@@ -685,5 +700,17 @@ export async function review(
 			: {}),
 		startedAt,
 	};
-	return bundle.deep || isLarge(bundle) ? reviewLarge(run) : reviewSmall(run);
+	try {
+		const result = await (bundle.deep || isLarge(bundle)
+			? reviewLarge(run)
+			: reviewSmall(run));
+		await drainTraceDeliveries(traceHealth);
+		return traceHealth?.failed
+			? { ...result, traceDeliveryFailed: true }
+			: result;
+	} catch (err) {
+		await drainTraceDeliveries(traceHealth);
+		attachRunRaws(err, run);
+		throw err;
+	}
 }

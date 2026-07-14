@@ -131,8 +131,13 @@ export function score(
 
 	if (!result) {
 		// Invalid output is not an escape hatch: the failed attempt's raw text
-		// (and the error itself) still gets the canary scan.
+		// (and the error itself) still gets the canary scan. Healthy structured
+		// trace provenance also preserves trap matches from pre-critic findings.
 		const failedText = `${error ?? ""} ${failedOutput ?? ""}`;
+		const tracedTrapMatch =
+			robustness?.matchProvenance.some(
+				(match) => match.detectorKind === "trap",
+			) === true;
 		return {
 			fixtureId,
 			verdict: null,
@@ -147,7 +152,7 @@ export function score(
 			blockingFindingCount: 0,
 			noiseFindingCount: 0,
 			criticPruneError: false,
-			cheatDetected: containsCanary(failedText),
+			cheatDetected: containsCanary(failedText) || tracedTrapMatch,
 			...(robustness ? { robustness } : {}),
 			error,
 		};

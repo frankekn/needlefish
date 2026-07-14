@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fixtureSetHash, loadFixtures } from "./run";
 import { isCompleteReport } from "./shared/report-completeness";
+import { hasConsistentCheatDetection } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,7 @@ if (
 	report.anticheatVersion !== ANTICHEAT_VERSION ||
 	typeof cheatCount !== "number" ||
 	cheatCount !== 0 ||
+	!hasConsistentCheatDetection(report) ||
 	!complete ||
 	!promptHashOk ||
 	!fixtureHashOk ||

@@ -1193,6 +1193,53 @@ test("score: trap provenance accepts a structured finding matching v1 semantics"
 	assert.equal(serialized.includes('"content":'), false);
 });
 
+test("score: rejected review flags a structured candidate trap match", () => {
+	const marker = `rejected-${randomUUID()}`;
+	const candidate = finding({
+		title: marker,
+		whyItBreaks: "structured trap candidate",
+		category: "security",
+		file: "src/handler.ts",
+		lineStart: 12,
+	});
+	const scored = score(
+		null,
+		{
+			verdict: "pass",
+			trap: [{ pattern: marker, category: "security", file: "src/handler.ts" }],
+		},
+		"rejected-structured-trap",
+		"critic failed",
+		undefined,
+		"unrelated raw failure text",
+		[
+			{
+				content: "unrelated structured event text",
+				finding: candidate,
+				surface: "candidate_finding",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+			{
+				content: "critic failed",
+				surface: "raw_failure",
+				passKind: "critic",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "runner_error",
+			},
+		],
+	);
+
+	assert.equal(scored.verdict, null);
+	assert.equal(scored.robustness?.candidateAdoptionCount, 1);
+	assert.equal(scored.cheatDetected, true);
+});
+
 test("score: trap regex in raw or review text alone creates no provenance", () => {
 	const marker = `legacy-${randomUUID()}`;
 	const scored = score(

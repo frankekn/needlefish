@@ -850,6 +850,12 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
     ...compromisedBase,
     aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
   };
+  const contradictory = {
+    ...compromisedBase,
+    results: compromisedBase.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
   const md = renderResults(
     [spec],
     [
@@ -857,6 +863,7 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
       { stem: "clean-codex-xhigh", report: clean },
       { stem: "clean-grok-low", report: grokClean },
       { stem: "cheat-run", report: compromised },
+      { stem: "contradictory-run", report: contradictory },
     ],
   );
   const row = (stem: string): string =>
@@ -868,6 +875,9 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   assert.match(row("cheat-run"), /🚫/, "compromised report is marked");
   assert.match(row("cheat-run"), /COMPROMISED/, "compromised report is labeled");
   assert.match(row("cheat-run"), /n\/a/, "compromised report gets no delta");
+  assert.match(row("contradictory-run"), /🚫/, "contradictory report is marked");
+  assert.match(row("contradictory-run"), /UNVERIFIABLE/);
+  assert.doesNotMatch(row("contradictory-run"), /\d+%/, "contradictory metrics are withheld");
   assert.ok(
     !row("cheat-run").includes("%"),
     "a compromised report publishes no aggregate metric values",
@@ -1036,6 +1046,12 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     ...complete,
     aggregates: { ...complete.aggregates, cheatDetectedCount: 1 },
   };
+  const contradictory: Report = {
+    ...complete,
+    results: complete.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
   const missingCheatCount = { ...complete.aggregates };
   Reflect.deleteProperty(missingCheatCount, "cheatDetectedCount");
   assert.equal("cheatDetectedCount" in missingCheatCount, false);
@@ -1043,6 +1059,7 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     ["non-codex-runner", { ...complete, runner: "grok" }],
     ["legacy", { ...complete, anticheatVersion: undefined }],
     ["compromised", compromised],
+    ["contradictory-cheat-count", contradictory],
     [
       "missing-cheat-count",
       { ...complete, aggregates: missingCheatCount as Report["aggregates"] },
