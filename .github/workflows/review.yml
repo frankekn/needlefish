@@ -9,7 +9,7 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, opencode, or pi"
+        description: "Model runner: codex, claude, opencode, grok, or pi"
         required: false
         default: codex
       model:
@@ -39,7 +39,7 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, opencode, or pi"
+        description: "Model runner: codex, claude, opencode, grok, or pi"
         type: string
         required: false
         default: codex
@@ -196,9 +196,18 @@ jobs:
             echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
             exit 1
           fi
+          # Grok 4.5 emits valid review JSON only in its unsandboxed mode;
+          # opt into that mode for the explicitly selected Grok lane only.
+          unset NEEDLEFISH_ALLOW_GROK_UNSANDBOXED
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "grok" ]; then
+            export NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1
+          fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
-          if { [ "$NEEDLEFISH_RUNNER_INPUT" = "pi" ] || [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; } && [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
-            NEEDLEFISH_MODEL_INPUT="gpt-5.6-sol"
+          if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
+            case "$NEEDLEFISH_RUNNER_INPUT" in
+              codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-sol" ;;
+              grok) NEEDLEFISH_MODEL_INPUT="grok-4.5" ;;
+            esac
           fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
