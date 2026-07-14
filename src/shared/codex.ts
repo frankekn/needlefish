@@ -134,6 +134,20 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
+// Configuration that may still affect routing when authentication is supplied
+// through an environment variable. Credential stores stay out of this list:
+// env-authenticated invocations must not expose unrelated OAuth/account files
+// that happen to exist in the caller's HOME.
+const EPHEMERAL_HOME_ENV_CONFIG_FILES: Record<RunnerName, readonly string[]> = {
+	codex: [], // runCodexCli always passes --ignore-user-config
+	claude: [],
+	opencode: [".config/opencode/opencode.json"],
+	grok: [".grok/config.toml"],
+	pi: [".pi/agent/models.json"],
+	openai: [],
+	acp: [],
+};
+
 function passthroughNames(): readonly string[] {
 	return (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
@@ -215,7 +229,10 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "codex") {
 		// CODEX_API_KEY through the passthrough authenticates without auth.json.
 		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
-			return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.codex };
+			return {
+				required: [],
+				optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.codex,
+			};
 		}
 		// The invocation always passes --ignore-user-config, so the config
 		// file cannot be a requirement — an auth.json-only OAuth setup is valid.
@@ -228,13 +245,19 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		runner === "grok" &&
 		hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"])
 	) {
-		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.grok };
+		return {
+			required: [],
+			optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.grok,
+		};
 	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST). Other provider API keys must be explicitly named
 	// in the passthrough and non-empty.
 	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
-		return { required: [], optional: EPHEMERAL_HOME_AUTH_FILES.opencode };
+		return {
+			required: [],
+			optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.opencode,
+		};
 	}
 	// acp launches an arbitrary external agent whose credential layout we
 	// cannot know a priori: the operator declares the copy-only staging list
@@ -275,7 +298,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		if (provider !== "openai-codex") {
 			return {
 				required: [".pi/agent/models.json"],
-				optional: [".pi/agent/auth.json"],
+				optional: [],
 			};
 		}
 	}

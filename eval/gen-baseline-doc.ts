@@ -20,7 +20,16 @@ if (!baselinePath) {
 	);
 	process.exit(1);
 }
-const report = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
+const repoRoot = path.resolve(__dirname, "..");
+const baselineAbsolutePath = path.resolve(baselinePath);
+const baselineRelativePath = path.relative(repoRoot, baselineAbsolutePath);
+const baselineDisplayPath =
+	baselineRelativePath !== ".." &&
+	!baselineRelativePath.startsWith(`..${path.sep}`) &&
+	!path.isAbsolute(baselineRelativePath)
+		? baselineRelativePath.split(path.sep).join("/")
+		: baselineAbsolutePath;
+const report = JSON.parse(readFileSync(baselineAbsolutePath, "utf8")) as Report;
 const specs = await loadFixtures(null);
 // Comparability contract, same as resume/compare/weekly/gen-results: baseline
 // documentation must never be generated from an unguarded, compromised,
@@ -74,9 +83,7 @@ lines.push(`- **created:** ${report.createdAt}`);
 lines.push(
 	`- **fixtures:** ${specs.length} (${specs.filter((s) => s.kind === "positive").length} positive, ${specs.filter((s) => s.kind === "negative").length} negative, ${specs.filter((s) => s.kind === "parity").length} parity)`,
 );
-lines.push(
-	`- **report file:** \`eval/baselines/codex-${report.promptHash}.json\``,
-);
+lines.push(`- **report file:** \`${baselineDisplayPath}\``);
 lines.push(``);
 lines.push(`## Aggregates`);
 lines.push(``);
@@ -155,7 +162,7 @@ lines.push(
 lines.push(
 	`node --import tsx eval/run.ts --runner <codex|claude|opencode> --model <id> --draws 1 \\`,
 );
-lines.push(`  --compare eval/baselines/codex-${report.promptHash}.json \\`);
+lines.push(`  --compare ${baselineDisplayPath} \\`);
 lines.push(`  --report eval/reports/<model>.json`);
 lines.push(``);
 lines.push(`# inspect raw findings for one fixture`);
@@ -165,9 +172,7 @@ lines.push(``);
 lines.push(`## Regenerate this doc`);
 lines.push(``);
 lines.push(`\`\`\`bash`);
-lines.push(
-	`node --import tsx eval/gen-baseline-doc.ts eval/baselines/codex-${report.promptHash}.json`,
-);
+lines.push(`node --import tsx eval/gen-baseline-doc.ts ${baselineDisplayPath}`);
 lines.push(`\`\`\``);
 
 writeFileSync(path.join(__dirname, "BASELINE.md"), lines.join("\n") + "\n");

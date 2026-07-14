@@ -395,11 +395,19 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	const home = prepareEphemeralHome("opencode", tmp);
 	assert.ok(home, "ephemeral HOME must still be created");
 
-	// … and an existing config file is staged as a copy.
+	// … and an existing config file is staged as a copy, while the unrelated
+	// account credential store is excluded even when it exists.
 	mkdirSync(path.join(fakeHome, ".config", "opencode"), { recursive: true });
 	writeFileSync(
 		path.join(fakeHome, ".config", "opencode", "opencode.json"),
 		"{}",
+	);
+	mkdirSync(path.join(fakeHome, ".local", "share", "opencode"), {
+		recursive: true,
+	});
+	writeFileSync(
+		path.join(fakeHome, ".local", "share", "opencode", "auth.json"),
+		'{"token":"must-not-stage"}',
 	);
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
@@ -408,6 +416,11 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	assert.ok(
 		existsSync(path.join(home2, ".config", "opencode", "opencode.json")),
 		"present optional config must be staged into the ephemeral HOME",
+	);
+	assert.equal(
+		existsSync(path.join(home2, ".local", "share", "opencode", "auth.json")),
+		false,
+		"env-auth mode must not stage the account credential store",
 	);
 });
 
@@ -731,7 +744,6 @@ test("prepareEphemeralHome: grok provider key via passthrough makes HOME files o
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
-	// No ~/.grok files planted.
 
 	// Without a provider key, grok HOME files stay required.
 	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
@@ -741,15 +753,38 @@ test("prepareEphemeralHome: grok provider key via passthrough makes HOME files o
 		/required auth source is missing/,
 	);
 
+	// Plant both routing config and an unrelated account credential. Env-auth
+	// mode may stage the former but must never copy the latter.
+	mkdirSync(path.join(fakeHome, ".grok"));
+	writeFileSync(
+		path.join(fakeHome, ".grok", "config.toml"),
+		'model = "grok-4.5"',
+	);
+	writeFileSync(
+		path.join(fakeHome, ".grok", "auth.json"),
+		'{"token":"must-not-stage"}',
+	);
+
 	// Passthrough naming a set provider key → HOME files optional.
 	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "XAI_API_KEY";
 	process.env.XAI_API_KEY = "xai-test";
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
-	assert.ok(prepareEphemeralHome("grok", tmp2), "provider-key mode must pass");
+	const home2 = prepareEphemeralHome("grok", tmp2);
+	assert.ok(home2, "provider-key mode must pass");
+	assert.ok(
+		existsSync(path.join(home2, ".grok", "config.toml")),
+		"env-auth mode must preserve routing config",
+	);
+	assert.equal(
+		existsSync(path.join(home2, ".grok", "auth.json")),
+		false,
+		"env-auth mode must not stage the account credential store",
+	);
 
 	// Passthrough naming an UNSET key does not count as provider-key auth.
 	delete process.env.XAI_API_KEY;
+	rmSync(path.join(fakeHome, ".grok", "auth.json"));
 	const tmp3 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp3, { recursive: true, force: true }));
 	assert.throws(
@@ -1176,15 +1211,37 @@ test("prepareEphemeralHome: codex API key via passthrough makes HOME files optio
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
-	// No ~/.codex files planted.
+	// Plant both files so env-auth mode is tested against an existing OAuth
+	// credential, not only an empty HOME.
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(
+		path.join(fakeHome, ".codex", "auth.json"),
+		'{"token":"must-not-stage"}',
+	);
+	writeFileSync(
+		path.join(fakeHome, ".codex", "config.toml"),
+		'model = "must-not-be-read"',
+	);
 
 	// Key set and named in passthrough → empty HOME accepted.
 	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CODEX_API_KEY";
 	process.env.CODEX_API_KEY = "ck-test";
-	assert.ok(prepareEphemeralHome("codex", tmp), "API-key mode must pass");
+	const home = prepareEphemeralHome("codex", tmp);
+	assert.ok(home, "API-key mode must pass");
+	assert.equal(
+		existsSync(path.join(home, ".codex", "auth.json")),
+		false,
+		"env-auth mode must not stage the OAuth credential store",
+	);
+	assert.equal(
+		existsSync(path.join(home, ".codex", "config.toml")),
+		false,
+		"codex ignores user config and must not stage it in env-auth mode",
+	);
 
 	// Empty key → back to fail-closed file requirement.
 	process.env.CODEX_API_KEY = "";
+	rmSync(path.join(fakeHome, ".codex", "auth.json"));
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
 	assert.throws(

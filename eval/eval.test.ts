@@ -1245,6 +1245,14 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
   const baselineDocPath = path.join(repoRoot, "eval", "BASELINE.md");
   const baselineBefore = readFileSync(baselineDocPath);
   t.after(() => writeFileSync(baselineDocPath, baselineBefore));
+  const multiDrawPath = path.join(
+    repoRoot,
+    "eval",
+    "baselines",
+    `.test-${path.basename(dir)}.json`,
+  );
+  const multiDrawArg = path.relative(repoRoot, multiDrawPath).split(path.sep).join("/");
+  t.after(() => rmSync(multiDrawPath, { force: true }));
 
   const multiDrawReport: Report = {
     ...complete,
@@ -1255,11 +1263,10 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
       draw,
     }))),
   };
-  const multiDrawPath = path.join(dir, "multi-draw.json");
   writeFileSync(multiDrawPath, JSON.stringify(multiDrawReport));
   const multiDrawResult = spawnSync(
     "npx",
-    ["tsx", path.join("eval", "gen-baseline-doc.ts"), multiDrawPath],
+    ["tsx", path.join("eval", "gen-baseline-doc.ts"), multiDrawArg],
     { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
   );
   try {
@@ -1276,6 +1283,14 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
     assert.doesNotMatch(
       generated,
       new RegExp(`^- \\*\\*fixtures:\\*\\* ${multiDrawReport.results.length} \\(`, "m"),
+    );
+    assert.ok(existsSync(multiDrawPath));
+    assert.ok(generated.includes(`- **report file:** \`${multiDrawArg}\``));
+    assert.ok(generated.includes(`  --compare ${multiDrawArg} \\`));
+    assert.ok(
+      generated.includes(
+        `node --import tsx eval/gen-baseline-doc.ts ${multiDrawArg}`,
+      ),
     );
   } finally {
     writeFileSync(baselineDocPath, baselineBefore);
