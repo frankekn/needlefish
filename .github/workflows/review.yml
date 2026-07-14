@@ -132,6 +132,44 @@ jobs:
         if: steps.refs.outputs.skip == 'true'
         run: echo "${{ steps.refs.outputs.skip_reason }}"
 
+      - name: Configure Needlefish temp storage
+        if: steps.refs.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
+          temp_root="$RUNNER_TEMP/needlefish"
+          mkdir -p "$temp_root"
+
+          report_capacity_failure() {
+            echo "Needlefish temp preflight failed: $1" >&2
+            df -hT -- "$temp_root" >&2 || true
+            df -i -- "$temp_root" >&2 || true
+            exit 1
+          }
+
+          space_df="$(df -Pk -- "$temp_root")" || report_capacity_failure "cannot inspect capacity"
+          available_kib="$(awk 'NR == 2 { print $4 }' <<< "$space_df")"
+          if [[ ! "$available_kib" =~ ^[0-9]+$ ]]; then
+            report_capacity_failure "invalid capacity data"
+          fi
+          if (( available_kib < 2097152 )); then
+            report_capacity_failure "less than 2 GiB available"
+          fi
+
+          inode_df="$(df -Pi -- "$temp_root")" || report_capacity_failure "cannot inspect inodes"
+          read -r inode_total inode_free <<< "$(awk 'NR == 2 { print $2, $4 }' <<< "$inode_df")"
+          if [[ ! "$inode_total" =~ ^[0-9]+$ || ! "$inode_free" =~ ^[0-9]+$ ]]; then
+            report_capacity_failure "invalid inode data"
+          fi
+          if (( inode_total == 0 )); then
+            report_capacity_failure "invalid inode data"
+          fi
+          if (( inode_free * 100 < inode_total * 10 )); then
+            report_capacity_failure "less than 10% inodes free"
+          fi
+
+          echo "TMPDIR=$temp_root" >> "$GITHUB_ENV"
+
       - name: Verify Needlefish release
         if: steps.refs.outputs.skip != 'true'
         env:
