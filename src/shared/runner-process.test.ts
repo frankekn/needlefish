@@ -113,11 +113,7 @@ test("spawnRunnerProcess kills a SIGTERM-trapping process group after timeout", 
     assert.throws(() => process.kill(-recordedPgid, 0), isMissingProcess);
   } finally {
     if (pgid !== undefined) {
-      try {
-        process.kill(-pgid, "SIGKILL");
-      } catch (error) {
-        if (!isMissingProcess(error)) throw error;
-      }
+      killProcessIfRunning(-pgid);
     }
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -169,11 +165,7 @@ setInterval(() => {}, 1000);
     if (existsSync(escapedPidPath)) {
       const escapedPid = Number(readFileSync(escapedPidPath, "utf8"));
       for (const pid of [-escapedPid, escapedPid]) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch (error) {
-          if (!isMissingProcess(error)) throw error;
-        }
+        killProcessIfRunning(pid);
       }
     }
     rmSync(tmp, { recursive: true, force: true });
@@ -182,4 +174,12 @@ setInterval(() => {}, 1000);
 
 function isMissingProcess(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ESRCH";
+}
+
+function killProcessIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error) {
+    if (!isMissingProcess(error)) throw error;
+  }
 }

@@ -383,6 +383,15 @@ variables are passed through. To pass an additional variable to the runner
 subprocess, set `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2` (comma-separated
 names).
 
+ACP env authentication additionally requires an explicit credential declaration:
+set `NEEDLEFISH_ACP_AUTH_ENV_VARS` to the credential names and include those same
+names in `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`, for example
+`NEEDLEFISH_ACP_AUTH_ENV_VARS=MY_AGENT_TOKEN` with
+`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=MY_AGENT_TOKEN`. Arbitrary passthrough
+configuration does not prove authentication. Alternatively, set
+`NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential files;
+Needlefish copies only those files into the disposable runner HOME.
+
 ## Verdict derivation (deterministic)
 
 - any P0 / P1 / P2 finding → `changes_requested`

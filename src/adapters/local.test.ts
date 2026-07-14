@@ -50,7 +50,16 @@ test("runLocal fails loudly when explicit PR metadata cannot be fetched", async 
 
   await assert.rejects(
     () => runLocal(repo, { pr: 24 }),
-    /--pr 24 requested, but PR metadata could not be fetched: gh pr view 24/
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(
+        error.message,
+        /--pr 24 requested, but PR metadata could not be fetched: gh pr view 24/
+      );
+      assert.ok(error.cause instanceof Error, "the gh failure must be preserved as cause");
+      assert.match(error.cause.message, /gh pr view 24/);
+      return true;
+    }
   );
 });
 

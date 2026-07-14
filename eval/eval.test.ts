@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, writeReport } from "./run";
+import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { matchesSpec, score } from "./shared/score";
@@ -722,6 +724,843 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
   }
 });
 
+function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
+  return {
+    promptHash: promptHash(),
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-13T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    fixtureSetHash: fixtureSetHash([spec]),
+    fixtures: [spec.id],
+    results: [{
+      fixtureId: spec.id,
+      draw: 0,
+      score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id),
+      durationMs: 1,
+      calls: 1,
+      retries: 0,
+    }],
+    aggregates: {
+      recall: 1,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 1,
+      lineAnchorValidRate: 1,
+      meanDurationMs: 1,
+      recallByFixture: { [spec.id]: 1 },
+      criticPruneErrorRate: 0,
+      recallByTier: { t2: 1 },
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+    ...overrides,
+  };
+}
+
+test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
+  // Draws that never faced canary detection must not populate a new report.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "pre-anticheat.json");
+  const spec = holdoutSpec("pre-anticheat-resume", false);
+  writeFileSync(resumePath, JSON.stringify(resumeReport(spec, {})));
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots and compare fail closed on a missing cheatDetectedCount", () => {
+  // Unvalidated JSON: a current-version report omitting the count cannot be
+  // established clean — resume reuses nothing, compare throws.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-countless-"));
+  const spec = holdoutSpec("countless-gate", false);
+  const base = resumeReport(spec, { anticheatVersion: 1 });
+  const strippedAggregates = { ...base.aggregates } as Record<string, unknown>;
+  delete strippedAggregates.cheatDetectedCount;
+  const countless = { ...base, aggregates: strippedAggregates };
+  try {
+    const resumePath = path.join(dir, "countless.json");
+    writeFileSync(resumePath, JSON.stringify(countless));
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0, "count-less draws must not be reused");
+    assert.deepEqual(resumed.slots, [null]);
+
+    const cleanPath = path.join(dir, "clean.json");
+    writeFileSync(cleanPath, JSON.stringify(base));
+    assert.throws(
+      () => compare(resumePath, base),
+      /compromised or unverifiable/,
+      "a count-less baseline must not anchor a comparison",
+    );
+    assert.throws(
+      () => compare(cleanPath, countless as unknown as Report),
+      /compromised or unverifiable/,
+      "a count-less candidate must not pass a comparison",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("compare: rejects a report whose clean aggregate contradicts a detected draw", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-inconsistent-cheat-count-"));
+  const spec = holdoutSpec("inconsistent-cheat-count", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1 });
+  const detected: Report = {
+    ...clean,
+    results: clean.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
+  const baselinePath = path.join(dir, "baseline.json");
+  writeFileSync(baselinePath, JSON.stringify(clean));
+  try {
+    assert.throws(
+      () => compare(baselinePath, detected),
+      /compromised or unverifiable/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots and compare reject malformed per-draw cheat detection values", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-malformed-cheat-detection-"));
+  const spec = holdoutSpec("malformed-cheat-detection", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1 });
+  const cleanPath = path.join(dir, "clean.json");
+  writeFileSync(cleanPath, JSON.stringify(clean));
+  try {
+    for (const [name, value] of [
+      ["missing", undefined],
+      ["null", null],
+      ["string", "false"],
+      ["numeric", 0],
+    ] as const) {
+      const malformed = {
+        ...clean,
+        results: clean.results.map((result) => {
+          const score = { ...result.score } as Record<string, unknown>;
+          if (value === undefined) delete score.cheatDetected;
+          else score.cheatDetected = value;
+          return { ...result, score };
+        }),
+      } as unknown as Report;
+      const malformedPath = path.join(dir, `${name}.json`);
+      writeFileSync(malformedPath, JSON.stringify(malformed));
+      const args = parseArgs(["--draws", "1", "--resume", malformedPath]);
+      assert.equal(
+        resumeSlots(args, [spec], [{ spec, draw: 0 }]).skipped,
+        0,
+        `${name} detection must not be reused`,
+      );
+      assert.throws(() => compare(cleanPath, malformed), /compromised or unverifiable/);
+      assert.throws(() => compare(malformedPath, clean), /compromised or unverifiable/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("renderResults: legacy and compromised reports are excluded from baseline and deltas", () => {
+  // The published results table honors the same comparability contract as
+  // resume/compare/weekly: pre-guard or canary-positive reports are listed
+  // but never selected as baseline nor given a delta.
+  const spec = holdoutSpec("gen-results-gate", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1, effort: "xhigh" });
+  const grokClean = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    effort: "low",
+  });
+  const legacy = resumeReport(spec, { effort: "xhigh" });
+  const compromisedBase = resumeReport(spec, { anticheatVersion: 1 });
+  const compromised = {
+    ...compromisedBase,
+    aggregates: { ...compromisedBase.aggregates, cheatDetectedCount: 1 },
+  };
+  const contradictory = {
+    ...compromisedBase,
+    results: compromisedBase.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
+  const md = renderResults(
+    [spec],
+    [
+      { stem: "legacy-run", report: legacy },
+      { stem: "clean-codex-xhigh", report: clean },
+      { stem: "clean-grok-low", report: grokClean },
+      { stem: "cheat-run", report: compromised },
+      { stem: "contradictory-run", report: contradictory },
+    ],
+  );
+  const row = (stem: string): string =>
+    md.split("\n").find((l) => l.includes(`| ${stem} |`) || l.includes(`${stem} |`)) ?? "";
+  assert.match(row("clean-codex-xhigh"), /\(baseline\)/, "guarded codex-xhigh is the baseline");
+  assert.ok(!row("clean-codex-xhigh").includes("🚫"));
+  assert.match(row("legacy-run"), /🚫/, "pre-guard report is marked");
+  assert.match(row("legacy-run"), /n\/a/, "pre-guard report gets no delta");
+  assert.match(row("cheat-run"), /🚫/, "compromised report is marked");
+  assert.match(row("cheat-run"), /COMPROMISED/, "compromised report is labeled");
+  assert.match(row("cheat-run"), /n\/a/, "compromised report gets no delta");
+  assert.match(row("contradictory-run"), /🚫/, "contradictory report is marked");
+  assert.match(row("contradictory-run"), /UNVERIFIABLE/);
+  assert.doesNotMatch(row("contradictory-run"), /\d+%/, "contradictory metrics are withheld");
+  assert.ok(
+    !row("cheat-run").includes("%"),
+    "a compromised report publishes no aggregate metric values",
+  );
+  assert.equal(
+    row("cheat-run").split("|").map((c) => c.trim())[3],
+    "—",
+    "a compromised report withholds its draw count",
+  );
+  // Fixture-level cells for the compromised column are withheld too: the
+  // 4th cell (cheat-run's) is "—" while the others carry hit counts.
+  const fixtureRow = md.split("\n").find((l) => l.startsWith(`| ${spec.id} |`)) ?? "";
+  assert.equal(
+    fixtureRow.split("|").map((c) => c.trim())[5],
+    "—",
+    "compromised report's fixture-level recall is withheld",
+  );
+  assert.equal(
+    fixtureRow.split("|").map((c) => c.trim())[6],
+    "—",
+    "unverifiable report's fixture-level recall is withheld",
+  );
+  assert.doesNotMatch(
+    md.slice(md.indexOf("## Stable misses"), md.indexOf("## False positives")),
+    /contradictory-run/,
+    "unverifiable stable misses are withheld",
+  );
+  assert.doesNotMatch(
+    md.slice(md.indexOf("## False positives"), md.indexOf("## Notes")),
+    /contradictory-run/,
+    "unverifiable false positives are withheld",
+  );
+  assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
+  assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("renderResults withholds secondary metrics for malformed per-draw cheat detection", () => {
+  const positive = holdoutSpec("malformed-render-positive", false);
+  const negative = { ...holdoutSpec("malformed-render-negative", false), kind: "negative" as const };
+  const seed = resumeReport(positive, { anticheatVersion: 1, draws: 3 });
+  for (const [name, value] of [
+    ["missing", undefined],
+    ["null", null],
+    ["string", "false"],
+    ["numeric", 0],
+  ] as const) {
+    const results = [positive.id, negative.id].flatMap((fixtureId) =>
+      [0, 1, 2].map((draw) => {
+        const score = {
+          ...seed.results[0]!.score,
+          recall: false,
+          falsePositive: fixtureId === negative.id,
+        } as Record<string, unknown>;
+        if (value === undefined) delete score.cheatDetected;
+        else score.cheatDetected = value;
+        return { ...seed.results[0]!, fixtureId, draw, score };
+      }),
+    );
+    const report = {
+      ...seed,
+      fixtures: [positive.id, negative.id],
+      results,
+    } as unknown as Report;
+    const stem = `malformed-${name}`;
+    const md = renderResults([positive, negative], [{ stem, report }]);
+    const fixtureSection = md.slice(
+      md.indexOf("## Recall by positive fixture"),
+      md.indexOf("## Stable misses"),
+    );
+    assert.match(fixtureSection, new RegExp(`\\| ${positive.id} \\| — \\|`));
+    assert.doesNotMatch(
+      md.slice(md.indexOf("## Stable misses"), md.indexOf("## False positives")),
+      new RegExp(stem),
+    );
+    assert.doesNotMatch(
+      md.slice(md.indexOf("## False positives"), md.indexOf("## Notes")),
+      new RegExp(stem),
+    );
+  }
+});
+
+test("renderResults: report manifests determine completeness and baseline eligibility", () => {
+  const spec = holdoutSpec("gen-results-partial-baseline", false);
+  const extraSpec = holdoutSpec("gen-results-manifest-extra", false);
+  const fixtures = [spec.id, extraSpec.id];
+  const setHash = fixtureSetHash([spec, extraSpec]);
+  const partialBase = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+    draws: 2,
+    fixtures,
+    fixtureSetHash: setHash,
+  });
+  const completeBase = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    effort: "medium",
+    draws: 2,
+    fixtures,
+    fixtureSetHash: setHash,
+  });
+  const missingManifestBase = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+    draws: 2,
+    fixtureSetHash: setHash,
+  });
+  const { fixtures: removedFixtures, ...missingManifest } = missingManifestBase;
+  assert.deepEqual(removedFixtures, [spec.id]);
+
+  const template = completeBase.results[0];
+  assert.ok(template);
+  const fullResults = [
+    { ...template, fixtureId: spec.id, draw: 0 },
+    { ...template, fixtureId: spec.id, draw: 1 },
+    { ...template, fixtureId: extraSpec.id, draw: 0 },
+    { ...template, fixtureId: extraSpec.id, draw: 1 },
+  ];
+  const partial: Report = { ...partialBase, results: fullResults.slice(0, 3) };
+  const duplicatePair: Report = {
+    ...partialBase,
+    results: [fullResults[0]!, fullResults[1]!, fullResults[2]!, fullResults[2]!],
+  };
+  const outsideFixture: Report = {
+    ...partialBase,
+    results: [
+      fullResults[0]!,
+      fullResults[1]!,
+      fullResults[2]!,
+      { ...fullResults[3]!, fixtureId: "outside-manifest" },
+    ],
+  };
+  const duplicateManifest: Report = {
+    ...partialBase,
+    fixtures: [spec.id, spec.id],
+    results: fullResults,
+  };
+  const outOfRangeDraw: Report = {
+    ...partialBase,
+    results: [
+      fullResults[0]!,
+      fullResults[1]!,
+      fullResults[2]!,
+      { ...fullResults[3]!, draw: 2 },
+    ],
+  };
+  const complete: Report = { ...completeBase, results: fullResults };
+
+  // The renderer sees one display spec, while both current reports declare two
+  // fixtures. Completeness must come from each report's own manifest.
+  const md = renderResults(
+    [spec],
+    [
+      { stem: "missing-manifest-codex", report: missingManifest },
+      { stem: "partial-codex-xhigh", report: partial },
+      { stem: "duplicate-pair-codex", report: duplicatePair },
+      { stem: "outside-fixture-codex", report: outsideFixture },
+      { stem: "duplicate-manifest-codex", report: duplicateManifest },
+      { stem: "out-of-range-draw-codex", report: outOfRangeDraw },
+      { stem: "complete-grok-medium", report: complete },
+    ],
+  );
+  const row = (stem: string): string =>
+    md.split("\n").find((line) => line.includes(`${stem} |`)) ?? "";
+  const cells = (stem: string): string[] =>
+    row(stem).split("|").map((cell) => cell.trim());
+
+  assert.doesNotMatch(row("missing-manifest-codex"), /\(baseline\)/);
+  assert.equal(cells("missing-manifest-codex")[3], "1/?");
+  assert.doesNotMatch(row("partial-codex-xhigh"), /\(baseline\)/);
+  assert.equal(cells("partial-codex-xhigh")[3], "3/4");
+  assert.equal(cells("partial-codex-xhigh")[5], "—");
+  for (const stem of [
+    "duplicate-pair-codex",
+    "outside-fixture-codex",
+    "out-of-range-draw-codex",
+  ]) {
+    assert.doesNotMatch(row(stem), /\(baseline\)/, `${stem} must not anchor`);
+    assert.match(row(stem), /⚠️/, `${stem} must be marked incomplete`);
+    assert.equal(cells(stem)[3], "4/4", `${stem} keeps its valid denominator`);
+    assert.equal(cells(stem)[5], "—", `${stem} gets no delta`);
+  }
+  assert.doesNotMatch(row("duplicate-manifest-codex"), /\(baseline\)/);
+  assert.match(row("duplicate-manifest-codex"), /⚠️/);
+  assert.equal(cells("duplicate-manifest-codex")[3], "4/?");
+  assert.equal(cells("duplicate-manifest-codex")[5], "—");
+  assert.match(row("complete-grok-medium"), /\(baseline\)/);
+  assert.equal(cells("complete-grok-medium")[3], "4/4");
+});
+
+test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-baseline-doc-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const specs = await loadFixtures(null);
+  const fixtureIds = specs.map((spec) => spec.id);
+  const seed = resumeReport(specs[0]!, { anticheatVersion: 1 });
+  const template = seed.results[0]!;
+  const complete: Report = {
+    ...seed,
+    fixtures: fixtureIds,
+    fixtureSetHash: fixtureSetHash(specs),
+    results: fixtureIds.map((fixtureId) => ({ ...template, fixtureId })),
+  };
+  const missingManifest = { ...complete };
+  Reflect.deleteProperty(missingManifest, "fixtures");
+  assert.equal("fixtures" in missingManifest, false);
+  const duplicatePair: Report = {
+    ...complete,
+    results: [complete.results[0]!, ...complete.results.slice(0, -1)],
+  };
+  const foreignFixture: Report = {
+    ...complete,
+    results: [
+      { ...complete.results[0]!, fixtureId: "outside-manifest" },
+      ...complete.results.slice(1),
+    ],
+  };
+  const outOfRangeDraw: Report = {
+    ...complete,
+    results: [
+      { ...complete.results[0]!, draw: 1 },
+      ...complete.results.slice(1),
+    ],
+  };
+  const compromised: Report = {
+    ...complete,
+    aggregates: { ...complete.aggregates, cheatDetectedCount: 1 },
+  };
+  const contradictory: Report = {
+    ...complete,
+    results: complete.results.map((result, index) => index === 0
+      ? { ...result, score: { ...result.score, cheatDetected: true } }
+      : result),
+  };
+  const malformedDetections = [
+    ["missing-draw-cheat-detection", undefined],
+    ["null-draw-cheat-detection", null],
+    ["string-draw-cheat-detection", "false"],
+    ["numeric-draw-cheat-detection", 0],
+  ] as const;
+  const missingCheatCount = { ...complete.aggregates };
+  Reflect.deleteProperty(missingCheatCount, "cheatDetectedCount");
+  assert.equal("cheatDetectedCount" in missingCheatCount, false);
+  const hostileReports: readonly (readonly [string, Report])[] = [
+    ["non-codex-runner", { ...complete, runner: "grok" }],
+    ["legacy", { ...complete, anticheatVersion: undefined }],
+    ["compromised", compromised],
+    ["contradictory-cheat-count", contradictory],
+    ...malformedDetections.map(([name, value]) => {
+      const malformed = {
+        ...complete,
+        results: complete.results.map((result) => {
+          const score = { ...result.score } as Record<string, unknown>;
+          if (value === undefined) delete score.cheatDetected;
+          else score.cheatDetected = value;
+          return { ...result, score };
+        }),
+      } as unknown as Report;
+      return [name, malformed] as const;
+    }),
+    [
+      "missing-cheat-count",
+      { ...complete, aggregates: missingCheatCount as Report["aggregates"] },
+    ],
+    [
+      "non-numeric-cheat-count",
+      {
+        ...complete,
+        aggregates: {
+          ...complete.aggregates,
+          cheatDetectedCount: "0" as unknown as number,
+        },
+      },
+    ],
+    ["missing-manifest", missingManifest],
+    ["empty-manifest", { ...complete, fixtures: [] }],
+    ["empty-fixture-id", { ...complete, fixtures: [""] }],
+    [
+      "non-string-fixture-id",
+      { ...complete, fixtures: [123 as unknown as string] },
+    ],
+    [
+      "duplicate-manifest",
+      { ...complete, fixtures: [fixtureIds[0]!, fixtureIds[0]!] },
+    ],
+    ["zero-draws", { ...complete, draws: 0 }],
+    ["fractional-draws", { ...complete, draws: 1.5 }],
+    ["partial-coverage", { ...complete, results: complete.results.slice(0, -1) }],
+    ["duplicate-pair", duplicatePair],
+    ["foreign-fixture", foreignFixture],
+    ["out-of-range-draw", outOfRangeDraw],
+    [
+      "fractional-result-draw",
+      {
+        ...complete,
+        results: [{ ...complete.results[0]!, draw: 0.5 }, ...complete.results.slice(1)],
+      },
+    ],
+    [
+      "filtered-subset",
+      { ...complete, fixtures: fixtureIds.slice(0, 1), results: complete.results.slice(0, 1) },
+    ],
+    ["missing-prompt-hash", { ...complete, promptHash: "" }],
+    [
+      "absent-prompt-hash",
+      (() => {
+        const r = { ...complete };
+        Reflect.deleteProperty(r, "promptHash");
+        return r as Report;
+      })(),
+    ],
+    ["missing-fixture-set-hash", { ...complete, fixtureSetHash: "" }],
+    [
+      "absent-fixture-set-hash",
+      (() => {
+        const r = { ...complete };
+        Reflect.deleteProperty(r, "fixtureSetHash");
+        return r as Report;
+      })(),
+    ],
+    [
+      "wrong-fixture-set-hash",
+      { ...complete, fixtureSetHash: "deadbeefdeadbeef" },
+    ],
+  ];
+  const repoRoot = path.resolve(__dirname, "..");
+  const baselineDocPath = path.join(repoRoot, "eval", "BASELINE.md");
+  const baselineBefore = readFileSync(baselineDocPath);
+  t.after(() => writeFileSync(baselineDocPath, baselineBefore));
+  const multiDrawPath = path.join(
+    repoRoot,
+    "eval",
+    "baselines",
+    `.test-${path.basename(dir)}.json`,
+  );
+  const multiDrawArg = path.relative(repoRoot, multiDrawPath).split(path.sep).join("/");
+  t.after(() => rmSync(multiDrawPath, { force: true }));
+
+  const multiDrawReport: Report = {
+    ...complete,
+    draws: 2,
+    results: fixtureIds.flatMap((fixtureId) => [0, 1].map((draw) => ({
+      ...template,
+      fixtureId,
+      draw,
+    }))),
+  };
+  writeFileSync(multiDrawPath, JSON.stringify(multiDrawReport));
+  const multiDrawResult = spawnSync(
+    "npx",
+    ["tsx", path.join("eval", "gen-baseline-doc.ts"), multiDrawArg],
+    { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+  );
+  try {
+    assert.equal(
+      multiDrawResult.status,
+      0,
+      `complete multi-draw report must generate, stderr: ${multiDrawResult.stderr}`,
+    );
+    const generated = readFileSync(baselineDocPath, "utf8");
+    assert.match(
+      generated,
+      new RegExp(`^- \\*\\*fixtures:\\*\\* ${fixtureIds.length} \\(`, "m"),
+    );
+    assert.doesNotMatch(
+      generated,
+      new RegExp(`^- \\*\\*fixtures:\\*\\* ${multiDrawReport.results.length} \\(`, "m"),
+    );
+    assert.ok(existsSync(multiDrawPath));
+    assert.ok(generated.includes(`- **report file:** \`${multiDrawArg}\``));
+    assert.ok(generated.includes(`  --compare ${multiDrawArg} \\`));
+    assert.ok(
+      generated.includes(
+        `node --import tsx eval/gen-baseline-doc.ts ${multiDrawArg}`,
+      ),
+    );
+  } finally {
+    writeFileSync(baselineDocPath, baselineBefore);
+  }
+
+  for (const [name, report] of hostileReports) {
+    const reportPath = path.join(dir, `${name}.json`);
+    writeFileSync(reportPath, JSON.stringify(report));
+    const res = spawnSync(
+      "npx",
+      ["tsx", path.join("eval", "gen-baseline-doc.ts"), reportPath],
+      { cwd: repoRoot, encoding: "utf8", timeout: 60_000 },
+    );
+    assert.equal(res.status, 1, `${name} must exit 1, stderr: ${res.stderr}`);
+    assert.match(res.stderr, /refusing to generate baseline doc/);
+    assert.doesNotMatch(res.stderr, /wrote eval\/BASELINE\.md/);
+    assert.deepEqual(
+      readFileSync(baselineDocPath),
+      baselineBefore,
+      `${name} must not alter BASELINE.md`,
+    );
+  }
+
+  // No default report: every committed baseline predates the guards and
+  // would deterministically fail the gate — the no-arg invocation must print
+  // usage before reading anything, not chase a stale hardcoded path.
+  const noArg = spawnSync("npx", ["tsx", path.join("eval", "gen-baseline-doc.ts")], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.equal(noArg.status, 1, `no-arg must exit 1, stderr: ${noArg.stderr}`);
+  assert.match(noArg.stderr, /usage: /);
+  assert.doesNotMatch(noArg.stderr, /refusing to generate baseline doc/);
+});
+
+test("renderResults: mixed prompt hashes are reported, not asserted shared", () => {
+  const spec = holdoutSpec("gen-results-hashes", false);
+  const a = resumeReport(spec, { anticheatVersion: 1, effort: "xhigh" });
+  const b = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    promptHash: "different-prompt-generation",
+  });
+  const md = renderResults(
+    [],
+    [
+      { stem: "a-current", report: a },
+      { stem: "b-other-prompt", report: b },
+    ],
+  );
+  assert.ok(
+    !md.includes("All runs share promptHash"),
+    "mixed hashes must not claim a shared hash",
+  );
+  assert.match(md, /Mixed prompt hashes/);
+  const row = md.split("\n").find((l) => l.includes("b-other-prompt")) ?? "";
+  assert.match(row, /n\/a/, "a cross-prompt row is not comparable");
+});
+
+test("renderResults: hashless reports do not assert shared prompt provenance", () => {
+  const spec = holdoutSpec("gen-results-prompt-hashless", false);
+  const hashless = (runner: "codex" | "grok") => {
+    const report = resumeReport(spec, { anticheatVersion: 1, runner });
+    Reflect.deleteProperty(report, "promptHash");
+    return report;
+  };
+  const one = renderResults(
+    [],
+    [{ stem: "one-hashless", report: hashless("codex") }],
+  );
+  const multiple = renderResults(
+    [],
+    [
+      { stem: "first-hashless", report: hashless("codex") },
+      { stem: "second-hashless", report: hashless("grok") },
+    ],
+  );
+  for (const md of [one, multiple]) {
+    assert.doesNotMatch(md, /All runs share promptHash/);
+    assert.match(md, /Prompt provenance is missing/);
+  }
+});
+
+test("renderResults: hashless reports neither anchor nor join comparisons", () => {
+  // Reports come from unvalidated disk JSON: two reports both missing
+  // fixtureSetHash would compare `undefined === undefined` and publish
+  // deltas across unknown fixture sets. Hash presence is part of the gate.
+  const spec = holdoutSpec("gen-results-hashless", false);
+  const a = resumeReport(spec, {
+    anticheatVersion: 1,
+    effort: "xhigh",
+  });
+  Reflect.deleteProperty(a, "fixtureSetHash");
+  assert.equal("fixtureSetHash" in a, false);
+  const b = resumeReport(spec, {
+    anticheatVersion: 1,
+  });
+  Reflect.deleteProperty(b, "fixtureSetHash");
+  assert.equal("fixtureSetHash" in b, false);
+  const md = renderResults(
+    [],
+    [
+      { stem: "a-hashless", report: a },
+      { stem: "b-hashless", report: b },
+    ],
+  );
+  assert.match(
+    md,
+    /No guarded report qualifies as a baseline/,
+    "a hashless report must not be selected as baseline",
+  );
+  for (const stem of ["a-hashless", "b-hashless"]) {
+    const row = md.split("\n").find((l) => l.includes(stem)) ?? "";
+    assert.match(row, /n\/a/, `${stem} must not publish a delta`);
+  }
+});
+
+test("writeReport: anticheatVersion is only earned when HOME isolation AND tracing were on", (t) => {
+  // The version label is a promise the guards ran. A run whose user --env
+  // disabled isolation OR the eval trace (which feeds critic-pruned
+  // candidates and failed raws to the canary scan) must produce an honestly
+  // unversioned report that resume/compare will refuse.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-report-"));
+  const spec = holdoutSpec("version-label", false);
+  const previous = {
+    home: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+    trace: process.env.NEEDLEFISH_EVAL_TRACE,
+  };
+  t.after(() => {
+    if (previous.home === undefined) delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+    else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.home;
+    if (previous.trace === undefined) delete process.env.NEEDLEFISH_EVAL_TRACE;
+    else process.env.NEEDLEFISH_EVAL_TRACE = previous.trace;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const reportPath = path.join(dir, "report.json");
+  const args = parseArgs(["--draws", "1", "--report", reportPath]);
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
+  const guarded = writeReport(args, [], [spec]);
+  assert.equal(guarded.anticheatVersion, 1);
+
+  const dryRunArgs = parseArgs([
+    "--dry-run",
+    "--draws",
+    "1",
+    "--report",
+    reportPath,
+  ]);
+  const dryRun = writeReport(dryRunArgs, [], [spec]);
+  assert.equal(
+    dryRun.anticheatVersion,
+    undefined,
+    "a dry run must not claim guards protected model draws that never ran",
+  );
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "0";
+  const unguarded = writeReport(args, [], [spec]);
+  assert.equal(
+    unguarded.anticheatVersion,
+    undefined,
+    "a run without HOME isolation must not claim the guard generation",
+  );
+
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  process.env.NEEDLEFISH_EVAL_TRACE = "0";
+  const untraced = writeReport(args, [], [spec]);
+  assert.equal(
+    untraced.anticheatVersion,
+    undefined,
+    "a run without eval tracing must not claim the guard generation",
+  );
+
+  // claude is exempt from HOME isolation by design (Keychain auth): its lanes
+  // never earn the label, even with both guard flags on — certifying one
+  // would promise a G1 guarantee its draws did not have.
+  process.env.NEEDLEFISH_EVAL_TRACE = "1";
+  const claudeArgs = parseArgs([
+    "--runner",
+    "claude",
+    "--draws",
+    "1",
+    "--report",
+    reportPath,
+  ]);
+  const claudeLane = writeReport(claudeArgs, [], [spec]);
+  assert.equal(
+    claudeLane.anticheatVersion,
+    undefined,
+    "a claude lane must not be certified as HOME-isolated",
+  );
+});
+
+test("resumeSlots: a compromised report is not resumed", () => {
+  // Current guard generation, but the trap fired: the whole report is void
+  // (see cheatAlert) and none of its draws may seed a fresh one.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "compromised.json");
+  const spec = holdoutSpec("compromised-resume", false);
+  const base = resumeReport(spec, { anticheatVersion: 1 });
+  writeFileSync(
+    resumePath,
+    JSON.stringify({
+      ...base,
+      aggregates: { ...base.aggregates, cheatDetectedCount: 1 },
+    }),
+  );
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots: a current-generation anti-cheat report reuses its draws", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));
+  const resumePath = path.join(dir, "current.json");
+  const spec = holdoutSpec("current-anticheat-resume", false);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(resumeReport(spec, { anticheatVersion: 1 })),
+  );
+  try {
+    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 1);
+    assert.notEqual(resumed.slots[0], null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cheatAlert: a detected canary fails the command, a clean report does not", () => {
+  const spec = holdoutSpec("cheat-alert-exit", false);
+  const previousExitCode = process.exitCode;
+  const previousWrite = process.stderr.write.bind(process.stderr);
+  let alertText = "";
+  try {
+    process.exitCode = undefined;
+    cheatAlert(resumeReport(spec, {}));
+    assert.equal(process.exitCode, undefined, "clean report must not set exitCode");
+    const compromised = resumeReport(spec, {});
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      alertText += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    }) as typeof process.stderr.write;
+    cheatAlert({
+      ...compromised,
+      aggregates: { ...compromised.aggregates, cheatDetectedCount: 1 },
+    });
+    assert.equal(process.exitCode, 1, "compromised report must fail the command");
+    assert.match(alertText, /anti-cheat detection fired/);
+    assert.match(alertText, /repository answer-key canary and\/or honeypot/);
+    assert.doesNotMatch(
+      alertText,
+      /honeypot trap matched/,
+      "canary-only hits must not be diagnosed as honeypot-only",
+    );
+  } finally {
+    process.stderr.write = previousWrite;
+    process.exitCode = previousExitCode;
+  }
+});
+
 test("compare: rejects a legacy baseline without fixtureSetHash", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-"));
   const baselinePath = path.join(dir, "baseline.json");
@@ -755,6 +1594,101 @@ test("compare: rejects a legacy baseline without fixtureSetHash", () => {
   writeFileSync(baselinePath, JSON.stringify(legacyBaseline));
   try {
     assert.throws(() => compare(baselinePath, candidate), /baseline report is missing fixtureSetHash/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("compare: rejects reports from another anti-cheat generation", () => {
+  // An unguarded baseline is not comparable to a guarded candidate — its
+  // draws never faced the canary. Same for an unguarded candidate.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const draw = (fixtureId: string, drawIndex: number) => ({
+    fixtureId,
+    draw: drawIndex,
+    score: score({ verdict: "pass", findings: [] }, { verdict: "pass" }, fixtureId),
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+  });
+  // Complete fixture × draw coverage so the success path reaches metrics.
+  const current: Report = {
+    promptHash: "prompt-hash",
+    runner: "codex",
+    model: null,
+    effort: null,
+    draws: 1,
+    createdAt: "2026-07-13T00:00:00.000Z",
+    baseline: false,
+    holdout: "include",
+    fixtures: ["fx-a", "fx-b"],
+    results: [draw("fx-a", 0), draw("fx-b", 0)],
+    aggregates: {
+      recall: 0,
+      falsePositiveRate: 0,
+      invalidJsonRate: 0,
+      verdictMatchRate: 0,
+      lineAnchorValidRate: 0,
+      meanDurationMs: 0,
+      recallByFixture: {},
+      criticPruneErrorRate: 0,
+      recallByTier: {},
+      meanNoisePerPositive: 0,
+      cheatDetectedCount: 0,
+    },
+    fixtureSetHash: "fixture-hash",
+    anticheatVersion: 1,
+  };
+  try {
+    const unguardedBaseline = { ...current, baseline: true };
+    delete unguardedBaseline.anticheatVersion;
+    writeFileSync(baselinePath, JSON.stringify(unguardedBaseline));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report anti-cheat version is none/,
+    );
+
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    const unguardedCandidate = { ...current };
+    delete unguardedCandidate.anticheatVersion;
+    assert.throws(
+      () => compare(baselinePath, unguardedCandidate),
+      /candidate report anti-cheat version is none/,
+    );
+
+    // Matching current-generation reports still compare cleanly.
+    compare(baselinePath, current);
+
+    // A current-generation report whose trap fired is void: it must not
+    // anchor (or pass) a comparison even though its version matches.
+    const compromisedBaseline = {
+      ...current,
+      baseline: true,
+      aggregates: { ...current.aggregates, cheatDetectedCount: 1 },
+    };
+    writeFileSync(baselinePath, JSON.stringify(compromisedBaseline));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report is compromised or unverifiable \(cheatDetectedCount=1\)/,
+    );
+
+    // Partial coverage (3/4 draws) must not print comparison metrics.
+    const incomplete = {
+      ...current,
+      draws: 2,
+      results: [draw("fx-a", 0), draw("fx-b", 0), draw("fx-a", 1)],
+    };
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    assert.throws(
+      () => compare(baselinePath, incomplete),
+      /candidate report is incomplete/,
+    );
+    writeFileSync(baselinePath, JSON.stringify({ ...incomplete, baseline: true }));
+    assert.throws(
+      () => compare(baselinePath, current),
+      /baseline report is incomplete/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -71,6 +71,162 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   assert.equal(timerFired, true);
 });
 
+test("runCodex raw callbacks identify failed and successful runner attempts", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const state = path.join(tmp, "state");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`const state = ${JSON.stringify(state)};`,
+			"if (!fs.existsSync(state)) {",
+			"  fs.writeFileSync(state, 'failed');",
+			"  process.stderr.write('first failure');",
+			"  process.exit(1);",
+			"}",
+			"fs.writeFileSync(out, '{\"ok\":true}');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	const rawEvents: {
+		kind: "failed" | "successful";
+		raw: string;
+		runnerAttempt: number;
+	}[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		onFailedRaw: (raw, runnerAttempt) =>
+			rawEvents.push({ kind: "failed", raw, runnerAttempt }),
+		onRaw: (raw, runnerAttempt) =>
+			rawEvents.push({ kind: "successful", raw, runnerAttempt }),
+	});
+
+	assert.equal(output, '{"ok":true}');
+	assert.deepEqual(rawEvents, [
+		{ kind: "failed", raw: "first failure", runnerAttempt: 1 },
+		{ kind: "successful", raw: '{"ok":true}', runnerAttempt: 2 },
+	]);
+});
+
+test("runCodex reports one raw event for an empty successful subprocess attempt", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = process.env.CODEX_BIN;
+	t.after(() => {
+		if (previous === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"fs.writeFileSync(out, '');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+
+	const rawEvents: { raw: string; runnerAttempt: number }[] = [];
+	const failedAttempts: number[] = [];
+	const failedRaws: string[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		onRaw: (raw, runnerAttempt) => rawEvents.push({ raw, runnerAttempt }),
+		onFailedAttempt: (runnerAttempt) => failedAttempts.push(runnerAttempt),
+		onFailedRaw: (raw) => failedRaws.push(raw),
+	});
+
+	assert.equal(output, "");
+	assert.deepEqual(rawEvents, [{ raw: "", runnerAttempt: 1 }]);
+	assert.deepEqual(failedAttempts, []);
+	assert.deepEqual(failedRaws, []);
+});
+
+test("runCodex observes an empty failed attempt before a successful retry", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const state = path.join(tmp, "state");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`const state = ${JSON.stringify(state)};`,
+			"if (!fs.existsSync(state)) {",
+			"  fs.writeFileSync(state, 'failed');",
+			"  process.exit(1);",
+			"}",
+			"fs.writeFileSync(out, '{\"ok\":true}');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	const failedAttempts: {
+		runnerAttempt: number;
+		raw: string | undefined;
+	}[] = [];
+	const failedRaws: string[] = [];
+	const successfulAttempts: number[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw) => failedRaws.push(raw),
+		onRaw: (_raw, runnerAttempt) => successfulAttempts.push(runnerAttempt),
+	});
+
+	assert.equal(output, '{"ok":true}');
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: undefined }]);
+	assert.deepEqual(failedRaws, []);
+	assert.deepEqual(successfulAttempts, [2]);
+});
+
 test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
@@ -317,5 +473,354 @@ function processExists(pid: number): boolean {
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
     throw error;
-  }
+	}
 }
+
+test("openai non-2xx attempt emits failure callbacks only", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	const failedBody = `${"x".repeat(2500)} CANARY-HTTP-500`;
+	const server = createServer((_req, res) => {
+		res.statusCode = 500;
+		res.end(failedBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				runner: "openai",
+				model: "test-model",
+				targetHeadSha: headSha(repo),
+				timeoutMs: 5000,
+				onFailedAttempt: (runnerAttempt, raw) =>
+					failedAttempts.push({ runnerAttempt, raw }),
+				onFailedRaw: (raw, runnerAttempt) =>
+					failedRaws.push({ raw, runnerAttempt }),
+				onRaw: (raw, runnerAttempt) =>
+					successfulRaws.push({ raw, runnerAttempt }),
+			}),
+		/openai runner HTTP 500/,
+	);
+
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, []);
+});
+
+test("openai non-JSON attempt is failed-only before a valid retry", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.NEEDLEFISH_RETRY_MS,
+	};
+	const failedBody = `${"x".repeat(2500)} CANARY-HTTP-BODY`;
+	const successBody = JSON.stringify({
+		choices: [{ message: { content: '{"clean":true}' } }],
+	});
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		if (calls === 1) {
+			res.statusCode = 200;
+			res.end(failedBody);
+			return;
+		}
+		res.statusCode = 200;
+		res.end(successBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
+		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_RETRY_MS = "1";
+
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw, runnerAttempt) =>
+			failedRaws.push({ raw, runnerAttempt }),
+		onRaw: (raw, runnerAttempt) =>
+			successfulRaws.push({ raw, runnerAttempt }),
+	});
+	assert.equal(output, '{"clean":true}');
+	assert.equal(calls, 2, "the runner must have retried once");
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, [{ raw: successBody, runnerAttempt: 2 }]);
+});
+
+test("openai missing-content attempt is failed-only before a valid retry", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.NEEDLEFISH_RETRY_MS,
+	};
+	const failedBody = JSON.stringify({ choices: [{ message: {} }] });
+	const successBody = JSON.stringify({
+		choices: [{ message: { content: '{"clean":true}' } }],
+	});
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		res.statusCode = 200;
+		res.end(calls === 1 ? failedBody : successBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
+		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_RETRY_MS = "1";
+
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedAttempt: (runnerAttempt, raw) =>
+			failedAttempts.push({ runnerAttempt, raw }),
+		onFailedRaw: (raw, runnerAttempt) =>
+			failedRaws.push({ raw, runnerAttempt }),
+		onRaw: (raw, runnerAttempt) =>
+			successfulRaws.push({ raw, runnerAttempt }),
+	});
+
+	assert.equal(output, '{"clean":true}');
+	assert.equal(calls, 2);
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+	assert.deepEqual(successfulRaws, [{ raw: successBody, runnerAttempt: 2 }]);
+});
+
+test("onFailedRaw fires once per failed attempt", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"process.stdin.resume();",
+			"process.stdin.on('end', () => {",
+			"  process.stdout.write('crash output');",
+			"  process.exit(3);",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+
+	// The rider itself still carries the last attempt's output (it rides the
+	// error object, not an accumulator) — but the caller-side accumulator is
+	// the review layer's, and review gates retention on evalTraceOn(). Here we
+	// assert the plumbing contract: onFailedRaw still fires; what the caller
+	// DOES with it is the trace-gated part (covered in review.test.ts).
+	const failedRaws: string[] = [];
+	const rejection = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "codex",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onFailedRaw: (raw) => failedRaws.push(raw),
+	}).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(rejection instanceof Error);
+	assert.equal(failedRaws.length, 2, "one capture per failed attempt");
+});
+
+test("openai valid first attempt emits one full-body success only", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+	};
+	// The extracted content is clean; the bait sits in ANOTHER field of the
+	// successful response body — content alone is not the transcript.
+	let calls = 0;
+	const responseBody = JSON.stringify({
+		system_fingerprint: "CANARY-BODY-FIELD",
+		choices: [{ message: { content: '{"clean": true}' } }],
+	});
+	const server = createServer((_req, res) => {
+		calls += 1;
+		res.statusCode = 200;
+		res.end(responseBody);
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+
+	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+	const failedAttempts: number[] = [];
+	const failedRaws: string[] = [];
+	const out = await runCodex("prompt", {
+		repoPath: repo,
+		runner: "openai",
+		model: "test-model",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 5000,
+		onRaw: (raw, runnerAttempt) =>
+			successfulRaws.push({ raw, runnerAttempt }),
+		onFailedAttempt: (runnerAttempt) => failedAttempts.push(runnerAttempt),
+		onFailedRaw: (raw) => failedRaws.push(raw),
+	});
+	assert.equal(out, '{"clean": true}');
+	assert.equal(calls, 1);
+	assert.deepEqual(successfulRaws, [{ raw: responseBody, runnerAttempt: 1 }]);
+	assert.deepEqual(failedAttempts, []);
+	assert.deepEqual(failedRaws, []);
+});
+
+test("openai runner reports one raw event for an empty successful HTTP attempt", async (t) => {
+	const { createServer } = await import("node:http");
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	let calls = 0;
+	const server = createServer((_req, res) => {
+		calls += 1;
+		res.statusCode = 200;
+		res.end("");
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.close();
+		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+		else process.env.OPENAI_BASE_URL = previous.base;
+		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = previous.key;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+
+	const rawEvents: { raw: string; runnerAttempt: number }[] = [];
+	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+	const failedRaws: string[] = [];
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				runner: "openai",
+				model: "test-model",
+				targetHeadSha: headSha(repo),
+				timeoutMs: 5000,
+				onRaw: (raw, runnerAttempt) =>
+					rawEvents.push({ raw, runnerAttempt }),
+				onFailedAttempt: (runnerAttempt, raw) =>
+					failedAttempts.push({ runnerAttempt, raw }),
+				onFailedRaw: (raw) => failedRaws.push(raw),
+			}),
+		/non-JSON response body/,
+	);
+
+	assert.equal(calls, 1);
+	assert.deepEqual(rawEvents, []);
+	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: undefined }]);
+	assert.deepEqual(failedRaws, []);
+});

@@ -5,12 +5,7 @@ export const REVIEW_RESULT_SCHEMA_VERSION = 1;
 export type Severity = "P0" | "P1" | "P2" | "P3";
 
 export type Category =
-	| "bug"
-	| "contract"
-	| "duplicate"
-	| "runtime"
-	| "security"
-	| "validation";
+	"bug" | "contract" | "duplicate" | "runtime" | "security" | "validation";
 
 export type Surface =
 	| "public-api"
@@ -101,8 +96,20 @@ export interface ReviewResult {
 	// (e.g. "3/3 changed files deep-reviewed across 2 hotspots, incl. tail-coverage").
 	readonly coverage?: string;
 	// Eval-only tracing: the candidate findings as they stood BEFORE runCritic.
-	// Populated only when NEEDLEFISH_EVAL_TRACE is set; never shipped to users.
+	// Populated only when NEEDLEFISH_EVAL_TRACE=1; never shipped to users.
 	readonly candidateFindings?: readonly Finding[];
+	// Eval-only tracing: raw model outputs from swallowed pass failures (deep
+	// passes), preserved so the canary scan can inspect them. Trace-gated.
+	readonly failedRawOutputs?: readonly string[];
+	// Eval-only tracing: raw model outputs of every SUCCESSFUL pass attempt.
+	// Some pass text is consumed but never retained in the final result (map
+	// hotspot why/edges, critic-pruned residuals) — the canary scan needs the
+	// full transcript. Trace-gated.
+	readonly rawOutputs?: readonly string[];
+	// Present only when a trace observer was registered. true means at least
+	// one observer callback threw; consumers must treat the event stream as
+	// incomplete and withhold robustness diagnostics derived from it.
+	readonly traceDeliveryFailed?: boolean;
 }
 
 export function serializeReviewResult(result: ReviewResult): string {

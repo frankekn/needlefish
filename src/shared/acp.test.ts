@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -33,6 +33,41 @@ test("runCodex acp clean stub returns agent text", async (t) => {
   assert.match(transcript, /"method":"session\/prompt"/);
 });
 
+test("runCodex acp env credentials use and dispose the isolated HOME", async (t) => {
+  const fixture = acpFixture(t, "clean");
+  const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+  const previous = captureEnv([
+    "NEEDLEFISH_EPHEMERAL_HOME",
+    "NEEDLEFISH_ACP_AUTH_FILES",
+    "NEEDLEFISH_ACP_AUTH_ENV_VARS",
+    "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+    "MY_AGENT_TOKEN",
+    "HOME",
+    "USERPROFILE",
+  ]);
+  t.after(() => {
+    restoreEnv(previous);
+    rmSync(fakeHome, { recursive: true, force: true });
+  });
+  process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+  delete process.env.NEEDLEFISH_ACP_AUTH_FILES;
+  process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "MY_AGENT_TOKEN";
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "MY_AGENT_TOKEN";
+  process.env.MY_AGENT_TOKEN = "agent-secret";
+  process.env.HOME = fakeHome;
+  delete process.env.USERPROFILE;
+
+  const output = await runAcpPrompt(fixture, 1000);
+
+  assert.equal(output, '{"ok":true}');
+  const dumped = readJsonRecord(fixture.envPath);
+  assert.equal(dumped.MY_AGENT_TOKEN, "agent-secret");
+  assert.equal(dumped.HOME, dumped.USERPROFILE);
+  assert.notEqual(dumped.HOME, fakeHome);
+  assert.equal(typeof dumped.HOME, "string");
+  assert.equal(existsSync(dumped.HOME as string), false, "isolated HOME must be disposed");
+});
+
 test("runCodex acp surfaces session prompt JSON-RPC errors", async (t) => {
   const fixture = acpFixture(t, "error");
 
@@ -61,11 +96,7 @@ test("runCodex acp times out silent runner and kills process group", { timeout: 
     assert.throws(() => process.kill(-groupId, 0), isMissingProcess);
   } finally {
     if (pgid !== undefined) {
-      try {
-        process.kill(-pgid, "SIGKILL");
-      } catch (error) {
-        if (!isMissingProcess(error)) throw error;
-      }
+      killProcessIfRunning(-pgid);
     }
   }
 });
@@ -141,6 +172,11 @@ function writeAcpStub(options: {
       "const picked = {};",
       "for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'GITHUB_API_TOKEN']) {",
       "  if (process.env[key] !== undefined) picked[key] = process.env[key];",
+      "}",
+      "if (process.env.MY_AGENT_TOKEN !== undefined) {",
+      "  picked.MY_AGENT_TOKEN = process.env.MY_AGENT_TOKEN;",
+      "  picked.HOME = process.env.HOME;",
+      "  picked.USERPROFILE = process.env.USERPROFILE;",
       "}",
       "fs.writeFileSync(envPath, JSON.stringify(picked));",
       "if (mode === 'malformed') {",
@@ -219,4 +255,12 @@ async function waitForMissingProcessGroup(pgid: number, timeoutMs: number): Prom
 
 function isMissingProcess(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ESRCH";
+}
+
+function killProcessIfRunning(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch (error) {
+    if (!isMissingProcess(error)) throw error;
+  }
 }
