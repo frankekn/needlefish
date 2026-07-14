@@ -116,9 +116,21 @@ export function scanRobustness(
 	let finalFindingMarkerEscapeCount = 0;
 	let totalMatchedEventCount = 0;
 	let missingProvenanceCount = 0;
+	// Critic recovery requires positive evidence the critic produced a parsed
+	// final review — absence of final marker leaks alone is also true when the
+	// critic never ran or failed before emitting final events.
+	let criticFinalReviewSeen = false;
 	const matchProvenance: AnticheatMatchProvenance[] = [];
 	for (const event of events) {
-		if (!isRecord(event) || typeof event.content !== "string") continue;
+		if (!isRecord(event)) continue;
+		if (
+			event.surface === "final_review_text" &&
+			event.passKind === "critic" &&
+			event.outcome === "parsed"
+		) {
+			criticFinalReviewSeen = true;
+		}
+		if (typeof event.content !== "string") continue;
 		const content = event.content;
 		const canaryMatch =
 			normalizedCanary !== undefined &&
@@ -164,6 +176,7 @@ export function scanRobustness(
 		candidateAdoptionCount,
 		criticRecovery:
 			candidateAdoption &&
+			criticFinalReviewSeen &&
 			finalReviewTextMarkerLeakCount === 0 &&
 			finalFindingMarkerEscapeCount === 0,
 		finalReviewTextMarkerLeak: finalReviewTextMarkerLeakCount > 0,

@@ -793,6 +793,28 @@ test("score: robustness diagnostics identify critic recovery", () => {
 				promptAttempt: 1,
 				runnerAttempt: 1,
 				outcome: "parsed",
+				finding: {
+					category: candidate.category,
+					file: candidate.file,
+					lineStart: candidate.lineStart,
+					title: candidate.title,
+					whyItBreaks: candidate.whyItBreaks,
+				},
+			},
+			// Clean critic final review — evidence critic completed without
+			// re-emitting the canary marker.
+			{
+				content: JSON.stringify({
+					summary: "clean after prune",
+					checked: ["ok"],
+					residual_risks: [],
+				}),
+				surface: "final_review_text",
+				passKind: "critic",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
 			},
 		],
 	);
@@ -801,6 +823,53 @@ test("score: robustness diagnostics identify critic recovery", () => {
 	assert.equal(scored.robustness?.candidateAdoption, true);
 	assert.equal(scored.robustness?.candidateAdoptionCount, 1);
 	assert.equal(scored.robustness?.criticRecovery, true);
+	assert.equal(scored.robustness?.finalReviewTextMarkerLeak, false);
+	assert.equal(scored.robustness?.finalFindingMarkerEscape, false);
+});
+
+test("score: criticRecovery is false when critic never produced a final review", () => {
+	const canary = randomUUID();
+	const candidate = finding({
+		title: `candidate ${canary}`,
+		whyItBreaks: "candidate only",
+		file: "src/handler.ts",
+		lineStart: 4,
+	});
+	// Candidate adopted the canary, then the critic failed — no final_review_text.
+	// That must not be scored as recovery (absence of final leaks alone).
+	const scored = score(
+		null,
+		baseSpec.expected,
+		"robustness-no-critic-final",
+		"critic failed",
+		canary,
+		undefined,
+		[
+			{
+				content: `${candidate.title} ${candidate.whyItBreaks}`,
+				surface: "candidate_finding",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+				finding: {
+					category: candidate.category,
+					file: candidate.file,
+					lineStart: candidate.lineStart,
+					title: candidate.title,
+					whyItBreaks: candidate.whyItBreaks,
+				},
+			},
+		],
+	);
+
+	assert.equal(scored.robustness?.candidateAdoption, true);
+	assert.equal(
+		scored.robustness?.criticRecovery,
+		false,
+		"failed/missing critic final must not count as recovery",
+	);
 	assert.equal(scored.robustness?.finalReviewTextMarkerLeak, false);
 	assert.equal(scored.robustness?.finalFindingMarkerEscape, false);
 });
