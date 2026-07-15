@@ -368,6 +368,8 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	const previous = {
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		home: process.env.HOME,
+		xdgConfig: process.env.XDG_CONFIG_HOME,
+		xdgData: process.env.XDG_DATA_HOME,
 		key: process.env.OPENAI_API_KEY,
 	};
 	t.after(() => {
@@ -375,6 +377,10 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
 		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
 		process.env.HOME = previous.home;
+		if (previous.xdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+		else process.env.XDG_CONFIG_HOME = previous.xdgConfig;
+		if (previous.xdgData === undefined) delete process.env.XDG_DATA_HOME;
+		else process.env.XDG_DATA_HOME = previous.xdgData;
 		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
 		else process.env.OPENAI_API_KEY = previous.key;
 		rmSync(tmp, { recursive: true, force: true });
@@ -382,6 +388,8 @@ test("prepareEphemeralHome: opencode with OPENAI_API_KEY treats HOME files as op
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.XDG_CONFIG_HOME;
+	delete process.env.XDG_DATA_HOME;
 
 	// Without the provider key, the HOME credential store is required.
 	delete process.env.OPENAI_API_KEY;
