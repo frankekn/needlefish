@@ -10,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { runAcp } from "./acp.js";
+import { prepareKiroEnvironment, runKiro } from "./kiro.js";
 import {
 	parsePositiveInteger,
 	type RunnerName,
@@ -66,6 +67,7 @@ const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
 		"ANTHROPIC_API_KEY",
 		"CLAUDE_CODE_OAUTH_TOKEN",
 	],
+	kiro: ["KIRO_BIN", "KIRO_MODEL", "KIRO_API_KEY"],
 	opencode: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
 	grok: ["GROK_BIN", "GROK_MODEL"],
 	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER"],
@@ -124,6 +126,7 @@ function buildRunnerEnv(
 const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 	codex: [".codex/auth.json", ".codex/config.toml"],
 	claude: [],
+	kiro: [],
 	opencode: [
 		".config/opencode/opencode.json",
 		".local/share/opencode/auth.json",
@@ -141,6 +144,7 @@ const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
 const EPHEMERAL_HOME_ENV_CONFIG_FILES: Record<RunnerName, readonly string[]> = {
 	codex: [], // runCodexCli always passes --ignore-user-config
 	claude: [],
+	kiro: [],
 	opencode: [".config/opencode/opencode.json"],
 	grok: [".grok/config.toml"],
 	pi: [".pi/agent/models.json"],
@@ -527,7 +531,9 @@ async function runCodexOnce(
 		const ghConfigDir = path.join(tmp, "gh-empty");
 		mkdirSync(ghConfigDir, { recursive: true });
 		const ephemeralHome = prepareEphemeralHome(runner, tmp);
-		const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+		const baseEnv = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+		const env =
+			runner === "kiro" ? prepareKiroEnvironment(baseEnv, tmp) : baseEnv;
 		const sandbox = prepareRunnerSandbox({
 			runner,
 			repoPath: opts.repoPath,
@@ -640,6 +646,8 @@ function resolveModel(
 			return process.env.CODEX_MODEL;
 		case "claude":
 			return process.env.CLAUDE_MODEL;
+		case "kiro":
+			return process.env.KIRO_MODEL;
 		case "opencode":
 			return process.env.OPENCODE_MODEL;
 		case "openai":
@@ -691,6 +699,8 @@ async function runRunner(
 			return await runCodexCli(invocation);
 		case "claude":
 			return await runClaude(invocation);
+		case "kiro":
+			return await runKiro(invocation);
 		case "opencode":
 			return await runOpenCode(invocation);
 		case "openai":
@@ -897,6 +907,7 @@ function outputFor(runner: RunnerName, result: RunnerResult): string {
 	switch (runner) {
 		case "codex":
 		case "claude":
+		case "kiro":
 			return result.out;
 		case "opencode":
 			return extractOpenCodeText(result.out);

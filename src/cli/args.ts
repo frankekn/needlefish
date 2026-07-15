@@ -56,8 +56,9 @@ Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
-  --runner <name>      codex | claude | opencode | openai | grok | pi | acp
+  --runner <name>      codex | claude | kiro | opencode | openai | grok | pi | acp
   --model <id>         model id for the selected runner
+  --effort <level>     reasoning effort for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
   --json               print ReviewResult JSON to stdout (local/pr only)
@@ -69,11 +70,12 @@ Local diff options:
   --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
+  NEEDLEFISH_RUNNER       codex | claude | kiro | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
+  KIRO_BIN                Kiro CLI executable (default: kiro-cli)
   OPENCODE_BIN            opencode executable (default: opencode)
   PI_BIN                  pi executable (default: pi)
   NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
@@ -87,6 +89,7 @@ type MutableLocalOptions = {
   cacheDir?: string;
   runner?: RunnerName;
   model?: string;
+  reasoningEffort?: string;
   timeoutMs?: number;
   localMode?: "uncommitted" | "branch";
 };
@@ -94,6 +97,7 @@ type MutableLocalOptions = {
 type MutableRunnerOptions = {
   runner?: RunnerName;
   model?: string;
+  reasoningEffort?: string;
   timeoutMs?: number;
 };
 
@@ -119,11 +123,13 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
+  if (opts.reasoningEffort) runnerOpts.reasoningEffort = opts.reasoningEffort;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
   return runnerOpts;
 }
 
-export function parseArgs(argv: readonly string[]): CliCommand {
+export function parseArgs(rawArgv: readonly string[]): CliCommand {
+  const argv = rawArgv[0] === "--" ? rawArgv.slice(1) : rawArgv;
   const explainCommand = argv[0] === "explain";
   const prCommand = argv[0] === "pr" || explainCommand;
   if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
@@ -215,6 +221,11 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       i++;
       continue;
     }
+    if (arg === "--effort") {
+      opts.reasoningEffort = takeValue(argv, i, "--effort");
+      i++;
+      continue;
+    }
     if (arg === "--timeout-ms") {
       opts.timeoutMs = parsePositiveInteger(takeValue(argv, i, "--timeout-ms"), "--timeout-ms");
       i++;
@@ -243,6 +254,10 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     if (arg.startsWith("--model=")) {
       opts.model = inlineValue(arg, "--model");
+      continue;
+    }
+    if (arg.startsWith("--effort=")) {
+      opts.reasoningEffort = inlineValue(arg, "--effort");
       continue;
     }
     if (arg.startsWith("--timeout-ms=")) {

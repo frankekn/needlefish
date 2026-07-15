@@ -16,6 +16,9 @@ inputs:
   timeout_ms:
     description: Optional per-call timeout in milliseconds
     required: false
+  effort:
+    description: Optional reasoning effort for the selected runner
+    required: false
   codex_reasoning_effort:
     description: "Codex reasoning effort: medium, high, or xhigh"
     required: false
@@ -100,6 +103,7 @@ runs:
         TARGET_REPO_PATH: ${{ inputs.repo_path }}
         RUNNER_INPUT: ${{ inputs.runner }}
         MODEL_INPUT: ${{ inputs.model }}
+        EFFORT_INPUT: ${{ inputs.effort }}
         TIMEOUT_INPUT: ${{ inputs.timeout_ms }}
       run: |
         pr="${PR_INPUT:-$EVENT_PR}"
@@ -113,5 +117,6 @@ runs:
         args=(--github --pr "$pr" --repo "$TARGET_REPO_PATH")
         if [ -n "$RUNNER_INPUT" ]; then args+=(--runner "$RUNNER_INPUT"); fi
         if [ -n "$MODEL_INPUT" ]; then args+=(--model "$MODEL_INPUT"); fi
+        if [ -n "$EFFORT_INPUT" ]; then args+=(--effort "$EFFORT_INPUT"); fi
         if [ -n "$TIMEOUT_INPUT" ]; then args+=(--timeout-ms "$TIMEOUT_INPUT"); fi
         pnpm review "${args[@]}"

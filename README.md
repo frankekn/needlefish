@@ -12,9 +12,11 @@ migration/upgrade risk, missing validation, duplicate behavior), never style.
 
 Read-only by default. Small PRs use a review pass plus an adversarial critic;
 large PRs use map/deep passes before the same critic. Codex is the default
-runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP
-agents are also supported. Verdict is derived deterministically from the
-surviving findings, never freehanded by the model.
+hosted-action runner; Kiro CLI is supported for explicit local and self-hosted
+runs, alongside Claude Code, opencode, OpenAI-compatible HTTP, Grok, pi, and
+ACP agents. Kiro is not installed by the hosted composite action. Verdict is
+derived deterministically from the surviving findings, never freehanded by the
+model.
 
 ## Install
 
@@ -70,7 +72,7 @@ Requires:
 
 - Node 20+
 - Corepack (recommended) or the pinned pnpm from `packageManager`
-- One supported model CLI authed locally: Codex, Claude Code, or opencode
+- One supported model CLI authed locally: Codex, Claude Code, Kiro CLI, or opencode
 - GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action mode
 
 ```bash
@@ -137,6 +139,7 @@ needlefish pr 123 --repo /path/to/some-repo
 
 # Runner selection:
 needlefish --repo /path/to/some-repo --runner claude
+needlefish --repo /path/to/some-repo --runner kiro --model gpt-5.6-luna --effort xhigh
 needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
 ```
@@ -224,13 +227,21 @@ jobs:
     uses: frankekn/needlefish/.github/workflows/review.yml@main
     with:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-      # Optional:
+      # Optional overrides (self-hosted defaults: kiro + gpt-5.6-luna + xhigh):
       # runner: codex
       # model: gpt-5.6-sol
-      # codex_reasoning_effort: medium
+      # effort: medium
+      # codex_reasoning_effort: medium # legacy Codex compatibility
       # timeout_ms: "600000"
     secrets: inherit
 ```
+
+The default Kiro lane uses `KIRO_API_KEY` from the intended
+Pro/Pro+/Pro Max/Power account when that repository or organization Actions
+secret is available. Otherwise it uses the runner service account's sanitized
+`~/.config/needlefish/kiro-auth.sqlite3`; the adapter copies it into the
+disposable HOME and fails closed if it is missing. `secrets: inherit` passes an
+optional API key to the reusable workflow.
 
 To use Grok 4.5, replace the `runner` and `model` overrides with
 `runner: grok` and `model: grok-4.5`. The self-hosted workflow requires the
@@ -268,7 +279,14 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
    verify each runner reports the same installed metadata before trusting the
    fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
-4. On that runner, auth the selected CLI once. For Codex:
+4. Configure authentication for the selected CLI. The default Kiro lane prefers
+   Kiro's supported headless contract: store the intended account's nonempty
+   `KIRO_API_KEY` as a repository or organization Actions secret. When that
+   secret is absent, the self-hosted workflow uses a sanitized auth database at
+   `~/.config/needlefish/kiro-auth.sqlite3`; guarded calls copy it as mode 0600
+   into disposable `HOME/.local/share/kiro-cli/data.sqlite3`. Keep only auth
+   state—no conversation/history rows. Needlefish does not install Kiro CLI;
+   install it using the operator-supported Kiro distribution. For Codex:
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
@@ -291,8 +309,7 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
 No self-hosted runner required: this repo doubles as a composite action that
 runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo. The
 hosted action installs the runners listed in `action.yml`; use the self-hosted
-workflow above for Grok 4.5 because the hosted action does not install the
-Grok CLI.
+workflow above for Kiro or Grok because the hosted action installs neither CLI.
 
 ```yaml
 name: needlefish
@@ -322,6 +339,7 @@ Runner authentication (repo secrets, passed via `env` on the action step):
 | runner   | secret(s)                                                |
 | -------- | -------------------------------------------------------- |
 | codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
+| kiro     | `KIRO_API_KEY` or sanitized guarded auth DB (self-hosted only; not hosted) |
 | claude   | `ANTHROPIC_API_KEY`                                       |
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
 | openai   | `OPENAI_API_KEY`                                          |
@@ -335,8 +353,8 @@ other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 "Runner subprocess environment").
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
-(default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
-`runner_version` (npm version of the runner CLI), `repo_path` (defaults to the
+(default `codex`), `model`, `effort`, `timeout_ms`, `codex_reasoning_effort`
+(legacy Codex compatibility), `runner_version` (npm version of the runner CLI), `repo_path` (defaults to the
 workspace checkout), `github_token` (defaults to the workflow token).
 
 Cost and behavior notes:
@@ -355,17 +373,18 @@ Cost and behavior notes:
 ## Model runner invocation
 
 `src/shared/codex.ts` invokes the selected runner. Use `--runner`, `--model`,
-and `--timeout-ms`, or the matching env vars:
+`--effort`, and `--timeout-ms`, or the matching env vars:
 
 | option | env | default |
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` |
+| effort | — | runner default; self-hosted Kiro defaults to `xhigh` |
+| Codex compatibility effort | `CODEX_REASONING_EFFORT` | `medium` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
-Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
-`GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
+Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `KIRO_BIN`,
+`OPENCODE_BIN`, `GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
 for the `acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
 `CODEX_RETRY_MS` still work for Codex compatibility.
 
@@ -376,7 +395,18 @@ for those three CLIs instead of a stack trace.
 Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
 read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
 restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
-`--permission-mode plan`, `--safe-mode`, and no session persistence. grok runs
+`--permission-mode plan`, `--safe-mode`, and no session persistence. Kiro runs
+headlessly through a random custom agent exposing and auto-allowing only `read`
+and `grep`; the full prompt is referenced by a mode-0600 file URI, never argv or
+stdin. Each call gets a disposable `KIRO_HOME`, disables inherited resources and
+auto-update, and runs outside the target repo. With
+`NEEDLEFISH_EPHEMERAL_HOME=1`, it also requires a disposable `KIRO_DATA_DIR`:
+a nonempty `KIRO_API_KEY` may use an empty directory, otherwise manual/local
+invocations may set `NEEDLEFISH_KIRO_AUTH_DB` to a readable regular auth DB,
+which is copied (never symlinked) as mode 0600 to the disposable
+`HOME/.local/share/kiro-cli/data.sqlite3`. The parent-only path is never
+forwarded to the child. Production review and eval workflows prefer
+`KIRO_API_KEY` and otherwise use the guarded auth-DB fallback. grok runs
 with `--permission-mode plan` by default. The self-hosted GitHub Grok 4.5 lane
 sets `NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1` for valid JSON output, which omits
 that restraint and is why it is limited to an explicitly selected runner.
@@ -404,7 +434,7 @@ needlefish checks that sandbox with
 
 ### Runner subprocess environment
 
-Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `pi`, `acp`) are spawned with an
+Runner CLIs (`codex`, `claude`, `kiro`, `opencode`, `grok`, `pi`, `acp`) are spawned with an
 allowlisted environment, not the full parent `process.env` — only
 locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
 variables are passed through. To pass an additional variable to the runner

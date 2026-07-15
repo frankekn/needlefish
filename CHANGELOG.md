@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.5 — 2026-07-15
+
+- Runner: add explicit local/self-hosted Kiro CLI support through a disposable
+  read/grep-only custom agent with file-URI prompts. Guarded IAM auth is copied
+  to Kiro's disposable HOME data path; production prefers `KIRO_API_KEY` when
+  configured and otherwise uses the sanitized auth-DB fallback.
+- CLI/CI: add generic `--effort`; default self-hosted reviews and weekly evals
+  to Kiro `gpt-5.6-luna` at `xhigh`. Hosted action installation remains
+  unchanged and does not include Kiro.
+
 ## 0.3.4 — 2026-07-15
 
 - Tests: isolate OpenCode's XDG config/data roots so ephemeral-home coverage is

@@ -23,10 +23,8 @@ jobs:
           fetch-depth: 0
       - name: Run full eval
         env:
-          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
-          # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
-          PI_PROVIDER: cliproxy
-          PI_BIN: /home/termtek/.npm-global/bin/pi
+          NEEDLEFISH_EPHEMERAL_HOME: "1"
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
         run: |
           # corepack enable defaults to the node prefix bin (/usr/bin on this
           # runner's system node) and dies with EACCES; install shims to a
@@ -36,7 +34,10 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --draws 3 --concurrency 4 \
+          if [ -z "${KIRO_API_KEY:-}" ]; then
+            export NEEDLEFISH_KIRO_AUTH_DB="$HOME/.config/needlefish/kiro-auth.sqlite3"
+          fi
+          node --import tsx eval/run.ts --runner kiro --model gpt-5.6-luna --effort xhigh --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:

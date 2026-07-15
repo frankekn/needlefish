@@ -9,14 +9,17 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: kiro, codex, claude, opencode, grok, or pi"
         required: false
-        default: codex
+        default: kiro
       model:
         description: Optional model id for the selected runner
         required: false
       timeout_ms:
         description: Optional per-call timeout in milliseconds
+        required: false
+      effort:
+        description: Optional reasoning effort for the selected runner
         required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
@@ -39,16 +42,20 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: kiro, codex, claude, opencode, grok, or pi"
         type: string
         required: false
-        default: codex
+        default: kiro
       model:
         description: Optional model id for the selected runner
         type: string
         required: false
       timeout_ms:
         description: Optional per-call timeout in milliseconds
+        type: string
+        required: false
+      effort:
+        description: Optional reasoning effort for the selected runner
         type: string
         required: false
       codex_reasoning_effort:
@@ -66,6 +73,10 @@ on:
       needlefish_repo:
         description: Needlefish source repo for the release staleness check
         type: string
+        required: false
+    secrets:
+      KIRO_API_KEY:
+        description: Optional Kiro paid-tier API key for the guarded headless runner
         required: false
 
 permissions:
@@ -217,9 +228,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
-          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'kiro' }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
+          NEEDLEFISH_EFFORT_INPUT: ${{ inputs.effort || github.event.inputs.effort }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
           # Deliberate on this disposable runner; the read-only toolset is probe-verified.
           NEEDLEFISH_ALLOW_PI_RUNNER: "1"
@@ -234,21 +247,31 @@ jobs:
             echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
             exit 1
           fi
-          # Grok 4.5 emits valid review JSON only in its unsandboxed mode;
-          # opt into that mode for the explicitly selected Grok lane only.
+          # Runner-specific safety/auth controls are enabled only for their lane.
           unset NEEDLEFISH_ALLOW_GROK_UNSANDBOXED
+          unset NEEDLEFISH_EPHEMERAL_HOME
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "grok" ]; then
             export NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1
+          elif [ "$NEEDLEFISH_RUNNER_INPUT" = "kiro" ]; then
+            export NEEDLEFISH_EPHEMERAL_HOME=1
+            if [ -z "${KIRO_API_KEY:-}" ]; then
+              export NEEDLEFISH_KIRO_AUTH_DB="$HOME/.config/needlefish/kiro-auth.sqlite3"
+            fi
           fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
+              kiro) NEEDLEFISH_MODEL_INPUT="gpt-5.6-luna" ;;
               codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-sol" ;;
               grok) NEEDLEFISH_MODEL_INPUT="grok-4.5" ;;
             esac
           fi
+          if [ -z "$NEEDLEFISH_EFFORT_INPUT" ] && [ "$NEEDLEFISH_RUNNER_INPUT" = "kiro" ]; then
+            NEEDLEFISH_EFFORT_INPUT="xhigh"
+          fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
+          if [ -n "$NEEDLEFISH_EFFORT_INPUT" ]; then args+=(--effort "$NEEDLEFISH_EFFORT_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           "$HOME/.local/bin/needlefish" "${args[@]}"

@@ -36,7 +36,7 @@ needlefish/
 | Verdict rules | `src/core/verdict.ts` | Deterministic; do not let model prose decide pass/fail. |
 | Local review | `src/adapters/local.ts` | Writes `~/.cache/needlefish/<repo>/last-review.json`. |
 | GitHub review | `src/adapters/github.ts` | Posts COMMENT review plus `Needlefish` check-run. |
-| Runner invocation | `src/shared/codex.ts`, `src/shared/runner-process.ts` | Timeout, retry, sandbox, and runner env behavior live here. |
+| Runner invocation | `src/shared/codex.ts`, `src/shared/kiro.ts`, `src/shared/runner-process.ts` | Dispatch/retry/transcripts stay generic; Kiro custom-agent and guarded auth behavior live in `kiro.ts`. |
 | Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read from target repo root only. |
 | Prompt behavior | `prompts/*.md` | Must remain read-only and output JSON contracts exactly. |
 | Tests | `src/**/*.test.ts`, `scripts/test.mjs` | Node test runner, no Jest/Vitest. |
@@ -52,7 +52,8 @@ needlefish/
 | `runGithub` | function | `src/adapters/github.ts` | Builds PR bundle, skips stale/closed PRs, posts review/check. |
 | `review` | function | `src/core/review.ts` | Chooses small vs large pipeline. |
 | `deriveVerdict` | function | `src/core/verdict.ts` | Converts findings/residual risks to pass/needs_human/changes_requested. |
-| `runCodex` | function | `src/shared/codex.ts` | Common runner entry for Codex, Claude, and opencode. |
+| `runCodex` | function | `src/shared/codex.ts` | Common runner entry; preserves retry and full success/failure transcripts. |
+| `runKiro` | function | `src/shared/kiro.ts` | Read/grep-only custom agent, isolated cwd/home, and guarded Kiro auth staging. |
 | `spawnRunnerProcess` | function | `src/shared/runner-process.ts` | Subprocess timeout/output/error handling. |
 | `makeBundle` | function | `src/shared/repo.ts` | Builds model context bundle with target repo `AGENTS.md`. |
 | `normalizeReview` | function | `src/shared/normalize.ts` | Boundary validation for model JSON. |
@@ -68,6 +69,8 @@ needlefish/
 - Keep tests beside the code path as `src/**/*.test.ts`.
 - Use Node built-ins (`node:test`, `assert/strict`, `spawnSync`, temp dirs) before adding dependencies.
 - Stub external CLIs in tests with temp scripts and env vars.
+- Boolean env flags are strictly `"1"` = enabled; any other value is off.
+- Guarded production Kiro workflows prefer a nonempty `KIRO_API_KEY` and otherwise require parent-only `NEEDLEFISH_KIRO_AUTH_DB`, copied to the disposable HOME Kiro data path. Never forward the auth-DB path to the child or weaken missing-auth failures.
 - Prefer structural fixes over prompt prose. If a prompt missed a bug despite having the evidence, change process/output shape first.
 
 ## ANTI-PATTERNS

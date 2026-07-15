@@ -117,7 +117,7 @@ test("parseArgs accepts runner options", () => {
 });
 
 test("parseArgs validates runner options", () => {
-  assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, pi, acp/);
+  assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, kiro, opencode, openai, grok, pi, acp/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
 });
 
@@ -136,4 +136,22 @@ test("parseArgs rejects explain without --finding", () => {
 
 test("parseArgs rejects --finding outside explain", () => {
   assert.throws(() => parseArgs(["--finding", "x"]), /only valid with the explain command/);
+});
+
+test("parseArgs accepts a single package-manager separator and generic effort", () => {
+  const separated = parseArgs(["--", "--runner", "kiro", "--effort", "xhigh"]);
+  assert.equal(separated.kind, "local");
+  if (separated.kind === "local") {
+    assert.equal(separated.opts.runner, "kiro");
+    assert.equal(separated.opts.reasoningEffort, "xhigh");
+  }
+
+  const inline = parseArgs(["--effort=high"]);
+  assert.equal(inline.kind, "local");
+  if (inline.kind === "local") {
+    assert.equal(inline.opts.reasoningEffort, "high");
+  }
+
+  assert.throws(() => parseArgs(["--", "--", "--effort", "xhigh"]), /unknown option --/);
+  assert.throws(() => parseArgs(["--effort="]), /--effort requires a value/);
 });
