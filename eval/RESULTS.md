@@ -623,3 +623,44 @@ Decision: **FAIL — do not merge or deploy this lane.** Any tier-1 miss is
 disqualifying, and the stable false positive independently fails the
 prefer-zero-findings production bar. The report remains valid evidence because
 all guards passed; no baseline is recorded from this failed candidate.
+
+## 2026-07-15 — Kiro CLI exploratory model/effort comparison (not a gate, not shipped)
+
+Ad-hoc side-by-side after the Kiro Luna/xhigh gate failure above, to see whether
+a different model/effort on the **same provider (Kiro CLI / `kiro-cli`, runner
+`kiro`)** clears the tier-1/false-positive bar the shipped candidate missed.
+All three rows below share **provider: Kiro CLI**, promptHash
+`e62d0889fc704541`, fixtureSetHash `0703343edae44d29`, guarded ephemeral HOME,
+full transcript tracing, anti-cheat generation 1, `cheatDetectedCount 0`
+throughout. Full set incl. holdouts, one draw, then x3 confirmation of every
+divergence (never fewer than 3 draws before any pass/fail read).
+
+| provider | model | effort | recall | t1/t2/t3 | FP rate | invalidJson | verdictMatch | noise | mean draw |
+|---|---|---|---|---|---|---|---|---|---|
+| Kiro CLI | gpt-5.6-luna | xhigh | 91.38% | 85.71/100/76.47 | 4.17% | 2.38% | 95.24% | 0.086 | 44.1s |
+| Kiro CLI | auto | xhigh | 82.76% | 85.71/85.29/76.47 | 0% | 0% | 90.48% | 0 | 53.8s |
+| Kiro CLI | gpt-5.6-sol | low | 93.10% | **100**/100/76.47 | 12.5% | 0% | 95.24% | 0.103 | 64.7s |
+
+x3 confirmation on every full-set divergence, same provider (Kiro CLI) throughout:
+
+| provider | model | effort | T1 confirm | stable FP count |
+|---|---|---|---|---|
+| Kiro CLI | gpt-5.6-luna | xhigh | 2/3 (unstable miss, still fails) | 1 @ 3/3 |
+| Kiro CLI | auto | xhigh | 0/3 (stable failure — worse than luna) | 0 |
+| Kiro CLI | gpt-5.6-sol | low | no T1 divergence existed (100% held clean) | **2 @ 3/3** (worst) |
+
+Read: sol/low is the only **Kiro CLI** lane with a clean tier-1 (no miss to even
+confirm), but it has the worst false-positive profile of the three — 12.5%
+full-set FP and 2 independently-stable false positives on confirm, worse than
+luna's already-disqualifying 1. auto/xhigh has the cleanest FP/JSON behavior
+of the three but its tier-1 miss is a stable failure (0/3), strictly worse than
+luna's unstable 2/3. **No Kiro CLI model/effort combination tried to date
+clears both axes (clean T1 AND no stable FP) simultaneously.**
+
+Decision: this was a comparative side-investigation only, not a re-run of the
+pre-declared gate. It does not change the standing **FAIL** verdict for Kiro
+CLI Luna/xhigh above, does not certify any Kiro CLI model/effort combination,
+and no prod config, workflow default, or PR was touched based on these
+numbers. Kiro CLI remains blocked from production/weekly-eval use pending a
+combination that clears both the tier-1 and false-positive bars on a
+pre-declared gate.
