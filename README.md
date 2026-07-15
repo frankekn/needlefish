@@ -224,11 +224,29 @@ jobs:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
       # Optional:
       # runner: codex
-      # model: gpt-5.5
-      # codex_reasoning_effort: high
+      # model: gpt-5.6-sol
+      # codex_reasoning_effort: medium
       # timeout_ms: "600000"
     secrets: inherit
 ```
+
+To use Grok 4.5, replace the `runner` and `model` overrides with
+`runner: grok` and `model: grok-4.5`. The self-hosted workflow requires the
+authenticated `grok` CLI on the runner's `PATH`; it does not install or log in
+to that CLI for you.
+
+For a one-off Grok review without editing a caller workflow:
+
+```bash
+PR_NUMBER=123 # replace with the PR number
+gh workflow run review.yml -R frankekn/needlefish --ref main \
+  -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
+```
+
+The Grok 4.5 lane deliberately opts out of Grok's process-level plan mode so
+the CLI returns valid review JSON. Use it only on a self-hosted runner you
+control; the workflow sets `NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1` only when
+`runner=grok` is selected.
 
 Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
 every target repo automatically. The runner must have needlefish deployed at
@@ -252,6 +270,8 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
    ```bash
    printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
    ```
+   For Grok, complete the provider's CLI login or key setup as appropriate
+   and verify that `grok` runs as the runner service account.
 5. If needlefish is **private**, the caller repo must be allowed to call this
    reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is enough.
 6. **Runner global-instructions caveat:** model CLIs may auto-load global
@@ -267,7 +287,10 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
 ## GitHub Action (hosted, any repo)
 
 No self-hosted runner required: this repo doubles as a composite action that
-runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo:
+runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo. The
+hosted action installs the runners listed in `action.yml`; use the self-hosted
+workflow above for Grok 4.5 because the hosted action does not install the
+Grok CLI.
 
 ```yaml
 name: needlefish
@@ -300,7 +323,7 @@ Runner authentication (repo secrets, passed via `env` on the action step):
 | claude   | `ANTHROPIC_API_KEY`                                       |
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
 | openai   | `OPENAI_API_KEY`                                          |
-| grok     | Grok CLI auth or provider-specific key                    |
+| grok     | Grok CLI auth or provider-specific key (self-hosted lane) |
 | pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
 | acp      | agent-specific auth plus `NEEDLEFISH_ACP_BIN` on the runner |
 
@@ -352,7 +375,10 @@ Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
 read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
 restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
 `--permission-mode plan`, `--safe-mode`, and no session persistence. grok runs
-with `--permission-mode plan` for the same process-level restraint. opencode
+with `--permission-mode plan` by default. The self-hosted GitHub Grok 4.5 lane
+sets `NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1` for valid JSON output, which omits
+that restraint and is why it is limited to an explicitly selected runner.
+opencode
 runs with `--pure` and never uses `--dangerously-skip-permissions`, but as of
 this writing opencode's headless `run` mode has **no** documented read-only or
 permission flag — a live probe confirmed it executes shell/tool calls with no
