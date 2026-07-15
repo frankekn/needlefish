@@ -58,7 +58,7 @@ Shared options:
   --deep               wider context (call sites, history, adjacent tests)
   --runner <name>      codex | claude | kiro | opencode | openai | grok | pi | acp
   --model <id>         model id for the selected runner
-  --effort <level>     reasoning effort for the selected runner
+  --effort <level>     reasoning effort (not supported by openai/acp)
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
   --json               print ReviewResult JSON to stdout (local/pr only)

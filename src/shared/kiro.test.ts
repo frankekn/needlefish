@@ -93,7 +93,7 @@ test("runCodex invokes Kiro through a private read-only custom agent", async (t)
 		"  agentMode: fs.statSync(agentPath).mode & 0o777,",
 		"  settings: JSON.parse(fs.readFileSync(path.join(process.env.KIRO_HOME, 'settings', 'cli.json'), 'utf8'))",
 		"}));",
-		"process.stdout.write('\\u001b[32m{\"ok\":true}\\u001b[0m\\r\\n');",
+		"process.stdout.write('\\u001b[36mread { path: \\\"/tmp/repo\\\" }\\u001b[0m\\n\\u001b[32m{\\\"ok\\\":true}\\u001b[0m\\r\\n');",
 	]);
 	const raw: string[] = [];
 
@@ -147,6 +147,30 @@ test("runCodex invokes Kiro through a private read-only custom agent", async (t)
 	assert.equal(env.NEEDLEFISH_TEST_SECRET, undefined);
 	assert.equal(existsSync(env.KIRO_HOME), false);
 	assert.ok(raw[0]?.includes("\u001b[32m"), "raw transcript must retain ANSI stdout");
+	assert.ok(
+		raw[0]?.includes('read { path: "/tmp/repo" }'),
+		"raw transcript must retain leading Kiro tool traces",
+	);
+});
+
+test("Kiro explain preserves plain text after tool trace", async (t) => {
+	const { repo, bin } = fixture(t);
+	writeKiroStub(bin, [
+		"process.stdout.write('read { path: \\\"/tmp/repo\\\" }\\nPlain explanation with {braces}.\\r\\n');",
+	]);
+
+	const output = await runCodex("explain prompt", {
+		repoPath: repo,
+		runner: "kiro",
+		label: "explain",
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+	});
+
+	assert.equal(
+		output,
+		'read { path: "/tmp/repo" }\nPlain explanation with {braces}.',
+	);
 });
 
 test("guarded Kiro API-key mode uses empty disposable home and data dirs", async (t) => {

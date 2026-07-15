@@ -689,3 +689,23 @@ test("runCodex rejects an invalid pi thinking effort", async () => {
 		rmSync(tmp, { recursive: true, force: true });
 	}
 });
+
+test("runCodex rejects effort for runners without effort support", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+	for (const runner of ["openai", "acp"] as const) {
+		await assert.rejects(
+			() =>
+				runCodex("prompt", {
+					repoPath: repo,
+					runner,
+					reasoningEffort: "xhigh",
+					targetHeadSha: headSha(repo),
+					timeoutMs: 1000,
+				}),
+			/--effort is not supported by runner/,
+		);
+	}
+});

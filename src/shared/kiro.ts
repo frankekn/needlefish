@@ -29,6 +29,7 @@ export interface KiroInvocation {
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
+	readonly expectJson: boolean;
 }
 
 export interface KiroResult {
@@ -81,7 +82,10 @@ export async function runKiro(
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
-	return { res, out: normalizeKiroOutput(res.stdout ?? "") };
+	return {
+		res,
+		out: normalizeKiroOutput(res.stdout ?? "", invocation.expectJson),
+	};
 }
 
 function writeKiroSettings(home: string): void {
@@ -171,6 +175,48 @@ function kiroArgs(
 	return args;
 }
 
-function normalizeKiroOutput(output: string): string {
-	return stripVTControlCharacters(output).replace(/\r\n?/g, "\n").trim();
+function normalizeKiroOutput(output: string, expectJson: boolean): string {
+	const normalized = stripVTControlCharacters(output)
+		.replace(/\r\n?/g, "\n")
+		.trim();
+	if (!expectJson) return normalized;
+	return finalJsonObject(normalized) ?? normalized;
+}
+
+function finalJsonObject(text: string): string | undefined {
+	let start = -1;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	let finalObject: string | undefined;
+	for (let index = 0; index < text.length; index++) {
+		const char = text[index];
+		if (depth === 0) {
+			if (char === "{") {
+				start = index;
+				depth = 1;
+			}
+			continue;
+		}
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (char === "\\") escaped = true;
+			else if (char === '"') inString = false;
+			continue;
+		}
+		if (char === '"') inString = true;
+		else if (char === "{") depth++;
+		else if (char === "}") depth--;
+		if (depth !== 0 || start < 0) continue;
+		const candidate = text.slice(start, index + 1);
+		const trailing = text.slice(index + 1).trim();
+		try {
+			JSON.parse(candidate);
+			if (trailing === "" || trailing === "```") finalObject = candidate;
+		} catch {
+			// Keep scanning: Kiro tool traces use non-JSON brace blocks.
+		}
+		start = -1;
+	}
+	return finalObject;
 }

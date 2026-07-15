@@ -383,6 +383,9 @@ Cost and behavior notes:
 | Codex compatibility effort | `CODEX_REASONING_EFFORT` | `medium` |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
+`--effort` is forwarded only to runners with an implemented effort control;
+the direct `openai` and `acp` runners reject it instead of silently ignoring it.
+
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `KIRO_BIN`,
 `OPENCODE_BIN`, `GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
 for the `acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and

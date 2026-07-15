@@ -437,6 +437,7 @@ interface RunnerInvocation {
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
+	readonly expectJson: boolean;
 }
 
 export async function runCodex(
@@ -444,6 +445,12 @@ export async function runCodex(
 	opts: CodexOptions,
 ): Promise<string> {
 	const runner = resolveRunner(opts);
+	if (
+		opts.reasoningEffort?.trim() &&
+		(runner === "openai" || runner === "acp")
+	) {
+		throw new Error(`--effort is not supported by runner ${runner}`);
+	}
 	if (runner === "opencode" && !process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER) {
 		throw new Error(
 			"The opencode runner has no verified process-level sandbox restraint in headless mode " +
@@ -550,6 +557,7 @@ async function runCodexOnce(
 			timeoutMs,
 			env,
 			tmp,
+			expectJson: opts.label !== "explain",
 		};
 		const result = await runRunner(runner, invocation);
 
