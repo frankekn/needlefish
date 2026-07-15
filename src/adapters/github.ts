@@ -239,20 +239,6 @@ export interface MatchResult {
 	readonly resolvedCount: number;
 }
 
-function countNewFindings(
-	prevKeys: readonly FindingKey[],
-	curr: readonly Finding[],
-): number {
-	return curr.filter(
-		(finding) =>
-			!prevKeys.some(
-				(previous) =>
-					finding.file === previous.file &&
-					finding.lineStart === previous.lineStart &&
-					normalizeTitle(finding.title) === previous.title,
-			),
-	).length;
-}
 
 export function matchFindings(
 	prevKeys: readonly FindingKey[],
@@ -733,7 +719,8 @@ export async function runGithub(
 				inlinedFindings: freshInlined,
 				openFindings: open,
 				resolvedCount,
-				newCount: countNewFindings(prev.state.findings, result.findings),
+				// New = not matched to a previous-round key.
+				newCount: fresh.length,
 				repoSlug: repo,
 			};
 			const body = renderMarkdown(freshResult, {
