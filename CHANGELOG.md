@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.3 — 2026-07-15
+
+- Eval: add fail-closed anti-cheat guards with per-draw ephemeral HOME,
+  answer-key canaries, and full-transcript scanning.
+- Review: harden coverage, error-path, round-comment, and report-integrity
+  handling across local and GitHub review paths.
+- GitHub: support an explicit Grok 4.5 review lane and keep review sandboxes
+  on the runner's temporary storage.
+- Docs: document the self-hosted Grok 4.5 GitHub workflow.
+
 ## 0.3.2 — 2026-07-07
 
 - CLI: `--version` now reads the version from package.json at runtime instead of a hardcoded string (0.3.1 still reported "0.3.0").
