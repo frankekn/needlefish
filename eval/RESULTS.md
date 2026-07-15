@@ -589,3 +589,37 @@ Pre-ship gate for the review-methodology Phase-1 code (touches reviewSmall/revie
 | sol medium | 87.9% (89.7%) | 9.7% (6.9%) | 94.8% (95.6%) |
 
 Drifts are small, in OPPOSITE directions per lane, and the stable-miss sets are identical to baseline (grok: same 5 fixtures 3/3; sol: refactor-move FP still 3/3) — sampling noise, not a code effect. Verdict: coverage plumbing is behavior-neutral; Phase 1 clear to ship. Reports: eval/reports/2026-07-12-p1branch-{sol,grok45}-x3.json (in the p1 worktree).
+
+## Kiro 0.3.5 production-lane certification — BLOCKED
+
+Pre-declared lane: self-hosted Ubuntu, Kiro CLI 2.10.0,
+`gpt-5.6-luna` at `xhigh`, guarded ephemeral HOME + full transcript tracing,
+full fixture set including holdouts, one draw followed by x3 confirmation of
+all divergences. Full-set comparability: promptHash `e62d0889fc704541`,
+fixtureSetHash `0703343edae44d29`, anti-cheat generation 1.
+
+The first 84-result run was valid but failed badly: recall 68.97%, FP 8.33%,
+invalid JSON 26.19%, tier recall 85.71/76.47/47.06%, noise 0.034, cheat 0.
+Diagnosis used a non-holdout structural probe: Kiro emitted a valid final JSON
+object after leading tool traces, while the generic first-brace/last-brace
+extractor sometimes spanned a tool-trace brace block. The adapter was fixed to
+feed only the valid final object to JSON parsing while retaining the complete
+raw stream for anti-cheat scanning. A targeted non-holdout x3 probe then had
+0/3 format failures, anti-cheat generation 1, and cheat 0.
+
+The corrected 84-result full run measured recall 91.38%, must-find hit rate
+93.50%, FP 4.17%, invalid JSON 2.38% (2/84), verdict match 95.24%, anchored-line
+validity 91.67%, tier recall 85.71/100/76.47%, noise 0.086, critic-prune error
+1.72%, mean draw 44.1s, and cheat 0.
+
+Confirmation selected all 10 format/verdict/anchor/FP/recall/critic
+divergences without exposing fixture identifiers and ran three draws each
+(fixtureSetHash `0628923a8ba24d98`). The selected tier-1 case hit 2/3, not the
+required 3/3. One false positive was stable at 3/3. Confirmation invalid JSON
+was 2/30 (6.67%); no format failure was stable. Anti-cheat generation remained
+1 and cheat remained 0.
+
+Decision: **FAIL — do not merge or deploy this lane.** Any tier-1 miss is
+disqualifying, and the stable false positive independently fails the
+prefer-zero-findings production bar. The report remains valid evidence because
+all guards passed; no baseline is recorded from this failed candidate.
