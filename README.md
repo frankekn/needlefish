@@ -4,6 +4,8 @@
 
 # needlefish
 
+[繁體中文](README.zh-TW.md)
+
 Strict local PR review agent. Acts like a senior engineer reviewing your diff
 before merge — only real defects (bugs, regressions, security, data loss,
 migration/upgrade risk, missing validation, duplicate behavior), never style.
