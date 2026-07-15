@@ -401,10 +401,19 @@ function findPreviousReview(
 	repo: string,
 	prNumber: number,
 ): { id: number; state: RoundState } | null {
-	const raw = ghJson(["api", `repos/${repo}/pulls/${prNumber}/reviews`]);
+	// --slurp: --paginate alone emits one JSON document PER PAGE (concatenated,
+	// unparseable); --slurp wraps the pages into a single outer array.
+	const raw = ghJson([
+		"api",
+		"--paginate",
+		"--slurp",
+		`repos/${repo}/pulls/${prNumber}/reviews`,
+	]);
 	if (!Array.isArray(raw)) return null;
-	for (let i = raw.length - 1; i >= 0; i--) {
-		const item = raw[i];
+	// flat(1) also tolerates a plain review list from stubs or older gh versions.
+	const reviews = raw.flat(1);
+	for (let i = reviews.length - 1; i >= 0; i--) {
+		const item = reviews[i];
 		if (!isRecord(item)) continue;
 		const state = parseState(stringField(item, "body"));
 		if (!state) continue;
