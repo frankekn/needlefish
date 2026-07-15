@@ -351,7 +351,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 	);
 });
 
-test("runCodex passes grok plan permission mode by default", async () => {
+test("runCodex passes grok plan permission mode when unset or set to 0", async () => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "grok-bin.js");
@@ -374,19 +374,23 @@ test("runCodex passes grok plan permission mode by default", async () => {
 		chmodSync(bin, 0o755);
 		process.env.GROK_BIN = bin;
 		process.env.NEEDLEFISH_RUNNER = "grok";
-		delete process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED;
+		for (const allowUnsandboxed of [undefined, "0"] as const) {
+			if (allowUnsandboxed === undefined)
+				delete process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED;
+			else process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED = allowUnsandboxed;
 
-		const output = await runCodex("prompt", {
-			repoPath: repo,
-			targetHeadSha: headSha(repo),
-			timeoutMs: 1000,
-		});
-		const args = readStringArray(argsPath);
+			const output = await runCodex("prompt", {
+				repoPath: repo,
+				targetHeadSha: headSha(repo),
+				timeoutMs: 1000,
+			});
+			const args = readStringArray(argsPath);
 
-		assert.equal(output, '{"ok":true}');
-		const flagIndex = args.indexOf("--permission-mode");
-		assert.notEqual(flagIndex, -1);
-		assert.equal(args[flagIndex + 1], "plan");
+			assert.equal(output, '{"ok":true}');
+			const flagIndex = args.indexOf("--permission-mode");
+			assert.notEqual(flagIndex, -1);
+			assert.equal(args[flagIndex + 1], "plan");
+		}
 	} finally {
 		if (previous.bin === undefined) delete process.env.GROK_BIN;
 		else process.env.GROK_BIN = previous.bin;
@@ -478,17 +482,21 @@ test("runCodex refuses the opencode runner without explicit opt-in", async (t) =
 	chmodSync(bin, 0o755);
 	process.env.OPENCODE_BIN = bin;
 	process.env.NEEDLEFISH_RUNNER = "opencode";
-	delete process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER;
+	for (const allowOpenCode of [undefined, "0"] as const) {
+		if (allowOpenCode === undefined)
+			delete process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER;
+		else process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = allowOpenCode;
 
-	await assert.rejects(
-		() =>
-			runCodex("prompt", {
-				repoPath: repo,
-				targetHeadSha: headSha(repo),
-				timeoutMs: 1000,
-			}),
-		/NEEDLEFISH_ALLOW_OPENCODE_RUNNER/,
-	);
+		await assert.rejects(
+			() =>
+				runCodex("prompt", {
+					repoPath: repo,
+					targetHeadSha: headSha(repo),
+					timeoutMs: 1000,
+				}),
+			/NEEDLEFISH_ALLOW_OPENCODE_RUNNER/,
+		);
+	}
 });
 
 test("runCodex allows opencode when explicitly opted in", async (t) => {
@@ -632,17 +640,21 @@ test("runCodex refuses the pi runner without explicit opt-in", async () => {
 		chmodSync(bin, 0o755);
 		process.env.PI_BIN = bin;
 		process.env.NEEDLEFISH_RUNNER = "pi";
-		delete process.env.NEEDLEFISH_ALLOW_PI_RUNNER;
+		for (const allowPi of [undefined, "0"] as const) {
+			if (allowPi === undefined)
+				delete process.env.NEEDLEFISH_ALLOW_PI_RUNNER;
+			else process.env.NEEDLEFISH_ALLOW_PI_RUNNER = allowPi;
 
-		await assert.rejects(
-			() =>
-				runCodex("prompt", {
-					repoPath: repo,
-					targetHeadSha: headSha(repo),
-					timeoutMs: 1000,
+			await assert.rejects(
+				() =>
+					runCodex("prompt", {
+						repoPath: repo,
+						targetHeadSha: headSha(repo),
+						timeoutMs: 1000,
 				}),
 			/NEEDLEFISH_ALLOW_PI_RUNNER/,
-		);
+			);
+		}
 	} finally {
 		if (previous.bin === undefined) delete process.env.PI_BIN;
 		else process.env.PI_BIN = previous.bin;

@@ -1430,10 +1430,16 @@ test("review docs-only fast path skips all model calls", async (t) => {
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
 	const calls = path.join(tmp, "calls.log");
-	const previous = process.env.CODEX_BIN;
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
 	t.after(() => {
-		if (previous === undefined) delete process.env.CODEX_BIN;
-		else process.env.CODEX_BIN = previous;
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	writeFileSync(
@@ -1464,25 +1470,31 @@ test("review docs-only fast path skips all model calls", async (t) => {
 		focus: null,
 	};
 
-	const result = await review(bundle);
+	for (const noFastPath of [undefined, "0"] as const) {
+		if (noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = noFastPath;
 
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.findings, []);
-	assert.deepEqual(result.residualRisks, []);
-	assert.match(
-		result.summary,
-		/Docs-only change \(2 file\(s\)\); model review skipped\./,
-	);
-	assert.deepEqual(result.checked, [
-		"FAST_PATH docs-only files=[README.md, docs/guide.md]",
-	]);
-	assert.equal(result.stats, undefined, "no stats when model is not called");
-	assert.ok((result.totalDurationMs ?? -1) >= 0, "totalDurationMs must be set");
-	assert.equal(result.baseSha, "base");
-	assert.ok(
-		!existsSync(calls),
-		"runner must not be invoked for docs-only bundle",
-	);
+		const result = await review(bundle);
+
+		assert.equal(result.verdict, "pass");
+		assert.deepEqual(result.findings, []);
+		assert.deepEqual(result.residualRisks, []);
+		assert.match(
+			result.summary,
+			/Docs-only change \(2 file\(s\)\); model review skipped\./,
+		);
+		assert.deepEqual(result.checked, [
+			"FAST_PATH docs-only files=[README.md, docs/guide.md]",
+		]);
+		assert.equal(result.stats, undefined, "no stats when model is not called");
+		assert.ok((result.totalDurationMs ?? -1) >= 0, "totalDurationMs must be set");
+		assert.equal(result.baseSha, "base");
+		assert.ok(
+			!existsSync(calls),
+			"runner must not be invoked for docs-only bundle",
+		);
+	}
 });
 
 test("review mixed docs+source bundle still invokes the model", async (t) => {

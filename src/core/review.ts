@@ -9,6 +9,7 @@ import {
 	type RunnerOptions,
 	type RunStat,
 } from "../shared/runner.js";
+import { envFlagOn } from "../shared/env.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -656,7 +657,7 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every((f) => f.surface === "docs") &&
-		!process.env.NEEDLEFISH_NO_FAST_PATH
+		!envFlagOn("NEEDLEFISH_NO_FAST_PATH")
 	);
 }
 

@@ -10,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { runAcp } from "./acp.js";
+import { envFlagOn } from "./env.js";
 import {
 	parsePositiveInteger,
 	type RunnerName,
@@ -440,7 +441,7 @@ export async function runCodex(
 	opts: CodexOptions,
 ): Promise<string> {
 	const runner = resolveRunner(opts);
-	if (runner === "opencode" && !process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER) {
+	if (runner === "opencode" && !envFlagOn("NEEDLEFISH_ALLOW_OPENCODE_RUNNER")) {
 		throw new Error(
 			"The opencode runner has no verified process-level sandbox restraint in headless mode " +
 				"(it executes tool calls with no permission gate) and must be explicitly enabled via " +
@@ -450,14 +451,14 @@ export async function runCodex(
 	// Fail closed (single live probe is not a guarantee): on 2026-07-10 pi with
 	// `--tools read,grep,find,ls` reported "no write, shell, bash, or edit tool is
 	// available" and created no file when instructed to; keep the env gate anyway.
-	if (runner === "pi" && !process.env.NEEDLEFISH_ALLOW_PI_RUNNER) {
+	if (runner === "pi" && !envFlagOn("NEEDLEFISH_ALLOW_PI_RUNNER")) {
 		throw new Error(
 			"The pi runner has no verified process-level sandbox restraint in headless mode " +
 				"(it executes tool calls with no permission gate) and must be explicitly enabled via " +
 				"NEEDLEFISH_ALLOW_PI_RUNNER=1.",
 		);
 	}
-	const maxAttempts = process.env.NEEDLEFISH_NO_RETRY ? 1 : 2;
+	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
 	const emitStat = (ok: boolean): void => {
@@ -821,7 +822,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	// JSON in plan mode, but it was write-restrained. The env opt-in unlocks the
 	// working unsandboxed mode; grok CLI --sandbox read-only and --disallowed-tools
 	// were verified ineffective at preventing writes that day.
-	if (!process.env.NEEDLEFISH_ALLOW_GROK_UNSANDBOXED)
+	if (!envFlagOn("NEEDLEFISH_ALLOW_GROK_UNSANDBOXED"))
 		args.push("--permission-mode", "plan");
 	if (invocation.reasoningEffort)
 		args.push("--reasoning-effort", invocation.reasoningEffort);

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Runner: boolean environment flags now require exactly `1`; previously any
+  non-empty value enabled them.
+
 ## 0.3.4 — 2026-07-15
 
 - Tests: isolate OpenCode's XDG config/data roots so ephemeral-home coverage is
