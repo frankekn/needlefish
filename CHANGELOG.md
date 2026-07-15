@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4 — 2026-07-15
+
+- Tests: isolate OpenCode's XDG config/data roots so ephemeral-home coverage is
+  deterministic on GitHub-hosted runners.
+
 ## 0.3.3 — 2026-07-15
 
 - Eval: add fail-closed anti-cheat guards with per-draw ephemeral HOME,
