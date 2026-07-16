@@ -10,6 +10,7 @@ import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFix
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
+import { scorerHash } from "./shared/scorer-hash";
 import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
@@ -803,6 +804,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     baseline: false,
     holdout: "include",
     fixtureSetHash: fixtureSetHash([spec]),
+    scorerHash: scorerHash(),
     fixtures: [spec.id],
     results: [{
       fixtureId: spec.id,
@@ -1308,6 +1310,16 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
       "wrong-fixture-set-hash",
       { ...complete, fixtureSetHash: "deadbeefdeadbeef" },
     ],
+    ["missing-scorer-hash", { ...complete, scorerHash: "" }],
+    [
+      "absent-scorer-hash",
+      (() => {
+        const r = { ...complete };
+        Reflect.deleteProperty(r, "scorerHash");
+        return r as Report;
+      })(),
+    ],
+    ["wrong-scorer-hash", { ...complete, scorerHash: "deadbeefdeadbeef" }],
   ];
   const repoRoot = path.resolve(__dirname, "..");
   const baselineDocPath = path.join(repoRoot, "eval", "BASELINE.md");
@@ -1706,6 +1718,7 @@ test("compare: rejects reports from another anti-cheat generation", () => {
       cheatDetectedCount: 0,
     },
     fixtureSetHash: "fixture-hash",
+    scorerHash: scorerHash(),
     anticheatVersion: 1,
   };
   try {
@@ -1760,6 +1773,135 @@ test("compare: rejects reports from another anti-cheat generation", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("compare: refuses a report with a missing or mismatched scorerHash", () => {
+  // Draws scored by different code (or with no stamp) are not comparable, even
+  // at a matching prompt/fixture/guard generation.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-scorer-compare-"));
+  const spec = holdoutSpec("scorer-compare", false);
+  const good = resumeReport(spec, { anticheatVersion: 1 });
+  const goodPath = path.join(dir, "good.json");
+  writeFileSync(goodPath, JSON.stringify(good));
+  try {
+    const missing = (() => {
+      const r = { ...good };
+      Reflect.deleteProperty(r, "scorerHash");
+      return r as Report;
+    })();
+    const mismatched: Report = { ...good, scorerHash: "deadbeefdeadbeef" };
+    for (const [name, bad] of [
+      ["missing", missing],
+      ["mismatched", mismatched],
+    ] as const) {
+      const badPath = path.join(dir, `${name}.json`);
+      writeFileSync(badPath, JSON.stringify(bad));
+      assert.throws(() => compare(badPath, good), /scorer hash is/, `${name} baseline must not anchor`);
+      assert.throws(() => compare(goodPath, bad), /scorer hash is/, `${name} candidate must not pass`);
+    }
+    // A matching scorerHash still compares cleanly.
+    compare(goodPath, good);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots: refuses a report with a missing or mismatched scorerHash", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-scorer-resume-"));
+  const spec = holdoutSpec("scorer-resume", false);
+  try {
+    for (const [name, override] of [
+      ["mismatched", { anticheatVersion: 1, scorerHash: "deadbeefdeadbeef" }],
+      ["missing", { anticheatVersion: 1, scorerHash: undefined }],
+    ] as const) {
+      const report = resumeReport(spec, override as Partial<Report>);
+      const resumePath = path.join(dir, `${name}.json`);
+      writeFileSync(resumePath, JSON.stringify(report));
+      const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+      const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+      assert.equal(resumed.skipped, 0, `${name} scorerHash must not be reused`);
+      assert.deepEqual(resumed.slots, [null]);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("gate-verdict's scorer hash replica matches the TS scorerHash (no drift)", () => {
+  // A report stamped by the TS scorerHash() must clear gate-verdict.mjs's plain
+  // JS replica, and a wrong hash must be refused — the only guard against the
+  // two implementations drifting and silently rejecting every real report.
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-scorer-gate-"));
+  try {
+    const criteriaPath = path.join(dir, "criteria.json");
+    writeFileSync(
+      criteriaPath,
+      JSON.stringify({ fixtures: ["fx"], riskTier: 2, maxMeanNoisePerPositive: 0.5, tier1Misses: 0 }),
+    );
+    const base = {
+      promptHash: "p",
+      fixtureSetHash: "f",
+      scorerHash: scorerHash(),
+      fixtures: ["fx"],
+      draws: 1,
+      results: [
+        {
+          fixtureId: "fx",
+          draw: 0,
+          score: { recall: true, noiseFindingCount: 0, cheatDetected: false },
+          findings: [],
+          matchEvidence: [],
+        },
+      ],
+      aggregates: { cheatDetectedCount: 0, meanNoisePerPositive: 0, recallByFixture: { fx: 1 } },
+      fixtureKinds: { fx: "positive" },
+      fixtureTiers: { fx: 2 },
+    };
+    const gate = (report: unknown): { status: number | null; reasons: string[] } => {
+      const reportPath = path.join(dir, "report.json");
+      writeFileSync(reportPath, JSON.stringify(report));
+      const res = spawnSync(
+        process.execPath,
+        [
+          path.resolve(__dirname, "..", "scripts", "gate-verdict.mjs"),
+          reportPath,
+          "--criteria",
+          criteriaPath,
+        ],
+        { encoding: "utf8" },
+      );
+      return { status: res.status, reasons: JSON.parse(res.stdout).reasons };
+    };
+    const ok = gate(base);
+    assert.equal(ok.status, 0, `TS scorerHash must clear the gate: ${JSON.stringify(ok.reasons)}`);
+    const bad = gate({ ...base, scorerHash: "deadbeefdeadbeef" });
+    assert.deepEqual(bad.reasons, ["scorer-hash-mismatch"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("renderResults: a scorerHash mismatch excludes a report from baseline and deltas", () => {
+  const spec = holdoutSpec("gen-results-scorer", false);
+  const clean = resumeReport(spec, { anticheatVersion: 1, effort: "xhigh" });
+  const staleScorer = resumeReport(spec, {
+    anticheatVersion: 1,
+    runner: "grok",
+    effort: "low",
+    scorerHash: "deadbeefdeadbeef",
+  });
+  const md = renderResults(
+    [spec],
+    [
+      { stem: "clean-codex-xhigh", report: clean },
+      { stem: "stale-scorer-grok", report: staleScorer },
+    ],
+  );
+  const row = (stem: string): string =>
+    md.split("\n").find((l) => l.includes(`${stem} |`)) ?? "";
+  assert.match(row("clean-codex-xhigh"), /\(baseline\)/, "guarded report anchors");
+  assert.match(row("stale-scorer-grok"), /🚫/, "a stale-scorer report is excluded");
+  assert.match(row("stale-scorer-grok"), /n\/a/, "a stale-scorer report gets no delta");
 });
 
 test("loadFixtures: discovers a fixture placed in eval/fixtures-real/", async () => {

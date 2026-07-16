@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { fixtureSetHash, loadFixtures } from "./run";
 import { isCompleteReport } from "./shared/report-completeness";
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import { scorerHash } from "./shared/scorer-hash";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,10 @@ const fixtureHashOk =
 	report.fixtureSetHash.length > 0 &&
 	report.fixtureSetHash === expectedFixtureHash;
 const runnerOk = report.runner === "codex";
+const scorerHashOk =
+	typeof report.scorerHash === "string" &&
+	report.scorerHash.length > 0 &&
+	report.scorerHash === scorerHash();
 if (
 	report.anticheatVersion !== ANTICHEAT_VERSION ||
 	typeof cheatCount !== "number" ||
@@ -55,10 +60,11 @@ if (
 	!complete ||
 	!promptHashOk ||
 	!fixtureHashOk ||
+	!scorerHashOk ||
 	!runnerOk
 ) {
 	process.stderr.write(
-		`refusing to generate baseline doc: runner=${runnerOk ? "codex" : report.runner ?? "missing"}, anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete}, promptHash=${promptHashOk ? "ok" : "missing"}, fixtureSetHash=${fixtureHashOk ? "ok" : report.fixtureSetHash ?? "missing"} — re-run the full Codex baseline under the current guards\n`,
+		`refusing to generate baseline doc: runner=${runnerOk ? "codex" : report.runner ?? "missing"}, anticheatVersion=${report.anticheatVersion ?? "none"} (current ${ANTICHEAT_VERSION}), cheatDetectedCount=${cheatCount ?? "missing"}, completeFullFixtureSet=${complete}, promptHash=${promptHashOk ? "ok" : "missing"}, fixtureSetHash=${fixtureHashOk ? "ok" : report.fixtureSetHash ?? "missing"}, scorerHash=${scorerHashOk ? "ok" : report.scorerHash ?? "missing"} — re-run the full Codex baseline under the current guards\n`,
 	);
 	process.exit(1);
 }

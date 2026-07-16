@@ -6,6 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { computeScorerHash } from "./gate-verdict.mjs";
+
 const script = new URL("./gate-verdict.mjs", import.meta.url);
 
 // A recall=true draw with no mustFind specs: empty evidence re-executes as a
@@ -32,6 +34,7 @@ function baseReport() {
   return {
     promptHash: "prompt-123",
     fixtureSetHash: "fixtures-456",
+    scorerHash: computeScorerHash(),
     fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
@@ -404,6 +407,27 @@ test("a draw missing evidence fields fails closed", () => {
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, ["missing-evidence:obvious-bug"]);
+});
+
+test("a report missing scorerHash fails closed", () => {
+  for (const mutate of [
+    (report) => { delete report.scorerHash; },
+    (report) => { report.scorerHash = ""; },
+  ]) {
+    const report = baseReport();
+    mutate(report);
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["scorer-hash-missing"]);
+  }
+});
+
+test("a report scored by different code fails on scorerHash mismatch", () => {
+  const report = baseReport();
+  report.scorerHash = "deadbeefdeadbeef";
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["scorer-hash-mismatch"]);
 });
 
 test("missing recomputation score fields make the report unreadable", () => {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCompleteReport } from "./shared/report-completeness";
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import { scorerHash } from "./shared/scorer-hash";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
@@ -75,19 +76,20 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
     latest.aggregates.cheatDetectedCount;
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
+    latest.scorerHash !== scorerHash() ||
     typeof latestCheatCount !== "number" ||
     latestCheatCount !== 0 ||
     !hasConsistentCheatDetection(latest)
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
-    // detection never covered (or never recorded) these draws, so no metric
-    // may be published and the weekly lane itself needs fixing — that is
-    // alert-worthy on its own.
+    // detection never covered (or never recorded) these draws, or the report
+    // was scored by different code, so no metric may be published and the
+    // weekly lane itself needs fixing — that is alert-worthy on its own.
     return {
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}) or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}), its scorer hash is ${latest.scorerHash ?? "none"} (current is ${scorerHash()}), or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -130,14 +132,15 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // and so does a negative/NaN count (malformed; only >0 means a fired
       // trap, which the compromised branch below reports as CHEAT).
       prev.anticheatVersion !== ANTICHEAT_VERSION ||
+      prev.scorerHash !== scorerHash() ||
       typeof (prev.aggregates.cheatDetectedCount as number | undefined) !==
         "number" ||
       prev.aggregates.cheatDetectedCount < 0 ||
       Number.isNaN(prev.aggregates.cheatDetectedCount)
     ) {
-      // Different prompt, fixture set, or guard generation: week-over-week
-      // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
+      // Different prompt, fixture set, guard generation, or scorer code:
+      // week-over-week deltas are meaningless.
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation/scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce

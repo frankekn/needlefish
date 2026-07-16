@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
+import { scorerHash } from "./shared/scorer-hash";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
 
 function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId">): FixtureScore {
@@ -62,6 +63,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     results,
     aggregates: aggregatesOf(partial.aggregates ? { ...partial.aggregates } : {}),
     fixtureSetHash: "fff",
+    scorerHash: scorerHash(),
     fixtureTiers: {},
     anticheatVersion: 1,
     ...partial,
@@ -205,7 +207,7 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
   assert.ok(
-    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation changed")),
+    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation/scorer changed")),
   );
 });
 
@@ -378,7 +380,7 @@ test("compareWeekly: a pre-guard previous week skips regression comparison", () 
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "cross-generation regression must not alert");
   assert.ok(
-    v.reasons.some((r) => r.includes("anti-cheat generation changed")),
+    v.reasons.some((r) => r.includes("anti-cheat generation/scorer changed")),
   );
 });
 
@@ -395,6 +397,27 @@ test("compareWeekly: an unguarded latest report withholds all metrics", () => {
     assert.equal(v.alert, true, "an unguarded weekly lane must alert");
     assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
   }
+});
+
+test("compareWeekly: a latest report scored by different code is unguarded", () => {
+  const latest = report([...drawsFor("a", [true, true, true])], {
+    scorerHash: "deadbeefdeadbeef",
+  });
+  const v = compareWeekly(null, latest);
+  assert.equal(v.unguarded, true, "a stale-scorer latest must be unguarded");
+  assert.equal(v.alert, true);
+  assert.ok(v.reasons.some((r) => r.includes("metrics withheld")));
+});
+
+test("compareWeekly: a prev scored by different code skips regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true])], {
+    scorerHash: "deadbeefdeadbeef",
+  });
+  const latest = report([...drawsFor("a", [false, false, false])]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false, "a stale-scorer prev must not anchor a regression");
+  assert.ok(v.reasons.some((r) => r.includes("skipping regression comparison")));
+  assert.ok(v.reasons.every((r) => !r.includes("fixtures regressed")));
 });
 
 test("compareWeekly: a missing cheatDetectedCount fails closed", () => {

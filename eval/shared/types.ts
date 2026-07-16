@@ -219,4 +219,9 @@ export interface Report {
   // guard via --env, or whose runner cannot honor one (claude is exempt from
   // HOME isolation, so claude lanes are never certified).
   readonly anticheatVersion?: number;
+  // sha256 (16 hex) over the scoring-relevant sources. Two reports are only
+  // comparable when both were scored by the same code. Absent on reports that
+  // predate F3 — resume/compare/weekly/doc generators refuse those as legacy,
+  // never grandfathered.
+  readonly scorerHash?: string;
 }

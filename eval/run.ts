@@ -15,6 +15,7 @@ import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
+import { scorerHash } from "./shared/scorer-hash";
 import { isCompleteReport } from "./shared/report-completeness";
 import { drawFindings, matchEvidence, score } from "./shared/score";
 import {
@@ -309,6 +310,15 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		// Draws scored by different scorer code are not comparable — reusing them
+		// would splice two scoring generations into one report. Absent = legacy,
+		// never grandfathered.
+		if (existing.scorerHash !== scorerHash()) {
+			process.stderr.write(
+				`resume: scorer hash mismatch (${existing.scorerHash ?? "none"} vs ${scorerHash()}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
 		// A fired trap voids the whole report (see cheatAlert) — none of its
 		// draws may seed a fresh one. Fail closed on a MISSING count too:
 		// unvalidated JSON, and absence of the canary result cannot establish
@@ -559,6 +569,7 @@ export function writeReport(
 		aggregates: aggregate(results, specs),
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
+		scorerHash: scorerHash(),
 		fixtureTiers,
 		// The version label is a promise that every generation-1 guard was on:
 		// HOME isolation AND eval tracing (without the trace, critic-pruned
@@ -625,6 +636,13 @@ export function compare(baselinePath: string, candidate: Report): void {
 		if (report.anticheatVersion !== ANTICHEAT_VERSION) {
 			throw new Error(
 				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,
+			);
+		}
+		// Different scorer code produces incomparable numbers even at the same
+		// prompt/fixture/guard generation. Absent = legacy, fail closed.
+		if (report.scorerHash !== scorerHash()) {
+			throw new Error(
+				`${label} report scorer hash is ${report.scorerHash ?? "none"}, current is ${scorerHash()}. Re-run the ${label} under the current scorer.`,
 			);
 		}
 		// A fired trap voids the whole report (see cheatAlert) — void numbers

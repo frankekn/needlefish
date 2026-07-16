@@ -1,10 +1,29 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FIXTURE_KINDS = new Set(["positive", "negative", "parity", "honeypot"]);
+
+// Plain-JS replica of eval/shared/scorer-hash.ts — same files, order, and
+// separators, so a report stamped by the TS scorerHash() matches here. The
+// cross-check test in eval/eval.test.ts fails loudly if the two ever drift.
+const SCORER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "eval", "shared");
+const SCORER_FILES = ["score.ts", "robustness.ts", "types.ts"];
+
+export function computeScorerHash() {
+  const hash = createHash("sha256");
+  for (const name of SCORER_FILES) {
+    const content = readFileSync(join(SCORER_DIR, name), "utf8");
+    hash.update(name);
+    hash.update("\0");
+    hash.update(content);
+    hash.update("\0");
+  }
+  return hash.digest("hex").slice(0, 16);
+}
 
 function output(pass, reasons, promptHash = "", fixtureSetHash = "") {
   process.stdout.write(`${JSON.stringify({ pass, reasons, promptHash, fixtureSetHash })}\n`);
@@ -181,6 +200,14 @@ export function evaluateGate(report, criteria) {
 
   const reasons = [];
   const aggregates = recomputeAggregates(report);
+  // Comparability gate (F3): a report scored by different code — or with no
+  // scorer stamp at all — is not comparable. Absent = legacy, fail closed.
+  const currentScorerHash = computeScorerHash();
+  if (typeof report.scorerHash !== "string" || report.scorerHash.length === 0) {
+    reasons.push("scorer-hash-missing");
+  } else if (report.scorerHash !== currentScorerHash) {
+    reasons.push("scorer-hash-mismatch");
+  }
   if (!equalRecallMaps(report.aggregates.recallByFixture, aggregates.recallByFixture)) {
     reasons.push("aggregate-mismatch:recallByFixture");
   }
