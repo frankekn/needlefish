@@ -16,7 +16,7 @@ import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { isCompleteReport } from "./shared/report-completeness";
-import { score } from "./shared/score";
+import { drawFindings, matchEvidence, score } from "./shared/score";
 import {
 	ANTICHEAT_VERSION,
 	type Aggregates,
@@ -226,6 +226,7 @@ async function runOne(
 	const stats = result?.stats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
+	const findings = result?.findings ?? [];
 	return {
 		fixtureId: spec.id,
 		draw: 0,
@@ -242,6 +243,8 @@ async function runOne(
 		durationMs,
 		calls,
 		retries,
+		findings: drawFindings(findings),
+		matchEvidence: matchEvidence(findings, spec.expected),
 	};
 }
 

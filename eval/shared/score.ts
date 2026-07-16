@@ -3,7 +3,13 @@ import {
 	scanRobustness,
 	type FindingMatchFields,
 } from "./robustness";
-import type { Expected, FixtureScore, MatchSpec } from "./types";
+import type {
+	DrawFinding,
+	Expected,
+	FixtureScore,
+	MatchEvidence,
+	MatchSpec,
+} from "./types";
 
 const BLOCKING: Severity[] = ["P0", "P1", "P2"];
 
@@ -39,6 +45,35 @@ export function recallMatch(
 			? spec
 			: { ...spec, file: expected.anchorFile };
 	return matchesSpec(finding, effective);
+}
+
+// Persisted per-draw ground truth (F1): the scored finding fields the gate
+// re-executes patterns against. Kept in full — truncation would break matching.
+export function drawFindings(
+	findings: readonly Finding[],
+): DrawFinding[] {
+	return findings.map((f) => ({
+		severity: f.severity,
+		category: f.category,
+		file: f.file,
+		lineStart: f.lineStart,
+		lineEnd: f.lineEnd,
+		title: f.title,
+		whyItBreaks: f.whyItBreaks,
+	}));
+}
+
+// Per-spec recall evidence (F1): reuses the SAME recallMatch used by score(),
+// so a non-null index exists for a spec iff score() counts it as a hit. The
+// index is the first satisfying finding; a miss records null.
+export function matchEvidence(
+	findings: readonly Finding[],
+	expected: Expected,
+): MatchEvidence[] {
+	return (expected.mustFind ?? []).map((spec) => {
+		const idx = findings.findIndex((f) => recallMatch(f, spec, expected));
+		return { pattern: spec.pattern, findingIndex: idx >= 0 ? idx : null };
+	});
 }
 
 function isBlocking(finding: Finding): boolean {

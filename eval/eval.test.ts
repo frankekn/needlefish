@@ -10,7 +10,7 @@ import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFix
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
-import { matchesSpec, score } from "./shared/score";
+import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
@@ -625,6 +625,74 @@ test("score: criticPruneError false when candidateFindings absent (trace off)", 
   const hit = finding({ title: "viewer branch unreachable", whyItBreaks: "viewers are blocked", file: "src/h.ts", lineStart: 1 });
   const s = score({ verdict: "changes_requested", findings: [hit] }, expected, "prune-fixture");
   assert.equal(s.criticPruneError, false, "no trace means no prune-error signal");
+});
+
+// --- per-draw evidence (F1): persisted ground truth for the gate ---
+
+test("drawFindings: records the scored finding fields in full", () => {
+  const f = finding({
+    title: "viewer branch unreachable",
+    whyItBreaks: "eligibility rejects viewers",
+    file: "src/handler.ts",
+    lineStart: 18,
+    lineEnd: 20,
+    severity: "P1",
+    category: "bug",
+  });
+  assert.deepEqual(drawFindings([f]), [
+    {
+      severity: "P1",
+      category: "bug",
+      file: "src/handler.ts",
+      lineStart: 18,
+      lineEnd: 20,
+      title: "viewer branch unreachable",
+      whyItBreaks: "eligibility rejects viewers",
+    },
+  ]);
+});
+
+test("matchEvidence: records the satisfying finding index per spec, null for a miss", () => {
+  const expected: Expected = {
+    verdict: "changes_requested",
+    mustFind: [
+      { pattern: "viewer", file: "handler.ts" },
+      { pattern: "ttl", file: "cache.ts" },
+    ],
+  };
+  const findings = [
+    finding({ title: "unrelated nit", whyItBreaks: "style", file: "src/a.ts", lineStart: 1 }),
+    finding({ title: "viewer branch unreachable", whyItBreaks: "blocked", file: "src/handler.ts", lineStart: 18 }),
+  ];
+  // First spec is satisfied by findings[1]; second spec has no match → null.
+  assert.deepEqual(matchEvidence(findings, expected), [
+    { pattern: "viewer", findingIndex: 1 },
+    { pattern: "ttl", findingIndex: null },
+  ]);
+});
+
+test("matchEvidence: a keyword hit on the wrong file records a miss, matching recall", () => {
+  // Same anti-gaming contract as score(): pattern words on an unrelated file
+  // must not count. The evidence null-ness mirrors score().recall exactly.
+  const expected: Expected = {
+    verdict: "changes_requested",
+    mustFind: [{ pattern: "viewer" }],
+    anchorFile: "src/handler.ts",
+  };
+  const findings = [
+    finding({ title: "viewer logic", whyItBreaks: "viewer path", file: "src/other.ts", lineStart: 3 }),
+  ];
+  const evidence = matchEvidence(findings, expected);
+  assert.deepEqual(evidence, [{ pattern: "viewer", findingIndex: null }]);
+  assert.equal(
+    score({ verdict: "changes_requested", findings }, expected, "evidence-recall").recall,
+    false,
+    "evidence null-ness must agree with score().recall",
+  );
+});
+
+test("matchEvidence: no mustFind specs yields empty evidence", () => {
+  assert.deepEqual(matchEvidence([], { verdict: "pass" }), []);
 });
 
 // --- provenance (real-PR fixture mining, eval/tools/pr2fixture.ts) ---

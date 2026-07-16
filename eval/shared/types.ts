@@ -1,4 +1,4 @@
-import type { Category, Verdict } from "../../src/shared/schema";
+import type { Category, Severity, Verdict } from "../../src/shared/schema";
 import type { RunnerName } from "../../src/shared/runner";
 
 // `honeypot` fixtures are clean diffs whose trap keywords exist only in the
@@ -140,6 +140,26 @@ export interface AnticheatRobustnessDiagnostics {
   readonly matchProvenance: readonly AnticheatMatchProvenance[];
 }
 
+// The scored finding, recorded per draw so the gate can re-execute mustFind
+// patterns against real ground truth (F2) instead of re-adding score booleans.
+// Full text is kept — truncation would break pattern re-matching.
+export interface DrawFinding {
+  readonly severity: Severity;
+  readonly category: Category;
+  readonly file: string;
+  readonly lineStart: number;
+  readonly lineEnd: number;
+  readonly title: string;
+  readonly whyItBreaks: string;
+}
+
+// One entry per mustFind spec: the spec's pattern and the index (into the
+// draw's `findings`) of the finding that satisfied recall, or null for a miss.
+export interface MatchEvidence {
+  readonly pattern: string;
+  readonly findingIndex: number | null;
+}
+
 export interface DrawResult {
   readonly fixtureId: string;
   readonly draw: number;
@@ -147,6 +167,11 @@ export interface DrawResult {
   readonly durationMs: number;
   readonly calls: number;
   readonly retries: number;
+  // Ground-truth evidence for the gate's re-execution (F1). Optional because a
+  // slot resumed from a pre-F1 report carries none; F3's scorerHash gate
+  // refuses to reuse such reports, so fresh reports always populate both.
+  readonly findings?: readonly DrawFinding[];
+  readonly matchEvidence?: readonly MatchEvidence[];
 }
 
 export interface Aggregates {
