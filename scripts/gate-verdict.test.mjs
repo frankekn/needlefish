@@ -8,6 +8,26 @@ import { fileURLToPath } from "node:url";
 
 const script = new URL("./gate-verdict.mjs", import.meta.url);
 
+// A recall=true draw with no mustFind specs: empty evidence re-executes as a
+// vacuous hit, matching score.recall=true.
+function emptyEvidence() {
+  return { findings: [], matchEvidence: [] };
+}
+
+// A recall=false draw: one spec recorded as a miss (null index), which
+// re-executes as recall=false.
+function missEvidence() {
+  return { findings: [], matchEvidence: [{ pattern: "bug", findingIndex: null }] };
+}
+
+// A recall=true draw whose single spec is satisfied by findings[0].
+function hitEvidence() {
+  return {
+    findings: [{ severity: "P1", category: "bug", file: "src/x.ts", lineStart: 1, lineEnd: 1, title: "bug found", whyItBreaks: "it breaks" }],
+    matchEvidence: [{ pattern: "bug", findingIndex: 0 }],
+  };
+}
+
 function baseReport() {
   return {
     promptHash: "prompt-123",
@@ -15,8 +35,8 @@ function baseReport() {
     fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
-      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-      { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+      { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
     ],
     aggregates: {
       cheatDetectedCount: 0,
@@ -155,7 +175,7 @@ test("real-shaped reports allow recall keys beyond the positive tier keys", () =
   const report = baseReport();
   report.fixtures.push("negative-case");
   report.fixtureKinds["negative-case"] = "negative";
-  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-case"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -191,7 +211,7 @@ test("a manifest-complete report passes", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
   report.fixtureKinds["negative-honeypot"] = "honeypot";
-  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-honeypot"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -210,6 +230,7 @@ test("nonzero recomputed honeypot count voids the report", () => {
 test("a failed tier-1 draw fails the whole report", () => {
   const report = baseReport();
   report.results[0].score.recall = false;
+  Object.assign(report.results[0], missEvidence());
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.ok(result.json.reasons.includes("tier1-missed:obvious-bug"));
@@ -238,10 +259,10 @@ test("duplicate draw indices fail completeness even when the raw count matches",
   const report = baseReport();
   report.draws = 2;
   report.results = [
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "required-bug", draw: 1, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 1, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
   ];
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -280,7 +301,7 @@ test("overlapping tier-1 and criteria fixture emits one missing-draws reason", (
 test("resume-shaped reports require draws for every fixture tier entry", () => {
   const report = baseReport();
   report.results = [
-    { fixtureId: "resume-first", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "resume-first", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
   ];
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
@@ -306,6 +327,7 @@ test("noise above the criteria threshold fails", () => {
 test("required fixture aggregate recall must equal one", () => {
   const report = baseReport();
   report.results[1].score.recall = false;
+  Object.assign(report.results[1], missEvidence());
   report.aggregates.recallByFixture["required-bug"] = 0;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -315,6 +337,7 @@ test("required fixture aggregate recall must equal one", () => {
 test("recomputes recall and rejects a claimed perfect aggregate", () => {
   const report = baseReport();
   report.results[1].score.recall = false;
+  Object.assign(report.results[1], missEvidence());
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, [
@@ -351,6 +374,36 @@ test("a report with consistent recomputed aggregates passes", () => {
   const result = run(report, criteria);
   assert.equal(result.status, 0);
   assert.deepEqual(result.json.reasons, []);
+});
+
+test("re-executes evidence and rejects a fabricated recall claim", () => {
+  const report = baseReport();
+  // obvious-bug still claims recall=true, but its evidence names a finding
+  // whose text does not contain the pattern — a scorer cannot fake a hit.
+  Object.assign(report.results[0], {
+    findings: [{ severity: "P1", category: "bug", file: "src/x.ts", lineStart: 1, lineEnd: 1, title: "unrelated nit", whyItBreaks: "cosmetic" }],
+    matchEvidence: [{ pattern: "bug", findingIndex: 0 }],
+  });
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["recall-without-evidence:obvious-bug"]);
+});
+
+test("re-executes evidence and passes a report whose findings support recall", () => {
+  const report = baseReport();
+  Object.assign(report.results[0], hitEvidence());
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("a draw missing evidence fields fails closed", () => {
+  const report = baseReport();
+  delete report.results[0].findings;
+  delete report.results[0].matchEvidence;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["missing-evidence:obvious-bug"]);
 });
 
 test("missing recomputation score fields make the report unreadable", () => {

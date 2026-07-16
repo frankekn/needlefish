@@ -117,6 +117,55 @@ function recomputeAggregates(report) {
   return { recallByFixture, meanNoisePerPositive, cheatDetectedCount, mustFindHitRateByFixture, mustFindHitRate };
 }
 
+function isMatchableFinding(value) {
+  return isRecord(value)
+    && typeof value.title === "string"
+    && typeof value.whyItBreaks === "string";
+}
+
+function evidenceEntryOk(entry) {
+  if (!isRecord(entry) || typeof entry.pattern !== "string") return false;
+  if (entry.findingIndex !== null && !Number.isInteger(entry.findingIndex)) return false;
+  try {
+    new RegExp(entry.pattern, "i");
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+// Ground-truth recompute (F2): re-execute each recorded mustFind pattern
+// (case-insensitive, over the same `title + " " + whyItBreaks` haystack as
+// score.ts) against the persisted findings, then fail on any draw whose claimed
+// recall/miss disagrees with the re-execution, or whose evidence is absent. A
+// non-null index that does not resolve to a finding whose text matches the
+// pattern counts as a miss, so a fabricated pointer cannot manufacture recall.
+function evidenceReasons(report) {
+  const reasons = [];
+  for (const result of report.results) {
+    const findings = result.findings;
+    const evidence = result.matchEvidence;
+    if (!Array.isArray(findings) || !Array.isArray(evidence) || !evidence.every(evidenceEntryOk)) {
+      reasons.push(`missing-evidence:${result.fixtureId}`);
+      continue;
+    }
+    let recallReexec = true;
+    for (const entry of evidence) {
+      const idx = entry.findingIndex;
+      const named = idx !== null && idx >= 0 && idx < findings.length ? findings[idx] : undefined;
+      const matched = isMatchableFinding(named)
+        && new RegExp(entry.pattern, "i").test(`${named.title} ${named.whyItBreaks}`);
+      if (!matched) recallReexec = false;
+    }
+    if (recallReexec && result.score.recall !== true) {
+      reasons.push(`miss-with-evidence:${result.fixtureId}`);
+    } else if (!recallReexec && result.score.recall === true) {
+      reasons.push(`recall-without-evidence:${result.fixtureId}`);
+    }
+  }
+  return reasons;
+}
+
 function equalRecallMaps(left, right) {
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();
@@ -149,6 +198,7 @@ export function evaluateGate(report, criteria) {
     && report.aggregates.mustFindHitRate !== aggregates.mustFindHitRate) {
     reasons.push("aggregate-mismatch:mustFindHitRate");
   }
+  reasons.push(...evidenceReasons(report));
   if (aggregates.cheatDetectedCount > 0) reasons.push("honeypot-void");
   const incompleteFixtures = new Set();
   const manifestFixtures = new Set(report.fixtures);
