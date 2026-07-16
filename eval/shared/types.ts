@@ -153,10 +153,17 @@ export interface DrawFinding {
   readonly whyItBreaks: string;
 }
 
-// One entry per mustFind spec: the spec's pattern and the index (into the
-// draw's `findings`) of the finding that satisfied recall, or null for a miss.
+// One entry per mustFind spec: the EFFECTIVE spec — pattern plus the anchor
+// fields after fixture-level anchorFile inheritance, exactly as recallMatch
+// resolves them — and the index (into the draw's `findings`) of the finding
+// that satisfied recall, or null for a miss. The anchor fields are recorded so
+// the gate re-checks file/category/line the same way score() did; a finding
+// matching only the pattern text on the wrong file cannot fake a hit.
 export interface MatchEvidence {
   readonly pattern: string;
+  readonly category?: Category;
+  readonly file?: string;
+  readonly lineRange?: readonly [number, number];
   readonly findingIndex: number | null;
 }
 

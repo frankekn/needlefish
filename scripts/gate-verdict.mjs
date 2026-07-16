@@ -145,6 +145,14 @@ function isMatchableFinding(value) {
 function evidenceEntryOk(entry) {
   if (!isRecord(entry) || typeof entry.pattern !== "string") return false;
   if (entry.findingIndex !== null && !Number.isInteger(entry.findingIndex)) return false;
+  if (entry.category !== undefined && typeof entry.category !== "string") return false;
+  if (entry.file !== undefined && typeof entry.file !== "string") return false;
+  if (entry.lineRange !== undefined
+    && !(Array.isArray(entry.lineRange)
+      && entry.lineRange.length === 2
+      && entry.lineRange.every((n) => Number.isFinite(n)))) {
+    return false;
+  }
   try {
     new RegExp(entry.pattern, "i");
   } catch {
@@ -153,12 +161,29 @@ function evidenceEntryOk(entry) {
   return true;
 }
 
-// Ground-truth recompute (F2): re-execute each recorded mustFind pattern
-// (case-insensitive, over the same `title + " " + whyItBreaks` haystack as
-// score.ts) against the persisted findings, then fail on any draw whose claimed
-// recall/miss disagrees with the re-execution, or whose evidence is absent. A
-// non-null index that does not resolve to a finding whose text matches the
-// pattern counts as a miss, so a fabricated pointer cannot manufacture recall.
+// Mirror eval/shared/score.ts matchesSpec on the recorded finding fields:
+// category equality, file suffix, lineStart within lineRange, then the
+// case-insensitive pattern over `title + " " + whyItBreaks`. A finding that
+// matches only the pattern text on the wrong file (or category, or line) is
+// not a hit, so a fabricated pointer cannot manufacture recall past the gate.
+function evidenceMatches(entry, finding) {
+  if (entry.category && finding.category !== entry.category) return false;
+  if (entry.file && !(typeof finding.file === "string" && finding.file.endsWith(entry.file))) return false;
+  if (entry.lineRange
+    && (typeof finding.lineStart !== "number"
+      || finding.lineStart < entry.lineRange[0]
+      || finding.lineStart > entry.lineRange[1])) {
+    return false;
+  }
+  return new RegExp(entry.pattern, "i").test(`${finding.title} ${finding.whyItBreaks}`);
+}
+
+// Ground-truth recompute (F2): re-execute each recorded mustFind spec against
+// the persisted findings with the SAME semantics score.ts used (pattern plus
+// the effective file/category/line anchor), then fail on any draw whose claimed
+// recall disagrees with the re-execution, or whose evidence is absent. A
+// non-null index that does not resolve to a finding satisfying the full spec
+// counts as a miss, so a fabricated pointer cannot manufacture recall.
 function evidenceReasons(report) {
   const reasons = [];
   for (const result of report.results) {
@@ -172,13 +197,17 @@ function evidenceReasons(report) {
     for (const entry of evidence) {
       const idx = entry.findingIndex;
       const named = idx !== null && idx >= 0 && idx < findings.length ? findings[idx] : undefined;
-      const matched = isMatchableFinding(named)
-        && new RegExp(entry.pattern, "i").test(`${named.title} ${named.whyItBreaks}`);
-      if (!matched) recallReexec = false;
+      if (!isMatchableFinding(named) || !evidenceMatches(entry, named)) recallReexec = false;
     }
-    if (recallReexec && result.score.recall !== true) {
+    // Expected recall is only defined for a parsed draw. An errored draw
+    // (formatOk false) scores recall false with empty evidence, which would
+    // otherwise re-execute as a vacuous hit on a zero-mustFind fixture; that is
+    // consistent, never a tamper signal. A parsed draw — or a legacy one that
+    // omits formatOk — is cross-checked against the re-execution as before.
+    const expectedRecall = result.score.formatOk === false ? false : recallReexec;
+    if (expectedRecall && result.score.recall !== true) {
       reasons.push(`miss-with-evidence:${result.fixtureId}`);
-    } else if (!recallReexec && result.score.recall === true) {
+    } else if (!expectedRecall && result.score.recall === true) {
       reasons.push(`recall-without-evidence:${result.fixtureId}`);
     }
   }

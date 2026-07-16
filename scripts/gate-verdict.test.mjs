@@ -409,6 +409,56 @@ test("a draw missing evidence fields fails closed", () => {
   assert.deepEqual(result.json.reasons, ["missing-evidence:obvious-bug"]);
 });
 
+// A negative/parity fixture has no mustFind specs, so an errored draw carries
+// empty evidence and score.recall=false. Empty evidence re-executes as a
+// vacuous hit; without the formatOk guard the gate would read that as a
+// claimed miss and hard-fail an honest report. (P1 repro.)
+function withErroredNegativeDraw(report, recall) {
+  // fixtureTiers is positive-only (eval/run.ts), so a negative fixture is added
+  // to fixtures/fixtureKinds/recallByFixture but not to fixtureTiers.
+  report.fixtures.push("parity-neg");
+  report.fixtureKinds["parity-neg"] = "negative";
+  report.aggregates.recallByFixture["parity-neg"] = recall ? 1 : 0;
+  report.results.push({
+    fixtureId: "parity-neg",
+    draw: 0,
+    score: { recall, formatOk: false, noiseFindingCount: 0, cheatDetected: false },
+    findings: [],
+    matchEvidence: [],
+  });
+}
+
+test("an errored draw on a zero-mustFind fixture is consistent, not a tamper", () => {
+  const report = baseReport();
+  withErroredNegativeDraw(report, false);
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("an errored draw claiming recall with no evidence still fails closed", () => {
+  const report = baseReport();
+  withErroredNegativeDraw(report, true);
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("recall-without-evidence:parity-neg"));
+});
+
+test("a pattern-matching finding on the wrong file is not a recall hit", () => {
+  const report = baseReport();
+  // The evidence anchors to src/x.ts (the recorded effective spec), but the
+  // pointed-at finding is on a different file. Only the pattern text matches;
+  // the gate must reject the claimed recall, not just the bare pattern.
+  Object.assign(report.results[0], {
+    score: { recall: true, formatOk: true, noiseFindingCount: 0, cheatDetected: false },
+    findings: [{ severity: "P1", category: "bug", file: "src/wrong.ts", lineStart: 1, lineEnd: 1, title: "bug found", whyItBreaks: "it breaks" }],
+    matchEvidence: [{ pattern: "bug", file: "src/x.ts", findingIndex: 0 }],
+  });
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["recall-without-evidence:obvious-bug"]);
+});
+
 test("a report missing scorerHash fails closed", () => {
   for (const mutate of [
     (report) => { delete report.scorerHash; },

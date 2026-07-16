@@ -666,9 +666,10 @@ test("matchEvidence: records the satisfying finding index per spec, null for a m
     finding({ title: "viewer branch unreachable", whyItBreaks: "blocked", file: "src/handler.ts", lineStart: 18 }),
   ];
   // First spec is satisfied by findings[1]; second spec has no match → null.
+  // Each entry records its own file anchor so the gate re-checks it.
   assert.deepEqual(matchEvidence(findings, expected), [
-    { pattern: "viewer", findingIndex: 1 },
-    { pattern: "ttl", findingIndex: null },
+    { pattern: "viewer", file: "handler.ts", findingIndex: 1 },
+    { pattern: "ttl", file: "cache.ts", findingIndex: null },
   ]);
 });
 
@@ -684,7 +685,9 @@ test("matchEvidence: a keyword hit on the wrong file records a miss, matching re
     finding({ title: "viewer logic", whyItBreaks: "viewer path", file: "src/other.ts", lineStart: 3 }),
   ];
   const evidence = matchEvidence(findings, expected);
-  assert.deepEqual(evidence, [{ pattern: "viewer", findingIndex: null }]);
+  // The inherited fixture anchorFile is recorded on the entry, so the gate can
+  // reject a wrong-file finding the same way score() does.
+  assert.deepEqual(evidence, [{ pattern: "viewer", file: "src/handler.ts", findingIndex: null }]);
   assert.equal(
     score({ verdict: "changes_requested", findings }, expected, "evidence-recall").recall,
     false,

@@ -71,8 +71,22 @@ export function matchEvidence(
 	expected: Expected,
 ): MatchEvidence[] {
 	return (expected.mustFind ?? []).map((spec) => {
-		const idx = findings.findIndex((f) => recallMatch(f, spec, expected));
-		return { pattern: spec.pattern, findingIndex: idx >= 0 ? idx : null };
+		// The effective spec recallMatch resolves: a spec without its own file
+		// inherits the fixture anchorFile. Record it in full so the gate enforces
+		// the SAME anchor, not just the pattern text. findIndex over matchesSpec
+		// is identical to recallMatch, so the index still mirrors score().recall.
+		const effective: MatchSpec =
+			spec.file || !expected.anchorFile
+				? spec
+				: { ...spec, file: expected.anchorFile };
+		const idx = findings.findIndex((f) => matchesSpec(f, effective));
+		return {
+			pattern: effective.pattern,
+			...(effective.category ? { category: effective.category } : {}),
+			...(effective.file ? { file: effective.file } : {}),
+			...(effective.lineRange ? { lineRange: effective.lineRange } : {}),
+			findingIndex: idx >= 0 ? idx : null,
+		};
 	});
 }
 
