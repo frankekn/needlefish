@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
   issues: write
+  # Needed for `gh workflow run deploy.yml`: GitHub suppresses workflow triggers
+  # from a GITHUB_TOKEN push, so the deploy is dispatched explicitly below.
+  actions: write
 concurrency:
   group: needlefish-weekly-eval
   cancel-in-progress: false
@@ -68,6 +71,16 @@ jobs:
           git add eval/results/weekly
           git commit -m "chore(eval): weekly regression report $(date -u +%Y-%m-%d)" || exit 0
           git pull --rebase origin main && git push origin HEAD:main
+      - name: Dispatch deploy
+        # A GITHUB_TOKEN push does not trigger deploy.yml (issue #19), so the
+        # release lags main until someone deploys by hand. Trigger it explicitly.
+        # No `|| true`: a failed dispatch must fail the job, never strand deploy.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "dispatching deploy.yml for main @ $sha"
+          gh workflow run deploy.yml -R "${{ github.repository }}" --ref main
       - name: Open issue on failure
         if: failure()
         env:

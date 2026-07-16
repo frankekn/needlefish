@@ -4,6 +4,12 @@
 
 - Runner: boolean environment flags now require exactly `1`; previously any
   non-empty value enabled them.
+- Eval: the gate re-executes recorded finding patterns against persisted
+  per-draw evidence instead of re-adding the scorer's own booleans; a
+  `scorerHash` makes reports scored by different code fail closed on resume,
+  compare, the weekly regression, the doc generators, and the gate; and the
+  weekly lane dispatches deploy after pushing its report so the release no
+  longer lags main (#19).
 
 ## 0.3.4 — 2026-07-15
 
