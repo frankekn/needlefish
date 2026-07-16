@@ -28,12 +28,15 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   const previous = {
     bin: process.env.CODEX_BIN,
     retry: process.env.CODEX_RETRY_MS,
+    noRetry: process.env.NEEDLEFISH_NO_RETRY,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
     else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+    else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
     rmSync(tmp, { recursive: true, force: true });
   });
   writeFileSync(
@@ -55,20 +58,26 @@ test("runCodex retry backoff yields the event loop", async (t) => {
   process.env.CODEX_BIN = bin;
   process.env.CODEX_RETRY_MS = "50";
 
-  let timerFired = false;
-  setTimeout(() => {
-    timerFired = true;
-  }, 0);
+  for (const noRetry of [undefined, "0"] as const) {
+    if (noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+    else process.env.NEEDLEFISH_NO_RETRY = noRetry;
+    rmSync(state, { force: true });
 
-  const output = await runCodex("prompt", {
-    repoPath: repo,
-    runner: "codex",
-    targetHeadSha: headSha(repo),
-    timeoutMs: 1000,
-  });
+    let timerFired = false;
+    setTimeout(() => {
+      timerFired = true;
+    }, 0);
 
-  assert.equal(output, "{\"ok\":true}");
-  assert.equal(timerFired, true);
+    const output = await runCodex("prompt", {
+      repoPath: repo,
+      runner: "codex",
+      targetHeadSha: headSha(repo),
+      timeoutMs: 1000,
+    });
+
+    assert.equal(output, "{\"ok\":true}");
+    assert.equal(timerFired, true);
+  }
 });
 
 test("runCodex raw callbacks identify failed and successful runner attempts", async (t) => {

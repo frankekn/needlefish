@@ -239,20 +239,6 @@ export interface MatchResult {
 	readonly resolvedCount: number;
 }
 
-function countNewFindings(
-	prevKeys: readonly FindingKey[],
-	curr: readonly Finding[],
-): number {
-	return curr.filter(
-		(finding) =>
-			!prevKeys.some(
-				(previous) =>
-					finding.file === previous.file &&
-					finding.lineStart === previous.lineStart &&
-					normalizeTitle(finding.title) === previous.title,
-			),
-	).length;
-}
 
 export function matchFindings(
 	prevKeys: readonly FindingKey[],
@@ -401,10 +387,19 @@ function findPreviousReview(
 	repo: string,
 	prNumber: number,
 ): { id: number; state: RoundState } | null {
-	const raw = ghJson(["api", `repos/${repo}/pulls/${prNumber}/reviews`]);
+	// --slurp: --paginate alone emits one JSON document PER PAGE (concatenated,
+	// unparseable); --slurp wraps the pages into a single outer array.
+	const raw = ghJson([
+		"api",
+		"--paginate",
+		"--slurp",
+		`repos/${repo}/pulls/${prNumber}/reviews`,
+	]);
 	if (!Array.isArray(raw)) return null;
-	for (let i = raw.length - 1; i >= 0; i--) {
-		const item = raw[i];
+	// flat(1) also tolerates a plain review list from stubs or older gh versions.
+	const reviews = raw.flat(1);
+	for (let i = reviews.length - 1; i >= 0; i--) {
+		const item = reviews[i];
 		if (!isRecord(item)) continue;
 		const state = parseState(stringField(item, "body"));
 		if (!state) continue;
@@ -724,7 +719,8 @@ export async function runGithub(
 				inlinedFindings: freshInlined,
 				openFindings: open,
 				resolvedCount,
-				newCount: countNewFindings(prev.state.findings, result.findings),
+				// New = not matched to a previous-round key.
+				newCount: fresh.length,
 				repoSlug: repo,
 			};
 			const body = renderMarkdown(freshResult, {

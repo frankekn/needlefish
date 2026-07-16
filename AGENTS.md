@@ -65,6 +65,7 @@ needlefish/
 - ESM only: `type: "module"`.
 - TypeScript is strict/no-emit with `moduleResolution: "bundler"`.
 - Use `unknown` at JSON/model/GitHub boundaries, then validate or narrow.
+- All NEEDLEFISH_* boolean flags go through `envFlagOn` in `src/shared/env.ts`; only `"1"` is on.
 - Keep tests beside the code path as `src/**/*.test.ts`.
 - Use Node built-ins (`node:test`, `assert/strict`, `spawnSync`, temp dirs) before adding dependencies.
 - Stub external CLIs in tests with temp scripts and env vars.

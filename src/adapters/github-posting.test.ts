@@ -42,6 +42,7 @@ type FixtureOptions = {
 	readonly prNumber: number;
 	readonly rawReview: string;
 	readonly staleHeadAfterReview?: boolean;
+	readonly paginatePreviousReviewOnSecondPage?: boolean;
 	// Make POSTs to the issue-comments endpoint exit 1 (after logging the
 	// attempt) to exercise the fail-soft paths around cosmetic comments.
 	readonly failIssueCommentPosts?: boolean;
@@ -239,10 +240,11 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  }));",
 			"  process.exit(0);",
 			"}",
-			`if (args[1] === ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)}) {`,
+			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)}) {`,
 			`  const reviewsPath = ${JSON.stringify(reviewsState)};`,
 			"  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
-			"  process.stdout.write(JSON.stringify(reviews));",
+			`  const pages = ${JSON.stringify(opts.paginatePreviousReviewOnSecondPage === true)} ? [[], reviews] : [reviews];`,
+			"  process.stdout.write(JSON.stringify(pages));",
 			"  process.exit(0);",
 			"}",
 			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
@@ -928,6 +930,30 @@ test("runGithub re-reviews same head when recheck is true", async (t) => {
 	assert.ok(
 		putPost,
 		"round 2 with --recheck should still review and PUT-update",
+	);
+});
+
+test("runGithub finds a state-bearing review on the second paginated page", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 32,
+		paginatePreviousReviewOnSecondPage: true,
+		rawReview: JSON.stringify({
+			summary: "first round",
+			findings: [mkFinding({ title: "bug", lineStart: 1 })],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 32, { timeoutMs: 1000 });
+	const round1Count = readPosts(fixture.postLog).length;
+
+	await runGithub(fixture.repo, 32, { timeoutMs: 1000 }, true);
+	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
+
+	assert.ok(
+		round2Posts.some((post) => post.args.includes("PUT")),
+		"a state-bearing review on page 2 must be found for the update",
 	);
 });
 
