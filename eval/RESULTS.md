@@ -646,3 +646,26 @@ Reports: eval/reports/2026-07-18-lean010-{sol-medium-x3-exclude,
 sol-medium-x3-full,terra-high-x3-full}.json; divergent-fixture x3 confirm
 rounds in session scratchpad only (9-draw merged verdicts recorded in plan
 010).
+
+## 2026-07-18 — plan 011 issue sweep: shipped through batch gate; terra FP envelope note
+
+Shipped on main after per-lane cross-family review + per-merge gates: weekly
+eval on the terra-high prod lane with explicit deploy dispatch (#19, ccbf406);
+size-cap-skipped untracked files surfaced in small AND large review paths
+(#26, 41d1b34+93e9e2a); PR #28's eval ground-truth re-implemented on v2 —
+per-draw finding evidence, gate-verdict recompute, scorerHash comparability
+(eaca967). #12 closed as already-fixed (runner-sandbox.ts:67 file-based
+apply + passing CJK regression test); #11 closed as superseded.
+
+Batch gate: terra high full set x3 guarded → new reference baseline
+`eval/baselines/2026-07-18-terra-high-x3-v2b.json` (anticheat v2 +
+scorerHash; the earlier same-day terra baseline predates scorerHash and is
+retained as history — consumers refuse it by design). recall .874 / FP .069 /
+noise .075 / cheat 0. All per-fixture divergences vs the morning run are ±1
+draw except `neg-hard-refactor-move`: 0/3 FP in the morning, 3/3 FP in the
+evening run AND 3/3 in a same-config confirm (prompt hash identical, scoring
+byte-identical per review) — provider-side behavior drift, matching the
+fixture's known FP history on the sol lane. Standing correction: terra-high's
+FP floor is NOT the morning 0.014 single point; its observed same-day
+envelope is 1–5 FP draws /72. Judge future prompt changes against the v2b
+baseline with divergence confirms, not against 0.014.
