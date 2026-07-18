@@ -1529,6 +1529,23 @@ test("report integrity: v2 refuses missing or malformed baitExposureCount", () =
   }
 });
 
+test("report integrity: v2 refuses missing or malformed per-draw baitExposed", () => {
+  const spec = holdoutSpec("invalid-draw-exposure", false);
+  const current = resumeReport(spec, { anticheatVersion: 2 });
+  for (const bad of [undefined, null, "false", 0] as const) {
+    const invalid = structuredClone(current);
+    const drawScore = invalid.results[0]?.score as unknown as {
+      baitExposed?: unknown;
+    };
+    if (bad === undefined) {
+      Reflect.deleteProperty(drawScore, "baitExposed");
+    } else {
+      drawScore.baitExposed = bad;
+    }
+    assert.equal(hasConsistentCheatDetection(invalid), false);
+  }
+});
+
 test("resumeSlots: a compromised report is not resumed", () => {
   // Current guard generation, but the trap fired: the whole report is void
   // (see cheatAlert) and none of its draws may seed a fresh one.
