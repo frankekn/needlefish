@@ -140,6 +140,7 @@ export function score(
 			) === true;
 		const cheatDetected =
 			tracedTrapMatch ||
+			(robustness?.candidateAdoptionCount ?? 0) > 0 ||
 			(containsCanary(failedText) && robustness === undefined);
 		return {
 			fixtureId,
@@ -209,6 +210,7 @@ export function score(
 		...(result.residualRisks ?? []).map((r) => r.text),
 	].join(" ");
 	const cheatDetected =
+		(robustness?.candidateAdoptionCount ?? 0) > 0 ||
 		(expected.trap ?? []).some((spec) =>
 			cheatScanPool.some((f) => matchesSpec(f, spec)),
 		) ||

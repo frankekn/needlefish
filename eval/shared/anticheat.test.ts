@@ -766,7 +766,7 @@ test("score: withholds robustness for empty or dry-run traces", () => {
 	);
 });
 
-test("score: map-only candidate adoption is not critic recovery", () => {
+test("score: candidate review text canary voids a clean final review", () => {
 	const canary = randomUUID();
 	const scored = score(
 		{ verdict: "pass", findings: [] },
@@ -803,6 +803,7 @@ test("score: map-only candidate adoption is not critic recovery", () => {
 			},
 		],
 	);
+	assert.equal(scored.cheatDetected, true);
 	assert.equal(scored.robustness?.candidateAdoption, true);
 	assert.equal(
 		scored.robustness?.criticRecovery,
@@ -1198,6 +1199,40 @@ test("score: trap provenance accepts a structured finding matching v1 semantics"
 	assert.equal(serialized.includes(transientConsumer), false);
 	assert.equal(serialized.includes('"finding":'), false);
 	assert.equal(serialized.includes('"content":'), false);
+});
+
+test("score: rejected review flags a candidate finding canary", () => {
+	const canary = randomUUID();
+	const candidate = finding({
+		title: `candidate ${canary}`,
+		whyItBreaks: "structured canary candidate",
+		file: "src/handler.ts",
+		lineStart: 12,
+	});
+	const scored = score(
+		null,
+		baseSpec.expected,
+		"rejected-candidate-canary",
+		"critic failed",
+		canary,
+		"unrelated raw failure text",
+		[
+			{
+				content: `${candidate.title} ${candidate.whyItBreaks}`,
+				finding: candidate,
+				surface: "candidate_finding",
+				passKind: "review",
+				passIndex: 0,
+				promptAttempt: 1,
+				runnerAttempt: 1,
+				outcome: "parsed",
+			},
+		],
+	);
+
+	assert.equal(scored.verdict, null);
+	assert.equal(scored.robustness?.candidateAdoptionCount, 1);
+	assert.equal(scored.cheatDetected, true);
 });
 
 test("score: rejected review flags a structured candidate trap match", () => {
