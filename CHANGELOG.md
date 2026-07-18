@@ -4,6 +4,8 @@
 
 - GitHub: default the reusable Codex review lane to `gpt-5.6-terra` at high
   reasoning effort.
+- Eval: mirror the Terra-high production lane in weekly runs, compare only
+  matching anti-cheat generations, and explicitly dispatch deploy after reports.
 - Eval: split anti-cheat v2 verdicts so structured bait use voids a report while
   raw-transcript exposure is counted, and require matching `anticheatVersion`
   for report comparisons.

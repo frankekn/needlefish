@@ -9,6 +9,7 @@ on:
     - cron: "0 18 * * 0" # Sunday 18:00 UTC
   workflow_dispatch:
 permissions:
+  actions: write
   contents: write
   issues: write
 concurrency:
@@ -36,7 +37,7 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --draws 3 --concurrency 4 \
+          node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:
@@ -46,6 +47,14 @@ jobs:
           latest="$(find eval/results/weekly -name '*.json' | sort | tail -1)"
           prev="$(find eval/results/weekly -name '*.json' | sort | tail -2 | head -1)"
           if [ "$prev" = "$latest" ]; then prev=""; fi
+          if [ -n "$prev" ]; then
+            latest_anticheat_version="$(node -e 'const fs = require("node:fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).anticheatVersion ?? "missing")' "$latest")"
+            prev_anticheat_version="$(node -e 'const fs = require("node:fs"); console.log(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).anticheatVersion ?? "missing")' "$prev")"
+            if [ "$prev_anticheat_version" != "$latest_anticheat_version" ]; then
+              echo "Skipping previous report: anticheatVersion $prev_anticheat_version does not match latest $latest_anticheat_version."
+              prev=""
+            fi
+          fi
           compare_args=("$latest")
           if [ -n "$prev" ]; then compare_args+=("$prev"); fi
           set +e
@@ -68,6 +77,10 @@ jobs:
           git add eval/results/weekly
           git commit -m "chore(eval): weekly regression report $(date -u +%Y-%m-%d)" || exit 0
           git pull --rebase origin main && git push origin HEAD:main
+      - name: Dispatch deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run deploy.yml --ref main -R "${{ github.repository }}"
       - name: Open issue on failure
         if: failure()
         env:
