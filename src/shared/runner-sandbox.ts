@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { RunnerName } from "./runner.js";
+import { RunnerTerminatingError } from "./temp-lifecycle.js";
 
 export interface RunnerSandbox {
   readonly repoPath: string;
@@ -31,7 +32,7 @@ class RunnerWorktreeChangedError extends Error {
 }
 
 export function isRunnerSafetyError(error: unknown): boolean {
-  return error instanceof RunnerWorktreeChangedError;
+  return error instanceof RunnerWorktreeChangedError || error instanceof RunnerTerminatingError;
 }
 
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {

@@ -2,12 +2,9 @@ import {
 	existsSync,
 	copyFileSync,
 	mkdirSync,
-	mkdtempSync,
 	readFileSync,
-	rmSync,
 	writeFileSync,
 } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
@@ -22,6 +19,10 @@ import {
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
+import {
+	createManagedTempDirectory,
+	disposeManagedTempDirectory,
+} from "./temp-lifecycle.js";
 import {
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
@@ -520,8 +521,8 @@ async function runCodexOnce(
 			opts.onRaw?.(raw, runnerAttempt),
 		);
 	}
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-"));
-	// Everything after mkdtemp lives inside the try: a preparation failure
+	const tmp = await createManagedTempDirectory();
+	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
 	try {
@@ -606,7 +607,7 @@ async function runCodexOnce(
 			throw err;
 		}
 	} finally {
-		rmSync(tmp, { recursive: true, force: true });
+		await disposeManagedTempDirectory(tmp);
 	}
 }
 

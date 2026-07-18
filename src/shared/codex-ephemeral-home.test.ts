@@ -23,6 +23,8 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
 	const homeDump = path.join(tmp, "home-dump.json");
+	const lifecycleRoot = path.join(tmp, "lifecycle-root");
+	mkdirSync(lifecycleRoot);
 	// CI-safe: never depend on the real ~/.codex — plant the auth sources in a
 	// fake parent HOME (ubuntu runners have no codex auth).
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
@@ -34,6 +36,7 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		retry: process.env.NEEDLEFISH_NO_RETRY,
 		home: process.env.HOME,
+		needlefishTmpdir: process.env.NEEDLEFISH_TMPDIR,
 	};
 	t.after(() => {
 		if (previous.bin === undefined) delete process.env.CODEX_BIN;
@@ -44,6 +47,9 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 		if (previous.retry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
 		else process.env.NEEDLEFISH_NO_RETRY = previous.retry;
 		process.env.HOME = previous.home;
+		if (previous.needlefishTmpdir === undefined)
+			delete process.env.NEEDLEFISH_TMPDIR;
+		else process.env.NEEDLEFISH_TMPDIR = previous.needlefishTmpdir;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
@@ -54,7 +60,8 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 			"const fs = require('node:fs');",
 			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`const homeDump = ${JSON.stringify(homeDump)};`,
-			"fs.writeFileSync(homeDump, JSON.stringify({ home: process.env.HOME ?? null }));",
+			"const path = require('node:path');",
+			"fs.writeFileSync(homeDump, JSON.stringify({ home: process.env.HOME ?? null, auth: fs.readFileSync(path.join(process.env.HOME, '.codex', 'auth.json'), 'utf8') }));",
 			"fs.writeFileSync(out, '{\"ok\":true}');",
 		].join("\n"),
 	);
@@ -63,6 +70,7 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_TMPDIR = lifecycleRoot;
 
 	await runCodex("prompt", {
 		repoPath: repo,
@@ -73,16 +81,18 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 
 	const dump = JSON.parse(readFileSync(homeDump, "utf8")) as {
 		home: string | null;
+		auth: string;
 	};
 	assert.ok(dump.home, "child HOME must be set");
+	assert.equal(dump.auth, '{"token":"x"}', "the disposable HOME must contain the copied credential");
 	assert.notEqual(
 		dump.home,
 		fakeHome,
 		"child HOME must NOT be the parent's HOME",
 	);
 	assert.ok(
-		dump.home.startsWith(path.join(os.tmpdir(), "needlefish-")),
-		`child HOME must live under the needlefish- tmp prefix, got: ${dump.home}`,
+		dump.home.startsWith(path.join(lifecycleRoot, "needlefish-managed-")),
+		`child HOME must live under the controlled lifecycle root, got: ${dump.home}`,
 	);
 	assert.ok(
 		dump.home.endsWith(`${path.sep}home`),
@@ -211,7 +221,7 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		retry: process.env.NEEDLEFISH_NO_RETRY,
 		home: process.env.HOME,
-		tmpdir: process.env.TMPDIR,
+		needlefishTmpdir: process.env.NEEDLEFISH_TMPDIR,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -220,15 +230,16 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 		if (previous.retry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
 		else process.env.NEEDLEFISH_NO_RETRY = previous.retry;
 		process.env.HOME = previous.home;
-		if (previous.tmpdir === undefined) delete process.env.TMPDIR;
-		else process.env.TMPDIR = previous.tmpdir;
+		if (previous.needlefishTmpdir === undefined)
+			delete process.env.NEEDLEFISH_TMPDIR;
+		else process.env.NEEDLEFISH_TMPDIR = previous.needlefishTmpdir;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.NEEDLEFISH_NO_RETRY = "1";
-	process.env.TMPDIR = scratchTmp;
+	process.env.NEEDLEFISH_TMPDIR = scratchTmp;
 
 	await assert.rejects(
 		() =>
@@ -240,10 +251,27 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 			}),
 		/required auth source is missing/,
 	);
+	const strandedInvocationDirectories = readdirSync(scratchTmp, {
+		withFileTypes: true,
+	})
+		.filter(
+			(entry) =>
+				entry.isDirectory() &&
+				/^(?:needlefish-(?:managed-)?|\.needlefish-staging-)[A-Za-z0-9]{6}$/.test(
+					entry.name,
+				),
+		)
+		.map((entry) => entry.name);
 	assert.deepEqual(
-		readdirSync(scratchTmp),
+		strandedInvocationDirectories,
 		[],
 		"a failed preparation must not leak its invocation dir",
+	);
+	assert.ok(
+		readdirSync(scratchTmp).some((entry) =>
+			entry.startsWith(".needlefish-owner-lock-"),
+		),
+		"the assertion root must contain the lifecycle artifact created by this allocation",
 	);
 });
 

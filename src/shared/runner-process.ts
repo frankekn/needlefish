@@ -1,4 +1,8 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  assertRunnerSchedulingAllowed,
+  registerRunnerProcessGroup,
+} from "./temp-lifecycle.js";
 
 const RUNNER_MAX_BUFFER_BYTES = 1024 * 1024 * 64;
 
@@ -73,6 +77,7 @@ export async function spawnRunnerProcess(
 export async function runManagedRunnerProcess(
   invocation: ManagedRunnerProcessInvocation
 ): Promise<RunnerProcessResult> {
+  assertRunnerSchedulingAllowed();
   return await new Promise<RunnerProcessResult>((resolve) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -94,9 +99,10 @@ export async function runManagedRunnerProcess(
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
+    const childClosed = new Promise<void>((resolve) => child.once("close", () => resolve()));
 
-    const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
-      if (killStarted) return;
+    const forceKillSequence = (): void => {
+      if (settled) return;
       killStarted = true;
       if (timer !== null) {
         clearTimeout(timer);
@@ -106,13 +112,34 @@ export async function runManagedRunnerProcess(
         clearTimeout(cancelTimer);
         cancelTimer = null;
       }
-      killRunnerProcessTree(child.pid, firstSignal);
-      if (firstSignal === "SIGKILL") {
+      if (hardKillTimer !== null) {
+        clearTimeout(hardKillTimer);
+        hardKillTimer = null;
+      }
+      signalRunnerProcessTree(child, "SIGKILL");
+      if (giveUpTimer === null) {
         giveUpTimer = setTimeout(() => finish(null, "SIGKILL"), runnerSigkillGiveUpMs());
+      }
+    };
+
+    const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
+      if (killStarted) return;
+      if (firstSignal === "SIGKILL") {
+        forceKillSequence();
         return;
       }
+      killStarted = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (cancelTimer !== null) {
+        clearTimeout(cancelTimer);
+        cancelTimer = null;
+      }
+      signalRunnerProcessTree(child, firstSignal);
       hardKillTimer = setTimeout(() => {
-        killRunnerProcessTree(child.pid, "SIGKILL");
+        signalRunnerProcessTree(child, "SIGKILL");
         giveUpTimer = setTimeout(() => {
           // A setsid-escaped descendant has left this kill group and may keep inherited pipes open.
           // We cannot kill that escapee here; the goal is to stop waiting for child "close".
@@ -163,6 +190,16 @@ export async function runManagedRunnerProcess(
         beginKillSequence("SIGTERM");
       },
     };
+    const unregisterProcessGroup =
+      child.pid === undefined
+        ? () => {}
+        : registerRunnerProcessGroup(
+            child.pid,
+            invocation.repoPath,
+            beginKillSequence,
+            forceKillSequence,
+            childClosed,
+          );
 
     const collect = (chunks: string[], bytes: { count: number }, chunk: unknown): string | null => {
       if (bufferError !== undefined) return null;
@@ -206,7 +243,10 @@ export async function runManagedRunnerProcess(
       spawnError = error;
       finish(null, null);
     });
-    child.on("close", (status, signal) => finish(status, signal));
+    child.on("close", (status, signal) => {
+      unregisterProcessGroup();
+      finish(status, signal);
+    });
 
     timer = setTimeout(() => {
       timedOut = true;
@@ -250,10 +290,14 @@ function runnerSigkillGiveUpMs(): number {
   return readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS, 2000);
 }
 
-function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  const pid = child.pid;
   if (pid === undefined) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    const args = ["/pid", String(pid), "/T"];
+    if (signal === "SIGKILL") args.push("/F");
+    spawnSync("taskkill", args, { stdio: "ignore" });
     return;
   }
   try {

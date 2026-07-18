@@ -4,6 +4,7 @@ import { runGithub } from "./adapters/github.js";
 import { runLocal, runLocalPr, printLocal } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
+import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
 import { readFileSync } from "node:fs";
 
 // package.json sits one level above both src/ (dev) and dist/ (published).
@@ -23,6 +24,11 @@ async function main() {
     case "help":
       process.stdout.write(USAGE);
       return;
+  }
+
+  await initializeTempLifecycle();
+
+  switch (command.kind) {
     case "github": {
       if (command.fix) {
         process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
