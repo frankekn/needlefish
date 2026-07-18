@@ -16,7 +16,8 @@ import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { isCompleteReport } from "./shared/report-completeness";
-import { score } from "./shared/score";
+import { drawFindings, matchEvidence, score } from "./shared/score";
+import { scorerHash } from "./shared/scorer-hash";
 import {
 	ANTICHEAT_VERSION,
 	type Aggregates,
@@ -227,6 +228,7 @@ async function runOne(
 	const stats = result?.stats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
+	const findings = result?.findings ?? [];
 	return {
 		fixtureId: spec.id,
 		draw: 0,
@@ -243,6 +245,8 @@ async function runOne(
 		durationMs,
 		calls,
 		retries,
+		findings: drawFindings(findings),
+		matchEvidence: matchEvidence(findings, spec.expected),
 	};
 }
 
@@ -304,6 +308,12 @@ export function resumeSlots(
 		if (existing.anticheatVersion !== ANTICHEAT_VERSION) {
 			process.stderr.write(
 				`resume: anti-cheat version mismatch (${existing.anticheatVersion ?? "none"} vs ${ANTICHEAT_VERSION}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
+		if (existing.scorerHash !== scorerHash()) {
+			process.stderr.write(
+				`resume: scorer hash mismatch (${existing.scorerHash ?? "none"} vs ${scorerHash()}), ignoring resume file\n`,
 			);
 			return { slots, skipped };
 		}
@@ -559,6 +569,7 @@ export function writeReport(
 		aggregates: aggregate(results, specs),
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
+		scorerHash: scorerHash(),
 		fixtureTiers,
 		// The version label is a promise that every current-generation guard was on:
 		// HOME isolation AND eval tracing (without the trace, critic-pruned
@@ -632,6 +643,11 @@ export function compare(baselinePath: string, candidate: Report): void {
 		if (report.anticheatVersion !== ANTICHEAT_VERSION) {
 			throw new Error(
 				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,
+			);
+		}
+		if (report.scorerHash !== scorerHash()) {
+			throw new Error(
+				`${label} report scorer hash is ${report.scorerHash ?? "none"}, current is ${scorerHash()}. Re-run the ${label} under the current scorer.`,
 			);
 		}
 		// A fired trap voids the whole report (see cheatAlert) — void numbers

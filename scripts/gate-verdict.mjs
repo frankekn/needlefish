@@ -1,10 +1,25 @@
 #!/usr/bin/env node
+/* global process */
 
+import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FIXTURE_KINDS = new Set(["positive", "negative", "parity", "honeypot"]);
+const SCORER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "eval", "shared");
+const SCORER_FILES = ["score.ts", "robustness.ts", "types.ts"];
+
+export function computeScorerHash() {
+  const hash = createHash("sha256");
+  for (const name of SCORER_FILES) {
+    hash.update(name);
+    hash.update("\0");
+    hash.update(readFileSync(join(SCORER_DIR, name), "utf8"));
+    hash.update("\0");
+  }
+  return hash.digest("hex").slice(0, 16);
+}
 
 function output(pass, reasons, promptHash = "", fixtureSetHash = "") {
   process.stdout.write(`${JSON.stringify({ pass, reasons, promptHash, fixtureSetHash })}\n`);
@@ -27,8 +42,6 @@ function validCriteria(value) {
 }
 
 function validReport(value) {
-  const hasMustFindAggregates = isRecord(value?.aggregates)
-    && (value.aggregates.mustFindHitRateByFixture !== undefined || value.aggregates.mustFindHitRate !== undefined);
   if (!isRecord(value)
     || typeof value.promptHash !== "string" || value.promptHash.length === 0
     || typeof value.fixtureSetHash !== "string" || value.fixtureSetHash.length === 0
@@ -74,10 +87,10 @@ function validReport(value) {
     && Number.isInteger(result.draw) && result.draw >= 0 && result.draw < value.draws
     && isRecord(result.score)
     && typeof result.score.recall === "boolean"
-    && (!hasMustFindAggregates || (Number.isInteger(result.score.mustFindHits)
-      && Number.isInteger(result.score.mustFindTotal)
-      && result.score.mustFindHits >= 0
-      && result.score.mustFindTotal >= result.score.mustFindHits))
+    && Number.isInteger(result.score.mustFindHits)
+    && Number.isInteger(result.score.mustFindTotal)
+    && result.score.mustFindHits >= 0
+    && result.score.mustFindTotal >= result.score.mustFindHits
     && Number.isInteger(result.score.noiseFindingCount)
     && result.score.noiseFindingCount >= 0
     && typeof result.score.cheatDetected === "boolean");
@@ -117,6 +130,65 @@ function recomputeAggregates(report) {
   return { recallByFixture, meanNoisePerPositive, cheatDetectedCount, mustFindHitRateByFixture, mustFindHitRate };
 }
 
+function evidenceEntryOk(entry) {
+  if (!isRecord(entry) || typeof entry.pattern !== "string") return false;
+  if (entry.findingIndex !== null && (!Number.isInteger(entry.findingIndex) || entry.findingIndex < 0)) return false;
+  if (entry.category !== undefined && typeof entry.category !== "string") return false;
+  if (entry.file !== undefined && typeof entry.file !== "string") return false;
+  if (entry.lineRange !== undefined
+    && !(Array.isArray(entry.lineRange) && entry.lineRange.length === 2
+      && entry.lineRange.every(Number.isFinite))) return false;
+  try { new RegExp(entry.pattern, "i"); } catch { return false; }
+  return true;
+}
+
+function isDrawFinding(finding) {
+  return isRecord(finding)
+    && typeof finding.severity === "string"
+    && typeof finding.category === "string"
+    && typeof finding.file === "string"
+    && Number.isFinite(finding.lineStart)
+    && Number.isFinite(finding.lineEnd)
+    && typeof finding.title === "string"
+    && typeof finding.whyItBreaks === "string";
+}
+
+function evidenceMatches(entry, finding) {
+  if (!isDrawFinding(finding)) return false;
+  if (entry.category && finding.category !== entry.category) return false;
+  if (entry.file && !finding.file.endsWith(entry.file)) return false;
+  if (entry.lineRange
+    && (finding.lineStart < entry.lineRange[0] || finding.lineStart > entry.lineRange[1])) return false;
+  return new RegExp(entry.pattern, "i").test(`${finding.title} ${finding.whyItBreaks}`);
+}
+
+function evidenceReasons(report) {
+  const reasons = [];
+  for (const result of report.results) {
+    if (!Array.isArray(result.findings)
+      || !result.findings.every(isDrawFinding)
+      || !Array.isArray(result.matchEvidence)
+      || result.matchEvidence.length !== result.score.mustFindTotal
+      || !result.matchEvidence.every(evidenceEntryOk)) {
+      reasons.push(`missing-evidence:${result.fixtureId}`);
+      continue;
+    }
+    const actualIndexes = result.matchEvidence.map((entry) => {
+      const index = result.findings.findIndex((finding) => evidenceMatches(entry, finding));
+      return index < 0 ? null : index;
+    });
+    if (actualIndexes.some((index, i) => index !== result.matchEvidence[i].findingIndex)) {
+      reasons.push(`unexplainable-evidence:${result.fixtureId}`);
+    }
+    const recall = result.score.formatOk === false
+      ? false
+      : actualIndexes.every((index) => index !== null);
+    if (recall && result.score.recall !== true) reasons.push(`miss-with-evidence:${result.fixtureId}`);
+    if (!recall && result.score.recall === true) reasons.push(`recall-without-evidence:${result.fixtureId}`);
+  }
+  return reasons;
+}
+
 function equalRecallMaps(left, right) {
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();
@@ -132,6 +204,11 @@ export function evaluateGate(report, criteria) {
 
   const reasons = [];
   const aggregates = recomputeAggregates(report);
+  if (typeof report.scorerHash !== "string" || report.scorerHash.length === 0) {
+    reasons.push("scorer-hash-missing");
+  } else if (report.scorerHash !== computeScorerHash()) {
+    reasons.push("scorer-hash-mismatch");
+  }
   if (!equalRecallMaps(report.aggregates.recallByFixture, aggregates.recallByFixture)) {
     reasons.push("aggregate-mismatch:recallByFixture");
   }
@@ -149,6 +226,7 @@ export function evaluateGate(report, criteria) {
     && report.aggregates.mustFindHitRate !== aggregates.mustFindHitRate) {
     reasons.push("aggregate-mismatch:mustFindHitRate");
   }
+  reasons.push(...evidenceReasons(report));
   if (aggregates.cheatDetectedCount > 0) reasons.push("honeypot-void");
   const incompleteFixtures = new Set();
   const manifestFixtures = new Set(report.fixtures);

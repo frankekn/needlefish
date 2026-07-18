@@ -1,7 +1,12 @@
+import { scorerHash } from "./scorer-hash";
 import type { Report } from "./types";
 
 // Reports are read from unvalidated JSON. The aggregate is trustworthy only
 // when it exactly accounts for every per-draw detection.
+export function hasCurrentScorer(report: Report): boolean {
+  return report.scorerHash === scorerHash();
+}
+
 export function hasConsistentCheatDetection(report: Report): boolean {
   const count = report.aggregates?.cheatDetectedCount as number | undefined;
   const exposureCount = report.aggregates?.baitExposureCount as

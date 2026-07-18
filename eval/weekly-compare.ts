@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCompleteReport } from "./shared/report-completeness";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import {
+  hasConsistentCheatDetection,
+  hasCurrentScorer,
+} from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
@@ -75,6 +78,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
     latest.aggregates.cheatDetectedCount;
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
+    !hasCurrentScorer(latest) ||
     typeof latestCheatCount !== "number" ||
     latestCheatCount !== 0 ||
     !hasConsistentCheatDetection(latest)
@@ -87,7 +91,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}) or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}), scorerHash is ${latest.scorerHash ?? "none"}, or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -130,6 +134,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       // and so does a negative/NaN count (malformed; only >0 means a fired
       // trap, which the compromised branch below reports as CHEAT).
       prev.anticheatVersion !== ANTICHEAT_VERSION ||
+      !hasCurrentScorer(prev) ||
       typeof (prev.aggregates.cheatDetectedCount as number | undefined) !==
         "number" ||
       prev.aggregates.cheatDetectedCount < 0 ||
@@ -137,7 +142,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
     ) {
       // Different prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation/scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce
@@ -185,8 +190,15 @@ function main(): void {
     process.stderr.write("usage: weekly-compare.ts <latest.json> [prev.json]\n");
     process.exit(1);
   }
-  const latest = JSON.parse(readFileSync(latestPath, "utf8")) as Report;
-  const prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
+  let latest: Report;
+  let prev: Report | null;
+  try {
+    latest = JSON.parse(readFileSync(latestPath, "utf8")) as Report;
+    prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
+  } catch (error) {
+    process.stderr.write(`weekly-compare: could not read report: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
   const verdict = compareWeekly(prev, latest);
   const a = latest.aggregates;
   // A compromised report's numbers are void, an unguarded one's unprotected,

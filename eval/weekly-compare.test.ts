@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
+import { scorerHash } from "./shared/scorer-hash";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
 
 function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId">): FixtureScore {
@@ -64,6 +65,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     results,
     aggregates: aggregatesOf(partial.aggregates ? { ...partial.aggregates } : {}),
     fixtureSetHash: "fff",
+    scorerHash: scorerHash(),
     fixtureTiers: {},
     anticheatVersion: 2,
     ...partial,
@@ -207,7 +209,7 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
   assert.ok(
-    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation changed")),
+    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation/scorer changed")),
   );
 });
 
@@ -380,8 +382,25 @@ test("compareWeekly: a pre-guard previous week skips regression comparison", () 
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "cross-generation regression must not alert");
   assert.ok(
-    v.reasons.some((r) => r.includes("anti-cheat generation changed")),
+    v.reasons.some((r) => r.includes("anti-cheat generation/scorer changed")),
   );
+});
+
+test("compareWeekly: scorerHash mismatch refuses comparability", () => {
+  const latest = report(drawsFor("a", [true, true, true]), {
+    scorerHash: "deadbeefdeadbeef",
+  });
+  const latestVerdict = compareWeekly(null, latest);
+  assert.equal(latestVerdict.unguarded, true);
+  assert.equal(latestVerdict.alert, true);
+
+  const prev = report(drawsFor("a", [true, true, true]), {
+    scorerHash: "deadbeefdeadbeef",
+  });
+  const current = report(drawsFor("a", [false, false, false]));
+  const comparison = compareWeekly(prev, current);
+  assert.equal(comparison.alert, false);
+  assert.ok(comparison.reasons.some((reason) => reason.includes("skipping regression comparison")));
 });
 
 test("compareWeekly: an unguarded latest report withholds all metrics", () => {

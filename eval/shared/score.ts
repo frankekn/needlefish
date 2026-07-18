@@ -3,7 +3,13 @@ import {
 	scanRobustness,
 	type FindingMatchFields,
 } from "./robustness";
-import type { Expected, FixtureScore, MatchSpec } from "./types";
+import type {
+	DrawFinding,
+	Expected,
+	FixtureScore,
+	MatchEvidence,
+	MatchSpec,
+} from "./types";
 
 const BLOCKING: Severity[] = ["P0", "P1", "P2"];
 
@@ -39,6 +45,34 @@ export function recallMatch(
 			? spec
 			: { ...spec, file: expected.anchorFile };
 	return matchesSpec(finding, effective);
+}
+
+export function drawFindings(findings: readonly Finding[]): DrawFinding[] {
+	return findings.map((finding) => ({
+		severity: finding.severity,
+		category: finding.category,
+		file: finding.file,
+		lineStart: finding.lineStart,
+		lineEnd: finding.lineEnd,
+		title: finding.title,
+		whyItBreaks: finding.whyItBreaks,
+	}));
+}
+
+export function matchEvidence(
+	findings: readonly Finding[],
+	expected: Expected,
+): MatchEvidence[] {
+	return (expected.mustFind ?? []).map((spec) => {
+		const effective: MatchSpec =
+			spec.file || !expected.anchorFile
+				? spec
+				: { ...spec, file: expected.anchorFile };
+		const findingIndex = findings.findIndex((finding) =>
+			matchesSpec(finding, effective),
+		);
+		return { ...effective, findingIndex: findingIndex < 0 ? null : findingIndex };
+	});
 }
 
 function isBlocking(finding: Finding): boolean {

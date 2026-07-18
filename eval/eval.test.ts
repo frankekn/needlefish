@@ -11,7 +11,8 @@ import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
-import { matchesSpec, score } from "./shared/score";
+import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
+import { scorerHash } from "./shared/scorer-hash";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
@@ -630,6 +631,28 @@ test("score: criticPruneError false when candidateFindings absent (trace off)", 
 
 // --- provenance (real-PR fixture mining, eval/tools/pr2fixture.ts) ---
 
+test("per-draw evidence records full findings and effective mustFind matches", () => {
+  const findings = [finding({
+    title: "viewer branch unreachable",
+    whyItBreaks: "eligibility rejects viewers",
+    file: "src/handler.ts",
+    lineStart: 18,
+  })];
+  const expected: Expected = {
+    verdict: "changes_requested",
+    anchorFile: "handler.ts",
+    mustFind: [{ pattern: "viewer" }, { pattern: "ttl", file: "cache.ts" }],
+  };
+  assert.deepEqual(drawFindings(findings)[0], {
+    severity: "P2", category: "bug", file: "src/handler.ts", lineStart: 18,
+    lineEnd: 18, title: "viewer branch unreachable", whyItBreaks: "eligibility rejects viewers",
+  });
+  assert.deepEqual(matchEvidence(findings, expected), [
+    { pattern: "viewer", file: "handler.ts", findingIndex: 0 },
+    { pattern: "ttl", file: "cache.ts", findingIndex: null },
+  ]);
+});
+
 test("fixtureSetHash: changes when provenance changes, same otherwise", () => {
   const withoutProvenance = holdoutSpec("prov-a", false);
   const withProvenanceA: FixtureSpec = {
@@ -737,6 +760,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     baseline: false,
     holdout: "include",
     fixtureSetHash: fixtureSetHash([spec]),
+    scorerHash: scorerHash(),
     fixtures: [spec.id],
     results: [{
       fixtureId: spec.id,
@@ -763,6 +787,23 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     ...overrides,
   };
 }
+
+test("resumeSlots: refuses a missing or mismatched scorerHash", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-scorer-resume-"));
+  const spec = holdoutSpec("scorer-resume", false);
+  try {
+    for (const scorerHashValue of [undefined, "deadbeefdeadbeef"]) {
+      const report = resumeReport(spec, { anticheatVersion: 2, scorerHash: scorerHashValue });
+      const resumePath = path.join(dir, `${scorerHashValue ?? "missing"}.json`);
+      writeFileSync(resumePath, JSON.stringify(report));
+      const resumed = resumeSlots(parseArgs(["--draws", "1", "--resume", resumePath]), [spec], [{ spec, draw: 0 }]);
+      assert.equal(resumed.skipped, 0);
+      assert.deepEqual(resumed.slots, [null]);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
   // Draws that never faced canary detection must not populate a new report.
@@ -1666,6 +1707,23 @@ test("compare: rejects a legacy baseline without fixtureSetHash", () => {
   }
 });
 
+test("compare: refuses missing or mismatched scorerHash", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-scorer-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const spec = holdoutSpec("scorer-compare", false);
+  const current = resumeReport(spec, { anticheatVersion: 2 });
+  try {
+    for (const scorerHashValue of [undefined, "deadbeefdeadbeef"]) {
+      writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, scorerHash: scorerHashValue }));
+      assert.throws(() => compare(baselinePath, current), /baseline report scorer hash is/);
+      writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+      assert.throws(() => compare(baselinePath, { ...current, scorerHash: scorerHashValue }), /candidate report scorer hash is/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("compare: rejects v1 reports after the anti-cheat v2 semantics change", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-compare-v1-"));
   const baselinePath = path.join(dir, "baseline.json");
@@ -1725,6 +1783,7 @@ test("compare: rejects reports from another anti-cheat generation", () => {
       baitExposureCount: 0,
     },
     fixtureSetHash: "fixture-hash",
+    scorerHash: scorerHash(),
     anticheatVersion: 2,
   };
   try {

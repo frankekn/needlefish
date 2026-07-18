@@ -1,3 +1,4 @@
+/* global process, structuredClone, URL */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -6,17 +7,28 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { computeScorerHash } from "./gate-verdict.mjs";
+
 const script = new URL("./gate-verdict.mjs", import.meta.url);
+
+function emptyEvidence() {
+  return { findings: [], matchEvidence: [] };
+}
+
+function missEvidence() {
+  return { findings: [], matchEvidence: [{ pattern: "bug", findingIndex: null }] };
+}
 
 function baseReport() {
   return {
     promptHash: "prompt-123",
     fixtureSetHash: "fixtures-456",
+    scorerHash: computeScorerHash(),
     fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
-      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-      { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+      { fixtureId: "required-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
     ],
     aggregates: {
       cheatDetectedCount: 0,
@@ -40,7 +52,13 @@ function run(report, criteria) {
   writeFileSync(criteriaPath, typeof criteria === "string" ? criteria : JSON.stringify(criteria));
   const result = spawnSync(process.execPath, [script.pathname, reportPath, "--criteria", criteriaPath], { encoding: "utf8" });
   rmSync(dir, { recursive: true, force: true });
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr, json: JSON.parse(result.stdout) };
+  let json;
+  try {
+    json = JSON.parse(result.stdout);
+  } catch {
+    json = null;
+  }
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr, json };
 }
 
 test("passes and echoes report hashes", () => {
@@ -49,17 +67,13 @@ test("passes and echoes report hashes", () => {
   assert.deepEqual(result.json, { pass: true, reasons: [], promptHash: "prompt-123", fixtureSetHash: "fixtures-456" });
 });
 
-test("cross-checks optional partial mustFind aggregates while accepting old reports", () => {
+test("cross-checks optional mustFind aggregates", () => {
   const oldShape = run(baseReport(), baseCriteria());
   assert.equal(oldShape.status, 0);
 
   const report = baseReport();
-  report.results[0].score.mustFindHits = 1;
-  report.results[0].score.mustFindTotal = 3;
-  report.results[1].score.mustFindHits = 2;
-  report.results[1].score.mustFindTotal = 3;
-  report.aggregates.mustFindHitRateByFixture = { "obvious-bug": 1 / 3, "required-bug": 2 / 3 };
-  report.aggregates.mustFindHitRate = 1 / 2;
+  report.aggregates.mustFindHitRateByFixture = {};
+  report.aggregates.mustFindHitRate = 0;
   assert.equal(run(report, baseCriteria()).status, 0);
 
   const mapOnly = structuredClone(report);
@@ -131,7 +145,7 @@ test("fixture kinds reject values outside the declared union", () => {
   const report = baseReport();
   report.fixtures.push("typo-kind");
   report.fixtureKinds["typo-kind"] = "negativ";
-  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
   report.aggregates.recallByFixture["typo-kind"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -155,7 +169,7 @@ test("real-shaped reports allow recall keys beyond the positive tier keys", () =
   const report = baseReport();
   report.fixtures.push("negative-case");
   report.fixtureKinds["negative-case"] = "negative";
-  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-case"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -191,7 +205,7 @@ test("a manifest-complete report passes", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
   report.fixtureKinds["negative-honeypot"] = "honeypot";
-  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } });
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-honeypot"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -210,6 +224,8 @@ test("nonzero recomputed honeypot count voids the report", () => {
 test("a failed tier-1 draw fails the whole report", () => {
   const report = baseReport();
   report.results[0].score.recall = false;
+  Object.assign(report.results[0], missEvidence());
+  report.results[0].score.mustFindTotal = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.ok(result.json.reasons.includes("tier1-missed:obvious-bug"));
@@ -238,10 +254,10 @@ test("duplicate draw indices fail completeness even when the raw count matches",
   const report = baseReport();
   report.draws = 2;
   report.results = [
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "required-bug", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
-    { fixtureId: "required-bug", draw: 1, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 1, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
   ];
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -280,7 +296,7 @@ test("overlapping tier-1 and criteria fixture emits one missing-draws reason", (
 test("resume-shaped reports require draws for every fixture tier entry", () => {
   const report = baseReport();
   report.results = [
-    { fixtureId: "resume-first", draw: 0, score: { recall: true, noiseFindingCount: 0, cheatDetected: false } },
+    { fixtureId: "resume-first", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
   ];
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
@@ -306,6 +322,8 @@ test("noise above the criteria threshold fails", () => {
 test("required fixture aggregate recall must equal one", () => {
   const report = baseReport();
   report.results[1].score.recall = false;
+  Object.assign(report.results[1], missEvidence());
+  report.results[1].score.mustFindTotal = 1;
   report.aggregates.recallByFixture["required-bug"] = 0;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -315,6 +333,8 @@ test("required fixture aggregate recall must equal one", () => {
 test("recomputes recall and rejects a claimed perfect aggregate", () => {
   const report = baseReport();
   report.results[1].score.recall = false;
+  Object.assign(report.results[1], missEvidence());
+  report.results[1].score.mustFindTotal = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
   assert.deepEqual(result.json.reasons, [
@@ -351,6 +371,39 @@ test("a report with consistent recomputed aggregates passes", () => {
   const result = run(report, criteria);
   assert.equal(result.status, 0);
   assert.deepEqual(result.json.reasons, []);
+});
+
+test("re-executes evidence and rejects a fabricated recall claim", () => {
+  const report = baseReport();
+  Object.assign(report.results[0], {
+    findings: [{ severity: "P1", category: "bug", file: "src/x.ts", lineStart: 1, lineEnd: 1, title: "unrelated", whyItBreaks: "cosmetic" }],
+    matchEvidence: [{ pattern: "bug", findingIndex: 0 }],
+  });
+  report.results[0].score.mustFindHits = 1;
+  report.results[0].score.mustFindTotal = 1;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, [
+    "unexplainable-evidence:obvious-bug",
+    "recall-without-evidence:obvious-bug",
+  ]);
+});
+
+test("missing evidence fails closed", () => {
+  const report = baseReport();
+  delete report.results[0].findings;
+  const result = run(report, baseCriteria());
+  assert.deepEqual(result.json.reasons, ["missing-evidence:obvious-bug"]);
+});
+
+test("missing or mismatched scorerHash fails closed", () => {
+  for (const hash of [undefined, "deadbeefdeadbeef"]) {
+    const report = baseReport();
+    report.scorerHash = hash;
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, [hash ? "scorer-hash-mismatch" : "scorer-hash-missing"]);
+  }
 });
 
 test("missing recomputation score fields make the report unreadable", () => {

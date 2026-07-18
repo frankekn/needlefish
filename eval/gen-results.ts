@@ -5,7 +5,10 @@ import {
   isCompleteReport,
   reportExpectedResultCount,
 } from "./shared/report-completeness";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import {
+  hasConsistentCheatDetection,
+  hasCurrentScorer,
+} from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type FixtureSpec, type Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,6 +42,7 @@ export interface NamedReport {
 function guarded(r: Report): boolean {
   return (
     r.anticheatVersion === ANTICHEAT_VERSION &&
+    hasCurrentScorer(r) &&
     r.aggregates.cheatDetectedCount === 0 &&
     hasConsistentCheatDetection(r)
   );

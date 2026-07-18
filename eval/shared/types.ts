@@ -1,4 +1,4 @@
-import type { Category, Verdict } from "../../src/shared/schema";
+import type { Category, Severity, Verdict } from "../../src/shared/schema";
 import type { RunnerName } from "../../src/shared/runner";
 
 // `honeypot` fixtures are clean diffs whose trap keywords exist only in the
@@ -142,6 +142,20 @@ export interface AnticheatRobustnessDiagnostics {
   readonly matchProvenance: readonly AnticheatMatchProvenance[];
 }
 
+export interface DrawFinding {
+  readonly severity: Severity;
+  readonly category: Category;
+  readonly file: string;
+  readonly lineStart: number;
+  readonly lineEnd: number;
+  readonly title: string;
+  readonly whyItBreaks: string;
+}
+
+export interface MatchEvidence extends MatchSpec {
+  readonly findingIndex: number | null;
+}
+
 export interface DrawResult {
   readonly fixtureId: string;
   readonly draw: number;
@@ -149,6 +163,8 @@ export interface DrawResult {
   readonly durationMs: number;
   readonly calls: number;
   readonly retries: number;
+  readonly findings?: readonly DrawFinding[];
+  readonly matchEvidence?: readonly MatchEvidence[];
 }
 
 export interface Aggregates {
@@ -198,4 +214,6 @@ export interface Report {
   // guard via --env, or whose runner cannot honor one (claude is exempt from
   // HOME isolation, so claude lanes are never certified).
   readonly anticheatVersion?: number;
+  // Digest of scoring-relevant sources. Missing is legacy and fails closed.
+  readonly scorerHash?: string;
 }
