@@ -613,3 +613,36 @@ No contamination signal: recall/verdict drifts are within x3 sampling noise
 and fail-closed ephemeral-HOME semantics mean every successful draw is itself
 evidence the sealed HOME was in use. The 2026-07-12 matrix stands; guards add
 no measurable latency. Report: eval/reports/2026-07-13-anticheat-grok45-x3.json.
+
+## 2026-07-18 — plan 010: lean review prompt (dedup per OpenAI GPT-5.6 guide) — NOT SHIPPED
+
+Hypothesis (OpenAI 5.6 prompting guide): stating each rule exactly once
+improves adherence. Lean variant (promptHash d048a378): review.md/deep.md with
+every duplicated rule collapsed to a single statement (precondition
+substitution 4→1 places, trigger re-explanations in Process → bare
+references, prefer-zero carve-outs → one-line pointers); trigger definitions,
+sandbox boundary, evidence contract untouched. All runs anticheat-v2 guarded,
+x3, cheatDetectedCount 0 throughout; baselines eval/baselines/2026-07-18-*.
+
+Verdict by lane (full set incl holdouts, vs same-lane baseline):
+
+| lane | recall | FP | noise | t1 | t2 | t3 |
+|---|---|---|---|---|---|---|
+| sol medium base | .879 | .111 | .126 | .857 | .931 | .784 |
+| sol medium LEAN | .897 | .111 | .092 | .952 | .951 | .765 |
+| terra high base | .885 | **.014** | .092 | .905 | .941 | .765 |
+| terra high LEAN | .868 | **.069** | .109 | .952 | .902 | .765 |
+
+- sol medium: lean wins recall/noise/t1/t2, ties FP; only t3 −0.019 (≈1 draw).
+  Guide's prediction holds on this lane.
+- terra high (prod): FAIL — FP ×5, recall/t2/verdictMatch down, broad 3/3→2/3
+  regressions. The current prompt's repetitions (prefer-zero carve-outs,
+  verdict-gate restatements) are load-bearing for terra's FP discipline.
+- Standing conclusion: prompts are lane artifacts; a dedup that helps one
+  model regresses another. Prod (terra high since PR #29) keeps the current
+  prompt (promptHash e62d0889). Lean variant recorded, not merged.
+
+Reports: eval/reports/2026-07-18-lean010-{sol-medium-x3-exclude,
+sol-medium-x3-full,terra-high-x3-full}.json; divergent-fixture x3 confirm
+rounds in session scratchpad only (9-draw merged verdicts recorded in plan
+010).
