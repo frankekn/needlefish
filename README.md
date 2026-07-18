@@ -59,8 +59,8 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (~48s at the default `medium`
-effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
+Cost: 2 model calls per review on small PRs (~56s at the workflow default,
+`gpt-5.6-terra` at `high` effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers can comment
 `@needlefish recheck` or `@needlefish explain <finding>` on the PR.
 
@@ -341,8 +341,8 @@ workspace checkout), `github_token` (defaults to the workflow token).
 
 Cost and behavior notes:
 
-- Small PRs use 2 model calls per PR (review + critic), about 48s at the
-  default `medium` effort. Large PRs use 1 map call + N deep calls
+- Small PRs use 2 model calls per PR (review + critic), about 56s at the
+  workflow default, `gpt-5.6-terra` at `high` effort. Large PRs use 1 map call + N deep calls
   (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
   Same-head re-runs use 0 model calls unless forced with `--recheck`.
 - Fork PRs don't receive secrets by default. The `if:` gate above skips them.
