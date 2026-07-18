@@ -13,6 +13,7 @@ import {
 import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { envFlagOn } from "./env.js";
 
 const MANAGED_PREFIX = "needlefish-managed-";
 const STAGING_PREFIX = ".needlefish-staging-";
@@ -22,6 +23,7 @@ const OWNER_FILE = ".needlefish-owner.json";
 const PROCESS_LOCK_PREFIX = ".needlefish-owner-lock-";
 const SWEEP_LOCK = ".needlefish-sweep.lock";
 const LEGACY_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+const QUARANTINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const LOCK_HOLDER = ': > "$1"; IFS= read -r _ || exit 0';
 
 interface HeldLock {
@@ -51,10 +53,20 @@ interface RunnerProcessGroup {
 const activeTempDirectories = new Set<string>();
 const activeRunnerProcessGroups = new Map<number, RunnerProcessGroup>();
 const startupSweeps = new Map<string, Promise<void>>();
-let processOwnerPromise: Promise<ProcessOwner> | null = null;
+const processOwnerPromises = new Map<string, Promise<ProcessOwner>>();
 let coordinatorInstalled = false;
 let terminationSignal: "SIGINT" | "SIGTERM" | null = null;
+let forceTermination = false;
+const terminationWaiters = new Set<() => void>();
 let lockSequence = 0;
+
+export class RunnerTerminatingError extends Error {
+  readonly name = "RunnerTerminatingError";
+
+  constructor(signal: "SIGINT" | "SIGTERM") {
+    super(`cannot schedule runner work while terminating from ${signal}`);
+  }
+}
 
 function isLinux(): boolean {
   return process.platform === "linux";
@@ -129,15 +141,20 @@ export function registerRunnerProcessGroup(
 ): () => void {
   installTerminationCoordinator();
   assertRunnerSchedulingAllowed();
-  activeRunnerProcessGroups.set(pid, {
+  const group: RunnerProcessGroup = {
     directory: findRegisteredTempDirectory(repoPath),
     terminate,
     kill,
     exited,
-  });
-  return () => {
-    if (terminationSignal === null) activeRunnerProcessGroups.delete(pid);
   };
+  activeRunnerProcessGroups.set(pid, group);
+  const unregister = (): void => {
+    if (activeRunnerProcessGroups.get(pid) !== group) return;
+    activeRunnerProcessGroups.delete(pid);
+    notifyTerminationWaiters();
+  };
+  void exited.then(unregister, unregister);
+  return unregister;
 }
 
 export async function reapManagedTempDirectories(root = resolveNeedlefishTempRoot()): Promise<void> {
@@ -156,13 +173,21 @@ export async function reapManagedTempDirectories(root = resolveNeedlefishTempRoo
         const owner = readOwnerMetadata(source);
         if (owner === null || ownerIsAlive(owner) || !canTakeLock(owner.ownerLock)) continue;
       } else if (isLegacyName(entry.name)) {
+        if (!envFlagOn("NEEDLEFISH_REAP_LEGACY_TMPDIRS")) continue;
         if (Date.now() - statSync(source).mtimeMs < LEGACY_GRACE_MS) continue;
-      } else if (!isQuarantineName(entry.name)) {
-        continue;
-      }
-
-      if (isQuarantineName(entry.name)) {
+      } else if (isQuarantineName(entry.name)) {
+        const owner = readOwnerMetadata(source);
+        if (
+          owner === null ||
+          Date.now() - statSync(source).mtimeMs < QUARANTINE_GRACE_MS ||
+          ownerIsAlive(owner) ||
+          !canTakeLock(owner.ownerLock)
+        ) {
+          continue;
+        }
         quarantined.push(source);
+        continue;
+      } else {
         continue;
       }
       const quarantine = path.join(
@@ -174,6 +199,7 @@ export async function reapManagedTempDirectories(root = resolveNeedlefishTempRoo
     }
 
     await Promise.all(quarantined.map((directory) => rm(directory, { recursive: true, force: true })));
+    reapOrphanedProcessOwnerLocks(root);
   } finally {
     await releaseLock(sweepLock);
   }
@@ -188,16 +214,44 @@ function ensureStartupSweep(root: string): Promise<void> {
 }
 
 async function ensureProcessOwner(root: string): Promise<ProcessOwner> {
-  if (processOwnerPromise !== null) {
-    const owner = await processOwnerPromise;
-    if (owner.lock.child.exitCode !== null || owner.lock.child.signalCode !== null) {
-      throw new Error("needlefish process owner lock exited unexpectedly");
-    }
-    return owner;
-  }
+  const current = processOwnerPromises.get(root);
+  if (current === undefined) return await acquireProcessOwner(root);
 
-  processOwnerPromise = createProcessOwner(root);
-  return await processOwnerPromise;
+  let owner: ProcessOwner;
+  try {
+    owner = await current;
+  } catch (error) {
+    if (processOwnerPromises.get(root) === current) processOwnerPromises.delete(root);
+    throw error;
+  }
+  if (lockHolderIsAlive(owner.lock)) return owner;
+
+  if (processOwnerPromises.get(root) === current) {
+    processOwnerPromises.set(root, createProcessOwner(root));
+  }
+  const replacement = processOwnerPromises.get(root) ?? createProcessOwner(root);
+  processOwnerPromises.set(root, replacement);
+  try {
+    return await replacement;
+  } catch (error) {
+    if (processOwnerPromises.get(root) === replacement) processOwnerPromises.delete(root);
+    throw error;
+  }
+}
+
+async function acquireProcessOwner(root: string): Promise<ProcessOwner> {
+  const acquisition = createProcessOwner(root);
+  processOwnerPromises.set(root, acquisition);
+  try {
+    return await acquisition;
+  } catch (error) {
+    if (processOwnerPromises.get(root) === acquisition) processOwnerPromises.delete(root);
+    throw error;
+  }
+}
+
+function lockHolderIsAlive(lock: HeldLock): boolean {
+  return lock.child.exitCode === null && lock.child.signalCode === null;
 }
 
 async function createProcessOwner(root: string): Promise<ProcessOwner> {
@@ -223,37 +277,70 @@ function onSigterm(): void {
 
 function coordinateTermination(signal: "SIGINT" | "SIGTERM"): void {
   if (terminationSignal !== null) {
-    if (isLinux()) terminateNow(terminationSignal);
-    for (const group of activeRunnerProcessGroups.values()) group.kill();
+    forceTermination = true;
+    notifyTerminationWaiters();
+    if (isLinux()) terminateImmediately(terminationSignal);
+    signalRegisteredRunners("kill", terminationSignal);
     return;
   }
   terminationSignal = signal;
-  for (const group of activeRunnerProcessGroups.values()) group.terminate(signal);
-  if (!isLinux()) {
-    void terminatePortable(signal);
-    return;
-  }
+  signalRegisteredRunners("terminate", signal);
   if (activeRunnerProcessGroups.size === 0) {
-    terminateNow(signal);
+    terminateImmediately(signal);
     return;
   }
-  setTimeout(() => terminateNow(signal), terminationGraceMs());
+  void completeTermination(signal);
 }
 
-async function terminatePortable(signal: "SIGINT" | "SIGTERM"): Promise<never> {
-  const groups = [...activeRunnerProcessGroups.values()];
-  if (groups.length > 0) await wait(terminationGraceMs());
-  for (const group of groups) group.kill();
-  const exited = await Promise.all(groups.map((group) => waitForExit(group)));
+function notifyTerminationWaiters(): void {
+  for (const wake of [...terminationWaiters]) wake();
+}
+
+async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (activeRunnerProcessGroups.size > 0) {
+    if (forceTermination) return false;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        terminationWaiters.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, remaining);
+      terminationWaiters.add(finish);
+      if (activeRunnerProcessGroups.size === 0 || forceTermination) finish();
+    });
+  }
+  return true;
+}
+
+function signalRegisteredRunners(method: "terminate" | "kill", signal: "SIGINT" | "SIGTERM"): void {
+  for (const [pid, group] of [...activeRunnerProcessGroups.entries()]) {
+    if (activeRunnerProcessGroups.get(pid) !== group) continue;
+    if (method === "terminate") group.terminate(signal);
+    else group.kill();
+  }
+}
+
+async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never> {
+  const exitedDuringGrace = await waitForRegisteredRunners(terminationGraceMs());
+  if (!exitedDuringGrace) signalRegisteredRunners("kill", signal);
+
+  if (isLinux()) process.exit(signal === "SIGINT" ? 130 : 143);
+
+  await waitForRegisteredRunners(terminationGraceMs());
   const unsafeDirectories = new Set<string>();
   let unmappedRunnerIsAlive = false;
-  for (let index = 0; index < groups.length; index++) {
-    if (exited[index]) continue;
-    const directory = groups[index]?.directory;
-    if (directory === null || directory === undefined) unmappedRunnerIsAlive = true;
-    else unsafeDirectories.add(directory);
+  for (const group of activeRunnerProcessGroups.values()) {
+    if (group.directory === null) unmappedRunnerIsAlive = true;
+    else unsafeDirectories.add(group.directory);
   }
-  for (const directory of activeTempDirectories) {
+  for (const directory of [...activeTempDirectories]) {
     if (unmappedRunnerIsAlive || unsafeDirectories.has(directory)) continue;
     await rm(directory, { recursive: true, force: true });
     activeTempDirectories.delete(directory);
@@ -261,8 +348,8 @@ async function terminatePortable(signal: "SIGINT" | "SIGTERM"): Promise<never> {
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
-function terminateNow(signal: "SIGINT" | "SIGTERM"): never {
-  for (const group of activeRunnerProcessGroups.values()) group.kill();
+function terminateImmediately(signal: "SIGINT" | "SIGTERM"): never {
+  signalRegisteredRunners("kill", signal);
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
@@ -284,23 +371,9 @@ function findRegisteredTempDirectory(repoPath: string): string | null {
   return null;
 }
 
-async function waitForExit(group: RunnerProcessGroup): Promise<boolean> {
-  return await new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(false), terminationGraceMs());
-    group.exited.then(() => {
-      clearTimeout(timeout);
-      resolve(true);
-    });
-  });
-}
-
-async function wait(milliseconds: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
-}
-
 export function assertRunnerSchedulingAllowed(): void {
   if (terminationSignal !== null) {
-    throw new Error(`cannot schedule runner work while terminating from ${terminationSignal}`);
+    throw new RunnerTerminatingError(terminationSignal);
   }
 }
 
@@ -336,6 +409,11 @@ async function acquireLock(target: string): Promise<HeldLock | null> {
     const poll = setInterval(() => {
       if (!existsSync(readyPath)) return;
       const lock = { child };
+      if (!lockHolderIsAlive(lock) || canTakeLock(target) || !lockHolderIsAlive(lock)) {
+        child.kill("SIGKILL");
+        finish(null, new Error(`lock holder reported ready without holding the lock: ${target}`));
+        return;
+      }
       child.unref();
       const stdin = child.stdin as (NodeJS.WritableStream & { unref?: () => void }) | null;
       stdin?.unref?.();
@@ -389,6 +467,10 @@ function readProcessStartTime(pid: number): string {
 }
 
 function ownerIsAlive(owner: OwnerMetadata): boolean {
+  return ownerIdentityIsAlive(owner);
+}
+
+function ownerIdentityIsAlive(owner: Pick<OwnerMetadata, "pid" | "processStartTime" | "bootId">): boolean {
   try {
     return readBootId() === owner.bootId && readProcessStartTime(owner.pid) === owner.processStartTime;
   } catch (error) {
@@ -400,7 +482,13 @@ function ownerIsAlive(owner: OwnerMetadata): boolean {
 function readOwnerMetadata(directory: string): OwnerMetadata | null {
   const metadataPath = path.join(directory, OWNER_FILE);
   if (!existsSync(metadataPath)) return null;
-  const value: unknown = JSON.parse(readFileSync(metadataPath, "utf8"));
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(metadataPath, "utf8"));
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
   if (
     typeof value !== "object" ||
     value === null ||
@@ -424,7 +512,44 @@ function readOwnerMetadata(directory: string): OwnerMetadata | null {
   }
   const expectedLockName = `${PROCESS_LOCK_PREFIX}${value.bootId}-${value.pid}-${value.processStartTime}.lock`;
   if (path.basename(value.ownerLock) !== expectedLockName) return null;
+  if (path.dirname(value.ownerLock) !== path.dirname(directory)) return null;
   return value as OwnerMetadata;
+}
+
+function parseProcessOwnerLock(name: string): Pick<OwnerMetadata, "pid" | "processStartTime" | "bootId"> | null {
+  const match = /^\.needlefish-owner-lock-(.+)-(\d+)-(\d+)\.lock$/.exec(name);
+  if (match === null) return null;
+  const [, bootId, pidText, processStartTime] = match;
+  if (
+    bootId === undefined ||
+    !/^[A-Za-z0-9-]+$/.test(bootId) ||
+    pidText === undefined ||
+    processStartTime === undefined
+  ) {
+    return null;
+  }
+  const pid = Number(pidText);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  return { pid, processStartTime, bootId };
+}
+
+function reapOrphanedProcessOwnerLocks(root: string): void {
+  const referencedLocks = new Set<string>();
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || (!isManagedName(entry.name) && !isQuarantineName(entry.name))) continue;
+    const owner = readOwnerMetadata(path.join(root, entry.name));
+    if (owner === null) continue;
+    referencedLocks.add(owner.ownerLock);
+  }
+
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const owner = parseProcessOwnerLock(entry.name);
+    if (owner === null) continue;
+    const ownerLock = path.join(root, entry.name);
+    if (referencedLocks.has(ownerLock) || ownerIdentityIsAlive(owner) || !canTakeLock(ownerLock)) continue;
+    unlinkSync(ownerLock);
+  }
 }
 
 function isManagedName(name: string): boolean {

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -18,7 +20,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   reapManagedTempDirectories,
   resolveNeedlefishTempRoot,
+  RunnerTerminatingError,
 } from "./temp-lifecycle";
+import { isRunnerSafetyError } from "./runner-sandbox";
 
 const lifecycleUrl = pathToFileURL(path.resolve("src/shared/temp-lifecycle.ts")).href;
 const runnerProcessUrl = pathToFileURL(path.resolve("src/shared/runner-process.ts")).href;
@@ -64,9 +68,15 @@ setInterval(() => {}, 1000);
 test("startup reaper gives recent legacy directories an age grace", { skip: process.platform !== "linux" }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const legacy = path.join(root, "needlefish-Ab12Cd");
+  const previous = process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS;
   mkdirSync(legacy);
   writeFileSync(path.join(legacy, "payload"), "x");
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => {
+    if (previous === undefined) delete process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS;
+    else process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS = "1";
 
   await reapManagedTempDirectories(root);
   assert.equal(existsSync(legacy), true, "a recent markerless legacy directory must be preserved");
@@ -75,6 +85,237 @@ test("startup reaper gives recent legacy directories an age grace", { skip: proc
   utimesSync(legacy, old, old);
   await reapManagedTempDirectories(root);
   assert.equal(existsSync(legacy), false, "a legacy directory past the grace must be reaped");
+});
+
+test("startup reaper preserves unowned legacy and quarantine directories by default", { skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const legacy = path.join(root, "needlefish-Ab12Cd");
+  const quarantine = path.join(root, ".needlefish-quarantine-123-456-0");
+  const previous = process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS;
+  for (const directory of [legacy, quarantine]) {
+    mkdirSync(directory);
+    writeFileSync(path.join(directory, "unrelated-data"), "keep");
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    utimesSync(directory, old, old);
+  }
+  t.after(() => {
+    if (previous === undefined) delete process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS;
+    else process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  delete process.env.NEEDLEFISH_REAP_LEGACY_TMPDIRS;
+
+  await reapManagedTempDirectories(root);
+
+  assert.equal(existsSync(legacy), true, "markerless legacy data is not owned by needlefish");
+  assert.equal(existsSync(quarantine), true, "markerless quarantine data is not owned by needlefish");
+});
+
+test("startup reaper ages an owned quarantine before deleting it", { skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const owner = spawnModule(`
+import { writeFileSync } from "node:fs";
+import { createManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+writeFileSync(${JSON.stringify(path.join(root, "managed"))}, await createManagedTempDirectory());
+setInterval(() => {}, 1000);
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const managedMarker = path.join(root, "managed");
+  await waitForFile(managedMarker);
+  const managed = readFileSync(managedMarker, "utf8");
+  owner.kill("SIGKILL");
+  await waitForExit(owner);
+  const quarantine = path.join(root, ".needlefish-quarantine-123-456-0");
+  renameSync(managed, quarantine);
+
+  await reapManagedTempDirectories(root);
+  assert.equal(existsSync(quarantine), true, "a concurrent/recent quarantine must be left alone");
+
+  const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  utimesSync(quarantine, old, old);
+  await reapManagedTempDirectories(root);
+  assert.equal(existsSync(quarantine), false, "an aged, marker-owned quarantine is collectable");
+});
+
+test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const ready = path.join(root, "ready");
+  const killed = path.join(root, "stale-kill");
+  const owner = spawnModule(`
+import { writeFileSync } from "node:fs";
+import { registerRunnerProcessGroup } from ${JSON.stringify(lifecycleUrl)};
+let unregister = () => {};
+let markExited = () => {};
+const exited = new Promise((resolve) => { markExited = resolve; });
+unregister = registerRunnerProcessGroup(
+  123,
+  ${JSON.stringify(root)},
+  () => setTimeout(() => { unregister(); markExited(); }, 25),
+  () => writeFileSync(${JSON.stringify(killed)}, "1"),
+  exited,
+);
+writeFileSync(${JSON.stringify(ready)}, "1");
+setInterval(() => {}, 1000);
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  await waitForFile(ready);
+  const started = Date.now();
+  owner.kill("SIGTERM");
+  const [status, signal] = await waitForExit(owner);
+
+  assert.equal(signal, null);
+  assert.equal(status, 143);
+  assert.ok(Date.now() - started < 700, "last runner close must end the grace wait");
+  assert.equal(existsSync(killed), false, "an unregistered runner must never receive SIGKILL");
+});
+
+test("a dead process-owner lock holder is reacquired for later allocations", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const marker = path.join(root, "directories.json");
+  const owner = spawnModule(`
+import { readFileSync, writeFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { createManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+const first = await createManagedTempDirectory();
+const childrenPath = \`/proc/\${process.pid}/task/\${process.pid}/children\`;
+const holderPid = Number(readFileSync(childrenPath, "utf8").trim());
+process.kill(holderPid, "SIGKILL");
+for (let attempt = 0; attempt < 100; attempt++) {
+  try { process.kill(holderPid, 0); } catch { break; }
+  await delay(10);
+}
+const second = await createManagedTempDirectory();
+writeFileSync(${JSON.stringify(marker)}, JSON.stringify([first, second]));
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 0, owner.stderr.read()?.toString());
+  const directories = JSON.parse(readFileSync(marker, "utf8")) as string[];
+  assert.equal(directories.length, 2);
+  assert.ok(directories.every((directory) => existsSync(directory)));
+});
+
+test("lock readiness is rejected unless the holder actually owns the lock", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const binDir = path.join(root, "bin");
+  const fakeFlock = path.join(binDir, "flock");
+  const resultPath = path.join(root, "result");
+  mkdirSync(binDir);
+  writeFileSync(fakeFlock, `#!/usr/bin/env node
+const fs = require("node:fs");
+const last = process.argv.at(-1);
+if (last === "true") process.exit(0);
+fs.writeFileSync(last, "ready-without-lock");
+process.stdin.resume();
+process.stdin.on("end", () => process.exit(0));
+`);
+  chmodSync(fakeFlock, 0o755);
+  const owner = spawnModule(`
+import { writeFileSync } from "node:fs";
+import { reapManagedTempDirectories } from ${JSON.stringify(lifecycleUrl)};
+try {
+  await reapManagedTempDirectories(${JSON.stringify(root)});
+  writeFileSync(${JSON.stringify(resultPath)}, "unexpected success");
+} catch (error) {
+  writeFileSync(${JSON.stringify(resultPath)}, error instanceof Error ? error.message : String(error));
+}
+`, root, { PATH: `${binDir}:${process.env.PATH ?? ""}` });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 0, owner.stderr.read()?.toString());
+  assert.match(readFileSync(resultPath, "utf8"), /reported ready without holding the lock/);
+});
+
+test("startup reaper treats malformed owner JSON as an invalid marker", { skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const managed = path.join(root, "needlefish-managed-Ab12Cd");
+  mkdirSync(managed);
+  writeFileSync(path.join(managed, ".needlefish-owner.json"), '{"pid":');
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+
+  await reapManagedTempDirectories(root);
+
+  assert.equal(existsSync(managed), true, "invalid ownership metadata must never authorize deletion");
+});
+
+test("termination errors use the runner safety escape hatch", () => {
+  const error = new RunnerTerminatingError("SIGINT");
+  assert.equal(error.name, "RunnerTerminatingError");
+  assert.equal(isRunnerSafetyError(error), true);
+});
+
+test("startup reaper removes an unlocked owner file only after its owner directory is gone", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const owner = spawnModule(`
+import { writeFileSync } from "node:fs";
+import { createManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+writeFileSync(${JSON.stringify(path.join(root, "managed"))}, await createManagedTempDirectory());
+setInterval(() => {}, 1000);
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const marker = path.join(root, "managed");
+  await waitForFile(marker);
+  const managed = readFileSync(marker, "utf8");
+  const metadata = JSON.parse(readFileSync(path.join(managed, ".needlefish-owner.json"), "utf8")) as { ownerLock: string };
+  assert.equal(existsSync(metadata.ownerLock), true);
+
+  owner.kill("SIGKILL");
+  await waitForExit(owner);
+  await reapManagedTempDirectories(root);
+
+  assert.equal(existsSync(managed), false);
+  assert.equal(existsSync(metadata.ownerLock), false, "dead, unreferenced owner locks must not accumulate");
+});
+
+test("startup reaper collects an orphaned owner lock alongside a metadata-less quarantine", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const owner = spawnModule(`
+import { writeFileSync } from "node:fs";
+import { createManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+writeFileSync(${JSON.stringify(path.join(root, "managed"))}, await createManagedTempDirectory());
+setInterval(() => {}, 1000);
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const marker = path.join(root, "managed");
+  await waitForFile(marker);
+  const managed = readFileSync(marker, "utf8");
+  const metadata = JSON.parse(readFileSync(path.join(managed, ".needlefish-owner.json"), "utf8")) as { ownerLock: string };
+  const quarantine = path.join(root, ".needlefish-quarantine-1234-1700000000000-0");
+  mkdirSync(quarantine);
+
+  owner.kill("SIGKILL");
+  await waitForExit(owner);
+  await reapManagedTempDirectories(root);
+
+  assert.equal(existsSync(managed), false);
+  assert.equal(existsSync(quarantine), true, "unattributable quarantine data must be preserved");
+  assert.equal(existsSync(metadata.ownerLock), false, "an unrelated unattributable quarantine must not block orphan lock collection");
 });
 
 for (const [signal, expectedStatus] of [

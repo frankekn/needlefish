@@ -101,8 +101,8 @@ export async function runManagedRunnerProcess(
     });
     const childClosed = new Promise<void>((resolve) => child.once("close", () => resolve()));
 
-    const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
-      if (killStarted) return;
+    const forceKillSequence = (): void => {
+      if (settled) return;
       killStarted = true;
       if (timer !== null) {
         clearTimeout(timer);
@@ -112,13 +112,34 @@ export async function runManagedRunnerProcess(
         clearTimeout(cancelTimer);
         cancelTimer = null;
       }
-      killRunnerProcessTree(child.pid, firstSignal);
-      if (firstSignal === "SIGKILL") {
+      if (hardKillTimer !== null) {
+        clearTimeout(hardKillTimer);
+        hardKillTimer = null;
+      }
+      signalRunnerProcessTree(child, "SIGKILL");
+      if (giveUpTimer === null) {
         giveUpTimer = setTimeout(() => finish(null, "SIGKILL"), runnerSigkillGiveUpMs());
+      }
+    };
+
+    const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
+      if (killStarted) return;
+      if (firstSignal === "SIGKILL") {
+        forceKillSequence();
         return;
       }
+      killStarted = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (cancelTimer !== null) {
+        clearTimeout(cancelTimer);
+        cancelTimer = null;
+      }
+      signalRunnerProcessTree(child, firstSignal);
       hardKillTimer = setTimeout(() => {
-        killRunnerProcessTree(child.pid, "SIGKILL");
+        signalRunnerProcessTree(child, "SIGKILL");
         giveUpTimer = setTimeout(() => {
           // A setsid-escaped descendant has left this kill group and may keep inherited pipes open.
           // We cannot kill that escapee here; the goal is to stop waiting for child "close".
@@ -176,7 +197,7 @@ export async function runManagedRunnerProcess(
             child.pid,
             invocation.repoPath,
             beginKillSequence,
-            () => killRunnerProcessTree(child.pid, "SIGKILL"),
+            forceKillSequence,
             childClosed,
           );
 
@@ -269,8 +290,10 @@ function runnerSigkillGiveUpMs(): number {
   return readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS, 2000);
 }
 
-function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
+function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  const pid = child.pid;
   if (pid === undefined) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32") {
     const args = ["/pid", String(pid), "/T"];
     if (signal === "SIGKILL") args.push("/F");
