@@ -243,9 +243,12 @@ jobs:
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
-              codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-sol" ;;
+              codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-terra" ;;
               grok) NEEDLEFISH_MODEL_INPUT="grok-4.5" ;;
             esac
+          fi
+          if [ -z "$CODEX_REASONING_EFFORT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ]; then
+            export CODEX_REASONING_EFFORT="high"
           fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
