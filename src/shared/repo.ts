@@ -90,12 +90,7 @@ export function fetchPrRefInfo(cwd: string, prNumber: number): PrRefInfo {
     ],
     cwd
   );
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`PR #${prNumber}: gh response was not valid JSON`);
-  }
+  const parsed: unknown = JSON.parse(raw);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error(`PR #${prNumber}: gh response was not an object`);
   }

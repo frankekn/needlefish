@@ -487,6 +487,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		headSha: bundle.headSha,
 		patchStat: bundle.patchStat,
 		changedFiles: bundle.changedFiles,
+		untrackedSkipped: bundle.untrackedSkipped,
 		agentsMd: bundle.agentsMd,
 		prMeta: bundle.prMeta,
 		focus: bundle.focus,
@@ -545,12 +546,18 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			hotspots,
 			deepConcurrency(),
 			async (h, passIndex) => {
+				const hotspot = {
+					...h,
+					...(bundle.untrackedSkipped?.length
+						? { untrackedSkipped: bundle.untrackedSkipped }
+						: {}),
+				};
 				const deepPrompt = loadPrompt("deep.md")
 					.replace("{{AGENTS}}", () => agents)
 					.replace("{{PR_META}}", () =>
 						JSON.stringify(bundle.prMeta, null, 2),
 					)
-					.replace("{{HOTSPOT}}", () => JSON.stringify(h, null, 2))
+					.replace("{{HOTSPOT}}", () => JSON.stringify(hotspot, null, 2))
 					.replace("{{FOCUS}}", bundle.focus ?? "(none)")
 					.replace("{{BASE}}", bundle.baseSha)
 					.replace("{{HEAD}}", bundle.headSha);

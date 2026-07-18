@@ -119,11 +119,17 @@ test("runLocal reports skipped tracked binary renames with spaces when no review
   );
 });
 
-test("runLocal surfaces size-cap-skipped untracked files in the review bundle", async (t) => {
+test("runLocal threads size-cap-skipped untracked files into large-path deep prompts", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-caps-"));
   const repo = initRepo(tmp);
   const { promptPath } = installFakeClaude(t, tmp);
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const previousLargePatchChars = process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+  process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "1";
+  t.after(() => {
+    if (previousLargePatchChars === undefined) delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+    else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previousLargePatchChars;
+    rmSync(tmp, { recursive: true, force: true });
+  });
 
   gitText(["branch", "-M", "main"], repo);
   writeFileSync(join(repo, "reviewed.md"), "review me\n");
@@ -141,7 +147,11 @@ test("runLocal surfaces size-cap-skipped untracked files in the review bundle", 
 
   const prompts = readFileSync(promptPath, "utf8");
   assert.equal(prompts.includes("diff --git a/large.md b/large.md"), false);
-  assert.match(prompts, /"path": "large\.md",\n\s+"bytes": 205824,\n\s+"reason": "per_file_cap"/);
+  const deepPrompt = prompts
+    .split("\n---PROMPT---\n")
+    .find((prompt) => prompt.includes("doing a DEEP review"));
+  assert.ok(deepPrompt, "expected the large path to run a deep pass");
+  assert.match(deepPrompt, /"untrackedSkipped": \[\n\s+\{\n\s+"path": "large\.md",\n\s+"bytes": 205824,\n\s+"reason": "per_file_cap"/);
 });
 
 test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {

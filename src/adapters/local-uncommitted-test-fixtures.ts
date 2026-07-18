@@ -51,6 +51,10 @@ export function writeFakeClaude(bin: string, promptPath: string): void {
       "process.stdin.on('data', (chunk) => { prompt += chunk; });",
       "process.stdin.on('end', () => {",
       `  fs.appendFileSync(${JSON.stringify(promptPath)}, '\\n---PROMPT---\\n' + prompt);`,
+      "  if (prompt.includes('review-MAP pass')) {",
+      "    process.stdout.write(JSON.stringify({ summary: 'mapped', hotspots: [] }));",
+      "    return;",
+      "  }",
       "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
