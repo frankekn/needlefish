@@ -3,7 +3,7 @@ import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
 import { runText } from "./process.js";
-import type { Bundle, ChangedFile, PrMeta } from "./schema.js";
+import type { Bundle, ChangedFile, PrMeta, UntrackedSkippedFile } from "./schema.js";
 
 const NO_AGENTS =
   "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
@@ -47,6 +47,7 @@ export interface BundleInput {
   readonly patchStat: string;
   readonly changedFiles: ChangedFile[];
   readonly reviewTarget?: string;
+  readonly untrackedSkipped?: readonly UntrackedSkippedFile[];
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
   readonly focus: string | null;
@@ -62,6 +63,7 @@ export function makeBundle(input: BundleInput): Bundle {
     patchStat: input.patchStat,
     changedFiles: input.changedFiles,
     ...(input.reviewTarget ? { reviewTarget: input.reviewTarget } : {}),
+    ...(input.untrackedSkipped?.length ? { untrackedSkipped: input.untrackedSkipped } : {}),
     agentsMd: input.agentsMd ?? readAgents(input.repoPath),
     prMeta: input.prMeta,
     deep: input.deep,
@@ -88,7 +90,12 @@ export function fetchPrRefInfo(cwd: string, prNumber: number): PrRefInfo {
     ],
     cwd
   );
-  const parsed: unknown = JSON.parse(raw);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`PR #${prNumber}: gh response was not valid JSON`);
+  }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error(`PR #${prNumber}: gh response was not an object`);
   }

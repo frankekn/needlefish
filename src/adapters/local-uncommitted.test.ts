@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { runLocal } from "./local";
+import { buildUntrackedPatch } from "./local-uncommitted";
 import { fakeClaudeEnv, installFakeClaude, writeFakeClaude } from "./local-uncommitted-test-fixtures";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 
@@ -34,6 +35,7 @@ test("runLocal reviews staged unstaged and untracked changes when working tree i
   assert.match(prompts, /diff --git a\/staged\.ts b\/staged\.ts/);
   assert.match(prompts, /diff --git a\/src\/new\.ts b\/src\/new\.ts/);
   assert.match(prompts, /\+export const untracked = 1;/);
+  assert.equal(prompts.includes('"untrackedSkipped"'), false);
   const cache = readFileSync(join(tmp, "cache", "last-review.json"), "utf8");
   assert.match(cache, /"headSha": "WORKING"/);
 });
@@ -117,9 +119,10 @@ test("runLocal reports skipped tracked binary renames with spaces when no review
   );
 });
 
-test("runLocal notes skipped binary oversize and total-capped untracked files", async (t) => {
+test("runLocal surfaces size-cap-skipped untracked files in the review bundle", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-caps-"));
   const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   gitText(["branch", "-M", "main"], repo);
@@ -127,10 +130,6 @@ test("runLocal notes skipped binary oversize and total-capped untracked files", 
   writeFileSync(join(repo, "image.png"), Buffer.from([0, 1, 2, 3]));
   writeFileSync(join(repo, "empty.txt"), "");
   writeFileSync(join(repo, "large.md"), "x".repeat(201 * 1024));
-  mkdirSync(join(repo, "docs"));
-  for (let i = 0; i < 6; i++) {
-    writeFileSync(join(repo, "docs", `cap-${i}.md`), `${i}\n${"x".repeat(190 * 1024)}`);
-  }
 
   const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
 
@@ -139,7 +138,28 @@ test("runLocal notes skipped binary oversize and total-capped untracked files", 
   assert.match(reviewTarget, /image\.png \(binary\)/);
   assert.match(reviewTarget, /empty\.txt \(empty\)/);
   assert.match(reviewTarget, /large\.md \(over 200KB\)/);
-  assert.match(reviewTarget, /docs\/cap-5\.md \(total untracked content cap 1MB\)/);
+
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.equal(prompts.includes("diff --git a/large.md b/large.md"), false);
+  assert.match(prompts, /"path": "large\.md",\n\s+"bytes": 205824,\n\s+"reason": "per_file_cap"/);
+});
+
+test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-total-cap-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const files = Array.from({ length: 7 }, (_, index) => `cap-${index}.md`);
+  for (const [index, file] of files.entries()) {
+    writeFileSync(join(tmp, file), `${index}\n${"x".repeat(190 * 1024)}`);
+  }
+
+  const result = buildUntrackedPatch(tmp, files);
+
+  assert.deepEqual(result.untrackedSkipped, [
+    { path: "cap-5.md", bytes: 194562, reason: "total_cap" },
+    { path: "cap-6.md", bytes: 194562, reason: "total_cap" },
+  ]);
+  assert.equal(result.patch.includes("cap-5.md"), false);
+  assert.equal(result.patch.includes("cap-6.md"), false);
 });
 
 test("runLocal reviews all nonignored files on unborn HEAD", async (t) => {

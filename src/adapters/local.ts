@@ -183,6 +183,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     patchStat: joinSections([trackedPatchStat, untracked.patchStat]),
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
+    untrackedSkipped: untracked.untrackedSkipped,
     prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,

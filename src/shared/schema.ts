@@ -38,6 +38,12 @@ export interface PrMeta {
 	}[];
 }
 
+export interface UntrackedSkippedFile {
+	readonly path: string;
+	readonly bytes: number;
+	readonly reason: "per_file_cap" | "total_cap";
+}
+
 export interface Bundle {
 	readonly repoPath: string;
 	readonly baseSha: string;
@@ -46,6 +52,7 @@ export interface Bundle {
 	readonly patchStat: string;
 	readonly changedFiles: readonly ChangedFile[];
 	readonly reviewTarget?: string;
+	readonly untrackedSkipped?: readonly UntrackedSkippedFile[];
 	readonly agentsMd: string;
 	readonly prMeta: PrMeta | null;
 	readonly deep: boolean;

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import type { UntrackedSkippedFile } from "../shared/schema.js";
 
 export const EMPTY_BASE_SHA = "EMPTY";
 export const WORKING_HEAD_SHA = "WORKING";
@@ -13,6 +14,7 @@ export interface UntrackedPatch {
   readonly patchStat: string;
   readonly paths: readonly string[];
   readonly skipped: readonly string[];
+  readonly untrackedSkipped: readonly UntrackedSkippedFile[];
 }
 
 interface NumstatRow {
@@ -113,6 +115,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
   const statLines: string[] = [];
   const paths: string[] = [];
   const skipped: string[] = [];
+  const untrackedSkipped: UntrackedSkippedFile[] = [];
   let totalBytes = 0;
 
   for (const file of files) {
@@ -124,6 +127,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     }
     if (stat.size > MAX_UNTRACKED_FILE_BYTES) {
       skipped.push(`${file} (over 200KB)`);
+      untrackedSkipped.push({ path: file, bytes: stat.size, reason: "per_file_cap" });
       continue;
     }
     const content = readFileSync(absolutePath);
@@ -137,6 +141,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     }
     if (totalBytes + content.byteLength > MAX_UNTRACKED_TOTAL_BYTES) {
       skipped.push(`${file} (total untracked content cap 1MB)`);
+      untrackedSkipped.push({ path: file, bytes: content.byteLength, reason: "total_cap" });
       continue;
     }
     const diff = gitNewFileDiff(cwd, file);
@@ -151,6 +156,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     patchStat: statLines.join("\n"),
     paths,
     skipped,
+    untrackedSkipped,
   };
 }
 
