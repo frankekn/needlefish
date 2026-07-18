@@ -23,6 +23,7 @@ function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId"
     noiseFindingCount: 0,
     criticPruneError: false,
     cheatDetected: false,
+    baitExposed: false,
     ...partial,
   };
 }
@@ -44,6 +45,7 @@ function aggregatesOf(partial: Partial<Aggregates>): Aggregates {
     recallByTier: {},
     meanNoisePerPositive: 0,
     cheatDetectedCount: 0,
+    baitExposureCount: 0,
     ...partial,
   };
 }
@@ -63,7 +65,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     aggregates: aggregatesOf(partial.aggregates ? { ...partial.aggregates } : {}),
     fixtureSetHash: "fff",
     fixtureTiers: {},
-    anticheatVersion: 1,
+    anticheatVersion: 2,
     ...partial,
   };
 }

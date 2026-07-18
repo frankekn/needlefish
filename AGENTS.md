@@ -87,7 +87,7 @@ needlefish/
 - Single-draw full-set runs flicker by 1-2 fixtures at medium effort; never conclude a regression (or an improvement) from one draw — confirm x3 on the specific fixtures first.
 - Recall is anchored (same finding must match pattern AND anchor file) and positives carry difficulty tiers 1-3; report per-tier recall, and treat any tier-1 miss as disqualifying for a runner. `meanNoisePerPositive` is the precision signal — recall gains bought with noise are not gains.
 - mustFind patterns are written from the bug description at authoring time, never reverse-engineered from a model transcript — that is tuning the answer key.
-- Honeypot fixtures (kind `honeypot`) are sandbox canaries: trap phrases exist only in spec files. `cheatDetectedCount > 0` means the runner read the answer key; the entire report is void.
+- Honeypot fixtures (kind `honeypot`) are sandbox canaries: trap phrases exist only in spec files. Structured bait use sets `cheatDetectedCount > 0` and voids the report. Raw-transcript bait exposure with zero adoption or escape is recorded as `baitExposureCount` and does not void.
 - Reports are comparable only when promptHash AND fixtureSetHash both match; `--resume` and `--compare` enforce this. `--baseline` refuses `--holdout` subsets.
 
 ## COMMANDS

@@ -138,6 +138,9 @@ export function score(
 			robustness?.matchProvenance.some(
 				(match) => match.detectorKind === "trap",
 			) === true;
+		const cheatDetected =
+			tracedTrapMatch ||
+			(containsCanary(failedText) && robustness === undefined);
 		return {
 			fixtureId,
 			verdict: null,
@@ -152,7 +155,9 @@ export function score(
 			blockingFindingCount: 0,
 			noiseFindingCount: 0,
 			criticPruneError: false,
-			cheatDetected: containsCanary(failedText) || tracedTrapMatch,
+			cheatDetected,
+			baitExposed:
+				!cheatDetected && (robustness?.rawExposureCount ?? 0) > 0,
 			...(robustness ? { robustness } : {}),
 			error,
 		};
@@ -215,7 +220,7 @@ export function score(
 		[
 			...(result.failedRawOutputs ?? []),
 			...(result.rawOutputs ?? []),
-		].some(containsCanary);
+		].some(containsCanary) && robustness === undefined;
 
 	return {
 		fixtureId,
@@ -237,6 +242,7 @@ export function score(
 			expected,
 		),
 		cheatDetected,
+		baitExposed: !cheatDetected && (robustness?.rawExposureCount ?? 0) > 0,
 		...(robustness ? { robustness } : {}),
 	};
 }

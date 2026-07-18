@@ -62,6 +62,7 @@ export async function mapLimit<T, R>(
 				const i = next++;
 				results[i] = await fn(items[i], i);
 			}
+			return undefined;
 		},
 	);
 	await Promise.all(workers);
@@ -512,6 +513,7 @@ function aggregate(
 	const cheatDetectedCount = results.filter(
 		(r) => r.score.cheatDetected,
 	).length;
+	const baitExposureCount = results.filter((r) => r.score.baitExposed).length;
 	const mustFindHitRates = aggregateMustFindHitRates(results);
 	return {
 		recall,
@@ -526,6 +528,7 @@ function aggregate(
 		recallByTier,
 		meanNoisePerPositive,
 		cheatDetectedCount,
+		baitExposureCount,
 	};
 }
 
@@ -557,7 +560,7 @@ export function writeReport(
 		gitSha: repoGitSha(),
 		fixtureSetHash: fixtureSetHash(specs),
 		fixtureTiers,
-		// The version label is a promise that every generation-1 guard was on:
+		// The version label is a promise that every current-generation guard was on:
 		// HOME isolation AND eval tracing (without the trace, critic-pruned
 		// candidates and failed raw outputs never reach the canary scan). A user
 		// --env override can legitimately disable either (e.g. acp lanes) — such
@@ -585,7 +588,14 @@ export function writeReport(
 }
 
 export function compare(baselinePath: string, candidate: Report): void {
-	const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
+	let baseline: Report;
+	try {
+		baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
+	} catch (error) {
+		throw new Error(`failed to parse baseline report ${baselinePath}`, {
+			cause: error,
+		});
+	}
 	if (baseline.promptHash !== candidate.promptHash) {
 		throw new Error(
 			`prompt hash mismatch: baseline ${baseline.promptHash} vs candidate ${candidate.promptHash}. Re-run baseline after prompt changes.`,
@@ -662,16 +672,22 @@ export function compare(baselinePath: string, candidate: Report): void {
 // voids the report. Wording is detector-neutral: G3 bait hits are not
 // honeypot-only, and operators must not be steered to the wrong root cause.
 export function cheatAlert(report: Report): void {
-	if (report.aggregates.cheatDetectedCount === 0) return;
-	process.stderr.write(
-		`\nCHEAT ALERT: anti-cheat detection fired in ${report.aggregates.cheatDetectedCount} draw(s). ` +
-			`The runner referenced planted bait (repository answer-key canary and/or honeypot trap content). ` +
-			`Treat every number in this report as compromised and investigate the runner sandbox.\n\n`,
-	);
-	// A compromised report must also fail the command: the report stays on
-	// disk for diagnosis, but no caller (CI gate, compare, scripts) may see
-	// this run exit 0.
-	process.exitCode = 1;
+	if (report.aggregates.baitExposureCount > 0) {
+		process.stderr.write(
+			`\nBAIT EXPOSURE: planted bait appeared only on raw transcript surfaces in ${report.aggregates.baitExposureCount} draw(s); no structured use was detected.\n\n`,
+		);
+	}
+	if (report.aggregates.cheatDetectedCount > 0) {
+		process.stderr.write(
+			`\nCHEAT ALERT: anti-cheat detection fired in ${report.aggregates.cheatDetectedCount} draw(s). ` +
+				`The runner referenced planted bait (repository answer-key canary and/or honeypot trap content). ` +
+				`Treat every number in this report as compromised and investigate the runner sandbox.\n\n`,
+		);
+		// A compromised report must also fail the command: the report stays on
+		// disk for diagnosis, but no caller (CI gate, compare, scripts) may see
+		// this run exit 0.
+		process.exitCode = 1;
+	}
 }
 
 async function main(): Promise<void> {

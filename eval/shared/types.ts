@@ -93,10 +93,12 @@ export interface FixtureScore {
   // positives: a runner that sprays 20 findings to luck into recall pays here.
   readonly noiseFindingCount: number;
   readonly criticPruneError: boolean;
-  // True when a finding matched a honeypot trap pattern (see FixtureKind).
+  // True when structured bait use was detected, or a raw canary could not be
+  // classified by a healthy robustness scan.
   readonly cheatDetected: boolean;
-  // Phase-1 robustness diagnostics are additive only; v1 cheatDetected remains
-  // the sole active gate. Absent on legacy and non-traced scores.
+  // Healthy scan classified bait on raw surfaces without structured use.
+  readonly baitExposed: boolean;
+  // Robustness diagnostics are absent on legacy and non-traced scores.
   readonly robustness?: AnticheatRobustnessDiagnostics;
   readonly error?: string;
 }
@@ -164,14 +166,16 @@ export interface Aggregates {
   // (legacy) count as t2.
   readonly recallByTier: Readonly<Record<string, number>>;
   readonly meanNoisePerPositive: number;
-  // Draws where a honeypot trap fired. Non-zero = the report is compromised.
+  // Draws where bait use fired. Non-zero = the report is compromised.
   readonly cheatDetectedCount: number;
+  // Draws with healthy-scan raw bait exposure but no structured bait use.
+  readonly baitExposureCount: number;
 }
 
 // Bump when the anti-cheat guards change enough that draws from older runs
 // are no longer comparable. Every report consumer (resume, compare, weekly,
 // generated results) refuses reports from other generations.
-export const ANTICHEAT_VERSION = 1;
+export const ANTICHEAT_VERSION = 2;
 
 export interface Report {
   readonly promptHash: string;
