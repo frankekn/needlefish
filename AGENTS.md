@@ -81,14 +81,14 @@ needlefish/
 
 ## EVAL DISCIPLINE
 
-- Any change to prompts/ or the review pipeline ships only through an eval gate: pre-declared pass criteria, full fixture set at the default effort, confirm tier (x3 draws) on divergent fixtures. Gate fails → revert, record the data in eval/RESULTS.md anyway.
+- Any change to prompts/ or the review pipeline ships only through an eval gate: pre-declared pass criteria, full fixture set mirroring the production lane's model and effort, confirm tier (x3 draws) on divergent fixtures. Gate fails → revert, record the data in eval/RESULTS.md anyway.
 - Miss museum: every confirmed real-PR miss becomes a generic fixture (no target-repo nouns) within a week.
 - Holdout fixtures (`holdout: true` in the spec) are sealed at authoring time: never run them while iterating on prompt wording (`--holdout exclude`); final gates always include them. Each prompt-change round should add at least one new holdout.
 - Single-draw full-set runs flicker by 1-2 fixtures at medium effort; never conclude a regression (or an improvement) from one draw — confirm x3 on the specific fixtures first.
 - Recall is anchored (same finding must match pattern AND anchor file) and positives carry difficulty tiers 1-3; report per-tier recall, and treat any tier-1 miss as disqualifying for a runner. `meanNoisePerPositive` is the precision signal — recall gains bought with noise are not gains.
 - mustFind patterns are written from the bug description at authoring time, never reverse-engineered from a model transcript — that is tuning the answer key.
 - Honeypot fixtures (kind `honeypot`) are sandbox canaries: trap phrases exist only in spec files. Structured bait use sets `cheatDetectedCount > 0` and voids the report. Raw-transcript bait exposure with zero adoption or escape is recorded as `baitExposureCount` and does not void.
-- Reports are comparable only when promptHash AND fixtureSetHash both match; `--resume` and `--compare` enforce this. `--baseline` refuses `--holdout` subsets.
+- Reports are comparable only when promptHash, fixtureSetHash, AND anticheatVersion all match; `--resume` and `--compare` enforce this. `--baseline` refuses `--holdout` subsets.
 
 ## COMMANDS
 

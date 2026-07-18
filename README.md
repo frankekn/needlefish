@@ -226,8 +226,8 @@ jobs:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
       # Optional:
       # runner: codex
-      # model: gpt-5.6-sol
-      # codex_reasoning_effort: medium
+      # model: gpt-5.6-terra
+      # codex_reasoning_effort: high
       # timeout_ms: "600000"
     secrets: inherit
 ```
@@ -361,7 +361,7 @@ and `--timeout-ms`, or the matching env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `high` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
