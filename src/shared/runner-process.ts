@@ -99,6 +99,7 @@ export async function runManagedRunnerProcess(
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
+    const childClosed = new Promise<void>((resolve) => child.once("close", () => resolve()));
 
     const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
       if (killStarted) return;
@@ -173,8 +174,10 @@ export async function runManagedRunnerProcess(
         ? () => {}
         : registerRunnerProcessGroup(
             child.pid,
+            invocation.repoPath,
             beginKillSequence,
             () => killRunnerProcessTree(child.pid, "SIGKILL"),
+            childClosed,
           );
 
     const collect = (chunks: string[], bytes: { count: number }, chunk: unknown): string | null => {
@@ -269,7 +272,9 @@ function runnerSigkillGiveUpMs(): number {
 function killRunnerProcessTree(pid: number | undefined, signal: NodeJS.Signals): void {
   if (pid === undefined) return;
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    const args = ["/pid", String(pid), "/T"];
+    if (signal === "SIGKILL") args.push("/F");
+    spawnSync("taskkill", args, { stdio: "ignore" });
     return;
   }
   try {
