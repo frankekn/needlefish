@@ -184,20 +184,130 @@ setInterval(() => {}, 1000);
   assert.equal(children.length, 1, "one needlefish process must have one persistent lock holder");
 });
 
+for (const [signal, expectedStatus] of [
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+] as const) {
+  test(`portable ${signal} waits for runner exit before deleting its temp tree`, { timeout: 10_000 }, async (t) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+    const readyPath = path.join(root, "ready");
+    const pidPath = path.join(root, "runner-pid");
+    const termMarker = path.join(root, "runner-saw-tree");
+    const owner = spawnModuleOnPlatform(`
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { createManagedTempDirectory, disposeManagedTempDirectory, initializeTempLifecycle } from ${JSON.stringify(lifecycleUrl)};
+import { spawnRunnerProcess } from ${JSON.stringify(runnerProcessUrl)};
+await initializeTempLifecycle();
+const directory = await createManagedTempDirectory();
+const runnerRepo = path.join(directory, "runner-repo");
+mkdirSync(runnerRepo);
+const runner = path.join(runnerRepo, "runner.js");
+writeFileSync(runner, ${JSON.stringify(`
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
+const onSignal = () => {
+  fs.writeFileSync(${JSON.stringify(termMarker)}, String(fs.existsSync(process.cwd()) && fs.existsSync(__filename)));
+};
+process.on("SIGINT", onSignal);
+process.on("SIGTERM", onSignal);
+setInterval(() => {}, 1000);
+`)});
+writeFileSync(${JSON.stringify(readyPath)}, directory);
+const running = spawnRunnerProcess({
+  command: process.execPath,
+  args: [runner],
+  stdin: "",
+  repoPath: runnerRepo,
+  timeoutMs: 60_000,
+  env: process.env,
+});
+try {
+  await running;
+} finally {
+  await disposeManagedTempDirectory(directory);
+}
+`, root, "darwin", {
+      NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS: "1000",
+      NEEDLEFISH_TERMINATION_GRACE_MS: "100",
+      PATH: "/needlefish-test-no-tools",
+    });
+    const cleanup: { runnerPid?: number } = {};
+    t.after(() => {
+      killIfRunning(owner.pid);
+      if (cleanup.runnerPid !== undefined) killIfRunning(-cleanup.runnerPid);
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    await waitForFile(readyPath);
+    await waitForFile(pidPath);
+    const directory = readFileSync(readyPath, "utf8");
+    const runnerPid = Number(readFileSync(pidPath, "utf8"));
+    cleanup.runnerPid = runnerPid;
+    owner.kill(signal);
+    const [status, exitSignal] = await waitForExit(owner);
+
+    assert.equal(status, expectedStatus);
+    assert.equal(exitSignal, null);
+    assert.equal(readFileSync(termMarker, "utf8"), "true");
+    assert.throws(() => process.kill(-runnerPid, 0), isMissingProcess);
+    assert.equal(existsSync(directory), false, "temp tree must be deleted after runner close");
+  });
+}
+
+test("portable termination preserves a temp tree when runner exit cannot be confirmed", { timeout: 10_000 }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const readyPath = path.join(root, "ready");
+  const termMarker = path.join(root, "term-seen");
+  const killMarker = path.join(root, "kill-seen");
+  const owner = spawnModuleOnPlatform(`
+import { writeFileSync } from "node:fs";
+import { createManagedTempDirectory, initializeTempLifecycle, registerRunnerProcessGroup } from ${JSON.stringify(lifecycleUrl)};
+await initializeTempLifecycle();
+const directory = await createManagedTempDirectory();
+registerRunnerProcessGroup(
+  123,
+  directory,
+  () => writeFileSync(${JSON.stringify(termMarker)}, "1"),
+  () => writeFileSync(${JSON.stringify(killMarker)}, "1"),
+  new Promise(() => {}),
+);
+writeFileSync(${JSON.stringify(readyPath)}, directory);
+setInterval(() => {}, 1000);
+`, root, "darwin", {
+    NEEDLEFISH_TERMINATION_GRACE_MS: "50",
+    PATH: "/needlefish-test-no-tools",
+  });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  await waitForFile(readyPath);
+  const directory = readFileSync(readyPath, "utf8");
+  owner.kill("SIGTERM");
+  const [status, signal] = await waitForExit(owner);
+
+  assert.equal(status, 143);
+  assert.equal(signal, null);
+  assert.equal(existsSync(termMarker), true);
+  assert.equal(existsSync(killMarker), true);
+  assert.equal(existsSync(directory), true, "unconfirmed runner temp tree must be preserved");
+});
+
 test("non-Linux lifecycle uses finally-cleaned legacy temp directories without flock", async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const marker = path.join(root, "fallback.json");
-  const owner = spawnModule(`
+  const owner = spawnModuleOnPlatform(`
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
-Object.defineProperty(process, "platform", { value: "darwin" });
-const lifecycle = await import(${JSON.stringify(lifecycleUrl)});
+import * as lifecycle from ${JSON.stringify(lifecycleUrl)};
 await lifecycle.initializeTempLifecycle();
 const directory = await lifecycle.createManagedTempDirectory();
 const name = path.basename(directory);
 await lifecycle.disposeManagedTempDirectory(directory);
 writeFileSync(${JSON.stringify(marker)}, JSON.stringify({ name, exists: existsSync(directory) }));
-`, root, { PATH: "/needlefish-test-no-tools" });
+`, root, "darwin", { PATH: "/needlefish-test-no-tools" });
   t.after(() => {
     killIfRunning(owner.pid);
     rmSync(root, { recursive: true, force: true });
@@ -241,6 +351,32 @@ function spawnModule(source: string, tmpRoot: string, extraEnv: NodeJS.ProcessEn
   return spawn(
     process.execPath,
     ["--import", importTarget, "--input-type=module", "--eval", source],
+    {
+      env: { ...process.env, ...extraEnv, NEEDLEFISH_TMPDIR: tmpRoot },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+}
+
+function spawnModuleOnPlatform(
+  source: string,
+  tmpRoot: string,
+  platform: NodeJS.Platform,
+  extraEnv: NodeJS.ProcessEnv = {},
+): ChildProcessWithoutNullStreams {
+  const preload = path.join(tmpRoot, `.platform-${platform}.cjs`);
+  writeFileSync(
+    preload,
+    `Object.defineProperty(process, "platform", { value: ${JSON.stringify(platform)} });\n`,
+  );
+  const importIndex = process.execArgv.indexOf("--import");
+  const importTarget = process.execArgv[importIndex + 1];
+  if (importIndex === -1 || importTarget === undefined) {
+    throw new Error("test process is missing its TypeScript import hook");
+  }
+  return spawn(
+    process.execPath,
+    ["--require", preload, "--import", importTarget, "--input-type=module", "--eval", source],
     {
       env: { ...process.env, ...extraEnv, NEEDLEFISH_TMPDIR: tmpRoot },
       stdio: ["pipe", "pipe", "pipe"],

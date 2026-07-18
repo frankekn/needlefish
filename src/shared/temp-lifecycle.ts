@@ -42,8 +42,10 @@ interface ProcessOwner {
 }
 
 interface RunnerProcessGroup {
+  readonly directory: string | null;
   readonly terminate: (signal: NodeJS.Signals) => void;
   readonly kill: () => void;
+  readonly exited: Promise<void>;
 }
 
 const activeTempDirectories = new Set<string>();
@@ -59,15 +61,15 @@ function isLinux(): boolean {
 }
 
 export function installTerminationCoordinator(): void {
-  if (!isLinux() || coordinatorInstalled) return;
+  if (coordinatorInstalled) return;
   coordinatorInstalled = true;
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
 }
 
 export async function initializeTempLifecycle(): Promise<void> {
-  if (!isLinux()) return;
   installTerminationCoordinator();
+  if (!isLinux()) return;
   await ensureStartupSweep(resolveNeedlefishTempRoot());
 }
 
@@ -79,6 +81,8 @@ export function resolveNeedlefishTempRoot(): string {
 export async function createManagedTempDirectory(): Promise<string> {
   const root = resolveNeedlefishTempRoot();
   mkdirSync(root, { recursive: true, mode: 0o700 });
+  installTerminationCoordinator();
+  assertRunnerSchedulingAllowed();
 
   if (!isLinux()) {
     const directory = mkdtempSync(path.join(root, LEGACY_PREFIX));
@@ -86,8 +90,6 @@ export async function createManagedTempDirectory(): Promise<string> {
     return directory;
   }
 
-  installTerminationCoordinator();
-  assertRunnerSchedulingAllowed();
   await ensureStartupSweep(root);
   assertRunnerSchedulingAllowed();
 
@@ -120,13 +122,19 @@ export async function disposeManagedTempDirectory(directory: string): Promise<vo
 
 export function registerRunnerProcessGroup(
   pid: number,
+  repoPath: string,
   terminate: (signal: NodeJS.Signals) => void,
   kill: () => void,
+  exited: Promise<void>,
 ): () => void {
-  if (!isLinux()) return () => {};
   installTerminationCoordinator();
   assertRunnerSchedulingAllowed();
-  activeRunnerProcessGroups.set(pid, { terminate, kill });
+  activeRunnerProcessGroups.set(pid, {
+    directory: findRegisteredTempDirectory(repoPath),
+    terminate,
+    kill,
+    exited,
+  });
   return () => {
     if (terminationSignal === null) activeRunnerProcessGroups.delete(pid);
   };
@@ -215,16 +223,42 @@ function onSigterm(): void {
 
 function coordinateTermination(signal: "SIGINT" | "SIGTERM"): void {
   if (terminationSignal !== null) {
-    terminateNow(terminationSignal);
+    if (isLinux()) terminateNow(terminationSignal);
+    for (const group of activeRunnerProcessGroups.values()) group.kill();
     return;
   }
   terminationSignal = signal;
   for (const group of activeRunnerProcessGroups.values()) group.terminate(signal);
+  if (!isLinux()) {
+    void terminatePortable(signal);
+    return;
+  }
   if (activeRunnerProcessGroups.size === 0) {
     terminateNow(signal);
     return;
   }
   setTimeout(() => terminateNow(signal), terminationGraceMs());
+}
+
+async function terminatePortable(signal: "SIGINT" | "SIGTERM"): Promise<never> {
+  const groups = [...activeRunnerProcessGroups.values()];
+  if (groups.length > 0) await wait(terminationGraceMs());
+  for (const group of groups) group.kill();
+  const exited = await Promise.all(groups.map((group) => waitForExit(group)));
+  const unsafeDirectories = new Set<string>();
+  let unmappedRunnerIsAlive = false;
+  for (let index = 0; index < groups.length; index++) {
+    if (exited[index]) continue;
+    const directory = groups[index]?.directory;
+    if (directory === null || directory === undefined) unmappedRunnerIsAlive = true;
+    else unsafeDirectories.add(directory);
+  }
+  for (const directory of activeTempDirectories) {
+    if (unmappedRunnerIsAlive || unsafeDirectories.has(directory)) continue;
+    await rm(directory, { recursive: true, force: true });
+    activeTempDirectories.delete(directory);
+  }
+  process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
 function terminateNow(signal: "SIGINT" | "SIGTERM"): never {
@@ -237,6 +271,31 @@ function terminationGraceMs(): number {
   if (configured === undefined || configured === "") return 5000;
   const parsed = Number(configured);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
+}
+
+function findRegisteredTempDirectory(repoPath: string): string | null {
+  const resolvedRepoPath = path.resolve(repoPath);
+  for (const directory of activeTempDirectories) {
+    const relative = path.relative(directory, resolvedRepoPath);
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+      return directory;
+    }
+  }
+  return null;
+}
+
+async function waitForExit(group: RunnerProcessGroup): Promise<boolean> {
+  return await new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(false), terminationGraceMs());
+    group.exited.then(() => {
+      clearTimeout(timeout);
+      resolve(true);
+    });
+  });
+}
+
+async function wait(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export function assertRunnerSchedulingAllowed(): void {
