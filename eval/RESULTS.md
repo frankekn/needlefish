@@ -669,3 +669,20 @@ fixture's known FP history on the sol lane. Standing correction: terra-high's
 FP floor is NOT the morning 0.014 single point; its observed same-day
 envelope is 1–5 FP draws /72. Judge future prompt changes against the v2b
 baseline with divergence confirms, not against 0.014.
+
+## 2026-07-18 — plan 010 correction: lean-prompt verdict re-judged under paired measurement
+
+The original terra FAIL leaned on FP ×5 vs the morning baseline — invalidated
+by the same-day discovery that terra's FP oscillates by time window on an
+IDENTICAL prompt (see plan-011 entry; refactor-move 0/3→3/3→0/3, promptHash
+equal). A same-window paired probe (full set ×1 each, launched
+simultaneously, harness bytes identical, only prompts differ) shows: FP tied
+at 0.083; lean recall 0.845 vs 0.879, losses concentrated in real-PR
+fixtures. Across three independent measurements (sol 9-draw confirms, terra
+x3 gate, paired x1) lean consistently loses real-PR-mined fixtures while
+holding or winning synthetic trigger fixtures. Verdict stands — NOT SHIPPED —
+with the corrected reason: consistent real-PR recall deficit, not FP.
+Methodology rule going forward: prompt A/Bs on the terra lane are valid only
+as same-window paired runs; cross-window comparisons measure the window.
+Reports: scratchpad paired-{current,lean}-x1 (session-local); aggregates
+recorded here.
