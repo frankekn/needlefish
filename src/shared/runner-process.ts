@@ -1,4 +1,8 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import {
+  assertRunnerSchedulingAllowed,
+  registerRunnerProcessGroup,
+} from "./temp-lifecycle.js";
 
 const RUNNER_MAX_BUFFER_BYTES = 1024 * 1024 * 64;
 
@@ -73,6 +77,7 @@ export async function spawnRunnerProcess(
 export async function runManagedRunnerProcess(
   invocation: ManagedRunnerProcessInvocation
 ): Promise<RunnerProcessResult> {
+  assertRunnerSchedulingAllowed();
   return await new Promise<RunnerProcessResult>((resolve) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -163,6 +168,14 @@ export async function runManagedRunnerProcess(
         beginKillSequence("SIGTERM");
       },
     };
+    const unregisterProcessGroup =
+      child.pid === undefined
+        ? () => {}
+        : registerRunnerProcessGroup(
+            child.pid,
+            beginKillSequence,
+            () => killRunnerProcessTree(child.pid, "SIGKILL"),
+          );
 
     const collect = (chunks: string[], bytes: { count: number }, chunk: unknown): string | null => {
       if (bufferError !== undefined) return null;
@@ -206,7 +219,10 @@ export async function runManagedRunnerProcess(
       spawnError = error;
       finish(null, null);
     });
-    child.on("close", (status, signal) => finish(status, signal));
+    child.on("close", (status, signal) => {
+      unregisterProcessGroup();
+      finish(status, signal);
+    });
 
     timer = setTimeout(() => {
       timedOut = true;

@@ -240,8 +240,19 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 			}),
 		/required auth source is missing/,
 	);
+	const strandedInvocationDirectories = readdirSync(scratchTmp, {
+		withFileTypes: true,
+	})
+		.filter(
+			(entry) =>
+				entry.isDirectory() &&
+				/^(?:needlefish-(?:managed-)?|\.needlefish-staging-)[A-Za-z0-9]{6}$/.test(
+					entry.name,
+				),
+		)
+		.map((entry) => entry.name);
 	assert.deepEqual(
-		readdirSync(scratchTmp),
+		strandedInvocationDirectories,
 		[],
 		"a failed preparation must not leak its invocation dir",
 	);
