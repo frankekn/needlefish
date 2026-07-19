@@ -686,3 +686,27 @@ Methodology rule going forward: prompt A/Bs on the terra lane are valid only
 as same-window paired runs; cross-window comparisons measure the window.
 Reports: scratchpad paired-{current,lean}-x1 (session-local); aggregates
 recorded here.
+
+## 2026-07-19 — plan 012 prompt quality pack: NOT SHIPPED (two paired rounds); A5 salvage probe
+
+Round 1 (8 edits incl. handoff/transform record obligations, confidence-severity
+deconflation): same-window paired x3 vs current — recall 0.753 vs 0.879, t2
+collapse, verdict dist shifted to MORE passes (fewer findings emitted) —
+attention-dilution mechanism, echoing the Trigger-E lesson. Round 2 (slimmed:
+deconflation reverted, obligations compressed to single sentences, record
+formats dropped): recall 0.764 vs 0.891, t3 0.627 vs 0.765 — still a broad
+finding-emission suppression. Two-round cap reached; pack abandoned; current
+prompt (e62d0889) stands.
+
+Robust positive signal across BOTH rounds: FP 0.0139 vs current's
+0.042-0.056; neg-hard-dead-code-delete FP eliminated (0 draws in both pack
+runs vs 1-4 in every current-prompt run) — attributed to A5, the
+export-evidence bar for public-contract claims (Trigger C/D). A5-only
+single-variable probe follows: targeted paired x3 on the FP negatives + the
+recall canaries the pack regressed; parity on canaries + FP kill → full
+paired ship gate for A5 alone.
+
+Reports: scratchpad gate12{,b}-{current,pack}-x3.json (session-local);
+aggregates recorded here. Standing lesson reconfirmed: on terra, every
+addition to this prompt taxes recall — candidate edits must be atomic,
+single-variable, and same-window paired.
