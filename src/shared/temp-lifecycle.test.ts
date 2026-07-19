@@ -177,6 +177,35 @@ setInterval(() => {}, 1000);
   assert.equal(existsSync(killed), false, "an unregistered runner must never receive SIGKILL");
 });
 
+test("termination ignores an already-gone registered runner", { timeout: 10_000 }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const ready = path.join(root, "ready");
+  const owner = spawnModuleOnPlatform(`
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { registerRunnerProcessGroup } from ${JSON.stringify(lifecycleUrl)};
+const child = spawn(process.execPath, ["-e", ""], { detached: true });
+await new Promise((resolve) => child.once("exit", resolve));
+const pid = child.pid;
+if (pid === undefined) throw new Error("short-lived child has no pid");
+const alreadyGone = () => process.kill(-pid, "SIGKILL");
+registerRunnerProcessGroup(pid, ${JSON.stringify(root)}, alreadyGone, alreadyGone, new Promise(() => {}));
+writeFileSync(${JSON.stringify(ready)}, "1");
+setInterval(() => {}, 1000);
+`, root, "darwin", { NEEDLEFISH_TERMINATION_GRACE_MS: "10" });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  await waitForFile(ready);
+  owner.kill("SIGTERM");
+  const [status, signal] = await waitForExit(owner);
+
+  assert.equal(signal, null, owner.stderr.read()?.toString());
+  assert.equal(status, 143, owner.stderr.read()?.toString());
+});
+
 test("a dead process-owner lock holder is reacquired for later allocations", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const marker = path.join(root, "directories.json");

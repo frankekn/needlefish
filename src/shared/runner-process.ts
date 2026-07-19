@@ -303,10 +303,14 @@ function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: 
   try {
     process.kill(-pid, signal);
   } catch (error) {
-    if (!isMissingProcess(error)) throw error;
+    if (!isGoneProcessError(error)) throw error;
   }
 }
 
-function isMissingProcess(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ESRCH";
+function isGoneProcessError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ESRCH" || error.code === "EPERM")
+  );
 }

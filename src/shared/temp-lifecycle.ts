@@ -322,9 +322,21 @@ async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
 function signalRegisteredRunners(method: "terminate" | "kill", signal: "SIGINT" | "SIGTERM"): void {
   for (const [pid, group] of [...activeRunnerProcessGroups.entries()]) {
     if (activeRunnerProcessGroups.get(pid) !== group) continue;
-    if (method === "terminate") group.terminate(signal);
-    else group.kill();
+    try {
+      if (method === "terminate") group.terminate(signal);
+      else group.kill();
+    } catch (error) {
+      if (!isGoneProcessError(error)) throw error;
+    }
   }
+}
+
+function isGoneProcessError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ESRCH" || error.code === "EPERM")
+  );
 }
 
 async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never> {
