@@ -6,14 +6,45 @@
 
 [English](README.md) | 繁體中文
 
-嚴格的本機 PR 審查工具。它會像資深工程師一樣檢查 diff，只回報真正的
-缺陷：錯誤、回歸、安全性、資料遺失、遷移／升級風險、缺少驗證或重複行為，
-不回報單純的風格問題。
+> 嚴格、本機、唯讀的 PR 審查：像資深工程師一樣，只標記真正的缺陷，其餘保持沉默。
 
-預設為唯讀。小型 PR 會執行審查與對抗式 critic；大型 PR 會先執行 map／deep
-階段，再交給相同的 critic。Codex 是預設 runner，也支援 Claude Code、
-opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP。最終 verdict 由保留下來的
-finding 確定性推導，不由模型自由決定。
+<p align="center">
+  <a href="https://www.npmjs.com/package/needlefish"><img src="https://img.shields.io/npm/v/needlefish" alt="npm version"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node >=20">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
+</p>
+
+Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回歸、安全性、
+資料遺失、遷移／升級風險、缺少驗證或重複行為，不回報單純的風格問題。
+
+**與眾不同之處：**
+
+- **Prefer-zero findings。** 以嚴格資深 reviewer 的標準：不值得在 merge 前
+  修的就捨棄。沒有風格挑剔，沒有雜訊。
+- **確定性 verdict。** `pass`／`needs_human`／`changes_requested` 由保留下來的
+  finding 依固定規則推導，不由模型自由決定。
+- **Sandboxed、唯讀 runner。** 審查預設唯讀；非 Codex runner 會在 throwaway
+  clean clone 中執行，並在每次模型呼叫後檢查是否遭竄改。
+- **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 84 個情境的
+  harness（啟用 anti-cheat guards）量測（見 [Benchmarks](#benchmarks)）。
+
+小型 PR 會執行審查與對抗式 critic；大型 PR 會先執行 map／deep 階段，再交給
+相同的 critic。Codex 是預設 runner，也支援 Claude Code、opencode、OpenAI
+相容 HTTP、Grok、pi 與 ACP。
+
+## 目錄
+
+- [安裝](#安裝)
+- [GitHub Action 快速開始](#github-action-快速開始)
+- [Benchmarks](#benchmarks)
+- [開發環境安裝](#開發環境安裝)
+- [本機使用](#本機使用唯讀不會寫入-github)
+- [機器介面](#機器介面)
+- [GitHub Action 模式（self-hosted runner）](#github-action-模式self-hosted-runner)
+- [GitHub Action（hosted，任何 repo）](#github-actionhosted任何-repo)
+- [Model runner 執行方式](#model-runner-執行方式)
+- [Verdict 推導](#verdict-推導確定性)
+- [狀態](#狀態)
 
 ## 安裝
 
@@ -62,6 +93,35 @@ fresh／still-open／resolved，不會不斷堆疊新 review。
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
+
+## Benchmarks
+
+Needlefish 內建一套有防護的評測 harness（`eval/`），任何 prompt 或 pipeline
+變更上線前都會先對它量測。fixture 集共 84 個審查情境——合成的 planted-bug／
+negative／honeypot 案例，加上從真實 PR 萃取的 fixture——每個各跑 3 次。每筆
+記錄的 run 都啟用 anti-cheat guards：per-draw ephemeral `HOME`、帶 per-run
+canary 的 planted bait answer key，以及全 transcript 掃描（下列所有數字皆
+`cheatDetectedCount: 0`；任何結構化的 bait 使用都會使該 report 作廢）。
+
+正式審查 lane（codex runner、`gpt-5.6-terra`、high reasoning effort）：
+
+| Test date | Lane | Anchored recall | False-positive rate | Verdict match |
+| --- | --- | --- | --- | --- |
+| 2026-07-19 | terra high (current baseline) | 0.874 | 0.056 | 0.944 |
+| 2026-07-18 | terra high | 0.885 | 0.014 | 0.972 |
+| 2026-07-18 | sol medium (previous default) | 0.879 | 0.111 | 0.944 |
+
+從錯誤中學到、並由 harness 強制的方法論注記：
+
+- Recall 是 **anchored** 的：一個 finding 只有同時符合預期的 pattern 與
+  預期的 file 才算數。Positive 帶有 difficulty tier；tier-1 漏掉會直接讓該
+  lane 失格。
+- Provider 端的行為在同一天、相同 prompt 與 config 下也會漂移（觀察到的
+  false-positive 範圍：72 個 negative 中 1–5 draw），因此 prompt 的 A/B
+  比較只有在 **same-window paired runs** 下才被採信。
+- 只有當 prompt hash、fixture-set hash、scorer hash 與 anti-cheat generation
+  全部相符時，report 之間才可比較；否則 harness 一律拒絕，包含它自己在
+  加上防護之前的 baseline。
 
 ## 開發環境安裝
 

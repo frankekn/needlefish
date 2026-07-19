@@ -6,15 +6,51 @@
 
 [繁體中文](README.zh-TW.md)
 
-Strict local PR review agent. Acts like a senior engineer reviewing your diff
-before merge — only real defects (bugs, regressions, security, data loss,
-migration/upgrade risk, missing validation, duplicate behavior), never style.
+> Strict, local, read-only PR review that acts like a senior engineer — it
+> flags only real defects and stays silent on everything else.
 
-Read-only by default. Small PRs use a review pass plus an adversarial critic;
-large PRs use map/deep passes before the same critic. Codex is the default
-runner; Claude Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP
-agents are also supported. Verdict is derived deterministically from the
-surviving findings, never freehanded by the model.
+<p align="center">
+  <a href="https://www.npmjs.com/package/needlefish"><img src="https://img.shields.io/npm/v/needlefish" alt="npm version"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node >=20">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
+</p>
+
+Needlefish reviews your diff before merge and reports only real defects — bugs,
+regressions, security, data loss, migration/upgrade risk, missing validation,
+duplicate behavior — never style.
+
+**Why it's different:**
+
+- **Prefer-zero findings.** A strict senior reviewer's bar: if it isn't worth
+  blocking merge, it's dropped. No style nits, no noise.
+- **Deterministic verdicts.** The `pass` / `needs_human` / `changes_requested`
+  verdict is derived from the surviving findings by fixed rules, never
+  freehanded by the model.
+- **Sandboxed, read-only runners.** Reviews run read-only by default; non-Codex
+  runners execute in a throwaway clean clone and are checked for tampering after
+  every model call.
+- **Guarded evals.** Every prompt/pipeline change is measured against an
+  84-scenario harness with active anti-cheat guards before it ships (see
+  [Benchmarks](#benchmarks)).
+
+Small PRs use a review pass plus an adversarial critic; large PRs use map/deep
+passes before the same critic. Codex is the default runner; Claude Code,
+opencode, OpenAI-compatible HTTP, Grok, pi, and ACP agents are also supported.
+
+## Contents
+
+- [Install](#install)
+- [GitHub Action quick start](#github-action-quick-start)
+- [Benchmarks](#benchmarks)
+- [Development install](#development-install)
+- [Local use](#local-use-read-only-no-github-writes)
+- [Machine interface](#machine-interface)
+- [Base detection](#base-detection)
+- [GitHub Action mode (self-hosted runner)](#github-action-mode-self-hosted-runner)
+- [GitHub Action (hosted, any repo)](#github-action-hosted-any-repo)
+- [Model runner invocation](#model-runner-invocation)
+- [Verdict derivation](#verdict-derivation-deterministic)
+- [Status](#status)
 
 ## Install
 
@@ -63,6 +99,36 @@ Cost: 2 model calls per review on small PRs (~56s at the workflow default,
 `gpt-5.6-terra` at `high` effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers can comment
 `@needlefish recheck` or `@needlefish explain <finding>` on the PR.
+
+## Benchmarks
+
+Needlefish ships with a guarded evaluation harness (`eval/`) and is measured
+against it before any prompt or pipeline change ships. The fixture set is 84
+review scenarios — synthetic planted-bug/negative/honeypot cases plus fixtures
+mined from real PRs — each run 3 times. Anti-cheat guards are active on every
+recorded run: per-draw ephemeral `HOME`, a planted bait answer key with a
+per-run canary, and a full-transcript scan (`cheatDetectedCount: 0` on all
+numbers below; any structured bait use voids a report).
+
+Production review lane (codex runner, `gpt-5.6-terra`, high reasoning effort):
+
+| Test date | Lane | Anchored recall | False-positive rate | Verdict match |
+| --- | --- | --- | --- | --- |
+| 2026-07-19 | terra high (current baseline) | 0.874 | 0.056 | 0.944 |
+| 2026-07-18 | terra high | 0.885 | 0.014 | 0.972 |
+| 2026-07-18 | sol medium (previous default) | 0.879 | 0.111 | 0.944 |
+
+Methodology notes, learned the hard way and enforced by the harness:
+
+- Recall is **anchored**: a finding only counts if it matches the expected
+  pattern AND the expected file. Positives carry difficulty tiers; tier-1
+  misses disqualify a lane outright.
+- Provider-side behavior drifts within a day on an identical prompt and
+  config (observed false-positive envelope: 1–5 draws per 72 negatives), so
+  prompt A/B comparisons are only trusted as **same-window paired runs**.
+- Reports are comparable only when prompt hash, fixture-set hash, scorer
+  hash, and anti-cheat generation all match; the harness refuses anything
+  else, including its own pre-guard baselines.
 
 ## Development install
 
@@ -430,7 +496,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.3. Read-only. Shipped: inline review comments, sticky re-review
+v0.3.4. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), `@needlefish recheck` / `@needlefish
 explain` maintainer commands, docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
