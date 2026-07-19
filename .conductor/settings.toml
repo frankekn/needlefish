@@ -1,0 +1,2 @@
+[scripts]
+setup = "bash scripts/worktree-setup"

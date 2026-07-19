@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# worktree-setup — bootstrap a fresh git worktree: install deps, copy env files.
+# template-version: 1
+# SSOT: agent-scripts scripts/worktree-setup-template.sh. Deployed copies live at
+# <repo>/scripts/worktree-setup; redeploy with scripts/install-worktree-setup.sh.
+# Works under Paseo, Conductor, herdr-worktree-lifecycle, Codex app, or manual runs:
+# source checkout is taken from tool env vars when present, else derived from git.
+set -u
+
+fail=0
+run() {
+  echo "==> $*"
+  "$@"
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "FAILED (exit $rc): $*" >&2
+    fail=1
+  fi
+}
+
+# --- locate the source checkout (for gitignored files like .env) ---
+SRC="${PASEO_SOURCE_CHECKOUT_PATH:-${CONDUCTOR_ROOT_PATH:-}}"
+if [ -z "$SRC" ]; then
+  gitcommon=$(git rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$gitcommon" ]; then
+    SRC=$(cd "$gitcommon/.." && pwd)
+  fi
+fi
+
+# --- copy env files the worktree is missing (gitignored ones only: tracked files already exist) ---
+if [ -n "$SRC" ] && [ -d "$SRC" ] && [ "$SRC" != "$(pwd)" ]; then
+  for f in "$SRC"/.env*; do
+    [ -f "$f" ] || continue
+    base=$(basename "$f")
+    [ -e "./$base" ] && continue
+    cp "$f" "./$base" && echo "==> copied $base from source checkout"
+  done
+else
+  echo "==> no separate source checkout detected; skipping env copy"
+fi
+
+# --- install dependencies by detected stack (non-exclusive across ecosystems) ---
+[ -f Gemfile ] && run bundle install
+
+if [ -f pnpm-lock.yaml ]; then
+  run pnpm install --frozen-lockfile
+elif [ -f yarn.lock ]; then
+  run yarn install --frozen-lockfile
+elif [ -f package-lock.json ]; then
+  run npm ci
+elif [ -f package.json ]; then
+  run npm install
+fi
+
+if [ -f uv.lock ]; then
+  run uv sync
+elif [ -f poetry.lock ]; then
+  run poetry install
+elif [ -f requirements.txt ]; then
+  echo "==> note: requirements.txt present; no lockfile convention detected — python env left to the repo"
+fi
+
+[ -f go.mod ] && run go mod download
+
+if [ "$fail" -ne 0 ]; then
+  echo "worktree-setup finished WITH FAILURES (see above)" >&2
+  exit 1
+fi
+echo "worktree-setup done"

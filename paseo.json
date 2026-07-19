@@ -1,5 +1,5 @@
 {
   "worktree": {
-    "setup": ["pnpm install --frozen-lockfile"]
+    "setup": "bash scripts/worktree-setup"
   }
 }
