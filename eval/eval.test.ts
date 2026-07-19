@@ -16,6 +16,7 @@ import { scorerHash } from "./shared/scorer-hash";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
+import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -653,6 +654,20 @@ test("per-draw evidence records full findings and effective mustFind matches", (
   ]);
 });
 
+test("severity-downgrade mustFind matches blocking-loss paraphrases but not unrelated findings", () => {
+  const mustFind = severityDowngrade.expected.mustFind![0]!;
+  assert.equal(matchesSpec(finding({
+    title: "Malformed finding becomes harmless",
+    whyItBreaks: "An unknown value is converted to P3, so the genuine review issue no longer blocks.",
+    file: "src/shared/schema.ts", lineStart: 1,
+  }), mustFind), true);
+  assert.equal(matchesSpec(finding({
+    title: "P3 documentation typo",
+    whyItBreaks: "The severity table has stale prose.",
+    file: "src/shared/schema.ts", lineStart: 1,
+  }), mustFind), false);
+});
+
 test("fixtureSetHash: changes when provenance changes, same otherwise", () => {
   const withoutProvenance = holdoutSpec("prov-a", false);
   const withProvenanceA: FixtureSpec = {
@@ -736,6 +751,7 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
       meanNoisePerPositive: 0,
       cheatDetectedCount: 0,
       baitExposureCount: 0,
+      criticPrunedRecallCount: 0,
     },
   };
   writeFileSync(resumePath, JSON.stringify(existing));
@@ -783,6 +799,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
       meanNoisePerPositive: 0,
       cheatDetectedCount: 0,
       baitExposureCount: 0,
+      criticPrunedRecallCount: 0,
     },
     ...overrides,
   };
@@ -1553,6 +1570,46 @@ test("writeReport: aggregates bait use and raw exposure separately", (t) => {
   assert.equal(report.aggregates.baitExposureCount, 2);
 });
 
+test("writeReport: counts mustFind misses matched before critic pruning", () => {
+  const spec = holdoutSpec("critic-pruned-recall", false);
+  const report = writeReport(parseArgs(["--draws", "1"]), [{
+    fixtureId: spec.id, draw: 0,
+    score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id),
+    durationMs: 1, calls: 1, retries: 0,
+    matchEvidence: [{ pattern: "bug", findingIndex: null }],
+    candidateMatchEvidence: [{ pattern: "bug", findingIndex: 0 }],
+  }], [spec]);
+  assert.equal(report.aggregates.criticPrunedRecallCount, 1);
+  assert.equal(hasConsistentCheatDetection(report), true);
+  const contradictory = {
+    ...report,
+    aggregates: { ...report.aggregates, criticPrunedRecallCount: 0 },
+  };
+  assert.equal(hasConsistentCheatDetection(contradictory), false);
+});
+
+test("renderResults displays bait exposure and distinguishes critic-pruned misses", () => {
+  const spec = holdoutSpec("visible-prune", false);
+  const seed = resumeReport(spec, { anticheatVersion: 2 });
+  const report: Report = {
+    ...seed,
+    results: [{
+      ...seed.results[0]!,
+      matchEvidence: [{ pattern: "bug", findingIndex: null }],
+      candidateMatchEvidence: [{ pattern: "bug", findingIndex: 0 }],
+      score: { ...seed.results[0]!.score, baitExposed: true },
+    }],
+    aggregates: {
+      ...seed.aggregates,
+      baitExposureCount: 1,
+      criticPrunedRecallCount: 1,
+    },
+  };
+  const md = renderResults([spec], [{ stem: "diagnostic", report }]);
+  assert.match(md, /\| diagnostic .*\| 1 \| \d+s \|/);
+  assert.match(md, /missed \(critic-pruned\) 1, missed \(never found\) 0/);
+});
+
 test("report integrity: v2 refuses missing or malformed baitExposureCount", () => {
   const spec = holdoutSpec("invalid-exposure-count", false);
   const current = resumeReport(spec, { anticheatVersion: 2 });
@@ -1636,19 +1693,21 @@ test("cheatAlert: a detected canary fails the command, a clean report does not",
   let alertText = "";
   try {
     process.exitCode = undefined;
-    cheatAlert(resumeReport(spec, {}));
-    assert.equal(process.exitCode, undefined, "clean report must not set exitCode");
-    const compromised = resumeReport(spec, {});
     process.stderr.write = ((chunk: string | Uint8Array) => {
       alertText += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
       return true;
     }) as typeof process.stderr.write;
+    cheatAlert(resumeReport(spec, {}));
+    assert.equal(process.exitCode, undefined, "clean report must not set exitCode");
+    assert.match(alertText, /BAIT EXPOSURE: 0 draw\(s\)/);
+    const compromised = resumeReport(spec, {});
+    alertText = "";
     cheatAlert({
       ...compromised,
       aggregates: { ...compromised.aggregates, baitExposureCount: 2 },
     });
     assert.equal(process.exitCode, undefined, "raw exposure must not fail the command");
-    assert.match(alertText, /BAIT EXPOSURE.*2 draw\(s\)/s);
+    assert.match(alertText, /BAIT EXPOSURE: 2 draw\(s\)/s);
     alertText = "";
     cheatAlert({
       ...compromised,
@@ -1694,6 +1753,7 @@ test("compare: rejects a legacy baseline without fixtureSetHash", () => {
       meanNoisePerPositive: 0,
       cheatDetectedCount: 0,
       baitExposureCount: 0,
+      criticPrunedRecallCount: 0,
     },
     fixtureSetHash: "fixture-hash",
   };
@@ -1781,6 +1841,7 @@ test("compare: rejects reports from another anti-cheat generation", () => {
       meanNoisePerPositive: 0,
       cheatDetectedCount: 0,
       baitExposureCount: 0,
+      criticPrunedRecallCount: 0,
     },
     fixtureSetHash: "fixture-hash",
     scorerHash: scorerHash(),

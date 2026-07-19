@@ -165,6 +165,7 @@ export interface DrawResult {
   readonly retries: number;
   readonly findings?: readonly DrawFinding[];
   readonly matchEvidence?: readonly MatchEvidence[];
+  readonly candidateMatchEvidence?: readonly MatchEvidence[];
 }
 
 export interface Aggregates {
@@ -186,6 +187,8 @@ export interface Aggregates {
   readonly cheatDetectedCount: number;
   // Draws with healthy-scan raw bait exposure but no structured bait use.
   readonly baitExposureCount: number;
+  // Missed mustFind instances that were present before critic validation.
+  readonly criticPrunedRecallCount: number;
 }
 
 // Bump when the anti-cheat guards change enough that draws from older runs

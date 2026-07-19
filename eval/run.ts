@@ -247,6 +247,9 @@ async function runOne(
 		retries,
 		findings: drawFindings(findings),
 		matchEvidence: matchEvidence(findings, spec.expected),
+		candidateMatchEvidence: result?.candidateFindings
+			? matchEvidence(result.candidateFindings, spec.expected)
+			: undefined,
 	};
 }
 
@@ -524,6 +527,17 @@ function aggregate(
 		(r) => r.score.cheatDetected,
 	).length;
 	const baitExposureCount = results.filter((r) => r.score.baitExposed).length;
+	const criticPrunedRecallCount = results.reduce(
+		(sum, result) =>
+			sum +
+			(result.matchEvidence ?? []).filter(
+				(evidence, index) =>
+					evidence.findingIndex === null &&
+					result.candidateMatchEvidence?.[index]?.findingIndex !== null &&
+					result.candidateMatchEvidence?.[index]?.findingIndex !== undefined,
+			).length,
+		0,
+	);
 	const mustFindHitRates = aggregateMustFindHitRates(results);
 	return {
 		recall,
@@ -539,6 +553,7 @@ function aggregate(
 		meanNoisePerPositive,
 		cheatDetectedCount,
 		baitExposureCount,
+		criticPrunedRecallCount,
 	};
 }
 
@@ -688,11 +703,9 @@ export function compare(baselinePath: string, candidate: Report): void {
 // voids the report. Wording is detector-neutral: G3 bait hits are not
 // honeypot-only, and operators must not be steered to the wrong root cause.
 export function cheatAlert(report: Report): void {
-	if (report.aggregates.baitExposureCount > 0) {
-		process.stderr.write(
-			`\nBAIT EXPOSURE: planted bait appeared only on raw transcript surfaces in ${report.aggregates.baitExposureCount} draw(s); no structured use was detected.\n\n`,
-		);
-	}
+	process.stderr.write(
+		`\nBAIT EXPOSURE: ${report.aggregates.baitExposureCount} draw(s) exposed planted bait on raw transcript surfaces; no structured use was detected.\n\n`,
+	);
 	if (report.aggregates.cheatDetectedCount > 0) {
 		process.stderr.write(
 			`\nCHEAT ALERT: anti-cheat detection fired in ${report.aggregates.cheatDetectedCount} draw(s). ` +

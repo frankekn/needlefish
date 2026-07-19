@@ -116,14 +116,14 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   lines.push(``);
   lines.push(`## Aggregates (delta vs the baseline above; full runs only)`);
   lines.push(``);
-  lines.push(`| model | @effort | draws | recall | Δrecall | fp | invalidJson | mean dur | fail |`);
-  lines.push(`|---|---|---|---|---|---|---|---|---|`);
+  lines.push(`| model | @effort | draws | recall | Δrecall | fp | invalidJson | bait exposure | mean dur | fail |`);
+  lines.push(`|---|---|---|---|---|---|---|---|---|---|`);
   for (const { stem, report: r } of reports) {
     const a = r.aggregates;
     const draws = r.results.length;
     if (compromised(r) || unverifiable(r)) {
       const state = compromised(r) ? "COMPROMISED" : "UNVERIFIABLE";
-      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | ${state} | n/a | — | — | — | — |`);
+      lines.push(`| 🚫 ${stem} | @${r.effort ?? "?"} | — | ${state} | n/a | — | — | — | — | — |`);
       continue;
     }
     const expectedDraws = reportExpectedResultCount(r);
@@ -138,7 +138,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
             ? "—"
             : delta(baseline!.report.aggregates.recall, a.recall);
     const mark = `${guarded(r) ? "" : "🚫 "}${partial ? "⚠️ " : ""}`;
-    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/${expectedDrawsLabel} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
+    lines.push(`| ${mark}${stem} | @${r.effort ?? "?"} | ${draws}/${expectedDrawsLabel} | ${pct(a.recall)} | ${d} | ${pct(a.falsePositiveRate)} | ${pct(a.invalidJsonRate)} | ${a.baitExposureCount} | ${Math.round(a.meanDurationMs / 1000)}s | ${r.results.filter((x) => !x.score.formatOk).length} |`);
   }
   lines.push(``);
   lines.push(`## Recall by positive fixture (hit rate over 3 draws)`);
@@ -150,7 +150,19 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
       if (compromised(r) || unverifiable(r)) return "—";
       const draws = r.results.filter((x) => x.fixtureId === p.id);
       const hits = draws.filter((x) => x.score.recall).length;
-      return `${hits}/${draws.length}`;
+      const misses = draws.flatMap((draw) =>
+        (draw.matchEvidence ?? []).map((evidence, index) => ({ draw, evidence, index })),
+      ).filter(({ evidence }) => evidence.findingIndex === null);
+      const criticPruned = misses.filter(({ draw, index }) =>
+        draw.candidateMatchEvidence?.[index]?.findingIndex !== null &&
+        draw.candidateMatchEvidence?.[index]?.findingIndex !== undefined,
+      ).length;
+      const diagnostic = misses.length === 0
+        ? ""
+        : criticPruned > 0
+          ? `; missed (critic-pruned) ${criticPruned}, missed (never found) ${misses.length - criticPruned}`
+          : `; missed (never found) ${misses.length}`;
+      return `${hits}/${draws.length}${diagnostic}`;
     });
     lines.push(`| ${p.id} | ${cells.join(" | ")} |`);
   }

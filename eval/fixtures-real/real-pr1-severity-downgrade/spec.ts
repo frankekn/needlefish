@@ -20,7 +20,8 @@ const spec: FixtureSpec = {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "severity.{0,24}(P3|default|coerc|downgrad|unrecogniz)|fail.?closed|invalid.{0,20}severity|non.?blocking|toUpperCase|upper.?case|lower.?case|case.{0,16}(sensitiv|normaliz)|trim|normaliz.{0,20}severity" },
+      // Encodes an invalid severity being downgraded to non-blocking P3 so a real finding stops blocking.
+      { pattern: "(?:invalid|malformed|unrecogniz|unknown|unsupported|unexpected|bad|stray|whitespace|trim|case|normaliz|coerc|default|fallback)[\\s\\S]{0,120}(?:severity|P3|non.?blocking|downgrad|stops? blocking)|(?:severity|finding)[\\s\\S]{0,120}(?:P3|non.?blocking|downgrad|stops? blocking|incorrectly pass|fail.?open)|fail.?closed" },
     ],
     anchorFile: "src/shared/schema.ts",
   },

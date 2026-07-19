@@ -47,6 +47,7 @@ function aggregatesOf(partial: Partial<Aggregates>): Aggregates {
     meanNoisePerPositive: 0,
     cheatDetectedCount: 0,
     baitExposureCount: 0,
+    criticPrunedRecallCount: 0,
     ...partial,
   };
 }
