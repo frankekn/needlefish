@@ -8,6 +8,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	watch,
 	writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -90,8 +91,10 @@ test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after th
 		fakeHome,
 		"child HOME must NOT be the parent's HOME",
 	);
-	assert.ok(
-		dump.home.startsWith(path.join(lifecycleRoot, "needlefish-managed-")),
+	const relativeHome = path.relative(lifecycleRoot, dump.home);
+	assert.match(
+		relativeHome,
+		/^needlefish-(?:managed-)?[^/\\]+[/\\]home$/,
 		`child HOME must live under the controlled lifecycle root, got: ${dump.home}`,
 	);
 	assert.ok(
@@ -240,6 +243,16 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	process.env.NEEDLEFISH_TMPDIR = scratchTmp;
+	let lifecycleAllocationObserved = false;
+	const lifecycleWatcher = watch(scratchTmp, (_event, filename) => {
+		if (
+			filename !== null &&
+			/^(?:needlefish-(?:managed-)?|\.needlefish-staging-)/.test(filename)
+		) {
+			lifecycleAllocationObserved = true;
+		}
+	});
+	t.after(() => lifecycleWatcher.close());
 
 	await assert.rejects(
 		() =>
@@ -267,12 +280,21 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 		[],
 		"a failed preparation must not leak its invocation dir",
 	);
-	assert.ok(
-		readdirSync(scratchTmp).some((entry) =>
-			entry.startsWith(".needlefish-owner-lock-"),
-		),
-		"the assertion root must contain the lifecycle artifact created by this allocation",
-	);
+	await new Promise<void>((resolve, reject) => {
+		const deadline = Date.now() + 1000;
+		const poll = (): void => {
+			if (lifecycleAllocationObserved) {
+				resolve();
+				return;
+			}
+			if (Date.now() >= deadline) {
+				reject(new Error("the assertion root must observe this lifecycle allocation"));
+				return;
+			}
+			setTimeout(poll, 10);
+		};
+		poll();
+	});
 });
 
 // S3.4: claude exemption — flag on + runner claude → real HOME retained.
