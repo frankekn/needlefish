@@ -710,3 +710,20 @@ Reports: scratchpad gate12{,b}-{current,pack}-x3.json (session-local);
 aggregates recorded here. Standing lesson reconfirmed: on terra, every
 addition to this prompt taxes recall — candidate edits must be atomic,
 single-variable, and same-window paired.
+
+## 2026-07-19 — A5 salvage probe: FAILED with mechanism; prompt-edit program closed
+
+A5-only (export/public claims need entrypoint-or-doc evidence), same-window
+paired x3, 10 targeted fixtures: recall canaries net -0.66, decisive damage
+on t1-swallowed-error (1.00 → 0.33) — direct mechanism: raising the "public"
+evidence bar suppresses Trigger D's public-swallow-without-callers rule; the
+pack rounds' FP reduction and this recall loss are two ends of the same
+lever. FP advantage did not reproduce cleanly in this window (2 vs 1 draws).
+
+Program closed. Current prompt e62d0889 stands as the measured optimum for
+the terra-high lane across six controlled comparisons (lean x2, pack x2,
+paired probes x2). Remaining recall frontier (t3 ~0.76, real-PR relational
+classes) is not reachable by prompt prose on this lane — future levers are
+structural: critic rescue with a serialized appeal tail, cross-family critic,
+two-draw consensus for marginal blocking verdicts, spec/intent axis (all
+recorded in plans/011-issue-sweep.md follow-ups and session records).
