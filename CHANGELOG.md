@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-07-19
 
 - GitHub: default the reusable Codex review lane to `gpt-5.6-terra` at high
   reasoning effort.
