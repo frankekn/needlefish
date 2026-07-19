@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # worktree-setup — bootstrap a fresh git worktree: install deps, copy env files.
-# template-version: 1
+# template-version: 2
 # SSOT: agent-scripts scripts/worktree-setup-template.sh. Deployed copies live at
 # <repo>/scripts/worktree-setup; redeploy with scripts/install-worktree-setup.sh.
 # Works under Paseo, Conductor, herdr-worktree-lifecycle, Codex app, or manual runs:
 # source checkout is taken from tool env vars when present, else derived from git.
 set -u
+
+# herdr-worktree-lifecycle calls this as: worktree-setup <branch> <worktree> <primary>
+# with cwd OUTSIDE the worktree; Paseo/Conductor run it with cwd inside the worktree
+# and no args. Never rely on $PWD when the worktree arg is present.
+HERDR_PRIMARY=""
+if [ -n "${2:-}" ] && [ -d "${2:-}" ]; then
+  cd "$2"
+  HERDR_PRIMARY="${3:-}"
+fi
 
 fail=0
 run() {
@@ -19,7 +28,7 @@ run() {
 }
 
 # --- locate the source checkout (for gitignored files like .env) ---
-SRC="${PASEO_SOURCE_CHECKOUT_PATH:-${CONDUCTOR_ROOT_PATH:-}}"
+SRC="${PASEO_SOURCE_CHECKOUT_PATH:-${CONDUCTOR_ROOT_PATH:-$HERDR_PRIMARY}}"
 if [ -z "$SRC" ]; then
   gitcommon=$(git rev-parse --git-common-dir 2>/dev/null || true)
   if [ -n "$gitcommon" ]; then

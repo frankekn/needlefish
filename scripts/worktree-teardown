@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# worktree-teardown — hook for worktree removal (herdr-worktree-lifecycle calls
+# this as: worktree-teardown <branch> <worktree> <primary>; Paseo's teardown runs
+# with cwd inside the worktree). Intentionally a no-op: none of these repos hold
+# per-worktree resources (databases, linked sites) yet. Add repo-specific cleanup
+# in the deployed copy if that changes.
+# template-version: 2
+exit 0
