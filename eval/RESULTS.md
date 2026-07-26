@@ -727,3 +727,25 @@ classes) is not reachable by prompt prose on this lane — future levers are
 structural: critic rescue with a serialized appeal tail, cross-family critic,
 two-draw consensus for marginal blocking verdicts, spec/intent axis (all
 recorded in plans/011-issue-sweep.md follow-ups and session records).
+
+## 2026-07-26 — Qwen3.8 Max Preview xhigh: precision win, production gate failed
+
+Full guarded run of `alibaba-token-plan/qwen3.8-max-preview` through the
+opencode runner at its highest available reasoning variant (`xhigh`): 84
+fixtures x3, promptHash `e62d0889fc704541`, fixtureSetHash
+`1968a9d2fabe2a56`, scorerHash `a424d3bb59a40443`, anti-cheat v2. All 252
+draws produced valid JSON; `cheatDetectedCount=0` and `baitExposureCount=10`.
+
+Against the 2026-07-19 terra-high production baseline: recall .856 vs .874,
+FP .000 vs .056, invalid JSON .000 vs .012, verdict match .913 vs .944, valid
+line anchors .897 vs .881, and mean draw duration 80.3s vs 56.8s. Tier recall
+was t1 .952 / t2 .873 / t3 .784; noise was .011 findings per positive.
+
+Production gate: **FAIL**. `real-pr1-self-review-tool-checkout` hit 2/3, and
+any tier-1 miss disqualifies a lane. Stable 0/3 misses:
+`go-backend-slop-swallow`, `real-pr1-fallback-missing-commit-pin`,
+`real-pr1-lenient-candidate-parse`, `real-pr1-neutral-conclusion`, and
+`real-pr4-hotspot-truncation`. Qwen3.8 is a strong precision-oriented
+second-opinion candidate, not a production replacement at this configuration.
+
+Report: `eval/reports/2026-07-26-qwen38-max-preview-xhigh-x3.json`.
