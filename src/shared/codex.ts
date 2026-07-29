@@ -554,8 +554,8 @@ async function runCodexOnce(
 		// sees it — dying is not an escape hatch from detection. All three
 		// surfaces matter: result.out is the resolved model output (codex writes
 		// it to --output-last-message, not stdout), result.res.stdout the raw
-		// stream, and stderr rides UNTRUNCATED (the error message clips it at
-		// 2000 chars — a canary parked past the clip must still reach the scan).
+		// stream, and stderr rides UNTRUNCATED. Keep it non-enumerable so routine
+		// error serialization cannot disclose a review prompt.
 		const withRunnerOutput = (err: Error): Error => {
 			const raw = [
 				...new Set([result.out, result.res.stdout, result.res.stderr]),
@@ -563,7 +563,10 @@ async function runCodexOnce(
 				.filter(Boolean)
 				.join("\n");
 			if (raw) {
-				(err as Error & { rawOutput?: string }).rawOutput = raw;
+				Object.defineProperty(err, "rawOutput", {
+					value: raw,
+					configurable: true,
+				});
 			}
 			return err;
 		};
@@ -571,7 +574,7 @@ async function runCodexOnce(
 		if (result.res.status !== 0) {
 			throw withRunnerOutput(
 				new Error(
-					`${runner} runner exited ${result.res.status}: ${(result.res.stderr ?? "").slice(0, 2000)}`,
+					`${runner} runner exited ${result.res.status}; stderr withheld because it may contain the review prompt`,
 				),
 			);
 		}
