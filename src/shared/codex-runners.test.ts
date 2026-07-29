@@ -311,6 +311,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "opencode-bin.js");
+	const stderrMarker = "SECRET_REVIEW_PROMPT_MARKER_7f6a";
 	const previous = {
 		bin: process.env.OPENCODE_BIN,
 		runner: process.env.NEEDLEFISH_RUNNER,
@@ -331,7 +332,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 		[
 			"#!/usr/bin/env node",
 			"process.stdout.write('not json');",
-			"process.stderr.write('boom');",
+			`process.stderr.write(${JSON.stringify(stderrMarker)});`,
 			"process.exit(2);",
 		].join("\n"),
 	);
@@ -340,15 +341,29 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 	process.env.NEEDLEFISH_RUNNER = "opencode";
 	process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = "1";
 
-	await assert.rejects(
-		() =>
-			runCodex("prompt", {
-				repoPath: repo,
-				targetHeadSha: headSha(repo),
-				timeoutMs: 1000,
-			}),
-		/opencode runner exited 2: boom/,
+	let caught: unknown;
+	try {
+		await runCodex("prompt", {
+			repoPath: repo,
+			targetHeadSha: headSha(repo),
+			timeoutMs: 1000,
+		});
+		assert.fail("expected runCodex to reject");
+	} catch (err) {
+		caught = err;
+	}
+	assert.ok(caught instanceof Error);
+	const err = caught as Error & { rawOutput?: string };
+	assert.match(
+		err.message,
+		/opencode runner exited 2; stderr withheld because it may contain the review prompt/,
 	);
+	assert.doesNotMatch(err.message, new RegExp(stderrMarker));
+	assert.match(
+		err.rawOutput ?? "",
+		new RegExp(stderrMarker),
+	);
+	assert.equal(Object.keys(err).includes("rawOutput"), false);
 });
 
 test("runCodex passes grok plan permission mode when unset or set to 0", async () => {
