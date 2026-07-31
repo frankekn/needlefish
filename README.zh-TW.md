@@ -280,8 +280,9 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
-   目前 production fleet 是一份共用 x64 安裝加兩份獨立 ARM 安裝。三份安裝都要
-   部署相同 release SHA，並確認 installed metadata 一致。
+   目前 production fleet 是一份共用 x64 安裝，加上一份由兩個 runner service
+   共用的 ARM 安裝。兩份安裝都要部署相同 release SHA，並確認 installed
+   metadata 一致。
 3. 確認 `gh` 與選定的模型 CLI 位於 `PATH`。
 4. 以 runner service account 登入 CLI。Codex 例如：
    ```bash

@@ -327,9 +327,10 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
-   The current production fleet uses one shared x64 installation plus two
-   separate ARM installations. Deploy the same release SHA to all three
-   installations and verify their installed metadata before trusting the fleet.
+   The current production fleet uses one shared x64 installation plus one
+   shared ARM installation used by two runner services. Deploy the same release
+   SHA to both installations and verify their installed metadata before trusting
+   the fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
 4. On that runner, auth the selected CLI once. For Codex:
    ```bash
