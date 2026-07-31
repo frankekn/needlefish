@@ -2,7 +2,7 @@
 
 ## OVERVIEW
 
-`src/shared/` is the high-blast-radius layer: git/gh subprocesses, model runner sandboxing, JSON normalization, schema contracts, rendering, and file classification.
+`src/shared/` is the high-blast-radius layer: git/gh subprocesses, model runner isolation, JSON normalization, schema contracts, rendering, and file classification.
 
 ## WHERE TO LOOK
 
@@ -19,13 +19,13 @@
 
 - Treat subprocess output and model/GitHub JSON as untrusted.
 - Use typed unions from `runner.ts` and `schema.ts`; do not widen to strings.
-- Preserve runner safety checks: clean sandbox, fixed `HEAD`, stripped GitHub tokens, read-only runner modes.
+- Preserve target isolation checks: clean throwaway clone, fixed `HEAD`, stripped GitHub tokens, and post-run dirty-worktree rejection.
 - Keep process timeout behavior durable. A child that traps `SIGTERM` must not hang the review path.
 - For test repos, use temp dirs and the fixture helpers in `codex-runner-test-fixtures.ts`.
 
 ## ANTI-PATTERNS
 
-- Do not add a new runner without sandbox, timeout, token-stripping, and dirty-worktree tests.
+- Do not add a new runner without target isolation, timeout, token-stripping, and dirty-worktree tests.
 - Do not read target policy from anywhere except target root `AGENTS.md` or `git show <head>:AGENTS.md`.
 - Do not swallow `spawn`/buffer/timeout failures into a passing review.
 - Do not weaken schema normalization to accept malformed findings.

@@ -6,7 +6,7 @@
 
 [繁體中文](README.zh-TW.md)
 
-> Strict, local, read-only PR review that acts like a senior engineer — it
+> Strict, local PR review that acts like a senior engineer — it
 > flags only real defects and stays silent on everything else.
 
 <p align="center">
@@ -26,9 +26,8 @@ duplicate behavior — never style.
 - **Deterministic verdicts.** The `pass` / `needs_human` / `changes_requested`
   verdict is derived from the surviving findings by fixed rules, never
   freehanded by the model.
-- **Sandboxed, read-only runners.** Reviews run read-only by default; non-Codex
-  runners execute in a throwaway clean clone and are checked for tampering after
-  every model call.
+- **Isolated review targets.** Reviews run against a throwaway clean clone and
+  are checked for tampering after every model call.
 - **Guarded evals.** Every prompt/pipeline change is measured against an
   84-scenario harness with active anti-cheat guards before it ships (see
   [Benchmarks](#benchmarks)).
@@ -311,10 +310,8 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
   -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
 ```
 
-The Grok 4.5 lane deliberately opts out of Grok's process-level plan mode so
-the CLI returns valid review JSON. Use it only on a self-hosted runner you
-control; the workflow sets `NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1` only when
-`runner=grok` is selected.
+All production model runners execute without their own process-level permission
+restrictions. Use them only on a self-hosted runner you control.
 
 Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
 every target repo automatically. The runner must have needlefish deployed at
@@ -330,9 +327,9 @@ SHA so review jobs can fail before spending model tokens when a runner is stale.
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
-   For a fleet, dispatch the same release SHA to all six selected runners and
-   verify each runner reports the same installed metadata before trusting the
-   fleet.
+   The current production fleet uses one shared x64 installation plus two
+   separate ARM installations. Deploy the same release SHA to all three
+   installations and verify their installed metadata before trusting the fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
 4. On that runner, auth the selected CLI once. For Codex:
    ```bash
@@ -439,32 +436,24 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 `claude`, or `opencode` can be found, Needlefish exits with install commands
 for those three CLIs instead of a stack trace.
 
-Codex runs with `--ignore-user-config -c model_reasoning_effort="<effort>" -s
-read-only`. `medium` is the default; set `CODEX_REASONING_EFFORT=high` to
-restore the old default, or `xhigh` for the highest-effort mode. Claude Code runs with
-`--permission-mode plan`, `--safe-mode`, and no session persistence. grok runs
-with `--permission-mode plan` by default. The self-hosted GitHub Grok 4.5 lane
-sets `NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1` for valid JSON output, which omits
-that restraint and is why it is limited to an explicitly selected runner.
-opencode
-runs with `--pure` and never uses `--dangerously-skip-permissions`, but as of
-this writing opencode's headless `run` mode has **no** documented read-only or
-permission flag — a live probe confirmed it executes shell/tool calls with no
-gate at all in that mode. Because of that gap, the `opencode` runner refuses to
-start unless `NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1` is set explicitly; set it only
-if you've separately sandboxed the environment opencode runs in. If opencode's
-CLI later ships a real permission/sandbox flag, this opt-in gate should replace
-the flag instead of the env-var check. pi runs with `--no-session --mode text
---provider openai-codex --thinking <level>`; pi advertises a `--tools
-read,grep,find,ls` read-only mode, but that restriction is unverified under
-headless invocation (same class as opencode), so the `pi` runner refuses to
-start unless `NEEDLEFISH_ALLOW_PI_RUNNER=1` is set explicitly. ACP runs a
+Codex runs with `--ignore-user-config --ignore-rules
+--dangerously-bypass-approvals-and-sandbox` so its inspection commands are not
+blocked by execpolicy rules, approval prompts, or the host sandbox. Needlefish
+still runs it inside a throwaway clean clone, strips GitHub tokens, fixes the
+expected `HEAD`, and rejects any worktree mutation. `medium` is the default; set
+`CODEX_REASONING_EFFORT=high` to restore the old default, or `xhigh` for the
+highest-effort mode. Claude Code runs with
+`--dangerously-skip-permissions`, `--safe-mode`, and no session persistence.
+Grok runs with `--always-approve --permission-mode bypassPermissions --no-plan
+--sandbox off`. opencode runs with `--auto` in headless mode and an inline
+`permission: "allow"` override for its global and build-agent permissions. pi
+runs with `--no-session --mode text --provider openai-codex --thinking <level>`
+and its default full toolset. ACP runs a
 JSON-RPC 2.0 Agent Client Protocol process over stdio from `NEEDLEFISH_ACP_BIN`;
 Needlefish sends `session/cancel` on timeout, then applies the same process-group
 kill path as the CLI runners. Closed PRs are skipped before diffing or model
-invocation. Non-Codex runners execute inside a throwaway clean clone at the
-review head commit;
-needlefish checks that sandbox with
+invocation. All CLI runners execute inside a throwaway clean clone at the review
+head commit; needlefish checks that clone with
 `git status --porcelain --untracked-files=all --ignored=matching` and verifies
 `HEAD` did not move after each successful model call.
 

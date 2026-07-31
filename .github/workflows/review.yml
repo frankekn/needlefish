@@ -221,8 +221,6 @@ jobs:
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
-          # Deliberate on this disposable runner; the read-only toolset is probe-verified.
-          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
           PI_PROVIDER: cliproxy
@@ -233,12 +231,6 @@ jobs:
           if [ ! -x "$HOME/.local/bin/needlefish" ]; then
             echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
             exit 1
-          fi
-          # Grok 4.5 emits valid review JSON only in its unsandboxed mode;
-          # opt into that mode for the explicitly selected Grok lane only.
-          unset NEEDLEFISH_ALLOW_GROK_UNSANDBOXED
-          if [ "$NEEDLEFISH_RUNNER_INPUT" = "grok" ]; then
-            export NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1
           fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then

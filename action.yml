@@ -1,6 +1,6 @@
 name: Needlefish PR Review
 description: >-
-  Strict PR review agent. Reviews the pull request diff with a read-only model
+  Strict PR review agent. Reviews the pull request diff with an isolated model
   runner and posts a COMMENT review plus a Needlefish check-run.
 inputs:
   pr_number:
@@ -47,16 +47,6 @@ runs:
         corepack enable
         corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
         pnpm install --frozen-lockfile
-    - name: Enable unprivileged user namespaces (Linux hosted runners)
-      shell: bash
-      run: |
-        # Ubuntu 23.10+ AppArmor blocks unprivileged user namespaces, which
-        # breaks the codex CLI sandbox (bwrap) on GitHub-hosted VMs and
-        # degrades reviews to diff-only. Best-effort: a locked-down runner
-        # without sudo just keeps the degraded mode.
-        if [ "$(uname -s)" = "Linux" ] && sudo -n true 2>/dev/null; then
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-        fi
     - name: Install model runner CLI
       shell: bash
       env:
@@ -107,9 +97,6 @@ runs:
           echo "No PR number: pass pr_number or trigger on pull_request events." >&2
           exit 1
         fi
-        # CI runs on a disposable VM, so the pi runner's unverified-sandbox gate
-        # (src/shared/codex.ts) is deliberately satisfied here.
-        if [ "$RUNNER_INPUT" = "pi" ]; then export NEEDLEFISH_ALLOW_PI_RUNNER=1; fi
         args=(--github --pr "$pr" --repo "$TARGET_REPO_PATH")
         if [ -n "$RUNNER_INPUT" ]; then args+=(--runner "$RUNNER_INPUT"); fi
         if [ -n "$MODEL_INPUT" ]; then args+=(--model "$MODEL_INPUT"); fi
