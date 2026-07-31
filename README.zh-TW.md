@@ -23,8 +23,8 @@ Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回
   修的就捨棄。沒有風格挑剔，沒有雜訊。
 - **確定性 verdict。** `pass`／`needs_human`／`changes_requested` 由保留下來的
   finding 依固定規則推導，不由模型自由決定。
-- **Sandboxed、唯讀 runner。** 審查預設唯讀；非 Codex runner 會在 throwaway
-  clean clone 中執行，並在每次模型呼叫後檢查是否遭竄改。
+- **隔離的審查目標。** 審查會在 throwaway clean clone 中執行，並在每次模型
+  呼叫後檢查是否遭竄改。
 - **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 84 個情境的
   harness（啟用 anti-cheat guards）量測（見 [Benchmarks](#benchmarks)）。
 
@@ -272,15 +272,16 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
   -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
 ```
 
-Grok 4.5 lane 會刻意停用 Grok 的 process-level plan mode，才能輸出有效
-JSON。workflow 只在明確選擇 `runner=grok` 時設定
-`NEEDLEFISH_ALLOW_GROK_UNSANDBOXED=1`，因此只能在你控制的 runner 上使用。
+所有 production model runner 都不套用各 runner 自己的 process-level 權限限制，
+因此只能在你控制的 self-hosted runner 上使用。
 
 1. 在目標 repo 註冊 self-hosted runner，並限制在自己控制的機器。
 2. 在 runner 部署 Needlefish；`main` 的 push 會觸發 `needlefish-deploy`：
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
+   目前 production fleet 是一份共用 x64 安裝加兩份獨立 ARM 安裝。三份安裝都要
+   部署相同 release SHA，並確認 installed metadata 一致。
 3. 確認 `gh` 與選定的模型 CLI 位於 `PATH`。
 4. 以 runner service account 登入 CLI。Codex 例如：
    ```bash
@@ -348,15 +349,20 @@ Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了�
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `high`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 
-Codex 使用 `--ignore-user-config` 與唯讀 sandbox；Claude 使用 plan mode；
-Grok 預設使用 `--permission-mode plan`，但 self-hosted Grok 4.5 lane 會
-明確停用它以取得有效 JSON。opencode 與 pi 的 headless 唯讀能力未完全驗證，
-因此必須分別設定 `NEEDLEFISH_ALLOW_OPENCODE_RUNNER=1` 或
-`NEEDLEFISH_ALLOW_PI_RUNNER=1`。ACP 透過 `NEEDLEFISH_ACP_BIN` 使用 JSON-RPC
-2.0 stdio process，timeout 時會先送 `session/cancel` 再終止 process group。
+Codex 使用 `--ignore-user-config --ignore-rules
+--dangerously-bypass-approvals-and-sandbox`，避免檢查命令遭 execpolicy rule、
+approval prompt 或 host sandbox 阻擋。Needlefish 仍會把它放在 throwaway clean
+clone 內執行、移除 GitHub token、固定預期 `HEAD`，並拒絕任何 worktree 變更。
+Claude 使用 `--dangerously-skip-permissions`；Grok 使用 `--always-approve
+--permission-mode bypassPermissions --no-plan --sandbox off`；opencode 使用
+`--auto` headless mode，並以 inline `permission: "allow"` 覆寫 global 與
+build-agent 權限；pi 使用預設完整 toolset。這些 production runner 都不需要額外的
+unsandboxed opt-in。
+ACP 透過 `NEEDLEFISH_ACP_BIN` 使用 JSON-RPC 2.0 stdio process，timeout 時會先送
+`session/cancel` 再終止 process group。
 
-非 Codex runner 會在 review head 的 throwaway clean clone 中執行；每次成功
-呼叫後都會確認 sandbox 沒有未提交變更且 `HEAD` 沒有移動。
+所有 CLI runner 都會在 review head 的 throwaway clean clone 中執行；每次成功
+呼叫後都會確認 clone 沒有未提交變更且 `HEAD` 沒有移動。
 
 ### Runner subprocess 環境
 

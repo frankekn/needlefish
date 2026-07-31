@@ -490,7 +490,6 @@ test("runCodex ephemeral HOME: opencode accepts explicitly passed provider API k
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
 	const previous = {
 		bin: process.env.OPENCODE_BIN,
-		allowOpenCode: process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER,
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		retry: process.env.NEEDLEFISH_NO_RETRY,
 		home: process.env.HOME,
@@ -504,7 +503,6 @@ test("runCodex ephemeral HOME: opencode accepts explicitly passed provider API k
 	t.after(() => {
 		for (const [name, value] of Object.entries({
 			OPENCODE_BIN: previous.bin,
-			NEEDLEFISH_ALLOW_OPENCODE_RUNNER: previous.allowOpenCode,
 			NEEDLEFISH_EPHEMERAL_HOME: previous.ephemeral,
 			NEEDLEFISH_NO_RETRY: previous.retry,
 			HOME: previous.home,
@@ -532,7 +530,6 @@ test("runCodex ephemeral HOME: opencode accepts explicitly passed provider API k
 	);
 	chmodSync(bin, 0o755);
 	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = "1";
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	process.env.HOME = fakeHome;
@@ -616,7 +613,6 @@ test("runCodex ephemeral HOME: opencode stages custom XDG auth roots into dispos
 	const previous = Object.fromEntries(
 		[
 			"OPENCODE_BIN",
-			"NEEDLEFISH_ALLOW_OPENCODE_RUNNER",
 			"NEEDLEFISH_EPHEMERAL_HOME",
 			"NEEDLEFISH_NO_RETRY",
 			"HOME",
@@ -651,7 +647,6 @@ test("runCodex ephemeral HOME: opencode stages custom XDG auth roots into dispos
 	);
 	chmodSync(bin, 0o755);
 	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_ALLOW_OPENCODE_RUNNER = "1";
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	process.env.HOME = fakeHome;

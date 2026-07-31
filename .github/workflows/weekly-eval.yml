@@ -24,7 +24,6 @@ jobs:
           fetch-depth: 0
       - name: Run full eval
         env:
-          NEEDLEFISH_ALLOW_PI_RUNNER: "1"
           # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
           PI_PROVIDER: cliproxy
           PI_BIN: /home/termtek/.npm-global/bin/pi

@@ -20,6 +20,45 @@ test("extractJson rejects output without a JSON object", () => {
   assert.throws(() => extractJson(text), /no JSON object found/);
 });
 
+test("runCodex invokes Codex without approval or sandbox restrictions", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const argsPath = path.join(tmp, "args.json");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+      "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "fs.writeFileSync(out, '{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+  assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
+  assert.equal(args.includes("--ignore-rules"), true);
+  assert.equal(args.includes("-s"), false);
+  assert.equal(args.includes("--sandbox"), false);
+  assert.equal(args.some((arg) => arg.startsWith("--sandbox=")), false);
+});
+
 test("runCodex retry backoff yields the event loop", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);

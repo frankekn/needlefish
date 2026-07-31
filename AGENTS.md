@@ -8,7 +8,7 @@ Frank owns this. Keep replies and docs terse unless formal prose is requested.
 
 ## OVERVIEW
 
-Needlefish is a strict TypeScript PR review CLI. It collects local or GitHub PR diffs, sends them through read-only model runners, prunes weak findings with a critic pass, and derives the final verdict deterministically from validated findings.
+Needlefish is a strict TypeScript PR review CLI. It collects local or GitHub PR diffs, sends them through isolated model runners, prunes weak findings with a critic pass, and derives the final verdict deterministically from validated findings.
 
 ## STRUCTURE
 
@@ -36,7 +36,7 @@ needlefish/
 | Verdict rules | `src/core/verdict.ts` | Deterministic; do not let model prose decide pass/fail. |
 | Local review | `src/adapters/local.ts` | Writes `~/.cache/needlefish/<repo>/last-review.json`. |
 | GitHub review | `src/adapters/github.ts` | Posts COMMENT review plus `Needlefish` check-run. |
-| Runner invocation | `src/shared/codex.ts`, `src/shared/runner-process.ts` | Timeout, retry, sandbox, and runner env behavior live here. |
+| Runner invocation | `src/shared/codex.ts`, `src/shared/runner-process.ts` | Timeout, retry, target isolation, and runner env behavior live here. |
 | Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read from target repo root only. |
 | Prompt behavior | `prompts/*.md` | Must remain read-only and output JSON contracts exactly. |
 | Tests | `src/**/*.test.ts`, `scripts/test.mjs` | Node test runner, no Jest/Vitest. |
@@ -66,6 +66,7 @@ needlefish/
 - TypeScript is strict/no-emit with `moduleResolution: "bundler"`.
 - Use `unknown` at JSON/model/GitHub boundaries, then validate or narrow.
 - All NEEDLEFISH_* boolean flags go through `envFlagOn` in `src/shared/env.ts`; only `"1"` is on.
+- Production model CLIs intentionally run without process-level permission or sandbox restrictions on trusted self-hosted runners. Do not restore those restrictions; preserve the throwaway target clone and post-run integrity checks instead.
 - Keep tests beside the code path as `src/**/*.test.ts`.
 - Use Node built-ins (`node:test`, `assert/strict`, `spawnSync`, temp dirs) before adding dependencies.
 - Stub external CLIs in tests with temp scripts and env vars.
@@ -77,7 +78,7 @@ needlefish/
 - Do not implement `--fix` or multi-repo config unless explicitly requested.
 - `--recheck` forces a full re-review (bypassing the same-head dedupe in GitHub mode); it is never incremental verification.
 - Do not substitute global `AGENTS.md`, `~/.codex/*`, or CLI-injected files as target repo review policy. Only bundle `agentsMd` counts.
-- Do not add new runner permissions that can mutate target repos; current model runners are read-only/sandboxed by design.
+- Do not weaken the throwaway clone, token stripping, fixed `HEAD`, or post-run mutation checks that isolate unrestricted model runners from the original target repo.
 
 ## EVAL DISCIPLINE
 
