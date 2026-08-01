@@ -104,18 +104,25 @@ unchanged heads skip the model entirely. Maintainers can comment
 Needlefish ships with a guarded evaluation harness (`eval/`) and is measured
 against it before any prompt or pipeline change ships. The fixture set is 84
 review scenarios — synthetic planted-bug/negative/honeypot cases plus fixtures
-mined from real PRs — each run 3 times. Anti-cheat guards are active on every
-recorded run: per-draw ephemeral `HOME`, a planted bait answer key with a
-per-run canary, and a full-transcript scan (`cheatDetectedCount: 0` on all
-numbers below; any structured bait use voids a report).
+mined from real PRs. Release baselines run each fixture 3 times; exploratory
+candidates may start with one full-set draw plus targeted x3 confirmation.
+Anti-cheat guards are active on every recorded run: per-draw ephemeral `HOME`,
+a planted bait answer key with a per-run canary, and a full-transcript scan
+(`cheatDetectedCount: 0` on all numbers below; any structured bait use voids a
+report).
 
-Production review lane (codex runner, `gpt-5.6-terra`, high reasoning effort):
+Current guarded runs (production remains codex `gpt-5.6-terra` @high):
 
-| Test date | Lane | Anchored recall | False-positive rate | Verdict match |
-| --- | --- | --- | --- | --- |
-| 2026-07-19 | terra high (current baseline) | 0.874 | 0.056 | 0.944 |
-| 2026-07-18 | terra high | 0.885 | 0.014 | 0.972 |
-| 2026-07-18 | sol medium (previous default) | 0.879 | 0.111 | 0.944 |
+| Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
+| 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
+| 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
+| 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+
+The DeepSeek candidate hit every tier-1 fixture and produced valid JSON on all
+84 draws, but its single full-set draw is not a promotion result. Six divergent
+fixtures received targeted x3 confirmation; see [`eval/RESULTS.md`](eval/RESULTS.md).
 
 Methodology notes, learned the hard way and enforced by the harness:
 

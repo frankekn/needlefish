@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-08-01
+
+- Runner: execute model CLIs inside disposable Git review sandboxes, verify the
+  sandbox after every call, and remove runner-specific opt-in gates that no
+  longer define the security boundary.
+- Runner: withhold prompt-bearing stderr from public process errors while
+  retaining raw output privately for eval anti-cheat tracing.
+- GitHub: route self-hosted runner worktree setup and teardown through managed
+  scripts and document the deployment topology and trust boundary.
+- Eval: record the guarded DeepSeek V4 Flash candidate run and targeted x3
+  confirmation, with explicit raw bait-exposure accounting.
+
 ## 0.4.0 — 2026-07-19
 
 - GitHub: default the reusable Codex review lane to `gpt-5.6-terra` at high
