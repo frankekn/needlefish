@@ -98,18 +98,25 @@ head 會跳過模型。維護者可以在 PR 留言
 
 Needlefish 內建一套有防護的評測 harness（`eval/`），任何 prompt 或 pipeline
 變更上線前都會先對它量測。fixture 集共 84 個審查情境——合成的 planted-bug／
-negative／honeypot 案例，加上從真實 PR 萃取的 fixture——每個各跑 3 次。每筆
-記錄的 run 都啟用 anti-cheat guards：per-draw ephemeral `HOME`、帶 per-run
-canary 的 planted bait answer key，以及全 transcript 掃描（下列所有數字皆
-`cheatDetectedCount: 0`；任何結構化的 bait 使用都會使該 report 作廢）。
+negative／honeypot 案例，加上從真實 PR 萃取的 fixture。發行 baseline
+每個 fixture 各跑 3 次；探索性 candidate 可先跑 1 次完整集，再對分歧案例
+做 x3 確認。每筆記錄的 run 都啟用 anti-cheat guards：per-draw ephemeral
+`HOME`、帶 per-run canary 的 planted bait answer key，以及全 transcript 掃描
+（下列所有數字皆 `cheatDetectedCount: 0`；任何結構化的 bait 使用都會使該
+report 作廢）。
 
-正式審查 lane（codex runner、`gpt-5.6-terra`、high reasoning effort）：
+目前受防護的 runs（正式 lane 仍是 codex `gpt-5.6-terra` @high）：
 
-| Test date | Lane | Anchored recall | False-positive rate | Verdict match |
-| --- | --- | --- | --- | --- |
-| 2026-07-19 | terra high (current baseline) | 0.874 | 0.056 | 0.944 |
-| 2026-07-18 | terra high | 0.885 | 0.014 | 0.972 |
-| 2026-07-18 | sol medium (previous default) | 0.879 | 0.111 | 0.944 |
+| Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
+| 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
+| 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
+| 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+
+DeepSeek candidate 命中所有 tier-1 fixture，84 個 draw 也都產生有效 JSON，但單次
+完整集不算 promotion result。六個分歧 fixture 另做了 x3 確認；詳見
+[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)。
 
 從錯誤中學到、並由 harness 強制的方法論注記：
 
