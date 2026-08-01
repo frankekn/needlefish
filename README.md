@@ -122,7 +122,8 @@ Current guarded runs (production remains codex `gpt-5.6-terra` @high):
 
 The DeepSeek candidate hit every tier-1 fixture and produced valid JSON on all
 84 draws, but its single full-set draw is not a promotion result. Six divergent
-fixtures received targeted x3 confirmation; see [`eval/RESULTS.md`](eval/RESULTS.md).
+fixtures received targeted x3 confirmation; see
+[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md).
 
 Methodology notes, learned the hard way and enforced by the harness:
 

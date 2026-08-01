@@ -116,7 +116,7 @@ report 作廢）。
 
 DeepSeek candidate 命中所有 tier-1 fixture，84 個 draw 也都產生有效 JSON，但單次
 完整集不算 promotion result。六個分歧 fixture 另做了 x3 確認；詳見
-[`eval/RESULTS.md`](eval/RESULTS.md)。
+[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)。
 
 從錯誤中學到、並由 harness 強制的方法論注記：
 
