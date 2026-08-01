@@ -1,5 +1,29 @@
 # Eval Results — all runs
 
+## Current guarded benchmark (2026-07-31)
+
+Prompt `e62d0889fc704541`, fixture set `1968a9d2fabe2a56`, scorer
+`a424d3bb59a40443`, anti-cheat v2. DeepSeek is a single full-set draw, so its
+delta against the three-draw production baseline is directional, not a model
+promotion result.
+
+| lane | draws | recall | tier 1 | fp | invalid JSON | verdict match | valid anchors | mean duration |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| codex `gpt-5.6-terra` @high (baseline) | 252/252 | 87.4% | 100% | 5.6% | 1.2% | 94.4% | 88.1% | 56.8s |
+| opencode `deepseek-v4-flash-free` @max | 84/84 | 89.7% | 100% | 0% | 0% | 94.0% | 92.9% | 94.7s |
+
+The six divergent fixtures were confirmed across three draws: `rs-backend-spec-drift`
+3/3, `real-pr1-bundle-basesha-mismatch` 2/3,
+`real-pr1-gh-cli-missing-repo-flag` 1/3, `real-pr1-lenient-candidate-parse`
+0/3, `real-pr1-neutral-conclusion` 1/3, and `real-pr4-hotspot-truncation`
+0/3. Both reports had zero structured bait use (`cheatDetectedCount: 0` and
+candidate adoption 0); raw-transcript bait exposure was 10 draws in the full
+run and 4 in confirmation. Reports:
+[full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
+[divergence confirm x3](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
+
+## Historical pre-guard benchmark
+
 All runs share promptHash `2d82256f1bb7da69`. Baseline = codex gpt-5.5 @ xhigh. recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial (draws < 102); its recall/fp are over a biased subset and not directly comparable.
 
 ## Aggregates (delta vs codex-xhigh baseline; full runs only)
