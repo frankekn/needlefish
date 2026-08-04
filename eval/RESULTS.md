@@ -1,4 +1,7 @@
-# Eval Results — all runs
+# Eval results
+
+This page leads with the latest comparable result. The full experiment log is
+collapsed below for reference.
 
 ## Current guarded benchmark (2026-07-31)
 
@@ -12,6 +15,10 @@ promotion result.
 | codex `gpt-5.6-terra` @high (baseline) | 252/252 | 87.4% | 100% | 5.6% | 1.2% | 94.4% | 88.1% | 56.8s |
 | opencode `deepseek-v4-flash-free` @max | 84/84 | 89.7% | 100% | 0% | 0% | 94.0% | 92.9% | 94.7s |
 
+**Takeaway:** DeepSeek looked better on recall, false positives, and anchors,
+but this was one draw against a three-draw baseline. Treat it as a promising
+candidate, not a promotion result.
+
 The six divergent fixtures were confirmed across three draws: `rs-backend-spec-drift`
 3/3, `real-pr1-bundle-basesha-mismatch` 2/3,
 `real-pr1-gh-cli-missing-repo-flag` 1/3, `real-pr1-lenient-candidate-parse`
@@ -21,6 +28,9 @@ candidate adoption 0); raw-transcript bait exposure was 10 draws in the full
 run and 4 in confirmation. Reports:
 [full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
 [divergence confirm x3](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
+
+<details>
+<summary><strong>Historical benchmarks and experiment log</strong></summary>
 
 ## Historical pre-guard benchmark
 
@@ -773,3 +783,5 @@ any tier-1 miss disqualifies a lane. Stable 0/3 misses:
 second-opinion candidate, not a production replacement at this configuration.
 
 Report: `eval/reports/2026-07-26-qwen38-max-preview-xhigh-x3.json`.
+
+</details>
