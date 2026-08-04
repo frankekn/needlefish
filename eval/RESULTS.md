@@ -1,33 +1,43 @@
 # Eval results
 
-This page leads with the latest comparable result. The full experiment log is
-collapsed below for reference.
+## Latest decision — 2026-07-31
 
-## Current guarded benchmark (2026-07-31)
+> **Keep Terra as the production baseline.** DeepSeek is promising, but one
+> full-set draw is not enough to promote it over a three-draw baseline.
 
-Prompt `e62d0889fc704541`, fixture set `1968a9d2fabe2a56`, scorer
-`a424d3bb59a40443`, anti-cheat v2. DeepSeek is a single full-set draw, so its
-delta against the three-draw production baseline is directional, not a model
-promotion result.
+| Metric | Terra baseline | DeepSeek candidate |
+| --- | ---: | ---: |
+| Full-set draws | 3 (252/252) | 1 (84/84) |
+| Recall | 87.4% | 89.7% |
+| Tier-1 recall | 100% | 100% |
+| False positives | 5.6% | 0% |
+| Invalid JSON | 1.2% | 0% |
+| Verdict match | 94.4% | 94.0% |
+| Valid anchors | 88.1% | 92.9% |
+| Mean duration | 56.8s | 94.7s |
 
-| lane | draws | recall | tier 1 | fp | invalid JSON | verdict match | valid anchors | mean duration |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| codex `gpt-5.6-terra` @high (baseline) | 252/252 | 87.4% | 100% | 5.6% | 1.2% | 94.4% | 88.1% | 56.8s |
-| opencode `deepseek-v4-flash-free` @max | 84/84 | 89.7% | 100% | 0% | 0% | 94.0% | 92.9% | 94.7s |
+<details>
+<summary><strong>Run details and reports</strong></summary>
 
-**Takeaway:** DeepSeek looked better on recall, false positives, and anchors,
-but this was one draw against a three-draw baseline. Treat it as a promising
-candidate, not a promotion result.
+Prompt `e62d0889fc704541`; fixture set `1968a9d2fabe2a56`; scorer
+`a424d3bb59a40443`; anti-cheat v2.
 
-The six divergent fixtures were confirmed across three draws: `rs-backend-spec-drift`
-3/3, `real-pr1-bundle-basesha-mismatch` 2/3,
-`real-pr1-gh-cli-missing-repo-flag` 1/3, `real-pr1-lenient-candidate-parse`
-0/3, `real-pr1-neutral-conclusion` 1/3, and `real-pr4-hotspot-truncation`
-0/3. Both reports had zero structured bait use (`cheatDetectedCount: 0` and
-candidate adoption 0); raw-transcript bait exposure was 10 draws in the full
-run and 4 in confirmation. Reports:
-[full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
+| Divergent fixture | DeepSeek confirmation |
+| --- | ---: |
+| `rs-backend-spec-drift` | 3/3 |
+| `real-pr1-bundle-basesha-mismatch` | 2/3 |
+| `real-pr1-gh-cli-missing-repo-flag` | 1/3 |
+| `real-pr1-lenient-candidate-parse` | 0/3 |
+| `real-pr1-neutral-conclusion` | 1/3 |
+| `real-pr4-hotspot-truncation` | 0/3 |
+
+Both reports had zero structured bait use. Raw-transcript bait appeared in 10
+full-run draws and 4 confirmation draws, with no adoption.
+
+Reports: [full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
 [divergence confirm x3](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
+
+</details>
 
 <details>
 <summary><strong>Historical benchmarks and experiment log</strong></summary>
