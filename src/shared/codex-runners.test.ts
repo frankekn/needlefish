@@ -133,7 +133,7 @@ test("runCodex extracts opencode json text output", async (t) => {
 		"--dir",
 	]);
 	assert.notEqual(args[6], repo);
-	assert.equal(args[7], "--file");
+	assert.deepEqual(args.slice(7, 10), ["--agent", "build", "--file"]);
 	assert.equal(
 		args.at(-1),
 		"Use the attached prompt file as your complete instruction.",

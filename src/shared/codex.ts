@@ -780,6 +780,8 @@ async function runOpenCode(
 		"--auto",
 		"--dir",
 		invocation.repoPath,
+		"--agent",
+		"build",
 	];
 	args.push("--file", promptPath);
 	if (invocation.model) args.push("--model", invocation.model);

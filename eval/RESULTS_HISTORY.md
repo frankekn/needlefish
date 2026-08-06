@@ -1,9 +1,34 @@
 # Evaluation history
 
-This is the original chronological record through 2026-07-31. For the
+This is the original chronological record through 2026-08-05. For the
 maintained narrative and current decision, see [RESULTS.md](RESULTS.md).
 
-## Latest decision — 2026-07-31
+## Latest decision — 2026-08-05
+
+> **Keep Terra as the production baseline.** Kimi K3 is the strongest
+> directional challenger, but requires full x3 confirmation.
+
+| Metric | Terra baseline | Kimi K3 x1 | DeepSeek x3 |
+| --- | ---: | ---: | ---: |
+| Full-set draws | 3 (252/252) | 1 (84/84) | 3 (252/252) |
+| Recall | 87.4% | 89.7% | 37.4% |
+| Tier-1 recall | 100% | 100% | 52.4% |
+| False positives | 5.6% | 0% | 1.4% |
+| Invalid JSON | 1.2% | 0% | 44.0% |
+| Verdict match | 94.4% | 96.4% | 53.6% |
+| Valid anchors | 88.1% | 90.5% | 52.0% |
+| Mean duration | 56.8s | 121.0s | 594.4s |
+
+OpenCode's pure mode initially failed because the staged user config selected
+the plugin-provided `sisyphus` agent while pure mode disabled that plugin.
+Needlefish now pins the built-in `build` agent. DeepSeek's x3 confirmation then
+failed operationally with 44% invalid JSON; Kimi K3 completed a clean x1 with
+zero structured bait use and advances to x3 confirmation.
+
+Reports: [DeepSeek x3](results/2026-08-05-opencode-deepseek-v4-flash-max-x3.json),
+[Kimi K3 x1](results/2026-08-05-opencode-kimi-k3-max-x1.json).
+
+## Previous decision — 2026-07-31
 
 > **Keep Terra as the production baseline.** DeepSeek is promising, but one
 > full-set draw is not enough to promote it over a three-draw baseline.
