@@ -193,3 +193,11 @@ test("review invokes only the selected immutable release binary", () => {
 	assert.match(reviewScript, /"\$NEEDLEFISH_BIN" "\$\{args\[@\]\}"/);
 	assert.doesNotMatch(reviewScript, /\.local\/bin\/needlefish|needlefish\/current/);
 });
+
+test("review forwards the optional opencode idle timeout without exporting an empty value", () => {
+	assert.match(workflow, /idle_timeout_ms:\n\s+description: Optional opencode inactivity timeout/);
+	assert.match(
+		reviewScript,
+		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
+	);
+});

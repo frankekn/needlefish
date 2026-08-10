@@ -147,6 +147,63 @@ test("runCodex extracts opencode json text output", async (t) => {
 	});
 });
 
+test("runCodex retries an opencode attempt that stops producing output", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "opencode-bin.js");
+	const attemptsPath = path.join(tmp, "attempts.txt");
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		idleTimeout: process.env.OPENCODE_IDLE_TIMEOUT_MS,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+		retry: process.env.NEEDLEFISH_RETRY_MS,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.idleTimeout === undefined)
+			delete process.env.OPENCODE_IDLE_TIMEOUT_MS;
+		else process.env.OPENCODE_IDLE_TIMEOUT_MS = previous.idleTimeout;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
+		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`const attemptsPath = ${JSON.stringify(attemptsPath)};`,
+			"const attempt = fs.existsSync(attemptsPath) ? Number(fs.readFileSync(attemptsPath, 'utf8')) + 1 : 1;",
+			"fs.writeFileSync(attemptsPath, String(attempt));",
+			"if (attempt === 1) setInterval(() => {}, 1000);",
+			"else process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\\\"ok\\\":true}' } }) + '\\n');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.OPENCODE_BIN = bin;
+	process.env.OPENCODE_IDLE_TIMEOUT_MS = "100";
+	delete process.env.NEEDLEFISH_NO_RETRY;
+	process.env.NEEDLEFISH_RETRY_MS = "1";
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	const startedAt = Date.now();
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 2000,
+	});
+
+	assert.ok(Date.now() - startedAt < 1000);
+	assert.equal(output, '{"ok":true}');
+	assert.equal(readFileSync(attemptsPath, "utf8"), "2");
+});
+
 test("runCodex rejects non-codex runners that dirty the target repo", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);

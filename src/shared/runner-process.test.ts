@@ -38,6 +38,44 @@ test("readRunnerDurationMs treats empty runner timeout env as unset", () => {
   assert.equal(readRunnerDurationMs("0", 5000), 0);
 });
 
+test("spawnRunnerProcess stops a runner that becomes idle", { timeout: 3000 }, async () => {
+  const startedAt = Date.now();
+  const result = await spawnRunnerProcess({
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    stdin: "",
+    repoPath: process.cwd(),
+    timeoutMs: 2000,
+    idleTimeoutMs: 100,
+    env: process.env,
+  });
+
+  assert.ok(Date.now() - startedAt < 1000);
+  assert.equal(result.status, null);
+  assert.equal(result.signal, "SIGTERM");
+  assert.equal((result.error as Error & { code?: string }).code, "EIDLETIMEDOUT");
+  assert.match(result.error?.message ?? "", /EIDLETIMEDOUT/);
+});
+
+test("spawnRunnerProcess refreshes the idle deadline when output arrives", async () => {
+  const result = await spawnRunnerProcess({
+    command: process.execPath,
+    args: [
+      "-e",
+      "let count = 0; const timer = setInterval(() => { process.stdout.write('tick\\n'); count += 1; if (count === 4) { clearInterval(timer); } }, 60);",
+    ],
+    stdin: "",
+    repoPath: process.cwd(),
+    timeoutMs: 1000,
+    idleTimeoutMs: 120,
+    env: process.env,
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "tick\ntick\ntick\ntick\n");
+});
+
 test("spawnRunnerProcess kills a SIGTERM-trapping process group after timeout", { timeout: 10_000 }, async () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-process-test-"));
   const runner = path.join(tmp, "zombie-runner.js");

@@ -302,6 +302,7 @@ jobs:
       # model: gpt-5.6-terra
       # codex_reasoning_effort: high
       # timeout_ms: "600000"
+      # idle_timeout_ms: "600000" # opencode only
     secrets: inherit
 ```
 
@@ -444,6 +445,11 @@ and `--timeout-ms`, or the matching env vars:
 | model | `NEEDLEFISH_MODEL` | runner default |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `high` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
+
+The opencode idle deadline resets whenever the CLI emits stdout or stderr. If a
+provider stream stops producing output, Needlefish terminates that attempt and
+uses the normal runner retry instead of waiting for an extended per-call timeout.
 
 Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
 `GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
@@ -483,6 +489,9 @@ locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
 variables are passed through. To pass an additional variable to the runner
 subprocess, set `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2` (comma-separated
 names).
+On GitHub Actions, the non-secret `RUNNER_TRACKING_ID` job marker is retained so
+the self-hosted runner can terminate detached model processes when a job is
+cancelled.
 
 ACP env authentication additionally requires an explicit credential declaration:
 set `NEEDLEFISH_ACP_AUTH_ENV_VARS` to the credential names and include those same

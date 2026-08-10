@@ -265,6 +265,7 @@ jobs:
       # model: gpt-5.6-terra
       # codex_reasoning_effort: high
       # timeout_ms: "600000"
+      # idle_timeout_ms: "600000" # 僅 opencode
     secrets: inherit
 ```
 
@@ -371,6 +372,11 @@ Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了�
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `high`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
+
+opencode CLI 每次產生 stdout 或 stderr 都會重設 idle deadline。若 provider
+stream 停止輸出，Needlefish 會終止該 attempt 並使用既有 runner retry，不再等待
+被拉長的完整 per-call timeout。
 
 Codex 使用 `--ignore-user-config --ignore-rules
 --dangerously-bypass-approvals-and-sandbox`，避免檢查命令遭 execpolicy rule、
@@ -395,6 +401,9 @@ Runner 只會收到 allowlist 環境，不會繼承完整的 parent `process.env
 ```bash
 NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2
 ```
+
+GitHub Actions 的非機密 `RUNNER_TRACKING_ID` job marker 會自動保留，讓
+self-hosted runner 在 job 被取消時能終止 detached model process。
 
 ACP 認證還需要宣告 `NEEDLEFISH_ACP_AUTH_ENV_VARS`，並把相同名稱放入
 `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`；或者以
