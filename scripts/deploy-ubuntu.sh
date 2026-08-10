@@ -35,15 +35,14 @@ git checkout --detach FETCH_HEAD
 
 sha=$(git rev-parse HEAD)
 release="$releases/$sha"
-if ! command -v pnpm >/dev/null 2>&1; then
-	pnpm_version=$(node -p "require('./package.json').packageManager")
-	corepack enable
-	corepack prepare "$pnpm_version" --activate
-fi
 if [ -e "$release" ]; then
 	validate_release
 else
-	pnpm install --frozen-lockfile
+	if command -v pnpm >/dev/null 2>&1; then
+		pnpm install --frozen-lockfile
+	else
+		corepack pnpm install --frozen-lockfile
+	fi
 
 	version=$(node -p "require('./package.json').version")
 	node_version=$(node -p "process.version")
