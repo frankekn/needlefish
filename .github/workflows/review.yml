@@ -170,7 +170,7 @@ jobs:
 
           echo "TMPDIR=$temp_root" >> "$GITHUB_ENV"
 
-      - name: Verify Needlefish release
+      - name: Select Needlefish release
         if: steps.refs.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -179,11 +179,35 @@ jobs:
           EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
           NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
         run: |
+          set -euo pipefail
+
+          report_release_failure() {
+            title="$1"
+            summary="$2"
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$PR_HEAD_SHA" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=$title" \
+              -f "output[summary]=$summary"
+            echo "$summary" >&2
+            exit 1
+          }
+
           if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
             EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
           fi
 
-          metadata="$HOME/.local/share/needlefish/current/release.json"
+          if [[ ! "$EXPECTED_NEEDLEFISH_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            report_release_failure \
+              "Invalid Needlefish release SHA" \
+              "Expected a full lowercase 40-character Needlefish commit SHA, received '$EXPECTED_NEEDLEFISH_SHA'."
+          fi
+
+          release="$HOME/.local/share/needlefish/releases/$EXPECTED_NEEDLEFISH_SHA"
+          metadata="$release/release.json"
+          binary="$release/bin/needlefish"
           actual_sha=""
           if [ -f "$metadata" ]; then
             actual_sha="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (typeof json.sha === "string") process.stdout.write(json.sha);' "$metadata" 2>/dev/null || true)"
@@ -191,16 +215,24 @@ jobs:
 
           if [ "$actual_sha" != "$EXPECTED_NEEDLEFISH_SHA" ]; then
             if [ -z "$actual_sha" ]; then actual_sha="missing"; fi
-            gh api -X POST "repos/$REPO/check-runs" \
-              -f name="Needlefish" \
-              -f head_sha="$PR_HEAD_SHA" \
-              -f status="completed" \
-              -f conclusion="failure" \
-              -f "output[title]=Needlefish release mismatch" \
-              -f "output[summary]=Expected Needlefish release $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata."
-            echo "Needlefish release mismatch: expected $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata." >&2
-            exit 1
+            report_release_failure \
+              "Needlefish release mismatch" \
+              "Expected Needlefish release $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata."
           fi
+
+          if [ ! -x "$binary" ]; then
+            report_release_failure \
+              "Needlefish release is incomplete" \
+              "Needlefish release $EXPECTED_NEEDLEFISH_SHA is missing executable $binary."
+          fi
+
+          if ! "$binary" --version; then
+            report_release_failure \
+              "Needlefish release is not runnable" \
+              "Needlefish release $EXPECTED_NEEDLEFISH_SHA failed its version check at $binary."
+          fi
+
+          printf 'NEEDLEFISH_BIN=%s\n' "$binary" >> "$GITHUB_ENV"
 
       - name: Checkout review target (PR head)
         if: steps.refs.outputs.skip != 'true'
@@ -228,8 +260,8 @@ jobs:
           PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: |
-          if [ ! -x "$HOME/.local/bin/needlefish" ]; then
-            echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
+          if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
+            echo "Selected Needlefish release is unavailable. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
             exit 1
           fi
           args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
@@ -246,4 +278,4 @@ jobs:
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
-          "$HOME/.local/bin/needlefish" "${args[@]}"
+          "$NEEDLEFISH_BIN" "${args[@]}"

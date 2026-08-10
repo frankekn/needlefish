@@ -282,6 +282,21 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
 所有 production model runner 都不套用各 runner 自己的 process-level 權限限制，
 因此只能在你控制的 self-hosted runner 上使用。
 
+需要可重現的 review 時，reusable workflow ref 與
+`needlefish_release_sha` 必須 pin 到同一個完整 commit SHA。workflow 會直接執行
+`~/.local/share/needlefish/releases/<sha>` 的 immutable release；即使較新的部署
+切換了共用的 `current` symlink，已 pin 的 repo 也不受影響。使用 `@main` 且未
+指定 release SHA 時，workflow 會解析 Needlefish `main` 的目前 SHA。PR job
+不會重新安裝 Needlefish，因此該 release 必須已部署在 runner。
+
+```yaml
+jobs:
+  review:
+    uses: frankekn/needlefish/.github/workflows/review.yml@<full-commit-sha>
+    with:
+      needlefish_release_sha: <full-commit-sha>
+```
+
 1. 在目標 repo 註冊 self-hosted runner，並限制在自己控制的機器。
 2. 在 runner 部署 Needlefish；`main` 的 push 會觸發 `needlefish-deploy`：
    ```bash
