@@ -338,12 +338,16 @@ test("runCodex passes allowlisted env vars to the runner subprocess", async (t) 
   const previous = {
     bin: process.env.CODEX_BIN,
     model: process.env.CODEX_MODEL,
+    runnerTrackingId: process.env.RUNNER_TRACKING_ID,
   };
   t.after(() => {
     if (previous.bin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previous.bin;
     if (previous.model === undefined) delete process.env.CODEX_MODEL;
     else process.env.CODEX_MODEL = previous.model;
+    if (previous.runnerTrackingId === undefined)
+      delete process.env.RUNNER_TRACKING_ID;
+    else process.env.RUNNER_TRACKING_ID = previous.runnerTrackingId;
     rmSync(tmp, { recursive: true, force: true });
   });
   writeFileSync(
@@ -353,13 +357,14 @@ test("runCodex passes allowlisted env vars to the runner subprocess", async (t) 
       "const fs = require('node:fs');",
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       `const envDump = ${JSON.stringify(envDump)};`,
-      "fs.writeFileSync(envDump, JSON.stringify({ codexModel: process.env.CODEX_MODEL ?? null }));",
+      "fs.writeFileSync(envDump, JSON.stringify({ codexModel: process.env.CODEX_MODEL ?? null, runnerTrackingId: process.env.RUNNER_TRACKING_ID ?? null }));",
       "fs.writeFileSync(out, '{\"ok\":true}');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
   process.env.CODEX_MODEL = "test-model";
+  process.env.RUNNER_TRACKING_ID = "github-job-marker";
 
   await runCodex("prompt", {
     repoPath: repo,
@@ -368,8 +373,12 @@ test("runCodex passes allowlisted env vars to the runner subprocess", async (t) 
     timeoutMs: 1000,
   });
 
-  const dump = JSON.parse(readFileSync(envDump, "utf8")) as { codexModel: string | null };
+  const dump = JSON.parse(readFileSync(envDump, "utf8")) as {
+    codexModel: string | null;
+    runnerTrackingId: string | null;
+  };
   assert.equal(dump.codexModel, "test-model");
+  assert.equal(dump.runnerTrackingId, "github-job-marker");
 });
 
 test("runCodex strips non-allowlisted env vars from the runner subprocess", async (t) => {

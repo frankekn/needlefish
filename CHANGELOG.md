@@ -5,6 +5,9 @@
 - GitHub: execute the exact immutable release selected by
   `needlefish_release_sha`, so a newer deployment cannot invalidate or replace a
   caller-pinned review runtime.
+- Runner: stop and retry opencode attempts after ten minutes without stdout or
+  stderr, independently of a longer per-call timeout, and preserve GitHub's
+  process-tracking marker so cancelled jobs do not leave detached runners.
 
 ## 0.4.1 — 2026-08-01
 

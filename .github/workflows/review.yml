@@ -18,6 +18,9 @@ on:
       timeout_ms:
         description: Optional per-call timeout in milliseconds
         required: false
+      idle_timeout_ms:
+        description: Optional opencode inactivity timeout in milliseconds
+        required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
         required: false
@@ -49,6 +52,10 @@ on:
         required: false
       timeout_ms:
         description: Optional per-call timeout in milliseconds
+        type: string
+        required: false
+      idle_timeout_ms:
+        description: Optional opencode inactivity timeout in milliseconds
         type: string
         required: false
       codex_reasoning_effort:
@@ -252,6 +259,7 @@ jobs:
           NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
+          OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
@@ -277,5 +285,6 @@ jobs:
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
+          if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           "$NEEDLEFISH_BIN" "${args[@]}"

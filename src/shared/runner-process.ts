@@ -20,6 +20,7 @@ export interface RunnerProcessInvocation {
   readonly stdin: string;
   readonly repoPath: string;
   readonly timeoutMs: number;
+  readonly idleTimeoutMs?: number;
   readonly env: NodeJS.ProcessEnv;
 }
 
@@ -38,6 +39,7 @@ export interface ManagedRunnerProcessInvocation {
   readonly args: readonly string[];
   readonly repoPath: string;
   readonly timeoutMs: number;
+  readonly idleTimeoutMs?: number;
   readonly env: NodeJS.ProcessEnv;
   readonly onSpawn?: RunnerLifecycleHandler;
   readonly onStdout?: RunnerChunkHandler;
@@ -50,6 +52,14 @@ export class RunnerTimeoutError extends Error {
 
   constructor(command: string) {
     super(`spawn ${command} ETIMEDOUT`);
+  }
+}
+
+export class RunnerIdleTimeoutError extends Error {
+  readonly code = "EIDLETIMEDOUT";
+
+  constructor(command: string) {
+    super(`spawn ${command} EIDLETIMEDOUT`);
   }
 }
 
@@ -69,6 +79,9 @@ export async function spawnRunnerProcess(
     args: invocation.args,
     repoPath: invocation.repoPath,
     timeoutMs: invocation.timeoutMs,
+    ...(invocation.idleTimeoutMs === undefined
+      ? {}
+      : { idleTimeoutMs: invocation.idleTimeoutMs }),
     env: invocation.env,
     onSpawn: (controller) => controller.child.stdin.end(invocation.stdin),
   });
@@ -84,10 +97,11 @@ export async function runManagedRunnerProcess(
     const stdoutBytes = { count: 0 };
     const stderrBytes = { count: 0 };
     let settled = false;
-    let timedOut = false;
     let spawnError: Error | undefined;
     let bufferError: Error | undefined;
+    let timeoutError: Error | undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelTimer: ReturnType<typeof setTimeout> | null = null;
     let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     let giveUpTimer: ReturnType<typeof setTimeout> | null = null;
@@ -107,6 +121,10 @@ export async function runManagedRunnerProcess(
       if (timer !== null) {
         clearTimeout(timer);
         timer = null;
+      }
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
       }
       if (cancelTimer !== null) {
         clearTimeout(cancelTimer);
@@ -133,6 +151,10 @@ export async function runManagedRunnerProcess(
         clearTimeout(timer);
         timer = null;
       }
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       if (cancelTimer !== null) {
         clearTimeout(cancelTimer);
         cancelTimer = null;
@@ -152,6 +174,7 @@ export async function runManagedRunnerProcess(
       if (settled) return;
       settled = true;
       if (timer !== null) clearTimeout(timer);
+      if (idleTimer !== null) clearTimeout(idleTimer);
       if (cancelTimer !== null) clearTimeout(cancelTimer);
       if (hardKillTimer !== null) clearTimeout(hardKillTimer);
       if (giveUpTimer !== null) clearTimeout(giveUpTimer);
@@ -163,7 +186,7 @@ export async function runManagedRunnerProcess(
         error:
           spawnError ??
           bufferError ??
-          (timedOut ? new RunnerTimeoutError(invocation.command) : undefined),
+          timeoutError,
       });
     };
 
@@ -214,10 +237,42 @@ export async function runManagedRunnerProcess(
       return text;
     };
 
+    const beginTimeout = (error: RunnerTimeoutError | RunnerIdleTimeoutError): void => {
+      if (settled || timeoutError !== undefined) return;
+      timeoutError = error;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+      if (invocation.onTimeout !== undefined) {
+        try {
+          invocation.onTimeout(controller);
+        } catch (handlerError) {
+          if (!(handlerError instanceof Error)) throw handlerError;
+        }
+      }
+      const cancelBeatMs = invocation.onTimeout === undefined ? 0 : runnerTimeoutCancelMs();
+      cancelTimer = setTimeout(() => beginKillSequence("SIGTERM"), cancelBeatMs);
+    };
+
+    const refreshIdleTimer = (): void => {
+      if (invocation.idleTimeoutMs === undefined || timeoutError !== undefined) return;
+      if (idleTimer !== null) clearTimeout(idleTimer);
+      idleTimer = setTimeout(
+        () => beginTimeout(new RunnerIdleTimeoutError(invocation.command)),
+        invocation.idleTimeoutMs,
+      );
+    };
+
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: unknown) => {
       const text = collect(stdout, stdoutBytes, chunk);
+      if (text !== null) refreshIdleTimer();
       if (text === null || invocation.onStdout === undefined) return;
       try {
         invocation.onStdout(text, controller);
@@ -227,6 +282,7 @@ export async function runManagedRunnerProcess(
     });
     child.stderr.on("data", (chunk: unknown) => {
       const text = collect(stderr, stderrBytes, chunk);
+      if (text !== null) refreshIdleTimer();
       if (text === null || invocation.onStderr === undefined) return;
       try {
         invocation.onStderr(text, controller);
@@ -235,7 +291,7 @@ export async function runManagedRunnerProcess(
       }
     });
     child.stdin.on("error", (error) => {
-      if (!timedOut && bufferError === undefined && spawnError === undefined) {
+      if (timeoutError === undefined && bufferError === undefined && spawnError === undefined) {
         spawnError = error;
       }
     });
@@ -248,18 +304,11 @@ export async function runManagedRunnerProcess(
       finish(status, signal);
     });
 
-    timer = setTimeout(() => {
-      timedOut = true;
-      if (invocation.onTimeout !== undefined) {
-        try {
-          invocation.onTimeout(controller);
-        } catch (error) {
-          if (!(error instanceof Error)) throw error;
-        }
-      }
-      const cancelBeatMs = invocation.onTimeout === undefined ? 0 : runnerTimeoutCancelMs();
-      cancelTimer = setTimeout(() => beginKillSequence("SIGTERM"), cancelBeatMs);
-    }, invocation.timeoutMs);
+    timer = setTimeout(
+      () => beginTimeout(new RunnerTimeoutError(invocation.command)),
+      invocation.timeoutMs,
+    );
+    refreshIdleTimer();
 
     if (invocation.onSpawn !== undefined) {
       try {

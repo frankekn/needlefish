@@ -75,6 +75,7 @@ Env:
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)
+  OPENCODE_IDLE_TIMEOUT_MS opencode inactivity timeout (default: min of per-call timeout and 600000)
   PI_BIN                  pi executable (default: pi)
   NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
 `;

@@ -52,6 +52,9 @@ const BASE_ENV_ALLOWLIST = [
 	"http_proxy",
 	"https_proxy",
 	"no_proxy",
+	// GitHub's self-hosted runner uses this non-secret job marker to find and
+	// terminate detached descendants when a workflow is cancelled.
+	"RUNNER_TRACKING_ID",
 ] as const;
 
 const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
@@ -670,6 +673,15 @@ function retryMsFor(runner: RunnerName): number {
 	return 5000;
 }
 
+function openCodeIdleTimeoutMs(totalTimeoutMs: number): number {
+	const configured = process.env.OPENCODE_IDLE_TIMEOUT_MS?.trim();
+	const idleTimeoutMs =
+		configured === undefined || configured === ""
+			? 600000
+			: parsePositiveInteger(configured, "OPENCODE_IDLE_TIMEOUT_MS");
+	return Math.min(totalTimeoutMs, idleTimeoutMs);
+}
+
 async function runRunner(
 	runner: RunnerName,
 	invocation: RunnerInvocation,
@@ -793,6 +805,7 @@ async function runOpenCode(
 		stdin: "",
 		repoPath: invocation.repoPath,
 		timeoutMs: invocation.timeoutMs,
+		idleTimeoutMs: openCodeIdleTimeoutMs(invocation.timeoutMs),
 		env: {
 			...invocation.env,
 			OPENCODE_CONFIG_CONTENT: unrestrictedConfig,
