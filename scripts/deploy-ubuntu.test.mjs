@@ -8,6 +8,13 @@ test("deploy does not install an optional model runner", async () => {
   assert.doesNotMatch(script, /npm install -g @mariozechner\/pi/);
 });
 
+test("deploy uses Corepack without writing system pnpm shims", async () => {
+  const script = await readFile("scripts/deploy-ubuntu.sh", "utf8");
+
+  assert.doesNotMatch(script, /^\s*corepack enable$/m);
+  assert.match(script, /corepack pnpm install --frozen-lockfile/);
+});
+
 test("hosted action does not require runner permission opt-ins", async () => {
   const action = await readFile("action.yml", "utf8");
 
