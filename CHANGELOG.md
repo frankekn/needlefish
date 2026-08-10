@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- GitHub: execute the exact immutable release selected by
+  `needlefish_release_sha`, so a newer deployment cannot invalidate or replace a
+  caller-pinned review runtime.
+
 ## 0.4.1 — 2026-08-01
 
 - Runner: execute model CLIs inside disposable Git review sandboxes, verify the

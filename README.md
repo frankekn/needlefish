@@ -321,12 +321,21 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
 All production model runners execute without their own process-level permission
 restrictions. Use them only on a self-hosted runner you control.
 
-Because the caller pins `@main`, fixes to needlefish's `review.yml` propagate to
-every target repo automatically. The runner must have needlefish deployed at
-`~/.local/bin/needlefish`; the workflow does not reinstall the tool on every PR.
-Hardened installed releases should also publish
-`~/.local/share/needlefish/current/release.json` with the installed Needlefish
-SHA so review jobs can fail before spending model tokens when a runner is stale.
+For reproducible reviews, pin the reusable workflow and
+`needlefish_release_sha` to the same full commit SHA. The workflow executes that
+immutable release from `~/.local/share/needlefish/releases/<sha>` even when a
+newer deployment has moved the shared `current` symlink. Callers using `@main`
+without an explicit release pin resolve the current Needlefish `main` SHA.
+The workflow never reinstalls the tool during a PR job; the selected release must
+already have been deployed on the runner.
+
+```yaml
+jobs:
+  review:
+    uses: frankekn/needlefish/.github/workflows/review.yml@<full-commit-sha>
+    with:
+      needlefish_release_sha: <full-commit-sha>
+```
 
 1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
    Keep it on a machine you control (EC2/pod/Mac).
