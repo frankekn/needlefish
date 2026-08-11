@@ -709,6 +709,7 @@ async function runCodexCli(
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
 	const reasoningEffort = resolveCodexReasoningEffort();
+	const serviceTier = resolveCodexServiceTier();
 	const args = [
 		"exec",
 		"--color",
@@ -722,6 +723,7 @@ async function runCodexCli(
 		"--output-last-message",
 		lastMsg,
 	];
+	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
 	if (invocation.reasoningEffort)
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
@@ -749,6 +751,13 @@ function resolveCodexReasoningEffort(): CodexReasoningEffort {
 	if (value === undefined || value === "") return "medium";
 	if (value === "medium" || value === "high" || value === "xhigh") return value;
 	throw new Error("CODEX_REASONING_EFFORT must be one of: medium, high, xhigh");
+}
+
+function resolveCodexServiceTier(): string | undefined {
+	const value = process.env.CODEX_SERVICE_TIER;
+	if (value === undefined || value === "") return undefined;
+	if (value === "fast" || value === "priority") return value;
+	throw new Error("CODEX_SERVICE_TIER must be one of: fast, priority");
 }
 
 async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
