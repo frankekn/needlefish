@@ -1356,6 +1356,54 @@ test("review feeds the diff as raw text, not escaped bundle JSON", async (t) => 
 	assert.equal(result.verdict, "pass");
 });
 
+test("review preserves candidate evidence when the critic omits it", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = process.env.CODEX_BIN;
+	t.after(() => {
+		if (previous === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  if (input.includes('adversarial critic')) {",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic clean', findings: [], checked: [], residual_risks: [] }));",
+			"    return;",
+			"  }",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'candidate clean', findings: [], checked: ['candidate evidence'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+
+	const result = await review({
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "short",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	});
+
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.checked, ["candidate evidence"]);
+});
+
 test("review large thresholds are env-overridable", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);

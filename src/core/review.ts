@@ -350,6 +350,20 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 	};
 }
 
+function parseCriticReview(candidate: RawReview): (raw: unknown) => RawReview {
+	return (raw) => {
+		const review = normalizeReview(raw);
+		if (!review.summary) {
+			throw new Error("critic produced no summary (likely malformed output)");
+		}
+		// The critic may prune evidence, but an empty list loses all validated
+		// candidate coverage and makes an otherwise valid review unusable.
+		return review.checked.length > 0
+			? review
+			: { ...review, checked: candidate.checked };
+	};
+}
+
 async function runCritic(
 	candidate: RawReview,
 	patchText: string,
@@ -367,7 +381,7 @@ async function runCritic(
 			prompt: criticPrompt,
 			passKind: "critic",
 			passIndex: 0,
-			parse: parseUsableReview("critic"),
+			parse: parseCriticReview(candidate),
 		},
 		run,
 	);
