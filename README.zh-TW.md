@@ -109,10 +109,17 @@ report 作廢）。
 
 | Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
 | --- | --- | ---: | ---: | ---: | ---: |
+| 2026-08-21 | OX Alpha @max（schema-tolerant semantic probe） | 3 × 26\* | 0.514 | 0.000 | 0.577 |
+| 2026-08-21 | opencode OX Alpha @max（部分完成） | 176/252\* | 0.235 | 0.000 | 0.483 |
 | 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
 | 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
 | 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
 | 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+
+\* OX Alpha 僅為透明揭露，不參與排名。它的 opencode run 在 252 draws 中完成
+176 draws 後停止，其中 51.7% 為不可用輸出。Semantic probe 只針對剩餘 26 個
+fixtures，透過臨時 adapter 正規化輸出 envelope，但不創造 finding 或 anchor；
+其中仍有 21.8% draws 不可用。這兩筆結果都不能與完整 production gate 直接比較。
 
 DeepSeek candidate 命中所有 tier-1 fixture，84 個 draw 也都產生有效 JSON，但單次
 完整集不算 promotion result。六個分歧 fixture 另做了 x3 確認；詳見

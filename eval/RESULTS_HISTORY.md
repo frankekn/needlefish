@@ -797,4 +797,38 @@ second-opinion candidate, not a production replacement at this configuration.
 
 Report: `eval/reports/2026-07-26-qwen38-max-preview-xhigh-x3.json`.
 
+## 2026-08-21 — OX Alpha: opencode partial plus schema-tolerant semantic probe
+
+The full `openrouter/stealth/ox-alpha` opencode max x3 run was stopped at
+176/252 draws. Its partial aggregate was .235 recall, .000 FP, .517 invalid
+output, .483 verdict match, .472 valid anchors, and 163.0s mean duration. The
+subset is biased toward earlier fixtures and the output contract dominates the
+score, so this is not a model-quality result.
+
+To isolate review content from the strict Needlefish schema, the 26 remaining
+fixtures were run x3 through a temporary OpenAI-compatible adapter with max
+reasoning. The adapter supplied a loose JSON response schema and normalized
+only non-semantic envelope fields. It kept a finding only when OX supplied the
+file, positive line anchor, title, and failure explanation; no bug or anchor
+was synthesized.
+
+All 78 draws completed. Aggregate recall was .514, must-find hit rate .523,
+FP .000, unusable-output rate .218, verdict match .577, valid anchors .577,
+mean duration 334.5s, and noise .014 per positive. Among usable positive draws,
+must-find hit rate was .661. Tier recall was t1 .778 / t2 .500 / t3 .429, so
+the lane fails the tier-1 production gate. Median duration was 297.7s, p90
+606.2s, and max 945.6s. The critic pruned five correct candidates.
+
+Stable 3/3 hits included diff-base-tip vs merge-base, dollar-token corruption,
+finding-field coercion, malformed review JSON, missing maxBuffer, token leak,
+untrusted-runner gating, and `real-pr9`. Stable semantic misses included
+fallback commit pinning, lenient candidate parsing, `real-pr10`, and option
+forwarding; neutral-conclusion and severity cases also suffered unusable
+outputs. Conclusion: runner/schema incompatibility materially understates OX,
+but semantic recall and latency remain insufficient even after isolating that
+confound. No production change.
+
+Reports: `eval/results/2026-08-21-opencode-ox-alpha-max-x3.json` and
+`eval/results/2026-08-21-ox-alpha-semantic-remaining-x3.json`.
+
 </details>

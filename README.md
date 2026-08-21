@@ -115,10 +115,19 @@ Current guarded runs (production remains codex `gpt-5.6-terra` @high):
 
 | Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
 | --- | --- | ---: | ---: | ---: | ---: |
+| 2026-08-21 | OX Alpha @max (schema-tolerant semantic probe) | 3 × 26\* | 0.514 | 0.000 | 0.577 |
+| 2026-08-21 | opencode OX Alpha @max (partial) | 176/252\* | 0.235 | 0.000 | 0.483 |
 | 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
 | 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
 | 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
 | 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+
+\* OX Alpha is included for transparency, not ranking. Its opencode run was
+stopped after 176 of 252 draws with 51.7% unusable output. The semantic probe
+ran only the 26 remaining fixtures through a temporary adapter that normalized
+the output envelope without inventing findings or anchors; 21.8% of those
+draws were still unusable. Neither result is directly comparable with a full
+production gate.
 
 The DeepSeek candidate hit every tier-1 fixture and produced valid JSON on all
 84 draws, but its single full-set draw is not a promotion result. Six divergent

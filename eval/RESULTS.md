@@ -7,13 +7,16 @@ paths.
 
 ## Current decision
 
-As of 2026-07-31, keep **Codex `gpt-5.6-terra` at high effort** as the
+As of 2026-08-21, keep **Codex `gpt-5.6-terra` at high effort** as the
 production baseline.
 
 DeepSeek is the strongest recent challenger: it produced higher recall, no
 false positives, no invalid JSON, and better anchors. It was also 67% slower,
 and its aggregate result came from one full-set draw rather than three. That is
 enough to justify a full confirmation run, but not enough to replace Terra.
+The later OX Alpha probe did not change this decision: its raw opencode lane
+was format-confounded, while a schema-tolerant semantic probe still trailed
+the established challengers and missed tier-1 defects.
 
 | Metric | Terra baseline | DeepSeek candidate |
 | --- | ---: | ---: |
@@ -249,6 +252,43 @@ DeepSeek then produced the stronger directional result shown at the top of
 this page. Its next gate is straightforward: run the full guarded fixture set
 x3 under the same hashes, then compare divergent fixtures and latency against
 Terra before considering promotion.
+
+### 8. OX Alpha runner and semantic probe — 2026-08-21
+
+The `openrouter/stealth/ox-alpha` opencode run was stopped after 176/252 draws.
+It had 23.5% recall and 51.7% invalid output, so it is a biased partial and does
+not measure the model independently of its runner contract.
+
+The 26 fixtures not completed by that run were then tested x3 through a
+temporary schema-tolerant OpenAI-compatible adapter. The adapter normalized
+only the review envelope: it retained findings only when the model supplied a
+file, positive line anchor, title, and failure explanation. It did not invent
+bugs or anchors.
+
+| Metric | OX Alpha semantic probe |
+| --- | ---: |
+| Completed draws | 78/78 |
+| Recall | 51.4% |
+| Must-find hit rate | 52.3% |
+| Must-find hit rate on usable positive draws | 66.1% |
+| Tier-1 / tier-2 / tier-3 recall | 77.8% / 50.0% / 42.9% |
+| Unusable-output rate | 21.8% |
+| False-positive rate | 0% |
+| Mean duration | 334.5s |
+| Noise per positive | 0.014 |
+
+The probe shows genuine review ability behind the schema failures, especially
+on diff-base, token-corruption, field-coercion, max-buffer, token-leak, and
+untrusted-runner defects. It also shows semantic misses beyond formatting:
+fallback commit pinning, lenient candidate parsing, neutral conclusions,
+severity downgrade, hotspot truncation, and option forwarding remained weak.
+The critic pruned five correct candidates. OX Alpha is not qualified for the
+production lane at this configuration; the semantic probe is diagnostic and
+is not directly comparable with a production gate because it used a subset
+fixture hash and a temporary adapter.
+
+Reports: [partial opencode run](results/2026-08-21-opencode-ox-alpha-max-x3.json)
+and [semantic probe](results/2026-08-21-ox-alpha-semantic-remaining-x3.json).
 
 ## Legacy pre-guard benchmark
 
