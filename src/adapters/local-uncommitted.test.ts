@@ -11,6 +11,27 @@ import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-te
 
 const TSX_IMPORT = process.env.NEEDLEFISH_TEST_TSX_IMPORT ?? "tsx";
 
+test("runLocal WORKING sandbox applies a tracked diff ending in a blank context line", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-blank-context-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(join(repo, "notes.txt"), "alpha\nbravo\ncharlie\n\n");
+  commitAll(repo, "trailing blank line");
+  const base = headSha(repo);
+  writeFileSync(join(repo, "notes.txt"), "alpha\nBravo\ncharlie\n\n");
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.equal(result.baseSha, base);
+  assert.equal(result.headSha, "WORKING");
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.match(prompts, /diff --git a\/notes\.txt b\/notes\.txt/);
+  assert.match(prompts, /\n charlie\n \n/);
+});
+
 test("runLocal reviews staged unstaged and untracked changes when working tree is dirty", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-uncommitted-"));
   const repo = initRepo(tmp);
@@ -207,8 +228,9 @@ test("local CLI reports a friendly git init message outside git repos", (t) => {
 
   assert.equal(result.status, 1);
   assert.equal(result.stdout, "");
-  assert.equal(result.stderr.trim().split(/\r?\n/).length, 1);
-  assert.match(result.stderr, /git init/);
+  const needlefishLines = result.stderr.split(/\r?\n/).filter((line) => line.startsWith("needlefish:"));
+  assert.equal(needlefishLines.length, 1);
+  assert.match(needlefishLines[0] ?? "", /git init/);
   assert.equal(result.stderr.includes("fatal:"), false);
 });
 

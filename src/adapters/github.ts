@@ -663,13 +663,13 @@ export async function runGithub(
 	if (!baseSha || !headSha)
 		throw new Error("Could not resolve PR base/head SHA");
 	const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
-	const patch = git(["diff", mergeBase, headSha], repoPath);
+	const patch = git(["diff", mergeBase, headSha], repoPath, { preserveOutput: true });
 	if (!patch.trim()) {
 		throw new Error(
 			`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
 		);
 	}
-	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath);
+	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath, { preserveOutput: true });
 	const changed = changedFiles(repoPath, mergeBase, headSha);
 
 	const commentsUrl = stringField(pr, "comments_url");

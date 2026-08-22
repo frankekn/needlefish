@@ -2,14 +2,18 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
-import { runText } from "./process.js";
+import { runText, type RunOptions } from "./process.js";
 import type { Bundle, ChangedFile, PrMeta, UntrackedSkippedFile } from "./schema.js";
 
 const NO_AGENTS =
   "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
 
-export function git(args: readonly string[], cwd: string): string {
-  return runText("git", args, { cwd });
+export function git(
+  args: readonly string[],
+  cwd: string,
+  opts?: Pick<RunOptions, "preserveOutput">
+): string {
+  return runText("git", args, { cwd, ...opts });
 }
 
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {
@@ -223,7 +227,7 @@ export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
 
 export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
   const mergeBase = git(["merge-base", baseSha, headSha], cwd);
-  const patch = git(["diff", mergeBase, headSha], cwd);
+  const patch = git(["diff", mergeBase, headSha], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
   }
@@ -231,7 +235,7 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
     baseSha: mergeBase,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", mergeBase, headSha], cwd),
+    patchStat: git(["diff", "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, mergeBase, headSha),
   };
 }
