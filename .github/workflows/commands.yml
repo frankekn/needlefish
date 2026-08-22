@@ -69,6 +69,7 @@ jobs:
         with:
           fetch-depth: 0
           path: target
+          persist-credentials: false
       - name: Needlefish explain
         working-directory: target
         env:
