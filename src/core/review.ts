@@ -9,6 +9,7 @@ import {
 	type RunnerOptions,
 	type RunStat,
 } from "../shared/runner.js";
+import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -656,14 +657,17 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	);
 }
 
-// Docs-only fast path: when every changed file is classified "docs" and the
-// escape hatch is unset, skip all model calls and return a deterministic pass.
-// classify.ts rule order already routes workflow yml to "workflow", so CI files
-// can never ride this path.
+// Docs-only fast path: skip model calls only when every changed file is
+// classified "docs" AND is user-facing prose (not model/agent policy
+// Markdown). classify.ts rule order already routes workflow yml to
+// "workflow", so CI files can never ride this path. Executable files under
+// a docs/ directory are not classified "docs" (Markdown extension required).
 function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
-		bundle.changedFiles.every((f) => f.surface === "docs") &&
+		bundle.changedFiles.every(
+			(f) => f.surface === "docs" && isDocsFastPathEligible(f.path),
+		) &&
 		!envFlagOn("NEEDLEFISH_NO_FAST_PATH")
 	);
 }
