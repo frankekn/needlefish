@@ -4,6 +4,8 @@ import {
 	writeFileSync,
 	existsSync,
 	mkdirSync,
+	renameSync,
+	unlinkSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -472,6 +474,30 @@ export function aggregateMustFindHitRates(
 	return { mustFindHitRateByFixture, mustFindHitRate };
 }
 
+// Per-process high-water mark of results flushed to each report path.
+// Concurrent draw completions can invoke writeReport with snapshots taken
+// at different sizes; a later call must not replace a larger checkpoint.
+const lastCheckpointCounts = new Map<string, number>();
+
+function atomicWriteFile(targetPath: string, contents: string): void {
+	const directory = path.dirname(targetPath);
+	mkdirSync(directory, { recursive: true });
+	const tempPath = path.join(
+		directory,
+		`.${path.basename(targetPath)}.${randomUUID()}.tmp`,
+	);
+	try {
+		writeFileSync(tempPath, contents);
+		renameSync(tempPath, targetPath);
+	} finally {
+		try {
+			unlinkSync(tempPath);
+		} catch {
+			// rename consumes the temp path; a failed create never produced one.
+		}
+	}
+}
+
 function aggregate(
 	results: readonly DrawResult[],
 	specs: readonly FixtureSpec[],
@@ -608,8 +634,14 @@ export function writeReport(
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
 	};
-	mkdirSync(path.dirname(path.resolve(args.report)), { recursive: true });
-	writeFileSync(args.report, JSON.stringify(report, null, 2));
+	const targetPath = path.resolve(args.report);
+	const incomingCount = results.length;
+	const lastCount = lastCheckpointCounts.get(targetPath);
+	if (lastCount !== undefined && incomingCount < lastCount) {
+		return report;
+	}
+	atomicWriteFile(targetPath, JSON.stringify(report, null, 2));
+	lastCheckpointCounts.set(targetPath, incomingCount);
 	return report;
 }
 
@@ -766,10 +798,16 @@ async function main(): Promise<void> {
 		// Threaded through fixture materialization and scoring; a finding that
 		// contains it means the runner copied the planted answer key.
 		const canary = randomUUID();
+		// Checkpoint after every completed draw. --resume only controls whether
+		// we LOAD a compatible prior report; a crash of a fresh run must still
+		// leave a structurally valid partial file at args.report.
+		const checkpoint = (partial: readonly DrawResult[]): void => {
+			writeReport(args, partial, specs);
+		};
 
 		if (args.compare) {
 			const slots: (DrawResult | null)[] = new Array(work.length).fill(null);
-			const results = await runWork(args, work, slots, canary);
+			const results = await runWork(args, work, slots, canary, checkpoint);
 			const report = writeReport(args, results, specs);
 			cheatAlert(report);
 			compare(args.compare, report);
@@ -785,10 +823,7 @@ async function main(): Promise<void> {
 		);
 
 		const { slots } = resumeSlots(args, specs, work);
-		const onDrawComplete = args.resume
-			? (partial: readonly DrawResult[]) => writeReport(args, partial, specs)
-			: undefined;
-		const results = await runWork(args, work, slots, canary, onDrawComplete);
+		const results = await runWork(args, work, slots, canary, checkpoint);
 
 		const report = writeReport(args, results, specs);
 		cheatAlert(report);
