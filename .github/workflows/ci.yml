@@ -1,0 +1,35 @@
+# Own-repo verification for pull requests and pushes to main.
+# Required branch-protection check name: needlefish-ci
+# Does not deploy. deploy.yml waits on a successful main-push run of this workflow.
+name: needlefish-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: needlefish-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  needlefish-ci:
+    name: needlefish-ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install and verify
+        run: |
+          corepack enable
+          PNPM_VERSION=$(node -p "require('./package.json').packageManager")
+          corepack prepare "$PNPM_VERSION" --activate
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm lint
+          pnpm test

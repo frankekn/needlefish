@@ -40,7 +40,7 @@ needlefish/
 | Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read from target repo root only. |
 | Prompt behavior | `prompts/*.md` | Must remain read-only and output JSON contracts exactly. |
 | Tests | `src/**/*.test.ts`, `scripts/test.mjs` | Node test runner, no Jest/Vitest. |
-| CI/deploy | `.github/workflows/*.yml`, `scripts/deploy-ubuntu.sh` | Self-hosted runner must already have `needlefish` deployed. |
+| CI/deploy | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/deploy-ubuntu.sh` | Own-repo required check is `needlefish-ci`; deploy waits on that SHA. |
 
 ## CODE MAP
 
@@ -99,6 +99,7 @@ PNPM_VERSION=$(node -p "require('./package.json').packageManager")
 corepack prepare "$PNPM_VERSION" --activate
 pnpm install --frozen-lockfile
 pnpm check
+pnpm lint
 pnpm test
 pnpm review -- --repo /path/to/target
 ```
@@ -109,3 +110,4 @@ pnpm review -- --repo /path/to/target
 - GitHub Action mode requires `gh`, a self-hosted runner, and `~/.local/bin/needlefish`; the reusable workflow does not reinstall Needlefish.
 - `changes_requested` maps to a failed check-run but still posts a non-sticky COMMENT review, not a GitHub blocking review state.
 - Closed PRs and stale heads must be skipped before posting.
+- Own-repo CI is the GitHub Actions check named `needlefish-ci` (job `needlefish-ci` in `.github/workflows/ci.yml`). Mark **`needlefish-ci`** required on `main`. It runs on `ubuntu-latest` and must not reference `secrets.*`. `needlefish-deploy` is not a merge gate; it deploys `workflow_run.head_sha` after a successful `needlefish-ci` **push** to `main`. `workflow_dispatch` on `needlefish-deploy` remains for recovery. Branch protection is a repo setting, not a workflow file.

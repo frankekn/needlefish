@@ -2,14 +2,15 @@
 
 ## OVERVIEW
 
-`.github/workflows/` is runtime behavior for Needlefish itself: reusable PR review and deploy-on-main for the self-hosted runner.
+`.github/workflows/` is runtime behavior for Needlefish itself: own-repo CI, reusable PR review, and gated deploy-on-main for the self-hosted runner.
 
 ## WHERE TO LOOK
 
 | Task | Location | Notes |
 | --- | --- | --- |
+| Own-repo CI | `ci.yml` | PRs and pushes to `main` on `ubuntu-latest`. Required check name: `needlefish-ci`. |
 | PR review workflow | `review.yml` | Reusable via `workflow_call`, manual via `workflow_dispatch`, and local repo PR trigger. |
-| Deploy workflow | `deploy.yml` | Push to `main` runs `scripts/deploy-ubuntu.sh` on self-hosted runner. |
+| Deploy workflow | `deploy.yml` | `workflow_run` after a successful `needlefish-ci` **push** to `main`, plus `workflow_dispatch`. Deploys `NEEDLEFISH_REF=<verified SHA>`. |
 
 ## CONVENTIONS
 
@@ -25,3 +26,6 @@
 - Do not install Needlefish on every PR review run; deploy is separate.
 - Do not broaden workflow permissions without a concrete posting need.
 - Do not run untrusted fork PR code on the persistent self-hosted runner.
+- Do not run own-repo CI on `self-hosted`.
+- Do not deploy `main`'s current tip from a `workflow_run`; deploy `head_sha`.
+- Do not let a `pull_request` `workflow_run` deploy; filter `event == 'push'`.
