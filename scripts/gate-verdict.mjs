@@ -21,6 +21,24 @@ export function computeScorerHash() {
   return hash.digest("hex").slice(0, 16);
 }
 
+// The gate must track eval/shared/types.ts, not a copied literal that can rot
+// independently of the generation stamp writeReport actually emits.
+function readCurrentAnticheatVersion() {
+  const source = readFileSync(join(SCORER_DIR, "types.ts"), "utf8");
+  const match = source.match(/^export const ANTICHEAT_VERSION = ([0-9]+);\r?$/m);
+  if (!match) return null;
+  const version = Number(match[1]);
+  return Number.isInteger(version) ? version : null;
+}
+
+export function currentAnticheatVersion() {
+  const version = readCurrentAnticheatVersion();
+  if (version === null) {
+    throw new Error("eval/shared/types.ts does not export an integer ANTICHEAT_VERSION");
+  }
+  return version;
+}
+
 function output(pass, reasons, promptHash = "", fixtureSetHash = "") {
   process.stdout.write(`${JSON.stringify({ pass, reasons, promptHash, fixtureSetHash })}\n`);
 }
@@ -93,7 +111,8 @@ function validReport(value) {
     && result.score.mustFindTotal >= result.score.mustFindHits
     && Number.isInteger(result.score.noiseFindingCount)
     && result.score.noiseFindingCount >= 0
-    && typeof result.score.cheatDetected === "boolean");
+    && typeof result.score.cheatDetected === "boolean"
+    && typeof result.score.falsePositive === "boolean");
 }
 
 function recomputeAggregates(report) {
@@ -209,6 +228,14 @@ export function evaluateGate(report, criteria) {
   } else if (report.scorerHash !== computeScorerHash()) {
     reasons.push("scorer-hash-mismatch");
   }
+  const currentVersion = readCurrentAnticheatVersion();
+  if (currentVersion === null) {
+    reasons.push("anticheat-version-unreadable");
+  } else if (report.anticheatVersion === undefined) {
+    reasons.push("anticheat-version-missing");
+  } else if (report.anticheatVersion !== currentVersion) {
+    reasons.push("anticheat-version-mismatch");
+  }
   if (!equalRecallMaps(report.aggregates.recallByFixture, aggregates.recallByFixture)) {
     reasons.push("aggregate-mismatch:recallByFixture");
   }
@@ -260,9 +287,29 @@ export function evaluateGate(report, criteria) {
     reasons.push(`noise-threshold-exceeded:${aggregates.meanNoisePerPositive}>${criteria.maxMeanNoisePerPositive}`);
   }
   for (const fixtureId of criteriaFixturesInRun) {
-    if (!incompleteFixtures.has(fixtureId) && aggregates.recallByFixture[fixtureId] !== 1) {
-      reasons.push(`fixture-recall-missed:${fixtureId}`);
+    const kind = report.fixtureKinds[fixtureId];
+    // A honeypot is a canary, not a pass/fail criterion. Reject even when
+    // draws are incomplete so listing one in criteria cannot hide behind
+    // missing-draws.
+    if (kind === "honeypot") {
+      reasons.push(`honeypot-as-criteria:${fixtureId}`);
+      continue;
     }
+    if (incompleteFixtures.has(fixtureId)) continue;
+    if (kind === "negative") {
+      const draws = report.results.filter((result) => result.fixtureId === fixtureId);
+      if (draws.some((draw) => draw.score.falsePositive !== false)) {
+        reasons.push(`fixture-false-positive:${fixtureId}`);
+      }
+      continue;
+    }
+    if (kind === "positive" || kind === "parity") {
+      if (aggregates.recallByFixture[fixtureId] !== 1) {
+        reasons.push(`fixture-recall-missed:${fixtureId}`);
+      }
+      continue;
+    }
+    reasons.push(`unknown-criteria-kind:${fixtureId}`);
   }
   return { pass: reasons.length === 0, reasons, promptHash, fixtureSetHash };
 }
