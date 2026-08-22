@@ -350,6 +350,118 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 	};
 }
 
+// Critic contract is prune-only (prompts/critic.md). Identity is the
+// immutable finding fields, exact and untruncated: dedup() case-folds and
+// slices title/why, and cross-round matching uses ±10-line drift. Both are
+// too loose for two outputs of the SAME review call — candidate identity is
+// stable within the call. Severity and confidence may change; every other
+// field is restored from the matched candidate so rewritten content cannot
+// reach deriveVerdict. Unknown keys throw from parse so runJsonPrompt
+// retries, then fails closed.
+function findingSubsetKey(finding: Finding): string {
+	return JSON.stringify([
+		finding.file,
+		finding.lineStart,
+		finding.lineEnd,
+		finding.category,
+		finding.title,
+		finding.whyItBreaks,
+		finding.suggestedFix,
+	]);
+}
+
+function bagByKey<T>(
+	items: readonly T[],
+	keyOf: (item: T) => string,
+): Map<string, T[]> {
+	const bag = new Map<string, T[]>();
+	for (const item of items) {
+		const key = keyOf(item);
+		const group = bag.get(key);
+		if (group) group.push(item);
+		else bag.set(key, [item]);
+	}
+	return bag;
+}
+
+function takeBagItem<T>(bag: Map<string, T[]>, key: string): T | undefined {
+	const group = bag.get(key);
+	if (!group || group.length === 0) return undefined;
+	return group.shift();
+}
+
+function takeResidual(
+	bag: Map<string, ResidualRisk[]>,
+	risk: ResidualRisk,
+): ResidualRisk | undefined {
+	const group = bag.get(risk.text);
+	if (!group || group.length === 0) return undefined;
+	if (risk.blocks) {
+		const index = group.findIndex((candidate) => candidate.blocks);
+		if (index < 0) return undefined;
+		const [matched] = group.splice(index, 1);
+		return matched;
+	}
+	const nonBlocking = group.findIndex((candidate) => !candidate.blocks);
+	const index = nonBlocking >= 0 ? nonBlocking : 0;
+	const [matched] = group.splice(index, 1);
+	return matched;
+}
+
+function assertCriticSubset(
+	critic: RawReview,
+	candidate: RawReview,
+): RawReview {
+	const findingsBag = bagByKey(candidate.findings, findingSubsetKey);
+	const findings: Finding[] = [];
+	for (const finding of critic.findings) {
+		const matched = takeBagItem(findingsBag, findingSubsetKey(finding));
+		if (!matched) {
+			throw new Error(
+				"malformed critic output: finding was not in the candidate review",
+			);
+		}
+		findings.push({
+			...matched,
+			severity: finding.severity,
+			confidence: finding.confidence,
+		});
+	}
+
+	const residualBag = bagByKey(candidate.residual_risks, (risk) => risk.text);
+	const residual_risks: ResidualRisk[] = [];
+	for (const risk of critic.residual_risks) {
+		const group = residualBag.get(risk.text);
+		if (!group || group.length === 0) {
+			throw new Error(
+				"malformed critic output: residual risk was not in the candidate review",
+			);
+		}
+		if (risk.blocks && !group.some((item) => item.blocks)) {
+			throw new Error(
+				"malformed critic output: residual risk is blocking but was not blocking in the candidate review",
+			);
+		}
+		const matched = takeResidual(residualBag, risk);
+		if (!matched) {
+			throw new Error(
+				"malformed critic output: residual risk was not in the candidate review",
+			);
+		}
+		residual_risks.push({
+			text: matched.text,
+			blocks: risk.blocks,
+		});
+	}
+
+	return {
+		summary: critic.summary,
+		findings,
+		checked: critic.checked,
+		residual_risks,
+	};
+}
+
 async function runCritic(
 	candidate: RawReview,
 	patchText: string,
@@ -367,7 +479,8 @@ async function runCritic(
 			prompt: criticPrompt,
 			passKind: "critic",
 			passIndex: 0,
-			parse: parseUsableReview("critic"),
+			parse: (raw: unknown) =>
+				assertCriticSubset(parseUsableReview("critic")(raw), candidate),
 		},
 		run,
 	);
