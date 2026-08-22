@@ -248,6 +248,7 @@ jobs:
           ref: ${{ steps.refs.outputs.head }}
           fetch-depth: 0
           path: target
+          persist-credentials: false
 
       - name: Needlefish review
         if: steps.refs.outputs.skip != 'true'
