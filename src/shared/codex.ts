@@ -600,9 +600,7 @@ async function runCodexOnce(
 	}
 }
 
-export function extractJson(text: string): unknown {
-	const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-	const raw = fence ? fence[1] : text;
+function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
 	if (start === -1 || end === -1 || end <= start) {
@@ -618,6 +616,56 @@ export function extractJson(text: string): unknown {
 		}
 		throw error;
 	}
+}
+
+// Prompt contract: exactly one ```json fence. Prefer that tag so a leading
+// non-JSON fence cannot win; reject multiple JSON fences instead of guessing.
+// A fence-free response is admitted only when the whole text is one JSON object.
+// Same-line fences are valid; the tag is a language identifier, not `{...}`.
+export function extractJson(text: string): unknown {
+	const trimmed = text.trim();
+	let documentError: SyntaxError | undefined;
+	if (trimmed.startsWith("{")) {
+		try {
+			const parsed = JSON.parse(trimmed);
+			if (isRecord(parsed)) return parsed;
+		} catch (error) {
+			if (!(error instanceof SyntaxError)) throw error;
+			documentError = error;
+		}
+	}
+
+	const fences: { tag: string; body: string }[] = [];
+	const fencePattern =
+		/```[ \t]*(?:([A-Za-z][\w+#.-]*)[ \t]*)?(?:\r?\n)?([\s\S]*?)```/g;
+	for (const match of text.matchAll(fencePattern)) {
+		const tag = (match[1] ?? "").toLowerCase();
+		fences.push({ tag, body: match[2] ?? "" });
+	}
+
+	const jsonFences = fences.filter((fence) => fence.tag === "json");
+	if (jsonFences.length > 1) {
+		throw new Error("ambiguous JSON fences in codex output");
+	}
+	if (jsonFences.length === 1) {
+		return parseJsonObject(jsonFences[0].body);
+	}
+
+	if (fences.length > 1) {
+		throw new Error("ambiguous fenced output in codex output");
+	}
+	if (fences.length === 1) {
+		const fence = fences[0];
+		if (fence.tag === "") return parseJsonObject(fence.body);
+		throw new Error("no JSON object found in codex output");
+	}
+
+	if (documentError) {
+		throw new Error(`invalid JSON in codex output: ${documentError.message}`, {
+			cause: documentError,
+		});
+	}
+	throw new Error("no JSON object found in codex output");
 }
 
 function resolveModel(
