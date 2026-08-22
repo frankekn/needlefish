@@ -398,6 +398,12 @@ function findPreviousReview(
 	if (!Array.isArray(raw)) return null;
 	// flat(1) also tolerates a plain review list from stubs or older gh versions.
 	const reviews = raw.flat(1);
+	// Same author check as minimizePreviousRoundComments: a marker is ours
+	// only when the author is bot-shaped or equals the identity this run
+	// posts as. Humans quoting the marker must not suppress review.
+	// authenticatedLogin is called once, not per review. Empty login
+	// fail-softs to bot-only trust — that can extra-review, never suppress.
+	const selfLogin = authenticatedLogin();
 	for (let i = reviews.length - 1; i >= 0; i--) {
 		const item = reviews[i];
 		if (!isRecord(item)) continue;
@@ -405,6 +411,8 @@ function findPreviousReview(
 		if (!state) continue;
 		const id = item.id;
 		if (typeof id !== "number") continue;
+		const author = nestedString(item, "user", "login");
+		if (!isBotAuthor(item) && !(selfLogin && author === selfLogin)) continue;
 		return { id, state };
 	}
 	return null;
