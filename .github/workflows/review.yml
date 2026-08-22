@@ -256,6 +256,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
+          PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
@@ -272,7 +273,11 @@ jobs:
             echo "Selected Needlefish release is unavailable. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
             exit 1
           fi
-          args=(--github --pr "${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}")
+          if [[ ! "$PR_NUM" =~ ^[1-9][0-9]*$ ]]; then
+            echo "PR number must be a positive integer, received '$PR_NUM'." >&2
+            exit 1
+          fi
+          args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
               codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-terra" ;;
