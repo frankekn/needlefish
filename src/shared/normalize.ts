@@ -197,8 +197,10 @@ export function normalizeReview(raw: unknown, strict = true): RawReview {
         })
         .filter((finding: Finding | null): finding is Finding => finding !== null);
   const residual = rawResidual.map((risk) => {
+    // Non-object entries are malformed. Coercing them to {text:"", blocks:false}
+    // erases the residual and lets deriveVerdict return pass.
     if (!isRecord(risk)) {
-      return { text: "", blocks: false };
+      throw new Error("malformed review output: residual risk not an object");
     }
     const text = String(risk.text ?? "").trim();
     if (!text) {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { deriveVerdict } from "../core/verdict";
 import { normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
 
 test("normalizeMap accepts a summary with no hotspots", () => {
@@ -408,6 +409,103 @@ test("normalizeReview rejects empty residual risk text", () => {
   };
 
   assert.throws(() => normalizeReview(raw), /residual risk text missing/);
+  assert.throws(() => normalizeReview(raw, true), /malformed review output: residual risk text missing/);
+  assert.throws(() => normalizeReview(raw, false), /malformed review output: residual risk text missing/);
+});
+
+function rawReview(residual_risks: unknown): Record<string, unknown> {
+  return {
+    summary: "s",
+    findings: [],
+    checked: ["x"],
+    residual_risks,
+  };
+}
+
+const NON_OBJECT_RESIDUAL_ENTRIES: readonly { readonly kind: string; readonly value: unknown }[] = [
+  { kind: "string", value: "could not verify the changed path" },
+  { kind: "number", value: 0 },
+  { kind: "null", value: null },
+  { kind: "boolean", value: false },
+  { kind: "array", value: [{ text: "nested residual", blocks: true }] },
+];
+
+for (const { kind, value } of NON_OBJECT_RESIDUAL_ENTRIES) {
+  test(`normalizeReview rejects ${kind} residual risk entry in both strict modes`, () => {
+    const raw = rawReview([value]);
+    const expected = /malformed review output: residual risk not an object/;
+    assert.throws(() => normalizeReview(raw), expected);
+    assert.throws(() => normalizeReview(raw, true), expected);
+    assert.throws(() => normalizeReview(raw, false), expected);
+  });
+}
+
+test("normalizeReview rejects boolean true residual risk entry in both strict modes", () => {
+  const raw = rawReview([true]);
+  const expected = /malformed review output: residual risk not an object/;
+  assert.throws(() => normalizeReview(raw), expected);
+  assert.throws(() => normalizeReview(raw, true), expected);
+  assert.throws(() => normalizeReview(raw, false), expected);
+});
+
+test("normalizeReview rejects mixed valid residual object and bare string in both strict modes", () => {
+  const raw = rawReview([
+    { text: "local helper untraced", blocks: false },
+    "could not verify the changed path",
+  ]);
+  const expected = /malformed review output: residual risk not an object/;
+  assert.throws(() => normalizeReview(raw), expected);
+  assert.throws(() => normalizeReview(raw, true), expected);
+  assert.throws(() => normalizeReview(raw, false), expected);
+});
+
+test("normalizeReview round-trips blocking residual risk to needs_human in both strict modes", () => {
+  const residual = { text: "could not verify the changed path", blocks: true };
+  for (const strict of [true, false] as const) {
+    const review = normalizeReview(rawReview([residual]), strict);
+    assert.deepEqual(review.residual_risks, [residual]);
+    assert.equal(deriveVerdict(review.findings, review.residual_risks), "needs_human");
+  }
+  const defaultReview = normalizeReview(rawReview([residual]));
+  assert.deepEqual(defaultReview.residual_risks, [residual]);
+  assert.equal(deriveVerdict(defaultReview.findings, defaultReview.residual_risks), "needs_human");
+});
+
+test("normalizeReview round-trips non-blocking residual risk to pass in both strict modes", () => {
+  const residual = { text: "low confidence private helper", blocks: false };
+  for (const strict of [true, false] as const) {
+    const review = normalizeReview(rawReview([residual]), strict);
+    assert.deepEqual(review.residual_risks, [residual]);
+    assert.equal(deriveVerdict(review.findings, review.residual_risks), "pass");
+  }
+  const defaultReview = normalizeReview(rawReview([residual]));
+  assert.deepEqual(defaultReview.residual_risks, [residual]);
+  assert.equal(deriveVerdict(defaultReview.findings, defaultReview.residual_risks), "pass");
+});
+
+test("normalizeReview accepts empty residual_risks in both strict modes", () => {
+  for (const strict of [true, false] as const) {
+    const review = normalizeReview(rawReview([]), strict);
+    assert.deepEqual(review.residual_risks, []);
+    assert.equal(deriveVerdict(review.findings, review.residual_risks), "pass");
+  }
+  const defaultReview = normalizeReview(rawReview([]));
+  assert.deepEqual(defaultReview.residual_risks, []);
+  assert.equal(deriveVerdict(defaultReview.findings, defaultReview.residual_risks), "pass");
+});
+
+test("normalizeReview loose mode still rejects malformed residuals after dropping malformed findings", () => {
+  const raw = {
+    summary: "s",
+    findings: [{ severity: "bad" }],
+    checked: ["x"],
+    residual_risks: ["could not verify the changed path"],
+  };
+
+  assert.throws(
+    () => normalizeReview(raw, false),
+    /malformed review output: residual risk not an object/,
+  );
 });
 
 test("normalizeReview drops malformed findings in loose mode", () => {
