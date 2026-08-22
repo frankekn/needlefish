@@ -96,8 +96,7 @@ in place (fresh / still-open / resolved) instead of stacking new ones.
 
 Cost: 2 model calls per review on small PRs (~56s at the workflow default,
 `gpt-5.6-terra` at `high` effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
-unchanged heads skip the model entirely. Maintainers can comment
-`@needlefish recheck` or `@needlefish explain <finding>` on the PR.
+unchanged heads skip the model entirely.
 
 ## Benchmarks
 
@@ -381,9 +380,10 @@ jobs:
 
 No self-hosted runner required: this repo doubles as a composite action that
 runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo. The
-hosted action installs the runners listed in `action.yml`; use the self-hosted
-workflow above for Grok 4.5 because the hosted action does not install the
-Grok CLI.
+hosted action's install step only accepts `codex`, `claude`, `opencode`, or
+`pi`. Use the self-hosted workflow above for Grok 4.5; the hosted action does
+not install the Grok CLI, and passing `runner: grok` (or `openai` / `acp`)
+fails that install step.
 
 ```yaml
 name: needlefish
@@ -408,22 +408,25 @@ jobs:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
 ```
 
-Runner authentication (repo secrets, passed via `env` on the action step):
+Runner authentication for the runners the hosted action can install
+(repo secrets, passed via `env` on the action step):
 
 | runner   | secret(s)                                                |
 | -------- | -------------------------------------------------------- |
 | codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY`                                       |
 | opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
-| openai   | `OPENAI_API_KEY`                                          |
-| grok     | Grok CLI auth or provider-specific key (self-hosted lane) |
 | pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
-| acp      | agent-specific auth plus `NEEDLEFISH_ACP_BIN` on the runner |
 
 The claude auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and
 opencode's `OPENAI_API_KEY` are allowlisted through to the runner subprocess;
 other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 "Runner subprocess environment").
+
+`grok` is a self-hosted-lane runner (authenticated `grok` CLI on `PATH`).
+`openai` (HTTP, `OPENAI_API_KEY` plus `--model` / `OPENAI_MODEL`) and `acp`
+(`NEEDLEFISH_ACP_BIN`) are CLI runners; the hosted action does not install
+them.
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
@@ -443,10 +446,20 @@ Cost and behavior notes:
   install, roughly a minute). The self-hosted path above stays the
   low-latency option.
 
+The composite action does not add PR comment commands to the consumer repo.
+This repository's `.github/workflows/commands.yml` listens for maintainer
+`@needlefish recheck` and `@needlefish explain <finding>` comments
+(OWNER / MEMBER / COLLABORATOR only). Recheck dispatches this repo's
+`review.yml`; explain runs `needlefish explain` on a self-hosted runner that
+already has `~/.local/bin/needlefish`. Copying that file into another repo
+only works after you retarget those two jobs.
+
 ## Model runner invocation
 
-`src/shared/codex.ts` invokes the selected runner. Use `--runner`, `--model`,
-and `--timeout-ms`, or the matching env vars:
+`src/shared/codex.ts` invokes the selected runner. `--runner` /
+`NEEDLEFISH_RUNNER` accepts `codex`, `claude`, `opencode`, `openai`, `grok`,
+`pi`, or `acp`. Use `--runner`, `--model`, and `--timeout-ms`, or the matching
+env vars:
 
 | option | env | default |
 | --- | --- | --- |
@@ -460,14 +473,25 @@ The opencode idle deadline resets whenever the CLI emits stdout or stderr. If a
 provider stream stops producing output, Needlefish terminates that attempt and
 uses the normal runner retry instead of waiting for an extended per-call timeout.
 
-Runner-specific binary env vars are `CODEX_BIN`, `CLAUDE_BIN`, `OPENCODE_BIN`,
-`GROK_BIN`, `PI_BIN`, and `NEEDLEFISH_ACP_BIN`. `NEEDLEFISH_ACP_BIN` is required
-for the `acp` runner. Existing `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, and
-`CODEX_RETRY_MS` still work for Codex compatibility.
+Per-runner env vars. For CLI runners, binary / model / listed auth vars are
+in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
+its env in-process (its subprocess allowlist is empty). Defaults in
+parentheses are the executable names used when the `*_BIN` var is unset:
+
+| runner | binary | model / other |
+| --- | --- | --- |
+| `codex` | `CODEX_BIN` (`codex`) | `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, `CODEX_RETRY_MS`, `CODEX_REASONING_EFFORT` |
+| `claude` | `CLAUDE_BIN` (`claude`) | `CLAUDE_MODEL`; auth `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` |
+| `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
+| `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |
+| `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`) |
+| `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
+| `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
 When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 `claude`, or `opencode` can be found, Needlefish exits with install commands
-for those three CLIs instead of a stack trace.
+for those three CLIs instead of a stack trace. Auto-detect does not look for
+`grok`, `pi`, `openai`, or `acp`.
 
 Codex runs with `--ignore-user-config --ignore-rules
 --dangerously-bypass-approvals-and-sandbox` so its inspection commands are not
@@ -476,7 +500,7 @@ still runs it inside a throwaway clean clone, strips GitHub tokens, fixes the
 expected `HEAD`, and rejects any worktree mutation. `medium` is the default; set
 `CODEX_REASONING_EFFORT=high` to restore the old default, or `xhigh` for the
 highest-effort mode. Claude Code runs with
-`--dangerously-skip-permissions`, `--safe-mode`, and no session persistence.
+`--dangerously-skip-permissions`, `--safe-mode`, and `--no-session-persistence`.
 Grok runs with `--always-approve --permission-mode bypassPermissions --no-plan
 --sandbox off`. opencode runs with `--auto` in headless mode and an inline
 `permission: "allow"` override for its global and build-agent permissions. pi
@@ -521,8 +545,10 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.3.4. Read-only. Shipped: inline review comments, sticky re-review
-(fresh/open/resolved across pushes), `@needlefish recheck` / `@needlefish
-explain` maintainer commands, docs-only fast path (no model calls),
+v0.4.1. Read-only. Shipped: inline review comments, sticky re-review
+(fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
-sysctl). `--fix` stays unimplemented by design.
+sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish
+recheck` / `@needlefish explain` comments exist in this repository's
+`.github/workflows/commands.yml`; the published composite action does not
+install that workflow.

@@ -1,9 +1,5 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-30 11:57:07 CST
-**Commit:** 853e2f8
-**Branch:** main
-
 Frank owns this. Keep replies and docs terse unless formal prose is requested.
 
 ## OVERVIEW
@@ -31,7 +27,7 @@ needlefish/
 
 | Task | Location | Notes |
 | --- | --- | --- |
-| CLI flags or modes | `src/cli.ts`, `src/cli/args.ts` | `--fix` is parsed but intentionally errors in v0.2. |
+| CLI flags or modes | `src/cli.ts`, `src/cli/args.ts` | `--fix` is parsed but intentionally errors. |
 | Review pipeline | `src/core/review.ts` | Small path is review + critic; large path is map + deep + critic. |
 | Verdict rules | `src/core/verdict.ts` | Deterministic; do not let model prose decide pass/fail. |
 | Local review | `src/adapters/local.ts` | Writes `~/.cache/needlefish/<repo>/last-review.json`. |

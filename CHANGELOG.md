@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Docs: synchronize README / CLI version copy with `package.json`, align
+  English and zh-TW runner configuration with the supported CLI and action
+  surfaces, and drop the hosted-action claim that `@needlefish` comment
+  commands are installed in consumer repos.
 - GitHub: execute the exact immutable release selected by
   `needlefish_release_sha`, so a newer deployment cannot invalidate or replace a
   caller-pinned review runtime.
