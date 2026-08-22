@@ -31,7 +31,7 @@ async function main() {
   switch (command.kind) {
     case "github": {
       if (command.fix) {
-        process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
+        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
         return;
       }
@@ -45,13 +45,13 @@ async function main() {
     case "local":
     case "pr": {
       if (command.fix) {
-        process.stderr.write("--fix is not implemented in v0.2 (see FUTURE_TODO.md).\n");
+        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
         return;
       }
       if (command.recheck) {
         process.stderr.write(
-          "v0.2 --recheck runs a full re-review; smart prior-findings verification is TODO.\n"
+          "--recheck runs a full re-review; smart prior-findings verification is TODO.\n"
         );
       }
       const cwd = command.repo ?? process.cwd();
