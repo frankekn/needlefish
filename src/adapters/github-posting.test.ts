@@ -36,6 +36,8 @@ type Fixture = {
 	readonly repo: string;
 	readonly reviewOutput: string;
 	readonly reviewsState: string;
+	readonly runnerLog: string;
+	readonly headSha: string;
 };
 
 type FixtureOptions = {
@@ -43,6 +45,9 @@ type FixtureOptions = {
 	readonly rawReview: string;
 	readonly staleHeadAfterReview?: boolean;
 	readonly paginatePreviousReviewOnSecondPage?: boolean;
+	// Each review becomes its own slurp page, last page newest. Used to prove
+	// an untrusted marker on a later page cannot hide an earlier trusted one.
+	readonly paginateEachReviewAsOwnPage?: boolean;
 	// Make POSTs to the issue-comments endpoint exit 1 (after logging the
 	// attempt) to exercise the fail-soft paths around cosmetic comments.
 	readonly failIssueCommentPosts?: boolean;
@@ -53,6 +58,8 @@ type FixtureOptions = {
 	// comments — set to a plain user login to simulate a PAT-authenticated
 	// runner. Defaults to a bot-shaped login.
 	readonly authorLogin?: string;
+	// Simulate `gh api user` failing. authenticatedLogin() fail-softs to "".
+	readonly failUserApi?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -139,6 +146,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const postLog = path.join(tmp, "posts.jsonl");
 	const reviewsState = path.join(tmp, "reviews-state.json");
 	const issueCommentsState = path.join(tmp, "issue-comments-state.json");
+	const runnerLog = path.join(tmp, "runner.log");
 	const previous = {
 		path: process.env.PATH,
 		repository: process.env.GITHUB_REPOSITORY,
@@ -202,7 +210,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  const apiPath = methodIdx >= 0 ? args[methodIdx + 2] : args[1];",
 			"  if (apiPath === reviewsEndpoint && method === 'POST') {",
 			"    const parsed = JSON.parse(payload);",
-			"    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: 'github-actions' } });",
+			`    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} } });`,
 			"    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
 			"  }",
 			"  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT') {",
@@ -243,7 +251,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)}) {`,
 			`  const reviewsPath = ${JSON.stringify(reviewsState)};`,
 			"  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
-			`  const pages = ${JSON.stringify(opts.paginatePreviousReviewOnSecondPage === true)} ? [[], reviews] : [reviews];`,
+			`  const pages = ${JSON.stringify(opts.paginateEachReviewAsOwnPage === true)} ? reviews.map((r) => [r]) : ${JSON.stringify(opts.paginatePreviousReviewOnSecondPage === true)} ? [[], reviews] : [reviews];`,
 			"  process.stdout.write(JSON.stringify(pages));",
 			"  process.exit(0);",
 			"}",
@@ -262,7 +270,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.stdout.write(JSON.stringify(issueComments));",
 			"  process.exit(0);",
 			"}",
-			`if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} })); process.exit(0); }`,
+			`if (args[1] === 'user') { if (${JSON.stringify(opts.failUserApi === true)} === true) { process.stderr.write('simulated user lookup failure'); process.exit(1); } process.stdout.write(JSON.stringify({ login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} })); process.exit(0); }`,
 			"if (args[1] === 'graphql') {",
 			`  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload: '' }) + '\\n');`,
 			"  process.stdout.write('{}');",
@@ -280,6 +288,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
+			`fs.appendFileSync(${JSON.stringify(runnerLog)}, 'run\\n');`,
 			`process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
 		].join("\n"),
 	);
@@ -291,7 +300,56 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	process.env.NEEDLEFISH_RUNNER = "claude";
 	process.env.CLAUDE_BIN = claude;
 	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
-	return { postLog, repo, reviewOutput: reviewOutputFile, reviewsState };
+	return {
+		postLog,
+		repo,
+		reviewOutput: reviewOutputFile,
+		reviewsState,
+		runnerLog,
+		headSha: targetHeadSha,
+	};
+}
+
+function runnerInvocationCount(fixture: Fixture): number {
+	if (!existsSync(fixture.runnerLog)) return 0;
+	return readFileSync(fixture.runnerLog, "utf8")
+		.split("\n")
+		.filter(Boolean).length;
+}
+
+function stateReviewBody(headSha: string): string {
+	return `# Needlefish review\n\n${renderState(headSha, [mkFinding({ title: "bug", lineStart: 1 })])}\n`;
+}
+
+function seedReviews(reviewsState: string, reviews: readonly unknown[]): void {
+	writeFileSync(reviewsState, JSON.stringify(reviews));
+}
+
+function defaultRawReview(): string {
+	return JSON.stringify({
+		summary: "review",
+		findings: [mkFinding({ title: "bug", lineStart: 1 })],
+		checked: ["checked"],
+		residual_risks: [],
+	});
+}
+
+function postedReview(posts: readonly Post[], prNumber: number): Post | undefined {
+	return posts.find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.includes(`repos/frankekn/needlefish/pulls/${prNumber}/reviews`),
+	);
+}
+
+function putReview(posts: readonly Post[], prNumber: number, id: number): Post | undefined {
+	return posts.find(
+		(p) =>
+			p.args.includes("PUT") &&
+			p.args.includes(
+				`repos/frankekn/needlefish/pulls/${prNumber}/reviews/${id}`,
+			),
+	);
 }
 
 test("runGithub posts blocking findings as non-sticky review comments", async (t) => {
@@ -955,6 +1013,324 @@ test("runGithub finds a state-bearing review on the second paginated page", asyn
 		round2Posts.some((post) => post.args.includes("PUT")),
 		"a state-bearing review on page 2 must be found for the update",
 	);
+});
+
+// --- State-marker author trust (same-head dedupe must not trust strangers) ---
+
+test("runGithub still skips same-head review when the marker is from a trusted bot author", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 50,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "github-actions" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 50, { timeoutMs: 1000 });
+
+	assert.equal(runnerInvocationCount(fixture), 0, "bot marker must enable dedupe");
+	assert.deepEqual(readPosts(fixture.postLog), [], "dedupe must post nothing");
+});
+
+test("runGithub still skips same-head review when the marker is from a [bot] suffix author", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 51,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "needlefish[bot]" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 51, { timeoutMs: 1000 });
+
+	assert.equal(runnerInvocationCount(fixture), 0);
+	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+test("runGithub still skips same-head review when the marker is from the authenticated PAT identity", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 52,
+		authorLogin: "frank-pat",
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 7,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "frank-pat" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 52, { timeoutMs: 1000 });
+
+	assert.equal(
+		runnerInvocationCount(fixture),
+		0,
+		"PAT-authored marker must enable same-head dedupe",
+	);
+	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+test("runGithub does not skip same-head review when the only state marker is from an untrusted user", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 53,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 53, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"untrusted marker must not suppress the model runner",
+	);
+	assert.ok(
+		postedReview(readPosts(fixture.postLog), 53),
+		"untrusted marker must not suppress posting a review",
+	);
+});
+
+test("runGithub ignores an untrusted review that quotes a trusted state marker", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 54,
+		rawReview: defaultRawReview(),
+	});
+	const quoted = `Looks correct.\n\n> ${renderState(fixture.headSha, [mkFinding({ title: "bug", lineStart: 1 })])}\n`;
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: quoted,
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 54, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"quoted marker from an untrusted author must not skip the runner",
+	);
+	assert.ok(postedReview(readPosts(fixture.postLog), 54));
+});
+
+test("runGithub skips malformed review objects without throwing and does not treat them as trusted", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 55,
+		rawReview: defaultRawReview(),
+	});
+	const body = stateReviewBody(fixture.headSha);
+	seedReviews(fixture.reviewsState, [
+		"not an object",
+		null,
+		{ body, id: "1", user: { login: "github-actions[bot]" } },
+		{ body, id: 2, user: { login: 123 } },
+		{ body, id: 3, user: "github-actions[bot]" },
+		{ body, id: 4 },
+		{ body, user: { login: "github-actions[bot]" } },
+		{
+			id: 100,
+			body,
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 55, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"malformed entries must be skipped without throwing; review must proceed",
+	);
+	assert.ok(postedReview(readPosts(fixture.postLog), 55));
+});
+
+test("runGithub skips an untrusted newest marker and still uses an older trusted review", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 56,
+		rawReview: defaultRawReview(),
+	});
+	const otherHead = "a".repeat(40);
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 10,
+			body: stateReviewBody(otherHead),
+			user: { login: "github-actions[bot]" },
+		},
+		{
+			id: 20,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 56, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"untrusted newest same-head marker must not suppress review",
+	);
+	const posts = readPosts(fixture.postLog);
+	assert.ok(
+		putReview(posts, 56, 10),
+		"older trusted review id must still be found for the PUT update",
+	);
+	assert.equal(
+		postedReview(posts, 56),
+		undefined,
+		"must not POST a new review when a trusted previous review exists",
+	);
+});
+
+test("runGithub skips same-head review when an untrusted newest marker is followed by an older trusted same-head marker", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 57,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "github-actions[bot]" },
+		},
+		{
+			id: 2,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 57, { timeoutMs: 1000 });
+
+	assert.equal(runnerInvocationCount(fixture), 0);
+	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+test("runGithub still finds a trusted marker when an untrusted one is newest across paginated pages", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 58,
+		paginateEachReviewAsOwnPage: true,
+		rawReview: defaultRawReview(),
+	});
+	const otherHead = "b".repeat(40);
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 10,
+			body: stateReviewBody(otherHead),
+			user: { login: "github-actions[bot]" },
+		},
+		{
+			id: 20,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 58, { timeoutMs: 1000 });
+
+	assert.ok(runnerInvocationCount(fixture) >= 1);
+	assert.ok(putReview(readPosts(fixture.postLog), 58, 10));
+});
+
+test("runGithub re-reviews a trusted same-head marker when recheck is true", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 59,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "github-actions[bot]" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 59, { timeoutMs: 1000 }, true);
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"--recheck must bypass same-head dedupe",
+	);
+	assert.ok(putReview(readPosts(fixture.postLog), 59, 1));
+});
+
+test("runGithub still skips a bot-authored same-head marker when gh api user fails", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 60,
+		failUserApi: true,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "github-actions[bot]" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 60, { timeoutMs: 1000 });
+
+	assert.equal(runnerInvocationCount(fixture), 0);
+	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+test("runGithub does not skip an untrusted same-head marker when gh api user fails", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 61,
+		failUserApi: true,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "unrelated-attacker" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 61, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"user-api failure must not widen trust to untrusted authors",
+	);
+	assert.ok(postedReview(readPosts(fixture.postLog), 61));
+});
+
+test("runGithub does not skip a PAT-authored marker when gh api user fails", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 62,
+		authorLogin: "frank-pat",
+		failUserApi: true,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "frank-pat" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 62, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"fail-soft user lookup narrows to bot-only trust and extra-reviews",
+	);
+	assert.ok(postedReview(readPosts(fixture.postLog), 62));
 });
 
 // --- S5 invariant: error path posts a PR comment ---
