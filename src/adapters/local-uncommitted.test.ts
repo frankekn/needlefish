@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -84,6 +92,41 @@ test("runLocal skips tracked binary files while reviewing uncommitted text chang
   assert.equal(prompts.includes("diff --git a/tracked image.bin"), false);
   assert.equal(prompts.includes("Binary files"), false);
   assert.equal(prompts.includes('"path": "tracked image.bin"'), false);
+});
+
+test("runLocal reviews untracked files when a dangling symlink is present", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-dangling-review-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(join(repo, "keep.ts"), "export const keep = 1;\n");
+  symlinkSync("missing-target-does-not-exist", join(repo, "dangling.link"));
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.match(
+    result.reviewTarget ?? "",
+    /Skipped untracked files: dangling\.link \(not a regular file\)/
+  );
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.match(prompts, /diff --git a\/keep\.ts b\/keep\.ts/);
+  assert.equal(prompts.includes("diff --git a/dangling.link"), false);
+});
+
+test("runLocal reports a skipped dangling symlink when no reviewable uncommitted patch remains", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-dangling-only-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  symlinkSync("missing-target-does-not-exist", join(repo, "dangling.link"));
+
+  await assert.rejects(
+    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
+    /No uncommitted changes to review\. Skipped files: dangling\.link \(not a regular file\)\./
+  );
 });
 
 test("runLocal reports skipped tracked binary files when no reviewable uncommitted patch remains", async (t) => {
@@ -170,6 +213,76 @@ test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {
   ]);
   assert.equal(result.patch.includes("cap-5.md"), false);
   assert.equal(result.patch.includes("cap-6.md"), false);
+});
+
+test("buildUntrackedPatch skips a dangling untracked symlink and still includes regular files", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-dangling-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  writeFileSync(join(tmp, "keep.ts"), "export const keep = 1;\n");
+  symlinkSync("missing-target-does-not-exist", join(tmp, "dangling.link"));
+
+  const result = buildUntrackedPatch(tmp, ["keep.ts", "dangling.link"]);
+
+  assert.match(result.patch, /diff --git a\/keep\.ts b\/keep\.ts/);
+  assert.match(result.patch, /\+export const keep = 1;/);
+  assert.equal(result.patch.includes("dangling.link"), false);
+  assert.deepEqual(result.paths, ["keep.ts"]);
+  assert.deepEqual(result.skipped, ["dangling.link (not a regular file)"]);
+  assert.deepEqual(result.untrackedSkipped, []);
+});
+
+test("buildUntrackedPatch skips directories, FIFOs, and live symlinks as not regular files", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-nonregular-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  writeFileSync(join(tmp, "keep.ts"), "export const keep = 1;\n");
+  mkdirSync(join(tmp, "subdir"));
+  symlinkSync("keep.ts", join(tmp, "live.link"));
+  const fifo = join(tmp, "pipe.fifo");
+  const made = spawnSync("mkfifo", [fifo], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+
+  const result = buildUntrackedPatch(tmp, ["keep.ts", "subdir", "live.link", "pipe.fifo"]);
+
+  assert.match(result.patch, /diff --git a\/keep\.ts b\/keep\.ts/);
+  assert.equal(result.patch.includes("live.link"), false);
+  assert.deepEqual(result.paths, ["keep.ts"]);
+  assert.deepEqual(result.skipped, [
+    "subdir (not a regular file)",
+    "live.link (not a regular file)",
+    "pipe.fifo (not a regular file)",
+  ]);
+  assert.deepEqual(result.untrackedSkipped, []);
+});
+
+test("buildUntrackedPatch skips a file that disappears before it is read", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-disappeared-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  writeFileSync(join(tmp, "before.ts"), "export const before = 1;\n");
+  writeFileSync(join(tmp, "gone.ts"), "export const gone = 1;\n");
+  writeFileSync(join(tmp, "after.ts"), "export const after = 1;\n");
+  rmSync(join(tmp, "gone.ts"));
+
+  const result = buildUntrackedPatch(tmp, ["before.ts", "gone.ts", "after.ts"]);
+
+  assert.match(result.patch, /diff --git a\/before\.ts b\/before\.ts/);
+  assert.match(result.patch, /diff --git a\/after\.ts b\/after\.ts/);
+  assert.equal(result.patch.includes("gone.ts"), false);
+  assert.deepEqual(result.paths, ["before.ts", "after.ts"]);
+  assert.deepEqual(result.skipped, ["gone.ts (not a regular file)"]);
+  assert.deepEqual(result.untrackedSkipped, []);
+});
+
+test("buildUntrackedPatch still throws unexpected I/O errors", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-eacces-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    t.skip("root can read mode 000 files");
+    return;
+  }
+  writeFileSync(join(tmp, "secret.ts"), "export const secret = 1;\n");
+  chmodSync(join(tmp, "secret.ts"), 0);
+
+  assert.throws(() => buildUntrackedPatch(tmp, ["secret.ts"]), { code: "EACCES" });
 });
 
 test("runLocal reviews all nonignored files on unborn HEAD", async (t) => {
