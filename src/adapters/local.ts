@@ -130,7 +130,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   const baseRef = detectBase(cwd, opts.base);
   const baseSha = git(["merge-base", baseRef, "HEAD"], cwd);
   const headSha = git(["rev-parse", "HEAD"], cwd);
-  const patch = git(["diff", baseSha, "HEAD"], cwd);
+  const patch = git(["diff", baseSha, "HEAD"], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(
       `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review.`
@@ -141,7 +141,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     baseSha,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd),
+    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, baseSha),
     ...(opts.pr
       ? {
@@ -159,8 +159,12 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const trackedBinaryPaths = headExists
     ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
     : [];
-  const trackedPatch = headExists ? git(trackedDiffArgs([], trackedBinaryPaths), cwd) : "";
-  const trackedPatchStat = headExists ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd) : "";
+  const trackedPatch = headExists
+    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    : "";
+  const trackedPatchStat = headExists
+    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    : "";
   const trackedPaths = headExists ? gitNulFields(trackedDiffArgs(["--name-only", "-z"], trackedBinaryPaths), cwd) : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists

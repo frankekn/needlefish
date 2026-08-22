@@ -67,7 +67,8 @@ function prepareWorkingSandbox(
   }
   // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
   // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
-  // Also ensure a trailing newline (upstream helpers may trim stdout).
+  // git apply requires a terminator newline; add one only when missing. Diff
+  // producers must preserve stdout — this cannot reconstruct a blank context line.
   const patchInput = options.targetPatch.endsWith("\n")
     ? options.targetPatch
     : `${options.targetPatch}\n`;
