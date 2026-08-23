@@ -424,9 +424,9 @@ other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 "Runner subprocess environment").
 
 `grok` is a self-hosted-lane runner (authenticated `grok` CLI on `PATH`).
-`openai` (HTTP, `OPENAI_API_KEY` plus `--model` / `OPENAI_MODEL`) and `acp`
-(`NEEDLEFISH_ACP_BIN`) are CLI runners; the hosted action does not install
-them.
+`acp` (`NEEDLEFISH_ACP_BIN`) is also a CLI runner. `openai` is HTTP, not a
+CLI (`OPENAI_API_KEY` plus `--model` / `OPENAI_MODEL`). The hosted action
+installs none of these.
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
@@ -447,9 +447,9 @@ Cost and behavior notes:
   low-latency option.
 
 The composite action does not add PR comment commands to the consumer repo.
-This repository's `.github/workflows/commands.yml` listens for maintainer
-`@needlefish recheck` and `@needlefish explain <finding>` comments
-(OWNER / MEMBER / COLLABORATOR only). Recheck dispatches this repo's
+This repository's `.github/workflows/commands.yml` listens for
+`@needlefish recheck` and `@needlefish explain <finding>` comments from
+maintainers with write access to this repository. Recheck dispatches this repo's
 `review.yml`; explain runs `needlefish explain` on a self-hosted runner that
 already has `~/.local/bin/needlefish`. Copying that file into another repo
 only works after you retarget those two jobs.

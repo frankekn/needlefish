@@ -372,8 +372,9 @@ claude 的 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` 與 opencode 的
 需設定 `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見「Runner subprocess 環境」）。
 
 `grok` 屬於 self-hosted lane（runner `PATH` 上需有已登入的 `grok` CLI）。
-`openai`（HTTP，`OPENAI_API_KEY` 加上 `--model`／`OPENAI_MODEL`）與 `acp`
-（`NEEDLEFISH_ACP_BIN`）是 CLI runner；hosted action 不會安裝它們。
+`acp`（`NEEDLEFISH_ACP_BIN`）也是 CLI runner。`openai` 是 HTTP，不是 CLI
+（`OPENAI_API_KEY` 加上 `--model`／`OPENAI_MODEL`）。hosted action 不會安裝
+上述任何一個。
 
 輸入（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設 `codex`）、
 `model`、`timeout_ms`、`codex_reasoning_effort`、`runner_version`（要安裝的
@@ -384,8 +385,8 @@ Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了�
 `pull_request_target`，因為它會把 secrets 交給由 fork code 觸發的 workflow。
 
 composite action 不會把 PR 留言指令加進 consumer repo。本 repo 的
-`.github/workflows/commands.yml` 會監聽維護者（僅 OWNER／MEMBER／
-COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
+`.github/workflows/commands.yml` 會監聽對本 repo 具有 write 權限之維護者的
+`@needlefish recheck` 與 `@needlefish explain <finding>`
 留言。recheck 會 dispatch 本 repo 的 `review.yml`；explain 在已部署
 `~/.local/bin/needlefish` 的 self-hosted runner 上執行 `needlefish explain`。
 把該檔案複製到其他 repo 之前，必須改寫這兩個 job 的目標。
