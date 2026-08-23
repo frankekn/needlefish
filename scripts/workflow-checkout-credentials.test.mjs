@@ -8,10 +8,22 @@ import test from "node:test";
 // step must set persist-credentials: false, or be on the allowlist below
 // with a YAML comment documenting why persisted git auth is required.
 
-// A new actions/checkout is a new place the job token can land on disk. The
-// coverage guard keeps a checkout from vanishing from the scan; this keeps one
-// from appearing without anyone deciding it should.
-const EXPECTED_CHECKOUT_COUNT = 6;
+// A FLOOR, deliberately not an equality — do not "tighten" this to assert.equal.
+//
+// What it guards: workflowFiles() decides which files get scanned at all, and
+// assertEveryMentionRecognized() can only speak about files that are in that set.
+// If a workflow is renamed to an unscanned extension, or checkouts migrate into a
+// composite action under .github/actions/*/action.yml (a path this scanner does not
+// read), no mention is left to flag and the scan goes quiet. The count falling
+// below the floor is the only signal of that coverage loss.
+//
+// Why not equality: a checkout being *added* is already fully policed — it must be
+// recognized (assertEveryMentionRecognized) and must set persist-credentials: false
+// or be allowlisted. Equality adds no security signal over the floor, and it breaks
+// on merge: any concurrently-open PR that legitimately adds a workflow checkout
+// passes its own CI, merges cleanly (different files), and lands a main that fails
+// an equality this branch could not have known to bump.
+const MINIMUM_CHECKOUT_COUNT = 6;
 
 const PERSISTED_CREDENTIAL_ALLOWLIST = [
 	{
@@ -181,10 +193,9 @@ test("every actions/checkout sets persist-credentials: false or is allowlisted",
 	const checkouts = workflowFiles().flatMap((file) =>
 		collectCheckouts(readFileSync(file, "utf8"), file),
 	);
-	assert.equal(
-		checkouts.length,
-		EXPECTED_CHECKOUT_COUNT,
-		`expected exactly ${EXPECTED_CHECKOUT_COUNT} actions/checkout steps, found ${checkouts.length}; bump EXPECTED_CHECKOUT_COUNT deliberately when adding or removing one`,
+	assert.ok(
+		checkouts.length >= MINIMUM_CHECKOUT_COUNT,
+		`expected at least ${MINIMUM_CHECKOUT_COUNT} actions/checkout steps, found ${checkouts.length}; checkouts left the scanned file set, so raise the floor only if they are genuinely gone`,
 	);
 	assertCheckoutPolicy(checkouts, PERSISTED_CREDENTIAL_ALLOWLIST);
 });
