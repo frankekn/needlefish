@@ -502,40 +502,95 @@ export function aggregateMustFindHitRates(
 	return { mustFindHitRateByFixture, mustFindHitRate };
 }
 
-// Per-process high-water mark of results flushed to each report path.
-// Concurrent draw completions can invoke writeReport with snapshots taken
-// at different sizes; a later call must not replace a larger checkpoint.
+// Per-process high-water mark of coverage flushed to each report path,
+// tracked as the SET of (fixtureId, draw) pairs a checkpoint has written —
+// not a raw count. Count is a weak proxy for "more complete": two
+// checkpoints can be the same size (or the later one even larger) while the
+// later one drops pairs the earlier one already covered, e.g. a
+// differently-composed concurrent completion. Only the actual coverage set
+// proves a checkpoint strictly retains everything already on record.
 //
 // This map starts empty in every process. Without seeding it from disk, a
 // FRESH run (no --resume) pointed at a --report path that already holds a
 // complete report from a prior invocation would have its own first partial
-// checkpoint (as small as one draw) pass this guard trivially — lastCount
-// is undefined, so incomingCount < lastCount is never true — and
+// checkpoint (as small as one draw) pass this guard trivially and
 // atomically overwrite the old complete report. A crash before the new run
 // finishes then leaves only a partial file that isCompleteReport rejects,
 // with the previously-good report unrecoverably gone: the checkpoint
 // feature this guard belongs to (crash resilience, #58) would have
 // destroyed the very artifact it exists to protect.
-const lastCheckpointCounts = new Map<string, number>();
+const lastCheckpointCoverage = new Map<string, ReadonlySet<string>>();
 
-// Reads whatever report already sits at `targetPath` (if any) so a fresh
+function coverageKey(fixtureId: string, draw: number): string {
+	return `${fixtureId} ${draw}`;
+}
+
+function coverageOf(
+	results: readonly { fixtureId: string; draw: number }[],
+): Set<string> {
+	const pairs = new Set<string>();
+	for (const r of results) pairs.add(coverageKey(r.fixtureId, r.draw));
+	return pairs;
+}
+
+type ExistingReportProbe =
+	| { readonly kind: "absent" }
+	| { readonly kind: "coverage"; readonly pairs: ReadonlySet<string> };
+
+// Probes whatever is already at `targetPath` (if anything) so a fresh
 // process can seed its high-water mark from disk instead of starting blind.
 // readFileSync follows the symlink chain to read the real file, same as any
 // normal read — only rename(2)'s no-dereference-on-final-component behavior
 // (handled separately by resolveWriteDestination) needs manual walking.
-function readExistingReportCount(targetPath: string): number | undefined {
+//
+// Only a confirmed ENOENT proves nothing is there. Every other failure —
+// permission denied, an I/O error, a directory in the way, content that
+// isn't valid JSON, or JSON that isn't shaped like a Report — means
+// something IS at that path and this call could not establish what it is.
+// Treating that the same as "nothing to protect" (as an earlier version of
+// this guard did) is a fail-open on a data-loss guard: silently
+// unprotected instead of maximally protected. Throw instead, with an
+// actionable message, so the operator hits this at the very first
+// checkpoint (seconds into a run) rather than the run silently losing its
+// crash-resilience guarantee for its whole duration, or a real report
+// being silently destroyed at the very end.
+function probeExistingReport(targetPath: string): ExistingReportProbe {
 	let raw: string;
 	try {
 		raw = readFileSync(targetPath, "utf8");
-	} catch {
-		return undefined;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { kind: "absent" };
+		}
+		throw new Error(
+			`--report target ${targetPath} exists but could not be read (${
+				(error as NodeJS.ErrnoException).code ?? String(error)
+			}). Refusing to checkpoint over it without knowing what it contains — ` +
+				"move or delete the file, fix its permissions, or point --report elsewhere, then retry.",
+			{ cause: error },
+		);
 	}
+	let parsed: unknown;
 	try {
-		const parsed = JSON.parse(raw) as { results?: unknown };
-		return Array.isArray(parsed.results) ? parsed.results.length : undefined;
-	} catch {
-		return undefined;
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(
+			`--report target ${targetPath} exists but is not valid JSON. Refusing to ` +
+				"checkpoint over it without knowing what it contains — move or delete the file, or point --report elsewhere, then retry.",
+			{ cause: error },
+		);
 	}
+	const existingResults = (parsed as { results?: unknown }).results;
+	if (!Array.isArray(existingResults)) {
+		throw new Error(
+			`--report target ${targetPath} exists but does not look like a Report (no results array). ` +
+				"Refusing to checkpoint over it without knowing what it contains — move or delete the file, or point --report elsewhere, then retry.",
+		);
+	}
+	return {
+		kind: "coverage",
+		pairs: coverageOf(existingResults as { fixtureId: string; draw: number }[]),
+	};
 }
 
 // Symlink chains can be arbitrarily long; this is comfortably above what any
@@ -736,33 +791,46 @@ export function writeReport(
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
 	};
 	const targetPath = path.resolve(args.report);
-	const incomingCount = results.length;
-	if (!lastCheckpointCounts.has(targetPath)) {
+	if (!lastCheckpointCoverage.has(targetPath)) {
 		// First checkpoint attempt this process has made to this path: seed
-		// the high-water mark from whatever report is already on disk so this
-		// run's own first (necessarily small) partial checkpoint cannot
-		// silently destroy a prior report before this run has produced
-		// anything at least as complete.
-		lastCheckpointCounts.set(targetPath, readExistingReportCount(targetPath) ?? 0);
+		// the high-water mark from whatever report is already on disk (this
+		// throws if something is there and unreadable — see
+		// probeExistingReport) so this run's own first (necessarily small)
+		// partial checkpoint cannot silently destroy a prior report before
+		// this run has produced anything at least as complete.
+		const probe = probeExistingReport(targetPath);
+		lastCheckpointCoverage.set(
+			targetPath,
+			probe.kind === "coverage" ? probe.pairs : new Set(),
+		);
 	}
-	const lastCount = lastCheckpointCounts.get(targetPath) as number;
-	// A partial (still in-progress) checkpoint must never regress below
-	// whatever is already the most-complete artifact at this path — from a
-	// prior process's on-disk report or from this run's own earlier
-	// checkpoints. But a report that is itself structurally complete (every
-	// fixture x draw pair present) is this run's deliberate final artifact
-	// and always wins, even if its own count is smaller than what preceded
-	// it (e.g. a rerun with --draws intentionally lowered) — otherwise
-	// --report would become unusable for a legitimate rerun.
+	const lastCoverage = lastCheckpointCoverage.get(targetPath) as ReadonlySet<string>;
+	const incomingCoverage = coverageOf(results);
+	// A partial (still in-progress) checkpoint must never drop any pair
+	// already covered at this path — from a prior process's on-disk report
+	// or from this run's own earlier checkpoints. Comparing sets (not
+	// counts) catches the case count-comparison misses: an equal- or
+	// larger-sized checkpoint that is differently composed and silently
+	// drops a pair the prior checkpoint had. But a report that is itself
+	// structurally complete (every fixture x draw pair present) is this
+	// run's deliberate final artifact and always wins, even over pairs it
+	// does not itself retain (e.g. a rerun with --draws intentionally
+	// lowered, or a different fixture set) — otherwise --report would
+	// become unusable for a legitimate rerun.
 	const incomingComplete = isCompleteReport(
 		report,
 		specs.map((s) => s.id),
 	);
-	if (!incomingComplete && incomingCount < lastCount) {
+	const retainsAllPriorCoverage = [...lastCoverage].every((key) =>
+		incomingCoverage.has(key),
+	);
+	if (!incomingComplete && !retainsAllPriorCoverage) {
 		return report;
 	}
 	atomicWriteFile(targetPath, JSON.stringify(report, null, 2));
-	lastCheckpointCounts.set(targetPath, Math.max(incomingCount, lastCount));
+	const merged = new Set(lastCoverage);
+	for (const key of incomingCoverage) merged.add(key);
+	lastCheckpointCoverage.set(targetPath, merged);
 	return report;
 }
 

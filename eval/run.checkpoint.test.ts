@@ -225,6 +225,74 @@ test("writeReport: a fresh run's interrupted partial checkpoint does not destroy
 	);
 });
 
+// Raw result count is a weak proxy for "more complete": a same-sized (or
+// even larger) checkpoint can be differently composed and silently drop a
+// fixture x draw pair the prior checkpoint already covered. The guard must
+// compare actual coverage, not cardinality.
+test("writeReport: an equal-count but worse-coverage checkpoint does not overwrite", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(
+		path.join(tmpdir(), "needlefish-checkpoint-coverage-"),
+	);
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const reportPath = path.join(dir, "report.json");
+	const specA = checkpointSpec("checkpoint-coverage-a");
+	const specB = checkpointSpec("checkpoint-coverage-b");
+	const specs = [specA, specB];
+	const args = parseArgs(["--draws", "2", "--report", reportPath]);
+
+	// First checkpoint: draw 0 for both fixtures (2 results), covering
+	// {A:0, B:0}.
+	writeReport(args, [makeDraw(specA, 0), makeDraw(specB, 0)], specs);
+	assert.equal(readReport(reportPath).results.length, 2);
+
+	// A same-sized checkpoint that is differently composed: {A:0, A:1} is
+	// still 2 results (equal count, so a pure count check would let it
+	// through) but drops B:0's coverage in favor of A:1. It must be
+	// blocked because it does not retain everything the prior checkpoint
+	// already covered.
+	writeReport(args, [makeDraw(specA, 0), makeDraw(specA, 1)], specs);
+
+	const onDisk = readReport(reportPath);
+	assert.deepEqual(
+		onDisk.results.map((r) => `${r.fixtureId}:${r.draw}`).sort(),
+		["checkpoint-coverage-a:0", "checkpoint-coverage-b:0"],
+		"an equal-count checkpoint that drops previously-covered pairs must not overwrite",
+	);
+});
+
+// Only a confirmed ENOENT proves nothing is at --report. Any other read
+// failure (garbage content that isn't valid JSON, here — a real failure
+// exercised through the actual JSON.parse path, not a mocked throw) means
+// something IS there and must be treated as maximally protected: fail
+// closed with an actionable error rather than silently treating it as
+// absent and overwriting it.
+test("writeReport: an unreadable existing report at --report is never treated as absent", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(
+		path.join(tmpdir(), "needlefish-checkpoint-unreadable-"),
+	);
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const reportPath = path.join(dir, "report.json");
+	const garbage = "{ this is not valid json";
+	writeFileSync(reportPath, garbage);
+	const spec = checkpointSpec("checkpoint-unreadable");
+	const args = parseArgs(["--draws", "2", "--report", reportPath]);
+
+	assert.throws(
+		() => writeReport(args, [makeDraw(spec, 0)], [spec]),
+		/not valid JSON/,
+		"an existing file that can't be parsed as a report must fail closed, not be treated as absent",
+	);
+
+	assert.equal(
+		readFileSync(reportPath, "utf8"),
+		garbage,
+		"a fail-closed refusal must leave the unreadable file untouched",
+	);
+	assert.deepEqual(leftoverTemps(dir), []);
+});
+
 test("writeReport: the completed report atomically supersedes a partial checkpoint", (t) => {
 	withGuardEnv(t);
 	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-final-"));
@@ -270,7 +338,11 @@ test("writeReport: a symlinked --report target stays a symlink and is written th
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	const realPath = path.join(dir, "real-report.json");
 	const linkPath = path.join(dir, "report.json");
-	writeFileSync(realPath, "placeholder");
+	// Valid-but-empty report JSON, not arbitrary garbage: this file only
+	// needs to make the symlink non-dangling for this test's purpose (the
+	// symlink surviving a write-through); real garbage content is its own,
+	// separately-tested case (see "an unreadable existing report...").
+	writeFileSync(realPath, JSON.stringify({ results: [] }));
 	symlinkSync(realPath, linkPath);
 	const spec = checkpointSpec("checkpoint-symlink");
 	const args = parseArgs(["--draws", "1", "--report", linkPath]);
