@@ -334,6 +334,53 @@ test("a commented-out checkout is not treated as an unrecognized step", () => {
 	assert.equal(checkouts[0].line, 5);
 });
 
+test("a YAML alias cannot smuggle a checkout past the scanner", () => {
+	// Actions has resolved anchors/aliases since 2025-09, so `uses: *checkout` runs.
+	// It is still not a bypass, and the reason is worth pinning: aliases are
+	// file-scoped, so an alias needs an `&anchor` in the SAME file, and YAML has no
+	// concatenation — the anchor's value must spell out `actions/checkout`. That
+	// definition line is never a plain `uses: actions/checkout@...`, so CHECKOUT_USES
+	// misses it, CHECKOUT_MENTION sees it, and the coverage guard rejects the file.
+	//
+	// Do NOT "fix" this by teaching the mention scan to skip anchor definitions or by
+	// resolving aliases: skipping the definition line is what would open the hole.
+	const variants = {
+		"anchor on a uses: line": [
+			"jobs:",
+			"  a:",
+			"    steps:",
+			"      - uses: &checkout actions/checkout@v4",
+			"  b:",
+			"    steps:",
+			"      - uses: *checkout",
+		],
+		"anchor on a non-uses key": [
+			"x-defs:",
+			"  checkout: &checkout actions/checkout@v4",
+			"jobs:",
+			"  a:",
+			"    steps:",
+			"      - uses: *checkout",
+		],
+		"anchor on a whole step mapping": [
+			"x-defs:",
+			"  step: &checkout { uses: actions/checkout@v4 }",
+			"jobs:",
+			"  a:",
+			"    steps:",
+			"      - *checkout",
+		],
+	};
+
+	for (const [label, lines] of Object.entries(variants)) {
+		assert.throws(
+			() => collectCheckouts(lines.join("\n"), "alias.yml"),
+			/cannot inspect/,
+			`${label}: the anchor definition must fail the coverage guard`,
+		);
+	}
+});
+
 test("a composite action's checkout is scanned, not just .github/workflows", () => {
 	// The floor cannot see this one: adding an unprotected checkout under
 	// .github/actions leaves the workflow checkouts intact, so the count stays green.
