@@ -146,7 +146,7 @@ test("critic subset: small path rejects a critic-only finding", async (t) => {
 		smallPathBin(
 			log,
 			candidateReview(),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ severity: 'P0', title: 'critic-only marker', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' }] }));",
+			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ severity: 'P0', title: 'critic-only marker', category: 'security', file: 'src/invented.ts', lineStart: 99, lineEnd: 99, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' }] }));",
 		),
 	);
 
@@ -231,12 +231,65 @@ test("critic subset: small path accepts upward severity correction", async (t) =
 	assert.equal(result.findings[0]?.title, "Echo bug");
 });
 
-test("critic subset: small path rejects rewritten finding content", async (t) => {
+const PARAPHRASE_CRITIC =
+	'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, title: "paraphrased title", whyItBreaks: "paraphrased why", suggestedFix: "paraphrased fix", lineStart: f.lineStart + 2, lineEnd: f.lineStart + 6, validation: "paraphrased validation", confidence: 0.8 })) }));';
+
+function assertCandidateContentRestored(
+	finding: typeof FINDING,
+	candidate: typeof FINDING,
+): void {
+	assert.equal(finding.title, candidate.title);
+	assert.equal(finding.whyItBreaks, candidate.whyItBreaks);
+	assert.equal(finding.suggestedFix, candidate.suggestedFix);
+	assert.equal(finding.lineStart, candidate.lineStart);
+	assert.equal(finding.lineEnd, candidate.lineEnd);
+	assert.equal(finding.validation, candidate.validation);
+	assert.equal(finding.file, candidate.file);
+	assert.equal(finding.category, candidate.category);
+}
+
+test("critic subset: small path accepts a paraphrased finding and restores candidate content", async (t) => {
+	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
 	const { repo } = installStub(t, (log) =>
+		smallPathBin(log, candidateReview({ findings: [candidate] }), PARAPHRASE_CRITIC),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 1);
+	assert.equal(result.verdict, "changes_requested");
+	const finding = result.findings[0]!;
+	assertCandidateContentRestored(finding, candidate);
+	assert.equal(finding.severity, "P2");
+	assert.equal(finding.confidence, 0.8);
+	assert.notEqual(finding.title, "paraphrased title");
+	assert.notEqual(finding.whyItBreaks, "paraphrased why");
+	assert.notEqual(finding.suggestedFix, "paraphrased fix");
+});
+
+test("critic subset: large path accepts a paraphrased finding and restores candidate content", async (t) => {
+	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
+	const { repo } = installStub(t, (log) =>
+		largePathBin(
+			log,
+			candidateReview({ findings: [candidate], summary: "deep h1" }),
+			PARAPHRASE_CRITIC,
+		),
+	);
+
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.findings.length, 1);
+	const finding = result.findings[0]!;
+	assertCandidateContentRestored(finding, candidate);
+	assert.equal(finding.confidence, 0.8);
+});
+
+test("critic subset: small path rejects lineStart drift outside the ±2 window", async (t) => {
+	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
+	const { repo, calls } = installStub(t, (log) =>
 		smallPathBin(
 			log,
-			candidateReview(),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, title: "rewritten title" })) }));',
+			candidateReview({ findings: [candidate] }),
+			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, lineStart: 13 })) }));',
 		),
 	);
 
@@ -244,29 +297,24 @@ test("critic subset: small path rejects rewritten finding content", async (t) =>
 		() => review(makeBundle(repo, false)),
 		/malformed critic output: finding was not in the candidate review/,
 	);
+	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+		"review",
+		"critic",
+		"critic",
+	]);
 });
 
-// Pins findingSubsetKey: a critic that keeps file/line/category/title but
-// rewrites any identity field must fail closed (retry then throw). A candidate
-// with lineStart < lineEnd lets lineStart mutate without normalize rejecting
-// "lineEnd before lineStart" first — otherwise that case would not pin the key.
-const IDENTITY_FINDING = { ...FINDING, lineStart: 1, lineEnd: 10 };
-const IDENTITY_FIELD_MUTATIONS = [
+const IDENTITY_REJECT_MUTATIONS = [
 	{ field: "file", value: "src/other.ts" },
-	{ field: "lineStart", value: 2 },
-	{ field: "lineEnd", value: 9 },
 	{ field: "category", value: "security" },
-	{ field: "title", value: "rewritten title" },
-	{ field: "whyItBreaks", value: "rewritten why" },
-	{ field: "suggestedFix", value: "rewritten fix" },
 ] as const;
 
-for (const { field, value } of IDENTITY_FIELD_MUTATIONS) {
+for (const { field, value } of IDENTITY_REJECT_MUTATIONS) {
 	test(`critic subset: small path rejects a rewritten ${field}`, async (t) => {
 		const { repo, calls } = installStub(t, (log) =>
 			smallPathBin(
 				log,
-				candidateReview({ findings: [IDENTITY_FINDING] }),
+				candidateReview(),
 				`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, ${field}: ${JSON.stringify(value)} })) }));`,
 			),
 		);
@@ -283,7 +331,59 @@ for (const { field, value } of IDENTITY_FIELD_MUTATIONS) {
 	});
 }
 
-test("critic subset: small path allows two findings that share a key", async (t) => {
+test("critic subset: small path allows two findings that share a loosened key", async (t) => {
+	const first = {
+		...FINDING,
+		title: "First bug",
+		whyItBreaks: "why one",
+		suggestedFix: "fix one",
+	};
+	const second = {
+		...FINDING,
+		title: "Second bug",
+		whyItBreaks: "why two",
+		suggestedFix: "fix two",
+	};
+	const pair = candidateReview({ findings: [first, second] });
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			pair,
+			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f, i) => ({ ...f, title: "para " + i, whyItBreaks: "para why " + i, suggestedFix: "para fix " + i })) }));',
+		),
+	);
+	const kept = await review(makeBundle(repo, false));
+	assert.equal(kept.findings.length, 2);
+	assert.equal(kept.verdict, "changes_requested");
+	assert.deepEqual(
+		kept.findings.map((f) => f.title).sort(),
+		["First bug", "Second bug"],
+	);
+	assert.deepEqual(
+		kept.findings.map((f) => f.whyItBreaks).sort(),
+		["why one", "why two"],
+	);
+	assert.ok(kept.findings.every((f) => !f.title.startsWith("para ")));
+});
+
+test("critic subset: small path rejects a third copy of a duplicate loosened-key finding", async (t) => {
+	const first = { ...FINDING, title: "First bug" };
+	const second = { ...FINDING, title: "Second bug" };
+	const pair = candidateReview({ findings: [first, second] });
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			pair,
+			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [...parsed.findings, parsed.findings[0]] }));",
+		),
+	);
+	await assert.rejects(
+		() => review(makeBundle(repo, false)),
+		/malformed critic output: finding was not in the candidate review/,
+	);
+});
+
+test("critic subset: small path allows two identical findings that share a key", async (t) => {
 	const pair = candidateReview({ findings: [FINDING, FINDING] });
 	const { repo } = installStub(t, (log) => smallPathBin(log, pair, ECHO));
 	const kept = await review(makeBundle(repo, false));
@@ -340,6 +440,64 @@ test("critic subset: small path accepts unblocking a residual", async (t) => {
 	assert.equal(result.verdict, "pass");
 	assert.deepEqual(result.residualRisks, [
 		{ text: "need human", blocks: false },
+	]);
+});
+
+test("critic subset: small path accepts residual case/whitespace drift and restores candidate text", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({
+				findings: [],
+				residual_risks: [{ text: "Need human", blocks: false }],
+			}),
+			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "NEED   human", blocks: false }] }));',
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.residualRisks, [
+		{ text: "Need human", blocks: false },
+	]);
+});
+
+test("critic subset: small path rejects a word-paraphrased residual", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({
+				findings: [],
+				residual_risks: [{ text: "Need human", blocks: false }],
+			}),
+			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "Need a human reviewer", blocks: false }] }));',
+		),
+	);
+
+	await assert.rejects(
+		() => review(makeBundle(repo, false)),
+		/malformed critic output: residual risk was not in the candidate review/,
+	);
+});
+
+test("critic subset: large path rejects a critic-only finding", async (t) => {
+	const { repo, calls } = installStub(t, (log) =>
+		largePathBin(
+			log,
+			candidateReview({ summary: "deep h1" }),
+			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ severity: 'P0', title: 'critic-only marker', category: 'security', file: 'src/invented.ts', lineStart: 99, lineEnd: 99, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' }] }));",
+		),
+	);
+
+	await assert.rejects(
+		() => review(makeBundle(repo, true)),
+		/malformed critic output: finding was not in the candidate review/,
+	);
+	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+		"map",
+		"deep",
+		"critic",
+		"critic",
 	]);
 });
 

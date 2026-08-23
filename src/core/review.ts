@@ -350,24 +350,27 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 	};
 }
 
-// Critic contract is prune-only (prompts/critic.md). Identity is the
-// immutable finding fields, exact and untruncated: dedup() case-folds and
-// slices title/why, and cross-round matching uses ±10-line drift. Both are
-// too loose for two outputs of the SAME review call — candidate identity is
-// stable within the call. Severity and confidence may change; every other
-// field is restored from the matched candidate so rewritten content cannot
-// reach deriveVerdict. Unknown keys throw from parse so runJsonPrompt
-// retries, then fails closed.
-function findingSubsetKey(finding: Finding): string {
-	return JSON.stringify([
-		finding.file,
-		finding.lineStart,
-		finding.lineEnd,
-		finding.category,
-		finding.title,
-		finding.whyItBreaks,
-		finding.suggestedFix,
-	]);
+// Critic contract is prune-only (prompts/critic.md). Real critics paraphrase
+// title/whyItBreaks/suggestedFix and nudge lineEnd/lineStart; those fields
+// are not identity. Matching is file + category + nearest unused candidate
+// lineStart within ±2. That window absorbs same-call re-anchoring (statement
+// vs condition). It is not the adapter's ±10, which exists for CROSS-ROUND
+// drift after code moved. An invented finding shares no candidate
+// file+category+near-lineStart and still fails closed. Matched content is
+// restored from the candidate so paraphrased text cannot reach deriveVerdict;
+// only severity and confidence come from the critic. Unknown keys throw from
+// parse so runJsonPrompt retries, then fails closed.
+//
+// Residuals have no file/line/category — the text is the identity. Word-level
+// paraphrase is too collision-prone (an invented blocking residual could
+// pair with an unrelated candidate and manufacture needs_human). Identity is
+// exact text after case-fold and whitespace collapse. Depleting the bag
+// still caps copies.
+
+const CRITIC_FINDING_LINE_WINDOW = 2;
+
+function residualSubsetKey(text: string): string {
+	return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function bagByKey<T>(
@@ -384,17 +387,33 @@ function bagByKey<T>(
 	return bag;
 }
 
-function takeBagItem<T>(bag: Map<string, T[]>, key: string): T | undefined {
-	const group = bag.get(key);
-	if (!group || group.length === 0) return undefined;
-	return group.shift();
+function takeMatchedFinding(
+	unused: Finding[],
+	finding: Finding,
+): Finding | undefined {
+	let bestIndex = -1;
+	let bestDelta = Infinity;
+	for (let i = 0; i < unused.length; i++) {
+		const candidate = unused[i];
+		if (candidate.file !== finding.file) continue;
+		if (candidate.category !== finding.category) continue;
+		const delta = Math.abs(candidate.lineStart - finding.lineStart);
+		if (delta > CRITIC_FINDING_LINE_WINDOW) continue;
+		if (delta < bestDelta) {
+			bestDelta = delta;
+			bestIndex = i;
+		}
+	}
+	if (bestIndex < 0) return undefined;
+	const [matched] = unused.splice(bestIndex, 1);
+	return matched;
 }
 
 function takeResidual(
 	bag: Map<string, ResidualRisk[]>,
 	risk: ResidualRisk,
 ): ResidualRisk | undefined {
-	const group = bag.get(risk.text);
+	const group = bag.get(residualSubsetKey(risk.text));
 	if (!group || group.length === 0) return undefined;
 	if (risk.blocks) {
 		const index = group.findIndex((candidate) => candidate.blocks);
@@ -412,10 +431,10 @@ function assertCriticSubset(
 	critic: RawReview,
 	candidate: RawReview,
 ): RawReview {
-	const findingsBag = bagByKey(candidate.findings, findingSubsetKey);
+	const unused = [...candidate.findings];
 	const findings: Finding[] = [];
 	for (const finding of critic.findings) {
-		const matched = takeBagItem(findingsBag, findingSubsetKey(finding));
+		const matched = takeMatchedFinding(unused, finding);
 		if (!matched) {
 			throw new Error(
 				"malformed critic output: finding was not in the candidate review",
@@ -428,10 +447,12 @@ function assertCriticSubset(
 		});
 	}
 
-	const residualBag = bagByKey(candidate.residual_risks, (risk) => risk.text);
+	const residualBag = bagByKey(candidate.residual_risks, (risk) =>
+		residualSubsetKey(risk.text),
+	);
 	const residual_risks: ResidualRisk[] = [];
 	for (const risk of critic.residual_risks) {
-		const group = residualBag.get(risk.text);
+		const group = residualBag.get(residualSubsetKey(risk.text));
 		if (!group || group.length === 0) {
 			throw new Error(
 				"malformed critic output: residual risk was not in the candidate review",
