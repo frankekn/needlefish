@@ -416,6 +416,142 @@ test("critic subset: small path still accepts a tie whose paraphrase shares no w
 	);
 });
 
+// Greedy consumption rejected this: the 52-anchored finding took the line-50
+// candidate (equal distance, no content signal), leaving the 50-anchored
+// finding with nothing inside ±2 — a false rejection of a real review, even
+// though the complete assignment 52→54, 50→50 exists.
+const ZERO_OVERLAP_AT_52 =
+	"{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 52, lineEnd: 52, severity: 'P0' }";
+const ZERO_OVERLAP_AT_50 =
+	"{ ...parsed.findings[0], title: 'yyy www', whyItBreaks: 'yyy www', lineStart: 50, lineEnd: 50, severity: 'P3' }";
+
+test("critic subset: small path accepts an order that only a complete matching can satisfy", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_50}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 2);
+	const at52 = result.findings[0]!;
+	const at50 = result.findings[1]!;
+	assert.equal(
+		at50.lineStart,
+		LOOP_BOUND.lineStart,
+		"the 50-anchored finding must take the only candidate it is eligible for",
+	);
+	assert.equal(
+		at52.lineStart,
+		NULL_CHECK.lineStart,
+		"the 52-anchored finding must yield line 50 rather than reject the review",
+	);
+});
+
+test("critic subset: large path accepts an order that only a complete matching can satisfy", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		largePathBin(
+			log,
+			candidateReview({
+				findings: [LOOP_BOUND, NULL_CHECK],
+				summary: "deep h1",
+			}),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_50}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.findings.length, 2);
+	assert.equal(result.findings[1]!.lineStart, LOOP_BOUND.lineStart);
+	assert.equal(result.findings[0]!.lineStart, NULL_CHECK.lineStart);
+});
+
+// Only an augmenting path saves this one. The 52-anchored finding's words
+// point at the line-54 candidate and it takes it; the 56-anchored finding is
+// eligible for line 54 and nothing else, so it must displace the incumbent
+// onto line 50 — its own second choice, and still a candidate it was eligible
+// for. Preference is sacrificed here only because the alternative is throwing
+// away a real review.
+const NULL_CHECK_PARAPHRASE_AT_52 =
+	"{ ...parsed.findings[0], title: 'null check missing on the returned value', whyItBreaks: 'the value returned is never checked for null', lineStart: 52, lineEnd: 52, severity: 'P1' }";
+const ZERO_OVERLAP_AT_56 =
+	"{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 56, lineEnd: 56, severity: 'P0' }";
+
+test("critic subset: small path displaces a preferred match rather than rejecting the review", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE_AT_52}, ${ZERO_OVERLAP_AT_56}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 2);
+	const displaced = result.findings[0]!;
+	const constrained = result.findings[1]!;
+	assert.equal(
+		constrained.lineStart,
+		NULL_CHECK.lineStart,
+		"the finding eligible for only one candidate must get it",
+	);
+	assert.equal(
+		displaced.lineStart,
+		LOOP_BOUND.lineStart,
+		"the displaced finding takes the remaining eligible candidate",
+	);
+	assert.equal(displaced.severity, "P1");
+	assert.equal(constrained.severity, "P0");
+});
+
+// Both findings sit at 52, so both are eligible for both candidates with the
+// same preference (equal distance, no shared words). Nothing but the
+// algorithm's own processing order can decide who gets which — and that order
+// must come from the findings themselves, not from the order the critic
+// happened to emit them in.
+const ZERO_OVERLAP_AT_52_ALT =
+	"{ ...parsed.findings[0], title: 'yyy www', whyItBreaks: 'yyy www', lineStart: 52, lineEnd: 52, severity: 'P3' }";
+const PERMUTATION_ORDERS = [
+	{
+		name: "as emitted",
+		js: `[${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_52_ALT}]`,
+	},
+	{
+		name: "reversed",
+		js: `[${ZERO_OVERLAP_AT_52_ALT}, ${ZERO_OVERLAP_AT_52}]`,
+	},
+] as const;
+
+for (const { name, js } of PERMUTATION_ORDERS) {
+	test(`critic subset: assignment is invariant under critic finding order (${name})`, async (t) => {
+		const { repo } = installStub(t, (log) =>
+			smallPathBin(
+				log,
+				candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+				`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: ${js} }));`,
+			),
+		);
+
+		const result = await review(makeBundle(repo, false));
+		assert.equal(result.findings.length, 2);
+		const p0 = result.findings.find((f) => f.severity === "P0");
+		const p3 = result.findings.find((f) => f.severity === "P3");
+		assert.ok(p0 && p3, "both critic findings must survive");
+		assert.equal(
+			p0!.lineStart,
+			LOOP_BOUND.lineStart,
+			"the same finding owns the line-50 candidate in either emission order",
+		);
+		assert.equal(
+			p3!.lineStart,
+			NULL_CHECK.lineStart,
+			"the same finding owns the line-54 candidate in either emission order",
+		);
+	});
+}
+
 const IDENTITY_REJECT_MUTATIONS = [
 	{ field: "file", value: "src/other.ts" },
 	{ field: "category", value: "security" },

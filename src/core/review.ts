@@ -375,10 +375,36 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 // total and deterministic: nearest line, then higher overlap, then first in
 // candidate order.
 //
-// Consumption stays greedy and first-come, as it was: within one ±2 cluster
-// an earlier critic finding can still take a candidate a later one needed.
-// Overlap makes that assignment follow the critic's words instead of array
-// order; it does not make greedy matching complete, in either direction.
+// Assignment is a maximum bipartite matching over that eligibility relation,
+// NOT first-come consumption. Greedy consumption destroys globally correct
+// assignments: candidates at 50 and 54 with critic findings anchored at 52
+// then 50 have a complete assignment (52→54, 50→50), but a greedy pass gives
+// 50 to the 52-anchored finding and then rejects a real review — a false
+// rejection in the seam whose first version already failed a gate at 92/252
+// for rejecting real reviews.
+//
+// Findings are processed in a canonical CONTENT order rather than array
+// order, so the assignment is a function of the two finding sets alone:
+// permuting the critic's findings cannot change who matches what. Each
+// finding first takes its most-preferred free candidate (nearest line, then
+// higher overlap, then candidate order — the tie-break above). Only a finding
+// that finds nothing free runs Kuhn's augmenting-path search, which may
+// displace an incumbent onto its own second choice. That ordering matters:
+// augmenting unconditionally would let a finding with no content signal
+// displace one that matched its candidate strongly, undoing the tie-break, so
+// displacement happens only when the alternative is rejecting the review
+// outright — and the displaced finding still lands on a real candidate it was
+// eligible for.
+//
+// Rejection keeps its exact meaning — the throw fires iff no complete
+// matching exists, i.e. some critic finding has no candidate under the same
+// eligibility relation. Eligibility is untouched, so this only ever accepts
+// MORE real critic output, never less; invention still fails closed, and 1:1
+// still holds because a candidate is the match of at most one finding.
+//
+// Cost, for F critic findings and C candidates: O(F·C) eligibility pairs,
+// O(F+C) tokenizations (token sets are built once, not per pair), and Kuhn is
+// O(F·E) = O(F²·C) worst case. Both are single digits in practice.
 //
 // Two things this deliberately does NOT do, both repeatedly proposed and both
 // rejected on recorded evidence — do not "fix" them without new evidence:
@@ -399,9 +425,8 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 //      channel the critic legitimately owns for a candidate it matched.
 //
 // What actually bounds the critic is unchanged: content is always restored
-// from a real unused candidate, and unused.splice enforces 1:1 consumption,
-// so no critic output can add a finding that the candidate review did not
-// contain.
+// from a real candidate, and the matching is 1:1, so no critic output can add
+// a finding that the candidate review did not contain.
 //
 // Residuals have no file/line/category — the text is the identity. Word-level
 // paraphrase is too collision-prone (an invented blocking residual could
@@ -449,30 +474,112 @@ function tokenOverlap(a: Set<string>, b: Set<string>): number {
 	return shared / (a.size + b.size - shared);
 }
 
-function takeMatchedFinding(
-	unused: Finding[],
+// Content-derived, so the processing order below cannot depend on where a
+// finding sat in the critic's array. Two findings identical in every field are
+// interchangeable: whichever takes which candidate, the restored output is the
+// same.
+function canonicalFindingKey(finding: Finding): string {
+	return [
+		finding.file,
+		finding.category,
+		String(finding.lineStart),
+		String(finding.lineEnd),
+		finding.severity,
+		String(finding.confidence),
+		finding.title,
+		finding.whyItBreaks,
+	].join(" ");
+}
+
+// The eligibility relation — file + category + ±2 lineStart — and nothing
+// else. Order within it is preference only: nearest line, then higher token
+// overlap, then candidate order.
+function eligibleCandidates(
 	finding: Finding,
-): Finding | undefined {
+	candidates: readonly Finding[],
+	candidateTokens: readonly Set<string>[],
+): number[] {
 	const criticTokens = findingTokens(finding);
-	let bestIndex = -1;
-	let bestDelta = Infinity;
-	let bestOverlap = -1;
-	for (let i = 0; i < unused.length; i++) {
-		const candidate = unused[i];
+	const eligible: { index: number; delta: number; overlap: number }[] = [];
+	for (let i = 0; i < candidates.length; i++) {
+		const candidate = candidates[i];
 		if (candidate.file !== finding.file) continue;
 		if (candidate.category !== finding.category) continue;
 		const delta = Math.abs(candidate.lineStart - finding.lineStart);
 		if (delta > CRITIC_FINDING_LINE_WINDOW) continue;
-		if (delta > bestDelta) continue;
-		const overlap = tokenOverlap(criticTokens, findingTokens(candidate));
-		if (delta < bestDelta || overlap > bestOverlap) {
-			bestDelta = delta;
-			bestOverlap = overlap;
-			bestIndex = i;
+		eligible.push({
+			index: i,
+			delta,
+			overlap: tokenOverlap(criticTokens, candidateTokens[i]),
+		});
+	}
+	eligible.sort(
+		(a, b) => a.delta - b.delta || b.overlap - a.overlap || a.index - b.index,
+	);
+	return eligible.map((entry) => entry.index);
+}
+
+// Maximum bipartite matching (Kuhn). Returns one candidate index per critic
+// finding, or undefined when no complete matching exists — which is exactly
+// the old "this finding was not in the candidate review" condition, since a
+// finding with no eligible candidate can never be covered.
+function matchCriticFindings(
+	criticFindings: readonly Finding[],
+	candidates: readonly Finding[],
+): number[] | undefined {
+	const candidateTokens = candidates.map(findingTokens);
+	const adjacency = criticFindings.map((finding) =>
+		eligibleCandidates(finding, candidates, candidateTokens),
+	);
+	const order = criticFindings
+		.map((finding, index) => ({ index, key: canonicalFindingKey(finding) }))
+		.sort((a, b) =>
+			a.key < b.key ? -1 : a.key > b.key ? 1 : a.index - b.index,
+		)
+		.map((entry) => entry.index);
+
+	const ownerOf = new Array<number>(candidates.length).fill(-1);
+	const assign = (finding: number, visited: boolean[]): boolean => {
+		for (const candidate of adjacency[finding]) {
+			if (visited[candidate]) continue;
+			visited[candidate] = true;
+			const owner = ownerOf[candidate];
+			if (owner < 0 || assign(owner, visited)) {
+				ownerOf[candidate] = finding;
+				return true;
+			}
+		}
+		return false;
+	};
+
+	// Phase 1 takes the most-preferred FREE candidate. Augmenting unconditionally
+	// would let a finding with no content signal displace one that matched its
+	// candidate strongly — undoing the tie-break — so displacement is deferred.
+	const unplaced: number[] = [];
+	for (const finding of order) {
+		const free = adjacency[finding].find(
+			(candidate) => ownerOf[candidate] < 0,
+		);
+		if (free === undefined) unplaced.push(finding);
+		else ownerOf[free] = finding;
+	}
+
+	// Phase 2 runs only for findings that found nothing free, where the choice
+	// is between displacing an incumbent and rejecting the whole review.
+	// Augmenting from a greedy initial matching still yields a maximum matching,
+	// and Kuhn's invariant holds: a finding that cannot augment now never can,
+	// so a failure here means no complete matching exists at all.
+	for (const finding of unplaced) {
+		if (!assign(finding, new Array<boolean>(candidates.length).fill(false))) {
+			return undefined;
 		}
 	}
-	if (bestIndex < 0) return undefined;
-	const [matched] = unused.splice(bestIndex, 1);
+
+	const matched = new Array<number>(criticFindings.length).fill(-1);
+	for (let candidate = 0; candidate < ownerOf.length; candidate++) {
+		const owner = ownerOf[candidate];
+		if (owner >= 0) matched[owner] = candidate;
+	}
 	return matched;
 }
 
@@ -498,21 +605,17 @@ function assertCriticSubset(
 	critic: RawReview,
 	candidate: RawReview,
 ): RawReview {
-	const unused = [...candidate.findings];
-	const findings: Finding[] = [];
-	for (const finding of critic.findings) {
-		const matched = takeMatchedFinding(unused, finding);
-		if (!matched) {
-			throw new Error(
-				"malformed critic output: finding was not in the candidate review",
-			);
-		}
-		findings.push({
-			...matched,
-			severity: finding.severity,
-			confidence: finding.confidence,
-		});
+	const matched = matchCriticFindings(critic.findings, candidate.findings);
+	if (!matched) {
+		throw new Error(
+			"malformed critic output: finding was not in the candidate review",
+		);
 	}
+	const findings: Finding[] = critic.findings.map((finding, index) => ({
+		...candidate.findings[matched[index]],
+		severity: finding.severity,
+		confidence: finding.confidence,
+	}));
 
 	const residualBag = bagByKey(candidate.residual_risks, (risk) =>
 		residualSubsetKey(risk.text),
