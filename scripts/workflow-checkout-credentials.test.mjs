@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -37,8 +45,9 @@ import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument } from "yam
 // outside .github/ — nothing remains to parse and the scan goes quiet. The count
 // falling below the floor is the only signal of that coverage loss. (It does NOT
 // catch a checkout *added* somewhere unscanned: the six here stay intact and the
-// floor stays green. Only widening workflowFiles() fixes that, which is why it
-// recurses rather than listing directories.)
+// floor stays green. Only the scan set itself fixes that — hence the .github
+// recursion, and hence scanRepository() following local `uses: ./…` references to
+// wherever their action.yml actually lives.)
 //
 // Why not equality: a checkout being *added* is already fully policed — it is
 // resolved by the parser and must set persist-credentials: false or be allowlisted.
@@ -57,6 +66,9 @@ const PERSISTED_CREDENTIAL_ALLOWLIST = [
 ];
 
 const CHECKOUT_ACTION = /^actions\/checkout(?:@|$)/;
+// `uses: ./path` runs a composite action whose metadata lives at path/action.yml,
+// resolved from the repository root. Such an action can run its own checkout.
+const LOCAL_ACTION = /^\.{1,2}\//;
 
 function parseWorkflow(content, file) {
 	const lineCounter = new LineCounter();
@@ -73,9 +85,10 @@ function lineOf(node, lineCounter) {
 	return node?.range ? lineCounter.linePos(node.range[0]).line : 0;
 }
 
-function collectCheckouts(content, file) {
+function scanWorkflow(content, file) {
 	const { doc, lineCounter } = parseWorkflow(content, file);
 	const checkouts = [];
+	const localActions = [];
 	// Anchors may be referenced repeatedly and may even recurse. Visiting each
 	// resolved node once terminates; the effect on the count is fail-closed, since a
 	// step reused through N aliases is counted once and can only push the total down
@@ -135,8 +148,13 @@ function collectCheckouts(content, file) {
 		const usesPair = pairsNamed(resolved, "uses")[0];
 		if (usesPair) {
 			const uses = scalarValue(usesPair.value);
-			if (typeof uses === "string" && CHECKOUT_ACTION.test(uses.trim())) {
-				checkouts.push(describe(resolved, usesPair, attached));
+			if (typeof uses === "string") {
+				const ref = uses.trim();
+				if (CHECKOUT_ACTION.test(ref)) {
+					checkouts.push(describe(resolved, usesPair, attached));
+				} else if (LOCAL_ACTION.test(ref)) {
+					localActions.push({ ref, line: lineOf(usesPair.key ?? resolved, lineCounter) });
+				}
 			}
 		}
 
@@ -146,7 +164,11 @@ function collectCheckouts(content, file) {
 	};
 
 	visit(doc.contents, "");
-	return checkouts;
+	return { checkouts, localActions };
+}
+
+function collectCheckouts(content, file) {
+	return scanWorkflow(content, file).checkouts;
 }
 
 function allowlistKey(entry) {
@@ -213,10 +235,48 @@ function workflowFiles(root = ".") {
 	return [...yamlFilesUnder(join(root, ".github")), join(root, "action.yml")];
 }
 
+// Directory listing alone cannot find every composite action: `uses: ./tools/thing`
+// puts action.yml anywhere in the repo, and enumerating candidate directories is the
+// same losing game as enumerating spellings was. So follow the references instead.
+// Start from the files that run by virtue of their location (workflows, root
+// action.yml) and walk every local `uses: ./…` to its metadata, transitively. That
+// set is closed under reachability: an action nothing references never runs, and one
+// that does is scanned wherever it lives.
+//
+// A reference with no metadata file fails the scan rather than being skipped — the
+// workflow would break at runtime anyway, and "the target is missing" must not be a
+// way to leave a checkout uninspected.
+function scanRepository(root = ".") {
+	const queue = [...workflowFiles(root)];
+	const scanned = new Set();
+	const checkouts = [];
+
+	while (queue.length > 0) {
+		const file = queue.shift();
+		if (scanned.has(file)) continue;
+		scanned.add(file);
+
+		const scan = scanWorkflow(readFileSync(file, "utf8"), file);
+		checkouts.push(...scan.checkouts);
+
+		for (const { ref, line } of scan.localActions) {
+			const dir = join(root, ref);
+			const metadata = [join(dir, "action.yml"), join(dir, "action.yaml")].find((path) =>
+				existsSync(path),
+			);
+			assert.ok(
+				metadata,
+				`${file}:${line}: uses: ${ref} but no action.yml or action.yaml exists there, so its steps cannot be inspected`,
+			);
+			queue.push(metadata);
+		}
+	}
+
+	return { checkouts, scanned: [...scanned] };
+}
+
 test("every actions/checkout sets persist-credentials: false or is allowlisted", () => {
-	const checkouts = workflowFiles().flatMap((file) =>
-		collectCheckouts(readFileSync(file, "utf8"), file),
-	);
+	const { checkouts } = scanRepository();
 	assert.ok(
 		checkouts.length >= MINIMUM_CHECKOUT_COUNT,
 		`expected at least ${MINIMUM_CHECKOUT_COUNT} actions/checkout steps, found ${checkouts.length}; checkouts left the scanned file set, so lower the floor only if they are genuinely gone`,
@@ -460,6 +520,100 @@ test("a composite action's checkout is scanned, not just .github/workflows", () 
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}
+});
+
+function withFixtureRepo(build) {
+	const root = mkdtempSync(join(tmpdir(), "needlefish-checkout-scan-"));
+	try {
+		mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+		writeFileSync(join(root, "action.yml"), "name: root\n");
+		build(root, (relative, lines) => {
+			const path = join(root, relative);
+			mkdirSync(join(path, ".."), { recursive: true });
+			writeFileSync(path, lines.join("\n"));
+		});
+		return build.result;
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+}
+
+test("a local composite action outside .github is followed and scanned", () => {
+	// The directory recursion cannot reach this one and the floor cannot see it: the
+	// workflow checkouts stay intact. Only following the `uses: ./…` reference finds it.
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/review.yml", [
+			"jobs:",
+			"  review:",
+			"    steps:",
+			"      - uses: actions/checkout@v4",
+			"        with:",
+			"          persist-credentials: false",
+			"      - uses: ./tools/prepare",
+		]);
+		write("tools/prepare/action.yml", [
+			"runs:",
+			"  using: composite",
+			"  steps:",
+			"    - uses: actions/checkout@v4",
+		]);
+
+		const { checkouts, scanned } = scanRepository(root);
+		assert.ok(
+			scanned.includes(join(root, "tools", "prepare", "action.yml")),
+			`referenced composite action must be scanned: ${scanned.join(", ")}`,
+		);
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/tools[/\\]prepare[/\\]action\.yml:4 .*must set persist-credentials: false or be allowlisted/,
+		);
+	});
+});
+
+test("local action references are followed transitively", () => {
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/review.yml", [
+			"jobs:",
+			"  review:",
+			"    steps:",
+			"      - uses: ./tools/outer",
+		]);
+		write("tools/outer/action.yml", [
+			"runs:",
+			"  using: composite",
+			"  steps:",
+			"    - uses: ./tools/inner",
+		]);
+		write("tools/inner/action.yml", [
+			"runs:",
+			"  using: composite",
+			"  steps:",
+			"    - uses: actions/checkout@v4",
+		]);
+
+		const { checkouts, scanned } = scanRepository(root);
+		assert.ok(scanned.includes(join(root, "tools", "inner", "action.yml")));
+		assert.equal(checkouts.length, 1);
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/tools[/\\]inner[/\\]action\.yml:4 /,
+		);
+	});
+});
+
+test("a local action reference with no metadata file fails the scan", () => {
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/review.yml", [
+			"jobs:",
+			"  review:",
+			"    steps:",
+			"      - uses: ./tools/missing",
+		]);
+		assert.throws(
+			() => scanRepository(root),
+			/review\.yml:4: uses: \.\/tools\/missing but no action\.yml or action\.yaml exists there/,
+		);
+	});
 });
 
 test("weekly-eval git push authenticates with GH_TOKEN instead of persisted checkout credentials", () => {
