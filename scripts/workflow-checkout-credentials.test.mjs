@@ -6,6 +6,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,7 +66,12 @@ const PERSISTED_CREDENTIAL_ALLOWLIST = [
 	},
 ];
 
-const CHECKOUT_ACTION = /^actions\/checkout(?:@|$)/;
+// Case-insensitive: GitHub resolves owner/repo without regard to case, so
+// `uses: Actions/Checkout@v4` runs this very action — `git ls-remote` for
+// Actions/Checkout and actions/checkout return the same SHA for v4. A case-sensitive
+// matcher classified the mixed-case spelling as an ordinary third-party action and
+// skipped it, leaving a real checkout unpoliced.
+const CHECKOUT_ACTION = /^actions\/checkout(?:@|$)/i;
 
 // The three reference forms GitHub documents for `uses:`. A resolved value that is
 // none of them fails the scan.
@@ -92,6 +98,12 @@ function parseWorkflow(content, file) {
 		assert.fail(`${file}:${line}: workflow YAML does not parse cleanly: ${problem.message}`);
 	}
 	return { doc, lineCounter };
+}
+
+// Returns the path when it is a regular file, otherwise undefined, so callers can
+// chain candidates with ?? and never confuse a directory for a file.
+function isFile(path) {
+	return existsSync(path) && statSync(path).isFile() ? path : undefined;
 }
 
 function lineOf(node, lineCounter) {
@@ -301,22 +313,18 @@ function scanRepository(root = ".") {
 			// Two different things share the `uses: ./…` spelling. A step-level
 			// reference names a DIRECTORY holding action.yml; a job-level reusable
 			// workflow call names the workflow FILE itself
-			// (`uses: ./.github/workflows/build.yml`). Demanding action.yml under the
-			// latter would fail the scan on a legitimate workflow — failing on
-			// unfamiliar, which this scanner must not do. Distinguish by extension:
-			// GitHub requires a reusable workflow to be a .yml/.yaml file, and an
-			// action directory cannot be named that way and still be resolvable.
-			const isReusableWorkflow = /\.ya?ml$/.test(ref);
-			const resolved = isReusableWorkflow
-				? [target].find((path) => existsSync(path))
-				: [join(target, "action.yml"), join(target, "action.yaml")].find((path) =>
-						existsSync(path),
-					);
+			// (`uses: ./.github/workflows/build.yml`). Decide by what is actually on
+			// disk, never by the name: a directory may legally be called `thing.yml`,
+			// and inferring "workflow" from the suffix would queue that directory and
+			// then read it as a file. Demanding action.yml under a reusable workflow
+			// call is equally wrong — that fails the scan on a legitimate workflow.
+			const resolved =
+				isFile(target) ??
+				isFile(join(target, "action.yml")) ??
+				isFile(join(target, "action.yaml"));
 			assert.ok(
 				resolved,
-				isReusableWorkflow
-					? `${file}:${line}: uses: ${ref} but that workflow file does not exist, so its steps cannot be inspected`
-					: `${file}:${line}: uses: ${ref} but no action.yml or action.yaml exists there, so its steps cannot be inspected`,
+				`${file}:${line}: uses: ${ref} resolves to neither a workflow file nor a directory containing action.yml or action.yaml, so its steps cannot be inspected`,
 			);
 			queue.push(resolved);
 		}
@@ -691,6 +699,51 @@ test("a uses: value that is not a documented reference form fails the scan", () 
 	});
 });
 
+test("a mixed-case checkout reference is still a checkout", () => {
+	// GitHub resolves owner/repo case-insensitively: `git ls-remote` for
+	// Actions/Checkout and actions/checkout both give v4 = 11d5960a…, the same repo.
+	// So this runs the real checkout action and must be policed like any other.
+	for (const ref of ["Actions/Checkout@v4", "ACTIONS/CHECKOUT@v4", "actions/Checkout@v4"]) {
+		const yaml = ["jobs:", "  a:", "    steps:", `      - uses: ${ref}`].join("\n");
+		const checkouts = collectCheckouts(yaml, "case.yml");
+		assert.equal(checkouts.length, 1, `${ref} must be recognized as a checkout`);
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/must set persist-credentials: false or be allowlisted/,
+			`${ref} must fail the policy`,
+		);
+	}
+});
+
+test("a local action in a directory named like a workflow is resolved by what is on disk", () => {
+	// A directory may legally be called `thing.yml`. Inferring "reusable workflow"
+	// from the suffix would queue the directory and then read it as a file.
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/review.yml", [
+			"jobs:",
+			"  review:",
+			"    steps:",
+			"      - uses: ./tools/thing.yml",
+		]);
+		write("tools/thing.yml/action.yml", [
+			"runs:",
+			"  using: composite",
+			"  steps:",
+			"    - uses: actions/checkout@v4",
+		]);
+
+		const { checkouts, scanned } = scanRepository(root);
+		assert.ok(
+			scanned.includes(join(root, "tools", "thing.yml", "action.yml")),
+			`the action.yml inside the .yml-named directory must be scanned: ${scanned.join(", ")}`,
+		);
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/thing\.yml[/\\]action\.yml:4 .*must set persist-credentials: false or be allowlisted/,
+		);
+	});
+});
+
 test("persist-credentials must be a literal true or false", () => {
 	// `yes` is the string "yes" under YAML 1.2 but a boolean under YAML 1.1, and
 	// GitHub's parser is the 1.1-flavoured one. Reading "not true, so safe" here would
@@ -762,7 +815,7 @@ test("a reusable workflow call pointing at a missing file fails the scan", () =>
 		]);
 		assert.throws(
 			() => scanRepository(root),
-			/caller\.yml:3: uses: \.\/\.github\/workflows\/absent\.yml but that workflow file does not exist/,
+			/caller\.yml:3: uses: \.\/\.github\/workflows\/absent\.yml resolves to neither a workflow file nor a directory containing action\.yml/,
 		);
 	});
 });
@@ -777,7 +830,7 @@ test("a local action reference with no metadata file fails the scan", () => {
 		]);
 		assert.throws(
 			() => scanRepository(root),
-			/review\.yml:4: uses: \.\/tools\/missing but no action\.yml or action\.yaml exists there/,
+			/review\.yml:4: uses: \.\/tools\/missing resolves to neither a workflow file nor a directory containing action\.yml/,
 		);
 	});
 });
