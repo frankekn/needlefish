@@ -94,7 +94,7 @@ export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandb
   recordGitMetadata(sandboxPath);
   return {
     repoPath: sandboxPath,
-    prompt: options.prompt.split(sourceRepoPath).join(sandboxPath),
+    prompt: withLfsDisclosure(options.prompt.split(sourceRepoPath).join(sandboxPath), sandboxPath),
     expectedHeadSha: options.targetHeadSha,
   };
 }
@@ -140,7 +140,7 @@ function prepareWorkingSandbox(
   recordGitMetadata(sandboxPath);
   return {
     repoPath: sandboxPath,
-    prompt: options.prompt.split(sourceRepoPath).join(sandboxPath),
+    prompt: withLfsDisclosure(options.prompt.split(sourceRepoPath).join(sandboxPath), sandboxPath),
     expectedHeadSha,
   };
 }
@@ -190,6 +190,141 @@ export function assertRunnerSandboxClean(
   } finally {
     sandboxGitMetadata.delete(metadataKey);
   }
+}
+
+// Git LFS content cannot be materialized in this sandbox. LFS registers its
+// filter in the global/system config, which gitEnv() drops on purpose, and
+// re-admitting filter.lfs.* would re-admit a config-named *program* — the exact
+// widening this module exists to prevent — as well as requiring network and
+// credentials the sandbox deliberately lacks. Hard-blocking LFS targets is not
+// acceptable either; they must stay reviewable.
+//
+// That leaves a third state, and it is the only genuinely unacceptable one: the
+// runner opens a pointer stub, sees plausible text, and reviews it as though it
+// were the file, with nothing anywhere saying otherwise. The harm is the
+// silence, not the pointer. So the pointer is disclosed to the runner instead.
+//
+// This is the sandbox's own fact to report: the neutralized checkout is what
+// creates it, and the adapters that build the bundle run before the sandbox
+// exists (prepareRunnerSandbox is called only from codex.ts) so they cannot
+// know it. The prompt is the one channel this module already owns.
+const MAX_DISCLOSED_LFS_PATHS = 64;
+const MAX_LFS_PROBE_CANDIDATES = 512;
+const MAX_LFS_POINTER_BYTES = 1024;
+const MAX_GITATTRIBUTES_BYTES = 256 * 1024;
+const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
+
+function withLfsDisclosure(prompt: string, sandboxPath: string): string {
+  const notice = lfsDisclosure(sandboxPath);
+  return notice === "" ? prompt : `${prompt}\n\n${notice}`;
+}
+
+function lfsDisclosure(sandboxPath: string): string {
+  // Cheap gate first: repositories that never mention filter=lfs pay one
+  // small ls-files and produce no notice at all, so nothing changes for them.
+  if (!hasLfsAttributes(sandboxPath)) return "";
+  let candidates: string[];
+  try {
+    candidates = splitNulList(git(["ls-files", "-z", "--", ":(attr:filter=lfs)"], sandboxPath));
+  } catch {
+    // We already know the repo configures LFS, so failing to enumerate is
+    // itself worth saying out loud rather than swallowing.
+    return renderLfsNotice([], 0, true);
+  }
+  const probed = candidates.slice(0, MAX_LFS_PROBE_CANDIDATES);
+  const pointers = probed.filter((rel) => isLfsPointerFile(path.join(sandboxPath, rel)));
+  if (pointers.length === 0) return "";
+  return renderLfsNotice(pointers, candidates.length, candidates.length > probed.length);
+}
+
+function hasLfsAttributes(sandboxPath: string): boolean {
+  let attributeFiles: string[];
+  try {
+    attributeFiles = splitNulList(git(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath));
+  } catch {
+    return false;
+  }
+  for (const rel of attributeFiles.slice(0, MAX_LFS_PROBE_CANDIDATES)) {
+    const text = readSmallFileText(path.join(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+    if (text !== undefined && /(^|\s)filter=lfs(\s|$)/m.test(text)) return true;
+  }
+  return false;
+}
+
+function isLfsPointerFile(filePath: string): boolean {
+  const text = readSmallFileText(filePath, MAX_LFS_POINTER_BYTES);
+  return text !== undefined && text.startsWith(LFS_POINTER_PREFIX);
+}
+
+// Same open/fstat/size discipline as the integrity fingerprint, for the same
+// reason — it must not become a new unguarded read. It differs in one way only:
+// it returns undefined instead of throwing, because here a non-regular or
+// oversized entry is simply "not a pointer file". A tracked path may legitimately
+// be a symlink or a large binary; that is not an integrity signal, and this
+// runs at sandbox creation, before any runner exists. The fingerprint's
+// fail-closed rejection is unchanged and unshared.
+function readSmallFileText(filePath: string, maxBytes: number): string | undefined {
+  let fd: number;
+  try {
+    fd = openSync(filePath, SAFE_OPEN_FLAGS);
+  } catch {
+    return undefined;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > maxBytes) return undefined;
+    const buffer = Buffer.allocUnsafe(stat.size);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const read = readSync(fd, buffer, offset, buffer.length - offset, offset);
+      if (read === 0) break;
+      offset += read;
+    }
+    return buffer.subarray(0, offset).toString("utf8");
+  } catch {
+    return undefined;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function splitNulList(out: string): string[] {
+  return out.split("\0").filter((entry) => entry !== "");
+}
+
+function renderLfsNotice(pointerPaths: string[], total: number, truncated: boolean): string {
+  const lines = [
+    "GIT LFS NOTICE (from the needlefish sandbox, not from the repository):",
+  ];
+  if (pointerPaths.length === 0) {
+    lines.push(
+      "This repository tracks files with Git LFS. The sandbox could not enumerate",
+      "which paths they are, so any file whose contents look like an LFS pointer",
+      "stub is unavailable here, not empty or malformed."
+    );
+  } else {
+    const shown = pointerPaths.slice(0, MAX_DISCLOSED_LFS_PATHS);
+    lines.push(
+      "The files listed below exist in this sandbox as Git LFS pointer stubs, not",
+      "as their real contents. The sandbox is checked out with a neutralized Git",
+      "configuration that deliberately excludes filter programs, so LFS content is",
+      "never materialized here. This is a property of the sandbox, not a defect in",
+      "the repository or the change under review.",
+      "",
+      "Do not review, quote, or draw conclusions from the contents of these paths,",
+      "and do not report findings about them. Treat them as unavailable:"
+    );
+    for (const rel of shown) lines.push(`- ${rel}`);
+    if (pointerPaths.length > shown.length) {
+      lines.push(`- ...and ${pointerPaths.length - shown.length} more`);
+    }
+    if (truncated) {
+      lines.push(
+        `(only the first ${MAX_LFS_PROBE_CANDIDATES} of ${total} LFS-tracked paths were checked)`
+      );
+    }
+  }
+  return lines.join("\n");
 }
 
 function hasHeadCommit(cwd: string): boolean {

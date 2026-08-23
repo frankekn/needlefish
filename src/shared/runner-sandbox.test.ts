@@ -153,6 +153,141 @@ test("prepareRunnerSandbox WORKING applies CJK tracked + untracked (no final new
   assert.deepEqual(readFileSync(path.join(sandbox.repoPath, untrackedPath)), untrackedContent);
 });
 
+// --- Git LFS disclosure ------------------------------------------------------
+//
+// LFS content cannot be materialized under the neutralized checkout, and
+// blocking LFS targets is not acceptable, so the remaining requirement is that
+// the runner is never handed a pointer stub as though it were the file. In
+// production the blob stored in git IS the pointer and the smudge filter is
+// what would replace it; with no filter registered the sandbox checks out the
+// pointer verbatim. These fixtures commit a real-shaped pointer blob, which
+// reproduces exactly that end state without needing git-lfs installed.
+
+const LFS_POINTER_BODY = `version https://git-lfs.github.com/spec/v1
+oid sha256:${"a".repeat(64)}
+size 40213
+`;
+
+function makeLfsRepo(
+  t: { after: (fn: () => void) => void },
+  setup: (repo: string) => void
+): { repo: string; sandboxTmp: string } {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-lfs-"));
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  const repoRoot = path.join(tmp, "source");
+  const sandboxTmp = path.join(tmp, "sandbox");
+  mkdirSync(repoRoot);
+  mkdirSync(sandboxTmp);
+  const repo = initRepo(repoRoot);
+  setup(repo);
+  commitAll(repo, "lfs fixture");
+  return { repo, sandboxTmp };
+}
+
+test("prepareRunnerSandbox discloses LFS pointer stubs in the runner prompt", (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
+    writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  // The premise: the sandbox really does hold the pointer, not the content.
+  assert.ok(
+    readFileSync(path.join(sandbox.repoPath, "asset.bin"), "utf8").startsWith(
+      "version https://git-lfs.github.com/spec/v1"
+    )
+  );
+  // The requirement: that fact reaches the runner instead of being silent.
+  assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  assert.match(sandbox.prompt, /^- asset\.bin$/m);
+  assert.match(sandbox.prompt, /Treat them as unavailable/);
+  assert.ok(sandbox.prompt.startsWith("REVIEW PROMPT BODY"));
+});
+
+test("prepareRunnerSandbox leaves the prompt untouched when no LFS is configured", (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  // Inert for every repository that does not use LFS: byte-identical prompt.
+  assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+});
+
+test("prepareRunnerSandbox does not disclose LFS-tracked files that hold real content", (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
+    // Tracked as LFS but never migrated — the worktree byte content is real.
+    writeFileSync(path.join(r, "asset.bin"), "real content, not a pointer\n");
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+});
+
+test("prepareRunnerSandbox discloses LFS pointers reached through a nested .gitattributes", (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    mkdirSync(path.join(r, "assets"));
+    writeFileSync(path.join(r, "assets", ".gitattributes"), "*.dat filter=lfs\n");
+    writeFileSync(path.join(r, "assets", "model.dat"), LFS_POINTER_BODY);
+    writeFileSync(path.join(r, "README.md"), "unaffected\n");
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  assert.match(sandbox.prompt, /^- assets\/model\.dat$/m);
+  assert.doesNotMatch(sandbox.prompt, /README\.md/);
+});
+
+test("prepareRunnerSandbox disclosure does not dirty the sandbox integrity check", (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
+    writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  // Probing the worktree must not leave the sandbox looking mutated.
+  assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
 function makeShaSandbox(
   t: { after: (fn: () => void) => void },
   setup?: (repo: string) => void
