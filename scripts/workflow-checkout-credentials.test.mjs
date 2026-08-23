@@ -102,7 +102,8 @@ function scanWorkflow(content, file) {
 	const { doc, lineCounter } = parseWorkflow(content, file);
 	const checkouts = [];
 	const localActions = [];
-	const unresolvable = [];
+	// Anything the scanner cannot read well enough to prove the policy holds.
+	const problems = [];
 	// Anchors may be referenced repeatedly and may even recurse. Visiting each
 	// resolved node once terminates; the effect on the count is fail-closed, since a
 	// step reused through N aliases is counted once and can only push the total down
@@ -123,10 +124,22 @@ function scanWorkflow(content, file) {
 		const withPair = pairsNamed(map, "with")[0];
 		const withMap = withPair ? deref(withPair.value) : undefined;
 		const persistPair = isMap(withMap) ? pairsNamed(withMap, "persist-credentials")[0] : undefined;
-		const persistRaw = persistPair ? scalarValue(persistPair.value) : undefined;
-		// Actions treats inputs as strings, so `false` and "false" mean the same thing.
-		const persistCredentials =
-			persistRaw === undefined || persistRaw === null ? null : String(persistRaw) === "true";
+		// Only a literal false counts as disabling persistence. Anything else that is
+		// not a literal true fails the scan rather than being read as "not true, so
+		// safe": this file parses YAML 1.2, where `yes` is the string "yes", while
+		// GitHub's workflow parser is YAML-1.1-flavoured and may hand actions/checkout
+		// the string "true" for it. Guessing which side is right is how a
+		// persist-credentials: yes ends up recorded as compliant. Unknown means stop.
+		let persistCredentials = null;
+		if (persistPair) {
+			const persistText = String(scalarValue(persistPair.value));
+			if (persistText !== "true" && persistText !== "false") {
+				problems.push(
+					`${file}:${lineOf(persistPair.key ?? persistPair.value, lineCounter)}: persist-credentials: ${persistText} is neither true nor false`,
+				);
+			}
+			persistCredentials = persistText !== "false";
+		}
 
 		return {
 			file,
@@ -169,7 +182,9 @@ function scanWorkflow(content, file) {
 			} else if (CHECKOUT_ACTION.test(ref)) {
 				checkouts.push(describe(resolved, usesPair, attached));
 			} else if (!EXTERNAL_ACTION.test(ref) && !DOCKER_ACTION.test(ref)) {
-				unresolvable.push(`${file}:${line}: uses: ${ref === "" ? JSON.stringify(uses) : ref}`);
+				problems.push(
+					`${file}:${line}: uses: ${ref === "" ? JSON.stringify(uses) : ref} is not a documented reference form (owner/repo@ref, ./path, or docker://…)`,
+				);
 			}
 		}
 
@@ -181,9 +196,9 @@ function scanWorkflow(content, file) {
 	visit(doc.contents, "");
 
 	assert.deepEqual(
-		unresolvable,
+		problems,
 		[],
-		`uses: values that are not a documented action reference (owner/repo@ref, ./path, or docker://…), so the scanner cannot tell whether they run a checkout: ${unresolvable.join(" | ")}`,
+		`the scanner cannot read these well enough to prove no checkout persists credentials: ${problems.join(" | ")}`,
 	);
 
 	return { checkouts, localActions };
@@ -282,15 +297,28 @@ function scanRepository(root = ".") {
 		checkouts.push(...scan.checkouts);
 
 		for (const { ref, line } of scan.localActions) {
-			const dir = join(root, ref);
-			const metadata = [join(dir, "action.yml"), join(dir, "action.yaml")].find((path) =>
-				existsSync(path),
-			);
+			const target = join(root, ref);
+			// Two different things share the `uses: ./…` spelling. A step-level
+			// reference names a DIRECTORY holding action.yml; a job-level reusable
+			// workflow call names the workflow FILE itself
+			// (`uses: ./.github/workflows/build.yml`). Demanding action.yml under the
+			// latter would fail the scan on a legitimate workflow — failing on
+			// unfamiliar, which this scanner must not do. Distinguish by extension:
+			// GitHub requires a reusable workflow to be a .yml/.yaml file, and an
+			// action directory cannot be named that way and still be resolvable.
+			const isReusableWorkflow = /\.ya?ml$/.test(ref);
+			const resolved = isReusableWorkflow
+				? [target].find((path) => existsSync(path))
+				: [join(target, "action.yml"), join(target, "action.yaml")].find((path) =>
+						existsSync(path),
+					);
 			assert.ok(
-				metadata,
-				`${file}:${line}: uses: ${ref} but no action.yml or action.yaml exists there, so its steps cannot be inspected`,
+				resolved,
+				isReusableWorkflow
+					? `${file}:${line}: uses: ${ref} but that workflow file does not exist, so its steps cannot be inspected`
+					: `${file}:${line}: uses: ${ref} but no action.yml or action.yaml exists there, so its steps cannot be inspected`,
 			);
-			queue.push(metadata);
+			queue.push(resolved);
 		}
 	}
 
@@ -659,6 +687,82 @@ test("a uses: value that is not a documented reference form fails the scan", () 
 			() => scanRepository(root),
 			/review\.yml:22: uses: \$\/tools\/prepare/,
 			"an unclassifiable reference must fail the scan, not be skipped",
+		);
+	});
+});
+
+test("persist-credentials must be a literal true or false", () => {
+	// `yes` is the string "yes" under YAML 1.2 but a boolean under YAML 1.1, and
+	// GitHub's parser is the 1.1-flavoured one. Reading "not true, so safe" here would
+	// record a step as compliant that actions/checkout may well see as "true".
+	for (const value of ["yes", "no", "1", "0", "'FALSE'", "~"]) {
+		const yaml = [
+			"jobs:",
+			"  a:",
+			"    steps:",
+			"      - uses: actions/checkout@v4",
+			"        with:",
+			`          persist-credentials: ${value}`,
+		].join("\n");
+		assert.throws(
+			() => collectCheckouts(yaml, "vague.yml"),
+			/vague\.yml:6: persist-credentials: .* is neither true nor false/,
+			`persist-credentials: ${value} must not be read as compliant`,
+		);
+	}
+
+	// Both literal spellings of the compliant value keep working.
+	for (const value of ["false", '"false"']) {
+		const yaml = [
+			"jobs:",
+			"  a:",
+			"    steps:",
+			"      - uses: actions/checkout@v4",
+			"        with:",
+			`          persist-credentials: ${value}`,
+		].join("\n");
+		const checkouts = collectCheckouts(yaml, "ok.yml");
+		assert.equal(checkouts[0].persistCredentials, false, `persist-credentials: ${value}`);
+		assertCheckoutPolicy(checkouts, []);
+	}
+});
+
+test("a local reusable workflow call is scanned as a workflow, not as an action directory", () => {
+	// `uses: ./.github/workflows/build.yml` at job level names the file itself. Looking
+	// for action.yml underneath it would fail the scan on a legitimate workflow.
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/caller.yml", [
+			"jobs:",
+			"  build:",
+			"    uses: ./.github/workflows/build.yml",
+		]);
+		write(".github/workflows/build.yml", [
+			"jobs:",
+			"  build:",
+			"    steps:",
+			"      - uses: actions/checkout@v4",
+		]);
+
+		const { checkouts, scanned } = scanRepository(root);
+		assert.ok(scanned.includes(join(root, ".github", "workflows", "build.yml")));
+		// The called workflow's unprotected checkout is still policed.
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/build\.yml:4 .*must set persist-credentials: false or be allowlisted/,
+		);
+	});
+});
+
+test("a reusable workflow call pointing at a missing file fails the scan", () => {
+	withFixtureRepo((root, write) => {
+		write(".github/workflows/caller.yml", [
+			"jobs:",
+			"  build:",
+			"    uses: ./.github/workflows/absent.yml",
+		]);
+		assert.throws(
+			() => scanRepository(root),
+			/caller\.yml:3: uses: \.\/\.github\/workflows\/absent\.yml but that workflow file does not exist/,
 		);
 	});
 });
