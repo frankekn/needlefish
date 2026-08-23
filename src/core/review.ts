@@ -361,6 +361,25 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 // only severity and confidence come from the critic. Unknown keys throw from
 // parse so runJsonPrompt retries, then fails closed.
 //
+// Two unused candidates can sit at the SAME distance from the critic's anchor
+// (candidates at 50 and 54, critic anchored at 52). Line distance alone then
+// says nothing, and picking by array order restores the neighbour's content
+// under this finding's severity — real content, real severity, wrong pairing.
+// The tie is broken by token overlap on the text the critic paraphrases
+// (title + whyItBreaks): paraphrase keeps the domain words, so overlap ranks
+// the intended candidate above an unrelated one. Overlap is a TIE-BREAK ONLY.
+// Eligibility is still file + category + ±2 and nothing else, so no text
+// comparison can reject a finding that the window admits — the exact-field
+// key that rejected 92/252 real reviews on 2026-08-22
+// (eval/RESULTS_HISTORY.md) cannot come back through this path. Ordering is
+// total and deterministic: nearest line, then higher overlap, then first in
+// candidate order.
+//
+// Consumption stays greedy and first-come, as it was: within one ±2 cluster
+// an earlier critic finding can still take a candidate a later one needed.
+// Overlap makes that assignment follow the critic's words instead of array
+// order; it does not make greedy matching complete, in either direction.
+//
 // Residuals have no file/line/category — the text is the identity. Word-level
 // paraphrase is too collision-prone (an invented blocking residual could
 // pair with an unrelated candidate and manufacture needs_human). Identity is
@@ -387,20 +406,45 @@ function bagByKey<T>(
 	return bag;
 }
 
+function findingTokens(finding: Finding): Set<string> {
+	return new Set(
+		`${finding.title} ${finding.whyItBreaks}`
+			.toLowerCase()
+			.split(/[^\p{L}\p{N}]+/u)
+			.filter((token) => token.length > 0),
+	);
+}
+
+// Jaccard overlap. 0 when either side has no tokens, so an empty-text finding
+// falls back to candidate order rather than outranking anything.
+function tokenOverlap(a: Set<string>, b: Set<string>): number {
+	if (a.size === 0 || b.size === 0) return 0;
+	let shared = 0;
+	for (const token of a) {
+		if (b.has(token)) shared++;
+	}
+	return shared / (a.size + b.size - shared);
+}
+
 function takeMatchedFinding(
 	unused: Finding[],
 	finding: Finding,
 ): Finding | undefined {
+	const criticTokens = findingTokens(finding);
 	let bestIndex = -1;
 	let bestDelta = Infinity;
+	let bestOverlap = -1;
 	for (let i = 0; i < unused.length; i++) {
 		const candidate = unused[i];
 		if (candidate.file !== finding.file) continue;
 		if (candidate.category !== finding.category) continue;
 		const delta = Math.abs(candidate.lineStart - finding.lineStart);
 		if (delta > CRITIC_FINDING_LINE_WINDOW) continue;
-		if (delta < bestDelta) {
+		if (delta > bestDelta) continue;
+		const overlap = tokenOverlap(criticTokens, findingTokens(candidate));
+		if (delta < bestDelta || overlap > bestOverlap) {
 			bestDelta = delta;
+			bestOverlap = overlap;
 			bestIndex = i;
 		}
 	}

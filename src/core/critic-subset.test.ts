@@ -304,6 +304,118 @@ test("critic subset: small path rejects lineStart drift outside the ±2 window",
 	]);
 });
 
+// Two candidates equidistant (±2) from the critic's anchor: line distance
+// alone cannot tell them apart, so only the critic's words can. Without the
+// overlap tie-break the earlier candidate in array order wins and its content
+// is shown under the critic's severity.
+const LOOP_BOUND = {
+	...FINDING,
+	title: "Off-by-one loop bound",
+	whyItBreaks: "the loop bound is off by one",
+	suggestedFix: "start at zero",
+	lineStart: 50,
+	lineEnd: 50,
+};
+const NULL_CHECK = {
+	...FINDING,
+	title: "Missing null check",
+	whyItBreaks: "the returned value is never null checked",
+	suggestedFix: "check for null",
+	lineStart: 54,
+	lineEnd: 54,
+};
+
+// Anchored at 52 — delta 2 to both candidates. Built from candidate[0]
+// (LOOP_BOUND) so every field except the paraphrased text points at the wrong
+// candidate: the tie can only be resolved from title/whyItBreaks.
+const NULL_CHECK_PARAPHRASE =
+	"{ ...parsed.findings[0], title: 'null check missing on the returned value', whyItBreaks: 'the value returned is never checked for null', lineStart: 52, lineEnd: 52, severity: 'P1' }";
+const LOOP_BOUND_PARAPHRASE =
+	"{ ...parsed.findings[1], title: 'loop bound is off by one', whyItBreaks: 'the bound of the loop is off by one', lineStart: 52, lineEnd: 52, severity: 'P3' }";
+
+test("critic subset: small path matches an equidistant tie by content, not candidate order", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 1);
+	const finding = result.findings[0]!;
+	assertCandidateContentRestored(finding, NULL_CHECK);
+	assert.notEqual(
+		finding.title,
+		LOOP_BOUND.title,
+		"the tie must not be resolved by candidate array order",
+	);
+	assert.equal(finding.severity, "P1");
+});
+
+test("critic subset: small path keeps both equidistant candidates paired with their own severity", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}, ${LOOP_BOUND_PARAPHRASE}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 2);
+	assert.equal(result.verdict, "changes_requested");
+	const nullCheck = result.findings.find((f) => f.title === NULL_CHECK.title);
+	const loopBound = result.findings.find((f) => f.title === LOOP_BOUND.title);
+	assert.ok(nullCheck, "the null-check candidate must survive");
+	assert.ok(loopBound, "the loop-bound candidate must survive");
+	assert.equal(nullCheck!.severity, "P1");
+	assert.equal(nullCheck!.lineStart, NULL_CHECK.lineStart);
+	assert.equal(loopBound!.severity, "P3");
+	assert.equal(loopBound!.lineStart, LOOP_BOUND.lineStart);
+});
+
+test("critic subset: large path matches an equidistant tie by content, not candidate order", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		largePathBin(
+			log,
+			candidateReview({
+				findings: [LOOP_BOUND, NULL_CHECK],
+				summary: "deep h1",
+			}),
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}] }));`,
+		),
+	);
+
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.findings.length, 1);
+	const finding = result.findings[0]!;
+	assertCandidateContentRestored(finding, NULL_CHECK);
+	assert.notEqual(finding.title, LOOP_BOUND.title);
+	assert.equal(finding.severity, "P1");
+});
+
+// The tie-break must never decide admission. Wholly disjoint wording on both
+// tied candidates has to keep matching (candidate order is the fallback),
+// otherwise the 2026-08-22 paraphrase-rejection regression is back.
+test("critic subset: small path still accepts a tie whose paraphrase shares no words", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
+			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 52, lineEnd: 52 }] }));",
+		),
+	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.findings.length, 1);
+	assert.ok(
+		[LOOP_BOUND.title, NULL_CHECK.title].includes(result.findings[0]!.title),
+		"a candidate must still be matched when content gives no signal",
+	);
+});
+
 const IDENTITY_REJECT_MUTATIONS = [
 	{ field: "file", value: "src/other.ts" },
 	{ field: "category", value: "security" },
