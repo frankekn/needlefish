@@ -970,6 +970,68 @@ unaffected.)
 Reports: `eval/results/2026-08-23-neg-dead-code-confirm-main-x9.json`,
 `eval/results/2026-08-23-neg-dead-code-confirm-branch-x9.json`.
 
+## 2026-08-24 — DIFFERENTIAL (not a gate): `t3-neighbor-defects`, main vs HEAD ×9
+
+The 2/5 gate above is uninformative about the matcher itself: every FP draw carried
+`findingCount: 1`, where maximum matching and greedy are identical, and **no draw in
+the 252 had two retained findings sharing `file` + `category` within 2 lines**. The
+fixture set contains no instance of the ambiguity the matcher exists to resolve.
+`t3-neighbor-defects` was written to create that geometry — two independent defects
+(lost empty-input guard; lost defensive copy before an in-place sort) in
+neighbouring functions of one file, anchors four lines apart — and was **committed
+at `6c8cc20` before the first run against it**; neither it nor its `mustFind`
+patterns changed afterwards. No criteria were declared for this differential and
+none were re-declared.
+
+**This is not a gate and is not comparable to any baseline.** Adding a fixture
+changes the set: this scoped run hashes `3e8baafd66df4bf4` against the baseline's
+`1968a9d2fabe2a56`. promptHash `e62d0889fc704541` and scorerHash
+`a424d3bb59a40443` are unchanged. Both sides ran the same lane (codex /
+gpt-5.6-terra / high), the same ×9 draws, the same fixture and the same harness with
+all three hashes equal, so the two sides are comparable **to each other and to
+nothing else**. The main side ran `origin/main`'s `src/` overlaid with this branch's
+`eval/`, so the only difference is the pipeline — main has no critic-subset check at
+all.
+
+| measure | main ×9 | branch ×9 |
+| --- | --- | --- |
+| recall | 9/9 | 9/9 |
+| mustFind hits | 18/18 | 18/18 |
+| verdict match | 9/9 | 9/9 |
+| false-positive draws | 0 | 0 |
+| noise findings | 0 | 0 |
+| `formatOk===false` | 0 | 0 |
+| subset-rejection errors | n/a (no check) | **0** |
+| `criticPrunedRecallCount` | 0 | 0 |
+| cheat / bait exposure | 0 / 1 | 0 / 0 |
+| mean draw duration | 59.9s | 57.0s |
+
+**The fixture does produce the geometry.** All 18 draws returned exactly two
+findings in `src/stats.ts`, both categorised `bug`; in 5/9 branch and 5/9 main draws
+the anchors were exactly 4 lines apart (8 and 12), the others 6–8/12 or 7/11. The
+coverage gap is closed: the set now contains the contended case.
+
+**What this establishes: no harm.** On the geometry the check was built for, the
+branch rejected nothing in 9/9 draws and lost no recall, verdict or precision
+against main.
+
+**What it does not establish: benefit.** The branch scores identically to main.
+Contention only *binds* when the critic re-anchors a finding to the midpoint between
+the two candidates (≈line 10 here); the retained report keeps candidate match
+evidence but not candidate or critic anchors, so whether contention bound in any
+draw is **unobservable from these artifacts**. At n=9 this cannot separate "never
+bound" from "bound and was resolved correctly". Making it observable would mean
+retaining pre-critic findings in `DrawResult`, which lives in the scorer-hash file
+set — deliberately not done here, to avoid making every future report incomparable
+to every past one for a measurement convenience.
+
+Reports: `eval/results/2026-08-24-neighbor-defects-differential-branch-x9.json`,
+`eval/results/2026-08-24-neighbor-defects-differential-main-x9.json`. **Caveat on
+the main-side file:** its `gitSha` field reads `6c8cc20` (this branch) because the
+run used a scratch overlay tree carrying this branch's `.git`. The distinguishing
+fact is that its `src/` was `origin/main` at `d72f064`; the field is an artifact of
+the method, not a claim about what was measured.
+
 ### 2026-08-23 correction — criterion 1 also missed; re-derived from the retained report
 
 Re-derived from `eval/results/2026-08-23-critic-subset-rework-x3.json` itself

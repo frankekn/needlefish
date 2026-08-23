@@ -1,0 +1,930 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "draws": 9,
+  "createdAt": "2026-08-23T17:59:41.589Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 55935,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 6,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average result",
+          "whyItBreaks": "For an empty array, reduce returns 0 and dividing by rows.length (0) returns NaN. The prior implementation returned 0, so callers that consume averages now receive a non-numeric value."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Avoid sorting the caller-owned array",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. Calling busiest now permanently reorders the caller's data, whereas the previous implementation sorted a copied array."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 60635,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average value",
+          "whyItBreaks": "For an empty array, total is 0 and rows.length is 0, so this returns NaN instead of the previous numeric result 0. Consumers of this exported function can no longer safely use its result in numeric display, serialization, or arithmetic."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not reorder the caller's rows array",
+          "whyItBreaks": "Array.prototype.sort mutates its receiver. This changes busiest() from a read-only selection helper into one that reorders the caller's data, so later code observing rows gets a different order than it supplied."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 55375,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average",
+          "whyItBreaks": "With rows=[], total is 0 and rows.length is 0, so this returns NaN instead of the prior defined result of 0. Consumers receiving a number can propagate NaN into displays, comparisons, or stored calculations."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not reorder the caller's rows",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. The previous implementation sorted a copy, so callers could retain their original row order; this change silently reorders caller-owned data while only asking for the busiest row."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 3,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 60167,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input result for averages",
+          "whyItBreaks": "For an empty array, reduce returns 0 and rows.length is 0, so this returns NaN instead of the previous numeric result 0. Callers of this exported function cannot use the result in arithmetic, serialization, or comparisons as before."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Avoid reordering the caller's rows",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. This changes the supplied array's order merely to calculate the busiest row, whereas the prior implementation sorted a copy. Any caller that retains rows for display or subsequent order-sensitive work now observes an unexpected reorder."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 4,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 58254,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 6,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average result",
+          "whyItBreaks": "For an empty rows array, total is 0 and rows.length is 0, so this now returns NaN instead of the previous numeric result 0. Consumers cannot safely use the result in arithmetic or serialization as a normal average."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not reorder the caller's rows array",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. The prior implementation sorted a copy, so callers that retain rows now observe their input unexpectedly reordered after calling busiest."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 5,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 56081,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Restore the empty-array result for averageAmount",
+          "whyItBreaks": "For averageAmount([]), reduce yields 0 and division by rows.length yields NaN. The prior implementation returned 0, so consumers receiving an empty dataset now get an invalid numeric result."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not sort the caller's rows array in place",
+          "whyItBreaks": "Array.prototype.sort mutates `rows`. The previous implementation sorted a copied array, so callers could reuse their input order; this change silently reorders their data after calling busiest."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 6,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 53178,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Preserve the zero result for empty input",
+          "whyItBreaks": "For [], reduce returns 0 and rows.length is 0, so averageAmount now returns NaN instead of its previous numeric result 0. Consumers cannot use NaN as an ordinary aggregate value."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not reorder the caller-provided rows",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. Calling busiest now changes the input collection’s order, whereas the prior implementation sorted a copy; later code sharing that array can observe reordered rows."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 7,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 52513,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 7,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average result",
+          "whyItBreaks": "For an empty array, reduce returns 0 and rows.length is 0, so this returns NaN instead of the previous numeric result 0. Callers receiving a number can persist, display, or aggregate NaN."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Do not reorder the caller's rows array",
+          "whyItBreaks": "Array.prototype.sort mutates rows in place. The previous implementation sorted a copy, so callers that retain rows now have their input silently reordered after calling busiest()."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-neighbor-defects",
+      "draw": 8,
+      "score": {
+        "fixtureId": "t3-neighbor-defects",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 2,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 60806,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 7,
+          "lineEnd": 8,
+          "title": "Preserve the empty-input average result",
+          "whyItBreaks": "Removing the empty-array guard causes averageAmount([]) to compute 0 / 0 and return NaN instead of the prior numeric result 0. Callers can no longer safely treat this exported number as an amount."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/stats.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Avoid sorting the caller's rows in place",
+          "whyItBreaks": "Array.prototype.sort mutates `rows`. Previously busiest() sorted a copied array, so callers retained their input order; now calling this exported helper silently reorders the caller's data."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "divide|division|divid|zero|empty|nan|not a number|no rows|length\\s*===?\\s*0|guard",
+          "file": "src/stats.ts",
+          "lineRange": [
+            6,
+            9
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "sort|mutat|in.?place|defensive copy|copies|copy|side.?effect|reorder|caller",
+          "file": "src/stats.ts",
+          "lineRange": [
+            10,
+            13
+          ],
+          "findingIndex": 1
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 56993.77777777778,
+    "recallByFixture": {
+      "t3-neighbor-defects": 1
+    },
+    "mustFindHitRateByFixture": {
+      "t3-neighbor-defects": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t3": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "6c8cc2070e17b7f83c799c18acf3a29a11a50f42",
+  "fixtureSetHash": "3e8baafd66df4bf4",
+  "scorerHash": "a424d3bb59a40443",
+  "fixtureTiers": {
+    "t3-neighbor-defects": 3
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "t3-neighbor-defects"
+  ],
+  "fixtureKinds": {
+    "t3-neighbor-defects": "positive"
+  }
+}
