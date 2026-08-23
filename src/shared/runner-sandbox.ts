@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   constants as fsConstants,
+  type Dir,
   fstatSync,
   lstatSync,
   mkdirSync,
+  opendirSync,
   openSync,
-  readdirSync,
   readSync,
+  type Stats,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -242,15 +244,10 @@ function recordGitMetadata(repoPath: string): void {
 
 function fingerprintGitSecurityMetadata(repoPath: string): string {
   const hash = createHash("sha256");
+  const budget: MetadataBudget = { entries: 0, bytes: 0 };
   const gitDirPath = path.join(repoPath, ".git");
-  appendFileHash(hash, path.join(gitDirPath, "config"));
-  const hooksDir = path.join(gitDirPath, "hooks");
-  const hookFiles = listFiles(hooksDir);
-  hash.update(`hooks:${hookFiles.length}\n`);
-  for (const file of hookFiles) {
-    hash.update(`${path.relative(hooksDir, file)}\0`);
-    appendFileHash(hash, file);
-  }
+  appendFileHash(hash, path.join(gitDirPath, "config"), budget);
+  appendHooksHash(hash, path.join(gitDirPath, "hooks"), budget);
   return hash.digest("hex");
 }
 
@@ -277,7 +274,20 @@ function fingerprintGitSecurityMetadata(repoPath: string): string {
 // multi-megabyte blob under .git is itself evidence that git metadata was
 // mutated, which is precisely what this check exists to detect. Skipping such
 // an entry would convert the loudest possible signal into silence.
+// Per-entry, entry-count, and aggregate budgets. A per-file cap alone is not
+// enough: nothing stops a runner writing a million sub-cap files under
+// .git/hooks, and enumerating plus hashing them all in an undeadlined parent is
+// the same stall/exhaustion by another route. Git's own template ships ~14
+// hook samples and a fresh clone's config is a few hundred bytes, so these
+// ceilings sit far above anything legitimate and far below anything harmful.
 const MAX_GIT_METADATA_BYTES = 1024 * 1024;
+const MAX_GIT_METADATA_ENTRIES = 128;
+const MAX_GIT_METADATA_TOTAL_BYTES = 4 * 1024 * 1024;
+
+interface MetadataBudget {
+  entries: number;
+  bytes: number;
+}
 
 // O_NOFOLLOW makes a symlinked final component fail with ELOOP instead of being
 // followed; O_NONBLOCK keeps open() itself from blocking on a FIFO with no
@@ -296,7 +306,11 @@ function errnoCode(error: unknown): string | undefined {
     : undefined;
 }
 
-function appendFileHash(hash: ReturnType<typeof createHash>, filePath: string): void {
+function appendFileHash(
+  hash: ReturnType<typeof createHash>,
+  filePath: string,
+  budget: MetadataBudget
+): void {
   let fd: number;
   try {
     fd = openSync(filePath, SAFE_OPEN_FLAGS);
@@ -323,6 +337,12 @@ function appendFileHash(hash: ReturnType<typeof createHash>, filePath: string): 
         `refusing to hash oversized git metadata entry ${filePath} (${stat.size} bytes)`
       );
     }
+    budget.bytes += stat.size;
+    if (budget.bytes > MAX_GIT_METADATA_TOTAL_BYTES) {
+      throw new GitMetadataShapeError(
+        `refusing to hash git metadata: total size exceeds ${MAX_GIT_METADATA_TOTAL_BYTES} bytes`
+      );
+    }
     // Read through the descriptor with an explicitly sized buffer: readFileSync
     // would re-stat and keep reading a file that grows under us.
     const buffer = Buffer.allocUnsafe(stat.size);
@@ -338,49 +358,114 @@ function appendFileHash(hash: ReturnType<typeof createHash>, filePath: string): 
   }
 }
 
-function listFiles(dir: string): string[] {
-  let root;
+// The hooks directory is inspected through a descriptor opened once with
+// O_NOFOLLOW|O_DIRECTORY, and every later use of the *path* is revalidated
+// against that descriptor's identity. Node exposes no openat/fdopendir, so the
+// enumeration and the per-file opens still resolve names; pinning dev/ino and
+// re-checking it before and after means a mid-inspection swap of .git/hooks
+// (by a process the runner detached before exiting) cannot be laundered into a
+// clean verdict. It also cannot stall or exhaust us in the window: each file is
+// opened O_NOFOLLOW|O_NONBLOCK, fstat-checked, and size-capped regardless.
+//
+// The walk is deliberately flat. Git never creates a subdirectory under
+// .git/hooks, so recursion bought nothing but a second, unanchored path
+// resolution per level; a directory entry is now itself a refused shape.
+function appendHooksHash(
+  hash: ReturnType<typeof createHash>,
+  hooksDir: string,
+  budget: MetadataBudget
+): void {
+  let dirFd: number;
   try {
-    root = lstatSync(dir);
+    dirFd = openSync(hooksDir, SAFE_OPEN_FLAGS | (fsConstants.O_DIRECTORY ?? 0));
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return [];
+    const code = errnoCode(error);
+    if (code === "ENOENT") {
+      hash.update("hooks:0\n");
+      return;
+    }
+    // ELOOP/ENOTDIR: .git/hooks is a symlink or not a directory at all. The old
+    // existsSync + readdirSync pair would have followed it and enumerated an
+    // attacker-selected tree.
     throw new GitMetadataShapeError(
-      `refusing to walk ${dir}: lstat failed (${errnoCode(error) ?? String(error)})`
+      `refusing to walk non-directory git metadata path ${hooksDir} (${code ?? String(error)})`
     );
   }
-  // lstat, not existsSync: a hooks directory replaced by a symlink would
-  // otherwise be followed, walking and reading whatever it points at.
-  if (!root.isDirectory()) {
-    throw new GitMetadataShapeError(`refusing to walk non-directory git metadata path ${dir}`);
-  }
-  const files: string[] = [];
-  const stack = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === undefined) break;
-    let entries;
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch (error) {
+  try {
+    const pinned = fstatSync(dirFd);
+    if (!pinned.isDirectory()) {
       throw new GitMetadataShapeError(
-        `refusing to walk ${current}: readdir failed (${errnoCode(error) ?? String(error)})`
+        `refusing to walk non-directory git metadata path ${hooksDir}`
       );
     }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
+    const names = readHookNames(hooksDir, budget);
+    assertSameDirectory(hooksDir, pinned);
+    hash.update(`hooks:${names.length}\n`);
+    for (const name of names) {
+      hash.update(`${name}\0`);
+      appendFileHash(hash, path.join(hooksDir, name), budget);
+    }
+    // Re-check after the reads: if the directory was swapped mid-hash, the bytes
+    // just mixed into the digest may not have come from this sandbox at all.
+    assertSameDirectory(hooksDir, pinned);
+  } finally {
+    closeSync(dirFd);
+  }
+}
+
+// Enumerated incrementally through opendirSync rather than readdirSync, which
+// would materialize every Dirent before the entry budget could reject them.
+function readHookNames(hooksDir: string, budget: MetadataBudget): string[] {
+  const names: string[] = [];
+  let dir: Dir;
+  try {
+    dir = opendirSync(hooksDir);
+  } catch (error) {
+    throw new GitMetadataShapeError(
+      `refusing to walk ${hooksDir}: opendir failed (${errnoCode(error) ?? String(error)})`
+    );
+  }
+  try {
+    for (let entry = dir.readSync(); entry !== null; entry = dir.readSync()) {
       // Dirent types come from d_type and are not resolved through symlinks.
-      // Only these two shapes are expected under .git; an UNKNOWN d_type also
-      // lands in the reject branch, which is the fail-closed direction.
-      if (entry.isDirectory()) stack.push(full);
-      else if (entry.isFile()) files.push(full);
-      else {
+      // An UNKNOWN d_type also lands here, which is the fail-closed direction.
+      if (!entry.isFile()) {
         throw new GitMetadataShapeError(
-          `refusing to hash non-regular git metadata entry ${full}`
+          `refusing to hash non-regular git metadata entry ${path.join(hooksDir, entry.name)}`
         );
       }
+      budget.entries += 1;
+      if (budget.entries > MAX_GIT_METADATA_ENTRIES) {
+        throw new GitMetadataShapeError(
+          `refusing to hash git metadata: more than ${MAX_GIT_METADATA_ENTRIES} entries under ${hooksDir}`
+        );
+      }
+      names.push(entry.name);
+    }
+  } finally {
+    try {
+      dir.closeSync();
+    } catch {
+      // Already closed or torn down under us; the shape error is what matters.
     }
   }
-  return files.sort();
+  return names.sort();
+}
+
+function assertSameDirectory(dirPath: string, pinned: Stats): void {
+  let current: Stats;
+  try {
+    current = lstatSync(dirPath);
+  } catch (error) {
+    throw new GitMetadataShapeError(
+      `refusing to hash git metadata: ${dirPath} vanished during inspection (${errnoCode(error) ?? String(error)})`
+    );
+  }
+  if (!current.isDirectory() || current.dev !== pinned.dev || current.ino !== pinned.ino) {
+    throw new GitMetadataShapeError(
+      `refusing to hash git metadata: ${dirPath} was replaced during inspection`
+    );
+  }
 }
 
 function gitStatus(repoPath: string): string {

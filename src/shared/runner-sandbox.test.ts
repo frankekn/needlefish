@@ -345,11 +345,14 @@ type HostileKind =
   | "hook-dev-zero-symlink"
   | "config-outside-symlink"
   | "hooks-dir-symlink"
+  | "hooks-dir-identical-copy"
+  | "hooks-dir-swap-race"
+  | "hook-many-entries"
   | "hook-oversized"
   | "hook-modified";
 
 function hostileChildScript(): string {
-  return `import { execFileSync } from "node:child_process";
+  return `import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -359,6 +362,62 @@ import {
 } from ${JSON.stringify(SANDBOX_MODULE)};
 
 const [sourceRepo, sandboxTmp, headSha, kind, scratch] = process.argv.slice(2);
+
+if (kind === "hooks-dir-swap-race") {
+  // A process the runner detached before exiting keeps swapping .git/hooks
+  // between the real directory and a symlink to a foreign tree, while the
+  // parent-side integrity check runs. Whatever the interleaving, the check must
+  // terminate and must only ever fail as a runner safety error — it must never
+  // block on the foreign FIFO, blow up on the foreign oversized file, or throw
+  // something the caller would treat as a retryable I/O error.
+  const foreign = path.join(scratch, "foreign-hooks");
+  mkdirSync(foreign, { recursive: true });
+  execFileSync("mkfifo", [path.join(foreign, "pre-commit")]);
+  writeFileSync(path.join(foreign, "bulk"), Buffer.alloc(4 * 1024 * 1024, 0x62));
+
+  let cleanRuns = 0;
+  let safetyRuns = 0;
+  for (let i = 0; i < 25; i++) {
+    const iterTmp = path.join(scratch, "iter-" + i);
+    mkdirSync(iterTmp, { recursive: true });
+    const sb = prepareRunnerSandbox({
+      runner: "claude",
+      repoPath: sourceRepo,
+      prompt: "",
+      targetHeadSha: headSha,
+      tmp: iterTmp,
+    });
+    const hooks = path.join(sb.repoPath, ".git", "hooks");
+    const swapper = spawn(
+      "sh",
+      [
+        "-c",
+        'while :; do mv "$1" "$1.real" 2>/dev/null && ln -s "$2" "$1" 2>/dev/null; ' +
+          'rm -f "$1" 2>/dev/null; mv "$1.real" "$1" 2>/dev/null; done',
+        "sh",
+        hooks,
+        foreign,
+      ],
+      { stdio: "ignore" }
+    );
+    try {
+      assertRunnerSandboxClean("claude", sb.repoPath, sb.expectedHeadSha);
+      cleanRuns++;
+    } catch (error) {
+      if (!isRunnerSafetyError(error)) {
+        process.stdout.write("NON_SAFETY_ERROR=" + (error instanceof Error ? error.message : String(error)) + "\\n");
+        swapper.kill("SIGKILL");
+        process.exit(4);
+      }
+      safetyRuns++;
+    } finally {
+      swapper.kill("SIGKILL");
+    }
+  }
+  process.stdout.write("RACE_OK clean=" + cleanRuns + " safety=" + safetyRuns + "\\n");
+  process.exit(0);
+}
+
 const sandbox = prepareRunnerSandbox({
   runner: "claude",
   repoPath: sourceRepo,
@@ -391,6 +450,17 @@ if (kind === "hook-fifo") {
   mkfifo(path.join(elsewhere, "pre-commit"));
   rmSync(hooksDir, { recursive: true, force: true });
   symlinkSync(elsewhere, hooksDir);
+} else if (kind === "hooks-dir-identical-copy") {
+  // A byte-identical copy OUTSIDE the sandbox. Content hashing alone cannot
+  // tell this from the real directory — only the entry's own shape can.
+  const copy = path.join(scratch, "identical-hooks");
+  execFileSync("cp", ["-a", hooksDir, copy]);
+  rmSync(hooksDir, { recursive: true, force: true });
+  symlinkSync(copy, hooksDir);
+} else if (kind === "hook-many-entries") {
+  for (let i = 0; i < 300; i++) {
+    writeFileSync(path.join(hooksDir, "filler-" + i), "x");
+  }
 } else if (kind === "hook-oversized") {
   writeFileSync(path.join(hooksDir, "pre-commit"), Buffer.alloc(2 * 1024 * 1024, 0x61));
 } else if (kind === "hook-modified") {
@@ -411,7 +481,8 @@ try {
 
 function runHostileSandboxChild(
   t: { after: (fn: () => void) => void },
-  kind: HostileKind
+  kind: HostileKind,
+  timeoutMs: number = HOSTILE_CHILD_TIMEOUT_MS
 ): { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string } {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-hostile-"));
   t.after(() => {
@@ -433,7 +504,7 @@ function runHostileSandboxChild(
     {
       cwd: REPO_ROOT,
       encoding: "utf8",
-      timeout: HOSTILE_CHILD_TIMEOUT_MS,
+      timeout: timeoutMs,
       env: { ...process.env, NO_COLOR: "1" },
     }
   );
@@ -492,6 +563,33 @@ test("assertRunnerSandboxClean rejects a symlinked .git/hooks directory", (t) =>
 test("assertRunnerSandboxClean rejects an oversized .git/hooks entry", (t) => {
   const child = runHostileSandboxChild(t, "hook-oversized");
   assertRefusedFast(child, /oversized git metadata entry/);
+});
+
+test("assertRunnerSandboxClean refuses a byte-identical .git/hooks tree outside the sandbox", (t) => {
+  // Content hashing alone reports this clean: every name and every byte match.
+  // Only the shape of the .git/hooks entry itself distinguishes it.
+  const child = runHostileSandboxChild(t, "hooks-dir-identical-copy");
+  assertRefusedFast(child, /non-directory git metadata path .*\.git\/hooks/);
+});
+
+test("assertRunnerSandboxClean bounds the number of .git/hooks entries", (t) => {
+  const child = runHostileSandboxChild(t, "hook-many-entries");
+  assertRefusedFast(child, /more than 128 entries/);
+});
+
+test("assertRunnerSandboxClean stays fail-closed while .git/hooks is swapped underneath it", (t) => {
+  // Liveness + classification guard, not a timing oracle: it asserts only
+  // outcomes that must hold for every interleaving, so it cannot fail
+  // spuriously. It goes red if the check ever blocks on the foreign FIFO,
+  // reads the foreign 4MiB blob unbounded, or surfaces a non-safety error.
+  const child = runHostileSandboxChild(t, "hooks-dir-swap-race", 90000);
+  assert.equal(
+    child.signal,
+    null,
+    `integrity check hung while .git/hooks was swapped; stdout: ${child.stdout}`
+  );
+  assert.equal(child.status, 0, `stdout: ${child.stdout}\nstderr: ${child.stderr.slice(0, 1000)}`);
+  assert.match(child.stdout, /RACE_OK/);
 });
 
 test("assertRunnerSandboxClean still reports an ordinary hook change as a metadata change", (t) => {
