@@ -577,33 +577,50 @@ function isLooselyBotShaped(item: JsonRecord): boolean {
 	return login.includes("github-actions") || /\[bot\]$/.test(login);
 }
 
+// The identity a GITHUB_TOKEN-authenticated run posts under. Not a target-repo
+// noun: it is the fixed platform identity GitHub attributes every Actions
+// token to, confirmed against the live reviews API for this repo's own runs
+// ({login: "github-actions[bot]", type: "Bot"}).
+const ACTIONS_BOT_LOGIN = "github-actions[bot]";
+
 // SECURITY-GRADE author check for needlefish-state markers. See the trust
 // boundary note in findPreviousReview for what rides on it.
 //
-// Only two identities are authorized, both attested by something outside the
-// attacker's control:
+// The rule is "the marker was written by the identity this run posts as",
+// never "the marker was written by something bot-shaped". Two ways to
+// establish that identity, both attested outside the author's control:
 //
-//   1. login === selfLogin — the exact identity this run authenticates as
-//      (`gh api user`). Self-hosted runners often use a PAT, so our own marker
-//      can legitimately carry a plain user login. Exact equality, never a
-//      prefix/substring, and never when selfLogin is empty.
-//   2. user.type === "Bot" AND the login ends in "[bot]" — both fields are set
-//      by GitHub, not by the account holder. A human account cannot obtain
-//      type "Bot", and "[" / "]" are not legal in a human username, so the
-//      pair cannot be forged from a normal account. Under GITHUB_TOKEN we post
-//      as github-actions[bot] / type "Bot" (confirmed against the live reviews
-//      API) and `gh api user` is not permitted to Actions tokens, so in
-//      production this is the branch that carries the dedupe.
+//   1. login === selfLogin — the identity `gh api user` reports. Exact
+//      equality only, never a prefix/substring, and never when selfLogin is
+//      empty. This covers PAT-authenticated self-hosted runners, where our
+//      own review carries a plain user login.
+//   2. login === ACTIONS_BOT_LOGIN AND user.type === "Bot" — the Actions
+//      default identity. Actions tokens are not permitted `GET /user`, so
+//      selfLogin is empty in that mode and this branch is what carries the
+//      dedupe in production. Both fields are set by GitHub: a human account
+//      cannot obtain type "Bot", and "[" / "]" are not legal in a human
+//      username, so neither half is forgeable from a normal account.
 //
-// A substring match on the login is NOT sufficient and was the original bug:
-// "github-actions" is a substring of the perfectly registrable username
-// "z-github-actions-z", so any user could mint a trusted-looking marker.
+// Deliberately NOT trusted:
+//   - a substring match on the login. That was the original bug:
+//     "github-actions" is a substring of the registrable username
+//     "z-github-actions-z", so any user could mint a trusted-looking marker.
+//   - any other Bot-typed "[bot]" account. A different GitHub App installed on
+//     the repo is not us, and trusting it lets it suppress our review.
+//
+// Consequence, accepted: a deployment that authenticates as a custom GitHub
+// App (login "<app>[bot]", and `GET /user` also unavailable to installation
+// tokens) matches neither branch, so its markers are not trusted and every run
+// re-reviews and posts a new review instead of updating. That is noisy but it
+// is the safe direction — an unrecognized author costs an extra review, never
+// a suppressed one.
 function isTrustedStateAuthor(item: JsonRecord, selfLogin: string): boolean {
 	const login = nestedString(item, "user", "login");
 	if (login === "") return false;
 	if (selfLogin !== "" && login === selfLogin) return true;
 	return (
-		nestedString(item, "user", "type") === "Bot" && /\[bot\]$/.test(login)
+		login === ACTIONS_BOT_LOGIN &&
+		nestedString(item, "user", "type") === "Bot"
 	);
 }
 

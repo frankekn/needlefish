@@ -1047,7 +1047,10 @@ test("runGithub still skips same-head review when the marker is from the real gi
 	assert.deepEqual(readPosts(fixture.postLog), [], "dedupe must post nothing");
 });
 
-test("runGithub still skips same-head review when the marker is from a GitHub App bot identity", async (t) => {
+// A different GitHub App installed on the repo is a genuine Bot identity but
+// it is not us. Trusting it would let it suppress our review, so bot-ness is
+// not sufficient: the login must be the identity this run posts as.
+test("runGithub does not trust a same-head marker from an unrelated GitHub App bot", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 51,
 		rawReview: defaultRawReview(),
@@ -1056,14 +1059,20 @@ test("runGithub still skips same-head review when the marker is from a GitHub Ap
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "needlefish[bot]", type: "Bot" },
+			user: { login: "unrelated-reviewer[bot]", type: "Bot" },
 		},
 	]);
 
 	await runGithub(fixture.repo, 51, { timeoutMs: 1000 });
 
-	assert.equal(runnerInvocationCount(fixture), 0);
-	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"an unrelated Bot-typed [bot] account must not suppress the model runner",
+	);
+	assert.ok(
+		postedReview(readPosts(fixture.postLog), 51),
+		"an unrelated Bot-typed [bot] account must not suppress posting a review",
+	);
 });
 
 test("runGithub still skips same-head review when the marker is from the authenticated PAT identity", async (t) => {
