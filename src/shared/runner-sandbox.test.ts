@@ -487,6 +487,51 @@ test("assertRunnerSandboxClean does not honor parent GIT_CONFIG_SYSTEM", (t) => 
   assert.equal(existsSync(sentinelPath), false);
 });
 
+test("assertRunnerSandboxClean does not execute a sandbox clean filter", (t) => {
+  // NEUTRAL_GIT_ARGS overrides the local keys that spawn processes, but filter
+  // driver names are arbitrary (filter.<anything>.clean) so they cannot be
+  // enumerated on the command line, and local config cannot be switched off at
+  // all. git status runs a clean filter to compare worktree content against the
+  // index, so a runner that writes the driver into .git/config, assigns it in
+  // .gitattributes, and dirties a tracked file gets its command executed by the
+  // parent's own post-run check. The metadata fingerprint already detects the
+  // .git/config edit — it just has to be consulted before git is invoked.
+  const { tmp, sandbox } = makeShaSandbox(t);
+  const sentinelPath = path.join(tmp, "clean-filter.sentinel");
+  const scriptPath = path.join(tmp, "clean-filter.sh");
+  writeFileSync(
+    scriptPath,
+    `#!/bin/sh
+printf '%s\\n' pwned >${JSON.stringify(sentinelPath)}
+cat
+`
+  );
+  chmodSync(scriptPath, 0o755);
+  execFileSync("git", ["config", "filter.pwn.clean", scriptPath], {
+    cwd: sandbox.repoPath,
+    encoding: "utf8",
+  });
+  writeFileSync(path.join(sandbox.repoPath, ".gitattributes"), "* filter=pwn\n");
+  // Same byte length as the committed "fixture\n". A size difference lets git
+  // declare the file modified from stat data alone and never hash it, so the
+  // filter would not run — the attack needs the content comparison, and so
+  // does any honest test of it.
+  writeFileSync(path.join(sandbox.repoPath, "README.md"), "dirtied\n");
+
+  assert.throws(
+    () => assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha),
+    (error: unknown) => {
+      assert.equal(isRunnerSafetyError(error), true);
+      return true;
+    }
+  );
+  assert.equal(
+    existsSync(sentinelPath),
+    false,
+    "sandbox clean filter was executed by the parent-side integrity check"
+  );
+});
+
 test("assertRunnerSandboxClean rejects a dirty worktree", (t) => {
   const { sandbox } = makeShaSandbox(t);
   writeFileSync(path.join(sandbox.repoPath, "pwned.txt"), "dirty\n");

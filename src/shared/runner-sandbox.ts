@@ -152,23 +152,17 @@ export function assertRunnerSandboxClean(
 ): void {
   const metadataKey = path.resolve(repoPath);
   try {
-    let currentHead: string;
-    let status: string;
-    try {
-      currentHead = git(["rev-parse", "HEAD"], repoPath);
-      status = actionableStatus(gitStatus(repoPath));
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new RunnerWorktreeChangedError(runner, error.message);
-      }
-      throw error;
-    }
-    if (currentHead !== expectedHeadSha) {
-      throw new RunnerWorktreeChangedError(runner, `HEAD moved to ${currentHead}`);
-    }
-    if (status.trim()) {
-      throw new RunnerWorktreeChangedError(runner, status.slice(0, 2000));
-    }
+    // Metadata first, before any git subprocess runs against this sandbox.
+    // .git/config is runner-writable and git consults it on every invocation,
+    // and filter.<name>.clean/.smudge/.process names a program to execute.
+    // NEUTRAL_GIT_ARGS can only override keys it can name, and a filter driver
+    // name is arbitrary, so filters cannot be neutralized that way; there is
+    // also no switch that makes git ignore local config. `git status` runs a
+    // clean filter whenever it must compare worktree content against the index
+    // (a same-size edit forces exactly that, since a size change would let git
+    // decide from stat data alone). Checking the fingerprint first means a
+    // .git/config the runner touched is rejected before git is asked to parse
+    // it — the detection already existed, it was simply consulted too late.
     const expectedMetadata = sandboxGitMetadata.get(metadataKey);
     if (expectedMetadata !== undefined) {
       let actualMetadata: string;
@@ -186,6 +180,23 @@ export function assertRunnerSandboxClean(
       if (expectedMetadata !== actualMetadata) {
         throw new RunnerWorktreeChangedError(runner, ".git/config or hooks changed");
       }
+    }
+    let currentHead: string;
+    let status: string;
+    try {
+      currentHead = git(["rev-parse", "HEAD"], repoPath);
+      status = actionableStatus(gitStatus(repoPath));
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new RunnerWorktreeChangedError(runner, error.message);
+      }
+      throw error;
+    }
+    if (currentHead !== expectedHeadSha) {
+      throw new RunnerWorktreeChangedError(runner, `HEAD moved to ${currentHead}`);
+    }
+    if (status.trim()) {
+      throw new RunnerWorktreeChangedError(runner, status.slice(0, 2000));
     }
   } finally {
     sandboxGitMetadata.delete(metadataKey);
