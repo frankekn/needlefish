@@ -1,9 +1,12 @@
 import {
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	writeFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
+	realpathSync,
 	renameSync,
 	unlinkSync,
 } from "node:fs";
@@ -480,15 +483,47 @@ export function aggregateMustFindHitRates(
 const lastCheckpointCounts = new Map<string, number>();
 
 function atomicWriteFile(targetPath: string, contents: string): void {
-	const directory = path.dirname(targetPath);
+	// rename(2) does not dereference a symlink in its final path component:
+	// renaming a temp file onto a symlinked targetPath would unlink the
+	// symlink itself and install a plain file in its place, silently
+	// destroying the alias. Resolve a symlinked target to its real
+	// destination first and rename into *that* (same-filesystem) directory,
+	// so the symlink survives and the rename stays atomic.
+	let resolvedTarget = targetPath;
+	try {
+		if (lstatSync(targetPath).isSymbolicLink()) {
+			try {
+				resolvedTarget = realpathSync(targetPath);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+					throw error;
+				}
+				// Dangling symlink: realpathSync fails because the pointed-to
+				// file doesn't exist yet. Resolve the link's own text relative
+				// to its directory — the same way the OS follows a relative
+				// symlink — so the alias becomes valid after this write
+				// instead of being replaced by a plain file.
+				resolvedTarget = path.resolve(
+					path.dirname(targetPath),
+					readlinkSync(targetPath),
+				);
+			}
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			throw error;
+		}
+		// Nothing at targetPath yet; write straight through as before.
+	}
+	const directory = path.dirname(resolvedTarget);
 	mkdirSync(directory, { recursive: true });
 	const tempPath = path.join(
 		directory,
-		`.${path.basename(targetPath)}.${randomUUID()}.tmp`,
+		`.${path.basename(resolvedTarget)}.${randomUUID()}.tmp`,
 	);
 	try {
 		writeFileSync(tempPath, contents);
-		renameSync(tempPath, targetPath);
+		renameSync(tempPath, resolvedTarget);
 	} finally {
 		try {
 			unlinkSync(tempPath);

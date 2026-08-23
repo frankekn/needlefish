@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -178,6 +181,66 @@ test("writeReport: a failed replace does not leave a temp file", (t) => {
 	const args = parseArgs(["--draws", "1", "--report", reportPath]);
 
 	assert.throws(() => writeReport(args, [makeDraw(spec, 0)], [spec]));
+	assert.deepEqual(leftoverTemps(dir), []);
+});
+
+// rename(2) does not dereference a symlink in its final path component:
+// a naive rename(tempPath, targetPath) over a symlinked --report path would
+// unlink the symlink and install a plain file, silently destroying the
+// alias. writeReport must instead write through to the symlink's resolved
+// destination and leave the symlink itself in place.
+test("writeReport: a symlinked --report target stays a symlink and is written through", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-symlink-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const realPath = path.join(dir, "real-report.json");
+	const linkPath = path.join(dir, "report.json");
+	writeFileSync(realPath, "placeholder");
+	symlinkSync(realPath, linkPath);
+	const spec = checkpointSpec("checkpoint-symlink");
+	const args = parseArgs(["--draws", "1", "--report", linkPath]);
+
+	writeReport(args, [makeDraw(spec, 0)], [spec]);
+
+	assert.equal(
+		lstatSync(linkPath).isSymbolicLink(),
+		true,
+		"the --report path must remain a symlink after checkpointing",
+	);
+	assert.equal(readlinkSync(linkPath), realPath);
+	const onDiskViaLink = readReport(linkPath);
+	assert.equal(onDiskViaLink.results.length, 1);
+	assert.equal(onDiskViaLink.results[0]?.fixtureId, spec.id);
+	const onDiskViaReal = readReport(realPath);
+	assert.equal(onDiskViaReal.results.length, 1);
+	assert.deepEqual(leftoverTemps(dir), []);
+});
+
+// A dangling symlink (pointing at a path that doesn't exist yet) must still
+// resolve: realpathSync fails for a dangling link, so the fallback has to
+// resolve the link's own text relative to its directory instead of
+// replacing the link with a plain file.
+test("writeReport: a dangling symlinked --report target is written through and stays a symlink", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-dangling-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const realPath = path.join(dir, "not-yet-created.json");
+	const linkPath = path.join(dir, "report.json");
+	symlinkSync(realPath, linkPath);
+	const spec = checkpointSpec("checkpoint-dangling");
+	const args = parseArgs(["--draws", "1", "--report", linkPath]);
+
+	writeReport(args, [makeDraw(spec, 0)], [spec]);
+
+	assert.equal(
+		lstatSync(linkPath).isSymbolicLink(),
+		true,
+		"the --report path must remain a symlink after checkpointing",
+	);
+	assert.equal(readlinkSync(linkPath), realPath);
+	assert.equal(existsSync(realPath), true);
+	const onDiskViaLink = readReport(linkPath);
+	assert.equal(onDiskViaLink.results.length, 1);
 	assert.deepEqual(leftoverTemps(dir), []);
 });
 
