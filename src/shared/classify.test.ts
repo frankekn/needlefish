@@ -80,3 +80,42 @@ test("isDocsFastPathEligible is a generic user-facing-docs allowlist", () => {
   assert.equal(isDocsFastPathEligible("DESIGN.md"), false);
   assert.equal(isDocsFastPathEligible(".github/workflows/review.yml"), false);
 });
+
+// A CLAUDE.md is agent policy wherever it sits: agents read the nearest one for
+// the directory being edited, so a nested copy is as policy-bearing as the root
+// one. Before this rule, only a root CLAUDE.md failed closed (and by accident --
+// it matched no allowlist entry); any CLAUDE.md under a docs/ or doc/ directory
+// matched DOCS_DIR and took the deterministic pass with zero model calls.
+test("isDocsFastPathEligible excludes CLAUDE.md policy files anywhere in the tree", () => {
+  assert.equal(isDocsFastPathEligible("CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("doc/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/docs/guides/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("src/shared/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/claude.md"), false);
+  assert.equal(isDocsFastPathEligible("CLAUDE.local.md"), false);
+  assert.equal(isDocsFastPathEligible("docs\\nested\\CLAUDE.md"), false);
+  // The AGENTS.md rule this mirrors, and ordinary docs, are unaffected.
+  assert.equal(isDocsFastPathEligible("AGENTS.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/AGENTS.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/AGENTS.review.md"), false);
+  assert.equal(isDocsFastPathEligible("prompts/review.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/prompts/review.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/claude-setup.md"), true);
+  assert.equal(isDocsFastPathEligible("README.md"), true);
+});
+
+// `.claude/` is an agent-config tree: skills, commands, and subagent definitions
+// instruct agents, and the prose describing them is part of that policy. It used
+// to fail closed only incidentally, which left the two allowlist entries open --
+// `.claude/README.md` (user-facing basename) and `.claude/docs/*.md` (DOCS_DIR).
+test("isDocsFastPathEligible excludes .claude agent-config Markdown", () => {
+  assert.equal(isDocsFastPathEligible(".claude/README.md"), false);
+  assert.equal(isDocsFastPathEligible(".claude/docs/guide.md"), false);
+  assert.equal(isDocsFastPathEligible(".claude/skills/review/SKILL.md"), false);
+  assert.equal(isDocsFastPathEligible(".claude/commands/ship.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/.claude/README.md"), false);
+  // A normal directory that merely starts with the same letters is still docs.
+  assert.equal(isDocsFastPathEligible("claude/docs/guide.md"), true);
+});

@@ -26,11 +26,20 @@ const RULES: { test: RegExp; surface: Surface }[] = [
 ];
 
 // Model/agent instruction directories — generic shape, not a repo-specific path.
-const POLICY_DIR = /(^|\/)(prompts?|instructions?)(\/|$)/i;
+// `.claude/` is an agent-config tree, not prose: its Markdown (skills, commands,
+// subagent definitions, and the README/docs that describe them) instructs agents.
+// It was previously excluded only by accident — nothing under it matched
+// DOCS_DIR or USER_FACING_BASENAME — which left `.claude/README.md` and
+// `.claude/docs/*.md` riding the fast path. Exclude it by design instead.
+const POLICY_DIR = /(^|\/)(prompts?|instructions?|\.claude)(\/|$)/i;
 const DOCS_DIR = /(^|\/)docs?\//i;
-// Portable repo-policy filename (any directory). Not a target-repo noun:
-// this is the file coding agents treat as review/instruction policy.
-const REPO_POLICY_BASENAME = /^agents(\.[a-z0-9_-]+)*\.md$/i;
+// Portable repo-policy filenames (any directory). Not target-repo nouns: these
+// are the files coding agents treat as review/instruction policy. A CLAUDE.md
+// is policy-bearing wherever it sits — agents read the nearest one for the
+// directory they are editing, so `docs/CLAUDE.md` instructs edits to `docs/**`
+// exactly as a root CLAUDE.md instructs the repo. Path, not content, is all the
+// classifier can see, so the basename alone must disqualify the fast path.
+const REPO_POLICY_BASENAME = /^(agents|claude)(\.[a-z0-9_-]+)*\.md$/i;
 // Human-facing documentation basenames (optional locale suffix). Unknown
 // Markdown fails closed rather than riding the docs fast path.
 const USER_FACING_BASENAME =
@@ -49,8 +58,8 @@ export function classifyFiles(files: string[]): { path: string; surface: Surface
 
 // True only for Markdown that is safe to skip model review: a docs/doc
 // directory, or a well-known human-facing basename; never a prompts-like
-// path or an AGENTS.md-shaped repo-policy file. review() also requires
-// surface === "docs".
+// path, an agent-config path, or an AGENTS.md/CLAUDE.md-shaped repo-policy
+// file. review() also requires surface === "docs".
 export function isDocsFastPathEligible(file: string): boolean {
   const normalized = file.replace(/\\/g, "/");
   if (!DOCS_EXT.test(normalized)) return false;
