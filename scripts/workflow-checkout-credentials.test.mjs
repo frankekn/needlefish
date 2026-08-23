@@ -3,29 +3,49 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument } from "yaml";
 
-// Line/regex scanner, not a YAML parser: Node has no YAML built-in and this
-// repo's workflow tests stay dependency-free. Each `uses: actions/checkout`
-// step must set persist-credentials: false, or be on the allowlist below
-// with a YAML comment documenting why persisted git auth is required.
+// Parses the workflow YAML; it does not pattern-match the source text. Each
+// actions/checkout step must set persist-credentials: false, or be on the allowlist
+// below with a YAML comment documenting why persisted git auth is required.
+//
+// This was a line/regex scanner through five rounds of review, and each round found
+// another way to spell the same reference past it: a flow mapping (`- { uses: ... }`),
+// "actions\/checkout@v4" (YAML 1.2 solidus escape), "actions/checkout@v4", a
+// double-quoted line continuation splitting the literal across two lines, anchors and
+// aliases, and finally a quoted key combined with an escaped value, which evaded the
+// key match and the value match at once. Every fix closed one syntactic axis and
+// exposed the next, because a regex over YAML has an unbounded number of them.
+//
+// Parsing ends that: the parser resolves quoting, escapes, flow vs block style,
+// anchors and block scalars before this file sees a single value, so an obfuscated
+// reference arrives as the same string as a plain one and is policed identically.
+// What matters is what the step RESOLVES to, which is also exactly what Actions runs.
+//
+// Why this scanner exists at all: persist-credentials: true writes the job token into
+// the workspace's .git/config. That is a filesystem channel, and the runner env
+// allowlist (buildRunnerEnv in src/shared/codex.ts, which builds from {} and never
+// copies GITHUB_TOKEN/GH_TOKEN) does not cover it. Model CLIs run against these trees
+// without a filesystem sandbox (AGENTS.md). This guards a different door from the env
+// allowlist, not the same one twice.
 
 // A FLOOR, deliberately not an equality — do not "tighten" this to assert.equal.
 //
-// What it guards: workflowFiles() decides which files get scanned at all, and
-// assertEveryMentionRecognized() can only speak about files that are in that set.
-// If checkouts leave that set — a workflow renamed to a non-YAML extension, or moved
-// to a path outside .github/ — no mention is left to flag and the scan goes quiet.
-// The count falling below the floor is the only signal of that coverage loss.
-// (Note this floor does NOT catch a checkout *added* somewhere unscanned: the six
-// here stay intact and the floor stays green. Only widening workflowFiles() fixes
-// that, which is why it recurses rather than listing directories.)
+// What it guards: workflowFiles() decides which files get scanned at all, and the
+// parse-based scan can only speak about files that are in that set. If checkouts
+// leave that set — a workflow renamed to a non-YAML extension, or moved to a path
+// outside .github/ — nothing remains to parse and the scan goes quiet. The count
+// falling below the floor is the only signal of that coverage loss. (It does NOT
+// catch a checkout *added* somewhere unscanned: the six here stay intact and the
+// floor stays green. Only widening workflowFiles() fixes that, which is why it
+// recurses rather than listing directories.)
 //
-// Why not equality: a checkout being *added* is already fully policed — it must be
-// recognized (assertEveryMentionRecognized) and must set persist-credentials: false
-// or be allowlisted. Equality adds no security signal over the floor, and it breaks
-// on merge: any concurrently-open PR that legitimately adds a workflow checkout
-// passes its own CI, merges cleanly (different files), and lands a main that fails
-// an equality this branch could not have known to bump.
+// Why not equality: a checkout being *added* is already fully policed — it is
+// resolved by the parser and must set persist-credentials: false or be allowlisted.
+// Equality adds no security signal over the floor, and it breaks on merge: any
+// concurrently-open PR that legitimately adds a workflow checkout passes its own CI,
+// merges cleanly (different files), and lands a main that fails an equality this
+// branch could not have known to bump.
 const MINIMUM_CHECKOUT_COUNT = 6;
 
 const PERSISTED_CREDENTIAL_ALLOWLIST = [
@@ -36,179 +56,96 @@ const PERSISTED_CREDENTIAL_ALLOWLIST = [
 	},
 ];
 
-const CHECKOUT_USES =
-	/^(\s*)(?:- )?uses:\s*['"]?actions\/checkout@\S+/;
+const CHECKOUT_ACTION = /^actions\/checkout(?:@|$)/;
 
-// CHECKOUT_USES only understands block-style steps. `- { uses: actions/checkout@v4 }`
-// is valid YAML that Actions runs happily, but it never matches — so without the
-// coverage guard below the step would drop out of collectCheckouts() and the policy
-// assertions would never see it. This scanner exists because model CLIs write
-// .github/workflows/*.yml with no filesystem sandbox (AGENTS.md), which makes a
-// silent pass on unrecognized syntax the exact failure it was written to prevent.
-// Fail closed instead: anything naming actions/checkout that the recognizer cannot
-// inspect fails the test with its file:line. Comment-only lines are excluded — a
-// commented-out step does not run.
-const CHECKOUT_MENTION = /actions\/checkout/g;
-const COMMENT_LINE = /^\s*#/;
-
-// The inverted guard. CHECKOUT_MENTION matches one literal spelling, so every round
-// of review found another way to write the same reference without it:
-// `"actions\/checkout@v4"` (YAML 1.2 solidus escape), `"actions\u002Fcheckout@v4"`,
-// and a double-quoted line continuation splitting the literal across two lines. That
-// tail has no end — \x6f, single quotes, block scalars — so stop enumerating
-// spellings and invert the question. Instead of "does this line name a checkout?",
-// ask "is this `uses:` value one this scanner can read at all?" and reject the file
-// if it is not, checkout or otherwise. Exotic spellings then fail closed without
-// anyone having to predict them.
-//
-// Fail closed on unparseable, NOT on unfamiliar: every form the repo actually uses
-// is accepted. Today that is only `owner/repo@ref`, but local (`./path`) and
-// `docker://` refs are accepted too so adding one does not break the build.
-// A quoted value is fine when it is a plain scalar — closing quote on the same line,
-// no backslash, so nothing can be hiding in an escape.
-//
-// Known false positive: a `uses:` written inside a `run: |` shell block would be
-// read as a step. No such line exists here (all 11 `uses:` lines are real steps or
-// inside `#` comments); if one appears, quote it differently or extend this.
-const USES_LINE = /^(\s*)(?:- )?uses:\s*(.*)$/;
-const PLAIN_ACTION_REF = /^[\w.-]+\/[\w./-]+@[\w./-]+$/;
-const LOCAL_ACTION_REF = /^\.{1,2}\/[\w./-]+$/;
-const DOCKER_ACTION_REF = /^docker:\/\/[\w.:/@-]+$/;
-
-function inspectableUsesValue(raw) {
-	// Strip a trailing YAML comment, but only when it is separated by whitespace —
-	// `#` inside a ref (a docker digest) is not a comment.
-	const value = raw.replace(/\s+#.*$/, "").trim();
-	if (value === "") return null;
-
-	let scalar = value;
-	if (scalar.startsWith('"')) {
-		// The `\\` in this class is deliberately redundant: a backslash is not in any
-		// of the three ref charsets below, so an escaped value is already rejected
-		// there (removing it from here fails no test — checked). It stays as the
-		// explicit statement of intent, so that widening a ref charset later cannot
-		// quietly re-admit \/, \u002F and friends. The closing-quote requirement is
-		// NOT redundant: it is what rejects an end-of-line continuation, whose quote
-		// lands on the next line.
-		if (!/^"[^"\\]*"$/.test(scalar)) return null;
-		scalar = scalar.slice(1, -1);
-	} else if (scalar.startsWith("'")) {
-		if (!/^'[^']*'$/.test(scalar)) return null;
-		scalar = scalar.slice(1, -1);
+function parseWorkflow(content, file) {
+	const lineCounter = new LineCounter();
+	const doc = parseDocument(content, { lineCounter });
+	const problem = doc.errors[0] ?? doc.warnings[0];
+	if (problem) {
+		const line = problem.pos ? lineCounter.linePos(problem.pos[0]).line : 0;
+		assert.fail(`${file}:${line}: workflow YAML does not parse cleanly: ${problem.message}`);
 	}
-
-	if (PLAIN_ACTION_REF.test(scalar)) return scalar;
-	if (LOCAL_ACTION_REF.test(scalar)) return scalar;
-	if (DOCKER_ACTION_REF.test(scalar)) return scalar;
-	return null;
+	return { doc, lineCounter };
 }
 
-function assertEveryUsesIsInspectable(lines, file) {
-	const uninspectable = [];
-	lines.forEach((line, index) => {
-		if (COMMENT_LINE.test(line)) return;
-		const match = line.match(USES_LINE);
-		if (!match) return;
-		if (inspectableUsesValue(match[2]) !== null) return;
-		uninspectable.push(`${file}:${index + 1}: ${line.trim()}`);
-	});
-
-	assert.deepEqual(
-		uninspectable,
-		[],
-		`uses: values this scanner cannot resolve, so it cannot prove they are not a checkout (write them as a plain owner/repo@ref): ${uninspectable.join(" | ")}`,
-	);
-}
-
-function indentOf(line) {
-	const match = line.match(/^(\s*)/);
-	return match ? match[1].length : 0;
-}
-
-function countByLine(entries) {
-	const counts = new Map();
-	for (const line of entries) counts.set(line, (counts.get(line) ?? 0) + 1);
-	return counts;
-}
-
-function assertEveryMentionRecognized(lines, checkouts, file) {
-	const mentioned = countByLine(
-		lines.flatMap((line, index) =>
-			COMMENT_LINE.test(line)
-				? []
-				: Array.from(line.match(CHECKOUT_MENTION) ?? [], () => index + 1),
-		),
-	);
-	const recognized = countByLine(checkouts.map((checkout) => checkout.line));
-
-	const unrecognized = [];
-	for (const [line, count] of [...mentioned].sort((a, b) => a[0] - b[0])) {
-		if ((recognized.get(line) ?? 0) >= count) continue;
-		unrecognized.push(`${file}:${line}: ${lines[line - 1].trim()}`);
-	}
-
-	assert.deepEqual(
-		unrecognized,
-		[],
-		`checkout syntax the scanner cannot inspect (rewrite as a block-style step, or teach CHECKOUT_USES to match it): ${unrecognized.join(" | ")}`,
-	);
+function lineOf(node, lineCounter) {
+	return node?.range ? lineCounter.linePos(node.range[0]).line : 0;
 }
 
 function collectCheckouts(content, file) {
-	const lines = content.split(/\r?\n/);
+	const { doc, lineCounter } = parseWorkflow(content, file);
 	const checkouts = [];
-	for (let usesIndex = 0; usesIndex < lines.length; usesIndex++) {
-		if (!CHECKOUT_USES.test(lines[usesIndex])) continue;
+	// Anchors may be referenced repeatedly and may even recurse. Visiting each
+	// resolved node once terminates; the effect on the count is fail-closed, since a
+	// step reused through N aliases is counted once and can only push the total down
+	// toward the floor, never hide a policy violation.
+	const seen = new Set();
 
-		const usesIndent = indentOf(lines[usesIndex]);
-		let start = usesIndex;
-		for (let i = usesIndex; i >= 0; i--) {
-			const dash = lines[i].match(/^(\s*)- /);
-			if (dash && dash[1].length <= usesIndent) {
-				start = i;
-				break;
-			}
-		}
+	const deref = (node) => (isAlias(node) ? node.resolve(doc) : node);
 
-		const stepIndent = indentOf(lines[start]);
-		let end = start;
-		for (let i = start + 1; i < lines.length; i++) {
-			const line = lines[i];
-			if (line.trim() === "") continue;
-			if (/^\s*#/.test(line)) {
-				end = i;
-				continue;
-			}
-			if (indentOf(line) <= stepIndent) break;
-			end = i;
-		}
+	const scalarValue = (node) => {
+		const resolved = deref(node);
+		return isScalar(resolved) ? resolved.value : undefined;
+	};
 
-		let commentStart = start;
-		for (let i = start - 1; i >= 0; i--) {
-			const line = lines[i];
-			if (line.trim() === "" || /^\s*#/.test(line)) {
-				commentStart = i;
-				continue;
-			}
-			break;
-		}
-		while (commentStart < start && lines[commentStart].trim() === "") {
-			commentStart++;
-		}
+	const pairsNamed = (map, key) =>
+		map.items.filter((pair) => scalarValue(pair.key) === key);
 
-		const block = lines.slice(commentStart, end + 1).join("\n");
-		const nameMatch = block.match(/^\s+- name:\s*(.+)$/m) ?? block.match(/^\s+name:\s*(.+)$/m);
-		const persistMatch = block.match(/^\s+persist-credentials:\s*['"]?(true|false)['"]?\s*(?:#.*)?$/m);
-		checkouts.push({
+	const describe = (map, usesPair, comment) => {
+		const withPair = pairsNamed(map, "with")[0];
+		const withMap = withPair ? deref(withPair.value) : undefined;
+		const persistPair = isMap(withMap) ? pairsNamed(withMap, "persist-credentials")[0] : undefined;
+		const persistRaw = persistPair ? scalarValue(persistPair.value) : undefined;
+		// Actions treats inputs as strings, so `false` and "false" mean the same thing.
+		const persistCredentials =
+			persistRaw === undefined || persistRaw === null ? null : String(persistRaw) === "true";
+
+		return {
 			file,
-			name: nameMatch ? nameMatch[1].trim() : "",
-			persistCredentials: persistMatch ? persistMatch[1] === "true" : null,
-			block,
-			line: usesIndex + 1,
-		});
-	}
-	assertEveryMentionRecognized(lines, checkouts, file);
-	assertEveryUsesIsInspectable(lines, file);
+			name: String(scalarValue(pairsNamed(map, "name")[0]?.value) ?? "").trim(),
+			persistCredentials,
+			comment: comment ?? "",
+			// For a step reached through an alias this is the anchor's definition site,
+			// which is where an author would have to make the fix.
+			line: lineOf(usesPair.key ?? map, lineCounter),
+		};
+	};
+
+	const visit = (node, comment) => {
+		const resolved = deref(node);
+		if (!resolved || seen.has(resolved)) return;
+		if (!isMap(resolved) && !isSeq(resolved)) return;
+		seen.add(resolved);
+
+		const attached = resolved.commentBefore ?? comment ?? "";
+
+		if (isSeq(resolved)) {
+			resolved.items.forEach((item, index) => {
+				// A comment before the FIRST item is hoisted onto the sequence itself,
+				// so item 0 inherits it; later items carry their own commentBefore.
+				visit(item, index === 0 ? attached : (deref(item)?.commentBefore ?? ""));
+			});
+			return;
+		}
+
+		// No duplicate-`uses:` guard here on purpose: the parser's uniqueKeys check
+		// rejects a repeated key as a parse error before this code runs, so such a
+		// guard would be unreachable. The test below pins that it is the parser's job.
+		const usesPair = pairsNamed(resolved, "uses")[0];
+		if (usesPair) {
+			const uses = scalarValue(usesPair.value);
+			if (typeof uses === "string" && CHECKOUT_ACTION.test(uses.trim())) {
+				checkouts.push(describe(resolved, usesPair, attached));
+			}
+		}
+
+		for (const pair of resolved.items) {
+			visit(pair.value, deref(pair.value)?.commentBefore ?? "");
+		}
+	};
+
+	visit(doc.contents, "");
 	return checkouts;
 }
 
@@ -224,7 +161,7 @@ function assertCheckoutPolicy(checkouts, allowlist) {
 		const allowed = remaining.get(key);
 		if (allowed) {
 			assert.match(
-				checkout.block,
+				checkout.comment,
 				allowed.commentMustMatch,
 				`${checkout.file}:${checkout.line} is allowlisted but has no YAML comment matching ${allowed.commentMustMatch}`,
 			);
@@ -268,11 +205,10 @@ function yamlFilesUnder(dir) {
 
 // All YAML under .github/, not just .github/workflows/. A composite action at
 // .github/actions/<name>/action.yml runs its own steps, including its own
-// actions/checkout, and a file the scanner never opens is a file it cannot police —
-// the same fail-open as unrecognized syntax, one directory over. Recursing on the
-// whole .github tree rather than allowlisting action.yml means a new location does
-// not need this list updated to be covered. Plus the repo-root action.yml, the
-// published action surface, which lives outside .github/.
+// actions/checkout, and a file the scanner never opens is a file it cannot police.
+// Recursing the whole .github tree rather than allowlisting known directories means a
+// new location does not need this list updated to be covered. Plus the repo-root
+// action.yml, the published action surface, which lives outside .github/.
 function workflowFiles(root = ".") {
 	return [...yamlFilesUnder(join(root, ".github")), join(root, "action.yml")];
 }
@@ -283,7 +219,7 @@ test("every actions/checkout sets persist-credentials: false or is allowlisted",
 	);
 	assert.ok(
 		checkouts.length >= MINIMUM_CHECKOUT_COUNT,
-		`expected at least ${MINIMUM_CHECKOUT_COUNT} actions/checkout steps, found ${checkouts.length}; checkouts left the scanned file set, so raise the floor only if they are genuinely gone`,
+		`expected at least ${MINIMUM_CHECKOUT_COUNT} actions/checkout steps, found ${checkouts.length}; checkouts left the scanned file set, so lower the floor only if they are genuinely gone`,
 	);
 	assertCheckoutPolicy(checkouts, PERSISTED_CREDENTIAL_ALLOWLIST);
 });
@@ -297,8 +233,8 @@ test("allowlisted checkouts document why persisted git credentials are required"
 			1,
 			`${entry.file} name=${JSON.stringify(entry.name)} must identify exactly one checkout`,
 		);
-		assert.match(matches[0].block, entry.commentMustMatch);
-		assert.match(matches[0].block, /#/);
+		assert.match(matches[0].comment, entry.commentMustMatch);
+		assert.notEqual(matches[0].comment, "", "an allowlisted checkout must carry a YAML comment");
 	}
 });
 
@@ -342,134 +278,53 @@ test("scanner accepts persist-credentials: false and rejects a stale allowlist e
 	);
 });
 
-test("scanner rejects a flow-mapping checkout instead of silently skipping it", () => {
-	// Valid YAML, runs on Actions, never matches CHECKOUT_USES. Before the coverage
-	// guard this yielded zero checkouts and assertCheckoutPolicy passed on nothing.
-	const yaml = [
-		"jobs:",
-		"  review:",
-		"    steps:",
-		"      - { uses: actions/checkout@v4 }",
-	].join("\n");
-	assert.throws(
-		() => collectCheckouts(yaml, "example.yml"),
-		/example\.yml:4: - \{ uses: actions\/checkout@v4 \}/,
-	);
-});
+// The obfuscations that defeated the five regex generations. Each must now be
+// RESOLVED and policed like any other checkout, not merely rejected as unreadable.
+const OBFUSCATIONS = {
+	"flow mapping": ["      - { uses: actions/checkout@v4 }"],
+	"solidus escape": ['      - uses: "actions\\/checkout@v4"'],
+	"unicode escape": ['      - uses: "actions\\u002Fcheckout@v4"'],
+	"line continuation": ['      - uses: "actions/check\\', '          out@v4"'],
+	"quoted key": ['      - "uses": actions/checkout@v4'],
+	"quoted key and escaped value": ['      - "uses": "actions\\/checkout@v4"'],
+	"unicode-escaped key and value": ['      - "\\u0075ses": "actions\\u002Fcheckout@v4"'],
+	"folded block scalar": ["      - uses: >-", "          actions/checkout@v4"],
+	"literal block scalar": ["      - uses: |-", "          actions/checkout@v4"],
+	"single-quoted": ["      - uses: 'actions/checkout@v4'"],
+};
 
-test("scanner rejects unrecognized checkout syntax even when it sets persist-credentials: false", () => {
-	// Inspectability, not policy: the scanner may not conclude "compliant" from
-	// syntax whose step boundaries it cannot resolve.
-	const yaml = [
-		"jobs:",
-		"  review:",
-		"    steps:",
-		"      - {uses: actions/checkout@v4, with: {persist-credentials: false}}",
-	].join("\n");
-	assert.throws(() => collectCheckouts(yaml, "example.yml"), /example\.yml:4/);
-});
-
-test("one unrecognized checkout fails the scan even when the other steps are compliant", () => {
-	const yaml = [
-		"jobs:",
-		"  review:",
-		"    steps:",
-		"      - uses: actions/checkout@v4",
-		"        with:",
-		"          persist-credentials: false",
-		"      - { uses: actions/checkout@v4 }",
-	].join("\n");
-	assert.throws(
-		() => collectCheckouts(yaml, "example.yml"),
-		(error) => {
-			assert.match(error.message, /example\.yml:7/);
-			assert.doesNotMatch(error.message, /example\.yml:4/);
-			return true;
-		},
-	);
-});
-
-test("a commented-out checkout is not treated as an unrecognized step", () => {
-	const yaml = [
-		"jobs:",
-		"  review:",
-		"    steps:",
-		"      # - uses: actions/checkout@v4  (dropped; the job clones its own copy)",
-		"      - uses: actions/checkout@v4",
-		"        with:",
-		"          persist-credentials: false",
-	].join("\n");
-	const checkouts = collectCheckouts(yaml, "example.yml");
-	assert.equal(checkouts.length, 1);
-	assert.equal(checkouts[0].line, 5);
-});
-
-test("a checkout spelled around the literal fails closed", () => {
-	// The three spellings that defeated CHECKOUT_MENTION. All resolve to
-	// actions/checkout@v4 under YAML 1.2; none contains the literal on one line.
-	const spellings = {
-		"solidus escape": '      - uses: "actions\\/checkout@v4"',
-		"unicode escape": '      - uses: "actions\\u002Fcheckout@v4"',
-	};
-	for (const [label, step] of Object.entries(spellings)) {
-		const yaml = ["jobs:", "  a:", "    steps:", step].join("\n");
+test("every known obfuscation resolves to a policed checkout", () => {
+	for (const [label, step] of Object.entries(OBFUSCATIONS)) {
+		const yaml = ["jobs:", "  a:", "    steps:", ...step].join("\n");
+		const checkouts = collectCheckouts(yaml, "sneaky.yml");
+		assert.equal(checkouts.length, 1, `${label}: must resolve to exactly one checkout`);
+		assert.equal(checkouts[0].persistCredentials, null, `${label}: persistence is on by default`);
 		assert.throws(
-			() => collectCheckouts(yaml, "sneaky.yml"),
-			/sneaky\.yml:4: .*cannot resolve|cannot resolve.*sneaky\.yml:4/s,
-			`${label} must be rejected`,
+			() => assertCheckoutPolicy(checkouts, []),
+			/persist-credentials: false or be allowlisted/,
+			`${label}: must fail the policy`,
 		);
 	}
-
-	// Line continuation: the closing quote is on the next line, so the value is not a
-	// plain scalar and the reference is split across two lines.
-	const continued = [
-		"jobs:",
-		"  a:",
-		"    steps:",
-		'      - uses: "actions/check\\',
-		'          out@v4"',
-	].join("\n");
-	assert.throws(() => collectCheckouts(continued, "sneaky.yml"), /cannot resolve/);
 });
 
-test("every uses: form the repo relies on stays inspectable", () => {
-	// Guards the other direction: fail closed on unparseable, not on unfamiliar.
+test("an obfuscated checkout that does disable persistence is accepted", () => {
+	// The mirror of the test above: the scanner reads the real value, so a compliant
+	// step written in an unusual style passes rather than being rejected for its style.
 	const yaml = [
 		"jobs:",
 		"  a:",
 		"    steps:",
-		"      - uses: actions/checkout@v4",
-		"        with:",
-		"          persist-credentials: false",
-		"      - uses: actions/setup-node@v4",
-		"      - uses: frankekn/needlefish@v0",
-		"      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0",
-		"        with:",
-		"          persist-credentials: false",
-		'      - uses: "actions/setup-node@v4"',
-		"      - uses: 'actions/setup-node@v4'",
-		"      - uses: ./.github/actions/setup",
-		"      - uses: owner/repo/sub/dir@main",
-		"      - uses: docker://alpine:3.19",
-		"      # - uses: whatever/nonsense@\\/weird",
+		'      - { "uses": "actions\\/checkout@v4", with: { persist-credentials: false } }',
 	].join("\n");
-	const checkouts = collectCheckouts(yaml, "legit.yml");
-	assert.equal(checkouts.length, 2, "both plain checkouts stay recognized");
+	const checkouts = collectCheckouts(yaml, "sneaky.yml");
+	assert.equal(checkouts.length, 1);
+	assert.equal(checkouts[0].persistCredentials, false);
 	assertCheckoutPolicy(checkouts, []);
 });
 
-test("a YAML alias cannot smuggle a checkout past the scanner", () => {
-	// Actions has resolved anchors/aliases since 2025-09, so `uses: *checkout` runs.
-	// It is still not a bypass, and the reason is worth pinning: aliases are
-	// file-scoped, so an alias needs an `&anchor` in the SAME file, and YAML has no
-	// concatenation — the anchor's value must spell out `actions/checkout`. That
-	// definition line is never a plain `uses: actions/checkout@...`, so CHECKOUT_USES
-	// misses it, CHECKOUT_MENTION sees it, and the coverage guard rejects the file.
-	//
-	// Do NOT "fix" this by teaching the mention scan to skip anchor definitions or by
-	// resolving aliases: skipping the definition line is what would open the hole.
+test("YAML anchors and aliases resolve to policed checkouts", () => {
 	const variants = {
-		"anchor on a uses: line": [
+		"anchor on a uses: value": [
 			"jobs:",
 			"  a:",
 			"    steps:",
@@ -478,7 +333,7 @@ test("a YAML alias cannot smuggle a checkout past the scanner", () => {
 			"    steps:",
 			"      - uses: *checkout",
 		],
-		"anchor on a non-uses key": [
+		"anchor on an unrelated key": [
 			"x-defs:",
 			"  checkout: &checkout actions/checkout@v4",
 			"jobs:",
@@ -497,12 +352,73 @@ test("a YAML alias cannot smuggle a checkout past the scanner", () => {
 	};
 
 	for (const [label, lines] of Object.entries(variants)) {
+		const checkouts = collectCheckouts(lines.join("\n"), "alias.yml");
+		assert.ok(checkouts.length >= 1, `${label}: the aliased checkout must be found`);
 		assert.throws(
-			() => collectCheckouts(lines.join("\n"), "alias.yml"),
-			/cannot inspect/,
-			`${label}: the anchor definition must fail the coverage guard`,
+			() => assertCheckoutPolicy(checkouts, []),
+			/persist-credentials: false or be allowlisted/,
+			`${label}: must fail the policy`,
 		);
 	}
+});
+
+test("a commented-out checkout is not a step", () => {
+	const yaml = [
+		"jobs:",
+		"  review:",
+		"    steps:",
+		"      # - uses: actions/checkout@v4  (dropped; the job clones its own copy)",
+		"      - uses: actions/checkout@v4",
+		"        with:",
+		"          persist-credentials: false",
+	].join("\n");
+	const checkouts = collectCheckouts(yaml, "example.yml");
+	assert.equal(checkouts.length, 1);
+	assert.equal(checkouts[0].line, 5);
+});
+
+test("a step declaring uses: twice is rejected by the parser, not silently last-wins", () => {
+	// Ambiguity is a bypass shape: if the scanner read the first `uses:` and Actions
+	// ran the second, a checkout could hide behind a benign-looking step.
+	const yaml = [
+		"jobs:",
+		"  a:",
+		"    steps:",
+		"      - uses: actions/setup-node@v4",
+		"        uses: actions/checkout@v4",
+	].join("\n");
+	assert.throws(
+		() => collectCheckouts(yaml, "dup.yml"),
+		/dup\.yml:\d+: workflow YAML does not parse cleanly: Map keys must be unique/,
+	);
+});
+
+test("a workflow that does not parse fails with its file and line", () => {
+	const yaml = ["jobs:", "  a:", "    steps:", "      - uses: [unterminated"].join("\n");
+	assert.throws(() => collectCheckouts(yaml, "broken.yml"), /broken\.yml:\d+: workflow YAML does not parse/);
+});
+
+test("every uses: form the repo relies on stays acceptable", () => {
+	// Fail closed on obfuscation, not on legitimate variety.
+	const yaml = [
+		"jobs:",
+		"  a:",
+		"    steps:",
+		"      - uses: actions/checkout@v4",
+		"        with:",
+		"          persist-credentials: false",
+		"      - uses: actions/setup-node@v4",
+		"      - uses: frankekn/needlefish@v0",
+		"      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0",
+		"        with:",
+		"          persist-credentials: false",
+		"      - uses: ./.github/actions/setup",
+		"      - uses: owner/repo/sub/dir@main",
+		"      - uses: docker://alpine:3.19",
+	].join("\n");
+	const checkouts = collectCheckouts(yaml, "legit.yml");
+	assert.equal(checkouts.length, 2, "both checkouts recognized, the other four forms ignored");
+	assertCheckoutPolicy(checkouts, []);
 });
 
 test("a composite action's checkout is scanned, not just .github/workflows", () => {
@@ -527,9 +443,7 @@ test("a composite action's checkout is scanned, not just .github/workflows", () 
 		);
 		writeFileSync(
 			join(root, ".github", "actions", "setup", "action.yml"),
-			["runs:", "  using: composite", "  steps:", "    - uses: actions/checkout@v4"].join(
-				"\n",
-			),
+			["runs:", "  using: composite", "  steps:", "    - uses: actions/checkout@v4"].join("\n"),
 		);
 
 		const files = workflowFiles(root);
@@ -538,9 +452,7 @@ test("a composite action's checkout is scanned, not just .github/workflows", () 
 			`composite action metadata must be in the scan set: ${files.join(", ")}`,
 		);
 
-		const checkouts = files.flatMap((file) =>
-			collectCheckouts(readFileSync(file, "utf8"), file),
-		);
+		const checkouts = files.flatMap((file) => collectCheckouts(readFileSync(file, "utf8"), file));
 		assert.throws(
 			() => assertCheckoutPolicy(checkouts, []),
 			/actions[/\\]setup[/\\]action\.yml:4 .*must set persist-credentials: false or be allowlisted/,
