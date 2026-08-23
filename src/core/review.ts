@@ -380,6 +380,29 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 // Overlap makes that assignment follow the critic's words instead of array
 // order; it does not make greedy matching complete, in either direction.
 //
+// Two things this deliberately does NOT do, both repeatedly proposed and both
+// rejected on recorded evidence — do not "fix" them without new evidence:
+//
+//   1. Require the critic to echo an opaque per-candidate identity token, or
+//      make a low-overlap match fail closed. Either turns text back into an
+//      admission test. The production critic paraphrases, and the exact-field
+//      key that did this rejected 92/252 real reviews (36.5%) on 2026-08-22.
+//      A rejection here throws away a whole real review; the defect it would
+//      buy is mis-ATTRIBUTION between two real candidates, never invention.
+//      Wrong trade.
+//   2. Withhold the critic's severity unless identity is "verified" by text
+//      similarity. Severity correction in both directions is the critic's job
+//      (prompts/critic.md; the severity-correction tests). Gating it on a
+//      similarity score would make the VERDICT depend on how heavily the
+//      critic paraphrased — a silent, unfalsifiable verdict shift, which is
+//      strictly worse in this seam than a loud, testable rule. Severity is a
+//      channel the critic legitimately owns for a candidate it matched.
+//
+// What actually bounds the critic is unchanged: content is always restored
+// from a real unused candidate, and unused.splice enforces 1:1 consumption,
+// so no critic output can add a finding that the candidate review did not
+// contain.
+//
 // Residuals have no file/line/category — the text is the identity. Word-level
 // paraphrase is too collision-prone (an invented blocking residual could
 // pair with an unrelated candidate and manufacture needs_human). Identity is
