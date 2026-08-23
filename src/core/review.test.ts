@@ -1551,7 +1551,7 @@ test("review does not fast-path policy markdown or executable files under docs p
 		"docs/CLAUDE.md",
 		"docs/GEMINI.md",
 		".claude/README.md",
-		".gemini/README.md",
+		".codex/README.md",
 		// No rule names this file; it is denied because unrecognized ALL-CAPS
 		// Markdown under docs/ fails closed. This is the case that stays fixed
 		// when the next agent CLI invents a filename.

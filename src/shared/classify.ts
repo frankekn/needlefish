@@ -26,12 +26,22 @@ const RULES: { test: RegExp; surface: Surface }[] = [
 ];
 
 // Model/agent instruction directories — generic shape, not a repo-specific path.
-// The dot-directories are agent-config trees, not prose: their Markdown (skills,
-// commands, subagent definitions, and the README/docs describing them) instructs
-// agents. They were previously excluded only by accident — nothing under them
-// matched DOCS_DIR or USER_FACING_BASENAME — which left `<dir>/README.md` and
-// `<dir>/docs/*.md` riding the fast path. Exclude them by design instead.
-const POLICY_DIR = /(^|\/)(prompts?|instructions?|\.claude|\.gemini)(\/|$)/i;
+const POLICY_DIR = /(^|\/)(prompts?|instructions?)(\/|$)/i;
+// Any dot-directory segment. A leading-dot directory is tool configuration, not
+// product documentation, and for agent CLIs it is where the policy lives:
+// `.claude/` (skills, commands, subagent definitions), `.codex/`, `.gemini/`,
+// `.cursor/`, `.github/copilot-instructions.md`. Naming them one at a time is
+// the same fail-open deny-list mistake as naming policy basenames one at a time
+// — the set grows with every new tool — so the whole shape is excluded instead.
+// Their Markdown was eligible only by accident before: `.codex/README.md` hit
+// USER_FACING_BASENAME and `.claude/docs/*.md` hit DOCS_DIR.
+//
+// Deliberate cost: genuine prose in a dot-directory (`.github/CONTRIBUTING.md`)
+// now gets a model review. A dot-directory is a small share of any repo's docs,
+// and `.github/` also holds agent policy, so failing closed here is cheap.
+// Matches a directory segment only — trailing "/" required — so `.env` and a
+// dotfile like `.README.md` are untouched by this rule.
+const DOT_DIR = /(^|\/)\.[^/]+\//;
 const DOCS_DIR = /(^|\/)docs?\//i;
 // Portable repo-policy filenames (any directory). Not target-repo nouns: an
 // entry belongs here when an agent CLI reads that filename as instructions for
@@ -79,7 +89,7 @@ export function classifyFiles(files: string[]): { path: string; surface: Surface
 
 // True only for Markdown that is safe to skip model review: descriptively named
 // prose in a docs/doc directory, or a recognized human-facing basename; never a
-// prompts-like path, an agent-config path, a named repo-policy file, or an
+// prompts-like path, a dot-directory, a named repo-policy file, or an
 // unrecognized ALL-CAPS convention name. review() also requires
 // surface === "docs". Every branch that returns true is an allowlist branch:
 // Markdown this function does not recognize gets reviewed, not passed.
@@ -87,6 +97,7 @@ export function isDocsFastPathEligible(file: string): boolean {
   const normalized = file.replace(/\\/g, "/");
   if (!DOCS_EXT.test(normalized)) return false;
   if (POLICY_DIR.test(normalized)) return false;
+  if (DOT_DIR.test(normalized)) return false;
   const base = normalized.slice(normalized.lastIndexOf("/") + 1);
   if (REPO_POLICY_BASENAME.test(base)) return false;
   const userFacing = USER_FACING_BASENAME.test(base);

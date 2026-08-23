@@ -146,12 +146,13 @@ test("isDocsFastPathEligible excludes GEMINI.md policy files anywhere in the tre
   assert.equal(isDocsFastPathEligible("docs/gemini-setup.md"), true);
 });
 
-// The agent-config dot-directories are policy trees: skills, commands, and
+// Dot-directories are tool/agent configuration trees: skills, commands, and
 // subagent definitions instruct agents, and the prose describing them is part of
-// that policy. They used to fail closed only incidentally, which left the two
+// that policy. They used to be denied only incidentally, which left the two
 // allowlist entries open -- `<dir>/README.md` (user-facing basename) and
-// `<dir>/docs/*.md` (DOCS_DIR).
-test("isDocsFastPathEligible excludes .claude agent-config Markdown", () => {
+// `<dir>/docs/*.md` (DOCS_DIR). No rule names .codex, .cursor or .aider; they
+// are denied by shape, which is what keeps the next tool's directory covered.
+test("isDocsFastPathEligible excludes dot-directory agent-config Markdown", () => {
   assert.equal(isDocsFastPathEligible(".claude/README.md"), false);
   assert.equal(isDocsFastPathEligible(".claude/docs/guide.md"), false);
   assert.equal(isDocsFastPathEligible(".claude/skills/review/SKILL.md"), false);
@@ -159,8 +160,16 @@ test("isDocsFastPathEligible excludes .claude agent-config Markdown", () => {
   assert.equal(isDocsFastPathEligible("packages/app/.claude/README.md"), false);
   assert.equal(isDocsFastPathEligible(".gemini/README.md"), false);
   assert.equal(isDocsFastPathEligible(".gemini/docs/guide.md"), false);
-  assert.equal(isDocsFastPathEligible(".gemini/commands/ship.md"), false);
+  assert.equal(isDocsFastPathEligible(".codex/README.md"), false);
+  assert.equal(isDocsFastPathEligible(".codex/docs/notes.md"), false);
+  assert.equal(isDocsFastPathEligible(".cursor/rules/style.md"), false);
+  assert.equal(isDocsFastPathEligible(".aider/README.md"), false);
+  assert.equal(isDocsFastPathEligible(".github/copilot-instructions.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/.codex/docs/guide.md"), false);
   // A normal directory that merely starts with the same letters is still docs.
   assert.equal(isDocsFastPathEligible("claude/docs/guide.md"), true);
   assert.equal(isDocsFastPathEligible("gemini/docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("codex/docs/guide.md"), true);
+  // A dotted *file* is not a dot-directory; this rule needs a path segment.
+  assert.equal(isDocsFastPathEligible("docs/.hidden-notes.md"), true);
 });
