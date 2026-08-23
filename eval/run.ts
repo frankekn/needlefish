@@ -6,7 +6,6 @@ import {
 	existsSync,
 	lstatSync,
 	mkdirSync,
-	realpathSync,
 	renameSync,
 	unlinkSync,
 } from "node:fs";
@@ -341,30 +340,37 @@ export function resumeSlots(
 			arr.push(r);
 			byFixture.set(r.fixtureId, arr);
 		}
-		const doneFixtures = new Set<string>();
+		// `skipped` counts fully-completed fixtures (kept for the existing
+		// stderr/return contract); it does not gate which individual draws
+		// are reused below. A fixture interrupted partway through a run — the
+		// exact scenario the per-draw checkpoint (issue #58) exists to
+		// survive — still has its already-good draws on disk and must not
+		// have them thrown away just because the fixture as a whole isn't
+		// done.
 		for (const spec of specs) {
 			const draws = byFixture.get(spec.id) ?? [];
 			const good = draws.filter((d) => d.score.formatOk);
 			if (good.length >= args.draws) {
-				doneFixtures.add(spec.id);
 				skipped++;
 			}
 		}
+		let reusedDraws = 0;
 		for (let i = 0; i < work.length; i++) {
 			const { spec, draw } = work[i];
-			if (!doneFixtures.has(spec.id)) continue;
 			const good = (byFixture.get(spec.id) ?? []).filter(
 				(d) => d.score.formatOk,
 			);
+			if (draw >= good.length) continue;
 			slots[i] = {
 				...good[draw],
 				draw,
 				calls: good[draw].calls ?? 0,
 				retries: good[draw].retries ?? 0,
 			};
+			reusedDraws++;
 		}
 		process.stderr.write(
-			`resume: reused ${skipped} fixture(s) with ${args.draws} good draws, re-running the rest\n`,
+			`resume: reused ${reusedDraws} draw(s) across ${skipped} fully-completed fixture(s), re-running the rest\n`,
 		);
 	} catch (err) {
 		process.stderr.write(
@@ -482,39 +488,49 @@ export function aggregateMustFindHitRates(
 // at different sizes; a later call must not replace a larger checkpoint.
 const lastCheckpointCounts = new Map<string, number>();
 
-function atomicWriteFile(targetPath: string, contents: string): void {
-	// rename(2) does not dereference a symlink in its final path component:
-	// renaming a temp file onto a symlinked targetPath would unlink the
-	// symlink itself and install a plain file in its place, silently
-	// destroying the alias. Resolve a symlinked target to its real
-	// destination first and rename into *that* (same-filesystem) directory,
-	// so the symlink survives and the rename stays atomic.
-	let resolvedTarget = targetPath;
-	try {
-		if (lstatSync(targetPath).isSymbolicLink()) {
-			try {
-				resolvedTarget = realpathSync(targetPath);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-					throw error;
-				}
-				// Dangling symlink: realpathSync fails because the pointed-to
-				// file doesn't exist yet. Resolve the link's own text relative
-				// to its directory — the same way the OS follows a relative
-				// symlink — so the alias becomes valid after this write
-				// instead of being replaced by a plain file.
-				resolvedTarget = path.resolve(
-					path.dirname(targetPath),
-					readlinkSync(targetPath),
-				);
+// Symlink chains can be arbitrarily long; this is comfortably above what any
+// real --report path would use and matches the ballpark of the OS's own
+// ELOOP threshold (Linux: 40). It exists to fail closed on a cycle rather
+// than hang, not to be a realistic chain length.
+const MAX_SYMLINK_CHAIN = 40;
+
+// rename(2) does not dereference a symlink in its final path component:
+// renaming a temp file onto a symlinked target would unlink the symlink
+// itself (or, mid-chain, an intermediate link) and install a plain file in
+// its place, silently destroying the alias. Walk the chain by hand — one
+// lstat+readlink hop at a time — rather than leaning on realpathSync, so a
+// live chain, a chain broken at its final hop (dangling), and no symlink at
+// all are all resolved by the same logic to the same real write
+// destination. A dangling final hop resolves to the path it points at
+// (which this write will then create) instead of stopping at the last
+// intermediate link.
+function resolveWriteDestination(targetPath: string): string {
+	let current = targetPath;
+	for (let hops = 0; hops < MAX_SYMLINK_CHAIN; hops++) {
+		let stat;
+		try {
+			stat = lstatSync(current);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw error;
 			}
+			// Nothing at `current`: either targetPath never existed, or we
+			// walked a chain of symlinks to a dangling final link. Either
+			// way, this is the real write destination.
+			return current;
 		}
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			throw error;
+		if (!stat.isSymbolicLink()) {
+			return current;
 		}
-		// Nothing at targetPath yet; write straight through as before.
+		current = path.resolve(path.dirname(current), readlinkSync(current));
 	}
+	throw new Error(
+		`symlink chain too deep resolving --report target: ${targetPath}`,
+	);
+}
+
+function atomicWriteFile(targetPath: string, contents: string): void {
+	const resolvedTarget = resolveWriteDestination(targetPath);
 	const directory = path.dirname(resolvedTarget);
 	mkdirSync(directory, { recursive: true });
 	const tempPath = path.join(

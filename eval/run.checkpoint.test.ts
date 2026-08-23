@@ -244,6 +244,92 @@ test("writeReport: a dangling symlinked --report target is written through and s
 	assert.deepEqual(leftoverTemps(dir), []);
 });
 
+// A single hop of a dangling chain is not enough: rename(2) would still
+// unlink an *intermediate* symlink (link -> mid -> real, where real doesn't
+// exist yet) and replace it with a plain file, leaving `link` broken. The
+// whole chain must be walked to the final (possibly nonexistent) target.
+test("writeReport: a multi-hop dangling symlink chain is written through and every link survives", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-chain-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const realPath = path.join(dir, "not-yet-created.json");
+	const midPath = path.join(dir, "mid-link.json");
+	const linkPath = path.join(dir, "report.json");
+	symlinkSync(realPath, midPath);
+	symlinkSync(midPath, linkPath);
+	const spec = checkpointSpec("checkpoint-chain");
+	const args = parseArgs(["--draws", "1", "--report", linkPath]);
+
+	writeReport(args, [makeDraw(spec, 0)], [spec]);
+
+	assert.equal(
+		lstatSync(linkPath).isSymbolicLink(),
+		true,
+		"the outer --report symlink must survive",
+	);
+	assert.equal(readlinkSync(linkPath), midPath);
+	assert.equal(
+		lstatSync(midPath).isSymbolicLink(),
+		true,
+		"the intermediate symlink must survive, not be replaced by the report file",
+	);
+	assert.equal(readlinkSync(midPath), realPath);
+	assert.equal(existsSync(realPath), true, "the chain's final target must be created");
+	const onDiskViaLink = readReport(linkPath);
+	assert.equal(onDiskViaLink.results.length, 1);
+	assert.deepEqual(leftoverTemps(dir), []);
+});
+
+// resumeSlots gated ALL of a fixture's slot reuse on the fixture having
+// args.draws good results. A fixture interrupted partway through (the exact
+// case the per-draw checkpoint exists to survive) would have its
+// already-good draws discarded and rerun from scratch on --resume,
+// defeating the checkpoint's purpose at fixture granularity.
+test("resumeSlots: reuses already-checkpointed draws from a partially-completed fixture", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(
+		path.join(tmpdir(), "needlefish-checkpoint-partial-resume-"),
+	);
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const reportPath = path.join(dir, "report.json");
+	const spec = checkpointSpec("checkpoint-partial-resume");
+	const specs = [spec];
+	const writeArgs = parseArgs(["--draws", "2", "--report", reportPath]);
+	// Only draw 0 completed before the process was interrupted; draw 1 never ran.
+	writeReport(writeArgs, [makeDraw(spec, 0)], specs);
+
+	const resumeArgs = parseArgs([
+		"--draws",
+		"2",
+		"--report",
+		reportPath,
+		"--resume",
+		reportPath,
+	]);
+	const work = [
+		{ spec, draw: 0 },
+		{ spec, draw: 1 },
+	];
+	const resumed = resumeSlots(resumeArgs, specs, work);
+
+	assert.equal(
+		resumed.skipped,
+		0,
+		"the fixture is not fully complete and must not count as skipped",
+	);
+	assert.notEqual(
+		resumed.slots[0],
+		null,
+		"the already-checkpointed draw 0 must be reused, not rerun",
+	);
+	assert.equal(resumed.slots[0]?.draw, 0);
+	assert.equal(
+		resumed.slots[1],
+		null,
+		"draw 1 was never completed and must still be scheduled",
+	);
+});
+
 test("checkpoint: an interrupted fresh run leaves a partial report a later process --resume continues", (t) => {
 	withGuardEnv(t);
 	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-resume-"));
