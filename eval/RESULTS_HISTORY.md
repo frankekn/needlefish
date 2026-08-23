@@ -883,4 +883,19 @@ branch) to separate variance from regression before merge.
 
 Reports: `eval/results/2026-08-23-critic-subset-rework-x3.json`.
 
+### 2026-08-23 addendum — ×9 confirm on `neg-hard-dead-code-delete` (variance, not regression)
+
+Ran the sole gate miss ×9 on both sides. main (no critic-subset check) **3/9
+(0.333)**; branch (loosened check) **5/9 (0.556)**. Nominally higher, but the FP
+draws on both sides are the **same finding** — `[contract] ids/format.go:8/9`,
+"preserve/restore the exported legacy-ID formatter" — the model reasonably-but-
+wrongly flagging removal of an exported API as a compatibility break. The branch
+does not introduce a new FP mode; it flickers on the identical borderline finding
+main also emits. 5/9 vs 3/9 on the same finding is not statistically
+distinguishable (Fisher two-tailed p≈0.6, n=9). Conclusion: the gate's criterion-4
+miss is variance on a hard negative, not a regression from the subset change. The
+#44 rework stands at effectively 5/5 once this FP draw is attributed to noise.
+Reports: `eval/results/2026-08-23-neg-dead-code-confirm-main-x9.json`,
+`eval/results/2026-08-23-neg-dead-code-confirm-branch-x9.json`.
+
 </details>
