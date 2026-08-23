@@ -447,9 +447,9 @@ Cost and behavior notes:
   low-latency option.
 
 The composite action does not add PR comment commands to the consumer repo.
-This repository's `.github/workflows/commands.yml` listens for
-`@needlefish recheck` and `@needlefish explain <finding>` comments from
-maintainers with write access to this repository. Recheck dispatches this repo's
+This repository's `.github/workflows/commands.yml` listens for maintainer
+`@needlefish recheck` and `@needlefish explain <finding>` comments
+(OWNER / MEMBER / COLLABORATOR only). Recheck dispatches this repo's
 `review.yml`; explain runs `needlefish explain` on a self-hosted runner that
 already has `~/.local/bin/needlefish`. Copying that file into another repo
 only works after you retarget those two jobs.

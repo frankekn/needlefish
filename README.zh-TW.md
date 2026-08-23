@@ -385,8 +385,8 @@ Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了�
 `pull_request_target`，因為它會把 secrets 交給由 fork code 觸發的 workflow。
 
 composite action 不會把 PR 留言指令加進 consumer repo。本 repo 的
-`.github/workflows/commands.yml` 會監聽對本 repo 具有 write 權限之維護者的
-`@needlefish recheck` 與 `@needlefish explain <finding>`
+`.github/workflows/commands.yml` 會監聽維護者（僅 OWNER／MEMBER／
+COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
 留言。recheck 會 dispatch 本 repo 的 `review.yml`；explain 在已部署
 `~/.local/bin/needlefish` 的 self-hosted runner 上執行 `needlefish explain`。
 把該檔案複製到其他 repo 之前，必須改寫這兩個 job 的目標。
