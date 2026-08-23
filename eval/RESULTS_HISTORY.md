@@ -862,22 +862,24 @@ Same lane and baseline, criteria **pre-declared before the run**
 
 | Pre-declared criterion | Result | |
 | --- | --- | --- |
-| `formatOk===false` ≤ 3/252, zero subset-rejection errors | 2/252, 0 errors (was 92) | pass |
+| `formatOk===false` ≤ 3/252, zero subset-rejection errors | 2/252 (was 92), but **both are subset-rejection errors** | **miss** (corrected 2026-08-23, see correction below) |
 | No systematic recall regression (\|reg−imp\|≤5; drops ≤1 draw bar 2 known-flaky) | 4 down / 5 up | pass |
 | `meanNoisePerPositive` ≥ 0.09 | 0.1149 | pass |
 | False-positive draws ≤ baseline (4) | 5 | **miss** |
 | anti-cheat v2, hashes match, cheat 0 | yes | pass |
 
 The two remaining `formatOk===false` draws (`t3-cache-key-tenant`,
-`real-pr4-options-not-forwarded`) carry no error and `verdict=null` — pre-existing
-envelope flakiness, not the subset check. The one extra false positive is on
+`real-pr4-options-not-forwarded`) were recorded here as carrying no error —
+**that is wrong; both are subset-check rejections** (correction below). The one
+extra false positive is on
 `neg-hard-dead-code-delete`, already non-deterministic at 1/3 on the baseline
 (now 2/3). Mechanism: the critic still cannot invent; the FP finding was in the
 *candidate* review, and the old strict key masked it by rejecting the whole
 review on paraphrase. Loosening unmasks a pre-existing candidate-review FP rather
 than creating one. Per EVAL DISCIPLINE the pre-declared FP criterion is not
-softened after the fact: the gate is 4/5, the sole miss being one FP draw on a
-flickering hard negative, mechanism-explained. Maintainer decision: accept on
+softened after the fact: the gate is 3/5 (criterion 1 also missed — corrected
+2026-08-23), the FP miss being one draw on a flickering hard negative,
+mechanism-explained. Maintainer decision: accept on
 the mechanism, or run an x9 confirm on `neg-hard-dead-code-delete` (main vs
 branch) to separate variance from regression before merge.
 
@@ -893,9 +895,52 @@ wrongly flagging removal of an exported API as a compatibility break. The branch
 does not introduce a new FP mode; it flickers on the identical borderline finding
 main also emits. 5/9 vs 3/9 on the same finding is not statistically
 distinguishable (Fisher two-tailed p≈0.6, n=9). Conclusion: the gate's criterion-4
-miss is variance on a hard negative, not a regression from the subset change. The
-#44 rework stands at effectively 5/5 once this FP draw is attributed to noise.
+miss is variance on a hard negative, not a regression from the subset change.
+(The addendum originally concluded the rework "stands at effectively 5/5 once
+this FP draw is attributed to noise" — that conclusion does not hold: criterion 1
+also missed, see the correction below. The ×9 evidence about criterion 4 is
+unaffected.)
 Reports: `eval/results/2026-08-23-neg-dead-code-confirm-main-x9.json`,
 `eval/results/2026-08-23-neg-dead-code-confirm-branch-x9.json`.
+
+### 2026-08-23 correction — criterion 1 also missed; re-derived from the retained report
+
+Re-derived from `eval/results/2026-08-23-critic-subset-rework-x3.json` itself
+(not from the summary above). Both `formatOk===false` rows carry a
+subset-check error, so pre-declared criterion 1 ("zero subset-rejection
+errors") **missed**. The recorded gate is **3/5**, not 4/5.
+
+| fixture | draw | error |
+| --- | --- | --- |
+| `t3-cache-key-tenant` | 1 | `malformed critic output: finding was not in the candidate review` |
+| `real-pr4-options-not-forwarded` | 0 | `malformed critic output: residual risk was not in the candidate review` |
+
+Checkable: `jq -r '.results[] | select(.score.formatOk == false) | [.fixtureId,
+.draw, .score.error] | @tsv'` returns exactly those two rows, and the report's
+own `aggregates.criticPruneErrorRate` is `0.0115`, not `0`. So the loosened
+check still fail-closes ~2/252 real production draws: one on the finding
+matcher, one on the residual exact-text identity. That is the residual cost of
+the design, and it is data, not an argument for or against merging — the
+revert/accept decision stays with the maintainer.
+
+Two further observations, recorded, **not** re-declared as criteria for this
+run (re-declaring after seeing results is tuning the answer key):
+
+- Tier-1 recall was `0.9048` (`real-pr1-self-review-tool-checkout` 1/3; both
+  missing draws carry no error, and their two candidate findings are 10 lines
+  apart, so the subset matcher is not implicated — the model's wording simply
+  missed the anchored `mustFind` pattern). The pre-declared table contains no
+  tier-1 criterion, while the 2026-07-26 entry failed a lane for exactly this
+  fixture at 2/3. The owed re-gate should pre-declare where tier-1 sits for a
+  pipeline change.
+- The gate ran at `49f12b9`. The matcher changed again afterwards
+  (equidistant matches are now broken by token overlap instead of candidate
+  array order), so **no recorded gate describes HEAD**. A fresh full
+  production-lane, holdout-included ×3 gate with criteria declared beforehand
+  is owed before merge. Evidence that the tie-break is likely outcome-neutral
+  on this fixture set, offered as a prior and not as a substitute: no draw in
+  the 252 retained results has two final findings sharing file+category within
+  4 lines, so no recorded draw exhibits the ambiguity the tie-break resolves
+  (candidate-level findings are not retained, so this is not proof).
 
 </details>
