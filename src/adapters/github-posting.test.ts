@@ -36,6 +36,7 @@ type Fixture = {
 	readonly repo: string;
 	readonly reviewOutput: string;
 	readonly reviewsState: string;
+	readonly issueCommentsState: string;
 	readonly runnerLog: string;
 	readonly headSha: string;
 };
@@ -199,6 +200,12 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"const fs = require('node:fs');",
 			"const args = process.argv.slice(2);",
 			"if (args[0] !== 'api') process.exit(2);",
+			// Mirror the live API: every user object carries `type`, and GitHub
+			// only ever pairs a `[bot]` login with type "Bot". Verified against
+			// `gh api repos/frankekn/needlefish/pulls/71/reviews`, which returns
+			// {login: "github-actions[bot]", type: "Bot"}.
+			`const AUTHOR_LOGIN = ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")};`,
+			"const AUTHOR_TYPE = AUTHOR_LOGIN.endsWith('[bot]') ? 'Bot' : 'User';",
 			"if (args.includes('--input')) {",
 			"  const payload = fs.readFileSync(0, 'utf8');",
 			`  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload }) + '\\n');`,
@@ -210,7 +217,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  const apiPath = methodIdx >= 0 ? args[methodIdx + 2] : args[1];",
 			"  if (apiPath === reviewsEndpoint && method === 'POST') {",
 			"    const parsed = JSON.parse(payload);",
-			`    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} } });`,
+			"    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
 			"    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
 			"  }",
 			"  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT') {",
@@ -228,7 +235,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
 			"    const parsed = JSON.parse(payload);",
 			"    const nextId = issueComments.length + 1;",
-			`    issueComments.push({ id: nextId, node_id: 'IC_node_' + nextId, body: parsed.body || '', user: { login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} } });`,
+			"    issueComments.push({ id: nextId, node_id: 'IC_node_' + nextId, body: parsed.body || '', user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
 			"    fs.writeFileSync(issueCommentsPath, JSON.stringify(issueComments));",
 			"  }",
 			"  process.stdout.write('{}');",
@@ -270,7 +277,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.stdout.write(JSON.stringify(issueComments));",
 			"  process.exit(0);",
 			"}",
-			`if (args[1] === 'user') { if (${JSON.stringify(opts.failUserApi === true)} === true) { process.stderr.write('simulated user lookup failure'); process.exit(1); } process.stdout.write(JSON.stringify({ login: ${JSON.stringify(opts.authorLogin ?? "github-actions[bot]")} })); process.exit(0); }`,
+			`if (args[1] === 'user') { if (${JSON.stringify(opts.failUserApi === true)} === true) { process.stderr.write('simulated user lookup failure'); process.exit(1); } process.stdout.write(JSON.stringify({ login: AUTHOR_LOGIN, type: AUTHOR_TYPE })); process.exit(0); }`,
 			"if (args[1] === 'graphql') {",
 			`  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload: '' }) + '\\n');`,
 			"  process.stdout.write('{}');",
@@ -305,6 +312,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		repo,
 		reviewOutput: reviewOutputFile,
 		reviewsState,
+		issueCommentsState,
 		runnerLog,
 		headSha: targetHeadSha,
 	};
@@ -1017,7 +1025,10 @@ test("runGithub finds a state-bearing review on the second paginated page", asyn
 
 // --- State-marker author trust (same-head dedupe must not trust strangers) ---
 
-test("runGithub still skips same-head review when the marker is from a trusted bot author", async (t) => {
+// The production identity: under GITHUB_TOKEN, Needlefish's reviews come back
+// from the API as {login: "github-actions[bot]", type: "Bot"} (verified live
+// on frankekn/needlefish#71). This is the identity the dedupe must still trust.
+test("runGithub still skips same-head review when the marker is from the real github-actions[bot] identity", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 50,
 		rawReview: defaultRawReview(),
@@ -1026,7 +1037,7 @@ test("runGithub still skips same-head review when the marker is from a trusted b
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "github-actions" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 	]);
 
@@ -1036,7 +1047,7 @@ test("runGithub still skips same-head review when the marker is from a trusted b
 	assert.deepEqual(readPosts(fixture.postLog), [], "dedupe must post nothing");
 });
 
-test("runGithub still skips same-head review when the marker is from a [bot] suffix author", async (t) => {
+test("runGithub still skips same-head review when the marker is from a GitHub App bot identity", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 51,
 		rawReview: defaultRawReview(),
@@ -1045,7 +1056,7 @@ test("runGithub still skips same-head review when the marker is from a [bot] suf
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "needlefish[bot]" },
+			user: { login: "needlefish[bot]", type: "Bot" },
 		},
 	]);
 
@@ -1065,7 +1076,7 @@ test("runGithub still skips same-head review when the marker is from the authent
 		{
 			id: 7,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "frank-pat" },
+			user: { login: "frank-pat", type: "User" },
 		},
 	]);
 
@@ -1079,6 +1090,106 @@ test("runGithub still skips same-head review when the marker is from the authent
 	assert.deepEqual(readPosts(fixture.postLog), []);
 });
 
+// THE BYPASS THIS PR EXISTS TO CLOSE. `z-github-actions-z` is a registrable
+// GitHub username (alphanumerics + single hyphens) that contains
+// "github-actions" as a substring. Any user can open a review on a public PR,
+// so if the marker author is authorized by substring the attacker mints a
+// same-head marker and the dedupe silently skips the model run, the review
+// post and the check run.
+test("runGithub does not trust a same-head marker whose author merely contains github-actions as a substring", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 63,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "z-github-actions-z", type: "User" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 63, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"a substring-lookalike login must not suppress the model runner",
+	);
+	assert.ok(
+		postedReview(readPosts(fixture.postLog), 63),
+		"a substring-lookalike login must not suppress posting a review",
+	);
+});
+
+// Defence in depth: GitHub never issues a human account a login containing
+// brackets, but the trust decision must rest on the type GitHub asserts, not
+// on the login's shape, so a User-typed "[bot]" login stays untrusted.
+test("runGithub does not trust a same-head marker from a [bot]-shaped login that GitHub types as User", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 64,
+		rawReview: defaultRawReview(),
+	});
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody(fixture.headSha),
+			user: { login: "needlefish[bot]", type: "User" },
+		},
+	]);
+
+	await runGithub(fixture.repo, 64, { timeoutMs: 1000 });
+
+	assert.ok(
+		runnerInvocationCount(fixture) >= 1,
+		"user-typed [bot] login must not suppress the model runner",
+	);
+	assert.ok(postedReview(readPosts(fixture.postLog), 64));
+});
+
+// The cosmetic cleanup path keeps the loose, substring-based predicate on
+// purpose (see isLooselyBotShaped). This pins that the security tightening
+// above did not leak into it: a round comment from a loosely bot-shaped login
+// that is neither the real bot identity nor the authenticated login is still
+// minimized, exactly as before.
+test("minimizePreviousRoundComments still sweeps a loosely bot-shaped author", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 65,
+		rawReview: defaultRawReview(),
+	});
+	// Trusted marker for a DIFFERENT head: prev exists, so the re-review branch
+	// (the one that minimizes) runs instead of the same-head dedupe.
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 10,
+			body: stateReviewBody("c".repeat(40)),
+			user: { login: "github-actions[bot]", type: "Bot" },
+		},
+	]);
+	writeFileSync(
+		fixture.issueCommentsState,
+		JSON.stringify([
+			{
+				id: 99,
+				node_id: "IC_seeded_loose",
+				body: "**Needlefish re-review** @ deadbee\n<!-- needlefish-round -->",
+				user: { login: "github-actions", type: "User" },
+			},
+		]),
+	);
+
+	await runGithub(fixture.repo, 65, { timeoutMs: 1000 });
+
+	const minimized = readPosts(fixture.postLog).some(
+		(p) =>
+			p.args.some((a) => a.includes("minimizeComment")) &&
+			p.args.some((a) => a.includes("IC_seeded_loose")),
+	);
+	assert.ok(
+		minimized,
+		"cosmetic cleanup must keep its loose author test unchanged",
+	);
+});
+
 test("runGithub does not skip same-head review when the only state marker is from an untrusted user", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 53,
@@ -1088,7 +1199,7 @@ test("runGithub does not skip same-head review when the only state marker is fro
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1114,7 +1225,7 @@ test("runGithub ignores an untrusted review that quotes a trusted state marker",
 		{
 			id: 1,
 			body: quoted,
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1136,15 +1247,15 @@ test("runGithub skips malformed review objects without throwing and does not tre
 	seedReviews(fixture.reviewsState, [
 		"not an object",
 		null,
-		{ body, id: "1", user: { login: "github-actions[bot]" } },
-		{ body, id: 2, user: { login: 123 } },
+		{ body, id: "1", user: { login: "github-actions[bot]", type: "Bot" } },
+		{ body, id: 2, user: { login: 123, type: "Bot" } },
 		{ body, id: 3, user: "github-actions[bot]" },
 		{ body, id: 4 },
-		{ body, user: { login: "github-actions[bot]" } },
+		{ body, user: { login: "github-actions[bot]", type: "Bot" } },
 		{
 			id: 100,
 			body,
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1167,12 +1278,12 @@ test("runGithub skips an untrusted newest marker and still uses an older trusted
 		{
 			id: 10,
 			body: stateReviewBody(otherHead),
-			user: { login: "github-actions[bot]" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 		{
 			id: 20,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1203,12 +1314,12 @@ test("runGithub skips same-head review when an untrusted newest marker is follow
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "github-actions[bot]" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 		{
 			id: 2,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1229,12 +1340,12 @@ test("runGithub still finds a trusted marker when an untrusted one is newest acr
 		{
 			id: 10,
 			body: stateReviewBody(otherHead),
-			user: { login: "github-actions[bot]" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 		{
 			id: 20,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1253,7 +1364,7 @@ test("runGithub re-reviews a trusted same-head marker when recheck is true", asy
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "github-actions[bot]" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 	]);
 
@@ -1276,7 +1387,7 @@ test("runGithub still skips a bot-authored same-head marker when gh api user fai
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "github-actions[bot]" },
+			user: { login: "github-actions[bot]", type: "Bot" },
 		},
 	]);
 
@@ -1296,7 +1407,7 @@ test("runGithub does not skip an untrusted same-head marker when gh api user fai
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "unrelated-attacker" },
+			user: { login: "unrelated-attacker", type: "User" },
 		},
 	]);
 
@@ -1320,7 +1431,7 @@ test("runGithub does not skip a PAT-authored marker when gh api user fails", asy
 		{
 			id: 1,
 			body: stateReviewBody(fixture.headSha),
-			user: { login: "frank-pat" },
+			user: { login: "frank-pat", type: "User" },
 		},
 	]);
 

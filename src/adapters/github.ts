@@ -398,11 +398,19 @@ function findPreviousReview(
 	if (!Array.isArray(raw)) return null;
 	// flat(1) also tolerates a plain review list from stubs or older gh versions.
 	const reviews = raw.flat(1);
-	// Same author check as minimizePreviousRoundComments: a marker is ours
-	// only when the author is bot-shaped or equals the identity this run
-	// posts as. Humans quoting the marker must not suppress review.
-	// authenticatedLogin is called once, not per review. Empty login
-	// fail-softs to bot-only trust — that can extra-review, never suppress.
+	// TRUST BOUNDARY. What this function returns decides two things in
+	// runGithub: (a) the same-head dedupe, which returns *before* the model
+	// run, the review post and the check-run post; and (b) the review id whose
+	// body the next round is PUT onto. Anyone can submit a review on a public
+	// PR, so a marker accepted from an author we have not authenticated is a
+	// silent review-suppression bypass — needlefish reports nothing and the PR
+	// looks unreviewed-but-fine. Authorization therefore runs on identity
+	// GitHub asserts (isTrustedStateAuthor), never on the shape of a login the
+	// author picked. An untrusted marker is skipped, not fatal: the scan keeps
+	// walking to older reviews. authenticatedLogin() is called once per run,
+	// not per review; when it fails it returns "" and trust narrows to verified
+	// bot identities, which can cause an extra review but never a suppressed
+	// one — the safe direction here, unlike the cosmetic cleanup path.
 	const selfLogin = authenticatedLogin();
 	for (let i = reviews.length - 1; i >= 0; i--) {
 		const item = reviews[i];
@@ -411,8 +419,7 @@ function findPreviousReview(
 		if (!state) continue;
 		const id = item.id;
 		if (typeof id !== "number") continue;
-		const author = nestedString(item, "user", "login");
-		if (!isBotAuthor(item) && !(selfLogin && author === selfLogin)) continue;
+		if (!isTrustedStateAuthor(item, selfLogin)) continue;
 		return { id, state };
 	}
 	return null;
@@ -556,9 +563,48 @@ function postRoundComment(
 	postIssueComment(repo, prNumber, body);
 }
 
-function isBotAuthor(item: JsonRecord): boolean {
+// COSMETIC ONLY — not a trust boundary. `includes("github-actions")` is a
+// substring test, and `z-github-actions-z` is a registrable GitHub username,
+// so an attacker can satisfy this at will. It is tolerated here because the
+// only thing it gates is minimizePreviousRoundComments: worst case a stranger
+// who copied `<!-- needlefish-round -->` into their own comment gets that
+// comment collapsed as OUTDATED — visible, reversible, and it decides nothing
+// about whether a review happens. Anything that gates review behaviour must
+// use isTrustedStateAuthor instead; that split is deliberate, do not merge
+// them back together.
+function isLooselyBotShaped(item: JsonRecord): boolean {
 	const login = nestedString(item, "user", "login");
 	return login.includes("github-actions") || /\[bot\]$/.test(login);
+}
+
+// SECURITY-GRADE author check for needlefish-state markers. See the trust
+// boundary note in findPreviousReview for what rides on it.
+//
+// Only two identities are authorized, both attested by something outside the
+// attacker's control:
+//
+//   1. login === selfLogin — the exact identity this run authenticates as
+//      (`gh api user`). Self-hosted runners often use a PAT, so our own marker
+//      can legitimately carry a plain user login. Exact equality, never a
+//      prefix/substring, and never when selfLogin is empty.
+//   2. user.type === "Bot" AND the login ends in "[bot]" — both fields are set
+//      by GitHub, not by the account holder. A human account cannot obtain
+//      type "Bot", and "[" / "]" are not legal in a human username, so the
+//      pair cannot be forged from a normal account. Under GITHUB_TOKEN we post
+//      as github-actions[bot] / type "Bot" (confirmed against the live reviews
+//      API) and `gh api user` is not permitted to Actions tokens, so in
+//      production this is the branch that carries the dedupe.
+//
+// A substring match on the login is NOT sufficient and was the original bug:
+// "github-actions" is a substring of the perfectly registrable username
+// "z-github-actions-z", so any user could mint a trusted-looking marker.
+function isTrustedStateAuthor(item: JsonRecord, selfLogin: string): boolean {
+	const login = nestedString(item, "user", "login");
+	if (login === "") return false;
+	if (selfLogin !== "" && login === selfLogin) return true;
+	return (
+		nestedString(item, "user", "type") === "Bot" && /\[bot\]$/.test(login)
+	);
 }
 
 // Self-hosted runners often authenticate gh with a PAT, so Needlefish's own
@@ -598,8 +644,12 @@ function minimizePreviousRoundComments(
 		if (!body.includes("<!-- needlefish-round -->")) continue;
 		// Ours = bot-shaped author, or the identity this run posts as (PAT).
 		// The author check keeps humans quoting the marker from being swept.
+		// Deliberately the loose predicate: this path is cosmetic (see
+		// isLooselyBotShaped) and erring wide only over-collapses a comment,
+		// whereas the state-marker path erring wide suppresses a review.
 		const author = nestedString(item, "user", "login");
-		if (!isBotAuthor(item) && !(selfLogin && author === selfLogin)) continue;
+		if (!isLooselyBotShaped(item) && !(selfLogin && author === selfLogin))
+			continue;
 		const nodeId = stringField(item, "node_id");
 		if (!nodeId) continue;
 		const query =
