@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -12,10 +13,12 @@ import test from "node:test";
 //
 // What it guards: workflowFiles() decides which files get scanned at all, and
 // assertEveryMentionRecognized() can only speak about files that are in that set.
-// If a workflow is renamed to an unscanned extension, or checkouts migrate into a
-// composite action under .github/actions/*/action.yml (a path this scanner does not
-// read), no mention is left to flag and the scan goes quiet. The count falling
-// below the floor is the only signal of that coverage loss.
+// If checkouts leave that set — a workflow renamed to a non-YAML extension, or moved
+// to a path outside .github/ — no mention is left to flag and the scan goes quiet.
+// The count falling below the floor is the only signal of that coverage loss.
+// (Note this floor does NOT catch a checkout *added* somewhere unscanned: the six
+// here stay intact and the floor stays green. Only widening workflowFiles() fixes
+// that, which is why it recurses rather than listing directories.)
 //
 // Why not equality: a checkout being *added* is already fully policed — it must be
 // recognized (assertEveryMentionRecognized) and must set persist-credentials: false
@@ -178,15 +181,30 @@ function assertCheckoutPolicy(checkouts, allowlist) {
 	);
 }
 
-function workflowFiles() {
-	const dir = ".github/workflows";
-	return [
-		...readdirSync(dir)
-			.filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
-			.map((name) => join(dir, name))
-			.sort(),
-		"action.yml",
-	];
+function yamlFilesUnder(dir) {
+	const files = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+		a.name.localeCompare(b.name),
+	)) {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...yamlFilesUnder(path));
+		} else if (entry.isFile() && /\.ya?ml$/.test(entry.name)) {
+			files.push(path);
+		}
+	}
+	return files;
+}
+
+// All YAML under .github/, not just .github/workflows/. A composite action at
+// .github/actions/<name>/action.yml runs its own steps, including its own
+// actions/checkout, and a file the scanner never opens is a file it cannot police —
+// the same fail-open as unrecognized syntax, one directory over. Recursing on the
+// whole .github tree rather than allowlisting action.yml means a new location does
+// not need this list updated to be covered. Plus the repo-root action.yml, the
+// published action surface, which lives outside .github/.
+function workflowFiles(root = ".") {
+	return [...yamlFilesUnder(join(root, ".github")), join(root, "action.yml")];
 }
 
 test("every actions/checkout sets persist-credentials: false or is allowlisted", () => {
@@ -314,6 +332,51 @@ test("a commented-out checkout is not treated as an unrecognized step", () => {
 	const checkouts = collectCheckouts(yaml, "example.yml");
 	assert.equal(checkouts.length, 1);
 	assert.equal(checkouts[0].line, 5);
+});
+
+test("a composite action's checkout is scanned, not just .github/workflows", () => {
+	// The floor cannot see this one: adding an unprotected checkout under
+	// .github/actions leaves the workflow checkouts intact, so the count stays green.
+	// Only the scan set widening catches it.
+	const root = mkdtempSync(join(tmpdir(), "needlefish-checkout-scan-"));
+	try {
+		mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+		mkdirSync(join(root, ".github", "actions", "setup"), { recursive: true });
+		writeFileSync(join(root, "action.yml"), "name: root\n");
+		writeFileSync(
+			join(root, ".github", "workflows", "review.yml"),
+			[
+				"jobs:",
+				"  review:",
+				"    steps:",
+				"      - uses: actions/checkout@v4",
+				"        with:",
+				"          persist-credentials: false",
+			].join("\n"),
+		);
+		writeFileSync(
+			join(root, ".github", "actions", "setup", "action.yml"),
+			["runs:", "  using: composite", "  steps:", "    - uses: actions/checkout@v4"].join(
+				"\n",
+			),
+		);
+
+		const files = workflowFiles(root);
+		assert.ok(
+			files.includes(join(root, ".github", "actions", "setup", "action.yml")),
+			`composite action metadata must be in the scan set: ${files.join(", ")}`,
+		);
+
+		const checkouts = files.flatMap((file) =>
+			collectCheckouts(readFileSync(file, "utf8"), file),
+		);
+		assert.throws(
+			() => assertCheckoutPolicy(checkouts, []),
+			/actions[/\\]setup[/\\]action\.yml:4 .*must set persist-credentials: false or be allowlisted/,
+		);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("weekly-eval git push authenticates with GH_TOKEN instead of persisted checkout credentials", () => {
