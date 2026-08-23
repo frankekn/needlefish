@@ -91,7 +91,7 @@ fresh／still-open／resolved，不會不斷堆疊新 review。
 
 小型 PR 每次審查使用 2 次模型呼叫（workflow 預設 `gpt-5.6-terra` @ `high`，約 56 秒）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
-head 會跳過模型。維護者可以在 PR 留言
+head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
 
 ## Benchmarks

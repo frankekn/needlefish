@@ -96,8 +96,9 @@ in place (fresh / still-open / resolved) instead of stacking new ones.
 
 Cost: 2 model calls per review on small PRs (~56s at the workflow default,
 `gpt-5.6-terra` at `high` effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
-unchanged heads skip the model entirely. Maintainers can comment
-`@needlefish recheck` or `@needlefish explain <finding>` on the PR.
+unchanged heads skip the model entirely. Maintainers with write access to
+this repository can comment `@needlefish recheck` or
+`@needlefish explain <finding>` on the PR.
 
 ## Benchmarks
 
