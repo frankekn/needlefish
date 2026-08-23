@@ -40,6 +40,73 @@ full-run draws and 4 confirmation draws, with no adoption.
 Reports: [full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
 [divergence confirm x3](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
 
+
+## 2026-08-24 — issue #44 matcher gate at HEAD 2de5867: FAILED 2/5
+
+First gate that describes HEAD. Since the retained `49f12b9` run the matcher changed
+twice: equidistant candidates are ordered by token overlap rather than array
+position, and critic findings are assigned by deterministic maximum bipartite
+matching instead of greedy nearest-first consumption. Eligibility
+(`file` + `category` + `lineStart` +/-2) is unchanged by both.
+
+Criteria pre-declared before the run (`/tmp/gate79/criteria-79-matcher.md`), same
+lane and baseline. promptHash `e62d0889fc704541`, fixtureSetHash
+`1968a9d2fabe2a56`, scorerHash `a424d3bb59a40443` — all equal to the 2026-08-09
+weekly baseline; anticheatVersion 2, cheatDetectedCount 0.
+
+| Pre-declared criterion | Result | |
+| --- | --- | --- |
+| 1a. finding-level rejections == 0 | 0 | pass |
+| 1b. residual-level rejections <= 1 | 2 | **miss** |
+| 1c. `formatOk===false` <= 3/252 | 3 | pass |
+| 2. no systematic recall regression | 3 down / 7 up, no drop > 1 draw | pass |
+| 3. `meanNoisePerPositive` >= 0.09 | 0.0632 | **miss** |
+| 4. false-positive draws <= 5 | 7 | **miss** |
+| 5. hashes match, anticheat 2, cheat 0 | yes | pass |
+
+**Gate FAILED (2/5 by criterion, 4/7 by sub-criterion).** Per EVAL DISCIPLINE the
+numbers are recorded as measured and no criterion was re-declared after the fact.
+
+**What the run confirms.** Criterion 1a was declared beforehand as a falsifiable
+prediction — maximum matching fixes finding assignment, so finding-level rejection
+should go to zero, while residual identity (exact text after case-fold and
+whitespace-collapse) is a separate untouched path and was budgeted at <=1 rather
+than 0. Finding-level rejection did reach exactly **0** (it was 1 at `49f12b9`).
+The matcher's core claim holds.
+
+**What fails.** Residual-level rejections rose 1 -> 2. False-positive draws rose to
+7 against a budget of 5. `meanNoisePerPositive` fell to 0.0632 against a floor of
+0.09.
+
+**Correction to the pre-declared text, disclosed rather than quietly dropped.**
+Criterion 4 stated that "an FP on any fixture other than `neg-hard-dead-code-delete`
+fails this criterion", written on the belief that the baseline's 4 FP draws were all
+on that fixture. That premise is wrong: the 2026-08-09 baseline already carries
+`neg-hard-refactor-move` (2 draws) and `neg-hard-timing-hardening` (1). Those are
+baseline behaviour, not new modes introduced here. Criterion 4 still fails on count
+(7 > 5), which is independent of the faulty clause.
+
+FP draws by fixture across the three comparable runs:
+
+| fixture | baseline 08-09 | 49f12b9 | HEAD 2de5867 |
+| --- | --- | --- | --- |
+| `neg-hard-dead-code-delete` | 1 | 2 | 3 |
+| `neg-hard-refactor-move` | 2 | 2 | 2 |
+| `neg-hard-timing-hardening` | 1 | 1 | 1 |
+| `go-harmless-variadic` | 0 | 0 | **1** |
+| total | 4 | 5 | 7 |
+
+**Data that resists the obvious explanation.** The natural story — the matcher lets
+previously-rejected reviews through, so more findings and therefore more false
+positives — is not supported: total findings are flat at 192 / 195 / **191** across
+the three runs. The FP increase is a change in composition, not volume, and
+`meanNoisePerPositive` falling while finding count holds steady is unexplained. That
+should be understood before this merges; it is recorded here as an open question,
+not as an argument in either direction.
+
+Reports: `eval/results/2026-08-24-critic-matcher-gate-x3.json` (this run),
+`eval/results/2026-08-23-critic-subset-rework-x3.json` (49f12b9).
+
 </details>
 
 <details>
