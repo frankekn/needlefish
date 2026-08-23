@@ -5,11 +5,13 @@ import test from "node:test";
 
 const SHA = /^[0-9a-f]{40}$/;
 const VERSION_COMMENT = /^v\d+\.\d+\.\d+$/;
-const FIRST_PARTY_FLOATING = /^frankekn\/needlefish@v\d+$/;
-// Only hosted-review.yml is allowed to carry a floating frankekn/needlefish@vN ref:
-// it deliberately live-tests the published major tag (see the file's header comment).
-// Any other workflow (deploy.yml, release.yml, etc.) must SHA-pin like every other
-// action, or a floating first-party tag could silently ship in a privileged workflow.
+// Only hosted-review.yml is allowed to carry a floating first-party ref, and only the
+// exact major tag its header comment documents as the deliberate live-test target
+// (currently v0 — see .github/workflows/hosted-review.yml:1-5). Matching any `vN` here
+// would silently follow a future major bump (or a typo) without anyone updating this
+// test, defeating the point of an intentional, reviewed exemption. Bumping the major
+// tag in hosted-review.yml must come with a matching bump here in the same PR.
+const FIRST_PARTY_FLOATING = /^frankekn\/needlefish@v0$/;
 const FIRST_PARTY_FLOATING_EXEMPT_FILE = join(".github/workflows", "hosted-review.yml");
 const PINNED_RUNNER = /^(\d+)\.(\d+)\.(\d+)$/;
 
@@ -90,6 +92,15 @@ test("floating first-party tag fails the invariant outside hosted-review.yml", (
     () => assertPinned(join(".github/workflows", "deploy.yml"), use),
     /must be a 40-hex SHA/,
     "a floating first-party tag must not be silently exempted in a privileged workflow",
+  );
+});
+
+test("a different floating major tag in hosted-review.yml is not silently exempted", () => {
+  const use = { line: 1, action: "frankekn/needlefish@v1", comment: "", raw: "uses: frankekn/needlefish@v1" };
+  assert.throws(
+    () => assertPinned(FIRST_PARTY_FLOATING_EXEMPT_FILE, use),
+    /must be a 40-hex SHA/,
+    "only the documented v0 tag is exempt in hosted-review.yml; a major bump must update this test deliberately",
   );
 });
 
