@@ -66,9 +66,22 @@ const PERSISTED_CREDENTIAL_ALLOWLIST = [
 ];
 
 const CHECKOUT_ACTION = /^actions\/checkout(?:@|$)/;
-// `uses: ./path` runs a composite action whose metadata lives at path/action.yml,
-// resolved from the repository root. Such an action can run its own checkout.
+
+// The three reference forms GitHub documents for `uses:`. A resolved value that is
+// none of them fails the scan.
+//
+// This is a CLASSIFICATION guard, and it is not the spelling guard that parsing
+// replaced. Parsing settles how a value is *written*; it says nothing about what the
+// resulting string *means*. Dropping the old regex guard in the parser rewrite lost
+// the second half by accident: an unclassifiable `uses:` fell through both branches
+// and vanished, so a composite action referenced by an invalid form was never
+// followed and its checkout was never policed. Found by driving `uses: $/tools/prepare`
+// (a form that does not exist in Actions) through the scanner: six protected
+// checkouts plus one unprotected checkout behind the bad reference, and the policy
+// passed. Unknown must mean stop, not skip.
 const LOCAL_ACTION = /^\.{1,2}\//;
+const EXTERNAL_ACTION = /^[\w.-]+\/[\w./-]+@[\w./-]+$/;
+const DOCKER_ACTION = /^docker:\/\/\S+$/;
 
 function parseWorkflow(content, file) {
 	const lineCounter = new LineCounter();
@@ -89,6 +102,7 @@ function scanWorkflow(content, file) {
 	const { doc, lineCounter } = parseWorkflow(content, file);
 	const checkouts = [];
 	const localActions = [];
+	const unresolvable = [];
 	// Anchors may be referenced repeatedly and may even recurse. Visiting each
 	// resolved node once terminates; the effect on the count is fail-closed, since a
 	// step reused through N aliases is counted once and can only push the total down
@@ -148,13 +162,14 @@ function scanWorkflow(content, file) {
 		const usesPair = pairsNamed(resolved, "uses")[0];
 		if (usesPair) {
 			const uses = scalarValue(usesPair.value);
-			if (typeof uses === "string") {
-				const ref = uses.trim();
-				if (CHECKOUT_ACTION.test(ref)) {
-					checkouts.push(describe(resolved, usesPair, attached));
-				} else if (LOCAL_ACTION.test(ref)) {
-					localActions.push({ ref, line: lineOf(usesPair.key ?? resolved, lineCounter) });
-				}
+			const ref = typeof uses === "string" ? uses.trim() : "";
+			const line = lineOf(usesPair.key ?? resolved, lineCounter);
+			if (LOCAL_ACTION.test(ref)) {
+				localActions.push({ ref, line });
+			} else if (CHECKOUT_ACTION.test(ref)) {
+				checkouts.push(describe(resolved, usesPair, attached));
+			} else if (!EXTERNAL_ACTION.test(ref) && !DOCKER_ACTION.test(ref)) {
+				unresolvable.push(`${file}:${line}: uses: ${ref === "" ? JSON.stringify(uses) : ref}`);
 			}
 		}
 
@@ -164,6 +179,13 @@ function scanWorkflow(content, file) {
 	};
 
 	visit(doc.contents, "");
+
+	assert.deepEqual(
+		unresolvable,
+		[],
+		`uses: values that are not a documented action reference (owner/repo@ref, ./path, or docker://…), so the scanner cannot tell whether they run a checkout: ${unresolvable.join(" | ")}`,
+	);
+
 	return { checkouts, localActions };
 }
 
@@ -597,6 +619,46 @@ test("local action references are followed transitively", () => {
 		assert.throws(
 			() => assertCheckoutPolicy(checkouts, []),
 			/tools[/\\]inner[/\\]action\.yml:4 /,
+		);
+	});
+});
+
+test("a uses: value that is not a documented reference form fails the scan", () => {
+	// Two separate facts, both worth pinning.
+	//
+	// 1. `$/path` is NOT a GitHub Actions reference form. The documented forms are
+	//    {owner}/{repo}@{ref}, ./path/to/dir, and docker://{image}:{tag}; a bare
+	//    path/to/dir is read as {owner}/{repo} and fails to resolve. So a workflow
+	//    written this way would not run the action at all.
+	// 2. It does not matter. The scan fails on any reference it cannot classify, so
+	//    no bypass of this shape exists whether or not the form is real. That is the
+	//    property under test — unknown means stop, not skip.
+	//
+	// The fixture is the bypass as it was claimed: six compliant checkouts, plus an
+	// unprotected one hidden behind the unclassifiable reference. Before the
+	// classification guard this passed, with tools/prepare never opened.
+	withFixtureRepo((root, write) => {
+		const steps = [];
+		for (let i = 0; i < MINIMUM_CHECKOUT_COUNT; i++) {
+			steps.push(
+				"      - uses: actions/checkout@v4",
+				"        with:",
+				"          persist-credentials: false",
+			);
+		}
+		steps.push("      - uses: $/tools/prepare");
+		write(".github/workflows/review.yml", ["jobs:", "  review:", "    steps:", ...steps]);
+		write("tools/prepare/action.yml", [
+			"runs:",
+			"  using: composite",
+			"  steps:",
+			"    - uses: actions/checkout@v4",
+		]);
+
+		assert.throws(
+			() => scanRepository(root),
+			/review\.yml:22: uses: \$\/tools\/prepare/,
+			"an unclassifiable reference must fail the scan, not be skipped",
 		);
 	});
 });
