@@ -831,4 +831,56 @@ confound. No production change.
 Reports: `eval/results/2026-08-21-opencode-ox-alpha-max-x3.json` and
 `eval/results/2026-08-21-ox-alpha-semantic-remaining-x3.json`.
 
+## 2026-08-22 — issue #44 critic prune-only subset check: first gate FAILED (key too strict)
+
+The structural critic-subset check (`assertCriticSubset`, PR #79) shipped with an
+exact seven-field identity key (`file, lineStart, lineEnd, category, title,
+whyItBreaks, suggestedFix`). Production gate against the 2026-08-09 baseline
+(codex / gpt-5.6-terra / high, full set, holdout include, x3, anti-cheat v2,
+hashes matching): **FAIL**. `formatOk === false` rose **0 → 92 / 252 (36.5%)**;
+91 of the 92 were `malformed critic output: finding was not in the candidate
+review`. `meanNoisePerPositive` collapsed 0.1207 → 0.0230 (reviews producing
+nothing), 41 fixtures regressed. Diagnosis: the real production critic
+legitimately paraphrases `title`/`whyItBreaks`/`suggestedFix` and nudges line
+numbers while pruning, so an exact-field key rejects more than a third of real
+reviews. Fail-closed direction correct; key too strict. Report:
+`/tmp/gate43-44/report-44.json` (not retained in-repo).
+
+## 2026-08-23 — issue #44 rework: loosened identity key — gate 4/5, primary defect fixed
+
+Reworked the key to `file` + `category` + nearest unused candidate `lineStart`
+within ±2 (not the adapter's cross-round ±10); content is still restored from
+the matched candidate, so paraphrase cannot reach `deriveVerdict` and invention
+(no candidate at that file+category+near-line) still fails closed. Residual
+identity loosened to exact text after case-fold + whitespace collapse only.
+Mutation-verified independently: stripping the file/category guards turns the
+invention-rejection tests red; re-imposing strict title equality turns the
+paraphrase-acceptance tests red.
+
+Same lane and baseline, criteria **pre-declared before the run**
+(`/tmp/gate43-44/criteria-44-rework.md`):
+
+| Pre-declared criterion | Result | |
+| --- | --- | --- |
+| `formatOk===false` ≤ 3/252, zero subset-rejection errors | 2/252, 0 errors (was 92) | pass |
+| No systematic recall regression (\|reg−imp\|≤5; drops ≤1 draw bar 2 known-flaky) | 4 down / 5 up | pass |
+| `meanNoisePerPositive` ≥ 0.09 | 0.1149 | pass |
+| False-positive draws ≤ baseline (4) | 5 | **miss** |
+| anti-cheat v2, hashes match, cheat 0 | yes | pass |
+
+The two remaining `formatOk===false` draws (`t3-cache-key-tenant`,
+`real-pr4-options-not-forwarded`) carry no error and `verdict=null` — pre-existing
+envelope flakiness, not the subset check. The one extra false positive is on
+`neg-hard-dead-code-delete`, already non-deterministic at 1/3 on the baseline
+(now 2/3). Mechanism: the critic still cannot invent; the FP finding was in the
+*candidate* review, and the old strict key masked it by rejecting the whole
+review on paraphrase. Loosening unmasks a pre-existing candidate-review FP rather
+than creating one. Per EVAL DISCIPLINE the pre-declared FP criterion is not
+softened after the fact: the gate is 4/5, the sole miss being one FP draw on a
+flickering hard negative, mechanism-explained. Maintainer decision: accept on
+the mechanism, or run an x9 confirm on `neg-hard-dead-code-delete` (main vs
+branch) to separate variance from regression before merge.
+
+Reports: `eval/results/2026-08-23-critic-subset-rework-x3.json`.
+
 </details>
