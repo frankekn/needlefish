@@ -1544,11 +1544,18 @@ test("review does not fast-path policy markdown or executable files under docs p
 		"docs/build.ts",
 		"prompts/review.md",
 		"AGENTS.md",
-		// Agent policy is policy wherever it sits: a nested CLAUDE.md instructs
-		// edits under its directory, and .claude/ Markdown is agent config, not
-		// prose about the product. Both used to reach the deterministic pass.
+		// Agent policy is policy wherever it sits: a nested CLAUDE.md/GEMINI.md
+		// instructs edits under its directory, and agent-config dot-directory
+		// Markdown is policy, not prose about the product. All of these used to
+		// reach the deterministic pass.
 		"docs/CLAUDE.md",
+		"docs/GEMINI.md",
 		".claude/README.md",
+		".gemini/README.md",
+		// No rule names this file; it is denied because unrecognized ALL-CAPS
+		// Markdown under docs/ fails closed. This is the case that stays fixed
+		// when the next agent CLI invents a filename.
+		"docs/CURSOR.md",
 	];
 	for (const filePath of cases) {
 		if (existsSync(calls)) rmSync(calls);

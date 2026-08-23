@@ -81,11 +81,12 @@ test("isDocsFastPathEligible is a generic user-facing-docs allowlist", () => {
   assert.equal(isDocsFastPathEligible(".github/workflows/review.yml"), false);
 });
 
-// A CLAUDE.md is agent policy wherever it sits: agents read the nearest one for
-// the directory being edited, so a nested copy is as policy-bearing as the root
-// one. Before this rule, only a root CLAUDE.md failed closed (and by accident --
-// it matched no allowlist entry); any CLAUDE.md under a docs/ or doc/ directory
-// matched DOCS_DIR and took the deterministic pass with zero model calls.
+// An agent-instruction file is policy wherever it sits: agents read the nearest
+// one for the directory being edited, so a nested copy is as policy-bearing as
+// the root one. Before this rule, only a root CLAUDE.md/GEMINI.md failed closed
+// (and by accident -- it matched no allowlist entry); any copy under a docs/ or
+// doc/ directory matched DOCS_DIR and took the deterministic pass with zero
+// model calls.
 test("isDocsFastPathEligible excludes CLAUDE.md policy files anywhere in the tree", () => {
   assert.equal(isDocsFastPathEligible("CLAUDE.md"), false);
   assert.equal(isDocsFastPathEligible("docs/CLAUDE.md"), false);
@@ -106,16 +107,60 @@ test("isDocsFastPathEligible excludes CLAUDE.md policy files anywhere in the tre
   assert.equal(isDocsFastPathEligible("README.md"), true);
 });
 
-// `.claude/` is an agent-config tree: skills, commands, and subagent definitions
-// instruct agents, and the prose describing them is part of that policy. It used
-// to fail closed only incidentally, which left the two allowlist entries open --
-// `.claude/README.md` (user-facing basename) and `.claude/docs/*.md` (DOCS_DIR).
+// The backstop that closes the class rather than one vendor at a time: under a
+// docs/ tree the DOCS_DIR blanket used to pass everything, so each new agent CLI
+// filename was a fresh fail-open hole. An ALL-CAPS basename now has to be a
+// recognized human-facing convention or it is reviewed. These vendor names are
+// stand-ins for "a filename nobody has added a rule for yet" -- the point is
+// that no rule mentions them.
+test("isDocsFastPathEligible fails closed on unrecognized ALL-CAPS Markdown under docs/", () => {
+  assert.equal(isDocsFastPathEligible("docs/QWEN.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/CURSOR.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/WINDSURF.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/COPILOT.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/RULES.md"), false);
+  assert.equal(isDocsFastPathEligible("doc/NEWAGENT.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/docs/CURSOR.local.md"), false);
+  // Recognized human-facing conventions still ride the fast path.
+  assert.equal(isDocsFastPathEligible("docs/README.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/CHANGELOG.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/CODE_OF_CONDUCT.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/LICENSE.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/README.zh-TW.md"), true);
+  // Descriptively named prose is unaffected -- this is not an uppercase ban.
+  assert.equal(isDocsFastPathEligible("docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/api-reference.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/Getting-Started.md"), true);
+  assert.equal(isDocsFastPathEligible("docs/qwen.md"), true);
+});
+
+test("isDocsFastPathEligible excludes GEMINI.md policy files anywhere in the tree", () => {
+  assert.equal(isDocsFastPathEligible("GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("doc/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("packages/app/docs/guides/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("src/shared/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs/gemini.md"), false);
+  assert.equal(isDocsFastPathEligible("GEMINI.local.md"), false);
+  // Prose that merely mentions the vendor is not an instruction file.
+  assert.equal(isDocsFastPathEligible("docs/gemini-setup.md"), true);
+});
+
+// The agent-config dot-directories are policy trees: skills, commands, and
+// subagent definitions instruct agents, and the prose describing them is part of
+// that policy. They used to fail closed only incidentally, which left the two
+// allowlist entries open -- `<dir>/README.md` (user-facing basename) and
+// `<dir>/docs/*.md` (DOCS_DIR).
 test("isDocsFastPathEligible excludes .claude agent-config Markdown", () => {
   assert.equal(isDocsFastPathEligible(".claude/README.md"), false);
   assert.equal(isDocsFastPathEligible(".claude/docs/guide.md"), false);
   assert.equal(isDocsFastPathEligible(".claude/skills/review/SKILL.md"), false);
   assert.equal(isDocsFastPathEligible(".claude/commands/ship.md"), false);
   assert.equal(isDocsFastPathEligible("packages/app/.claude/README.md"), false);
+  assert.equal(isDocsFastPathEligible(".gemini/README.md"), false);
+  assert.equal(isDocsFastPathEligible(".gemini/docs/guide.md"), false);
+  assert.equal(isDocsFastPathEligible(".gemini/commands/ship.md"), false);
   // A normal directory that merely starts with the same letters is still docs.
   assert.equal(isDocsFastPathEligible("claude/docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("gemini/docs/guide.md"), true);
 });
