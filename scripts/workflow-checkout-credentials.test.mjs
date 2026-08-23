@@ -51,6 +51,75 @@ const CHECKOUT_USES =
 const CHECKOUT_MENTION = /actions\/checkout/g;
 const COMMENT_LINE = /^\s*#/;
 
+// The inverted guard. CHECKOUT_MENTION matches one literal spelling, so every round
+// of review found another way to write the same reference without it:
+// `"actions\/checkout@v4"` (YAML 1.2 solidus escape), `"actions\u002Fcheckout@v4"`,
+// and a double-quoted line continuation splitting the literal across two lines. That
+// tail has no end — \x6f, single quotes, block scalars — so stop enumerating
+// spellings and invert the question. Instead of "does this line name a checkout?",
+// ask "is this `uses:` value one this scanner can read at all?" and reject the file
+// if it is not, checkout or otherwise. Exotic spellings then fail closed without
+// anyone having to predict them.
+//
+// Fail closed on unparseable, NOT on unfamiliar: every form the repo actually uses
+// is accepted. Today that is only `owner/repo@ref`, but local (`./path`) and
+// `docker://` refs are accepted too so adding one does not break the build.
+// A quoted value is fine when it is a plain scalar — closing quote on the same line,
+// no backslash, so nothing can be hiding in an escape.
+//
+// Known false positive: a `uses:` written inside a `run: |` shell block would be
+// read as a step. No such line exists here (all 11 `uses:` lines are real steps or
+// inside `#` comments); if one appears, quote it differently or extend this.
+const USES_LINE = /^(\s*)(?:- )?uses:\s*(.*)$/;
+const PLAIN_ACTION_REF = /^[\w.-]+\/[\w./-]+@[\w./-]+$/;
+const LOCAL_ACTION_REF = /^\.{1,2}\/[\w./-]+$/;
+const DOCKER_ACTION_REF = /^docker:\/\/[\w.:/@-]+$/;
+
+function inspectableUsesValue(raw) {
+	// Strip a trailing YAML comment, but only when it is separated by whitespace —
+	// `#` inside a ref (a docker digest) is not a comment.
+	const value = raw.replace(/\s+#.*$/, "").trim();
+	if (value === "") return null;
+
+	let scalar = value;
+	if (scalar.startsWith('"')) {
+		// The `\\` in this class is deliberately redundant: a backslash is not in any
+		// of the three ref charsets below, so an escaped value is already rejected
+		// there (removing it from here fails no test — checked). It stays as the
+		// explicit statement of intent, so that widening a ref charset later cannot
+		// quietly re-admit \/, \u002F and friends. The closing-quote requirement is
+		// NOT redundant: it is what rejects an end-of-line continuation, whose quote
+		// lands on the next line.
+		if (!/^"[^"\\]*"$/.test(scalar)) return null;
+		scalar = scalar.slice(1, -1);
+	} else if (scalar.startsWith("'")) {
+		if (!/^'[^']*'$/.test(scalar)) return null;
+		scalar = scalar.slice(1, -1);
+	}
+
+	if (PLAIN_ACTION_REF.test(scalar)) return scalar;
+	if (LOCAL_ACTION_REF.test(scalar)) return scalar;
+	if (DOCKER_ACTION_REF.test(scalar)) return scalar;
+	return null;
+}
+
+function assertEveryUsesIsInspectable(lines, file) {
+	const uninspectable = [];
+	lines.forEach((line, index) => {
+		if (COMMENT_LINE.test(line)) return;
+		const match = line.match(USES_LINE);
+		if (!match) return;
+		if (inspectableUsesValue(match[2]) !== null) return;
+		uninspectable.push(`${file}:${index + 1}: ${line.trim()}`);
+	});
+
+	assert.deepEqual(
+		uninspectable,
+		[],
+		`uses: values this scanner cannot resolve, so it cannot prove they are not a checkout (write them as a plain owner/repo@ref): ${uninspectable.join(" | ")}`,
+	);
+}
+
 function indentOf(line) {
 	const match = line.match(/^(\s*)/);
 	return match ? match[1].length : 0;
@@ -139,6 +208,7 @@ function collectCheckouts(content, file) {
 		});
 	}
 	assertEveryMentionRecognized(lines, checkouts, file);
+	assertEveryUsesIsInspectable(lines, file);
 	return checkouts;
 }
 
@@ -332,6 +402,60 @@ test("a commented-out checkout is not treated as an unrecognized step", () => {
 	const checkouts = collectCheckouts(yaml, "example.yml");
 	assert.equal(checkouts.length, 1);
 	assert.equal(checkouts[0].line, 5);
+});
+
+test("a checkout spelled around the literal fails closed", () => {
+	// The three spellings that defeated CHECKOUT_MENTION. All resolve to
+	// actions/checkout@v4 under YAML 1.2; none contains the literal on one line.
+	const spellings = {
+		"solidus escape": '      - uses: "actions\\/checkout@v4"',
+		"unicode escape": '      - uses: "actions\\u002Fcheckout@v4"',
+	};
+	for (const [label, step] of Object.entries(spellings)) {
+		const yaml = ["jobs:", "  a:", "    steps:", step].join("\n");
+		assert.throws(
+			() => collectCheckouts(yaml, "sneaky.yml"),
+			/sneaky\.yml:4: .*cannot resolve|cannot resolve.*sneaky\.yml:4/s,
+			`${label} must be rejected`,
+		);
+	}
+
+	// Line continuation: the closing quote is on the next line, so the value is not a
+	// plain scalar and the reference is split across two lines.
+	const continued = [
+		"jobs:",
+		"  a:",
+		"    steps:",
+		'      - uses: "actions/check\\',
+		'          out@v4"',
+	].join("\n");
+	assert.throws(() => collectCheckouts(continued, "sneaky.yml"), /cannot resolve/);
+});
+
+test("every uses: form the repo relies on stays inspectable", () => {
+	// Guards the other direction: fail closed on unparseable, not on unfamiliar.
+	const yaml = [
+		"jobs:",
+		"  a:",
+		"    steps:",
+		"      - uses: actions/checkout@v4",
+		"        with:",
+		"          persist-credentials: false",
+		"      - uses: actions/setup-node@v4",
+		"      - uses: frankekn/needlefish@v0",
+		"      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0",
+		"        with:",
+		"          persist-credentials: false",
+		'      - uses: "actions/setup-node@v4"',
+		"      - uses: 'actions/setup-node@v4'",
+		"      - uses: ./.github/actions/setup",
+		"      - uses: owner/repo/sub/dir@main",
+		"      - uses: docker://alpine:3.19",
+		"      # - uses: whatever/nonsense@\\/weird",
+	].join("\n");
+	const checkouts = collectCheckouts(yaml, "legit.yml");
+	assert.equal(checkouts.length, 2, "both plain checkouts stay recognized");
+	assertCheckoutPolicy(checkouts, []);
 });
 
 test("a YAML alias cannot smuggle a checkout past the scanner", () => {
