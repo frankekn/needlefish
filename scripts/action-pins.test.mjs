@@ -6,6 +6,11 @@ import test from "node:test";
 const SHA = /^[0-9a-f]{40}$/;
 const VERSION_COMMENT = /^v\d+\.\d+\.\d+$/;
 const FIRST_PARTY_FLOATING = /^frankekn\/needlefish@v\d+$/;
+// Only hosted-review.yml is allowed to carry a floating frankekn/needlefish@vN ref:
+// it deliberately live-tests the published major tag (see the file's header comment).
+// Any other workflow (deploy.yml, release.yml, etc.) must SHA-pin like every other
+// action, or a floating first-party tag could silently ship in a privileged workflow.
+const FIRST_PARTY_FLOATING_EXEMPT_FILE = join(".github/workflows", "hosted-review.yml");
 const PINNED_RUNNER = /^(\d+)\.(\d+)\.(\d+)$/;
 
 function workflowFiles() {
@@ -32,33 +37,60 @@ function usesLines(text) {
   return found;
 }
 
+// Checks one `uses:` line against the pinning invariant. Returns `{ exempt: true }`
+// for the hosted-review.yml floating first-party tag; otherwise asserts SHA+version
+// comment and returns `{ exempt: false }`. Exported behavior only via return value so
+// both the aggregate sweep test and the file-scoping unit tests exercise the same logic.
+function assertPinned(file, use) {
+  if (file === FIRST_PARTY_FLOATING_EXEMPT_FILE && FIRST_PARTY_FLOATING.test(use.action)) {
+    return { exempt: true };
+  }
+  const at = use.action.lastIndexOf("@");
+  assert.notEqual(at, -1, `${file}:${use.line} missing @ref: ${use.raw}`);
+  const ref = use.action.slice(at + 1);
+  assert.match(
+    ref,
+    SHA,
+    `${file}:${use.line} third-party action must be a 40-hex SHA: ${use.raw}`,
+  );
+  assert.match(
+    use.comment,
+    VERSION_COMMENT,
+    `${file}:${use.line} SHA pin must have a # vX.Y.Z comment: ${use.raw}`,
+  );
+  return { exempt: false };
+}
+
 test("third-party actions are SHA-pinned with a version comment", () => {
   let thirdParty = 0;
   let firstParty = 0;
   for (const file of workflowFiles()) {
     for (const use of usesLines(readFileSync(file, "utf8"))) {
-      if (FIRST_PARTY_FLOATING.test(use.action)) {
+      const { exempt } = assertPinned(file, use);
+      if (exempt) {
         firstParty += 1;
-        continue;
+      } else {
+        thirdParty += 1;
       }
-      const at = use.action.lastIndexOf("@");
-      assert.notEqual(at, -1, `${file}:${use.line} missing @ref: ${use.raw}`);
-      const ref = use.action.slice(at + 1);
-      assert.match(
-        ref,
-        SHA,
-        `${file}:${use.line} third-party action must be a 40-hex SHA: ${use.raw}`,
-      );
-      assert.match(
-        use.comment,
-        VERSION_COMMENT,
-        `${file}:${use.line} SHA pin must have a # vX.Y.Z comment: ${use.raw}`,
-      );
-      thirdParty += 1;
     }
   }
   assert.ok(thirdParty > 0, "expected at least one third-party action pin");
   assert.ok(firstParty > 0, "expected the hosted live-test first-party floating ref");
+});
+
+test("floating first-party tag is exempt in hosted-review.yml", () => {
+  const use = { line: 1, action: "frankekn/needlefish@v0", comment: "", raw: "uses: frankekn/needlefish@v0" };
+  const result = assertPinned(FIRST_PARTY_FLOATING_EXEMPT_FILE, use);
+  assert.deepEqual(result, { exempt: true });
+});
+
+test("floating first-party tag fails the invariant outside hosted-review.yml", () => {
+  const use = { line: 1, action: "frankekn/needlefish@v1", comment: "", raw: "uses: frankekn/needlefish@v1" };
+  assert.throws(
+    () => assertPinned(join(".github/workflows", "deploy.yml"), use),
+    /must be a 40-hex SHA/,
+    "a floating first-party tag must not be silently exempted in a privileged workflow",
+  );
 });
 
 test("hosted action pins a version per runner and lets runner_version override", () => {
