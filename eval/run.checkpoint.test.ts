@@ -330,6 +330,90 @@ test("resumeSlots: reuses already-checkpointed draws from a partially-completed 
 	);
 });
 
+// A positional `good[draw]` lookup relabels results: if draw 0 failed
+// format and draw 1 succeeded, the one entry in `good` (draw 1's own
+// result) sits at position 0 and would be mislabeled as draw 0, backfilling
+// the failed draw with a stranger's result while the untouched draw 1 slot
+// gets needlessly rescheduled. Reuse must be keyed by each draw's own
+// recorded draw number.
+test("resumeSlots: reuses a draw only under its own recorded draw number, never a stranger's", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(
+		path.join(tmpdir(), "needlefish-checkpoint-draw-index-"),
+	);
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const reportPath = path.join(dir, "report.json");
+	const spec = checkpointSpec("checkpoint-draw-index");
+	const specs = [spec];
+	const writeArgs = parseArgs(["--draws", "2", "--report", reportPath]);
+	const failedDraw0 = makeDraw(spec, 0);
+	const goodDraw1 = makeDraw(spec, 1);
+	const invalidDraw0 = {
+		...failedDraw0,
+		score: { ...failedDraw0.score, formatOk: false },
+	};
+	writeReport(writeArgs, [invalidDraw0, goodDraw1], specs);
+
+	const resumeArgs = parseArgs([
+		"--draws",
+		"2",
+		"--report",
+		reportPath,
+		"--resume",
+		reportPath,
+	]);
+	const work = [
+		{ spec, draw: 0 },
+		{ spec, draw: 1 },
+	];
+	const resumed = resumeSlots(resumeArgs, specs, work);
+
+	assert.equal(
+		resumed.slots[0],
+		null,
+		"draw 0's own result was invalid and must be rerun under its own index, not backfilled from draw 1",
+	);
+	assert.notEqual(
+		resumed.slots[1],
+		null,
+		"draw 1's own good result must be reused under its own index",
+	);
+	assert.equal(resumed.slots[1]?.draw, 1);
+
+	// Gate-integrity check: a resumed run must not understate the invalid
+	// rate versus an uninterrupted run of the exact same two attempts. A
+	// non-resumed run of [invalid draw 0, good draw 1] would report
+	// invalidJsonRate 0.5; if resume silently drops the invalid draw (by
+	// mislabeling a good draw over it and never truly retrying slot 0), the
+	// gate would see a better number than reality.
+	const baselineReport = writeReport(
+		parseArgs(["--draws", "2", "--report", path.join(dir, "baseline.json")]),
+		[invalidDraw0, goodDraw1],
+		specs,
+	);
+	assert.equal(baselineReport.aggregates.invalidJsonRate, 0.5);
+
+	// The resumed process retries slot 0 (the invalid draw) and, in this
+	// scenario, reproduces the same failure again.
+	const rerunDraw0 = {
+		...makeDraw(spec, 0),
+		score: { ...makeDraw(spec, 0).score, formatOk: false },
+	};
+	const finalResults = [rerunDraw0, resumed.slots[1]!];
+	const finalReport = writeReport(resumeArgs, finalResults, specs);
+
+	assert.equal(
+		finalReport.results.length,
+		2,
+		"every draw must be accounted for in the final report",
+	);
+	assert.equal(
+		finalReport.aggregates.invalidJsonRate,
+		baselineReport.aggregates.invalidJsonRate,
+		"resume must not understate the invalid-draw rate relative to an uninterrupted run",
+	);
+});
+
 test("checkpoint: an interrupted fresh run leaves a partial report a later process --resume continues", (t) => {
 	withGuardEnv(t);
 	const dir = mkdtempSync(path.join(tmpdir(), "needlefish-checkpoint-resume-"));

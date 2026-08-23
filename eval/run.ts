@@ -340,6 +340,18 @@ export function resumeSlots(
 			arr.push(r);
 			byFixture.set(r.fixtureId, arr);
 		}
+		// Index good draws by their OWN recorded draw number, not by position
+		// in completion order. Draws land in `existing.results` in whatever
+		// order they finished (concurrent runs), and a failed draw is
+		// filtered out of "good" — so a positional `good[draw]` lookup (the
+		// prior approach) silently relabels one draw's result as another's:
+		// e.g. draws=2 with draw 0 failed and draw 1 good leaves `good` with
+		// one entry whose OWN draw number is 1, but a positional lookup would
+		// hand it to slot 0 under a false draw-0 label while slot 1 (which
+		// has no result at all) gets rescheduled. Reusing a draw must mean
+		// "this exact draw number already has a good result on disk", never
+		// "some good result exists nearby".
+		//
 		// `skipped` counts fully-completed fixtures (kept for the existing
 		// stderr/return contract); it does not gate which individual draws
 		// are reused below. A fixture interrupted partway through a run — the
@@ -347,25 +359,32 @@ export function resumeSlots(
 		// survive — still has its already-good draws on disk and must not
 		// have them thrown away just because the fixture as a whole isn't
 		// done.
+		const goodByFixture = new Map<string, Map<number, DrawResult>>();
 		for (const spec of specs) {
-			const draws = byFixture.get(spec.id) ?? [];
-			const good = draws.filter((d) => d.score.formatOk);
-			if (good.length >= args.draws) {
-				skipped++;
+			const goodByDraw = new Map<number, DrawResult>();
+			for (const d of byFixture.get(spec.id) ?? []) {
+				if (d.score.formatOk) goodByDraw.set(d.draw, d);
 			}
+			goodByFixture.set(spec.id, goodByDraw);
+			let complete = true;
+			for (let draw = 0; draw < args.draws; draw++) {
+				if (!goodByDraw.has(draw)) {
+					complete = false;
+					break;
+				}
+			}
+			if (complete) skipped++;
 		}
 		let reusedDraws = 0;
 		for (let i = 0; i < work.length; i++) {
 			const { spec, draw } = work[i];
-			const good = (byFixture.get(spec.id) ?? []).filter(
-				(d) => d.score.formatOk,
-			);
-			if (draw >= good.length) continue;
+			const match = goodByFixture.get(spec.id)?.get(draw);
+			if (!match) continue;
 			slots[i] = {
-				...good[draw],
+				...match,
 				draw,
-				calls: good[draw].calls ?? 0,
-				retries: good[draw].retries ?? 0,
+				calls: match.calls ?? 0,
+				retries: match.retries ?? 0,
 			};
 			reusedDraws++;
 		}
