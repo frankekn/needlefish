@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
+	copyFileSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -148,6 +149,80 @@ test("writeReport: a later smaller checkpoint does not overwrite a larger one", 
 		[0, 1, 2, 3],
 	);
 	assert.deepEqual(leftoverTemps(dir), []);
+});
+
+// lastCheckpointCounts is a process-local high-water mark, empty at process
+// start. Without seeding it from whatever is already on disk, a FRESH run
+// (no --resume) that reuses a --report path already holding a complete
+// report from a prior process would have its own first partial checkpoint
+// (as small as one draw) pass the guard trivially and destroy that report —
+// and a crash before the new run finishes would leave only a partial file
+// behind, with the previously-good report unrecoverably gone. This
+// simulates the prior process by writing the "existing" complete report via
+// copyFileSync (not writeReport), so this test's own lastCheckpointCounts
+// has no entry for reportPath when the "fresh run" begins.
+test("writeReport: a fresh run's interrupted partial checkpoint does not destroy a complete report already on disk", (t) => {
+	withGuardEnv(t);
+	const dir = mkdtempSync(
+		path.join(tmpdir(), "needlefish-checkpoint-preserve-existing-"),
+	);
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const reportPath = path.join(dir, "report.json");
+	const stagingPath = path.join(dir, "staging.json");
+
+	// A prior process's complete report: 2 fixtures x 2 draws = 4 results.
+	const specA = checkpointSpec("checkpoint-preserve-existing-a");
+	const specB = checkpointSpec("checkpoint-preserve-existing-b");
+	const priorSpecs = [specA, specB];
+	const priorResults = [
+		makeDraw(specA, 0),
+		makeDraw(specA, 1),
+		makeDraw(specB, 0),
+		makeDraw(specB, 1),
+	];
+	const priorArgs = parseArgs(["--draws", "2", "--report", stagingPath]);
+	const priorReport = writeReport(priorArgs, priorResults, priorSpecs);
+	assert.equal(isCompleteReport(priorReport, priorSpecs.map((s) => s.id)), true);
+	copyFileSync(stagingPath, reportPath);
+
+	// A fresh, unrelated, non-resumed run targets the same --report path
+	// with a smaller, different fixture set. Only its first draw completes
+	// before the process is "interrupted" (simulated by simply not issuing
+	// any further writeReport call).
+	const specC = checkpointSpec("checkpoint-preserve-existing-c");
+	const freshSpecs = [specC];
+	const freshArgs = parseArgs(["--draws", "2", "--report", reportPath]);
+	writeReport(freshArgs, [makeDraw(specC, 0)], freshSpecs);
+
+	const afterPartial = readReport(reportPath);
+	assert.equal(
+		afterPartial.results.length,
+		4,
+		"an interrupted fresh run's partial checkpoint must not destroy the complete report already on disk",
+	);
+	assert.equal(isCompleteReport(afterPartial, priorSpecs.map((s) => s.id)), true);
+
+	// The fresh run continues and reaches its OWN completion (2 draws for
+	// its 1 fixture = 2 results) — smaller than the old report's 4, but
+	// structurally complete on its own terms. A legitimate finished rerun
+	// must still be able to replace an old complete report; the guard must
+	// not make --report unusable for an intentional smaller rerun.
+	const finalReport = writeReport(
+		freshArgs,
+		[makeDraw(specC, 0), makeDraw(specC, 1)],
+		freshSpecs,
+	);
+	assert.equal(isCompleteReport(finalReport, freshSpecs.map((s) => s.id)), true);
+	const afterFinal = readReport(reportPath);
+	assert.equal(
+		afterFinal.results.length,
+		2,
+		"a legitimately completed fresh run must still be able to replace an old complete report",
+	);
+	assert.deepEqual(
+		afterFinal.results.map((r) => r.fixtureId),
+		[specC.id, specC.id],
+	);
 });
 
 test("writeReport: the completed report atomically supersedes a partial checkpoint", (t) => {

@@ -505,7 +505,38 @@ export function aggregateMustFindHitRates(
 // Per-process high-water mark of results flushed to each report path.
 // Concurrent draw completions can invoke writeReport with snapshots taken
 // at different sizes; a later call must not replace a larger checkpoint.
+//
+// This map starts empty in every process. Without seeding it from disk, a
+// FRESH run (no --resume) pointed at a --report path that already holds a
+// complete report from a prior invocation would have its own first partial
+// checkpoint (as small as one draw) pass this guard trivially — lastCount
+// is undefined, so incomingCount < lastCount is never true — and
+// atomically overwrite the old complete report. A crash before the new run
+// finishes then leaves only a partial file that isCompleteReport rejects,
+// with the previously-good report unrecoverably gone: the checkpoint
+// feature this guard belongs to (crash resilience, #58) would have
+// destroyed the very artifact it exists to protect.
 const lastCheckpointCounts = new Map<string, number>();
+
+// Reads whatever report already sits at `targetPath` (if any) so a fresh
+// process can seed its high-water mark from disk instead of starting blind.
+// readFileSync follows the symlink chain to read the real file, same as any
+// normal read — only rename(2)'s no-dereference-on-final-component behavior
+// (handled separately by resolveWriteDestination) needs manual walking.
+function readExistingReportCount(targetPath: string): number | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(targetPath, "utf8");
+	} catch {
+		return undefined;
+	}
+	try {
+		const parsed = JSON.parse(raw) as { results?: unknown };
+		return Array.isArray(parsed.results) ? parsed.results.length : undefined;
+	} catch {
+		return undefined;
+	}
+}
 
 // Symlink chains can be arbitrarily long; this is comfortably above what any
 // real --report path would use and matches the ballpark of the OS's own
@@ -706,12 +737,32 @@ export function writeReport(
 	};
 	const targetPath = path.resolve(args.report);
 	const incomingCount = results.length;
-	const lastCount = lastCheckpointCounts.get(targetPath);
-	if (lastCount !== undefined && incomingCount < lastCount) {
+	if (!lastCheckpointCounts.has(targetPath)) {
+		// First checkpoint attempt this process has made to this path: seed
+		// the high-water mark from whatever report is already on disk so this
+		// run's own first (necessarily small) partial checkpoint cannot
+		// silently destroy a prior report before this run has produced
+		// anything at least as complete.
+		lastCheckpointCounts.set(targetPath, readExistingReportCount(targetPath) ?? 0);
+	}
+	const lastCount = lastCheckpointCounts.get(targetPath) as number;
+	// A partial (still in-progress) checkpoint must never regress below
+	// whatever is already the most-complete artifact at this path — from a
+	// prior process's on-disk report or from this run's own earlier
+	// checkpoints. But a report that is itself structurally complete (every
+	// fixture x draw pair present) is this run's deliberate final artifact
+	// and always wins, even if its own count is smaller than what preceded
+	// it (e.g. a rerun with --draws intentionally lowered) — otherwise
+	// --report would become unusable for a legitimate rerun.
+	const incomingComplete = isCompleteReport(
+		report,
+		specs.map((s) => s.id),
+	);
+	if (!incomingComplete && incomingCount < lastCount) {
 		return report;
 	}
 	atomicWriteFile(targetPath, JSON.stringify(report, null, 2));
-	lastCheckpointCounts.set(targetPath, incomingCount);
+	lastCheckpointCounts.set(targetPath, Math.max(incomingCount, lastCount));
 	return report;
 }
 
