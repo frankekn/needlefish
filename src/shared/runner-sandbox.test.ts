@@ -304,6 +304,28 @@ test("prepareRunnerSandbox escapes repository-controlled LFS pathnames", (t) => 
   }
 });
 
+test("prepareRunnerSandbox discloses an LFS pointer whose pathname begins with a space", (t) => {
+  // `git ls-files -z` is a NUL-delimited byte stream, and a leading-space name
+  // sorts first. Trimming that stream corrupts the first entry; the corrupted
+  // path then fails to open, so the pointer would drop out of the notice
+  // entirely — a silent omission dressed up as "nothing to disclose".
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
+    writeFileSync(path.join(r, " leading-space.bin"), LFS_POINTER_BODY);
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  assert.match(sandbox.prompt, /^- " leading-space\.bin"$/m);
+});
+
 test("prepareRunnerSandbox discloses uncertainty when the LFS candidate list is truncated", (t) => {
   // More LFS-tracked files than the probe ceiling, none of them pointers in the
   // probed prefix. Concluding "no pointers" from a partial scan would be the

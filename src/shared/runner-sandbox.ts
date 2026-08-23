@@ -227,7 +227,7 @@ function lfsDisclosure(sandboxPath: string): string {
   if (scan === "unknown") return renderUncertainNotice();
   let candidates: string[];
   try {
-    candidates = splitNulList(git(["ls-files", "-z", "--", ":(attr:filter=lfs)"], sandboxPath));
+    candidates = gitNulList(["ls-files", "-z", "--", ":(attr:filter=lfs)"], sandboxPath);
   } catch {
     // We already know the repo configures LFS, so failing to enumerate is
     // itself worth saying out loud rather than swallowing.
@@ -248,7 +248,7 @@ type LfsAttributeScan = "none" | "present" | "unknown";
 function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
   let attributeFiles: string[];
   try {
-    attributeFiles = splitNulList(git(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath));
+    attributeFiles = gitNulList(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath);
   } catch {
     return "unknown";
   }
@@ -302,10 +302,6 @@ function readSmallFileText(filePath: string, maxBytes: number): string | undefin
   } finally {
     closeSync(fd);
   }
-}
-
-function splitNulList(out: string): string[] {
-  return out.split("\0").filter((entry) => entry !== "");
 }
 
 // Pathnames here are repository-controlled: the author of the change under
@@ -371,7 +367,7 @@ function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function git(args: readonly string[], cwd: string, input?: string): string {
+function runGit(args: readonly string[], cwd: string, input?: string): string {
   const res = spawnSync("git", [...NEUTRAL_GIT_ARGS, ...args], {
     cwd,
     env: gitEnv(),
@@ -383,7 +379,22 @@ function git(args: readonly string[], cwd: string, input?: string): string {
   if (res.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${(res.stderr ?? "").slice(0, 2000)}`);
   }
-  return res.stdout.trim();
+  return res.stdout;
+}
+
+function git(args: readonly string[], cwd: string, input?: string): string {
+  return runGit(args, cwd, input).trim();
+}
+
+// NUL-delimited output must not be trimmed. A Git pathname may begin or end
+// with whitespace, so trimming the stream silently corrupts the first or last
+// entry — and a corrupted path no longer opens, so an LFS pointer would drop
+// out of the disclosure entirely. That is the same silence the disclosure
+// exists to remove, arriving through the plumbing instead.
+function gitNulList(args: readonly string[], cwd: string): string[] {
+  return runGit(args, cwd)
+    .split("\0")
+    .filter((entry) => entry !== "");
 }
 
 function gitEnv(): NodeJS.ProcessEnv {
