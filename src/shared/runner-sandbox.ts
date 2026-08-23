@@ -1,6 +1,16 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import type { RunnerName } from "./runner.js";
 import { RunnerTerminatingError } from "./temp-lifecycle.js";
@@ -158,11 +168,22 @@ export function assertRunnerSandboxClean(
       throw new RunnerWorktreeChangedError(runner, status.slice(0, 2000));
     }
     const expectedMetadata = sandboxGitMetadata.get(metadataKey);
-    if (
-      expectedMetadata !== undefined &&
-      expectedMetadata !== fingerprintGitSecurityMetadata(repoPath)
-    ) {
-      throw new RunnerWorktreeChangedError(runner, ".git/config or hooks changed");
+    if (expectedMetadata !== undefined) {
+      let actualMetadata: string;
+      try {
+        actualMetadata = fingerprintGitSecurityMetadata(repoPath);
+      } catch (error) {
+        // A refused entry shape is itself a mutation of the metadata this check
+        // guards, so it must surface as a runner safety error (retry-suppressing
+        // via isRunnerSafetyError) rather than as an opaque I/O failure.
+        if (error instanceof GitMetadataShapeError) {
+          throw new RunnerWorktreeChangedError(runner, error.message);
+        }
+        throw error;
+      }
+      if (expectedMetadata !== actualMetadata) {
+        throw new RunnerWorktreeChangedError(runner, ".git/config or hooks changed");
+      }
     }
   } finally {
     sandboxGitMetadata.delete(metadataKey);
@@ -233,16 +254,105 @@ function fingerprintGitSecurityMetadata(repoPath: string): string {
   return hash.digest("hex");
 }
 
+// Everything below runs in the PARENT process, after the runner subprocess has
+// exited, against paths the runner could write. Two properties of that trust
+// boundary make an unguarded read fatal rather than merely untidy:
+//
+//   1. There is no OS-level jail. `runner-process.ts` spawns the model CLI with
+//      plain spawn/spawnSync — no bwrap, chroot, seccomp, or container — so the
+//      runner can create any file type inside its own sandbox clone, including
+//      a FIFO or a symlink pointing outside it. (See the AGENTS.md convention:
+//      runners deliberately run unrestricted; the throwaway clone plus *these*
+//      post-run checks are the isolation.)
+//   2. The runner's own containment does not cover us. The subprocess timeout
+//      and the 64MB output cap bound the *child*; this fingerprint runs after
+//      the child is gone, with no timeout of its own. A blocking read here
+//      hangs the review forever and an unbounded one exhausts parent memory —
+//      neither is caught by anything upstream.
+//
+// So only regular files of plausible size are hashed, and the entry type is
+// resolved from the file descriptor we actually read (O_NOFOLLOW + fstat), not
+// from a path stat that a concurrent writer could invalidate. Anything else
+// fails the integrity check closed: a symlink, FIFO, socket, device node, or
+// multi-megabyte blob under .git is itself evidence that git metadata was
+// mutated, which is precisely what this check exists to detect. Skipping such
+// an entry would convert the loudest possible signal into silence.
+const MAX_GIT_METADATA_BYTES = 1024 * 1024;
+
+// O_NOFOLLOW makes a symlinked final component fail with ELOOP instead of being
+// followed; O_NONBLOCK keeps open() itself from blocking on a FIFO with no
+// writer (O_NOFOLLOW alone does not help there). Both are POSIX-only; on a
+// platform lacking them the fstat check below is still the guard that holds.
+const SAFE_OPEN_FLAGS =
+  fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0);
+
+class GitMetadataShapeError extends Error {
+  readonly name = "GitMetadataShapeError";
+}
+
+function errnoCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
+}
+
 function appendFileHash(hash: ReturnType<typeof createHash>, filePath: string): void {
+  let fd: number;
   try {
-    hash.update(readFileSync(filePath));
-  } catch {
-    hash.update("missing");
+    fd = openSync(filePath, SAFE_OPEN_FLAGS);
+  } catch (error) {
+    // A genuinely absent path is a normal fingerprint input (a repo with no
+    // hooks, a hook deleted between listing and hashing): hash the absence, so
+    // a deletion still changes the digest. Every other failure — ELOOP from a
+    // symlink, EACCES from a chmod'd file — is a shape we refuse to hash.
+    if (errnoCode(error) === "ENOENT") {
+      hash.update("missing");
+      return;
+    }
+    throw new GitMetadataShapeError(
+      `refusing to hash ${filePath}: open failed (${errnoCode(error) ?? String(error)})`
+    );
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) {
+      throw new GitMetadataShapeError(`refusing to hash non-regular git metadata entry ${filePath}`);
+    }
+    if (stat.size > MAX_GIT_METADATA_BYTES) {
+      throw new GitMetadataShapeError(
+        `refusing to hash oversized git metadata entry ${filePath} (${stat.size} bytes)`
+      );
+    }
+    // Read through the descriptor with an explicitly sized buffer: readFileSync
+    // would re-stat and keep reading a file that grows under us.
+    const buffer = Buffer.allocUnsafe(stat.size);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const read = readSync(fd, buffer, offset, buffer.length - offset, offset);
+      if (read === 0) break;
+      offset += read;
+    }
+    hash.update(buffer.subarray(0, offset));
+  } finally {
+    closeSync(fd);
   }
 }
 
 function listFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
+  let root;
+  try {
+    root = lstatSync(dir);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return [];
+    throw new GitMetadataShapeError(
+      `refusing to walk ${dir}: lstat failed (${errnoCode(error) ?? String(error)})`
+    );
+  }
+  // lstat, not existsSync: a hooks directory replaced by a symlink would
+  // otherwise be followed, walking and reading whatever it points at.
+  if (!root.isDirectory()) {
+    throw new GitMetadataShapeError(`refusing to walk non-directory git metadata path ${dir}`);
+  }
   const files: string[] = [];
   const stack = [dir];
   while (stack.length > 0) {
@@ -251,13 +361,23 @@ function listFiles(dir: string): string[] {
     let entries;
     try {
       entries = readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
+    } catch (error) {
+      throw new GitMetadataShapeError(
+        `refusing to walk ${current}: readdir failed (${errnoCode(error) ?? String(error)})`
+      );
     }
     for (const entry of entries) {
       const full = path.join(current, entry.name);
+      // Dirent types come from d_type and are not resolved through symlinks.
+      // Only these two shapes are expected under .git; an UNKNOWN d_type also
+      // lands in the reject branch, which is the fail-closed direction.
       if (entry.isDirectory()) stack.push(full);
-      else files.push(full);
+      else if (entry.isFile()) files.push(full);
+      else {
+        throw new GitMetadataShapeError(
+          `refusing to hash non-regular git metadata entry ${full}`
+        );
+      }
     }
   }
   return files.sort();

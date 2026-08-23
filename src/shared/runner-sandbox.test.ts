@@ -12,6 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildUntrackedPatch, joinSections } from "../adapters/local-uncommitted";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import {
@@ -322,4 +323,183 @@ test("assertRunnerSandboxClean rejects security-relevant .git metadata changes",
       return true;
     }
   );
+});
+
+// --- hostile .git metadata shapes -------------------------------------------
+//
+// These run the whole prepare -> mutate -> assert cycle in a CHILD process on
+// purpose. The shapes under test (a FIFO, a symlink to /dev/zero) make the
+// unguarded read block forever or allocate without bound; a synchronous hang
+// inside the test process would wedge the entire suite and no node:test
+// `timeout` option could fire, because the blocked syscall never yields the
+// event loop. spawnSync's timeout is enforced by the OS, so a regression here
+// fails the suite instead of hanging it.
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SANDBOX_MODULE = path.join(REPO_ROOT, "src", "shared", "runner-sandbox.ts");
+const HOSTILE_CHILD_TIMEOUT_MS = 20000;
+
+type HostileKind =
+  | "none"
+  | "hook-fifo"
+  | "hook-dev-zero-symlink"
+  | "config-outside-symlink"
+  | "hooks-dir-symlink"
+  | "hook-oversized"
+  | "hook-modified";
+
+function hostileChildScript(): string {
+  return `import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import {
+  assertRunnerSandboxClean,
+  isRunnerSafetyError,
+  prepareRunnerSandbox,
+} from ${JSON.stringify(SANDBOX_MODULE)};
+
+const [sourceRepo, sandboxTmp, headSha, kind, scratch] = process.argv.slice(2);
+const sandbox = prepareRunnerSandbox({
+  runner: "claude",
+  repoPath: sourceRepo,
+  prompt: "",
+  targetHeadSha: headSha,
+  tmp: sandboxTmp,
+});
+
+const gitDir = path.join(sandbox.repoPath, ".git");
+const hooksDir = path.join(gitDir, "hooks");
+const mkfifo = (p) => execFileSync("mkfifo", [p]);
+
+if (kind === "hook-fifo") {
+  mkfifo(path.join(hooksDir, "pre-commit"));
+} else if (kind === "hook-dev-zero-symlink") {
+  symlinkSync("/dev/zero", path.join(hooksDir, "pre-commit"));
+} else if (kind === "config-outside-symlink") {
+  // Byte-identical content at a path OUTSIDE the throwaway clone. An unguarded
+  // readFileSync follows the link, hashes the same bytes, and reports the
+  // sandbox clean — while .git/config now resolves to a file the runner is
+  // free to rewrite after the check has passed.
+  const outside = path.join(scratch, "outside-config");
+  const configPath = path.join(gitDir, "config");
+  writeFileSync(outside, readFileSync(configPath));
+  rmSync(configPath);
+  symlinkSync(outside, configPath);
+} else if (kind === "hooks-dir-symlink") {
+  const elsewhere = path.join(scratch, "elsewhere-hooks");
+  mkdirSync(elsewhere, { recursive: true });
+  mkfifo(path.join(elsewhere, "pre-commit"));
+  rmSync(hooksDir, { recursive: true, force: true });
+  symlinkSync(elsewhere, hooksDir);
+} else if (kind === "hook-oversized") {
+  writeFileSync(path.join(hooksDir, "pre-commit"), Buffer.alloc(2 * 1024 * 1024, 0x61));
+} else if (kind === "hook-modified") {
+  writeFileSync(path.join(hooksDir, "pre-commit"), "#!/bin/sh\\nexit 0\\n");
+}
+
+try {
+  assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+  process.stdout.write("NO_THROW\\n");
+  process.exit(0);
+} catch (error) {
+  process.stdout.write("SAFETY=" + isRunnerSafetyError(error) + "\\n");
+  process.stdout.write("MESSAGE=" + (error instanceof Error ? error.message : String(error)) + "\\n");
+  process.exit(3);
+}
+`;
+}
+
+function runHostileSandboxChild(
+  t: { after: (fn: () => void) => void },
+  kind: HostileKind
+): { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string } {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-hostile-"));
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  const repoRoot = path.join(tmp, "source");
+  const sandboxTmp = path.join(tmp, "sandbox");
+  const scratch = path.join(tmp, "scratch");
+  mkdirSync(repoRoot);
+  mkdirSync(sandboxTmp);
+  mkdirSync(scratch);
+  const repo = initRepo(repoRoot);
+  const scriptPath = path.join(tmp, "hostile-child.mts");
+  writeFileSync(scriptPath, hostileChildScript());
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", scriptPath, repo, sandboxTmp, headSha(repo), kind, scratch],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      timeout: HOSTILE_CHILD_TIMEOUT_MS,
+      env: { ...process.env, NO_COLOR: "1" },
+    }
+  );
+  return {
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
+function assertRefusedFast(
+  child: ReturnType<typeof runHostileSandboxChild>,
+  detail: RegExp
+): void {
+  // A killed child means the read blocked or allocated without bound — the
+  // exact DoS this guard exists to prevent.
+  assert.equal(
+    child.signal,
+    null,
+    `integrity check did not return within ${HOSTILE_CHILD_TIMEOUT_MS}ms (signal ${child.signal}); stderr: ${child.stderr.slice(0, 500)}`
+  );
+  assert.equal(child.status, 3, `expected a thrown safety error; stdout: ${child.stdout}\n${child.stderr.slice(0, 500)}`);
+  assert.match(child.stdout, /SAFETY=true/);
+  assert.match(child.stdout, /MESSAGE=.*refusing to /);
+  assert.match(child.stdout, detail);
+}
+
+test("assertRunnerSandboxClean control: an unmutated sandbox passes in the child harness", (t) => {
+  const child = runHostileSandboxChild(t, "none");
+  assert.equal(child.signal, null);
+  assert.equal(child.status, 0, `stdout: ${child.stdout}\nstderr: ${child.stderr.slice(0, 1000)}`);
+  assert.match(child.stdout, /NO_THROW/);
+});
+
+test("assertRunnerSandboxClean rejects a FIFO in .git/hooks without blocking", (t) => {
+  const child = runHostileSandboxChild(t, "hook-fifo");
+  assertRefusedFast(child, /non-regular git metadata entry .*hooks\/pre-commit/);
+});
+
+test("assertRunnerSandboxClean rejects a .git/hooks symlink to a character device", (t) => {
+  const child = runHostileSandboxChild(t, "hook-dev-zero-symlink");
+  assertRefusedFast(child, /hooks\/pre-commit/);
+});
+
+test("assertRunnerSandboxClean rejects a symlinked .git/config without following it", (t) => {
+  const child = runHostileSandboxChild(t, "config-outside-symlink");
+  assertRefusedFast(child, /refusing to hash .*\.git\/config: open failed \(ELOOP\)/);
+});
+
+test("assertRunnerSandboxClean rejects a symlinked .git/hooks directory", (t) => {
+  const child = runHostileSandboxChild(t, "hooks-dir-symlink");
+  assertRefusedFast(child, /non-directory git metadata path .*\.git\/hooks/);
+});
+
+test("assertRunnerSandboxClean rejects an oversized .git/hooks entry", (t) => {
+  const child = runHostileSandboxChild(t, "hook-oversized");
+  assertRefusedFast(child, /oversized git metadata entry/);
+});
+
+test("assertRunnerSandboxClean still reports an ordinary hook change as a metadata change", (t) => {
+  // Guards the other direction: the shape rejection must not swallow the plain
+  // content-drift signal this check was built for.
+  const child = runHostileSandboxChild(t, "hook-modified");
+  assert.equal(child.signal, null);
+  assert.equal(child.status, 3, `stdout: ${child.stdout}\nstderr: ${child.stderr.slice(0, 1000)}`);
+  assert.match(child.stdout, /SAFETY=true/);
+  assert.match(child.stdout, /MESSAGE=.*\.git\/config or hooks changed/);
 });
