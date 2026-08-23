@@ -326,6 +326,31 @@ test("prepareRunnerSandbox discloses an LFS pointer whose pathname begins with a
   assert.match(sandbox.prompt, /^- " leading-space\.bin"$/m);
 });
 
+test("prepareRunnerSandbox discloses an LFS pointer whose pathname is not valid UTF-8", (t) => {
+  // A Git pathname is a byte string: 0xFF 0xFE is a legal Linux filename and is
+  // not valid UTF-8. Decoding it to a JS string yields U+FFFD, and that path no
+  // longer opens — so the probe would read nothing, call it "not a pointer",
+  // and drop it from the notice without a word.
+  const rawName = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("-blob.bin", "utf8")]);
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
+    writeFileSync(Buffer.concat([Buffer.from(`${r}/`, "utf8"), rawName]), LFS_POINTER_BODY);
+  });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "REVIEW PROMPT BODY",
+    targetHeadSha: headSha(repo),
+    tmp: sandboxTmp,
+  });
+
+  assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  // Faithful to the bytes on disk, and still unable to break out of the bullet.
+  assert.match(sandbox.prompt, /^- "\\xff\\xfe-blob\.bin"$/m);
+  assert.doesNotMatch(sandbox.prompt, /�/);
+});
+
 test("prepareRunnerSandbox discloses uncertainty when the LFS candidate list is truncated", (t) => {
   // More LFS-tracked files than the probe ceiling, none of them pointers in the
   // probed prefix. Concluding "no pointers" from a partial scan would be the

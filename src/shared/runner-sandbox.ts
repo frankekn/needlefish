@@ -225,7 +225,7 @@ function lfsDisclosure(sandboxPath: string): string {
   const scan = scanLfsAttributes(sandboxPath);
   if (scan === "none") return "";
   if (scan === "unknown") return renderUncertainNotice();
-  let candidates: string[];
+  let candidates: Buffer[];
   try {
     candidates = gitNulList(["ls-files", "-z", "--", ":(attr:filter=lfs)"], sandboxPath);
   } catch {
@@ -235,7 +235,7 @@ function lfsDisclosure(sandboxPath: string): string {
   }
   const probed = candidates.slice(0, MAX_LFS_PROBE_CANDIDATES);
   const truncated = candidates.length > probed.length;
-  const pointers = probed.filter((rel) => isLfsPointerFile(path.join(sandboxPath, rel)));
+  const pointers = probed.filter((rel) => isLfsPointerFile(sandboxChildPath(sandboxPath, rel)));
   // "No pointer in the part we looked at" is not "no pointer". Only an
   // exhaustive scan may conclude silence; a truncated one must still say so,
   // or the disclosure reintroduces the very silence it exists to remove.
@@ -246,7 +246,7 @@ function lfsDisclosure(sandboxPath: string): string {
 type LfsAttributeScan = "none" | "present" | "unknown";
 
 function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
-  let attributeFiles: string[];
+  let attributeFiles: Buffer[];
   try {
     attributeFiles = gitNulList(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath);
   } catch {
@@ -255,7 +255,7 @@ function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
   const probed = attributeFiles.slice(0, MAX_LFS_PROBE_CANDIDATES);
   let unreadable = false;
   for (const rel of probed) {
-    const text = readSmallFileText(path.join(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+    const text = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
     if (text === undefined) {
       unreadable = true;
       continue;
@@ -267,9 +267,20 @@ function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
   return unreadable || attributeFiles.length > probed.length ? "unknown" : "none";
 }
 
-function isLfsPointerFile(filePath: string): boolean {
+function isLfsPointerFile(filePath: Buffer): boolean {
   const text = readSmallFileText(filePath, MAX_LFS_POINTER_BYTES);
   return text !== undefined && text.startsWith(LFS_POINTER_PREFIX);
+}
+
+// A Git pathname is a byte string, not text: on Linux any byte except NUL and
+// '/' is legal, so a repository may contain names that are not valid UTF-8.
+// Decoding one to a JS string replaces those bytes with U+FFFD, and the
+// resulting path no longer opens — which for this probe would mean the pointer
+// reads as "not a pointer" and drops silently out of the notice. So repository
+// pathnames stay Buffers all the way to the filesystem call (fs accepts Buffer
+// paths), and are decoded only for display, where they are escaped anyway.
+function sandboxChildPath(sandboxPath: string, rel: Buffer): Buffer {
+  return Buffer.concat([Buffer.from(`${sandboxPath}${path.sep}`, "utf8"), rel]);
 }
 
 // Same open/fstat/size discipline as the integrity fingerprint, for the same
@@ -279,7 +290,7 @@ function isLfsPointerFile(filePath: string): boolean {
 // be a symlink or a large binary; that is not an integrity signal, and this
 // runs at sandbox creation, before any runner exists. The fingerprint's
 // fail-closed rejection is unchanged and unshared.
-function readSmallFileText(filePath: string, maxBytes: number): string | undefined {
+function readSmallFileText(filePath: string | Buffer, maxBytes: number): string | undefined {
   let fd: number;
   try {
     fd = openSync(filePath, SAFE_OPEN_FLAGS);
@@ -311,12 +322,30 @@ function readSmallFileText(filePath: string, maxBytes: number): string | undefin
 // therefore JSON-quoted (which escapes newlines, quotes, backslashes and C0
 // controls) and length-clipped; U+2028/U+2029 are escaped too, since JSON
 // permits them raw yet many renderers treat them as line breaks.
-const MAX_DISCLOSED_PATH_CHARS = 256;
+// Bytes that are not valid UTF-8 are rendered \xNN rather than decoded, so the
+// disclosed name stays faithful to what is actually on disk and still cannot
+// carry a line break or a quote into the prompt.
+const MAX_DISCLOSED_PATH_BYTES = 256;
 
-function formatDisclosedPath(rel: string): string {
+function formatDisclosedPath(rel: Buffer): string {
   const clipped =
-    rel.length > MAX_DISCLOSED_PATH_CHARS ? `${rel.slice(0, MAX_DISCLOSED_PATH_CHARS)}...` : rel;
-  return JSON.stringify(clipped).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+    rel.length > MAX_DISCLOSED_PATH_BYTES ? rel.subarray(0, MAX_DISCLOSED_PATH_BYTES) : rel;
+  const suffix = clipped.length < rel.length ? "..." : "";
+  const decoded = clipped.toString("utf8");
+  if (Buffer.compare(Buffer.from(decoded, "utf8"), clipped) === 0) {
+    return JSON.stringify(decoded + suffix)
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+  }
+  let escaped = "";
+  for (const byte of clipped) {
+    const printableAscii = byte >= 0x20 && byte < 0x7f;
+    escaped =
+      printableAscii && byte !== 0x22 && byte !== 0x5c
+        ? escaped + String.fromCharCode(byte)
+        : `${escaped}\\x${byte.toString(16).padStart(2, "0")}`;
+  }
+  return `"${escaped}${suffix}"`;
 }
 
 function renderUncertainNotice(): string {
@@ -330,7 +359,7 @@ function renderUncertainNotice(): string {
   ].join("\n");
 }
 
-function renderLfsNotice(pointerPaths: string[], total: number, truncated: boolean): string {
+function renderLfsNotice(pointerPaths: Buffer[], total: number, truncated: boolean): string {
   const shown = pointerPaths.slice(0, MAX_DISCLOSED_LFS_PATHS);
   const lines = [
     "GIT LFS NOTICE (from the needlefish sandbox, not from the repository):",
@@ -386,15 +415,33 @@ function git(args: readonly string[], cwd: string, input?: string): string {
   return runGit(args, cwd, input).trim();
 }
 
-// NUL-delimited output must not be trimmed. A Git pathname may begin or end
-// with whitespace, so trimming the stream silently corrupts the first or last
-// entry — and a corrupted path no longer opens, so an LFS pointer would drop
-// out of the disclosure entirely. That is the same silence the disclosure
-// exists to remove, arriving through the plumbing instead.
-function gitNulList(args: readonly string[], cwd: string): string[] {
-  return runGit(args, cwd)
-    .split("\0")
-    .filter((entry) => entry !== "");
+// NUL-delimited output is read as raw bytes and never trimmed or decoded. Two
+// distinct corruptions live here, and both end as a silently dropped pointer:
+// trimming mangles a pathname that begins or ends with whitespace, and UTF-8
+// decoding mangles one that is not valid UTF-8. Either way the path stops
+// opening, the probe concludes "not a pointer", and the disclosure goes quiet.
+function gitNulList(args: readonly string[], cwd: string): Buffer[] {
+  const res = spawnSync("git", [...NEUTRAL_GIT_ARGS, ...args], {
+    cwd,
+    env: gitEnv(),
+    timeout: 30000,
+  });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} failed: ${(res.stderr ?? Buffer.alloc(0)).toString("utf8").slice(0, 2000)}`
+    );
+  }
+  const out: Buffer = res.stdout;
+  const parts: Buffer[] = [];
+  let start = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] !== 0) continue;
+    if (i > start) parts.push(out.subarray(start, i));
+    start = i + 1;
+  }
+  if (start < out.length) parts.push(out.subarray(start));
+  return parts;
 }
 
 function gitEnv(): NodeJS.ProcessEnv {
