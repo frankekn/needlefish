@@ -19,13 +19,55 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event.issue.pull_request &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       startsWith(github.event.comment.body, '@needlefish ')
     outputs:
       command: ${{ steps.cmd.outputs.command }}
       finding: ${{ steps.cmd.outputs.finding }}
     steps:
+      - name: Check repository permission
+        id: auth
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+          echo "allowed=false" >> "$GITHUB_OUTPUT"
+          : "${REPO:?REPO is required}"
+          : "${COMMENTER:?COMMENTER is required}"
+
+          payload="$(gh api "repos/${REPO}/collaborators/${COMMENTER}/permission")" || {
+            echo "Failed to look up repository permission for the commenter" >&2
+            exit 1
+          }
+
+          # Effective access: .permission maps maintain→write and triage→read.
+          # Allow admin/maintain/write on either field; everything else denies.
+          role="$(printf '%s\n' "$payload" | node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); if (typeof data.role_name === "string") process.stdout.write(data.role_name);')" || {
+            echo "Invalid permission payload" >&2
+            exit 1
+          }
+          perm="$(printf '%s\n' "$payload" | node -e 'const fs = require("node:fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); if (typeof data.permission === "string") process.stdout.write(data.permission);')" || {
+            echo "Invalid permission payload" >&2
+            exit 1
+          }
+
+          allowed=false
+          case "$role" in
+            admin|maintain|write) allowed=true ;;
+          esac
+          case "$perm" in
+            admin|maintain|write) allowed=true ;;
+          esac
+
+          if [ "$allowed" != true ]; then
+            echo "Denied: commenter lacks write permission on this repository" >&2
+            exit 1
+          fi
+
+          echo "allowed=true" >> "$GITHUB_OUTPUT"
       - name: Parse command
+        if: steps.auth.outputs.allowed == 'true'
         id: cmd
         env:
           BODY: ${{ github.event.comment.body }}
@@ -47,13 +89,13 @@ jobs:
             echo "finding=$finding"
           } >> "$GITHUB_OUTPUT"
       - name: Acknowledge
-        if: steps.cmd.outputs.command != ''
+        if: steps.auth.outputs.allowed == 'true' && steps.cmd.outputs.command != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api -X POST "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes
       - name: Dispatch recheck
-        if: steps.cmd.outputs.command == 'recheck'
+        if: steps.auth.outputs.allowed == 'true' && steps.cmd.outputs.command == 'recheck'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
