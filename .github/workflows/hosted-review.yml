@@ -1,7 +1,8 @@
 # Dogfood the composite action on a GitHub-hosted runner.
 # Manual trigger only — pull_request reviews stay on the self-hosted runner
 # (review.yml); this exists to live-test the `uses: frankekn/needlefish@v0`
-# path without double-reviewing every PR.
+# path without double-reviewing every PR. The first-party v0 tag is
+# deliberately floating; do not SHA-pin it.
 name: hosted-review
 on:
   workflow_dispatch:
@@ -17,7 +18,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           persist-credentials: false

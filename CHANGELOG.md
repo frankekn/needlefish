@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- GitHub: pin third-party Actions to commit SHAs and pin hosted-action runner
+  CLI defaults per runner, with `runner_version` as an explicit override.
 - GitHub: execute the exact immutable release selected by
   `needlefish_release_sha`, so a newer deployment cannot invalidate or replace a
   caller-pinned review runtime.

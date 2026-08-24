@@ -20,9 +20,10 @@ inputs:
     description: "Codex reasoning effort: medium, high, or xhigh"
     required: false
   runner_version:
-    description: npm version of the model runner CLI to install
+    description: >-
+      npm version of the selected runner CLI. Omit to install the per-runner
+      pin in the install step; set to override (including an intentional latest).
     required: false
-    default: latest
   repo_path:
     description: Path to the target repo checkout to review
     required: false
@@ -37,7 +38,7 @@ branding:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: 20
     - name: Install needlefish dependencies
@@ -54,13 +55,14 @@ runs:
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex) pkg="@openai/codex" ;;
-          claude) pkg="@anthropic-ai/claude-code" ;;
-          opencode) pkg="opencode-ai" ;;
-          pi) pkg="@mariozechner/pi" ;;
+          codex) pkg="@openai/codex"; pinned="0.149.0" ;;
+          claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.239" ;;
+          opencode) pkg="opencode-ai"; pinned="1.18.21" ;;
+          pi) pkg="@mariozechner/pi"; pinned="0.70.6" ;;
           *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
-        npm install -g "${pkg}@${NF_RUNNER_VERSION}"
+        ver="${NF_RUNNER_VERSION:-$pinned}"
+        npm install -g "${pkg}@${ver}"
     - name: Authenticate model runner
       shell: bash
       env:

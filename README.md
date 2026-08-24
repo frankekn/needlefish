@@ -428,8 +428,15 @@ other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
-`runner_version` (npm version of the runner CLI), `repo_path` (defaults to the
-workspace checkout), `github_token` (defaults to the workflow token).
+`runner_version`, `repo_path` (defaults to the workspace checkout),
+`github_token` (defaults to the workflow token).
+
+`runner_version` overrides the npm version of the selected runner CLI. When
+omitted, the action installs the per-runner pin from `action.yml` (currently
+Codex `0.149.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+explicit version — or `latest` — only when you intentionally want something
+other than the pin. A single default cannot be correct for four packages, so
+the pin is chosen from the selected `runner`.
 
 Cost and behavior notes:
 
