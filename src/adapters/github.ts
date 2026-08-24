@@ -714,9 +714,9 @@ function authenticatedLogin(): string {
 	}
 }
 
-// S4.2: minimize prior round comments (classifier OUTDATED) so the timeline
-// surfaces only the latest round. Fail-soft: a minimize failure never fails
-// the review.
+// S4.2: minimize prior round and infra-error comments (classifier OUTDATED)
+// so the timeline surfaces only the current result. Fail-soft: a minimize
+// failure never fails the review.
 function minimizePreviousRoundComments(
 	repo: string,
 	prNumber: number,
@@ -736,7 +736,11 @@ function minimizePreviousRoundComments(
 	for (const item of raw.flat(1)) {
 		if (!isRecord(item)) continue;
 		const body = stringField(item, "body");
-		if (!body.includes("<!-- needlefish-round -->")) continue;
+		if (
+			!body.includes("<!-- needlefish-round -->") &&
+			!body.includes("<!-- needlefish-error -->")
+		)
+			continue;
 		// Ours = bot-shaped author, or the identity this run posts as (PAT).
 		// The author check keeps humans quoting the marker from being swept.
 		// Deliberately the loose predicate: this path is cosmetic (see
@@ -856,6 +860,17 @@ export async function runGithub(
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
 		if (result.verdict === "changes_requested") process.exitCode = 1;
+		// Run before posting this result so fresh round comments are not swept.
+		// This also clears stale infra-error comments when the first successful
+		// review has no previous state-bearing review.
+		try {
+			minimizePreviousRoundComments(repo, prNumber);
+		} catch (minErr) {
+			const mm = minErr instanceof Error ? minErr.message : String(minErr);
+			process.stderr.write(
+				`needlefish: could not minimize previous comments: ${mm}\n`,
+			);
+		}
 
 		if (prev) {
 			const { fresh, open, resolvedCount } = matchFindings(
@@ -881,15 +896,6 @@ export async function runGithub(
 				stateMarker: renderState(headSha, result.findings),
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
-			// S4: minimize prior round comments FIRST, then post this round's
-			// comment (body edits don't notify). Minimizing after posting would
-			// sweep up the fresh comment too — it carries the same marker.
-			try {
-				minimizePreviousRoundComments(repo, prNumber);
-			} catch (minErr) {
-				const mm = minErr instanceof Error ? minErr.message : String(minErr);
-				process.stderr.write(`needlefish: could not minimize previous round comments: ${mm}\n`);
-			}
 			// Fail-soft: the round comment is cosmetic; a transient POST failure
 			// must not throw to the outer catch, which would replace a computed
 			// verdict check-run with a red "review failed" one.
