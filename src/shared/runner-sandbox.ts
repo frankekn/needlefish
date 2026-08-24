@@ -164,6 +164,19 @@ export function assertRunnerSandboxClean(
     // decide from stat data alone). Checking the fingerprint first means a
     // .git/config the runner touched is rejected before git is asked to parse
     // it — the detection already existed, it was simply consulted too late.
+    //
+    // The residual gap is a TOCTOU window: the runner is still live between this
+    // fingerprint read and the `git status` below, so a runner that deliberately
+    // races the check could rewrite .git/config in between. Closing that would
+    // mean killing the runner before verifying, or verifying from a copy the
+    // runner cannot reach. Neither is implemented, on purpose: a runner that
+    // actively attacks its own verification is outside this tool's threat model
+    // (needlefish is run by a maintainer on their own machine and by consumers
+    // against their own repos; the runner is a model CLI the operator chose, not
+    // untrusted third-party code). The ordering above is what makes the check
+    // meaningful against a runner that merely misbehaves — which is the case
+    // this guard exists for. Do not re-file the race as a defect without first
+    // changing that threat model.
     const expectedMetadata = sandboxGitMetadata.get(metadataKey);
     if (expectedMetadata !== undefined) {
       let actualMetadata: string;
