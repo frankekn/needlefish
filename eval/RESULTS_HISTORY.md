@@ -40,6 +40,117 @@ full-run draws and 4 confirmation draws, with no adoption.
 Reports: [full x1](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json),
 [divergence confirm x3](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
 
+
+## 2026-08-24 — issue #44 matcher gate at HEAD 2de5867: FAILED 2/5
+
+First gate that describes HEAD. Since the retained `49f12b9` run the matcher changed
+twice: equidistant candidates are ordered by token overlap rather than array
+position, and critic findings are assigned by deterministic maximum bipartite
+matching instead of greedy nearest-first consumption. Eligibility
+(`file` + `category` + `lineStart` +/-2) is unchanged by both.
+
+Criteria pre-declared before the run (`/tmp/gate79/criteria-79-matcher.md`), same
+lane and baseline. promptHash `e62d0889fc704541`, fixtureSetHash
+`1968a9d2fabe2a56`, scorerHash `a424d3bb59a40443` — all equal to the 2026-08-09
+weekly baseline; anticheatVersion 2, cheatDetectedCount 0.
+
+| Pre-declared criterion | Result | |
+| --- | --- | --- |
+| 1a. finding-level rejections == 0 | 0 | pass |
+| 1b. residual-level rejections <= 1 | 2 | **miss** |
+| 1c. `formatOk===false` <= 3/252 | 3 | pass |
+| 2. no systematic recall regression | 3 down / 7 up, no drop > 1 draw | pass |
+| 3. `meanNoisePerPositive` >= 0.09 | 0.0632 | **miss** |
+| 4. false-positive draws <= 5 | 7 | **miss** |
+| 5. hashes match, anticheat 2, cheat 0 | yes | pass |
+
+**Gate FAILED (2/5 by criterion, 4/7 by sub-criterion).** Per EVAL DISCIPLINE the
+numbers are recorded as measured and no criterion was re-declared after the fact.
+
+**What the run confirms.** Criterion 1a was declared beforehand as a falsifiable
+prediction — maximum matching fixes finding assignment, so finding-level rejection
+should go to zero, while residual identity (exact text after case-fold and
+whitespace-collapse) is a separate untouched path and was budgeted at <=1 rather
+than 0. Finding-level rejection did reach exactly **0** (it was 1 at `49f12b9`).
+The matcher's core claim holds.
+
+**What fails.** Residual-level rejections rose 1 -> 2. False-positive draws rose to
+7 against a budget of 5. `meanNoisePerPositive` fell to 0.0632 against a floor of
+0.09.
+
+**Correction to the pre-declared text, disclosed rather than quietly dropped.**
+Criterion 4 stated that "an FP on any fixture other than `neg-hard-dead-code-delete`
+fails this criterion", written on the belief that the baseline's 4 FP draws were all
+on that fixture. That premise is wrong: the 2026-08-09 baseline already carries
+`neg-hard-refactor-move` (2 draws) and `neg-hard-timing-hardening` (1). Those are
+baseline behaviour, not new modes introduced here. Criterion 4 still fails on count
+(7 > 5), which is independent of the faulty clause.
+
+FP draws by fixture across the three comparable runs:
+
+| fixture | baseline 08-09 | 49f12b9 | HEAD 2de5867 |
+| --- | --- | --- | --- |
+| `neg-hard-dead-code-delete` | 1 | 2 | 3 |
+| `neg-hard-refactor-move` | 2 | 2 | 2 |
+| `neg-hard-timing-hardening` | 1 | 1 | 1 |
+| `go-harmless-variadic` | 0 | 0 | **1** |
+| total | 4 | 5 | 7 |
+
+**Data that resists the obvious explanation.** The natural story — the matcher lets
+previously-rejected reviews through, so more findings and therefore more false
+positives — is not supported: total findings are flat at 192 / 195 / **191** across
+the three runs. The FP increase is a change in composition, not volume, and
+`meanNoisePerPositive` falling while finding count holds steady is unexplained. That
+should be understood before this merges; it is recorded here as an open question,
+not as an argument in either direction.
+
+Reports: `eval/results/2026-08-24-critic-matcher-gate-x3.json` (this run),
+`eval/results/2026-08-23-critic-subset-rework-x3.json` (49f12b9).
+
+
+### 2026-08-24 — maintainer decision on the failed gate: ACCEPT, on proof rather than measurement
+
+Recorded so the override is auditable next to the failure, not in place of it.
+**The 2/5 gate above stands as measured. No criterion was re-declared, softened, or
+retired, and this entry does not convert it into a pass.**
+
+Frank accepted the branch with the gate failure on the record. Grounds:
+
+1. The defect is demonstrated, not hypothesised — a deterministic unit test shows
+   greedy assignment throwing `finding was not in the candidate review` on an input
+   where a complete assignment exists. That is a false rejection of a real review,
+   the same class of regression that produced the 92/252 failure on 2026-08-22.
+2. The change is **acceptance-monotone by construction**: maximum matching accepts
+   iff a complete assignment exists, which is a superset of what any greedy order
+   accepts, so it cannot introduce a rejection greedy would not have made. The
+   differential's null result is therefore consistent with a proof, not merely an
+   absence of evidence.
+3. The three failing criteria sit on paths the change cannot mechanically reach.
+   Every false-positive draw in the failing run carried `findingCount: 1`, where
+   matching and greedy are identical; residual-level identity is the untouched
+   exact-text path; `meanNoisePerPositive` is emission-driven and emission is
+   governed by the unchanged eligibility relation.
+
+**What this decision does NOT claim.** No eval evidence of benefit exists — the
+`t3-neighbor-defects` differential was a null on every scored dimension. Whether
+contention ever bound in those draws is unobservable from retained artifacts, and
+n=9 cannot separate "never bound" from "bound and resolved". The instrument that
+would answer it (retaining pre-critic findings in `DrawResult`) was written and
+deliberately reverted, because it lives in the `scorerHash` file set and would make
+every future report incomparable with every past one.
+
+**Tracked separately rather than absorbed here:** the false-positive drift on
+`neg-hard-dead-code-delete` (1 -> 2 -> 3 across the three comparable runs) is filed
+as issue #84. It is not attributable to this branch — the matcher is a no-op at
+`findingCount: 1` — but it degrades the gate's ability to discriminate over time and
+is a standing risk to every future pre-declared FP criterion.
+
+**Precedent note.** Accepting over a failed gate departs from the literal EVAL
+DISCIPLINE rule ("gate fails -> revert"). It is justified here only because the
+failing criteria were shown to be causally unrelated to the change under test, by
+mechanism rather than by argument from results. That showing is the bar; absent it,
+the rule applies as written.
+
 </details>
 
 <details>
@@ -830,5 +941,179 @@ confound. No production change.
 
 Reports: `eval/results/2026-08-21-opencode-ox-alpha-max-x3.json` and
 `eval/results/2026-08-21-ox-alpha-semantic-remaining-x3.json`.
+
+## 2026-08-22 — issue #44 critic prune-only subset check: first gate FAILED (key too strict)
+
+The structural critic-subset check (`assertCriticSubset`, PR #79) shipped with an
+exact seven-field identity key (`file, lineStart, lineEnd, category, title,
+whyItBreaks, suggestedFix`). Production gate against the 2026-08-09 baseline
+(codex / gpt-5.6-terra / high, full set, holdout include, x3, anti-cheat v2,
+hashes matching): **FAIL**. `formatOk === false` rose **0 → 92 / 252 (36.5%)**;
+91 of the 92 were `malformed critic output: finding was not in the candidate
+review`. `meanNoisePerPositive` collapsed 0.1207 → 0.0230 (reviews producing
+nothing), 41 fixtures regressed. Diagnosis: the real production critic
+legitimately paraphrases `title`/`whyItBreaks`/`suggestedFix` and nudges line
+numbers while pruning, so an exact-field key rejects more than a third of real
+reviews. Fail-closed direction correct; key too strict. Report:
+`/tmp/gate43-44/report-44.json` (not retained in-repo).
+
+## 2026-08-23 — issue #44 rework: loosened identity key — gate 4/5, primary defect fixed
+
+Reworked the key to `file` + `category` + nearest unused candidate `lineStart`
+within ±2 (not the adapter's cross-round ±10); content is still restored from
+the matched candidate, so paraphrase cannot reach `deriveVerdict` and invention
+(no candidate at that file+category+near-line) still fails closed. Residual
+identity loosened to exact text after case-fold + whitespace collapse only.
+Mutation-verified independently: stripping the file/category guards turns the
+invention-rejection tests red; re-imposing strict title equality turns the
+paraphrase-acceptance tests red.
+
+Same lane and baseline, criteria **pre-declared before the run**
+(`/tmp/gate43-44/criteria-44-rework.md`):
+
+| Pre-declared criterion | Result | |
+| --- | --- | --- |
+| `formatOk===false` ≤ 3/252, zero subset-rejection errors | 2/252 (was 92), but **both are subset-rejection errors** | **miss** (corrected 2026-08-23, see correction below) |
+| No systematic recall regression (\|reg−imp\|≤5; drops ≤1 draw bar 2 known-flaky) | 4 down / 5 up | pass |
+| `meanNoisePerPositive` ≥ 0.09 | 0.1149 | pass |
+| False-positive draws ≤ baseline (4) | 5 | **miss** |
+| anti-cheat v2, hashes match, cheat 0 | yes | pass |
+
+The two remaining `formatOk===false` draws (`t3-cache-key-tenant`,
+`real-pr4-options-not-forwarded`) were recorded here as carrying no error —
+**that is wrong; both are subset-check rejections** (correction below). The one
+extra false positive is on
+`neg-hard-dead-code-delete`, already non-deterministic at 1/3 on the baseline
+(now 2/3). Mechanism: the critic still cannot invent; the FP finding was in the
+*candidate* review, and the old strict key masked it by rejecting the whole
+review on paraphrase. Loosening unmasks a pre-existing candidate-review FP rather
+than creating one. Per EVAL DISCIPLINE the pre-declared FP criterion is not
+softened after the fact: the gate is 3/5 (criterion 1 also missed — corrected
+2026-08-23), the FP miss being one draw on a flickering hard negative,
+mechanism-explained. Maintainer decision: accept on
+the mechanism, or run an x9 confirm on `neg-hard-dead-code-delete` (main vs
+branch) to separate variance from regression before merge.
+
+Reports: `eval/results/2026-08-23-critic-subset-rework-x3.json`.
+
+### 2026-08-23 addendum — ×9 confirm on `neg-hard-dead-code-delete` (variance, not regression)
+
+Ran the sole gate miss ×9 on both sides. main (no critic-subset check) **3/9
+(0.333)**; branch (loosened check) **5/9 (0.556)**. Nominally higher, but the FP
+draws on both sides are the **same finding** — `[contract] ids/format.go:8/9`,
+"preserve/restore the exported legacy-ID formatter" — the model reasonably-but-
+wrongly flagging removal of an exported API as a compatibility break. The branch
+does not introduce a new FP mode; it flickers on the identical borderline finding
+main also emits. 5/9 vs 3/9 on the same finding is not statistically
+distinguishable (Fisher two-tailed p≈0.6, n=9). Conclusion: the gate's criterion-4
+miss is variance on a hard negative, not a regression from the subset change.
+(The addendum originally concluded the rework "stands at effectively 5/5 once
+this FP draw is attributed to noise" — that conclusion does not hold: criterion 1
+also missed, see the correction below. The ×9 evidence about criterion 4 is
+unaffected.)
+Reports: `eval/results/2026-08-23-neg-dead-code-confirm-main-x9.json`,
+`eval/results/2026-08-23-neg-dead-code-confirm-branch-x9.json`.
+
+## 2026-08-24 — DIFFERENTIAL (not a gate): `t3-neighbor-defects`, main vs HEAD ×9
+
+The 2/5 gate above is uninformative about the matcher itself: every FP draw carried
+`findingCount: 1`, where maximum matching and greedy are identical, and **no draw in
+the 252 had two retained findings sharing `file` + `category` within 2 lines**. The
+fixture set contains no instance of the ambiguity the matcher exists to resolve.
+`t3-neighbor-defects` was written to create that geometry — two independent defects
+(lost empty-input guard; lost defensive copy before an in-place sort) in
+neighbouring functions of one file, anchors four lines apart — and was **committed
+at `6c8cc20` before the first run against it**; neither it nor its `mustFind`
+patterns changed afterwards. No criteria were declared for this differential and
+none were re-declared.
+
+**This is not a gate and is not comparable to any baseline.** Adding a fixture
+changes the set: this scoped run hashes `3e8baafd66df4bf4` against the baseline's
+`1968a9d2fabe2a56`. promptHash `e62d0889fc704541` and scorerHash
+`a424d3bb59a40443` are unchanged. Both sides ran the same lane (codex /
+gpt-5.6-terra / high), the same ×9 draws, the same fixture and the same harness with
+all three hashes equal, so the two sides are comparable **to each other and to
+nothing else**. The main side ran `origin/main`'s `src/` overlaid with this branch's
+`eval/`, so the only difference is the pipeline — main has no critic-subset check at
+all.
+
+| measure | main ×9 | branch ×9 |
+| --- | --- | --- |
+| recall | 9/9 | 9/9 |
+| mustFind hits | 18/18 | 18/18 |
+| verdict match | 9/9 | 9/9 |
+| false-positive draws | 0 | 0 |
+| noise findings | 0 | 0 |
+| `formatOk===false` | 0 | 0 |
+| subset-rejection errors | n/a (no check) | **0** |
+| `criticPrunedRecallCount` | 0 | 0 |
+| cheat / bait exposure | 0 / 1 | 0 / 0 |
+| mean draw duration | 59.9s | 57.0s |
+
+**The fixture does produce the geometry.** All 18 draws returned exactly two
+findings in `src/stats.ts`, both categorised `bug`; in 5/9 branch and 5/9 main draws
+the anchors were exactly 4 lines apart (8 and 12), the others 6–8/12 or 7/11. The
+coverage gap is closed: the set now contains the contended case.
+
+**What this establishes: no harm.** On the geometry the check was built for, the
+branch rejected nothing in 9/9 draws and lost no recall, verdict or precision
+against main.
+
+**What it does not establish: benefit.** The branch scores identically to main.
+Contention only *binds* when the critic re-anchors a finding to the midpoint between
+the two candidates (≈line 10 here); the retained report keeps candidate match
+evidence but not candidate or critic anchors, so whether contention bound in any
+draw is **unobservable from these artifacts**. At n=9 this cannot separate "never
+bound" from "bound and was resolved correctly". Making it observable would mean
+retaining pre-critic findings in `DrawResult`, which lives in the scorer-hash file
+set — deliberately not done here, to avoid making every future report incomparable
+to every past one for a measurement convenience.
+
+Reports: `eval/results/2026-08-24-neighbor-defects-differential-branch-x9.json`,
+`eval/results/2026-08-24-neighbor-defects-differential-main-x9.json`. **Caveat on
+the main-side file:** its `gitSha` field reads `6c8cc20` (this branch) because the
+run used a scratch overlay tree carrying this branch's `.git`. The distinguishing
+fact is that its `src/` was `origin/main` at `d72f064`; the field is an artifact of
+the method, not a claim about what was measured.
+
+### 2026-08-23 correction — criterion 1 also missed; re-derived from the retained report
+
+Re-derived from `eval/results/2026-08-23-critic-subset-rework-x3.json` itself
+(not from the summary above). Both `formatOk===false` rows carry a
+subset-check error, so pre-declared criterion 1 ("zero subset-rejection
+errors") **missed**. The recorded gate is **3/5**, not 4/5.
+
+| fixture | draw | error |
+| --- | --- | --- |
+| `t3-cache-key-tenant` | 1 | `malformed critic output: finding was not in the candidate review` |
+| `real-pr4-options-not-forwarded` | 0 | `malformed critic output: residual risk was not in the candidate review` |
+
+Checkable: `jq -r '.results[] | select(.score.formatOk == false) | [.fixtureId,
+.draw, .score.error] | @tsv'` returns exactly those two rows, and the report's
+own `aggregates.criticPruneErrorRate` is `0.0115`, not `0`. So the loosened
+check still fail-closes ~2/252 real production draws: one on the finding
+matcher, one on the residual exact-text identity. That is the residual cost of
+the design, and it is data, not an argument for or against merging — the
+revert/accept decision stays with the maintainer.
+
+Two further observations, recorded, **not** re-declared as criteria for this
+run (re-declaring after seeing results is tuning the answer key):
+
+- Tier-1 recall was `0.9048` (`real-pr1-self-review-tool-checkout` 1/3; both
+  missing draws carry no error, and their two candidate findings are 10 lines
+  apart, so the subset matcher is not implicated — the model's wording simply
+  missed the anchored `mustFind` pattern). The pre-declared table contains no
+  tier-1 criterion, while the 2026-07-26 entry failed a lane for exactly this
+  fixture at 2/3. The owed re-gate should pre-declare where tier-1 sits for a
+  pipeline change.
+- The gate ran at `49f12b9`. The matcher changed again afterwards
+  (equidistant matches are now broken by token overlap instead of candidate
+  array order), so **no recorded gate describes HEAD**. A fresh full
+  production-lane, holdout-included ×3 gate with criteria declared beforehand
+  is owed before merge. Evidence that the tie-break is likely outcome-neutral
+  on this fixture set, offered as a prior and not as a substitute: no draw in
+  the 252 retained results has two final findings sharing file+category within
+  4 lines, so no recorded draw exhibits the ambiguity the tie-break resolves
+  (candidate-level findings are not retained, so this is not proof).
 
 </details>

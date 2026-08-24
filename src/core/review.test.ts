@@ -1170,7 +1170,25 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		focus: null,
 	};
 
-	const baseline = await review(bundle);
+	const baseline = await review(bundle).then(
+		() => null,
+		(err: unknown) => err,
+	);
+	assert.ok(
+		baseline instanceof Error,
+		"critic-only finding must reject the review",
+	);
+	assert.match(
+		baseline.message,
+		/malformed critic output: finding was not in the candidate review/,
+	);
+	const baselineCalls = readFileSync(calls, "utf8").trim().split("\n");
+	assert.equal(
+		baselineCalls.filter((line) => line === "critic").length,
+		2,
+		"invented critic findings must fail closed through the parse retry",
+	);
+
 	const events: ReviewTraceEvent[] = [];
 	const result = await review(
 		bundle,
@@ -1187,34 +1205,18 @@ test("review isolates trace observers across concurrent deep passes and classifi
 			}
 			throw new Error("observer delivery failed");
 		},
+	).then(
+		() => null,
+		(err: unknown) => err,
 	);
 
-	assert.deepEqual(
-		{
-			verdict: result.verdict,
-			summary: result.summary,
-			findings: result.findings,
-			checked: result.checked,
-			residualRisks: result.residualRisks,
-			coverage: result.coverage,
-		},
-		{
-			verdict: baseline.verdict,
-			summary: baseline.summary,
-			findings: baseline.findings,
-			checked: baseline.checked,
-			residualRisks: baseline.residualRisks,
-			coverage: baseline.coverage,
-		},
+	assert.ok(result instanceof Error, "observer run must also reject");
+	assert.equal(result.message, baseline.message);
+	assert.equal(
+		(result as Error & { traceDeliveryFailed?: boolean }).traceDeliveryFailed,
+		true,
+		"observer throws must mark delivery health failed",
 	);
-	assert.deepEqual(result.checked, [
-		"[h1] deep h1",
-		"checked h1",
-		"[h2] deep h2",
-		"checked h2",
-		"[h3] deep h3",
-		"checked h3",
-	]);
 	const windows = ["h1", "h2", "h3"].map(
 		(name) =>
 			JSON.parse(readFileSync(path.join(tmp, `deep-${name}.json`), "utf8")) as {
@@ -1226,15 +1228,11 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		windows.some((b, j) => i < j && a.start < b.end && b.start < a.end),
 	);
 	assert.ok(overlaps, "expected at least two deep passes to overlap in time");
+	const allCalls = readFileSync(calls, "utf8").trim().split("\n");
 	assert.equal(
-		readFileSync(calls, "utf8").trim().split("\n").length,
-		10,
+		allCalls.length,
+		baselineCalls.length * 2,
 		"observer delivery errors must not add model calls",
-	);
-	assert.equal(
-		result.traceDeliveryFailed,
-		true,
-		"observer throws must mark delivery health failed",
 	);
 	for (const [marker, passIndex] of [
 		["deep h1", 0],
@@ -1267,19 +1265,24 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		0,
 		"critic-only output must never be emitted as a candidate surface",
 	);
-	assert.ok(
-		events.some(
+	assert.equal(
+		events.filter(
 			(event) =>
-				event.surface === "final_finding" &&
+				event.surface.startsWith("final_") &&
 				event.content.includes("critic-only marker"),
-		),
+		).length,
+		0,
+		"invented critic findings must not reach final surfaces",
 	);
 	assert.ok(
 		events.some(
 			(event) =>
-				event.surface === "final_review_text" &&
+				event.surface === "raw_success" &&
+				event.passKind === "critic" &&
+				event.outcome === "parse_failed" &&
 				event.content.includes("critic-only marker"),
 		),
+		"invented critic output must fail at parse, not be admitted",
 	);
 	assert.ok(
 		events.some(
@@ -1298,10 +1301,6 @@ test("review isolates trace observers across concurrent deep passes and classifi
 		0,
 		"critic-pruned candidate output must not survive on final surfaces",
 	);
-	const labels = new Set(result.stats?.map((s) => s.label));
-	for (const expected of ["map", "deep:h1", "deep:h2", "deep:h3", "critic"]) {
-		assert.ok(labels.has(expected), `missing stat label ${expected}`);
-	}
 });
 
 test("review feeds the diff as raw text, not escaped bundle JSON", async (t) => {
@@ -1922,8 +1921,7 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			"    fs.appendFileSync(calls, 'critic\\n');",
 			"    const critics = fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line === 'critic').length;",
 			"    if (critics === 1) process.exit(4);",
-			"    const finalFinding = { ...finding, title: 'final finding marker' };",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'final review marker', findings: [finalFinding], checked: ['final checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'final review marker', findings: [], checked: ['final checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  fs.appendFileSync(calls, 'review\\n');",
@@ -1958,7 +1956,7 @@ test("review traces prompt and runner attempts through candidate and final surfa
 		},
 	);
 
-	assert.equal(result.findings[0]?.title, "final finding marker");
+	assert.equal(result.findings.length, 0);
 	assert.ok(
 		events.some(
 			(event) =>
@@ -2009,7 +2007,6 @@ test("review traces prompt and runner attempts through candidate and final surfa
 	for (const [surface, marker] of [
 		["candidate_finding", "candidate finding marker"],
 		["candidate_review_text", "candidate review marker"],
-		["final_finding", "final finding marker"],
 		["final_review_text", "final review marker"],
 	] as const) {
 		assert.ok(
@@ -2019,15 +2016,6 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			`missing ${surface}`,
 		);
 	}
-	assert.equal(
-		events.filter(
-			(event) =>
-				event.surface.startsWith("candidate_") &&
-				event.content.includes("final finding marker"),
-		).length,
-		0,
-		"critic-only findings must not be candidate findings",
-	);
 	assert.equal(
 		events.filter(
 			(event) =>
@@ -2051,13 +2039,12 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			event.surface === "candidate_finding" &&
 			event.content.includes("candidate finding marker"),
 	);
-	const finalFinding = events.find(
-		(event) =>
-			event.surface === "final_finding" &&
-			event.content.includes("final finding marker"),
-	);
 	assert.equal(candidateFinding?.finding?.title, "candidate finding marker");
-	assert.equal(finalFinding?.finding?.title, "final finding marker");
+	assert.equal(
+		events.filter((event) => event.surface === "final_finding").length,
+		0,
+		"pruned candidate findings must not appear on final_finding",
+	);
 });
 
 test("review awaits and isolates async observer errors from small review semantics", async (t) => {
