@@ -402,6 +402,50 @@ test("re-executes evidence and rejects a fabricated recall claim", () => {
   ]);
 });
 
+function ttlFinding(file) {
+  return {
+    severity: "P1",
+    category: "bug",
+    file,
+    lineStart: 12,
+    lineEnd: 12,
+    title: "ttl inverted",
+    whyItBreaks: "expired entries served",
+  };
+}
+
+function reportWithEvidence(file, specFile) {
+  const report = baseReport();
+  Object.assign(report.results[0], {
+    findings: [ttlFinding(file)],
+    matchEvidence: [{ pattern: "ttl", file: specFile, findingIndex: 0 }],
+  });
+  report.results[0].score.mustFindHits = 1;
+  report.results[0].score.mustFindTotal = 1;
+  return report;
+}
+
+test("evidence matching accepts an exact file path", () => {
+  const result = run(reportWithEvidence("src/cache.ts", "src/cache.ts"), baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("evidence matching accepts a component-boundary shorthand", () => {
+  const result = run(reportWithEvidence("src/cache.ts", "cache.ts"), baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("evidence matching rejects a character-suffix collision", () => {
+  const result = run(reportWithEvidence("src/notcache.ts", "cache.ts"), baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, [
+    "unexplainable-evidence:obvious-bug",
+    "recall-without-evidence:obvious-bug",
+  ]);
+});
+
 test("missing evidence fails closed", () => {
   const report = baseReport();
   delete report.results[0].findings;

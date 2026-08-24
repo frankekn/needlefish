@@ -13,12 +13,19 @@ import type {
 
 const BLOCKING: Severity[] = ["P0", "P1", "P2"];
 
+// Fixture anchors match a finding path when they are identical or when the
+// finding path ends with "/" + anchor. Character suffixes (`notcache.ts`
+// vs `cache.ts`) must not count: that would grant recall on the wrong file.
+export function fileMatchesAnchor(file: string, anchor: string): boolean {
+	return anchor.length > 0 && (file === anchor || file.endsWith(`/${anchor}`));
+}
+
 export function matchesSpec(
 	finding: FindingMatchFields,
 	spec: MatchSpec,
 ): boolean {
 	if (spec.category && finding.category !== spec.category) return false;
-	if (spec.file && !finding.file.endsWith(spec.file)) return false;
+	if (spec.file && !fileMatchesAnchor(finding.file, spec.file)) return false;
 	if (
 		spec.lineRange &&
 		(finding.lineStart < spec.lineRange[0] ||
@@ -115,7 +122,7 @@ function lineAnchorValid(
 	if (mustFind.length === 0) {
 		// No mustFind (negatives with an anchor): keep the old any-finding check.
 		return findings.some((f) => {
-			if (!f.file.endsWith(expected.anchorFile!)) return false;
+			if (!fileMatchesAnchor(f.file, expected.anchorFile!)) return false;
 			if (!range) return true;
 			return f.lineStart >= range[0] && f.lineStart <= range[1];
 		});

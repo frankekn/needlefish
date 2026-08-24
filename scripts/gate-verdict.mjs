@@ -172,10 +172,16 @@ function isDrawFinding(finding) {
     && typeof finding.whyItBreaks === "string";
 }
 
+// Deliberate duplicate of fileMatchesAnchor in eval/shared/score.ts (source of
+// truth). This file must not import TypeScript; keep the two in sync.
+function fileMatchesAnchor(file, anchor) {
+  return anchor.length > 0 && (file === anchor || file.endsWith(`/${anchor}`));
+}
+
 function evidenceMatches(entry, finding) {
   if (!isDrawFinding(finding)) return false;
   if (entry.category && finding.category !== entry.category) return false;
-  if (entry.file && !finding.file.endsWith(entry.file)) return false;
+  if (entry.file && !fileMatchesAnchor(finding.file, entry.file)) return false;
   if (entry.lineRange
     && (finding.lineStart < entry.lineRange[0] || finding.lineStart > entry.lineRange[1])) return false;
   return new RegExp(entry.pattern, "i").test(`${finding.title} ${finding.whyItBreaks}`);
