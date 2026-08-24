@@ -1,9 +1,13 @@
 import {
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	writeFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
+	renameSync,
+	unlinkSync,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -336,30 +340,56 @@ export function resumeSlots(
 			arr.push(r);
 			byFixture.set(r.fixtureId, arr);
 		}
-		const doneFixtures = new Set<string>();
+		// Index good draws by their OWN recorded draw number, not by position
+		// in completion order. Draws land in `existing.results` in whatever
+		// order they finished (concurrent runs), and a failed draw is
+		// filtered out of "good" — so a positional `good[draw]` lookup (the
+		// prior approach) silently relabels one draw's result as another's:
+		// e.g. draws=2 with draw 0 failed and draw 1 good leaves `good` with
+		// one entry whose OWN draw number is 1, but a positional lookup would
+		// hand it to slot 0 under a false draw-0 label while slot 1 (which
+		// has no result at all) gets rescheduled. Reusing a draw must mean
+		// "this exact draw number already has a good result on disk", never
+		// "some good result exists nearby".
+		//
+		// `skipped` counts fully-completed fixtures (kept for the existing
+		// stderr/return contract); it does not gate which individual draws
+		// are reused below. A fixture interrupted partway through a run — the
+		// exact scenario the per-draw checkpoint (issue #58) exists to
+		// survive — still has its already-good draws on disk and must not
+		// have them thrown away just because the fixture as a whole isn't
+		// done.
+		const goodByFixture = new Map<string, Map<number, DrawResult>>();
 		for (const spec of specs) {
-			const draws = byFixture.get(spec.id) ?? [];
-			const good = draws.filter((d) => d.score.formatOk);
-			if (good.length >= args.draws) {
-				doneFixtures.add(spec.id);
-				skipped++;
+			const goodByDraw = new Map<number, DrawResult>();
+			for (const d of byFixture.get(spec.id) ?? []) {
+				if (d.score.formatOk) goodByDraw.set(d.draw, d);
 			}
+			goodByFixture.set(spec.id, goodByDraw);
+			let complete = true;
+			for (let draw = 0; draw < args.draws; draw++) {
+				if (!goodByDraw.has(draw)) {
+					complete = false;
+					break;
+				}
+			}
+			if (complete) skipped++;
 		}
+		let reusedDraws = 0;
 		for (let i = 0; i < work.length; i++) {
 			const { spec, draw } = work[i];
-			if (!doneFixtures.has(spec.id)) continue;
-			const good = (byFixture.get(spec.id) ?? []).filter(
-				(d) => d.score.formatOk,
-			);
+			const match = goodByFixture.get(spec.id)?.get(draw);
+			if (!match) continue;
 			slots[i] = {
-				...good[draw],
+				...match,
 				draw,
-				calls: good[draw].calls ?? 0,
-				retries: good[draw].retries ?? 0,
+				calls: match.calls ?? 0,
+				retries: match.retries ?? 0,
 			};
+			reusedDraws++;
 		}
 		process.stderr.write(
-			`resume: reused ${skipped} fixture(s) with ${args.draws} good draws, re-running the rest\n`,
+			`resume: reused ${reusedDraws} draw(s) across ${skipped} fully-completed fixture(s), re-running the rest\n`,
 		);
 	} catch (err) {
 		process.stderr.write(
@@ -470,6 +500,158 @@ export function aggregateMustFindHitRates(
 		? fixtureRates.reduce((sum, rate) => sum + rate, 0) / fixtureRates.length
 		: 0;
 	return { mustFindHitRateByFixture, mustFindHitRate };
+}
+
+// Per-process high-water mark of coverage flushed to each report path,
+// tracked as the SET of (fixtureId, draw) pairs a checkpoint has written —
+// not a raw count. Count is a weak proxy for "more complete": two
+// checkpoints can be the same size (or the later one even larger) while the
+// later one drops pairs the earlier one already covered, e.g. a
+// differently-composed concurrent completion. Only the actual coverage set
+// proves a checkpoint strictly retains everything already on record.
+//
+// This map starts empty in every process. Without seeding it from disk, a
+// FRESH run (no --resume) pointed at a --report path that already holds a
+// complete report from a prior invocation would have its own first partial
+// checkpoint (as small as one draw) pass this guard trivially and
+// atomically overwrite the old complete report. A crash before the new run
+// finishes then leaves only a partial file that isCompleteReport rejects,
+// with the previously-good report unrecoverably gone: the checkpoint
+// feature this guard belongs to (crash resilience, #58) would have
+// destroyed the very artifact it exists to protect.
+const lastCheckpointCoverage = new Map<string, ReadonlySet<string>>();
+
+function coverageKey(fixtureId: string, draw: number): string {
+	return `${fixtureId} ${draw}`;
+}
+
+function coverageOf(
+	results: readonly { fixtureId: string; draw: number }[],
+): Set<string> {
+	const pairs = new Set<string>();
+	for (const r of results) pairs.add(coverageKey(r.fixtureId, r.draw));
+	return pairs;
+}
+
+type ExistingReportProbe =
+	| { readonly kind: "absent" }
+	| { readonly kind: "coverage"; readonly pairs: ReadonlySet<string> };
+
+// Probes whatever is already at `targetPath` (if anything) so a fresh
+// process can seed its high-water mark from disk instead of starting blind.
+// readFileSync follows the symlink chain to read the real file, same as any
+// normal read — only rename(2)'s no-dereference-on-final-component behavior
+// (handled separately by resolveWriteDestination) needs manual walking.
+//
+// Only a confirmed ENOENT proves nothing is there. Every other failure —
+// permission denied, an I/O error, a directory in the way, content that
+// isn't valid JSON, or JSON that isn't shaped like a Report — means
+// something IS at that path and this call could not establish what it is.
+// Treating that the same as "nothing to protect" (as an earlier version of
+// this guard did) is a fail-open on a data-loss guard: silently
+// unprotected instead of maximally protected. Throw instead, with an
+// actionable message, so the operator hits this at the very first
+// checkpoint (seconds into a run) rather than the run silently losing its
+// crash-resilience guarantee for its whole duration, or a real report
+// being silently destroyed at the very end.
+function probeExistingReport(targetPath: string): ExistingReportProbe {
+	let raw: string;
+	try {
+		raw = readFileSync(targetPath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return { kind: "absent" };
+		}
+		throw new Error(
+			`--report target ${targetPath} exists but could not be read (${
+				(error as NodeJS.ErrnoException).code ?? String(error)
+			}). Refusing to checkpoint over it without knowing what it contains — ` +
+				"move or delete the file, fix its permissions, or point --report elsewhere, then retry.",
+			{ cause: error },
+		);
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (error) {
+		throw new Error(
+			`--report target ${targetPath} exists but is not valid JSON. Refusing to ` +
+				"checkpoint over it without knowing what it contains — move or delete the file, or point --report elsewhere, then retry.",
+			{ cause: error },
+		);
+	}
+	const existingResults = (parsed as { results?: unknown }).results;
+	if (!Array.isArray(existingResults)) {
+		throw new Error(
+			`--report target ${targetPath} exists but does not look like a Report (no results array). ` +
+				"Refusing to checkpoint over it without knowing what it contains — move or delete the file, or point --report elsewhere, then retry.",
+		);
+	}
+	return {
+		kind: "coverage",
+		pairs: coverageOf(existingResults as { fixtureId: string; draw: number }[]),
+	};
+}
+
+// Symlink chains can be arbitrarily long; this is comfortably above what any
+// real --report path would use and matches the ballpark of the OS's own
+// ELOOP threshold (Linux: 40). It exists to fail closed on a cycle rather
+// than hang, not to be a realistic chain length.
+const MAX_SYMLINK_CHAIN = 40;
+
+// rename(2) does not dereference a symlink in its final path component:
+// renaming a temp file onto a symlinked target would unlink the symlink
+// itself (or, mid-chain, an intermediate link) and install a plain file in
+// its place, silently destroying the alias. Walk the chain by hand — one
+// lstat+readlink hop at a time — rather than leaning on realpathSync, so a
+// live chain, a chain broken at its final hop (dangling), and no symlink at
+// all are all resolved by the same logic to the same real write
+// destination. A dangling final hop resolves to the path it points at
+// (which this write will then create) instead of stopping at the last
+// intermediate link.
+function resolveWriteDestination(targetPath: string): string {
+	let current = targetPath;
+	for (let hops = 0; hops < MAX_SYMLINK_CHAIN; hops++) {
+		let stat;
+		try {
+			stat = lstatSync(current);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				throw error;
+			}
+			// Nothing at `current`: either targetPath never existed, or we
+			// walked a chain of symlinks to a dangling final link. Either
+			// way, this is the real write destination.
+			return current;
+		}
+		if (!stat.isSymbolicLink()) {
+			return current;
+		}
+		current = path.resolve(path.dirname(current), readlinkSync(current));
+	}
+	throw new Error(
+		`symlink chain too deep resolving --report target: ${targetPath}`,
+	);
+}
+
+function atomicWriteFile(targetPath: string, contents: string): void {
+	const resolvedTarget = resolveWriteDestination(targetPath);
+	const directory = path.dirname(resolvedTarget);
+	mkdirSync(directory, { recursive: true });
+	const tempPath = path.join(
+		directory,
+		`.${path.basename(resolvedTarget)}.${randomUUID()}.tmp`,
+	);
+	try {
+		writeFileSync(tempPath, contents);
+		renameSync(tempPath, resolvedTarget);
+	} finally {
+		try {
+			unlinkSync(tempPath);
+		} catch {
+			// rename consumes the temp path; a failed create never produced one.
+		}
+	}
 }
 
 function aggregate(
@@ -608,8 +790,47 @@ export function writeReport(
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
 	};
-	mkdirSync(path.dirname(path.resolve(args.report)), { recursive: true });
-	writeFileSync(args.report, JSON.stringify(report, null, 2));
+	const targetPath = path.resolve(args.report);
+	if (!lastCheckpointCoverage.has(targetPath)) {
+		// First checkpoint attempt this process has made to this path: seed
+		// the high-water mark from whatever report is already on disk (this
+		// throws if something is there and unreadable — see
+		// probeExistingReport) so this run's own first (necessarily small)
+		// partial checkpoint cannot silently destroy a prior report before
+		// this run has produced anything at least as complete.
+		const probe = probeExistingReport(targetPath);
+		lastCheckpointCoverage.set(
+			targetPath,
+			probe.kind === "coverage" ? probe.pairs : new Set(),
+		);
+	}
+	const lastCoverage = lastCheckpointCoverage.get(targetPath) as ReadonlySet<string>;
+	const incomingCoverage = coverageOf(results);
+	// A partial (still in-progress) checkpoint must never drop any pair
+	// already covered at this path — from a prior process's on-disk report
+	// or from this run's own earlier checkpoints. Comparing sets (not
+	// counts) catches the case count-comparison misses: an equal- or
+	// larger-sized checkpoint that is differently composed and silently
+	// drops a pair the prior checkpoint had. But a report that is itself
+	// structurally complete (every fixture x draw pair present) is this
+	// run's deliberate final artifact and always wins, even over pairs it
+	// does not itself retain (e.g. a rerun with --draws intentionally
+	// lowered, or a different fixture set) — otherwise --report would
+	// become unusable for a legitimate rerun.
+	const incomingComplete = isCompleteReport(
+		report,
+		specs.map((s) => s.id),
+	);
+	const retainsAllPriorCoverage = [...lastCoverage].every((key) =>
+		incomingCoverage.has(key),
+	);
+	if (!incomingComplete && !retainsAllPriorCoverage) {
+		return report;
+	}
+	atomicWriteFile(targetPath, JSON.stringify(report, null, 2));
+	const merged = new Set(lastCoverage);
+	for (const key of incomingCoverage) merged.add(key);
+	lastCheckpointCoverage.set(targetPath, merged);
 	return report;
 }
 
@@ -766,10 +987,16 @@ async function main(): Promise<void> {
 		// Threaded through fixture materialization and scoring; a finding that
 		// contains it means the runner copied the planted answer key.
 		const canary = randomUUID();
+		// Checkpoint after every completed draw. --resume only controls whether
+		// we LOAD a compatible prior report; a crash of a fresh run must still
+		// leave a structurally valid partial file at args.report.
+		const checkpoint = (partial: readonly DrawResult[]): void => {
+			writeReport(args, partial, specs);
+		};
 
 		if (args.compare) {
 			const slots: (DrawResult | null)[] = new Array(work.length).fill(null);
-			const results = await runWork(args, work, slots, canary);
+			const results = await runWork(args, work, slots, canary, checkpoint);
 			const report = writeReport(args, results, specs);
 			cheatAlert(report);
 			compare(args.compare, report);
@@ -785,10 +1012,7 @@ async function main(): Promise<void> {
 		);
 
 		const { slots } = resumeSlots(args, specs, work);
-		const onDrawComplete = args.resume
-			? (partial: readonly DrawResult[]) => writeReport(args, partial, specs)
-			: undefined;
-		const results = await runWork(args, work, slots, canary, onDrawComplete);
+		const results = await runWork(args, work, slots, canary, checkpoint);
 
 		const report = writeReport(args, results, specs);
 		cheatAlert(report);
