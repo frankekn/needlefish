@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { ensurePrCommits, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
+import { ensurePrCommits, git, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -87,6 +88,36 @@ test("ensurePrCommits deepens ready shallow PR graph for sandbox fetch", () => {
     gitText(["fetch", "--quiet", repo, targetHeadSha], sandbox);
     gitText(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandbox);
     assert.equal(headSha(sandbox), targetHeadSha);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("prDiffFromShas preserves a diff whose last hunk is a blank context line", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-blank-context-"));
+  try {
+    const work = join(tmp, "work");
+    gitText(["init", "-q", work], tmp);
+    gitText(["config", "user.email", "test@example.com"], work);
+    gitText(["config", "user.name", "Test"], work);
+    writeFileSync(join(work, "notes.txt"), "alpha\nbravo\ncharlie\n\n");
+    commitAll(work, "trailing blank line");
+    const baseSha = headSha(work);
+    writeFileSync(join(work, "notes.txt"), "alpha\nBravo\ncharlie\n\n");
+    commitAll(work, "change middle line");
+    const targetHeadSha = headSha(work);
+
+    const raw = spawnSync("git", ["diff", baseSha, targetHeadSha], {
+      cwd: work,
+      encoding: "utf8",
+    });
+    assert.equal(raw.status, 0, raw.stderr);
+    assert.ok((raw.stdout ?? "").endsWith(" \n"));
+
+    const diff = prDiffFromShas(work, baseSha, targetHeadSha);
+    assert.equal(diff.patch, raw.stdout);
+    assert.notEqual(diff.patch, git(["diff", baseSha, targetHeadSha], work));
+    assert.equal(git(["merge-base", baseSha, targetHeadSha], work), baseSha);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

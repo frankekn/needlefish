@@ -15,6 +15,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildUntrackedPatch, joinSections } from "../adapters/local-uncommitted";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
+import { git } from "./repo";
 import {
   assertRunnerSandboxClean,
   isRunnerSafetyError,
@@ -151,6 +152,54 @@ test("prepareRunnerSandbox WORKING applies CJK tracked + untracked (no final new
   assert.equal(sandbox.expectedHeadSha, headSha(sandbox.repoPath));
   assert.equal(readFileSync(path.join(sandbox.repoPath, "README.md"), "utf8"), trackedContent);
   assert.deepEqual(readFileSync(path.join(sandbox.repoPath, untrackedPath)), untrackedContent);
+});
+
+test("prepareRunnerSandbox applies a WORKING patch whose last hunk is a blank context line", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-blank-context-"));
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  const repoRoot = path.join(tmp, "source");
+  mkdirSync(repoRoot);
+  const repo = initRepo(repoRoot);
+  const original = "alpha\nbravo\ncharlie\n\n";
+  const changed = "alpha\nBravo\ncharlie\n\n";
+  writeFileSync(path.join(repo, "notes.txt"), original);
+  commitAll(repo, "trailing blank line");
+  writeFileSync(path.join(repo, "notes.txt"), changed);
+
+  const preserved = git(["diff", "HEAD"], repo, { preserveOutput: true });
+  assert.ok(preserved.endsWith(" \n"), "git diff must end with a blank context line");
+  assert.equal(git(["diff", "HEAD"], repo), preserved.trim());
+
+  const failTmp = path.join(tmp, "sandbox-trim");
+  mkdirSync(failTmp);
+  assert.throws(
+    () =>
+      prepareRunnerSandbox({
+        runner: "claude",
+        repoPath: repo,
+        prompt: "",
+        targetHeadSha: "WORKING",
+        targetPatch: `${preserved.trim()}\n`,
+        tmp: failTmp,
+      }),
+    /corrupt patch/
+  );
+
+  const okTmp = path.join(tmp, "sandbox-ok");
+  mkdirSync(okTmp);
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "",
+    targetHeadSha: "WORKING",
+    targetPatch: preserved,
+    tmp: okTmp,
+  });
+
+  assert.equal(sandbox.expectedHeadSha, headSha(sandbox.repoPath));
+  assert.equal(readFileSync(path.join(sandbox.repoPath, "notes.txt"), "utf8"), changed);
 });
 
 // --- Git LFS disclosure ------------------------------------------------------
