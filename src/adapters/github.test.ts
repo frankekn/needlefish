@@ -70,6 +70,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       )}); process.exit(0); }`,
       "if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
       "if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === 'repos/frankekn/needlefish/pulls/7/reviews') { process.stdout.write('[[]]'); process.exit(0); }",
+      "if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: 'github-actions[bot]' })); process.exit(0); }",
       "process.stderr.write(`unexpected gh args ${args.join(' ')}`);",
       "process.exit(2);",
     ].join("\n")
