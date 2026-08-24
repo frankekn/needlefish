@@ -181,6 +181,17 @@ function makeLfsRepo(
   mkdirSync(repoRoot);
   mkdirSync(sandboxTmp);
   const repo = initRepo(repoRoot);
+  // These fixtures declare `filter=lfs` in .gitattributes while the test picks
+  // the worktree bytes -- including the "tracked as LFS but never migrated"
+  // case, whose whole point is that the bytes are NOT a pointer. A host with
+  // git-lfs installed sets filter.lfs.clean in global/system config, which
+  // rewrites those bytes into a real pointer at commit time and silently
+  // inverts what these tests assert. Repo-local empty values override the
+  // host's config, so the fixture means the same thing on every machine.
+  for (const key of ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"]) {
+    execFileSync("git", ["-C", repo, "config", key, ""]);
+  }
+  execFileSync("git", ["-C", repo, "config", "filter.lfs.required", "false"]);
   setup(repo);
   commitAll(repo, "lfs fixture");
   return { repo, sandboxTmp };
