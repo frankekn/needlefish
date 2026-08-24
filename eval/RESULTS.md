@@ -290,6 +290,74 @@ fixture hash and a temporary adapter.
 Reports: [partial opencode run](results/2026-08-21-opencode-ox-alpha-max-x3.json)
 and [semantic probe](results/2026-08-21-ox-alpha-semantic-remaining-x3.json).
 
+### 9. Residual fail-soft structural gate — pre-declared 2026-08-24
+
+Change under test: critic residuals that cannot be restored exactly from the
+candidate bag (including a non-blocking-to-blocking upgrade) are pruned rather
+than aborting the entire review. Finding invention remains fail-closed. This is
+a structural pipeline change; prompts and scorer are unchanged.
+
+Production lane: Codex / `gpt-5.6-terra` / high, full fixture set, holdouts
+included, three draws. Pass criteria declared before seeing the report:
+
+1. Zero errors containing `residual risk was not in the candidate review` or
+   `residual risk is blocking but was not blocking in the candidate review`.
+2. `recallByTier.t1 === 1`; any tier-1 miss fails the gate.
+3. Overall recall >= 0.84, false-positive rate <= 0.10, and
+   `meanNoisePerPositive <= 0.12` (the measured production envelope of the two
+   2026-08-23/24 full Terra x3 gates).
+4. `real-pr4-options-not-forwarded` recall >= 2/3; this is the retained fixture
+   that previously produced the residual subset rejection.
+5. `cheatDetectedCount === 0`. Any cheat detection voids the report.
+
+Gate failure means revert this pipeline change and retain the report here.
+
+**Result: FAILED (4/5 criteria), reverted.** The full 85-fixture / 255-draw
+report completed with prompt hash `e62d0889fc704541`, fixture hash
+`7fa7d2fdb1586db9`, scorer hash `bd85218ae8ae948f`, and anti-cheat v2.
+
+| Criterion | Result |
+| --- | --- |
+| Residual subset errors | PASS — 0/255 |
+| Tier-1 recall | **FAIL — 0.8571** (`t1-inverted-guard` 2/3; `real-pr1-self-review-tool-checkout` 1/3) |
+| Recall / FP / noise envelope | PASS — 0.8475 / 0.0417 / 0.0904 |
+| `real-pr4-options-not-forwarded` | PASS — 3/3 |
+| Cheat detection | PASS — 0 |
+
+Four unrelated critic-envelope failures remained (`critic produced no summary
+or checked list`): one `go-harmless-variadic`, one
+`neg-hard-refactor-move`, and two `neg-safe-tightening` draws. The residual
+fail-soft behavior removed the targeted failure and did not cause the tier-1
+misses, but the pre-declared production rule treats any tier-1 miss as
+disqualifying; no post-hoc exception was made. Report:
+[`results/2026-08-24-residual-failsoft-gate-x3.json`](results/2026-08-24-residual-failsoft-gate-x3.json).
+
+### 10. Residual conservative-fallback structural gate — pre-declared 2026-08-24
+
+Second design under test after reverting the failed fail-soft gate: exact
+critic residual subsets still prune normally, but any unmatched, exhausted, or
+blocking-upgraded residual makes Needlefish retain the complete candidate
+residual list. Large-path blocking residual re-append is de-duplicated. This
+keeps missing-evidence signals conservative while preventing critic wording
+drift or invention from aborting a review or changing its verdict.
+
+Production lane and pre-declared pass criteria are unchanged: full fixture set,
+holdouts included, Codex / `gpt-5.6-terra` / high, three draws; zero residual
+subset errors; tier-1 recall exactly 1; overall recall >= 0.84, FP <= 0.10,
+noise <= 0.12; `real-pr4-options-not-forwarded` recall >= 2/3; and zero cheat
+detections. Any miss fails and reverts this second design. Report target:
+`results/2026-08-24-residual-conservative-fallback-gate-x3.json`.
+
+**Result: FAILED (4/5 criteria), reverted.** All 255 draws completed with zero
+format errors, zero targeted residual subset errors, 0.8870 recall, 0.0694 FP,
+0.0621 noise, zero cheat detections, and
+`real-pr4-options-not-forwarded` at 2/3. Tier-1 recall was **0.9048**:
+`t1-inverted-guard` missed draw 2 and
+`real-pr1-self-review-tool-checkout` missed draw 3. Both were usable model
+outputs rather than residual matching failures, but the pre-declared rule
+allows no tier-1 exception. Report:
+[`results/2026-08-24-residual-conservative-fallback-gate-x3.json`](results/2026-08-24-residual-conservative-fallback-gate-x3.json).
+
 ## Legacy pre-guard benchmark
 
 These early runs used prompt `2d82256f1bb7da69` and a weaker regex-only
