@@ -1455,6 +1455,35 @@ test("runGithub does not skip a PAT-authored marker when gh api user fails", asy
 
 // --- S5 invariant: error path posts a PR comment ---
 
+test("a successful review minimizes an earlier infra-failure comment", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 66,
+		rawReview: defaultRawReview(),
+	});
+	writeFileSync(
+		fixture.issueCommentsState,
+		JSON.stringify([
+			{
+				id: 99,
+				node_id: "IC_old_error",
+				body: "Needlefish review FAILED TO RUN\n<!-- needlefish-error -->",
+				user: { login: "github-actions[bot]", type: "Bot" },
+			},
+		]),
+	);
+
+	await runGithub(fixture.repo, 66, { timeoutMs: 1000 });
+
+	assert.ok(
+		readPosts(fixture.postLog).some(
+			(p) =>
+				p.args.some((a) => a.includes("minimizeComment")) &&
+				p.args.some((a) => a === "id=IC_old_error"),
+		),
+		"a current verdict must hide the obsolete infra failure",
+	);
+});
+
 test("runGithub posts a FAILED TO RUN PR comment when the review errors", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 40,
