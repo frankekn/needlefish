@@ -40,6 +40,7 @@ Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回
 - [開發環境安裝](#開發環境安裝)
 - [本機使用](#本機使用唯讀不會寫入-github)
 - [機器介面](#機器介面)
+- [基準偵測](#基準偵測)
 - [GitHub Action 模式（self-hosted runner）](#github-action-模式self-hosted-runner)
 - [GitHub Action（hosted，任何 repo）](#github-actionhosted任何-repo)
 - [Model runner 執行方式](#model-runner-執行方式)
@@ -235,8 +236,9 @@ needlefish --repo . --json | jq .verdict
 | `stats` | 選用的 runner 呼叫時間與嘗試次數。 |
 | `totalDurationMs` | 選用的總審查時間（毫秒）。 |
 
-base 預設依序為 `--base`、`origin/HEAD`、`main`；可用
-`--base <ref>` 覆寫。
+## 基準偵測
+
+`--base` → `origin/HEAD` → `main`。用 `--base <ref>` 覆寫。
 
 ## GitHub Action 模式（self-hosted runner）
 
@@ -328,7 +330,11 @@ jobs:
 
 ## GitHub Action（hosted，任何 repo）
 
-此 repo 也提供在 GitHub-hosted `ubuntu-latest` 執行的 composite action：
+此 repo 也提供在 GitHub-hosted `ubuntu-latest` 執行的 composite action。
+hosted action 的安裝步驟只接受 `codex`、`claude`、`opencode` 或 `pi`。
+Grok CLI 不在其中；要使用 Grok 4.5，請使用上方的 self-hosted reusable
+workflow。對 hosted action 傳入 `runner: grok`（或 `openai`／`acp`）會在
+安裝步驟失敗。
 
 ```yaml
 name: needlefish
@@ -361,27 +367,49 @@ OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳�
 （或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
 選擇。
 
-runner 認證方式：
+hosted action 能安裝的 runner，其認證方式（repo secrets，透過 action step 的
+`env` 傳入）：
 
 | runner | secret／認證 |
 | --- | --- |
-| codex | `CODEX_AUTH_JSON` 或 `CODEX_API_KEY` |
+| codex | `CODEX_AUTH_JSON`（已登入的 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY` |
 | claude | `ANTHROPIC_API_KEY` |
 | opencode | 所選模型的 provider key，例如 `OPENAI_API_KEY` |
-| grok | Grok CLI auth 或 provider key（self-hosted lane） |
-| pi | `PI_AUTH_JSON` |
-| acp | agent-specific auth 與 runner 上的 `NEEDLEFISH_ACP_BIN` |
+| pi | `PI_AUTH_JSON`（已登入的 `~/.pi/agent/auth.json` 內容） |
+
+claude 的 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` 與 opencode 的
+`OPENAI_API_KEY` 會進入 runner subprocess allowlist；其他 provider 的 key
+需設定 `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見「Runner subprocess 環境」）。
+
+`grok` 屬於 self-hosted lane（runner `PATH` 上需有已登入的 `grok` CLI）。
+`acp`（`NEEDLEFISH_ACP_BIN`）也是 CLI runner。`openai` 是 HTTP，不是 CLI
+（`OPENAI_API_KEY` 加上 `--model`／`OPENAI_MODEL`）。hosted action 不會安裝
+上述任何一個。
+
+輸入（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設 `codex`）、
+`model`、`timeout_ms`、`codex_reasoning_effort`、`runner_version`（要安裝的
+runner CLI npm 版本）、`repo_path`（預設為 workspace checkout）、
+`github_token`（預設為 workflow token）。
 
 Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了解風險前使用
 `pull_request_target`，因為它會把 secrets 交給由 fork code 觸發的 workflow。
 
+composite action 不會把 PR 留言指令加進 consumer repo。本 repo 的
+`.github/workflows/commands.yml` 會監聽維護者（僅 OWNER／MEMBER／
+COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
+留言。recheck 會 dispatch 本 repo 的 `review.yml`；explain 在已部署
+`~/.local/bin/needlefish` 的 self-hosted runner 上執行 `needlefish explain`。
+把該檔案複製到其他 repo 之前，必須改寫這兩個 job 的目標。
+
 ## Model runner 執行方式
 
-可使用 `--runner`、`--model`、`--timeout-ms`，或相同的環境變數：
+`--runner`／`NEEDLEFISH_RUNNER` 可為 `codex`、`claude`、`opencode`、`openai`、
+`grok`、`pi` 或 `acp`。可使用 `--runner`、`--model`、`--timeout-ms`，或相同的
+環境變數：
 
 | 選項 | 環境變數 | 預設 |
 | --- | --- | --- |
-| runner | `NEEDLEFISH_RUNNER` | 自動偵測 codex → claude → opencode |
+| runner | `NEEDLEFISH_RUNNER` | 自動偵測 `codex`，然後 `claude`，然後 `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `high`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
@@ -391,25 +419,50 @@ opencode CLI 每次產生 stdout 或 stderr 都會重設 idle deadline。若 pro
 stream 停止輸出，Needlefish 會終止該 attempt 並使用既有 runner retry，不再等待
 被拉長的完整 per-call timeout。
 
+各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數在該
+runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process 內
+讀取環境變數（subprocess allowlist 為空）。括號內是未設定 `*_BIN` 時使用的
+執行檔名：
+
+| runner | binary | model／其他 |
+| --- | --- | --- |
+| `codex` | `CODEX_BIN`（`codex`） | `CODEX_MODEL`、`CODEX_TIMEOUT_MS`、`CODEX_RETRY_MS`、`CODEX_REASONING_EFFORT` |
+| `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
+| `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
+| `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
+| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`） |
+| `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
+| `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
+
+若未指定 `--runner` 或 `NEEDLEFISH_RUNNER`，且找不到 `codex`、`claude`、
+`opencode`，Needlefish 會輸出這三個 CLI 的安裝指令後結束，而不是 stack
+trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或 `acp`。
+
 Codex 使用 `--ignore-user-config --ignore-rules
 --dangerously-bypass-approvals-and-sandbox`，避免檢查命令遭 execpolicy rule、
 approval prompt 或 host sandbox 阻擋。Needlefish 仍會把它放在 throwaway clean
 clone 內執行、移除 GitHub token、固定預期 `HEAD`，並拒絕任何 worktree 變更。
-Claude 使用 `--dangerously-skip-permissions`；Grok 使用 `--always-approve
---permission-mode bypassPermissions --no-plan --sandbox off`；opencode 使用
-`--auto` headless mode，並以 inline `permission: "allow"` 覆寫 global 與
-build-agent 權限；pi 使用預設完整 toolset。這些 production runner 都不需要額外的
-unsandboxed opt-in。
-ACP 透過 `NEEDLEFISH_ACP_BIN` 使用 JSON-RPC 2.0 stdio process，timeout 時會先送
-`session/cancel` 再終止 process group。
+`medium` 是預設；設 `CODEX_REASONING_EFFORT=high` 可恢復舊預設，`xhigh` 為
+最高 effort。Claude 使用 `--dangerously-skip-permissions`、`--safe-mode`、
+`--no-session-persistence`。Grok 使用 `--always-approve --permission-mode
+bypassPermissions --no-plan --sandbox off`。opencode 使用 `--auto` headless
+mode，並以 inline `permission: "allow"` 覆寫 global 與 build-agent 權限。pi
+使用 `--no-session --mode text --provider openai-codex --thinking <level>`
+與預設完整 toolset。這些 production runner 都不需要額外的 unsandboxed
+opt-in。ACP 透過 `NEEDLEFISH_ACP_BIN` 使用 JSON-RPC 2.0 stdio process，
+timeout 時會先送 `session/cancel` 再終止 process group。
 
 所有 CLI runner 都會在 review head 的 throwaway clean clone 中執行；每次成功
-呼叫後都會確認 clone 沒有未提交變更且 `HEAD` 沒有移動。
+呼叫後都會以
+`git status --porcelain --untracked-files=all --ignored=matching`
+確認 clone 沒有未提交變更，並驗證 `HEAD` 沒有移動。
 
 ### Runner subprocess 環境
 
-Runner 只會收到 allowlist 環境，不會繼承完整的 parent `process.env`。若要
-額外傳遞變數，設定：
+CLI runner（`codex`、`claude`、`opencode`、`grok`、`pi`、`acp`）只會收到
+allowlist 環境，不會繼承完整的 parent `process.env`——僅 locale／proxy／path
+基礎變數加上各 runner 自己的 `_BIN`／`_MODEL` 類變數。若要額外傳遞變數，
+設定：
 
 ```bash
 NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2
@@ -419,9 +472,11 @@ GitHub Actions 的非機密 `RUNNER_TRACKING_ID` job marker 會自動保留，�
 self-hosted runner 在 job 被取消時能終止 detached model process。
 
 ACP 認證還需要宣告 `NEEDLEFISH_ACP_AUTH_ENV_VARS`，並把相同名稱放入
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`；或者以
-`NEEDLEFISH_ACP_AUTH_FILES` 指定要複製到 disposable HOME 的 HOME-relative
-credential files。
+`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`，例如
+`NEEDLEFISH_ACP_AUTH_ENV_VARS=MY_AGENT_TOKEN` 搭配
+`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=MY_AGENT_TOKEN`。任意 passthrough 設定
+本身不能證明已認證。或者以 `NEEDLEFISH_ACP_AUTH_FILES` 指定要複製到
+disposable HOME 的 HOME-relative credential files。
 
 ## Verdict 推導（確定性）
 
@@ -433,7 +488,10 @@ credential files。
 
 ## 狀態
 
-v0.3.4。唯讀。已提供 inline review comment、sticky re-review
-（fresh／open／resolved）、`@needlefish recheck`／`@needlefish explain`、
-純文件 fast path（不呼叫模型）、same-head dedupe、以及 hosted runner 的
-repo inspection（best-effort AppArmor sysctl）。`--fix` 仍刻意未實作。
+v0.4.1。唯讀。已提供 inline review comment、sticky re-review
+（fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
+dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
+sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／
+`@needlefish explain` 留言指令存在於本 repo 的
+`.github/workflows/commands.yml`；已發布的 composite action 不會安裝該
+workflow。

@@ -10,6 +10,10 @@
 - Runner: stop and retry opencode attempts after ten minutes without stdout or
   stderr, independently of a longer per-call timeout, and preserve GitHub's
   process-tracking marker so cancelled jobs do not leave detached runners.
+- Docs: synchronize README / CLI version copy with `package.json`, align
+  English and zh-TW runner configuration with the supported CLI and action
+  surfaces, and drop the hosted-action claim that `@needlefish` comment
+  commands are installed in consumer repos.
 
 ## 0.4.1 — 2026-08-01
 

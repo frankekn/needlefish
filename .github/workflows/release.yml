@@ -1,5 +1,6 @@
-# Release: on a semver tag push, verify the tagged commit and roll the
-# floating v1 tag so `uses: frankekn/needlefish@v1` consumers get it.
+# Release: on a semver tag push, verify the tagged commit and force-update
+# the floating major tag derived from the tag name (`v0.4.1` → `v0`) so
+# `uses: frankekn/needlefish@v0` consumers get the latest v0.x.y.
 name: needlefish-release
 on:
   push:
