@@ -7,7 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { computeScorerHash } from "./gate-verdict.mjs";
+import { computeScorerHash, currentAnticheatVersion } from "./gate-verdict.mjs";
 
 const script = new URL("./gate-verdict.mjs", import.meta.url);
 
@@ -19,16 +19,29 @@ function missEvidence() {
   return { findings: [], matchEvidence: [{ pattern: "bug", findingIndex: null }] };
 }
 
+function baseScore(overrides = {}) {
+  return {
+    recall: true,
+    mustFindHits: 0,
+    mustFindTotal: 0,
+    noiseFindingCount: 0,
+    cheatDetected: false,
+    falsePositive: false,
+    ...overrides,
+  };
+}
+
 function baseReport() {
   return {
     promptHash: "prompt-123",
     fixtureSetHash: "fixtures-456",
     scorerHash: computeScorerHash(),
+    anticheatVersion: currentAnticheatVersion(),
     fixtures: ["obvious-bug", "required-bug"],
     draws: 1,
     results: [
-      { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
-      { fixtureId: "required-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+      { fixtureId: "obvious-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+      { fixtureId: "required-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
     ],
     aggregates: {
       cheatDetectedCount: 0,
@@ -145,7 +158,7 @@ test("fixture kinds reject values outside the declared union", () => {
   const report = baseReport();
   report.fixtures.push("typo-kind");
   report.fixtureKinds["typo-kind"] = "negativ";
-  report.results.push({ fixtureId: "typo-kind", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
+  report.results.push({ fixtureId: "typo-kind", draw: 0, score: baseScore(), ...emptyEvidence() });
   report.aggregates.recallByFixture["typo-kind"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -169,7 +182,7 @@ test("real-shaped reports allow recall keys beyond the positive tier keys", () =
   const report = baseReport();
   report.fixtures.push("negative-case");
   report.fixtureKinds["negative-case"] = "negative";
-  report.results.push({ fixtureId: "negative-case", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
+  report.results.push({ fixtureId: "negative-case", draw: 0, score: baseScore(), ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-case"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -205,7 +218,7 @@ test("a manifest-complete report passes", () => {
   const report = baseReport();
   report.fixtures.push("negative-honeypot");
   report.fixtureKinds["negative-honeypot"] = "honeypot";
-  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() });
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: baseScore(), ...emptyEvidence() });
   report.aggregates.recallByFixture["negative-honeypot"] = 1;
   const result = run(report, baseCriteria());
   assert.equal(result.status, 0);
@@ -254,10 +267,10 @@ test("duplicate draw indices fail completeness even when the raw count matches",
   const report = baseReport();
   report.draws = 2;
   report.results = [
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
-    { fixtureId: "obvious-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
-    { fixtureId: "required-bug", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
-    { fixtureId: "required-bug", draw: 1, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "obvious-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "obvious-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 1, score: baseScore(), ...emptyEvidence() },
   ];
   const result = run(report, baseCriteria());
   assert.equal(result.status, 1);
@@ -296,7 +309,7 @@ test("overlapping tier-1 and criteria fixture emits one missing-draws reason", (
 test("resume-shaped reports require draws for every fixture tier entry", () => {
   const report = baseReport();
   report.results = [
-    { fixtureId: "resume-first", draw: 0, score: { recall: true, mustFindHits: 0, mustFindTotal: 0, noiseFindingCount: 0, cheatDetected: false }, ...emptyEvidence() },
+    { fixtureId: "resume-first", draw: 0, score: baseScore(), ...emptyEvidence() },
   ];
   report.aggregates.recallByFixture = { "resume-first": 1 };
   report.fixtureTiers = { "resume-first": 2, "resume-second": 2 };
@@ -407,9 +420,19 @@ test("missing or mismatched scorerHash fails closed", () => {
 });
 
 test("missing recomputation score fields make the report unreadable", () => {
-  for (const field of ["noiseFindingCount", "cheatDetected"]) {
+  for (const field of ["noiseFindingCount", "cheatDetected", "falsePositive"]) {
     const report = baseReport();
     delete report.results[0].score[field];
+    const result = run(report, baseCriteria());
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.json.reasons, ["unreadable-report"]);
+  }
+});
+
+test("non-boolean falsePositive makes the report unreadable", () => {
+  for (const value of [0, 1, "false", null]) {
+    const report = baseReport();
+    report.results[0].score.falsePositive = value;
     const result = run(report, baseCriteria());
     assert.equal(result.status, 1);
     assert.deepEqual(result.json.reasons, ["unreadable-report"]);
@@ -502,6 +525,174 @@ test("entrypoint runs when invoked through a symlinked directory", () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /^usage:/);
   assert.equal(result.stdout, "");
+});
+
+test("a negative criteria fixture with a false-positive draw fails", () => {
+  const report = baseReport();
+  report.fixtures.push("clean-diff");
+  report.fixtureKinds["clean-diff"] = "negative";
+  report.results.push({ fixtureId: "clean-diff", draw: 0, score: baseScore({ falsePositive: true }), ...emptyEvidence() });
+  report.aggregates.recallByFixture["clean-diff"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["clean-diff"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["fixture-false-positive:clean-diff"]);
+});
+
+test("a negative criteria fixture with no false positives passes", () => {
+  const report = baseReport();
+  report.fixtures.push("clean-diff");
+  report.fixtureKinds["clean-diff"] = "negative";
+  report.results.push({ fixtureId: "clean-diff", draw: 0, score: baseScore(), ...emptyEvidence() });
+  report.aggregates.recallByFixture["clean-diff"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["clean-diff"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("a negative criteria fixture fails if any draw is a false positive", () => {
+  const report = baseReport();
+  report.draws = 2;
+  report.fixtures.push("clean-diff");
+  report.fixtureKinds["clean-diff"] = "negative";
+  report.results = [
+    { fixtureId: "obvious-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "obvious-bug", draw: 1, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "required-bug", draw: 1, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "clean-diff", draw: 0, score: baseScore(), ...emptyEvidence() },
+    { fixtureId: "clean-diff", draw: 1, score: baseScore({ falsePositive: true }), ...emptyEvidence() },
+  ];
+  report.aggregates.recallByFixture["clean-diff"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["clean-diff"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["fixture-false-positive:clean-diff"]);
+});
+
+test("an incomplete negative criteria fixture fails for missing draws only", () => {
+  const report = baseReport();
+  report.draws = 2;
+  report.fixtures.push("clean-diff");
+  report.fixtureKinds["clean-diff"] = "negative";
+  report.results.push({ fixtureId: "clean-diff", draw: 0, score: baseScore({ falsePositive: true }), ...emptyEvidence() });
+  report.aggregates.recallByFixture["clean-diff"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["clean-diff"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("missing-draws:clean-diff"));
+  assert.ok(!result.json.reasons.includes("fixture-false-positive:clean-diff"));
+});
+
+test("a negative fixture not listed in criteria does not fail on false positives", () => {
+  const report = baseReport();
+  report.fixtures.push("clean-diff");
+  report.fixtureKinds["clean-diff"] = "negative";
+  report.results.push({ fixtureId: "clean-diff", draw: 0, score: baseScore({ falsePositive: true }), ...emptyEvidence() });
+  report.aggregates.recallByFixture["clean-diff"] = 1;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("a parity criteria fixture remains recall-gated", () => {
+  const report = baseReport();
+  report.fixtures.push("parity-throw");
+  report.fixtureKinds["parity-throw"] = "parity";
+  report.results.push({
+    fixtureId: "parity-throw",
+    draw: 0,
+    score: baseScore({ recall: false, mustFindTotal: 1 }),
+    ...missEvidence(),
+  });
+  report.aggregates.recallByFixture["parity-throw"] = 0;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["parity-throw"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["fixture-recall-missed:parity-throw"]);
+});
+
+test("a parity criteria fixture with perfect recall passes", () => {
+  const report = baseReport();
+  report.fixtures.push("parity-throw");
+  report.fixtureKinds["parity-throw"] = "parity";
+  report.results.push({ fixtureId: "parity-throw", draw: 0, score: baseScore(), ...emptyEvidence() });
+  report.aggregates.recallByFixture["parity-throw"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["parity-throw"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json.reasons, []);
+});
+
+test("a honeypot listed as a criteria fixture fails with a distinct reason", () => {
+  const report = baseReport();
+  report.fixtures.push("negative-honeypot");
+  report.fixtureKinds["negative-honeypot"] = "honeypot";
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: baseScore(), ...emptyEvidence() });
+  report.aggregates.recallByFixture["negative-honeypot"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["negative-honeypot"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["honeypot-as-criteria:negative-honeypot"]);
+});
+
+test("an incomplete honeypot criteria fixture still fails as a canary", () => {
+  const report = baseReport();
+  report.draws = 2;
+  report.fixtures.push("negative-honeypot");
+  report.fixtureKinds["negative-honeypot"] = "honeypot";
+  report.results.push({ fixtureId: "negative-honeypot", draw: 0, score: baseScore(), ...emptyEvidence() });
+  report.aggregates.recallByFixture["negative-honeypot"] = 1;
+  const criteria = baseCriteria();
+  criteria.fixtures = ["negative-honeypot"];
+  const result = run(report, criteria);
+  assert.equal(result.status, 1);
+  assert.ok(result.json.reasons.includes("honeypot-as-criteria:negative-honeypot"));
+  assert.ok(result.json.reasons.includes("missing-draws:negative-honeypot"));
+});
+
+test("missing anticheatVersion fails closed", () => {
+  const report = baseReport();
+  delete report.anticheatVersion;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["anticheat-version-missing"]);
+});
+
+test("stale anticheatVersion fails closed", () => {
+  const report = baseReport();
+  const current = currentAnticheatVersion();
+  report.anticheatVersion = current === 0 ? 1 : 0;
+  const result = run(report, baseCriteria());
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.json.reasons, ["anticheat-version-mismatch"]);
+});
+
+test("current anticheatVersion is read from eval/shared/types.ts", () => {
+  const source = readFileSync(new URL("../eval/shared/types.ts", import.meta.url), "utf8");
+  const match = source.match(/^export const ANTICHEAT_VERSION = ([0-9]+);$/m);
+  assert.ok(match);
+  assert.equal(currentAnticheatVersion(), Number(match[1]));
+});
+
+test("a guarded report that meets all criteria still passes", () => {
+  const result = run(baseReport(), baseCriteria());
+  assert.equal(result.status, 0);
+  assert.deepEqual(result.json, {
+    pass: true,
+    reasons: [],
+    promptHash: "prompt-123",
+    fixtureSetHash: "fixtures-456",
+  });
+  assert.equal(baseReport().anticheatVersion, currentAnticheatVersion());
 });
 
 test("entrypoint runs when the argv path cannot be canonicalized", () => {
