@@ -20,6 +20,97 @@ test("extractJson rejects output without a JSON object", () => {
   assert.throws(() => extractJson(text), /no JSON object found/);
 });
 
+test("extractJson parses an untagged fence", () => {
+  const text = "preface\n```\n{\"ok\":true}\n```\ntrailer";
+
+  const parsed = extractJson(text);
+
+  assert.deepEqual(parsed, { ok: true });
+});
+
+test("extractJson prefers a later json fence over a leading code fence", () => {
+  const text = [
+    "```ts",
+    '{"severity":"critical","wrong":true}',
+    "```",
+    "```json",
+    '{"ok":true}',
+    "```",
+  ].join("\n");
+
+  const parsed = extractJson(text);
+
+  assert.deepEqual(parsed, { ok: true });
+});
+
+test("extractJson rejects multiple json fences", () => {
+  const text = [
+    "```json",
+    '{"first":1}',
+    "```",
+    "```json",
+    '{"second":2}',
+    "```",
+  ].join("\n");
+
+  assert.throws(() => extractJson(text), /ambiguous JSON fences/);
+});
+
+test("extractJson rejects invalid JSON", () => {
+  const text = "```json\n{ok:true}\n```";
+
+  assert.throws(() => extractJson(text), /invalid JSON in codex output/);
+});
+
+test("extractJson parses a raw JSON document", () => {
+  const parsed = extractJson('{"ok":true}');
+
+  assert.deepEqual(parsed, { ok: true });
+});
+
+test("extractJson parses a raw JSON document that mentions json fences", () => {
+  const parsed = extractJson('{"note":"```json\\n{\\"ok\\":true}\\n```"}');
+
+  assert.deepEqual(parsed, { note: "```json\n{\"ok\":true}\n```" });
+});
+
+test("extractJson parses a single-line tagged json fence", () => {
+  const parsed = extractJson('```json {"summary":"ok"}```');
+
+  assert.deepEqual(parsed, { summary: "ok" });
+});
+
+test("extractJson parses a single-line untagged fence", () => {
+  const parsed = extractJson('```{"summary":"ok"}```');
+
+  assert.deepEqual(parsed, { summary: "ok" });
+});
+
+test("extractJson treats a single-line brace body as untagged not a language tag", () => {
+  const parsed = extractJson('```{"a":1}```');
+
+  assert.deepEqual(parsed, { a: 1 });
+});
+
+test("extractJson rejects a single tagged non-JSON fence", () => {
+  const text = "```ts\n{\"wrong\":true}\n```";
+
+  assert.throws(() => extractJson(text), /no JSON object found/);
+});
+
+test("extractJson rejects multiple untagged fences", () => {
+  const text = "```\n{\"a\":1}\n```\n```\n{\"b\":2}\n```";
+
+  assert.throws(() => extractJson(text), /ambiguous fenced output/);
+});
+
+test("extractJson rejects unfenced output that is not a single JSON document", () => {
+  assert.throws(
+    () => extractJson('{"ok":true} trailer'),
+    /invalid JSON in codex output/,
+  );
+});
+
 test("runCodex invokes Codex without approval or sandbox restrictions", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
