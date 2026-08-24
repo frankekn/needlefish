@@ -12,6 +12,7 @@ import path from "node:path";
 import test from "node:test";
 import { review } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
+import { classifySurface } from "../shared/classify";
 import { headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import type { Bundle } from "../shared/schema";
 
@@ -1461,8 +1462,8 @@ test("review docs-only fast path skips all model calls", async (t) => {
 		patch: "diff --git a/README.md b/README.md\n+docs\n",
 		patchStat: " README.md | 1 +",
 		changedFiles: [
-			{ path: "README.md", surface: "docs" },
-			{ path: "docs/guide.md", surface: "docs" },
+			{ path: "README.md", surface: classifySurface("README.md") },
+			{ path: "docs/guide.md", surface: classifySurface("docs/guide.md") },
 		],
 		agentsMd: "(none)",
 		prMeta: null,
@@ -1495,6 +1496,152 @@ test("review docs-only fast path skips all model calls", async (t) => {
 			"runner must not be invoked for docs-only bundle",
 		);
 	}
+});
+
+test("review does not fast-path policy markdown or executable files under docs paths", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+			"  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
+			"  fs.writeFileSync(out, JSON.stringify(review));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	delete process.env.NEEDLEFISH_NO_FAST_PATH;
+
+	const cases = [
+		"src/api/docs/handler.ts",
+		"docs/build.ts",
+		"prompts/review.md",
+		"AGENTS.md",
+		// Agent policy is policy wherever it sits: a nested CLAUDE.md/GEMINI.md
+		// instructs edits under its directory, and agent-config dot-directory
+		// Markdown is policy, not prose about the product. All of these used to
+		// reach the deterministic pass.
+		"docs/CLAUDE.md",
+		"docs/GEMINI.md",
+		".claude/README.md",
+		".codex/README.md",
+		// No rule names this file; it is denied because unrecognized ALL-CAPS
+		// Markdown under docs/ fails closed. This is the case that stays fixed
+		// when the next agent CLI invents a filename.
+		"docs/CURSOR.md",
+	];
+	for (const filePath of cases) {
+		if (existsSync(calls)) rmSync(calls);
+		const bundle: Bundle = {
+			repoPath: repo,
+			baseSha: "base",
+			headSha: headSha(repo),
+			patch: `diff --git a/${filePath} b/${filePath}\n+changed\n`,
+			patchStat: ` ${filePath} | 1 +`,
+			changedFiles: [{ path: filePath, surface: classifySurface(filePath) }],
+			agentsMd: "(none)",
+			prMeta: null,
+			deep: false,
+			focus: null,
+		};
+		const result = await review(bundle);
+		assert.ok(
+			existsSync(calls),
+			`runner must be invoked for ${filePath}`,
+		);
+		assert.doesNotMatch(
+			result.summary,
+			/Docs-only change/,
+			`${filePath} must not take the docs fast path`,
+		);
+		assert.ok(
+			!result.checked.some((line) => line.startsWith("FAST_PATH")),
+			`${filePath} must not record a FAST_PATH checked line`,
+		);
+	}
+});
+
+test("review still fast-paths genuine prose classified via classifySurface", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`fs.appendFileSync(${JSON.stringify(calls)}, 'called\\n');`,
+			"process.exit(1);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	delete process.env.NEEDLEFISH_NO_FAST_PATH;
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/docs/guide.md b/docs/guide.md\n+docs\n",
+		patchStat: " docs/guide.md | 1 +",
+		changedFiles: [
+			{ path: "docs/guide.md", surface: classifySurface("docs/guide.md") },
+		],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	const result = await review(bundle);
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.checked, [
+		"FAST_PATH docs-only files=[docs/guide.md]",
+	]);
+	assert.ok(
+		!existsSync(calls),
+		"runner must not be invoked for genuine prose docs",
+	);
 });
 
 test("review mixed docs+source bundle still invokes the model", async (t) => {
