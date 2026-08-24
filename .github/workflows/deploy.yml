@@ -1,16 +1,85 @@
+# Deploy the SHA that already passed needlefish-ci. A job here cannot
+# `needs:` a job in ci.yml, so this waits on workflow_run instead.
+#
+# workflow_run.branches matches the triggering workflow's branch, and for
+# pull_request runs GitHub may treat that as the PR base. Restrict to
+# event == 'push' so a green PR targeting main cannot deploy.
+# scripts/deploy-ubuntu.sh fetches NEEDLEFISH_REF (default: main) into a temp
+# clone, so this workflow must pass the verified SHA rather than a branch name.
 name: needlefish-deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: [needlefish-ci]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: needlefish-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-      - run: scripts/deploy-ubuntu.sh
+      - name: Resolve deploy SHA
+        id: sha
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            sha="$WORKFLOW_SHA"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            sha="$DISPATCH_SHA"
+          else
+            echo "unsupported event: $EVENT_NAME" >&2
+            exit 1
+          fi
+          if ! printf '%s\n' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "refusing to deploy without a 40-character lowercase SHA (event=$EVENT_NAME sha=${sha:-empty})" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout verified SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+          persist-credentials: false
+
+      - name: Deploy verified SHA
+        env:
+          NEEDLEFISH_REF: ${{ steps.sha.outputs.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s\n' "$NEEDLEFISH_REF" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "NEEDLEFISH_REF must be a 40-character lowercase commit SHA, got: $NEEDLEFISH_REF" >&2
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            tip="$(git ls-remote --heads origin main | cut -f1)"
+            if [ -z "$tip" ]; then
+              echo "could not resolve origin/main" >&2
+              exit 1
+            fi
+            if [ "$NEEDLEFISH_REF" != "$tip" ]; then
+              echo "Skipping deploy of $NEEDLEFISH_REF because origin/main is now $tip"
+              exit 0
+            fi
+          fi
+          scripts/deploy-ubuntu.sh
