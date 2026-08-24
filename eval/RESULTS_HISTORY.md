@@ -107,6 +107,50 @@ not as an argument in either direction.
 Reports: `eval/results/2026-08-24-critic-matcher-gate-x3.json` (this run),
 `eval/results/2026-08-23-critic-subset-rework-x3.json` (49f12b9).
 
+
+### 2026-08-24 — maintainer decision on the failed gate: ACCEPT, on proof rather than measurement
+
+Recorded so the override is auditable next to the failure, not in place of it.
+**The 2/5 gate above stands as measured. No criterion was re-declared, softened, or
+retired, and this entry does not convert it into a pass.**
+
+Frank accepted the branch with the gate failure on the record. Grounds:
+
+1. The defect is demonstrated, not hypothesised — a deterministic unit test shows
+   greedy assignment throwing `finding was not in the candidate review` on an input
+   where a complete assignment exists. That is a false rejection of a real review,
+   the same class of regression that produced the 92/252 failure on 2026-08-22.
+2. The change is **acceptance-monotone by construction**: maximum matching accepts
+   iff a complete assignment exists, which is a superset of what any greedy order
+   accepts, so it cannot introduce a rejection greedy would not have made. The
+   differential's null result is therefore consistent with a proof, not merely an
+   absence of evidence.
+3. The three failing criteria sit on paths the change cannot mechanically reach.
+   Every false-positive draw in the failing run carried `findingCount: 1`, where
+   matching and greedy are identical; residual-level identity is the untouched
+   exact-text path; `meanNoisePerPositive` is emission-driven and emission is
+   governed by the unchanged eligibility relation.
+
+**What this decision does NOT claim.** No eval evidence of benefit exists — the
+`t3-neighbor-defects` differential was a null on every scored dimension. Whether
+contention ever bound in those draws is unobservable from retained artifacts, and
+n=9 cannot separate "never bound" from "bound and resolved". The instrument that
+would answer it (retaining pre-critic findings in `DrawResult`) was written and
+deliberately reverted, because it lives in the `scorerHash` file set and would make
+every future report incomparable with every past one.
+
+**Tracked separately rather than absorbed here:** the false-positive drift on
+`neg-hard-dead-code-delete` (1 -> 2 -> 3 across the three comparable runs) is filed
+as issue #84. It is not attributable to this branch — the matcher is a no-op at
+`findingCount: 1` — but it degrades the gate's ability to discriminate over time and
+is a standing risk to every future pre-declared FP criterion.
+
+**Precedent note.** Accepting over a failed gate departs from the literal EVAL
+DISCIPLINE rule ("gate fails -> revert"). It is justified here only because the
+failing criteria were shown to be causally unrelated to the change under test, by
+mechanism rather than by argument from results. That showing is the bar; absent it,
+the rule applies as written.
+
 </details>
 
 <details>
