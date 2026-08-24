@@ -118,9 +118,88 @@ export function applyVerdictLabel(
 	return Promise.resolve();
 }
 
+// Git C-quoting (quote.c unquote_c_style): surrounding double quotes,
+// named escapes \a \b \f \n \r \t \v \\ \", and 3-digit octal \NNN.
+// Octal values are bytes of the UTF-8 path, not independent code points.
+export function unquoteGitCStyle(quoted: string): string | null {
+	const src = Buffer.from(quoted, "utf8");
+	if (src.length < 2 || src[0] !== 0x22) return null;
+	const out: number[] = [];
+	let i = 1;
+	while (i < src.length) {
+		const b = src[i++];
+		if (b === 0x22) return Buffer.from(out).toString("utf8");
+		if (b !== 0x5c) {
+			out.push(b);
+			continue;
+		}
+		if (i >= src.length) return null;
+		const esc = src[i++];
+		switch (esc) {
+			case 0x61:
+				out.push(0x07);
+				break;
+			case 0x62:
+				out.push(0x08);
+				break;
+			case 0x66:
+				out.push(0x0c);
+				break;
+			case 0x6e:
+				out.push(0x0a);
+				break;
+			case 0x72:
+				out.push(0x0d);
+				break;
+			case 0x74:
+				out.push(0x09);
+				break;
+			case 0x76:
+				out.push(0x0b);
+				break;
+			case 0x5c:
+			case 0x22:
+				out.push(esc);
+				break;
+			case 0x30:
+			case 0x31:
+			case 0x32:
+			case 0x33: {
+				if (i + 1 >= src.length) return null;
+				const d2 = src[i];
+				const d3 = src[i + 1];
+				if (d2 < 0x30 || d2 > 0x37 || d3 < 0x30 || d3 > 0x37) return null;
+				i += 2;
+				out.push(((esc - 0x30) << 6) | ((d2 - 0x30) << 3) | (d3 - 0x30));
+				break;
+			}
+			default:
+				return null;
+		}
+	}
+	return null;
+}
+
+function pathFromDiffHeaderRest(rest: string): string | null {
+	if (rest.startsWith('"')) return unquoteGitCStyle(rest);
+	const tab = rest.indexOf("\t");
+	return tab === -1 ? rest : rest.slice(0, tab);
+}
+
+function headPathFromPlusPlusPlus(line: string): string | null {
+	const decoded = pathFromDiffHeaderRest(line.slice(4));
+	if (decoded === null || decoded === "/dev/null") return null;
+	if (!decoded.startsWith("b/")) return null;
+	const file = decoded.slice(2);
+	return file === "" ? null : file;
+}
+
 // Parse a unified diff into head-side (new) line ranges per file path.
-// For each `+++ b/<path>`, hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1];
-// d defaults to 1 when omitted. Deleted files (`+++ /dev/null`) are skipped.
+// `+++` paths follow git quoting: unquoted `b/<path>`, or C-quoted
+// `"b/<path>"` (the `b/` prefix sits inside the quotes). A tab after the
+// name is a GNU-patch terminator / timestamp separator, not part of the path.
+// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; d defaults to 1 when
+// omitted. Deleted files (`+++ /dev/null`) are skipped.
 export function headLinesInPatch(
 	patch: string,
 ): Map<string, Array<[number, number]>> {
@@ -128,8 +207,7 @@ export function headLinesInPatch(
 	let file: string | null = null;
 	for (const raw of patch.split("\n")) {
 		if (raw.startsWith("+++ ")) {
-			const m = /^\+\+\+ b\/(.+)$/.exec(raw);
-			file = m ? m[1] : null;
+			file = headPathFromPlusPlusPlus(raw);
 			if (file && !ranges.has(file)) ranges.set(file, []);
 			continue;
 		}
