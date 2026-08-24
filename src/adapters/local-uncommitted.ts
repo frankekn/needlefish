@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, type Stats } from "node:fs";
 import path from "node:path";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
@@ -110,6 +110,11 @@ function statLine(filePath: string, insertions: number): string {
   return ` ${filePath} | ${insertions} ${pluses}`;
 }
 
+/** ENOENT only (dangling/missing). EACCES and other I/O errors stay fail-closed. */
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
 export function buildUntrackedPatch(cwd: string, files: readonly string[]): UntrackedPatch {
   const patches: string[] = [];
   const statLines: string[] = [];
@@ -120,8 +125,14 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
 
   for (const file of files) {
     const absolutePath = path.join(cwd, file);
-    const stat = statSync(absolutePath);
-    if (!stat.isFile()) {
+    // lstat does not follow; a dangling symlink must not abort the whole review.
+    let stat: Stats | undefined;
+    try {
+      stat = lstatSync(absolutePath);
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+    if (stat === undefined || !stat.isFile()) {
       skipped.push(`${file} (not a regular file)`);
       continue;
     }
@@ -130,7 +141,14 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
       untrackedSkipped.push({ path: file, bytes: stat.size, reason: "per_file_cap" });
       continue;
     }
-    const content = readFileSync(absolutePath);
+    let content: Buffer;
+    try {
+      content = readFileSync(absolutePath);
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+      skipped.push(`${file} (not a regular file)`);
+      continue;
+    }
     if (content.byteLength === 0) {
       skipped.push(`${file} (empty)`);
       continue;
