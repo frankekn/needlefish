@@ -558,9 +558,13 @@ async function runCodexOnce(
 		};
 		if (result.res.error) throw withRunnerOutput(result.res.error);
 		if (result.res.status !== 0) {
+			// Surface only allowlisted, prompt-free cause tokens extracted from
+			// stderr (auth/quota/network classifications). Raw stderr stays
+			// withheld — it may contain the review prompt.
+			const cause = safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new Error(
-					`${runner} runner exited ${result.res.status}; stderr withheld because it may contain the review prompt`,
+					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt`,
 				),
 			);
 		}
@@ -598,6 +602,26 @@ async function runCodexOnce(
 	} finally {
 		await disposeManagedTempDirectory(tmp);
 	}
+}
+
+// Allowlisted cause classification for withheld runner stderr. Only canned
+// phrases and regex-extracted codes ever reach the PR-visible message; raw
+// stderr text never does (it may contain the review prompt).
+export function safeRunnerCause(stderr: string): string | undefined {
+	if (!stderr) return undefined;
+	const authCode = stderr.match(/auth error code:\s*([a-z0-9_]+)/i);
+	if (authCode) return `auth error (${authCode[1]})`;
+	if (/\b40[13]\b|unauthorized|login required|not logged in/i.test(stderr)) {
+		return "auth rejected";
+	}
+	if (/usage limit|quota exceeded|credit balance/i.test(stderr)) {
+		return "usage limit";
+	}
+	if (/rate limit/i.test(stderr)) return "rate limited";
+	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
+		return "network error";
+	}
+	return undefined;
 }
 
 function parseJsonObject(raw: string): unknown {
