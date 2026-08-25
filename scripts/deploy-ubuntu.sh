@@ -58,6 +58,23 @@ NODE
 	fi
 fi
 
+# Keep the last-known-good install one symlink away: the canary window armed
+# at each deploy rolls back by repointing "current" at "previous".
+previous_target=""
+if [ -L "$root/current" ]; then
+	previous_target=$(readlink "$root/current")
+fi
 ln -sfn "$release" "$root/current"
+if [ -n "$previous_target" ] && [ "$previous_target" != "$release" ]; then
+	ln -sfn "$previous_target" "$root/previous"
+else
+	second=$(ls -dt "$releases"/* 2>/dev/null | sed -n 2p)
+	if [ -n "$second" ] && [ "$second" != "$release" ]; then
+		ln -sfn "$second" "$root/previous"
+	fi
+fi
 ln -sfn "$root/current/bin/needlefish" "$bin_dir/needlefish"
 echo "needlefish deployed: $release"
+if [ -e "$root/previous" ]; then
+	echo "canary rollback point: $(readlink "$root/previous") (repoint $root/current at it to roll back)"
+fi
