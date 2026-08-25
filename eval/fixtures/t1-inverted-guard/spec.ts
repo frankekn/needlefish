@@ -49,7 +49,34 @@ export function purgeProject(user: User, project: Project, db: { delete(id: stri
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite" },
+      {
+        facts: [
+          {
+            id: "admins_rejected",
+            meaning: "The refactored guard incorrectly returns forbidden for administrators.",
+            alternatives: [
+              { allOf: ["user\\.isAdmin", "return\\s+[\"']forbidden[\"']"] },
+              { allOf: ["\\badmins?\\b", "\\b(?:forbidden|rejected|blocked)\\b"] },
+              { allOf: ["\\badministrators?\\b", "\\b(?:forbidden|rejected|blocked|denied)\\b"] },
+              { allOf: ["admin(?:istrator)?\\s+(?:check|guard)", "\\binvert(?:ed|s|ing)\\b", "\\b(?:forbidden|rejected|blocked|denied)\\b"] },
+              { allOf: ["if\\s*\\(\\s*user\\.isAdmin\\s*\\)", "return\\s+[\"']forbidden[\"']"] },
+            ],
+          },
+          {
+            id: "non_admins_can_purge",
+            meaning: "Non-administrators can reach the destructive project purge/delete path.",
+            alternatives: [
+              { allOf: ["non[- ]?admins?", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              { allOf: ["without\\s+admin", "db\\.delete"] },
+              { allOf: ["unauthori[sz]ed\\s+users?", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              { allOf: ["not\\s+(?:an?\\s+)?admin(?:istrator)?", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              { allOf: ["users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              { allOf: ["if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']", "db\\.delete\\s*\\("] },
+              { allOf: ["user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+            ],
+          },
+        ],
+      },
     ],
     anchorFile: "src/projects.ts",
     anchorLineRange: [11, 16],

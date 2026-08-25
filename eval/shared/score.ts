@@ -32,8 +32,16 @@ export function matchesSpec(
 			finding.lineStart > spec.lineRange[1])
 	)
 		return false;
-	const re = new RegExp(spec.pattern, "i");
-	return re.test(`${finding.title} ${finding.whyItBreaks}`);
+	const text = `${finding.title} ${finding.whyItBreaks}`;
+	if (spec.facts)
+		return spec.facts.every((fact) =>
+			fact.alternatives.some((alternative) =>
+				alternative.allOf.every((pattern) =>
+					new RegExp(pattern, "i").test(text),
+				),
+			),
+		);
+	return spec.pattern !== undefined && new RegExp(spec.pattern, "i").test(text);
 }
 
 // The recall matcher: a single finding must satisfy the pattern AND the

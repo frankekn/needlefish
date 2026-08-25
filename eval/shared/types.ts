@@ -18,8 +18,19 @@ export type FixtureTier = 1 | 2 | 3;
 // the sealed holdouts for a final-gate check.
 export type HoldoutMode = "include" | "exclude" | "only";
 
+export interface MatchFact {
+  readonly id: string;
+  readonly meaning: string;
+  readonly alternatives: readonly {
+    readonly allOf: readonly string[];
+  }[];
+}
+
 export interface MatchSpec {
-  readonly pattern: string;
+  // Legacy sentence regex, or independently curated order-free facts. Exactly
+  // one form is required; anchor.test.ts enforces the fixture contract.
+  readonly pattern?: string;
+  readonly facts?: readonly MatchFact[];
   readonly category?: Category;
   // File the matching finding must anchor to (suffix match). For recall, a
   // mustFind spec without `file` inherits the fixture-level anchorFile — the

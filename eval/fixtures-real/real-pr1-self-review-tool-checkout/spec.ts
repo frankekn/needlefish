@@ -20,7 +20,36 @@ const spec: FixtureSpec = {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "trusted.{0,20}(checkout|code|tool)|same.{0,20}checkout|self.?review|candidate.{0,20}code.{0,20}control|pinned.{0,20}(release|base)|--repo\\b.{0,20}target" },
+      {
+        facts: [
+          {
+            id: "pr_controls_executed_reviewer",
+            meaning: "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+            alternatives: [
+              { allOf: ["(?:PR|pull request)[ -]?head", "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b", "(?:src/cli\\.ts|Needlefish)"] },
+              { allOf: ["untrusted\\s+(?:checkout|code|PR)", "\\b(?:runs?|running|executes?|executed|executing)\\b", "(?:reviewer|review tool|Needlefish)"] },
+              { allOf: ["PR[- ]controlled", "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"] },
+              { allOf: ["(?:PR|pull request)[ -]?head", "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b", "(?:src/cli\\.ts|Needlefish)"] },
+              { allOf: ["(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)", "(?:src/cli\\.ts|Needlefish)", "\\b(?:tool|reviewer|review)\\b"] },
+              { allOf: ["self[- ]review\\s+mode", "PR\\s+checkout(?:'s)?\\s+own\\s+src", "\\btool\\b"] },
+              { allOf: ["ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}", "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"] },
+            ],
+          },
+          {
+            id: "reviewer_has_write_authority",
+            meaning: "The PR-controlled reviewer can write pull-request reviews or checks.",
+            alternatives: [
+              { allOf: ["(?:GH_TOKEN|GITHUB_TOKEN)", "(?:pull-requests|checks)\\s*:\\s*write"] },
+              { allOf: ["write\\s+(?:permission|access|authority)", "(?:pull[- ]requests?|reviews?|checks?)"] },
+              { allOf: ["\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b", "own\\s+(?:passing\\s+)?(?:review|check)"] },
+              { allOf: ["pull-requests\\s*:\\s*write", "checks\\s*:\\s*write"] },
+              { allOf: ["(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
+              { allOf: ["(?:Needlefish|reviewer|review tool)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
+              { allOf: ["(?:GH_TOKEN|GITHUB_TOKEN)", "\\bwrite[- ]scoped\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
+            ],
+          },
+        ],
+      },
     ],
     anchorFile: ".github/workflows/review.yml",
   },

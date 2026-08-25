@@ -23,7 +23,7 @@ if (!id) {
 const spec = await loadOne(id);
 process.stderr.write(`fixture: ${spec.id} | promptHash: ${promptHash()}\n`);
 process.stderr.write(`expected verdict: ${spec.expected.verdict}\n`);
-process.stderr.write(`mustFind patterns: ${(spec.expected.mustFind ?? []).map((m: MatchSpec) => m.pattern).join(" | ")}\n\n`);
+process.stderr.write(`mustFind matchers: ${(spec.expected.mustFind ?? []).map((m: MatchSpec) => m.pattern ?? m.facts?.map((fact) => fact.id).join("+")).join(" | ")}\n\n`);
 
 const loaded = loadFixture(spec);
 try {
