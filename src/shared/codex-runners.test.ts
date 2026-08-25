@@ -366,6 +366,101 @@ test("runCodex can review an unreferenced target commit", async (t) => {
 	assert.equal(readFileSync(readmePath, "utf8"), "feature\n");
 });
 
+test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const stderrMarker = "SECRET_REVIEW_PROMPT_MARKER_9c2b";
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			`process.stderr.write("ERROR: unexpected status 401 Unauthorized, auth error code: invalid_api_key " + ${JSON.stringify(stderrMarker)});`,
+			"process.exit(1);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "codex";
+
+	let caught: unknown;
+	try {
+		await runCodex("prompt", {
+			repoPath: repo,
+			targetHeadSha: headSha(repo),
+			timeoutMs: 1000,
+		});
+		assert.fail("expected runCodex to reject");
+	} catch (err) {
+		caught = err;
+	}
+	assert.ok(caught instanceof Error);
+	const err = caught as Error & { rawOutput?: string };
+	assert.match(
+		err.message,
+		/codex runner exited 1; likely cause: auth error \(invalid_api_key\); stderr withheld/,
+	);
+	assert.doesNotMatch(err.message, new RegExp(stderrMarker));
+	assert.match(err.rawOutput ?? "", new RegExp(stderrMarker));
+});
+
+test("runCodex keeps the generic withheld message when stderr has no allowlisted cause", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"process.stderr.write('opaque internal failure');",
+			"process.exit(3);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "codex";
+
+	let caught: unknown;
+	try {
+		await runCodex("prompt", {
+			repoPath: repo,
+			targetHeadSha: headSha(repo),
+			timeoutMs: 1000,
+		});
+		assert.fail("expected runCodex to reject");
+	} catch (err) {
+		caught = err;
+	}
+	assert.ok(caught instanceof Error);
+	assert.match(
+		(caught as Error).message,
+		/codex runner exited 3; stderr withheld because it may contain the review prompt/,
+	);
+	assert.doesNotMatch((caught as Error).message, /likely cause/);
+});
+
 test("runCodex reports opencode exit errors before parsing stdout", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);

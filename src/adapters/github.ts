@@ -503,6 +503,39 @@ function findPreviousReview(
 	return null;
 }
 
+// S5a: create the check as in_progress BEFORE any model work so a PR always
+// shows whether a review is running on its latest head. All completions update
+// this same check by id; a null id (creation failed) makes completions fall
+// back to creating their own, preserving the old behavior.
+function createPendingCheck(repo: string, headSha: string): number | null {
+	try {
+		const created = ghJson(
+			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
+			JSON.stringify({
+				name: "Needlefish",
+				head_sha: headSha,
+				status: "in_progress",
+				external_id: process.env.GITHUB_RUN_ID || undefined,
+				details_url:
+					process.env.GITHUB_SERVER_URL &&
+					process.env.GITHUB_REPOSITORY &&
+					process.env.GITHUB_RUN_ID
+						? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+						: undefined,
+			}),
+		);
+		if (isRecord(created) && typeof created.id === "number") {
+			return created.id;
+		}
+	} catch (err) {
+		const em = err instanceof Error ? err.message : String(err);
+		process.stderr.write(
+			`needlefish: could not create pending check: ${em}\n`,
+		);
+	}
+	return null;
+}
+
 function postCheck(
 	repo: string,
 	headSha: string,
@@ -510,7 +543,20 @@ function postCheck(
 	conclusion: "success" | "failure" | "neutral",
 	title: string,
 	summary: string,
+	checkId?: number | null,
 ) {
+	const output = JSON.stringify({
+		status: "completed",
+		conclusion,
+		output: { title, summary },
+	});
+	if (typeof checkId === "number") {
+		ghJson(
+			["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
+			output,
+		);
+		return;
+	}
 	ghJson(
 		["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
 		JSON.stringify({
@@ -855,10 +901,26 @@ export async function runGithub(
 		focus: null,
 	});
 
+	const pendingCheckId = createPendingCheck(repo, headSha);
+
 	try {
 		const result = await review(bundle, opts);
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
-		if (!isCurrentOpenHead(repo, prNumber, headSha)) return;
+		if (!isCurrentOpenHead(repo, prNumber, headSha)) {
+			// Head moved while reviewing: close our own check so it cannot hang
+			// as in_progress forever. Timeline comments stay suppressed for the
+			// stale head exactly as before.
+			postCheck(
+				repo,
+				headSha,
+				result,
+				"neutral",
+				"Needlefish: superseded",
+				"A newer head was pushed while this review ran; its result is not posted.",
+				pendingCheckId,
+			);
+			return;
+		}
 		if (result.verdict === "changes_requested") process.exitCode = 1;
 		// Run before posting this result so fresh round comments are not swept.
 		// This also clears stale infra-error comments when the first successful
@@ -929,6 +991,7 @@ export async function runGithub(
 				conclusion,
 				checkRunTitle(result),
 				summary,
+				pendingCheckId,
 			);
 			process.stdout.write(summary);
 		} else {
@@ -954,11 +1017,14 @@ export async function runGithub(
 				conclusion,
 				checkRunTitle(result),
 				summary,
+				pendingCheckId,
 			);
 			process.stdout.write(summary);
 		}
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
+		// The pending check must ALWAYS reach a terminal state — an in_progress
+		// check on a stale head would hang forever otherwise.
 		if (isCurrentOpenHead(repo, prNumber, headSha)) {
 			// Check run and error comment are independent fail-soft attempts: a
 			// failure of either GitHub endpoint must not suppress the other, nor
@@ -971,6 +1037,7 @@ export async function runGithub(
 					"failure",
 					"Needlefish: review failed",
 					`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
+					pendingCheckId,
 				);
 			} catch (checkErr) {
 				const cm =

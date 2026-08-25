@@ -588,3 +588,54 @@ Disposition options (owner decision, none applied):
    removing it from the scored set until context enrichment lands.
 
 No fixture file was modified in this audit.
+
+### 16a. §16 disposition resolved — 2026-08-25
+
+Owner decision: option 3 direction — both stable endpoint-identity misses
+(`real-pr1-bundle-basesha-mismatch`, `real-pr1-diff-base-tip-not-mergebase`)
+are folded into the R-track producer/consumer invariant-enforcement workstream;
+they were already sealed for that change in gate 14's declaration. Until it
+lands they stay in the scored set as standing tier cost inside the pre-declared
+envelope (proven acceptable across gates 9/10/14); no fixture-set hash churn.
+
+### 17. Early pending check-run + latest-head reconciliation — Class D declared 2026-08-25
+
+Change: the GitHub adapter creates the `Needlefish` check as `in_progress`
+before any model work and completes that same check by id on every terminal
+path (verdict, error, superseded-by-newer-head); review.yml gains an
+`if: always()` reconciliation finalizer that re-dispatches (bounded at two
+infra failures) when a closed or superseded run leaves the PR's latest open
+head without a terminal verdict.
+
+Classification: **Class D** by provenance containment — the change touches
+only check-run/posting plumbing and never any model input or output; the
+successful-path review content is byte-identical to the old pipeline.
+Proportionality note recorded per the taxonomy's own principle: no eval draw
+is consumed because no draw can observe this path (the eval harness exercises
+`review()`, not GitHub posting); the gate is therefore the resident suites
+plus the live canary window.
+
+Gate criteria (pre-declared): `github-posting.test.ts` green including four
+new lifecycle cases (pending created before model work and completed by id;
+error completes failure by id; stale head closes neutral-superseded with no
+timeline posts; single create + single completion per round); full suite
+green; live canary after deploy.
+
+**Result: PASSED.** `github-posting.test.ts` 48/48; full suite 782+/0 fail;
+`pnpm check`/`lint` clean.
+
+### 18. Runner stderr safe-cause surfacing — Class D declared 2026-08-25
+
+Trigger: claw-console PR #25 failed for hours with only `codex runner exited
+1; stderr withheld…`; diagnosis required local reproduction (invalid/stale
+exported auth.json → 401 fast-exit). Change: when a runner exits nonzero,
+extract allowlisted cause tokens from stderr (auth error codes, 401/403,
+usage/quota/rate limits, network errno) into a `likely cause:` suffix. Raw
+stderr text never enters the message; full output remains available only via
+the non-enumerable rawOutput canary attachment.
+
+Classification: **Class D** — runner plumbing only; zero review-content touch.
+Gate: resident suites (`codex-runners.test.ts` +4 cases incl. leak-negative);
+no eval draws consumed, same proportionality reasoning as §17.
+
+**Result: PASSED.** `codex-runners.test.ts` 14/14; suite green.

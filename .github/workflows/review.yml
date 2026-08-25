@@ -294,3 +294,55 @@ jobs:
           if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           "$NEEDLEFISH_BIN" "${args[@]}"
+
+  # S6 reconciliation: the latest open head of this PR must eventually carry a
+  # terminal Needlefish check that is not an infra error. Superseded runs
+  # (cancel-in-progress) and crashed runs would otherwise leave a head with no
+  # verdict at all. Bounded: at most two infra-failed checks on a head are
+  # tolerated before the finalizer gives up loudly.
+  reconcile:
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: write
+    steps:
+      - name: Re-dispatch when the latest head lacks a terminal result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
+        run: |
+          set -eu
+          if [ -z "$PR_NUM" ]; then
+            echo "no PR number in context; nothing to reconcile" >&2
+            exit 0
+          fi
+          state=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .state)
+          if [ "$state" != "open" ]; then
+            echo "PR #$PR_NUM is $state; nothing to reconcile"
+            exit 0
+          fi
+          head=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.sha)
+          runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100"
+          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
+          if [ "$valid" -gt 0 ]; then
+            echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
+            exit 0
+          fi
+          running=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=in_progress" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
+          queued=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=queued" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
+          if [ "$running" -gt 0 ] || [ "$queued" -gt 0 ]; then
+            echo "a needlefish run for $head is still active or queued; letting it finish"
+            exit 0
+          fi
+          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
+          if [ "$infra_fails" -ge 2 ]; then
+            echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
+            exit 0
+          fi
+          gh workflow run review.yml --ref main -f pr_number="$PR_NUM"
+          echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"
