@@ -663,6 +663,8 @@ and explicit-override preservation; `actionlint`, `pnpm check`, `pnpm lint`,
 and full suite green; post-deploy claw-console canary reaches a terminal review
 verdict without runner infrastructure failure.
 
-Pre-deploy result: resident gate passed — workflow-script tests 13/13, full
-suite 788/788, and `actionlint`/`pnpm check`/`pnpm lint` clean. Live canary
-pending deployment.
+**Result: PASSED.** Resident gate: workflow-script tests 13/13, full suite
+788/788, and `actionlint`/`pnpm check`/`pnpm lint` clean. Live canary:
+claw-console run `32870517112` selected immutable release `2d36ec7f`, resolved
+Codex `0.149.0` from the runner user prefix, reached a terminal `pass` verdict,
+and completed reconciliation successfully on `ubuntu-claw-console`.
