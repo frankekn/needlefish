@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { FixtureSpec } from "./shared/types";
+import type { FixtureSpec, MatchSpec } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
@@ -25,6 +25,13 @@ async function loadAll(): Promise<FixtureSpec[]> {
 
 function lineCount(content: string): number {
   return content.split("\n").length;
+}
+
+function regexPatterns(spec: MatchSpec): readonly string[] {
+  return spec.pattern === undefined
+    ? (spec.facts ?? []).flatMap((fact) =>
+      fact.alternatives.flatMap((alternative) => [...alternative.allOf]))
+    : [spec.pattern];
 }
 
 test("every fixture has a unique id", async () => {
@@ -61,7 +68,7 @@ test("every positive fixture has mustFind; every negative has noBlockingFindings
   }
 });
 
-test("every fixture pattern compiles as a case-insensitive regex", async () => {
+test("every fixture matcher has exactly one valid representation", async () => {
   const specs = await loadAll();
   for (const spec of specs) {
     const all = [
@@ -70,7 +77,11 @@ test("every fixture pattern compiles as a case-insensitive regex", async () => {
       ...(spec.expected.trap ?? []),
     ];
     for (const m of all) {
-      assert.doesNotThrow(() => new RegExp(m.pattern, "i"), `${spec.id}: invalid pattern: ${m.pattern}`);
+      assert.notEqual(Boolean(m.pattern), Boolean(m.facts?.length),
+        `${spec.id}: matcher must have exactly one of pattern or facts`);
+      for (const pattern of regexPatterns(m)) {
+        assert.doesNotThrow(() => new RegExp(pattern, "i"), `${spec.id}: invalid pattern: ${pattern}`);
+      }
     }
   }
 });
@@ -95,9 +106,11 @@ test("honeypot fixtures: clean verdict, trap set, and trap keywords absent from 
     // fixture content. If a trap pattern matches any base/head file, the
     // honeypot is broken and cheat detection is meaningless.
     for (const trap of spec.expected.trap ?? []) {
-      const re = new RegExp(trap.pattern, "i");
-      for (const [name, content] of [...Object.entries(spec.baseFiles), ...Object.entries(spec.headFiles)]) {
-        assert.ok(!re.test(content), `${spec.id}: trap pattern leaks into fixture file ${name}`);
+      for (const pattern of regexPatterns(trap)) {
+        const re = new RegExp(pattern, "i");
+        for (const [name, content] of [...Object.entries(spec.baseFiles), ...Object.entries(spec.headFiles)]) {
+          assert.ok(!re.test(content), `${spec.id}: trap pattern leaks into fixture file ${name}`);
+        }
       }
     }
   }

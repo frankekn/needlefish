@@ -441,6 +441,13 @@ test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
 });
 
+test("parseArgs: --gate-class defaults to R and accepts only R|D", () => {
+  assert.equal(parseArgs([]).gateClass, "R");
+  assert.equal(parseArgs(["--gate-class", "D"]).gateClass, "D");
+  assert.equal(parseArgs(["--gate-class", "R"]).gateClass, "R");
+  assert.throws(() => parseArgs(["--gate-class", "X"]), /--gate-class must be R\|D/);
+});
+
 test("parseArgs: accepts valid --concurrency", () => {
   assert.equal(parseArgs(["--concurrency", "1"]).concurrency, 1);
   assert.equal(parseArgs(["--concurrency", "8"]).concurrency, 8);
@@ -1779,6 +1786,26 @@ test("compare: refuses missing or mismatched scorerHash", () => {
       writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
       assert.throws(() => compare(baselinePath, { ...current, scorerHash: scorerHashValue }), /candidate report scorer hash is/);
     }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("compare: refuses cross-gate-class reports", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-gate-class-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const spec = holdoutSpec("gate-class-compare", false);
+  const current = resumeReport(spec, { anticheatVersion: 2 });
+  try {
+    // D baseline vs R candidate.
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, gateClass: "D" }));
+    assert.throws(() => compare(baselinePath, current), /gate class mismatch: baseline is D, candidate is R/);
+    // Explicit R baseline vs D candidate.
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, gateClass: "R" }));
+    assert.throws(() => compare(baselinePath, { ...current, gateClass: "D" }), /gate class mismatch: baseline is R, candidate is D/);
+    // Legacy reports without the field compare as R.
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    assert.throws(() => compare(baselinePath, { ...current, gateClass: "D" }), /gate class mismatch: baseline is R, candidate is D/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

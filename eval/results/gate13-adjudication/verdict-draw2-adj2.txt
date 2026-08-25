@@ -1,0 +1,1 @@
+{"verdict":"miss","facts_found":{"admins_rejected":true,"non_admins_can_purge":false},"finding_index":-1,"reasoning":"The finding correctly states that administrators are returned forbidden before deletion, but it does not state that non-administrators can reach the destructive delete path."}

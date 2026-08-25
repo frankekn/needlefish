@@ -622,23 +622,12 @@ function assertCriticSubset(
 		residualSubsetKey(risk.text),
 	);
 	const residual_risks: ResidualRisk[] = [];
+	let restoreCandidateResiduals = false;
 	for (const risk of critic.residual_risks) {
-		const group = residualBag.get(residualSubsetKey(risk.text));
-		if (!group || group.length === 0) {
-			throw new Error(
-				"malformed critic output: residual risk was not in the candidate review",
-			);
-		}
-		if (risk.blocks && !group.some((item) => item.blocks)) {
-			throw new Error(
-				"malformed critic output: residual risk is blocking but was not blocking in the candidate review",
-			);
-		}
 		const matched = takeResidual(residualBag, risk);
 		if (!matched) {
-			throw new Error(
-				"malformed critic output: residual risk was not in the candidate review",
-			);
+			restoreCandidateResiduals = true;
+			break;
 		}
 		residual_risks.push({
 			text: matched.text,
@@ -650,8 +639,22 @@ function assertCriticSubset(
 		summary: critic.summary,
 		findings,
 		checked: critic.checked,
-		residual_risks,
+		residual_risks: restoreCandidateResiduals
+			? candidate.residual_risks
+			: residual_risks,
 	};
+}
+
+function restoreRequiredResiduals(
+	current: readonly ResidualRisk[],
+	required: readonly ResidualRisk[],
+): ResidualRisk[] {
+	const restored = [...current];
+	const available = bagByKey(restored, (risk) => residualSubsetKey(risk.text));
+	for (const risk of required) {
+		if (!takeResidual(available, risk)) restored.push(risk);
+	}
+	return restored;
 }
 
 async function runCritic(
@@ -935,7 +938,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const blockingResiduals = residuals.filter((risk) => risk.blocks);
 	const final = {
 		...pruned.value,
-		residual_risks: [...pruned.value.residual_risks, ...blockingResiduals],
+		residual_risks: restoreRequiredResiduals(
+			pruned.value.residual_risks,
+			blockingResiduals,
+		),
 	};
 	// Compute coverage from the hotspots whose deep pass actually SUCCEEDED
 	// (includes the tail backstop). A failed pass's files were not reviewed —

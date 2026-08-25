@@ -161,7 +161,7 @@ test("critic subset: small path rejects a critic-only finding", async (t) => {
 	]);
 });
 
-test("critic subset: small path rejects a critic-only blocking residual", async (t) => {
+test("critic subset: small path drops a critic-only residual by restoring the candidate list", async (t) => {
 	const { repo, calls } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -170,13 +170,11 @@ test("critic subset: small path rejects a critic-only blocking residual", async 
 		),
 	);
 
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: residual risk was not in the candidate review/,
-	);
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.residualRisks, []);
 	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
 		"review",
-		"critic",
 		"critic",
 	]);
 });
@@ -654,7 +652,7 @@ test("critic subset: small path rejects a third copy of a duplicate-key finding"
 	);
 });
 
-test("critic subset: small path rejects upgrading a residual to blocking", async (t) => {
+test("critic subset: small path restores the candidate list on a blocking upgrade", async (t) => {
 	const { repo } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -666,10 +664,11 @@ test("critic subset: small path rejects upgrading a residual to blocking", async
 		),
 	);
 
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: residual risk is blocking but was not blocking in the candidate review/,
-	);
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.residualRisks, [
+		{ text: "maybe later", blocks: false },
+	]);
 });
 
 test("critic subset: small path accepts unblocking a residual", async (t) => {
@@ -710,7 +709,7 @@ test("critic subset: small path accepts residual case/whitespace drift and resto
 	]);
 });
 
-test("critic subset: small path rejects a word-paraphrased residual", async (t) => {
+test("critic subset: small path restores candidate residuals on wording drift", async (t) => {
 	const { repo } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -722,10 +721,28 @@ test("critic subset: small path rejects a word-paraphrased residual", async (t) 
 		),
 	);
 
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: residual risk was not in the candidate review/,
+	const result = await review(makeBundle(repo, false));
+	assert.deepEqual(result.residualRisks, [
+		{ text: "Need human", blocks: false },
+	]);
+});
+
+test("critic subset: a late residual mismatch restores the complete candidate list", async (t) => {
+	const candidateResiduals = [
+		{ text: "first", blocks: false },
+		{ text: "second", blocks: true },
+	];
+	const { repo } = installStub(t, (log) =>
+		smallPathBin(
+			log,
+			candidateReview({ findings: [], residual_risks: candidateResiduals }),
+			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [parsed.residual_risks[0], { text: "invented", blocks: false }] }));',
+		),
 	);
+
+	const result = await review(makeBundle(repo, false));
+	assert.equal(result.verdict, "needs_human");
+	assert.deepEqual(result.residualRisks, candidateResiduals);
 });
 
 test("critic subset: large path rejects a critic-only finding", async (t) => {
@@ -749,7 +766,7 @@ test("critic subset: large path rejects a critic-only finding", async (t) => {
 	]);
 });
 
-test("critic subset: large path rejects a critic-only blocking residual", async (t) => {
+test("critic subset: large path drops a critic-only residual by restoring the candidate list", async (t) => {
 	const { repo, calls } = installStub(t, (log) =>
 		largePathBin(
 			log,
@@ -758,15 +775,33 @@ test("critic subset: large path rejects a critic-only blocking residual", async 
 		),
 	);
 
-	await assert.rejects(
-		() => review(makeBundle(repo, true)),
-		/malformed critic output: residual risk was not in the candidate review/,
-	);
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.residualRisks, []);
 	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
 		"map",
 		"deep",
 		"critic",
-		"critic",
+	]);
+});
+
+test("critic subset: large path does not duplicate a retained blocking residual", async (t) => {
+	const { repo } = installStub(t, (log) =>
+		largePathBin(
+			log,
+			candidateReview({
+				findings: [],
+				summary: "deep h1",
+				residual_risks: [{ text: "Need human", blocks: true }],
+			}),
+			ECHO,
+		),
+	);
+
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.verdict, "needs_human");
+	assert.deepEqual(result.residualRisks, [
+		{ text: "Need human", blocks: true },
 	]);
 });
 

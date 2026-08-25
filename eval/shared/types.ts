@@ -18,8 +18,19 @@ export type FixtureTier = 1 | 2 | 3;
 // the sealed holdouts for a final-gate check.
 export type HoldoutMode = "include" | "exclude" | "only";
 
+export interface MatchFact {
+  readonly id: string;
+  readonly meaning: string;
+  readonly alternatives: readonly {
+    readonly allOf: readonly string[];
+  }[];
+}
+
 export interface MatchSpec {
-  readonly pattern: string;
+  // Legacy sentence regex, or independently curated order-free facts. Exactly
+  // one form is required; anchor.test.ts enforces the fixture contract.
+  readonly pattern?: string;
+  readonly facts?: readonly MatchFact[];
   readonly category?: Category;
   // File the matching finding must anchor to (suffix match). For recall, a
   // mustFind spec without `file` inherits the fixture-level anchorFile — the
@@ -196,6 +207,11 @@ export interface Aggregates {
 // generated results) refuses reports from other generations.
 export const ANTICHEAT_VERSION = 2;
 
+// Eval gate contract class (AGENTS.md EVAL DISCIPLINE): R = recall-affecting
+// full-contract run, D = delivery/reliability reduced contract. Classification
+// is provenance containment of the change's outputs, not its motive.
+export type GateClass = "R" | "D";
+
 export interface Report {
   readonly promptHash: string;
   readonly runner: RunnerName;
@@ -219,4 +235,7 @@ export interface Report {
   readonly anticheatVersion?: number;
   // Digest of scoring-relevant sources. Missing is legacy and fails closed.
   readonly scorerHash?: string;
+  // Gate contract the run was declared under. Absent is legacy; legacy
+  // reports compare as R.
+  readonly gateClass?: GateClass;
 }

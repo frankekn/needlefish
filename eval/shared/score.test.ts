@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Finding, Verdict } from "../../src/shared/schema";
+import selfReviewCheckout from "../fixtures-real/real-pr1-self-review-tool-checkout/spec";
+import invertedGuard from "../fixtures/t1-inverted-guard/spec";
 import {
 	fileMatchesAnchor,
 	matchEvidence,
@@ -76,6 +78,58 @@ test("matchesSpec: per-spec file uses component-boundary matching", () => {
 		false,
 	);
 });
+
+const structuredCases = [
+	{
+		fixture: invertedGuard,
+		lineStart: 12,
+		facts: [
+			"Admins are forbidden.",
+			"Non-admins can delete.",
+		],
+	},
+	{
+		fixture: selfReviewCheckout,
+		lineStart: 34,
+		facts: [
+			"The PR head executes Needlefish.",
+			"The reviewer has write access to checks.",
+		],
+	},
+] as const;
+
+for (const { fixture, lineStart, facts } of structuredCases) {
+	test(`${fixture.id}: structured facts are order-free but must stay in one anchored finding`, () => {
+		const makeFinding = (text: string) =>
+			finding({
+				title: "Authorization defect",
+				whyItBreaks: text,
+				file: fixture.expected.anchorFile!,
+				lineStart,
+			});
+		const hit = (findings: readonly Finding[]) =>
+			score(
+				{ verdict: "changes_requested", findings },
+				fixture.expected,
+				fixture.id,
+			).recall;
+
+		assert.equal(hit([makeFinding(facts.join(" "))]), true);
+		assert.equal(hit([makeFinding([...facts].reverse().join(" "))]), true);
+		assert.equal(
+			hit(facts.map(makeFinding)),
+			false,
+			"facts split across findings must not combine into a hit",
+		);
+		for (let removed = 0; removed < facts.length; removed += 1) {
+			assert.equal(
+				hit([makeFinding(facts.filter((_, index) => index !== removed).join(" "))]),
+				false,
+				`removing required fact ${removed} must cause a miss`,
+			);
+		}
+	});
+}
 
 test("score: character-suffix collision does not grant recall", () => {
 	const expected: Expected = {

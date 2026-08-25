@@ -41,12 +41,15 @@ test("prompts never embed a mustFind/trap pattern verbatim", async () => {
   const specs = await loadFixtures(null);
   const prompts = promptTexts();
   for (const spec of specs) {
-    const patterns = [...(spec.expected.mustFind ?? []), ...(spec.expected.trap ?? [])].map((m) => m.pattern);
-    for (const pattern of patterns) {
+    const alternatives = [...(spec.expected.mustFind ?? []), ...(spec.expected.trap ?? [])]
+      .flatMap((m) => m.pattern === undefined
+        ? (m.facts ?? []).flatMap((fact) => fact.alternatives.map((alternative) => alternative.allOf))
+        : [[m.pattern]]);
+    for (const patterns of alternatives) {
       for (const [file, text] of prompts) {
         assert.ok(
-          !text.includes(pattern.toLowerCase()),
-          `prompts/${file} embeds fixture ${spec.id} pattern verbatim`
+          !patterns.every((pattern) => text.includes(pattern.toLowerCase())),
+          `prompts/${file} embeds fixture ${spec.id} matcher alternative verbatim`
         );
       }
     }

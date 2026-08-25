@@ -78,14 +78,17 @@ needlefish/
 
 ## EVAL DISCIPLINE
 
-- Any change to prompts/ or the review pipeline ships only through an eval gate: pre-declared pass criteria, full fixture set mirroring the production lane's model and effort, confirm tier (x3 draws) on divergent fixtures. Gate fails → revert, record the data in eval/RESULTS.md anyway.
+- Every pipeline/prompt change ships through an eval gate classified `gateClass: R` or `D`, declared in the report. Gate fails → revert, record the data in eval/RESULTS.md anyway.
+- **Class R (recall-affecting)** — full fixture set mirroring the production lane's model and effort, confirm tier (x3 draws) on divergent fixtures, holdouts included, tier-1 = 1 absolute. Required whenever the change can alter what the models are fed (prompts/, bundle contents such as round context) or what counts as usable output (`src/shared/normalize.ts`), alter critic matching/severity semantics beyond provenance-preserving restore, or touch scoring. Mixed changes (part R, part D) are always R.
+- **Class D (delivery/reliability)** — changes whose successful-path output is byte-identical to the old pipeline and whose new outputs on previously-failing inputs are subsets of artifacts the old pipeline had already admitted (candidate bag), with signals never removed and verdicts only moving more conservative. Examples: error handling, retry/timeout tuning, fail-soft restore of candidate residuals, posting/check-run plumbing. D gate = resident property suite (`final findings/residuals ⊆ candidate bag`; drift corpus replay must not throw) + x3 gate on the historical critic-drift fixture subset plus all honeypots with pre-declared zero malformed-output errors and zero cheat detections + live canary window with automatic rollback to the last-known-good install.
+- The classification test is provenance containment, not motive. A change motivated by delivery that alters model inputs is R.
 - Miss museum: every confirmed real-PR miss becomes a generic fixture (no target-repo nouns) within a week.
 - Holdout fixtures (`holdout: true` in the spec) are sealed at authoring time: never run them while iterating on prompt wording (`--holdout exclude`); final gates always include them. Each prompt-change round should add at least one new holdout.
 - Single-draw full-set runs flicker by 1-2 fixtures at medium effort; never conclude a regression (or an improvement) from one draw — confirm x3 on the specific fixtures first.
 - Recall is anchored (same finding must match pattern AND anchor file) and positives carry difficulty tiers 1-3; report per-tier recall, and treat any tier-1 miss as disqualifying for a runner. `meanNoisePerPositive` is the precision signal — recall gains bought with noise are not gains.
 - mustFind patterns are written from the bug description at authoring time, never reverse-engineered from a model transcript — that is tuning the answer key.
 - Honeypot fixtures (kind `honeypot`) are sandbox canaries: trap phrases exist only in spec files. Structured bait use sets `cheatDetectedCount > 0` and voids the report. Raw-transcript bait exposure with zero adoption or escape is recorded as `baitExposureCount` and does not void.
-- Reports are comparable only when promptHash, fixtureSetHash, AND anticheatVersion all match; `--resume` and `--compare` enforce this. `--baseline` refuses `--holdout` subsets.
+- Reports are comparable only when promptHash, fixtureSetHash, AND anticheatVersion all match; `--resume` and `--compare` enforce this. `--baseline` refuses `--holdout` subsets. Reports carry `gateClass`; `--compare` requires both sides equal, and only Class R full-contract reports may anchor `--baseline`. Legacy reports without the field compare as R.
 
 ## COMMANDS
 

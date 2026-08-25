@@ -1,0 +1,1 @@
+{"verdict":"hit","facts_found":{"admins_rejected":true,"non_admins_can_purge":true},"finding_index":0,"reasoning":"Finding 0 is anchored to src/projects.ts line 12 and explicitly states both required facts: administrators return forbidden, while non-administrators can fall through to db.delete() for archived projects."}

@@ -1,0 +1,11 @@
+[
+  {
+    "severity": "P1",
+    "category": "security",
+    "file": "src/projects.ts",
+    "lineStart": 12,
+    "lineEnd": 12,
+    "title": "Restore admin-only authorization for purging",
+    "whyItBreaks": "For an archived project, user.isAdmin=false falls through to db.delete(), granting an unprivileged user destructive access. Conversely, user.isAdmin=true returns \"forbidden\", blocking the only authorized role."
+  }
+]
