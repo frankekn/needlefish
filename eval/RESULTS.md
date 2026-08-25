@@ -639,3 +639,30 @@ Gate: resident suites (`codex-runners.test.ts` +4 cases incl. leak-negative);
 no eval draws consumed, same proportionality reasoning as §17.
 
 **Result: PASSED.** `codex-runners.test.ts` 14/14; suite green.
+
+### 19. Self-hosted user-local Codex resolution — Class D declared 2026-08-25
+
+Trigger: the reusable workflow selected a valid immutable Needlefish release
+on `ubuntu-claw-console`, then failed with `spawn codex ENOENT` because Codex
+was installed at `$HOME/.local/bin/codex` while the runner service PATH did not
+include `$HOME/.local/bin`.
+
+Change: for the Codex runner only, `review.yml` selects the executable
+user-local install when `CODEX_BIN` is unset. An explicit `CODEX_BIN` remains
+authoritative; runner arguments, model inputs, normalization, scoring, and
+posting are unchanged.
+
+Classification: **Class D** by provenance containment — executable resolution
+only. Healthy existing runner paths are byte-identical, no signal is removed,
+and no model input or output contract changes. No eval draw can observe shell
+binary resolution, so the proportional gate is the executable workflow-script
+suite plus the live self-hosted canary.
+
+Gate criteria (pre-declared): workflow-script tests prove user-local fallback
+and explicit-override preservation; `actionlint`, `pnpm check`, `pnpm lint`,
+and full suite green; post-deploy claw-console canary reaches a terminal review
+verdict without runner infrastructure failure.
+
+Pre-deploy result: resident gate passed — workflow-script tests 13/13, full
+suite 788/788, and `actionlint`/`pnpm check`/`pnpm lint` clean. Live canary
+pending deployment.

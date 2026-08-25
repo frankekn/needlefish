@@ -39,17 +39,25 @@ const script = scriptLines
 	.map((line) => line.replace(/^          /, ""))
 	.join("\n");
 
-function runReview(prNum) {
+function runReview(prNum, { runner = "", homeCodex = false, codexBin = "" } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
+	const codexBinLog = join(root, "codex-bin.log");
 	const needlefishBin = join(fakeBin, "needlefish");
 	mkdirSync(fakeBin);
+	const expectedHomeCodex = join(root, ".local", "bin", "codex");
+	if (homeCodex) {
+		mkdirSync(join(root, ".local", "bin"), { recursive: true });
+		writeFileSync(expectedHomeCodex, "#!/bin/sh\nexit 0\n");
+		chmodSync(expectedHomeCodex, 0o755);
+	}
 	writeFileSync(
 		needlefishBin,
 		`#!/usr/bin/env bash
 set -euo pipefail
 for arg in "$@"; do printf '<%s>\\n' "$arg" >> "$ARGV_LOG"; done
+printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
 `,
 	);
 	chmodSync(needlefishBin, 0o755);
@@ -60,11 +68,14 @@ for arg in "$@"; do printf '<%s>\\n' "$arg" >> "$ARGV_LOG"; done
 		env: {
 			...process.env,
 			ARGV_LOG: argvLog,
+			CODEX_BIN: codexBin,
+			CODEX_BIN_LOG: codexBinLog,
 			CODEX_REASONING_EFFORT: "",
+			HOME: root,
 			NEEDLEFISH_BIN: needlefishBin,
 			NEEDLEFISH_MODEL_INPUT: "",
 			NEEDLEFISH_RECHECK_INPUT: "",
-			NEEDLEFISH_RUNNER_INPUT: "",
+			NEEDLEFISH_RUNNER_INPUT: runner,
 			NEEDLEFISH_TIMEOUT_MS_INPUT: "",
 			OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
@@ -74,6 +85,8 @@ for arg in "$@"; do printf '<%s>\\n' "$arg" >> "$ARGV_LOG"; done
 	const output = {
 		...result,
 		argvLog: existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "",
+		codexBin: existsSync(codexBinLog) ? readFileSync(codexBinLog, "utf8") : "",
+		expectedHomeCodex,
 		pwned: existsSync(join(root, "pwned")),
 	};
 	rmSync(root, { recursive: true, force: true });
@@ -95,6 +108,24 @@ test("review invokes needlefish with a valid numeric PR number", () => {
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.argvLog, /<--github>\n<--pr>\n<42>\n/);
+});
+
+test("review uses an installed user-local Codex CLI when CODEX_BIN is unset", () => {
+	const result = runReview("42", { runner: "codex", homeCodex: true });
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.codexBin, result.expectedHomeCodex);
+});
+
+test("review preserves an explicitly configured CODEX_BIN", () => {
+	const result = runReview("42", {
+		runner: "codex",
+		homeCodex: true,
+		codexBin: "/opt/codex/bin/codex",
+	});
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.codexBin, "/opt/codex/bin/codex");
 });
 
 test("review rejects PR number 0 before invoking needlefish", () => {
