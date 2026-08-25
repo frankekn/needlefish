@@ -278,6 +278,9 @@ jobs:
             echo "PR number must be a positive integer, received '$PR_NUM'." >&2
             exit 1
           fi
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
+            export CODEX_BIN="$HOME/.local/bin/codex"
+          fi
           args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
