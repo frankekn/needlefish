@@ -207,6 +207,11 @@ export interface Aggregates {
 // generated results) refuses reports from other generations.
 export const ANTICHEAT_VERSION = 2;
 
+// Eval gate contract class (AGENTS.md EVAL DISCIPLINE): R = recall-affecting
+// full-contract run, D = delivery/reliability reduced contract. Classification
+// is provenance containment of the change's outputs, not its motive.
+export type GateClass = "R" | "D";
+
 export interface Report {
   readonly promptHash: string;
   readonly runner: RunnerName;
@@ -230,4 +235,7 @@ export interface Report {
   readonly anticheatVersion?: number;
   // Digest of scoring-relevant sources. Missing is legacy and fails closed.
   readonly scorerHash?: string;
+  // Gate contract the run was declared under. Absent is legacy; legacy
+  // reports compare as R.
+  readonly gateClass?: GateClass;
 }

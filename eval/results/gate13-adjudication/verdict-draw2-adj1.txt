@@ -1,0 +1,1 @@
+{"verdict":"miss","facts_found":{"admins_rejected":true,"non_admins_can_purge":false},"finding_index":-1,"reasoning":"Finding 0 correctly states that administrators are rejected before deletion, but it does not identify that non-administrators can pass the inverted admin guard and reach db.delete. Both required facts are not present in one finding."}

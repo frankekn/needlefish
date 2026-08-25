@@ -1,0 +1,11 @@
+[
+  {
+    "severity": "P2",
+    "category": "bug",
+    "file": "src/projects.ts",
+    "lineStart": 12,
+    "lineEnd": 12,
+    "title": "Allow admins to purge archived projects",
+    "whyItBreaks": "For an admin with an archived project, this branch now returns \"forbidden\" before deletion. Previously that same valid input called db.delete and returned \"purged\", so no administrator can purge any project."
+  }
+]

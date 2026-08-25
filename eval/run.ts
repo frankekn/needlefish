@@ -28,6 +28,7 @@ import {
 	type DrawResult,
 	type FixtureKind,
 	type FixtureSpec,
+	type GateClass,
 	type HoldoutMode,
 	type Report,
 } from "./shared/types";
@@ -50,6 +51,7 @@ interface RunArgs {
 	fixtures: string | null;
 	resume: string | null;
 	holdout: HoldoutMode;
+	gateClass: GateClass;
 	env: Record<string, string>;
 }
 
@@ -114,6 +116,10 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		);
 	}
 	const holdout = holdoutRaw as HoldoutMode;
+	const gateClassRaw = get("--gate-class") ?? "R";
+	if (gateClassRaw !== "R" && gateClassRaw !== "D") {
+		throw new Error(`--gate-class must be R|D, got: ${gateClassRaw}`);
+	}
 	const env: Record<string, string> = {};
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] !== "--env") continue;
@@ -137,6 +143,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		fixtures,
 		resume,
 		holdout,
+		gateClass: gateClassRaw as GateClass,
 		env,
 	};
 }
@@ -321,6 +328,14 @@ export function resumeSlots(
 		if (existing.scorerHash !== scorerHash()) {
 			process.stderr.write(
 				`resume: scorer hash mismatch (${existing.scorerHash ?? "none"} vs ${scorerHash()}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
+		// Draws declared under the other gate contract satisfy different pass
+		// criteria — mixing them would blend two contracts into one report.
+		if ((existing.gateClass ?? "R") !== args.gateClass) {
+			process.stderr.write(
+				`resume: gate class mismatch (${existing.gateClass ?? "R"} vs ${args.gateClass}), ignoring resume file\n`,
 			);
 			return { slots, skipped };
 		}
@@ -762,6 +777,7 @@ export function writeReport(
 		createdAt: new Date().toISOString(),
 		baseline: args.baseline,
 		holdout: args.holdout,
+		gateClass: args.gateClass,
 		results,
 		aggregates: aggregate(results, specs),
 		gitSha: repoGitSha(),
@@ -866,6 +882,17 @@ export function compare(baselinePath: string, candidate: Report): void {
 	if (baseline.holdout !== candidate.holdout) {
 		throw new Error(
 			`holdout mode mismatch: baseline ran '${baseline.holdout}', candidate ran '${candidate.holdout}'. Deltas across different subsets are meaningless.`,
+		);
+	}
+	// R and D reports satisfy different pass contracts (full-contract recall vs
+	// reduced delivery criteria). A delta across classes would present numbers
+	// earned under different rules as one measurement. Legacy reports predate
+	// the field and compare as R.
+	const baselineGate = baseline.gateClass ?? "R";
+	const candidateGate = candidate.gateClass ?? "R";
+	if (baselineGate !== candidateGate) {
+		throw new Error(
+			`gate class mismatch: baseline is ${baselineGate}, candidate is ${candidateGate}. Compare against a baseline run under the same contract.`,
 		);
 	}
 	// Draws from another anti-cheat generation never faced the same guards —
@@ -978,6 +1005,14 @@ async function main(): Promise<void> {
 		if (args.baseline && args.holdout !== "include") {
 			throw new Error(
 				"--baseline requires --holdout include: a baseline recorded on a tuning subset is not a baseline",
+			);
+		}
+		// Only Class R full-contract reports may anchor future comparisons; a
+		// D report's reduced criteria would silently become the bar every
+		// later candidate is judged by.
+		if (args.baseline && args.gateClass !== "R") {
+			throw new Error(
+				"--baseline requires --gate-class R: only full-contract runs may anchor comparisons",
 			);
 		}
 		const loaded = await loadFixtures(args.fixtures);
