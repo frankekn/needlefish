@@ -27,8 +27,15 @@ const step = workflow.match(
 assert.ok(step, "Needlefish review step must exist");
 const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
 assert.ok(runBlock, "Needlefish review must have a run block");
-const script = runBlock[1]
-	.split("\n")
+// Model the literal-block scalar termination rule: the script ends at the
+// first line dedented below the block's 10-space indentation (e.g., a
+// top-level job appended after this one), not at end of file.
+const scriptLines = [];
+for (const line of runBlock[1].split("\n")) {
+	if (line.length > 0 && !line.startsWith("          ")) break;
+	scriptLines.push(line);
+}
+const script = scriptLines
 	.map((line) => line.replace(/^          /, ""))
 	.join("\n");
 

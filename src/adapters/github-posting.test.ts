@@ -147,6 +147,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const postLog = path.join(tmp, "posts.jsonl");
 	const reviewsState = path.join(tmp, "reviews-state.json");
 	const issueCommentsState = path.join(tmp, "issue-comments-state.json");
+	const checksStatePath = path.join(tmp, "checks-state.json");
 	const runnerLog = path.join(tmp, "runner.log");
 	const previous = {
 		path: process.env.PATH,
@@ -229,7 +230,27 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  }",
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			`  const issueCommentsEndpoint = ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)};`,
-			`  if (apiPath === 'repos/frankekn/needlefish/check-runs' && method === 'POST' && ${JSON.stringify(opts.failCheckRunPosts === true)} === true) { process.stderr.write('simulated check POST failure'); process.exit(1); }`,
+			`  const checksStatePath = ${JSON.stringify(checksStatePath)};`,
+			`  if (apiPath === 'repos/frankekn/needlefish/check-runs' && method === 'POST') {`,
+			`    if (${JSON.stringify(opts.failCheckRunPosts === true)} === true) { process.stderr.write('simulated check POST failure'); process.exit(1); }`,
+			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
+			`    const parsedCheck = JSON.parse(payload);`,
+			`    const nextId = checks.length + 1;`,
+			`    checks.push({ id: nextId, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
+			`    process.stdout.write(JSON.stringify({ id: nextId }));`,
+			`    process.exit(0);`,
+			`  }`,
+			`  if (apiPath && apiPath.startsWith('repos/frankekn/needlefish/check-runs/') && method === 'PATCH') {`,
+			`    const id = Number(apiPath.split('/').pop());`,
+			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
+			`    const parsedPatch = JSON.parse(payload);`,
+			`    const check = checks.find((c) => c.id === id);`,
+			`    if (check) { check.status = parsedPatch.status || 'completed'; check.conclusion = parsedPatch.conclusion ?? null; check.output = parsedPatch.output ?? null; }`,
+			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
+			`    process.stdout.write('{}');`,
+			`    process.exit(0);`,
+			`  }`,
 			"  if (apiPath === issueCommentsEndpoint && method === 'POST') {",
 			`    if (${JSON.stringify(opts.failIssueCommentPosts === true)} === true) { process.stderr.write('simulated comment POST failure'); process.exit(1); }`,
 			"    const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
@@ -535,7 +556,35 @@ test("runGithub skips posting when the PR head changes after review", async (t) 
 
 	await runGithub(fixture.repo, 10, { timeoutMs: 1000 });
 
-	assert.deepEqual(readPosts(fixture.postLog), []);
+	// The pending check is still created for the (then-current) head and must
+	// be closed as superseded; no review/comment may reach the timeline.
+	const checkOps = readPosts(fixture.postLog).filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.equal(checkOps.length, 2);
+	const [created, completed] = checkOps;
+	assert.equal(created.args[1], "-X");
+	assert.equal(created.args[2], "POST");
+	const createdPayload = parseJson(created.payload) as { status?: unknown };
+	assert.equal(createdPayload.status, "in_progress");
+	assert.equal(completed.args[1], "-X");
+	assert.equal(completed.args[2], "PATCH");
+	const completedPayload = parseJson(completed.payload) as {
+		conclusion?: unknown;
+		output?: { title?: unknown };
+	};
+	assert.equal(completedPayload.conclusion, "neutral");
+	assert.match(String(completedPayload.output?.title ?? ""), /superseded/);
+	assert.ok(
+		!readPosts(fixture.postLog).some(
+			(p) =>
+				p.args.some((a) => a.includes("pulls/10/reviews")) ||
+				p.args.some(
+					(a) => a === "repos/frankekn/needlefish/issues/10/comments",
+				),
+		),
+		"stale head must not post reviews or comments",
+	);
 });
 
 test("runGithub keeps non-anchorable findings in the review body only", async (t) => {
@@ -1620,10 +1669,12 @@ test("runGithub posts a re-review round comment with counts on the second round"
 	// Check-run title carries the red reason (top blocking finding title).
 	const checkPost = round3Posts.find(
 		(p) =>
-			p.args.includes("POST") &&
-			p.args.some((a) => a === "repos/frankekn/needlefish/check-runs"),
+			p.args.includes("PATCH") &&
+			p.args.some((a) =>
+				a.startsWith("repos/frankekn/needlefish/check-runs/"),
+			),
 	);
-	assert.ok(checkPost, "round 3 should post a check run");
+	assert.ok(checkPost, "round 3 should complete the pending check run");
 	const checkPayload = parseJson(checkPost.payload) as {
 		output?: { title?: unknown };
 	};
@@ -1682,13 +1733,25 @@ test("a failing round-comment POST does not replace the verdict check with a fai
 	await runGithub(fixture.repo, 43, { timeoutMs: 1000 }, true);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
-	const checkPosts = round2Posts.filter(
+	const checkCreates = round2Posts.filter(
 		(p) =>
 			p.args.includes("POST") &&
 			p.args.some((a) => a === "repos/frankekn/needlefish/check-runs"),
 	);
-	assert.equal(checkPosts.length, 1, "exactly one check run posted");
-	const payload = parseJson(checkPosts[0].payload) as {
+	assert.equal(checkCreates.length, 1, "exactly one pending check created");
+	const createPayload = parseJson(checkCreates[0].payload) as {
+		status?: unknown;
+	};
+	assert.equal(createPayload.status, "in_progress");
+	const checkPatches = round2Posts.filter(
+		(p) =>
+			p.args.includes("PATCH") &&
+			p.args.some((a) =>
+				a.startsWith("repos/frankekn/needlefish/check-runs/"),
+			),
+	);
+	assert.equal(checkPatches.length, 1, "exactly one check completion posted");
+	const payload = parseJson(checkPatches[0].payload) as {
 		conclusion?: unknown;
 		output?: { title?: unknown };
 	};
@@ -1696,4 +1759,81 @@ test("a failing round-comment POST does not replace the verdict check with a fai
 	// success conclusion, not a red "review failed" check.
 	assert.equal(payload.conclusion, "success");
 	assert.doesNotMatch(String(payload.output?.title ?? ""), /review failed/);
+});
+
+test("pending check is created before review and completed by id", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 61,
+		rawReview: JSON.stringify({
+			summary: "clean",
+			findings: [],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 61, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	const checkOps = posts.filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.equal(
+		checkOps.length,
+		2,
+		"exactly one create + one completion, no duplicate check runs",
+	);
+	const [created, completed] = checkOps;
+	assert.equal(created.args[1], "-X");
+	assert.equal(created.args[2], "POST");
+	const createdPayload = parseJson(created.payload) as {
+		status?: unknown;
+		name?: unknown;
+	};
+	assert.equal(createdPayload.status, "in_progress");
+	assert.equal(createdPayload.name, "Needlefish");
+	assert.equal(completed.args[1], "-X");
+	assert.equal(completed.args[2], "PATCH");
+	assert.ok(
+		completed.args.some((a) => a === "repos/frankekn/needlefish/check-runs/1"),
+		"completion must update the check created above (id 1)",
+	);
+	const payload = parseJson(completed.payload) as { conclusion?: unknown };
+	assert.equal(payload.conclusion, "success");
+	// The pending creation must precede the model runner invocation, which
+	// itself precedes the completion.
+	const runnerIdx = posts.findIndex((p) =>
+		p.args.some((a) => a === "repos/frankekn/needlefish/pulls/61/reviews"),
+	);
+	const createdIdx = posts.indexOf(created);
+	const completedIdx = posts.indexOf(completed);
+	assert.ok(runnerIdx === -1 || createdIdx < runnerIdx);
+	assert.ok(createdIdx < runnerIdx || runnerIdx === -1);
+	assert.ok(createdIdx < completedIdx);
+});
+
+test("review error updates the pending check to failure by id", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 62,
+		rawReview: "definitely not json",
+	});
+
+	await runGithub(fixture.repo, 62, { timeoutMs: 1000 });
+
+	const checkOps = readPosts(fixture.postLog).filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.ok(checkOps.length >= 2, "create + failure completion must both log");
+	const [created] = checkOps;
+	const createdPayload = parseJson(created.payload) as { status?: unknown };
+	assert.equal(createdPayload.status, "in_progress");
+	const last = checkOps[checkOps.length - 1];
+	assert.equal(last.args[1], "-X");
+	assert.equal(last.args[2], "PATCH");
+	const payload = parseJson(last.payload) as {
+		conclusion?: unknown;
+		output?: { title?: unknown };
+	};
+	assert.equal(payload.conclusion, "failure");
+	assert.match(String(payload.output?.title ?? ""), /review failed/);
 });
