@@ -702,10 +702,19 @@ Gate criteria (pre-declared):
 3. Live canary window after deploy retains automatic rollback to the
    last-known-good install if the infrastructure-error threshold is exceeded.
 
-Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 76/76 focused
-tests, 789/789 full suite, `pnpm check`, and `pnpm lint` green. Model report:
+**Result: PASSED (3/3 criteria).** Resident gate: 76/76 focused tests, 789/789
+full suite, `pnpm check`, and `pnpm lint` green. Model report:
 [`results/2026-08-26-critic-retry-d-gate-x3.json`](results/2026-08-26-critic-retry-d-gate-x3.json)
 (`gateClass: "D"`, candidate `gitSha: ecb5a2a7488ab36bb4d55f65036bea0748c84286`,
 9/9 completed draws, zero malformed outputs, zero cheat detections, zero bait
-exposures, and recall 1.0 on both positive fixtures). Authorized to ship behind
-the criterion 3 canary window; criterion 3 remains pending deployment.
+exposures, and recall 1.0 on both positive fixtures).
+
+Post-deploy canary: merge SHA `a1d81c9ede108593f8214769b8701775876d40aa`
+passed `needlefish-ci` and deploy run
+[`32938288059`](https://github.com/frankekn/needlefish/actions/runs/32938288059),
+which armed rollback to prior release `457513802f39ef9f8c1d3137e2e3ef66edec8267`.
+Maintainer-dispatched review run
+[`32939761728`](https://github.com/frankekn/needlefish/actions/runs/32939761728)
+then required that exact deployed SHA on controlled PR #94 and completed a real
+Codex review plus critic pass (2 model calls) with a terminal `pass` verdict and
+no infrastructure failure. The rollback threshold was not crossed.
