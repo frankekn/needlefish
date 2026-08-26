@@ -26,7 +26,9 @@ jobs:
       - name: Validate canary ref
         env:
           ACTION_REF: ${{ github.event.inputs.action_ref }}
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          REPO: ${{ github.repository }}
         run: |
           if [[ ! "$ACTION_REF" =~ ^[0-9A-Fa-f]{40}$ ]]; then
             echo "action_ref must be a full commit SHA" >&2
@@ -36,26 +38,25 @@ jobs:
             echo "pr_number must be a positive integer" >&2
             exit 1
           fi
+          status=$(gh api "repos/$REPO/compare/$ACTION_REF...main" --jq .status)
+          if [ "$status" != "ahead" ] && [ "$status" != "identical" ]; then
+            echo "action_ref must be published on main" >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.action_ref }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify action ref is published on main
-        env:
-          ACTION_REF: ${{ github.event.inputs.action_ref }}
-        run: |
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$ACTION_REF" refs/remotes/origin/main; then
-            echo "action_ref must be published on main" >&2
-            exit 1
-          fi
-      - name: Fetch canary PR head
-        env:
-          PR_NUMBER: ${{ github.event.inputs.pr_number }}
-        run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ github.event.inputs.pr_number }}/head
+          fetch-depth: 0
+          path: canary-target
+          persist-credentials: false
       - uses: ./
         with:
           pr_number: ${{ github.event.inputs.pr_number }}
+          repo_path: ${{ github.workspace }}/canary-target
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
