@@ -444,9 +444,9 @@ auto-detection order, and hosted defaults; it does not control credentials,
 model arguments, or self-hosted binaries.
 
 By default the composite action installs the selected npm runner into
-job-local storage. Set `install_runner: false` when the executable is already
-on `PATH` or supplied through its `*_BIN` variable. In that mode,
-`runner_version` is rejected because Needlefish is not managing the binary.
+job-local storage. Set `install_runner: false` when the executable is supplied
+through its runner-specific `*_BIN` variable. In that mode, `runner_version`
+is rejected because Needlefish is not managing the binary.
 The root hosted action remains limited to the same four managed runners; use
 the self-hosted workflow or CLI for external-only runners such as `grok`,
 `openai`, or `acp`.
@@ -457,6 +457,7 @@ credentials:
 
 ```yaml
 - uses: frankekn/needlefish/setup@<full-commit-sha>
+  id: model-runner
   with:
     runner: codex
     # version: <explicit-version> # optional override
@@ -466,6 +467,7 @@ credentials:
     install_runner: false
   env:
     CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+    CODEX_BIN: ${{ steps.model-runner.outputs.binary_path }}
 ```
 
 Official managed setup is currently CI-validated on `linux-x64`. Other

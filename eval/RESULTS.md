@@ -682,9 +682,11 @@ scoring, or posting contract changes.
 
 Classification: **Class D** by provenance containment. Existing managed runs
 execute the same pinned runner with byte-identical review inputs; the new setup
-surface and external-binary opt-out only make previously explicit operator
-ownership available without removing signals or admitting a new model output
-shape. Self-hosted deployment remains separate and never invokes setup.
+surface and explicit-`*_BIN` opt-out only skip an unused install. Before this
+change the runtime already treated the same `*_BIN` value as authoritative over
+the action-installed executable, so this does not enable a new runner behavior,
+remove signals, or admit a new model output shape. Self-hosted deployment
+remains separate and never invokes setup.
 
 Gate criteria (pre-declared):
 

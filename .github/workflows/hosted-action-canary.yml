@@ -28,8 +28,8 @@ jobs:
           ACTION_REF: ${{ github.event.inputs.action_ref }}
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
         run: |
-          if [[ ! "$ACTION_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "action_ref must be a full lowercase commit SHA" >&2
+          if [[ ! "$ACTION_REF" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "action_ref must be a full commit SHA" >&2
             exit 1
           fi
           if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then

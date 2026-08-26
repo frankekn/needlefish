@@ -368,7 +368,7 @@ executable、auto-detection order 與 hosted default 的唯一來源；它不管
 credentials、model arguments 或 self-hosted binary。
 
 Composite action 預設把所選 npm runner 安裝在 job-local storage。若 executable
-已在 `PATH`，或已透過 `*_BIN` 指定，設定 `install_runner: false`。此模式下
+已透過 runner-specific `*_BIN` 指定，設定 `install_runner: false`。此模式下
 `runner_version` 會被拒絕，因為 Needlefish 沒有管理該 binary。Operator 也可用
 這個模式提供四個 managed runner 的既有 binary；root hosted action 不新增
 `grok`、`openai` 或 `acp`，這些 external-only runner 仍使用 self-hosted
@@ -379,6 +379,7 @@ install-only action；它不會安裝 credentials：
 
 ```yaml
 - uses: frankekn/needlefish/setup@<full-commit-sha>
+  id: model-runner
   with:
     runner: codex
     # version: <explicit-version> # 可選 override
@@ -388,6 +389,7 @@ install-only action；它不會安裝 credentials：
     install_runner: false
   env:
     CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+    CODEX_BIN: ${{ steps.model-runner.outputs.binary_path }}
 ```
 
 官方 managed setup 目前只在 `linux-x64` 經過 CI 驗證。其他平台會得到明確

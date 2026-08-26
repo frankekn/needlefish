@@ -26,8 +26,8 @@ inputs:
     required: false
   install_runner:
     description: >-
-      Install the selected npm runner in job-local storage. Set false when a
-      prior setup step or the runner host provides the executable.
+      Install the selected npm runner in job-local storage. Set false when the
+      executable is provided through the selected runner's *_BIN variable.
     required: false
     default: "true"
   repo_path:
@@ -62,7 +62,10 @@ runs:
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex|claude|opencode|pi) ;;
+          codex) runner_bin_env=CODEX_BIN; runner_bin="${CODEX_BIN:-}" ;;
+          claude) runner_bin_env=CLAUDE_BIN; runner_bin="${CLAUDE_BIN:-}" ;;
+          opencode) runner_bin_env=OPENCODE_BIN; runner_bin="${OPENCODE_BIN:-}" ;;
+          pi) runner_bin_env=PI_BIN; runner_bin="${PI_BIN:-}" ;;
           *) echo "unknown managed runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
         case "$NF_INSTALL_RUNNER" in
@@ -71,6 +74,10 @@ runs:
         esac
         if [ "$NF_INSTALL_RUNNER" = "false" ] && [ -n "$NF_RUNNER_VERSION" ]; then
           echo "runner_version cannot be used when install_runner is false" >&2
+          exit 1
+        fi
+        if [ "$NF_INSTALL_RUNNER" = "false" ] && [ -z "$runner_bin" ]; then
+          echo "install_runner=false requires $runner_bin_env" >&2
           exit 1
         fi
     - name: Install model runner CLI
