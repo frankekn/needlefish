@@ -26,9 +26,14 @@ jobs:
       - name: Validate canary ref
         env:
           ACTION_REF: ${{ github.event.inputs.action_ref }}
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
         run: |
           if [[ ! "$ACTION_REF" =~ ^[0-9a-f]{40}$ ]]; then
             echo "action_ref must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "pr_number must be a positive integer" >&2
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,6 +50,10 @@ jobs:
             echo "action_ref must be published on main" >&2
             exit 1
           fi
+      - name: Fetch canary PR head
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        run: git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
       - uses: ./
         with:
           pr_number: ${{ github.event.inputs.pr_number }}
