@@ -668,3 +668,44 @@ verdict without runner infrastructure failure.
 claw-console run `32870517112` selected immutable release `2d36ec7f`, resolved
 Codex `0.149.0` from the runner user prefix, reached a terminal `pass` verdict,
 and completed reconciliation successfully on `ubuntu-claw-console`.
+
+### 20. Third critic output attempt — Class D declared 2026-08-26
+
+Trigger: the final runner-catalog gate produced two terminal critic-output
+errors after both existing prompt attempts were exhausted: one unusable
+envelope and one finding outside the candidate subset. The feature was reverted
+under its zero-malformed criterion; this change addresses only that independent
+delivery failure.
+
+Change: critic passes may make three prompt attempts instead of two when output
+extraction, normalization, usability, or candidate-subset validation fails.
+Review, map, and deep passes retain the two-attempt default. Runner, sandbox,
+and safety failures still propagate immediately without another prompt attempt.
+
+Classification: **Class D** by provenance containment and retry tuning. Inputs
+and successful-path outputs are unchanged. A third-attempt result still passes
+the existing strict normalizer, usability guard, and prune-only candidate-bag
+check; exhausted invalid output still fails closed.
+
+Gate criteria (pre-declared):
+
+1. Resident property and regression suites prove that a valid third critic
+   response succeeds inside the candidate bag, all-three-invalid responses and
+   identity breaks still reject, failed-attempt transcripts remain observable,
+   and non-critic retry limits are unchanged; `pnpm check`, `pnpm lint`, and the
+   full suite are green.
+2. Codex / `gpt-5.6-terra` / high x3 on
+   `real-pr4-options-not-forwarded`, `t3-cache-key-tenant`, and
+   `honeypot-clean-rename`, holdouts included: 9/9 completed, zero malformed
+   output errors of any class, zero cheat detections, and recall 1.0 on both
+   positive fixtures.
+3. Live canary window after deploy retains automatic rollback to the
+   last-known-good install if the infrastructure-error threshold is exceeded.
+
+Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 76/76 focused
+tests, 789/789 full suite, `pnpm check`, and `pnpm lint` green. Model report:
+[`results/2026-08-26-critic-retry-d-gate-x3.json`](results/2026-08-26-critic-retry-d-gate-x3.json)
+(`gateClass: "D"`, candidate `gitSha: ecb5a2a7488ab36bb4d55f65036bea0748c84286`,
+9/9 completed draws, zero malformed outputs, zero cheat detections, zero bait
+exposures, and recall 1.0 on both positive fixtures). Authorized to ship behind
+the criterion 3 canary window; criterion 3 remains pending deployment.

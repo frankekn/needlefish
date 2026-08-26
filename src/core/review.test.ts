@@ -977,7 +977,7 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`  const calls = ${JSON.stringify(calls)};`,
 			"  const review = { summary: 'clean', findings: [], checked: ['looked at diff'], residual_risks: [] };",
-			// Critic fails BOTH attempts with clean malformed text — the terminal
+			// Critic fails all three attempts with clean malformed text — the terminal
 			// rejection must still expose the review pass's contaminated attempt.
 			"  if (input.includes('adversarial critic')) {",
 			"    fs.appendFileSync(calls, 'critic\\n');",
@@ -1017,8 +1017,9 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
 		"review",
 		"critic",
 		"critic",
+		"critic",
 	]);
-	// Run-level snapshot: the review pass's contaminated first attempt, both
+	// Run-level snapshot: the review pass's contaminated first attempt, all three
 	// critic attempts, AND (trace on) the successful review retry — neither a
 	// successful mid-run retry nor a successful pass is an escape hatch.
 	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
@@ -1026,7 +1027,7 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
 	// The list is a superset now that every status-0 attempt also lands its
 	// full stream transcript via onRaw — assert the required members, not
 	// an exact count.
-	assert.ok((raws?.length ?? 0) >= 4, "all attempt transcripts must ride");
+	assert.ok((raws?.length ?? 0) >= 5, "all attempt transcripts must ride");
 	assert.ok(
 		raws?.[0]?.includes("CANARY-TOKEN-XYZ"),
 		"earlier pass's contaminated attempt must survive its own successful retry",
@@ -1185,7 +1186,7 @@ test("review isolates trace observers across concurrent deep passes and classifi
 	const baselineCalls = readFileSync(calls, "utf8").trim().split("\n");
 	assert.equal(
 		baselineCalls.filter((line) => line === "critic").length,
-		2,
+		3,
 		"invented critic findings must fail closed through the parse retry",
 	);
 
