@@ -77,7 +77,7 @@ interface PromptSpec<T> extends ReviewPass {
 	readonly label: string;
 	readonly prompt: string;
 	readonly parse: (raw: unknown) => T;
-	readonly maxAttempts?: number;
+	readonly maxAttempts?: 3;
 }
 
 interface PromptResult<T> extends ReviewTraceProvenance {
