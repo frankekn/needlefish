@@ -158,6 +158,33 @@ test("critic subset: small path rejects a critic-only finding", async (t) => {
 		"review",
 		"critic",
 		"critic",
+		"critic",
+	]);
+});
+
+test("critic subset: small path accepts a valid third response", async (t) => {
+	const { repo, calls } = installStub(
+		t,
+		(log) =>
+			smallPathBin(
+				log,
+				candidateReview(),
+				"const criticCalls = fs.readFileSync(calls, 'utf8').trim().split('\\n').filter((line) => line === 'critic').length; const invented = { ...parsed.findings[0], file: 'src/invented.ts' }; fs.writeFileSync(out, JSON.stringify(criticCalls < 3 ? { ...parsed, findings: [invented] } : parsed));",
+			),
+		{ evalTrace: true },
+	);
+
+	const result = await review(makeBundle(repo, false));
+
+	assert.equal(result.findings.length, 1);
+	assert.equal(result.findings[0]?.file, FINDING.file);
+	assert.equal(result.findings[0]?.title, FINDING.title);
+	assert.equal(result.failedRawOutputs?.length, 2);
+	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
+		"review",
+		"critic",
+		"critic",
+		"critic",
 	]);
 });
 
@@ -297,6 +324,7 @@ test("critic subset: small path rejects lineStart drift outside the ±2 window",
 	);
 	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
 		"review",
+		"critic",
 		"critic",
 		"critic",
 	]);
@@ -573,6 +601,7 @@ for (const { field, value } of IDENTITY_REJECT_MUTATIONS) {
 			"review",
 			"critic",
 			"critic",
+			"critic",
 		]);
 	});
 }
@@ -761,6 +790,7 @@ test("critic subset: large path rejects a critic-only finding", async (t) => {
 	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
 		"map",
 		"deep",
+		"critic",
 		"critic",
 		"critic",
 	]);

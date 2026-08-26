@@ -77,6 +77,7 @@ interface PromptSpec<T> extends ReviewPass {
 	readonly label: string;
 	readonly prompt: string;
 	readonly parse: (raw: unknown) => T;
+	readonly maxAttempts?: number;
 }
 
 interface PromptResult<T> extends ReviewTraceProvenance {
@@ -259,16 +260,22 @@ function attachRunRaws(err: unknown, run: ReviewRun): void {
 	}
 }
 
-// One retry on malformed output: re-ask the model, never re-parse the same
-// text. Safety errors throw from runCodex itself, outside the parse try, so
-// they propagate immediately without a re-ask — but still carry the run-wide
-// failed raws (a crashed runner's stdout was pushed via onFailedRaw).
+// By default, retry malformed output once: re-ask the model, never re-parse the
+// same text. A pass can opt into a higher bounded attempt count when its output
+// is the final validation boundary. Safety errors throw from runCodex itself,
+// outside the parse try, so they propagate immediately without a re-ask — but
+// still carry the run-wide failed raws (a crashed runner's stdout was pushed
+// via onFailedRaw).
 async function runJsonPrompt<T>(
 	spec: PromptSpec<T>,
 	run: ReviewRun,
 ): Promise<PromptResult<T>> {
 	let lastErr: unknown;
-	for (let promptAttempt = 1; promptAttempt <= 2; promptAttempt++) {
+	for (
+		let promptAttempt = 1;
+		promptAttempt <= (spec.maxAttempts ?? 2);
+		promptAttempt++
+	) {
 		let out: string;
 		let successfulRunnerAttempt = 1;
 		const successfulRaws: SuccessfulRaw[] = [];
@@ -674,6 +681,7 @@ async function runCritic(
 			prompt: criticPrompt,
 			passKind: "critic",
 			passIndex: 0,
+			maxAttempts: 3,
 			parse: (raw: unknown) =>
 				assertCriticSubset(parseUsableReview("critic")(raw), candidate),
 		},
