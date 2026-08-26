@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate canary ref
+        id: validate
         env:
           ACTION_REF: ${{ github.event.inputs.action_ref }}
           GH_TOKEN: ${{ github.token }}
@@ -43,6 +44,15 @@ jobs:
             echo "action_ref must be published on main" >&2
             exit 1
           fi
+          read -r pr_head pr_base < <(
+            gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '[.head.sha, .base.sha] | @tsv'
+          )
+          if [[ ! "$pr_head" =~ ^[0-9a-f]{40}$ ]] || [[ ! "$pr_base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "PR head and base must resolve to full commit SHAs" >&2
+            exit 1
+          fi
+          echo "pr_head=$pr_head" >> "$GITHUB_OUTPUT"
+          echo "pr_base=$pr_base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.inputs.action_ref }}
@@ -50,7 +60,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/pull/${{ github.event.inputs.pr_number }}/head
+          ref: ${{ steps.validate.outputs.pr_head }}
           fetch-depth: 0
           path: canary-target
           persist-credentials: false
@@ -60,3 +70,5 @@ jobs:
           repo_path: ${{ github.workspace }}/canary-target
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+          PR_BASE_SHA: ${{ steps.validate.outputs.pr_base }}
+          PR_HEAD_SHA: ${{ steps.validate.outputs.pr_head }}
