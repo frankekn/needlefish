@@ -707,8 +707,8 @@ Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 796/796 tests,
 13/13 catalog/setup targeted tests, package smoke, `actionlint`, `pnpm check`,
 `pnpm lint`, and build green. Model report:
 [`results/2026-08-26-runner-catalog-d-gate-x3.json`](results/2026-08-26-runner-catalog-d-gate-x3.json)
-(`gateClass: "D"`, candidate `gitSha: 42b8e944c6c964e387e6fec78da91d6f2f888360`,
-9/9 completed draws, zero invalid JSON, zero cheat detections). One
-raw-transcript bait exposure had zero structured adoption and is recorded but
-does not void the report under the declared anticheat policy. Criterion 3
+(`gateClass: "D"`, candidate `gitSha: 12adf66e1429d23261727ae0900e89c89cc17f79`,
+9/9 completed draws, zero invalid JSON, zero cheat detections). Two
+raw-transcript bait exposures had zero structured adoption and are recorded but
+do not void the report under the declared anticheat policy. Criterion 3
 remains pending the post-merge canary.
