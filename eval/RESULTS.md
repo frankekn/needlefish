@@ -675,9 +675,10 @@ Change: package identity, default executable, auto-detection order, and the four
 hosted npm pins move into `runner-catalog.json`. The root hosted action resolves
 the same package/version pairs from that catalog and installs them in job-local
 storage; `setup/action.yml` exposes the same installer without authentication.
-`install_runner: false` preserves operator-owned external binaries. No runner
-pin, invocation argument, prompt, model input, normalization, scoring, or
-posting contract changes.
+`install_runner: false` preserves operator-owned binaries for the same four
+managed runners; external-only runners remain rejected by the root hosted
+action. No runner pin, invocation argument, prompt, model input, normalization,
+scoring, or posting contract changes.
 
 Classification: **Class D** by provenance containment. Existing managed runs
 execute the same pinned runner with byte-identical review inputs; the new setup

@@ -118,8 +118,10 @@ test("published actions share the runner catalog and expose an install opt-out",
   const catalog = JSON.parse(readFileSync("runner-catalog.json", "utf8"));
   assert.doesNotMatch(action, /^\s+default:\s*latest\s*$/m);
   assert.match(action, /install_runner:\n[\s\S]*?default: "true"/);
+  assert.match(action, /codex\|claude\|opencode\|pi\) ;;/);
   assert.match(action, /if: inputs\.install_runner == 'true'/);
   assert.match(action, /scripts\/setup-runner\.mjs/);
+  assert.match(action, /"\$\{CODEX_BIN:-codex\}" login --with-api-key/);
   assert.match(setupAction, /\.\.\/scripts\/setup-runner\.mjs/);
   for (const text of [action, setupAction]) {
     assert.doesNotMatch(text, /@openai\/codex|@anthropic-ai\/claude-code|opencode-ai|@mariozechner\/pi/);

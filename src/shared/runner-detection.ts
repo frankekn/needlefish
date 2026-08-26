@@ -7,9 +7,11 @@ const NO_AUTO_DETECTED_RUNNER_MESSAGE = [
 	"No supported model runner found on PATH.",
 	"Install one:",
 	...AUTO_DETECT_RUNNERS.map((runner) => {
-		const npmPackage = RUNNER_CATALOG[runner].hostedInstall?.npmPackage;
-		if (!npmPackage) throw new Error(`auto-detected runner has no install package: ${runner}`);
-		return `  ${runner}: npm install -g ${npmPackage}`;
+		const entry = RUNNER_CATALOG[runner];
+		const npmPackage = entry.hostedInstall?.npmPackage;
+		return npmPackage
+			? `  ${runner}: npm install -g ${npmPackage}`
+			: `  ${runner}: provide ${entry.binary} on PATH`;
 	}),
 ].join("\n");
 

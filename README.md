@@ -447,8 +447,9 @@ By default the composite action installs the selected npm runner into
 job-local storage. Set `install_runner: false` when the executable is already
 on `PATH` or supplied through its `*_BIN` variable. In that mode,
 `runner_version` is rejected because Needlefish is not managing the binary.
-This also permits external-only runners such as `grok`, `openai`, or `acp` when
-the operator supplies their normal runtime configuration.
+The root hosted action remains limited to the same four managed runners; use
+the self-hosted workflow or CLI for external-only runners such as `grok`,
+`openai`, or `acp`.
 
 For workflows that want installation separated from the review action, use the
 optional install-only action from the same immutable ref. It installs no
@@ -470,7 +471,7 @@ credentials:
 Official managed setup is currently CI-validated on `linux-x64`. Other
 platforms receive an explicit warning rather than a false support claim;
 external-binary mode remains available on any platform supported by the
-selected runner and Needlefish.
+selected managed runner and Needlefish.
 
 Cost and behavior notes:
 

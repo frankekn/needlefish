@@ -370,7 +370,9 @@ credentials、model arguments 或 self-hosted binary。
 Composite action 預設把所選 npm runner 安裝在 job-local storage。若 executable
 已在 `PATH`，或已透過 `*_BIN` 指定，設定 `install_runner: false`。此模式下
 `runner_version` 會被拒絕，因為 Needlefish 沒有管理該 binary。Operator 也可用
-這個模式提供 `grok`、`openai` 或 `acp` 的既有 runtime 設定。
+這個模式提供四個 managed runner 的既有 binary；root hosted action 不新增
+`grok`、`openai` 或 `acp`，這些 external-only runner 仍使用 self-hosted
+workflow 或 CLI。
 
 若要把 runner 安裝與 review action 分開，可從同一個 immutable ref 使用選配的
 install-only action；它不會安裝 credentials：
@@ -389,7 +391,7 @@ install-only action；它不會安裝 credentials：
 ```
 
 官方 managed setup 目前只在 `linux-x64` 經過 CI 驗證。其他平台會得到明確
-warning，而不是虛假的支援宣告；只要所選 runner 與 Needlefish 支援該平台，
+warning，而不是虛假的支援宣告；只要所選 managed runner 與 Needlefish 支援該平台，
 仍可使用 external-binary mode。
 
 hosted action 能安裝的 runner，其認證方式（repo secrets，透過 action step 的

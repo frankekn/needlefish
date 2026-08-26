@@ -7,7 +7,7 @@ inputs:
     description: PR number to review (defaults to the pull_request event PR)
     required: false
   runner:
-    description: "Model runner: codex, claude, opencode, openai, grok, pi, or acp"
+    description: "Managed runner: codex, claude, opencode, or pi"
     required: false
     default: codex
   model:
@@ -57,9 +57,14 @@ runs:
     - name: Validate runner installation mode
       shell: bash
       env:
+        NF_RUNNER: ${{ inputs.runner }}
         NF_INSTALL_RUNNER: ${{ inputs.install_runner }}
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
+        case "$NF_RUNNER" in
+          codex|claude|opencode|pi) ;;
+          *) echo "unknown managed runner: $NF_RUNNER" >&2; exit 1 ;;
+        esac
         case "$NF_INSTALL_RUNNER" in
           true|false) ;;
           *) echo "install_runner must be true or false" >&2; exit 1 ;;
@@ -88,7 +93,7 @@ runs:
           printf '%s' "$CODEX_AUTH_JSON" > "$HOME/.codex/auth.json"
           chmod 600 "$HOME/.codex/auth.json"
         elif [ "$NF_RUNNER" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
-          printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
+          printf '%s' "$CODEX_API_KEY" | "${CODEX_BIN:-codex}" login --with-api-key
         elif [ "$NF_RUNNER" = "pi" ] && [ -n "${PI_AUTH_JSON:-}" ]; then
           mkdir -p "$HOME/.pi/agent"
           printf '%s' "$PI_AUTH_JSON" > "$HOME/.pi/agent/auth.json"
