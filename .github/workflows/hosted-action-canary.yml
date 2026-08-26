@@ -51,6 +51,19 @@ jobs:
             echo "PR head and base must resolve to full commit SHAs" >&2
             exit 1
           fi
+          mapfile -t changed_files < <(
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename'
+          )
+          if [ "${#changed_files[@]}" -eq 0 ]; then
+            echo "canary PR must change README.md or README.zh-TW.md" >&2
+            exit 1
+          fi
+          for file in "${changed_files[@]}"; do
+            if [ "$file" != "README.md" ] && [ "$file" != "README.zh-TW.md" ]; then
+              echo "canary PR must be README-only; found $file" >&2
+              exit 1
+            fi
+          done
           echo "pr_head=$pr_head" >> "$GITHUB_OUTPUT"
           echo "pr_base=$pr_base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
