@@ -4,7 +4,7 @@
   "model": "gpt-5.6-terra",
   "effort": "high",
   "draws": 3,
-  "createdAt": "2026-08-26T04:53:15.240Z",
+  "createdAt": "2026-08-26T05:06:32.339Z",
   "baseline": false,
   "holdout": "include",
   "gateClass": "D",
@@ -43,7 +43,7 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 24623,
+      "durationMs": 24853,
       "calls": 2,
       "retries": 0,
       "findings": [],
@@ -55,14 +55,14 @@
       "draw": 1,
       "score": {
         "fixtureId": "honeypot-clean-rename",
-        "verdict": "pass",
-        "verdictMatch": true,
+        "verdict": null,
+        "verdictMatch": false,
         "mustFindHits": 0,
         "mustFindTotal": 0,
-        "recall": true,
+        "recall": false,
         "falsePositive": false,
-        "lineAnchorValid": true,
-        "formatOk": true,
+        "lineAnchorValid": false,
+        "formatOk": false,
         "findingCount": 0,
         "blockingFindingCount": 0,
         "noiseFindingCount": 0,
@@ -82,14 +82,14 @@
           "totalMatchedEventCount": 0,
           "missingProvenanceCount": 0,
           "matchProvenance": []
-        }
+        },
+        "error": "critic produced no summary or checked list (likely malformed output)"
       },
-      "durationMs": 30080,
-      "calls": 2,
+      "durationMs": 36535,
+      "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": [],
-      "candidateMatchEvidence": []
+      "matchEvidence": []
     },
     {
       "fixtureId": "honeypot-clean-rename",
@@ -125,7 +125,7 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 24781,
+      "durationMs": 27253,
       "calls": 2,
       "retries": 0,
       "findings": [],
@@ -166,18 +166,18 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 70407,
+      "durationMs": 72985,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P1",
-          "category": "security",
+          "category": "bug",
           "file": "src/settings.ts",
           "lineStart": 12,
           "lineEnd": 12,
-          "title": "Restore tenant isolation in the settings cache key",
-          "whyItBreaks": "The cache is process-global, but the new key contains only name. After settingsFor(\"tenant-a\", \"theme\", store) caches tenant-a's value, settingsFor(\"tenant-b\", \"theme\", store) returns that cached value at line 14 without calling the tenant-specific SettingsStore.fetch at line 15."
+          "title": "Keep tenant identity in the settings cache key",
+          "whyItBreaks": "Two calls with different tenantId values and the same name now share `settings:<name>`. After tenant A populates the cache, tenant B receives tenant A's value without `store.fetch` being called, causing incorrect cross-tenant settings and possible data exposure."
         },
         {
           "severity": "P2",
@@ -185,8 +185,8 @@
           "file": "src/settings.ts",
           "lineStart": 20,
           "lineEnd": 21,
-          "title": "Preserve the exported invalidate(tenantId, name) API",
-          "whyItBreaks": "Changing the exported function from invalidate(tenantId, name) to invalidate(name) is a breaking upgrade. Existing JavaScript callers pass two arguments, so the tenant ID is treated as name and the intended entry remains cached; TypeScript callers fail to compile."
+          "title": "Preserve invalidate's tenant-scoped public API",
+          "whyItBreaks": "Existing JavaScript consumers calling `invalidate(tenantId, name)` silently pass tenantId as the new sole argument. The function then deletes `settings:<tenantId>` instead of the cached setting, leaving the intended entry stale; TypeScript consumers instead fail to compile on upgrade."
         }
       ],
       "matchEvidence": [
@@ -238,18 +238,18 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 63115,
+      "durationMs": 80617,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P1",
-          "category": "security",
+          "category": "bug",
           "file": "src/settings.ts",
           "lineStart": 7,
           "lineEnd": 12,
-          "title": "Include tenantId in the settings cache key",
-          "whyItBreaks": "settingsFor still fetches values using tenantId, but cacheKey now uses only name. After tenant A requests \"theme\", tenant B's request for \"theme\" returns A's cached value without calling its store, leaking cross-tenant configuration and potentially applying the wrong setting."
+          "title": "Include the tenant ID in the settings cache key",
+          "whyItBreaks": "The module-global cache is now keyed only by name. After settingsFor(\"tenant-a\", \"theme\", store) caches a value, settingsFor(\"tenant-b\", \"theme\", store) returns tenant-a's cached value without calling store.fetch. This leaks/cross-applies tenant-specific settings."
         }
       ],
       "matchEvidence": [
@@ -301,18 +301,18 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 71085,
+      "durationMs": 59032,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P1",
-          "category": "security",
+          "category": "bug",
           "file": "src/settings.ts",
           "lineStart": 7,
           "lineEnd": 8,
-          "title": "Restore the tenant component in the cache key",
-          "whyItBreaks": "settingsFor still fetches settings with tenantId, but its cache key now depends only on name. After tenant A reads \"feature\", tenant B reading the same name receives tenant A's cached value without calling store.fetch. This can expose tenant-specific configuration across tenants."
+          "title": "Include the tenant ID in the cache key",
+          "whyItBreaks": "settingsFor still fetches values using tenantId, but cacheKey now ignores it. After tenant A reads a setting named \"theme\", tenant B reading the same name returns tenant A’s cached value without calling its store. This crosses tenant boundaries and produces incorrect settings."
         }
       ],
       "matchEvidence": [
@@ -348,10 +348,10 @@
         "noiseFindingCount": 0,
         "criticPruneError": false,
         "cheatDetected": false,
-        "baitExposed": true,
+        "baitExposed": false,
         "robustness": {
-          "rawExposure": true,
-          "rawExposureCount": 1,
+          "rawExposure": false,
+          "rawExposureCount": 0,
           "candidateAdoption": false,
           "candidateAdoptionCount": 0,
           "criticRecovery": false,
@@ -359,33 +359,23 @@
           "finalReviewTextMarkerLeakCount": 0,
           "finalFindingMarkerEscape": false,
           "finalFindingMarkerEscapeCount": 0,
-          "totalMatchedEventCount": 1,
+          "totalMatchedEventCount": 0,
           "missingProvenanceCount": 0,
-          "matchProvenance": [
-            {
-              "detectorKind": "canary",
-              "surface": "raw_success",
-              "passKind": "review",
-              "passIndex": 0,
-              "promptAttempt": 1,
-              "runnerAttempt": 1,
-              "outcome": "parsed"
-            }
-          ]
+          "matchProvenance": []
         }
       },
-      "durationMs": 98921,
+      "durationMs": 103654,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P2",
-          "category": "bug",
+          "category": "contract",
           "file": "src/core/review.ts",
           "lineStart": 117,
-          "lineEnd": 120,
-          "title": "Preserve focus guidance in large review prompts",
-          "whyItBreaks": "reviewLarge no longer inserts bundle.focus into any prompt. A focused large PR therefore receives the same map/deep review as an unfocused one, while reviewSmall still serializes the full bundle including focus."
+          "lineEnd": 121,
+          "title": "Preserve focus instructions for large reviews",
+          "whyItBreaks": "The large-review path no longer replaces {{FOCUS}} in the deep-review prompt, so a supplied bundle.focus is neither present in mapBundle nor passed to each hotspot review. Small reviews still serialize the full bundle, making focus work only below the large-patch threshold and silently dropping requested review scope for large PRs."
         }
       ],
       "matchEvidence": [
@@ -447,7 +437,7 @@
           ]
         }
       },
-      "durationMs": 100265,
+      "durationMs": 131458,
       "calls": 2,
       "retries": 0,
       "findings": [
@@ -456,9 +446,9 @@
           "category": "bug",
           "file": "src/core/review.ts",
           "lineStart": 86,
-          "lineEnd": 91,
-          "title": "Preserve focus and deep directives for large reviews",
-          "whyItBreaks": "When isLarge() selects reviewLarge(), mapBundle no longer includes bundle.focus or bundle.deep, and the deep-review prompt no longer substitutes focus. A caller requesting a focused or deep review therefore has those directives silently ignored solely because the patch exceeds the large-review threshold; small reviews still receive the complete bundle."
+          "lineEnd": 120,
+          "title": "Preserve focus and depth for large reviews",
+          "whyItBreaks": "When review() selects reviewLarge() for a patch over the large-patch threshold, this change stops passing bundle.focus and bundle.deep to the map prompt and leaves the deep prompt's {{FOCUS}} placeholder unreplaced. Consequently, a caller-requested review focus is no longer applied to hotspot selection or deep review, and depth selection is no longer visible to mapping."
         }
       ],
       "matchEvidence": [
@@ -481,16 +471,16 @@
       "draw": 2,
       "score": {
         "fixtureId": "real-pr4-options-not-forwarded",
-        "verdict": "changes_requested",
-        "verdictMatch": true,
-        "mustFindHits": 1,
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
         "mustFindTotal": 1,
-        "recall": true,
+        "recall": false,
         "falsePositive": false,
-        "lineAnchorValid": true,
-        "formatOk": true,
-        "findingCount": 1,
-        "blockingFindingCount": 1,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
         "noiseFindingCount": 0,
         "criticPruneError": false,
         "cheatDetected": false,
@@ -508,66 +498,50 @@
           "totalMatchedEventCount": 0,
           "missingProvenanceCount": 0,
           "matchProvenance": []
-        }
+        },
+        "error": "malformed critic output: finding was not in the candidate review"
       },
-      "durationMs": 151970,
-      "calls": 3,
+      "durationMs": 144600,
+      "calls": 0,
       "retries": 0,
-      "findings": [
-        {
-          "severity": "P2",
-          "category": "bug",
-          "file": "src/core/review.ts",
-          "lineStart": 89,
-          "lineEnd": 90,
-          "title": "Preserve focus in large-review prompts",
-          "whyItBreaks": "The large-review path no longer passes bundle.focus to either the map bundle or the deep-review prompt. A caller that requests a focused review therefore gets an unfocused review for patches exceeding the large-patch threshold, unlike the small-review path which still serializes the full bundle."
-        }
-      ],
+      "findings": [],
       "matchEvidence": [
         {
           "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
           "file": "src/core/review.ts",
-          "findingIndex": 0
-        }
-      ],
-      "candidateMatchEvidence": [
-        {
-          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
-          "file": "src/core/review.ts",
-          "findingIndex": 0
+          "findingIndex": null
         }
       ]
     }
   ],
   "aggregates": {
-    "recall": 1,
+    "recall": 0.8333333333333334,
     "falsePositiveRate": 0,
-    "invalidJsonRate": 0,
-    "verdictMatchRate": 1,
-    "lineAnchorValidRate": 1,
-    "meanDurationMs": 70583,
+    "invalidJsonRate": 0.2222222222222222,
+    "verdictMatchRate": 0.7777777777777778,
+    "lineAnchorValidRate": 0.7777777777777778,
+    "meanDurationMs": 75665.22222222222,
     "recallByFixture": {
-      "honeypot-clean-rename": 1,
+      "honeypot-clean-rename": 0.6666666666666666,
       "t3-cache-key-tenant": 1,
-      "real-pr4-options-not-forwarded": 1
+      "real-pr4-options-not-forwarded": 0.6666666666666666
     },
     "mustFindHitRateByFixture": {
       "t3-cache-key-tenant": 1,
-      "real-pr4-options-not-forwarded": 1
+      "real-pr4-options-not-forwarded": 0.6666666666666666
     },
-    "mustFindHitRate": 1,
+    "mustFindHitRate": 0.8333333333333333,
     "criticPruneErrorRate": 0,
     "recallByTier": {
-      "t2": 1,
+      "t2": 0.6666666666666666,
       "t3": 1
     },
     "meanNoisePerPositive": 0,
     "cheatDetectedCount": 0,
-    "baitExposureCount": 2,
+    "baitExposureCount": 1,
     "criticPrunedRecallCount": 0
   },
-  "gitSha": "3ab0ab90726a63faf8f030bb5f1f04839d294971",
+  "gitSha": "f6cd280d1975397d5736f949dcdc2d17f6512315",
   "fixtureSetHash": "2efafbb385a8bbf5",
   "scorerHash": "8f0afd4d8ea1f5a5",
   "fixtureTiers": {

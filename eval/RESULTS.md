@@ -704,12 +704,13 @@ Gate criteria (pre-declared):
    install without receiving a model credential, and reaches a terminal review
    verdict without an infrastructure failure.
 
-Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 796/796 tests,
-13/13 catalog/setup targeted tests, package smoke, `actionlint`, `pnpm check`,
-`pnpm lint`, and build green. Model report:
+Final result: **FAILED; not authorized to ship.** The resident gate passed:
+796/796 tests, 13/13 catalog/setup targeted tests, package smoke, `actionlint`,
+`pnpm check`, `pnpm lint`, and build green. Final model report:
 [`results/2026-08-26-runner-catalog-d-gate-x3.json`](results/2026-08-26-runner-catalog-d-gate-x3.json)
-(`gateClass: "D"`, candidate `gitSha: 3ab0ab90726a63faf8f030bb5f1f04839d294971`,
-9/9 completed draws, zero invalid JSON, zero cheat detections). Two
-raw-transcript bait exposures had zero structured adoption and are recorded but
-do not void the report under the declared anticheat policy. Criterion 3
-remains pending the post-merge canary.
+(`gateClass: "D"`, candidate `gitSha: f6cd280d1975397d5736f949dcdc2d17f6512315`,
+9/9 completed draws, 2 malformed outputs, zero cheat detections). One
+raw-transcript bait exposure had zero structured adoption. The pre-declared
+zero-malformed criterion failed; earlier passing draws do not override the final
+candidate result. Criterion 3 was not run. The feature was reverted and PR #92
+closed per the Class D gate contract.
