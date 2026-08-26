@@ -1,0 +1,52 @@
+name: hosted-action-canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to review with the checked-out action ref
+        required: true
+      action_ref:
+        description: Full reviewed Needlefish commit SHA to execute
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: hosted-action-canary-${{ github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate canary ref
+        env:
+          ACTION_REF: ${{ github.event.inputs.action_ref }}
+        run: |
+          if [[ ! "$ACTION_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "action_ref must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.action_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify action ref is published on main
+        env:
+          ACTION_REF: ${{ github.event.inputs.action_ref }}
+        run: |
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$ACTION_REF" refs/remotes/origin/main; then
+            echo "action_ref must be published on main" >&2
+            exit 1
+          fi
+      - uses: ./
+        with:
+          pr_number: ${{ github.event.inputs.pr_number }}
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}

@@ -432,15 +432,45 @@ installs none of these.
 
 Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
-`runner_version`, `repo_path` (defaults to the workspace checkout),
+`runner_version`, `install_runner`, `repo_path` (defaults to the workspace checkout),
 `github_token` (defaults to the workflow token).
 
 `runner_version` overrides the npm version of the selected runner CLI. When
-omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.149.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
-explicit version — or `latest` — only when you intentionally want something
-other than the pin. A single default cannot be correct for four packages, so
-the pin is chosen from the selected `runner`.
+omitted, the action installs the selected runner's official hosted pin from
+[`runner-catalog.json`](runner-catalog.json). Pass an explicit version — or
+`latest` — only when you intentionally want something other than that pin.
+The catalog is the single source for package identity, default executable,
+auto-detection order, and hosted defaults; it does not control credentials,
+model arguments, or self-hosted binaries.
+
+By default the composite action installs the selected npm runner into
+job-local storage. Set `install_runner: false` when the executable is already
+on `PATH` or supplied through its `*_BIN` variable. In that mode,
+`runner_version` is rejected because Needlefish is not managing the binary.
+This also permits external-only runners such as `grok`, `openai`, or `acp` when
+the operator supplies their normal runtime configuration.
+
+For workflows that want installation separated from the review action, use the
+optional install-only action from the same immutable ref. It installs no
+credentials:
+
+```yaml
+- uses: frankekn/needlefish/setup@<full-commit-sha>
+  with:
+    runner: codex
+    # version: <explicit-version> # optional override
+- uses: frankekn/needlefish@<same-full-commit-sha>
+  with:
+    runner: codex
+    install_runner: false
+  env:
+    CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+```
+
+Official managed setup is currently CI-validated on `linux-x64`. Other
+platforms receive an explicit warning rather than a false support claim;
+external-binary mode remains available on any platform supported by the
+selected runner and Needlefish.
 
 Cost and behavior notes:
 

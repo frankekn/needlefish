@@ -18,6 +18,7 @@ const PINNED_RUNNER = /^(\d+)\.(\d+)\.(\d+)$/;
 function workflowFiles() {
   return [
     "action.yml",
+    join("setup", "action.yml"),
     ...readdirSync(".github/workflows")
       .filter((name) => name.endsWith(".yml"))
       .map((name) => join(".github/workflows", name)),
@@ -44,6 +45,7 @@ function usesLines(text) {
 // comment and returns `{ exempt: false }`. Exported behavior only via return value so
 // both the aggregate sweep test and the file-scoping unit tests exercise the same logic.
 function assertPinned(file, use) {
+  if (/^\.{1,2}\//.test(use.action)) return { exempt: false, local: true };
   if (file === FIRST_PARTY_FLOATING_EXEMPT_FILE && FIRST_PARTY_FLOATING.test(use.action)) {
     return { exempt: true };
   }
@@ -68,7 +70,8 @@ test("third-party actions are SHA-pinned with a version comment", () => {
   let firstParty = 0;
   for (const file of workflowFiles()) {
     for (const use of usesLines(readFileSync(file, "utf8"))) {
-      const { exempt } = assertPinned(file, use);
+      const { exempt, local } = assertPinned(file, use);
+      if (local) continue;
       if (exempt) {
         firstParty += 1;
       } else {
@@ -104,33 +107,40 @@ test("a different floating major tag in hosted-review.yml is not silently exempt
   );
 });
 
-test("hosted action pins a version per runner and lets runner_version override", () => {
-  const action = readFileSync("action.yml", "utf8");
-  assert.doesNotMatch(action, /^\s+default:\s*latest\s*$/m);
-  assert.match(
-    action,
-    /ver="\$\{NF_RUNNER_VERSION:-\$pinned\}"/,
-    "install step must prefer runner_version when set",
-  );
-  assert.match(action, /npm install -g "\$\{pkg\}@\$\{ver\}"/);
+test("local actions do not require an external ref pin", () => {
+  const use = { line: 1, action: "./", comment: "", raw: "uses: ./" };
+  assert.deepEqual(assertPinned("canary.yml", use), { exempt: false, local: true });
+});
 
-  const pins = {};
-  for (const match of action.matchAll(
-    /^\s+(codex|claude|opencode|pi)\) pkg="([^"]+)"; pinned="([^"]+)" ;;$/gm,
-  )) {
-    pins[match[1]] = { pkg: match[2], pinned: match[3] };
+test("published actions share the runner catalog and expose an install opt-out", () => {
+  const action = readFileSync("action.yml", "utf8");
+  const setupAction = readFileSync(join("setup", "action.yml"), "utf8");
+  const catalog = JSON.parse(readFileSync("runner-catalog.json", "utf8"));
+  assert.doesNotMatch(action, /^\s+default:\s*latest\s*$/m);
+  assert.match(action, /install_runner:\n[\s\S]*?default: "true"/);
+  assert.match(action, /if: inputs\.install_runner == 'true'/);
+  assert.match(action, /scripts\/setup-runner\.mjs/);
+  assert.match(setupAction, /\.\.\/scripts\/setup-runner\.mjs/);
+  for (const text of [action, setupAction]) {
+    assert.doesNotMatch(text, /@openai\/codex|@anthropic-ai\/claude-code|opencode-ai|@mariozechner\/pi/);
   }
+
+  const pins = Object.fromEntries(
+    Object.entries(catalog)
+      .filter(([, entry]) => entry.hostedInstall)
+      .map(([runner, entry]) => [runner, entry.hostedInstall]),
+  );
   assert.deepEqual(
     Object.keys(pins).sort(),
     ["claude", "codex", "opencode", "pi"],
     "every hosted runner must have its own pin",
   );
-  assert.equal(pins.codex.pkg, "@openai/codex");
-  assert.equal(pins.claude.pkg, "@anthropic-ai/claude-code");
-  assert.equal(pins.opencode.pkg, "opencode-ai");
-  assert.equal(pins.pi.pkg, "@mariozechner/pi");
-  for (const [runner, { pinned }] of Object.entries(pins)) {
-    assert.notEqual(pinned, "latest", `${runner} must not pin latest`);
-    assert.match(pinned, PINNED_RUNNER, `${runner} pin must be x.y.z: ${pinned}`);
+  assert.equal(pins.codex.npmPackage, "@openai/codex");
+  assert.equal(pins.claude.npmPackage, "@anthropic-ai/claude-code");
+  assert.equal(pins.opencode.npmPackage, "opencode-ai");
+  assert.equal(pins.pi.npmPackage, "@mariozechner/pi");
+  for (const [runner, { defaultVersion }] of Object.entries(pins)) {
+    assert.notEqual(defaultVersion, "latest", `${runner} must not pin latest`);
+    assert.match(defaultVersion, PINNED_RUNNER, `${runner} pin must be x.y.z: ${defaultVersion}`);
   }
 });

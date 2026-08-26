@@ -2,6 +2,8 @@ export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "
 
 export type RunnerName = (typeof RUNNERS)[number];
 
+const RUNNER_NAMES: ReadonlySet<string> = new Set(RUNNERS);
+
 export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
@@ -19,15 +21,7 @@ export interface RunStat {
 }
 
 export function isRunnerName(value: string): value is RunnerName {
-  return (
-    value === "codex" ||
-    value === "claude" ||
-    value === "opencode" ||
-    value === "openai" ||
-    value === "grok" ||
-    value === "pi" ||
-    value === "acp"
-  );
+	return RUNNER_NAMES.has(value);
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {

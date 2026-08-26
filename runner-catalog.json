@@ -1,0 +1,67 @@
+{
+  "codex": {
+    "kind": "cli",
+    "binary": "codex",
+    "binaryEnv": "CODEX_BIN",
+    "autoDetectOrder": 1,
+    "hostedInstall": {
+      "npmPackage": "@openai/codex",
+      "defaultVersion": "0.149.0",
+      "testedPlatforms": ["linux-x64"]
+    }
+  },
+  "claude": {
+    "kind": "cli",
+    "binary": "claude",
+    "binaryEnv": "CLAUDE_BIN",
+    "autoDetectOrder": 2,
+    "hostedInstall": {
+      "npmPackage": "@anthropic-ai/claude-code",
+      "defaultVersion": "2.1.239",
+      "testedPlatforms": ["linux-x64"]
+    }
+  },
+  "opencode": {
+    "kind": "cli",
+    "binary": "opencode",
+    "binaryEnv": "OPENCODE_BIN",
+    "autoDetectOrder": 3,
+    "hostedInstall": {
+      "npmPackage": "opencode-ai",
+      "defaultVersion": "1.18.21",
+      "testedPlatforms": ["linux-x64"]
+    }
+  },
+  "openai": {
+    "kind": "http",
+    "binary": null,
+    "binaryEnv": null,
+    "autoDetectOrder": null,
+    "hostedInstall": null
+  },
+  "grok": {
+    "kind": "cli",
+    "binary": "grok",
+    "binaryEnv": "GROK_BIN",
+    "autoDetectOrder": null,
+    "hostedInstall": null
+  },
+  "pi": {
+    "kind": "cli",
+    "binary": "pi",
+    "binaryEnv": "PI_BIN",
+    "autoDetectOrder": null,
+    "hostedInstall": {
+      "npmPackage": "@mariozechner/pi",
+      "defaultVersion": "0.70.6",
+      "testedPlatforms": ["linux-x64"]
+    }
+  },
+  "acp": {
+    "kind": "cli",
+    "binary": null,
+    "binaryEnv": "NEEDLEFISH_ACP_BIN",
+    "autoDetectOrder": null,
+    "hostedInstall": null
+  }
+}

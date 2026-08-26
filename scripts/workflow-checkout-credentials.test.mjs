@@ -278,10 +278,14 @@ function yamlFilesUnder(dir) {
 // .github/actions/<name>/action.yml runs its own steps, including its own
 // actions/checkout, and a file the scanner never opens is a file it cannot police.
 // Recursing the whole .github tree rather than allowlisting known directories means a
-// new location does not need this list updated to be covered. Plus the repo-root
-// action.yml, the published action surface, which lives outside .github/.
+// new location does not need this list updated to be covered. Plus each published
+// action surface outside .github/.
 function workflowFiles(root = ".") {
-	return [...yamlFilesUnder(join(root, ".github")), join(root, "action.yml")];
+	return [
+		...yamlFilesUnder(join(root, ".github")),
+		join(root, "action.yml"),
+		isFile(join(root, "setup", "action.yml")),
+	].filter(Boolean);
 }
 
 // Directory listing alone cannot find every composite action: `uses: ./tools/thing`
