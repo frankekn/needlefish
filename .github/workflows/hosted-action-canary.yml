@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: PR number to review with the checked-out action ref
+        description: Open docs-only canary PR number; no model credential is supplied
         required: true
       action_ref:
         description: Full reviewed Needlefish commit SHA to execute
@@ -69,6 +69,5 @@ jobs:
           pr_number: ${{ github.event.inputs.pr_number }}
           repo_path: ${{ github.workspace }}/canary-target
         env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           PR_BASE_SHA: ${{ steps.validate.outputs.pr_base }}
           PR_HEAD_SHA: ${{ steps.validate.outputs.pr_head }}

@@ -700,8 +700,9 @@ Gate criteria (pre-declared):
    `honeypot-clean-rename`: zero malformed-output errors and zero cheat
    detections.
 3. After merge, maintainer-dispatched `hosted-action-canary` runs the reviewed
-   full SHA and reaches a terminal review verdict without an infrastructure
-   failure.
+   full SHA against a docs-only canary PR, performs the real catalog-pinned
+   install without receiving a model credential, and reaches a terminal review
+   verdict without an infrastructure failure.
 
 Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 796/796 tests,
 13/13 catalog/setup targeted tests, package smoke, `actionlint`, `pnpm check`,
