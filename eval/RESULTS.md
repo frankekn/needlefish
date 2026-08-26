@@ -702,6 +702,10 @@ Gate criteria (pre-declared):
 3. Live canary window after deploy retains automatic rollback to the
    last-known-good install if the infrastructure-error threshold is exceeded.
 
-Preflight: criterion 1 is green (76/76 focused tests, 789/789 full suite,
-`pnpm check`, and `pnpm lint`). Criteria 2 and 3 remain pending. The change is
-not authorized to ship before a committed candidate passes criterion 2.
+Pre-merge result: criteria 1 and 2 **PASSED**. Resident gate: 76/76 focused
+tests, 789/789 full suite, `pnpm check`, and `pnpm lint` green. Model report:
+[`results/2026-08-26-critic-retry-d-gate-x3.json`](results/2026-08-26-critic-retry-d-gate-x3.json)
+(`gateClass: "D"`, candidate `gitSha: ecb5a2a7488ab36bb4d55f65036bea0748c84286`,
+9/9 completed draws, zero malformed outputs, zero cheat detections, zero bait
+exposures, and recall 1.0 on both positive fixtures). Authorized to ship behind
+the criterion 3 canary window; criterion 3 remains pending deployment.
