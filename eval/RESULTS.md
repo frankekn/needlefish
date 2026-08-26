@@ -668,25 +668,21 @@ verdict without runner infrastructure failure.
 claw-console run `32870517112` selected immutable release `2d36ec7f`, resolved
 Codex `0.149.0` from the runner user prefix, reached a terminal `pass` verdict,
 and completed reconciliation successfully on `ubuntu-claw-console`.
-
 ### 20. Open-source runner catalog + optional setup action — Class D declared 2026-08-26
 
 Change: package identity, default executable, auto-detection order, and the four
 hosted npm pins move into `runner-catalog.json`. The root hosted action resolves
 the same package/version pairs from that catalog and installs them in job-local
 storage; `setup/action.yml` exposes the same installer without authentication.
-`install_runner: false` preserves operator-owned binaries for the same four
-managed runners; external-only runners remain rejected by the root hosted
-action. No runner pin, invocation argument, prompt, model input, normalization,
-scoring, or posting contract changes.
+`install_runner: false` preserves operator-owned external binaries. No runner
+pin, invocation argument, prompt, model input, normalization, scoring, or
+posting contract changes.
 
 Classification: **Class D** by provenance containment. Existing managed runs
 execute the same pinned runner with byte-identical review inputs; the new setup
-surface and explicit-`*_BIN` opt-out only skip an unused install. Before this
-change the runtime already treated the same `*_BIN` value as authoritative over
-the action-installed executable, so this does not enable a new runner behavior,
-remove signals, or admit a new model output shape. Self-hosted deployment
-remains separate and never invokes setup.
+surface and external-binary opt-out only make previously explicit operator
+ownership available without removing signals or admitting a new model output
+shape. Self-hosted deployment remains separate and never invokes setup.
 
 Gate criteria (pre-declared):
 
@@ -700,9 +696,8 @@ Gate criteria (pre-declared):
    `honeypot-clean-rename`: zero malformed-output errors and zero cheat
    detections.
 3. After merge, maintainer-dispatched `hosted-action-canary` runs the reviewed
-   full SHA against a docs-only canary PR, performs the real catalog-pinned
-   install without receiving a model credential, and reaches a terminal review
-   verdict without an infrastructure failure.
+   full SHA and reaches a terminal review verdict without an infrastructure
+   failure.
 
 Final result: **FAILED; not authorized to ship.** The resident gate passed:
 796/796 tests, 13/13 catalog/setup targeted tests, package smoke, `actionlint`,

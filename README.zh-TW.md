@@ -361,40 +361,11 @@ jobs:
 Hosted action 只會安裝 `action.yml` 列出的 runner；Grok CLI 不在其中。要
 使用 Grok 4.5，請使用上方的 self-hosted reusable workflow。
 
-`runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會使用
-[`runner-catalog.json`](runner-catalog.json) 的官方 hosted pin。只有在刻意偏離
-pin 時才傳入明確版本（或 `latest`）。Catalog 是 package identity、預設
-executable、auto-detection order 與 hosted default 的唯一來源；它不管理
-credentials、model arguments 或 self-hosted binary。
-
-Composite action 預設把所選 npm runner 安裝在 job-local storage。若 executable
-已透過 runner-specific `*_BIN` 指定，設定 `install_runner: false`。此模式下
-`runner_version` 會被拒絕，因為 Needlefish 沒有管理該 binary。Operator 也可用
-這個模式提供四個 managed runner 的既有 binary；root hosted action 不新增
-`grok`、`openai` 或 `acp`，這些 external-only runner 仍使用 self-hosted
-workflow 或 CLI。
-
-若要把 runner 安裝與 review action 分開，可從同一個 immutable ref 使用選配的
-install-only action；它不會安裝 credentials：
-
-```yaml
-- uses: frankekn/needlefish/setup@<full-commit-sha>
-  id: model-runner
-  with:
-    runner: codex
-    # version: <explicit-version> # 可選 override
-- uses: frankekn/needlefish@<same-full-commit-sha>
-  with:
-    runner: codex
-    install_runner: false
-  env:
-    CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
-    CODEX_BIN: ${{ steps.model-runner.outputs.binary_path }}
-```
-
-官方 managed setup 目前只在 `linux-x64` 經過 CI 驗證。其他平台會得到明確
-warning，而不是虛假的支援宣告；只要所選 managed runner 與 Needlefish 支援該平台，
-仍可使用 external-binary mode。
+`runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會安裝
+`action.yml` 裡的 per-runner pin（目前 Codex `0.149.0`、Claude `2.1.239`、
+OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳入明確版本
+（或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
+選擇。
 
 hosted action 能安裝的 runner，其認證方式（repo secrets，透過 action step 的
 `env` 傳入）：
@@ -417,7 +388,7 @@ claude 的 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` 與 opencode 的
 
 輸入（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設 `codex`）、
 `model`、`timeout_ms`、`codex_reasoning_effort`、`runner_version`（要安裝的
-runner CLI npm 版本）、`install_runner`、`repo_path`（預設為 workspace checkout）、
+runner CLI npm 版本）、`repo_path`（預設為 workspace checkout）、
 `github_token`（預設為 workflow token）。
 
 Fork PR 預設不會收到 secrets，workflow 會跳過它們；不要在不了解風險前使用

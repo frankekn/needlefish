@@ -7,7 +7,7 @@ inputs:
     description: PR number to review (defaults to the pull_request event PR)
     required: false
   runner:
-    description: "Managed runner: codex, claude, opencode, or pi"
+    description: "Model runner: codex, claude, opencode, or pi"
     required: false
     default: codex
   model:
@@ -22,14 +22,8 @@ inputs:
   runner_version:
     description: >-
       npm version of the selected runner CLI. Omit to install the per-runner
-      pin from runner-catalog.json; set to override (including an intentional latest).
+      pin in the install step; set to override (including an intentional latest).
     required: false
-  install_runner:
-    description: >-
-      Install the selected npm runner in job-local storage. Set false when the
-      executable is provided through the selected runner's *_BIN variable.
-    required: false
-    default: "true"
   repo_path:
     description: Path to the target repo checkout to review
     required: false
@@ -54,40 +48,21 @@ runs:
         corepack enable
         corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
         pnpm install --frozen-lockfile
-    - name: Validate runner installation mode
+    - name: Install model runner CLI
       shell: bash
       env:
         NF_RUNNER: ${{ inputs.runner }}
-        NF_INSTALL_RUNNER: ${{ inputs.install_runner }}
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex) runner_bin_env=CODEX_BIN; runner_bin="${CODEX_BIN:-}" ;;
-          claude) runner_bin_env=CLAUDE_BIN; runner_bin="${CLAUDE_BIN:-}" ;;
-          opencode) runner_bin_env=OPENCODE_BIN; runner_bin="${OPENCODE_BIN:-}" ;;
-          pi) runner_bin_env=PI_BIN; runner_bin="${PI_BIN:-}" ;;
-          *) echo "unknown managed runner: $NF_RUNNER" >&2; exit 1 ;;
+          codex) pkg="@openai/codex"; pinned="0.149.0" ;;
+          claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.239" ;;
+          opencode) pkg="opencode-ai"; pinned="1.18.21" ;;
+          pi) pkg="@mariozechner/pi"; pinned="0.70.6" ;;
+          *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
-        case "$NF_INSTALL_RUNNER" in
-          true|false) ;;
-          *) echo "install_runner must be true or false" >&2; exit 1 ;;
-        esac
-        if [ "$NF_INSTALL_RUNNER" = "false" ] && [ -n "$NF_RUNNER_VERSION" ]; then
-          echo "runner_version cannot be used when install_runner is false" >&2
-          exit 1
-        fi
-        if [ "$NF_INSTALL_RUNNER" = "false" ] && [ -z "$runner_bin" ]; then
-          echo "install_runner=false requires $runner_bin_env" >&2
-          exit 1
-        fi
-    - name: Install model runner CLI
-      if: inputs.install_runner == 'true'
-      id: install-runner
-      shell: bash
-      env:
-        NF_RUNNER: ${{ inputs.runner }}
-        NF_RUNNER_VERSION: ${{ inputs.runner_version }}
-      run: node "$GITHUB_ACTION_PATH/scripts/setup-runner.mjs" "$NF_RUNNER" "$NF_RUNNER_VERSION"
+        ver="${NF_RUNNER_VERSION:-$pinned}"
+        npm install -g "${pkg}@${ver}"
     - name: Authenticate model runner
       shell: bash
       env:
@@ -100,7 +75,7 @@ runs:
           printf '%s' "$CODEX_AUTH_JSON" > "$HOME/.codex/auth.json"
           chmod 600 "$HOME/.codex/auth.json"
         elif [ "$NF_RUNNER" = "codex" ] && [ -n "${CODEX_API_KEY:-}" ]; then
-          printf '%s' "$CODEX_API_KEY" | "${CODEX_BIN:-codex}" login --with-api-key
+          printf '%s' "$CODEX_API_KEY" | codex login --with-api-key
         elif [ "$NF_RUNNER" = "pi" ] && [ -n "${PI_AUTH_JSON:-}" ]; then
           mkdir -p "$HOME/.pi/agent"
           printf '%s' "$PI_AUTH_JSON" > "$HOME/.pi/agent/auth.json"

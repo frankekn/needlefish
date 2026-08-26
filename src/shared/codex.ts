@@ -15,7 +15,6 @@ import {
 	type RunStat,
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
-import { defaultRunnerBinary } from "./runner-catalog.js";
 import {
 	spawnRunnerProcess,
 	type RunnerProcessResult,
@@ -802,7 +801,7 @@ async function runCodexCli(
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CODEX_BIN ?? defaultRunnerBinary("codex"),
+		command: process.env.CODEX_BIN ?? "codex",
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -847,7 +846,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 		args.push("--effort", invocation.reasoningEffort);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CLAUDE_BIN ?? defaultRunnerBinary("claude"),
+		command: process.env.CLAUDE_BIN ?? "claude",
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -882,7 +881,7 @@ async function runOpenCode(
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({
-		command: process.env.OPENCODE_BIN ?? defaultRunnerBinary("opencode"),
+		command: process.env.OPENCODE_BIN ?? "opencode",
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -916,7 +915,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	if (invocation.reasoningEffort)
 		args.push("--reasoning-effort", invocation.reasoningEffort);
 	const res = await spawnRunnerProcess({
-		command: process.env.GROK_BIN ?? defaultRunnerBinary("grok"),
+		command: process.env.GROK_BIN ?? "grok",
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -971,7 +970,7 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	// positional arg. Verified 2026-07-10: `pi -p --no-session --mode text` with
 	// no positional message reads the full prompt from stdin.
 	const res = await spawnRunnerProcess({
-		command: process.env.PI_BIN ?? defaultRunnerBinary("pi"),
+		command: process.env.PI_BIN ?? "pi",
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,

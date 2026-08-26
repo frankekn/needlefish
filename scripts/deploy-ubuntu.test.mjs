@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("deploy does not install or invoke optional model-runner setup", async () => {
+test("deploy does not install an optional model runner", async () => {
   const script = await readFile("scripts/deploy-ubuntu.sh", "utf8");
 
-  assert.doesNotMatch(script, /setup-runner|@openai\/codex|@anthropic-ai\/claude-code|opencode-ai|@mariozechner\/pi/);
+  assert.doesNotMatch(script, /npm install -g @mariozechner\/pi/);
 });
 
 test("deploy uses Corepack without writing system pnpm shims", async () => {
