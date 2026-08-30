@@ -303,7 +303,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		if (provider !== "openai-codex") {
 			return {
 				required: [".pi/agent/models.json"],
-				optional: [],
+				optional: [".pi/agent/auth.json"],
 			};
 		}
 	}

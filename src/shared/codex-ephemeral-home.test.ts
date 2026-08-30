@@ -724,6 +724,12 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 		false,
 		"absent OAuth file must not be fabricated",
 	);
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
+	const authenticatedHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
+		'{"token":"x"}',
+	);
 
 	// Proxy provider with the registry itself missing stays fail-closed.
 	rmSync(path.join(fakeHome, ".pi", "agent", "models.json"));
