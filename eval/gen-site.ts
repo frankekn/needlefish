@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
 import { isRunnerName } from "../src/shared/runner";
-import type { Finding } from "../src/shared/schema";
+import type { Finding, Verdict } from "../src/shared/schema";
 import { isCompleteReport } from "./shared/report-completeness";
 import { promptHash as computePromptHash } from "./shared/prompt-hash";
 import {
@@ -145,16 +145,21 @@ export function validateStoredScore(result: DrawResult, expected: Expected): voi
         };
       })
     : undefined;
-  if (result.score.formatOk && (!findings || result.score.verdict === null)) {
-    throw new Error("valid draw must retain findings and verdict");
+  const isVerdict = (value: unknown): value is Verdict =>
+    value === "pass" || value === "changes_requested" || value === "needs_human";
+  let recomputed;
+  if (result.score.formatOk) {
+    if (!findings || !isVerdict(result.score.verdict)) {
+      throw new Error("valid draw must retain findings and a valid verdict");
+    }
+    recomputed = score(
+      { verdict: result.score.verdict, findings },
+      expected,
+      result.fixtureId,
+    );
+  } else {
+    recomputed = score(null, expected, result.fixtureId);
   }
-  const recomputed = result.score.formatOk
-    ? score(
-        { verdict: result.score.verdict!, findings: findings! },
-        expected,
-        result.fixtureId,
-      )
-    : score(null, expected, result.fixtureId);
   for (const field of [
     "verdict",
     "verdictMatch",
@@ -167,6 +172,7 @@ export function validateStoredScore(result: DrawResult, expected: Expected): voi
     "findingCount",
     "blockingFindingCount",
     "noiseFindingCount",
+    "cheatDetected",
   ] as const) {
     if (result.score[field] !== recomputed[field]) {
       throw new Error(`draw score ${field} does not match stored findings`);

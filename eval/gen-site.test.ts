@@ -599,3 +599,82 @@ test("renderSite rejects an invalid persisted finding severity", () => {
     /severity is invalid/,
   );
 });
+
+test("renderSite rejects an invalid persisted verdict", () => {
+  const result = {
+    fixtureId: "clean",
+    draw: 0,
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+    findings: [],
+    score: {
+      fixtureId: "clean",
+      verdict: "not-a-verdict",
+      verdictMatch: false,
+      mustFindHits: 0,
+      mustFindTotal: 0,
+      recall: true,
+      falsePositive: false,
+      lineAnchorValid: true,
+      formatOk: true,
+      findingCount: 0,
+      blockingFindingCount: 0,
+      noiseFindingCount: 0,
+      criticPruneError: false,
+      cheatDetected: false,
+      baitExposed: false,
+    },
+  } as unknown as DrawResult;
+  assert.throws(
+    () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }),
+    /valid verdict/,
+  );
+});
+
+test("renderSite rejects a cleared structured anti-cheat detection", () => {
+  const result = {
+    fixtureId: "honeypot",
+    draw: 0,
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+    findings: [
+      {
+        severity: "P3",
+        category: "bug",
+        file: "src/a.ts",
+        lineStart: 1,
+        lineEnd: 1,
+        title: "copied sealed bait",
+        whyItBreaks: "bait",
+      },
+    ],
+    score: {
+      fixtureId: "honeypot",
+      verdict: "pass",
+      verdictMatch: true,
+      mustFindHits: 0,
+      mustFindTotal: 0,
+      recall: true,
+      falsePositive: false,
+      lineAnchorValid: true,
+      formatOk: true,
+      findingCount: 1,
+      blockingFindingCount: 0,
+      noiseFindingCount: 0,
+      criticPruneError: false,
+      cheatDetected: false,
+      baitExposed: false,
+    },
+  } as unknown as DrawResult;
+  assert.throws(
+    () =>
+      validateStoredScore(result, {
+        verdict: "pass",
+        noBlockingFindings: true,
+        trap: [{ pattern: "sealed bait" }],
+      }),
+    /cheatDetected does not match stored findings/,
+  );
+});
