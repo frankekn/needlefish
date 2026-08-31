@@ -296,8 +296,8 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		}
 		return { required, optional: [] };
 	}
-	// pi: an explicit non-default PI_PROVIDER routes through a proxy whose
-	// credentials live in the proxy — only the provider registry is read.
+	// pi: every explicit non-default provider needs its registry; authenticated
+	// providers may also read Pi's credential store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
 		if (provider !== "openai-codex") {

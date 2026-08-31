@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
-[Benchmark](docs/index.html) · [方法](eval/RESULTS.md) · [GitHub Action](#github-action-快速開始)
+[Benchmark](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [方法](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-快速開始)
 
 Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回歸、安全性、
 資料遺失、遷移／升級風險、缺少驗證或重複行為，不回報單純的風格問題。
@@ -99,7 +99,7 @@ head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR
 
 ## Benchmarks
 
-[公開 benchmark 頁面](docs/index.html)只回答一個問題：哪一組 model、agent
+[公開 benchmark 頁面](https://github.com/frankekn/needlefish/blob/main/docs/index.html)只回答一個問題：哪一組 model、agent
 harness、provider route 與 effort，能抓到真正的 PR 缺陷，又不會阻擋乾淨的
 變更？Leaderboard 直接由受防護的 report JSON 產生，不手抄分數。
 
@@ -111,9 +111,10 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 都和 production baseline 相同的 report 才能排名。Provider failure 或訂閱尚未
 提供的模型只會標為 operational outcome，不會算成模型零分。
 
-Production 仍是 Codex `gpt-5.6-terra` @ `high`，直到完整 gate 證明應該更換。
-時間序實驗記錄見 [`eval/RESULTS.md`](eval/RESULTS.md)，raw report 位於
-`eval/results/`。
+目前部署的 Codex `gpt-5.6-terra` @ `high` 未通過 Tier-1 gate。0.4.2 會維持
+blocked，直到該 lane 重新通過資格驗證，或選定合格的替代 lane。詳見
+[時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)與
+[raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)。
 
 ## 開發環境安裝
 
@@ -465,7 +466,7 @@ disposable HOME 的 HOME-relative credential files。
 
 ## 狀態
 
-v0.4.2。唯讀。已提供 inline review comment、sticky re-review
+已準備 v0.4.2（尚未發布）。唯讀。已提供 inline review comment、sticky re-review
 （fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
 sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／

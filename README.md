@@ -15,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
-[Benchmark](docs/index.html) · [Methodology](eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
+[Benchmark](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
 
 Needlefish reviews your diff before merge and reports only real defects — bugs,
 regressions, security, data loss, migration/upgrade risk, missing validation,
@@ -104,7 +104,7 @@ this repository can comment `@needlefish recheck` or
 
 ## Benchmarks
 
-The [public benchmark page](docs/index.html) answers one question: which model,
+The [public benchmark page](https://github.com/frankekn/needlefish/blob/main/docs/index.html) answers one question: which model,
 agent harness, provider route, and effort catches real PR defects without
 blocking clean changes? Its leaderboard is generated from guarded report JSON;
 scores are never copied by hand.
@@ -118,9 +118,10 @@ when its prompt, fixture-set, scorer, and anti-cheat hashes match the production
 baseline. Provider failures and unavailable subscription models are shown as
 operational outcomes, not zero model scores.
 
-Production remains Codex `gpt-5.6-terra` at `high` effort until a complete gate
-justifies a change. See [`eval/RESULTS.md`](eval/RESULTS.md) for the chronological
-record and `eval/results/` for raw reports.
+The deployed Codex `gpt-5.6-terra` at `high` effort misses the current Tier-1
+gate. Release 0.4.2 remains blocked until it is re-qualified or a qualified
+replacement is selected. See the [chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
+and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
 ## Development install
 
@@ -529,7 +530,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
+Prepared for v0.4.2 (unreleased). Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish

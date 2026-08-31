@@ -17,6 +17,7 @@ const report = {
     readFileSync("eval/results/weekly/2026-08-23.json", "utf8"),
   ) as Report),
   scorerHash: scorerHash(),
+  gateClass: "R" as const,
 };
 
 function config(reportPath: string, name: string): LaneConfig {
@@ -26,13 +27,13 @@ function config(reportPath: string, name: string): LaneConfig {
     provider: "Test provider",
     route: "Test subscription",
     runnerVersion: "test-runner 1.0.0",
-    status: name === "Production" ? "Production" : "Candidate",
+    status: name === "Deployed" ? "Deployed" : "Candidate",
   };
 }
 
 function setup(): { manifest: LeaderboardManifest; lanes: Lane[] } {
   const configs = [
-    config("results/production.json", "Production"),
+    config("results/deployed.json", "Deployed"),
     config("results/candidate-a.json", "Candidate A"),
     config("results/candidate-b.json", "Candidate B"),
   ];
@@ -85,6 +86,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
   assert.match(html, /Scroll horizontally to see every metric/);
   assert.match(html, /Disqualified: Tier-1 miss/);
+  assert.match(html, /Release 0\.4\.2 is blocked/);
   assert.match(html, /Balanced Review Accuracy/);
   assert.match(html, /seed 6ba00010/);
 });
@@ -119,5 +121,53 @@ test("renderSite rejects a lane with a different fixture set", () => {
   assert.throws(
     () => renderSite(manifest, mismatched),
     /fixtureSetHash does not match the baseline/,
+  );
+});
+
+test("renderSite rejects a reduced-contract lane", () => {
+  const { manifest, lanes } = setup();
+  const reduced = lanes.map((lane, index) =>
+    index === 1
+      ? { ...lane, report: { ...lane.report, gateClass: "D" as const } }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, reduced),
+    /public lanes require gate class R/,
+  );
+});
+
+test("renderSite rejects different fixture IDs with matching hashes", () => {
+  const { manifest, lanes } = setup();
+  const originalId = report.fixtures?.[0];
+  assert.ok(originalId);
+  const replacementId = "different-fixture";
+  const changed = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            fixtures: lane.report.fixtures?.map((id) =>
+              id === originalId ? replacementId : id,
+            ),
+            fixtureKinds: Object.fromEntries(
+              Object.entries(lane.report.fixtureKinds ?? {}).map(([id, kind]) => [
+                id === originalId ? replacementId : id,
+                kind,
+              ]),
+            ),
+            results: lane.report.results.map((result) =>
+              result.fixtureId === originalId
+                ? { ...result, fixtureId: replacementId }
+                : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, changed),
+    /fixture manifest does not match the baseline/,
   );
 });

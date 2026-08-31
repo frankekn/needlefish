@@ -8,7 +8,7 @@
       "provider": "OpenAI Codex",
       "route": "Codex subscription",
       "runnerVersion": "Codex CLI 0.151.0",
-      "status": "Production"
+      "status": "Deployed"
     },
     {
       "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",

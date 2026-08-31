@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.4.2 — 2026-09-01
+## 0.4.2 — Unreleased (prepared 2026-09-01)
+
+Release blocker: the currently deployed Terra-high lane misses the current
+Tier-1 gate. Re-qualify it or select a qualified replacement before release.
 
 - Runner: stage Pi's credential store into the disposable HOME when present,
   allowing authenticated non-proxy providers without weakening proxy-only

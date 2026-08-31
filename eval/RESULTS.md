@@ -7,8 +7,10 @@ paths.
 
 ## Current decision
 
-As of 2026-09-01, keep **Codex `gpt-5.6-terra` at high effort** as the
-production configuration while the expanded gate is published and reviewed.
+As of 2026-09-01, the deployed **Codex `gpt-5.6-terra` at high effort** lane
+misses the current Tier-1 gate and is disqualified. Release 0.4.2 is blocked
+until this lane is re-qualified or a qualified replacement is selected; this
+change does not make that product decision.
 DeepSeek V4 Flash Vision Exp leads the completed comparison; Grok 4.6 is
 second, and GLM-5.3-Flash is third after its perfect specificity lifts its
 balanced review score. Terra high and Luna max miss Tier-1
