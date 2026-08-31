@@ -437,6 +437,26 @@ test("parseArgs: rejects malformed --env values", () => {
   assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
 });
 
+test("writeReport: records invocation provenance as one complete set", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-provenance-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const spec = holdoutSpec("provenance", false);
+  const args = parseArgs([
+    "--provider", "OpenAI",
+    "--route", "Codex CLI subscription",
+    "--runner-version", "codex-cli 1.2.3",
+    "--report", path.join(dir, "report.json"),
+  ]);
+  const report = writeReport(args, [], [spec]);
+  assert.equal(report.provider, "OpenAI");
+  assert.equal(report.route, "Codex CLI subscription");
+  assert.equal(report.runnerVersion, "codex-cli 1.2.3");
+  assert.throws(
+    () => parseArgs(["--provider", "OpenAI"]),
+    /must be supplied together/,
+  );
+});
+
 test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
 });

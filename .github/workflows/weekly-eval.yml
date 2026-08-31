@@ -37,7 +37,9 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --draws 3 --concurrency 4 \
+          node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high \
+            --provider "OpenAI" --route "Codex CLI subscription" --runner-version "$(codex --version)" \
+            --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:

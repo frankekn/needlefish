@@ -128,7 +128,7 @@ is appropriate only if missing defects is the dominant product concern.
 
 ```text
 R = anchored recall on positive fixtures
-S = specificity = 1 - false-positive rate on negative fixtures
+S = usable specificity = valid, non-false-positive negative draws / all scheduled negative draws
 
 Balanced Review Accuracy = (R + S) / 2
 ```

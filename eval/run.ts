@@ -42,6 +42,9 @@ interface RunArgs {
 	runner: RunnerName;
 	model: string | null;
 	effort: string | null;
+	provider: string | null;
+	route: string | null;
+	runnerVersion: string | null;
 	draws: number;
 	concurrency: number;
 	baseline: boolean;
@@ -84,6 +87,18 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
 	const effort = get("--effort");
+	const provider = get("--provider");
+	const route = get("--route");
+	const runnerVersion = get("--runner-version");
+	const provenanceFields = [provider, route, runnerVersion];
+	if (
+		provenanceFields.some((value) => value !== null) &&
+		provenanceFields.some((value) => value === null)
+	) {
+		throw new Error(
+			"--provider, --route, and --runner-version must be supplied together",
+		);
+	}
 	const draws = Number(get("--draws") ?? "1");
 	if (!Number.isInteger(draws) || draws < 1)
 		throw new Error("--draws must be a positive integer");
@@ -134,6 +149,9 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		runner,
 		model,
 		effort,
+		provider,
+		route,
+		runnerVersion,
 		draws,
 		concurrency,
 		baseline,
@@ -773,6 +791,15 @@ export function writeReport(
 		runner: args.runner,
 		model: args.model,
 		effort: args.effort,
+		...(args.provider !== null &&
+		args.route !== null &&
+		args.runnerVersion !== null
+			? {
+					provider: args.provider,
+					route: args.route,
+					runnerVersion: args.runnerVersion,
+				}
+			: {}),
 		draws: args.draws,
 		createdAt: new Date().toISOString(),
 		baseline: args.baseline,
