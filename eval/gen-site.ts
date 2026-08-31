@@ -365,6 +365,22 @@ export function validateManifest(value: unknown): LeaderboardManifest {
   if (new Set(lanes.map((lane) => lane.report)).size !== lanes.length) {
     throw new Error("leaderboard manifest lane report paths must be unique");
   }
+  const excluded = (manifest.excluded as unknown[] | undefined)?.map(
+    (value, index) => {
+      const label = `leaderboard manifest.excluded[${index}]`;
+      return {
+        ...blockedConfig(value, label),
+        report: requiredString(record(value, label), "report", label),
+      };
+    },
+  );
+  const reportPaths = [
+    ...lanes.map((lane) => lane.report),
+    ...(excluded ?? []).map((item) => item.report),
+  ];
+  if (new Set(reportPaths).size !== reportPaths.length) {
+    throw new Error("leaderboard manifest ranked and excluded report paths must be unique");
+  }
   return {
     updated: requiredString(manifest, "updated", "leaderboard manifest"),
     baseline: requiredString(manifest, "baseline", "leaderboard manifest"),
@@ -372,15 +388,7 @@ export function validateManifest(value: unknown): LeaderboardManifest {
     blocked: manifest.blocked.map((value, index) =>
       blockedConfig(value, `leaderboard manifest.blocked[${index}]`),
     ),
-    excluded: (manifest.excluded as unknown[] | undefined)?.map(
-      (value, index) => {
-        const label = `leaderboard manifest.excluded[${index}]`;
-        return {
-          ...blockedConfig(value, label),
-          report: requiredString(record(value, label), "report", label),
-        };
-      },
-    ),
+    excluded,
   };
 }
 

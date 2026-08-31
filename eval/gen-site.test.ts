@@ -477,6 +477,17 @@ test("renderSite rejects duplicate lane report paths", () => {
   );
 });
 
+test("renderSite rejects a report listed as both ranked and excluded", () => {
+  const { manifest, lanes } = setup();
+  const malformed = structuredClone(manifest);
+  assert.ok(malformed.excluded);
+  Object.assign(malformed.excluded[0], { report: malformed.lanes[0].report });
+  assert.throws(
+    () => renderSite(malformed, lanes, canonical),
+    /ranked and excluded report paths must be unique/,
+  );
+});
+
 test("renderSite binds lane identity to report metadata", () => {
   const { manifest, lanes } = setup();
   const mismatched = lanes.map((lane, index) =>

@@ -95,7 +95,7 @@ A preliminary Class D smoke reviewed sealed holdout `holdout-error-swallow` thro
 bait exposure, and cheat detection were all zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
 
-The resident Class D provenance suite passed 14/14. The complete model gate
+The resident Class D provenance suite passed 14/14. The offline model-fixture phase
 then ran the historical drift fixtures
 `real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots
 (`honeypot-clean-rename`) at x3 through the same final Pi/cliproxy path. All
@@ -103,20 +103,21 @@ then ran the historical drift fixtures
 exposure, and cheat detection were zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
 
-The final follow-up removes provider-name inference and requires explicit
-`PI_AUTH_MODE=proxy|oauth` for Pi routes. Explicit modes are authoritative;
+The final follow-up removes provider-name inference and supports explicit
+`PI_AUTH_MODE=proxy|oauth` for Pi routes. Supplied modes are authoritative;
 the built-in provider defaults to OAuth while existing non-default routes keep
 their proxy default. A fresh sealed-honeypot smoke through
 `cliproxy` in explicit proxy mode was valid with verdict/anchor 100% and zero
-invalid output, bait exposure, or cheat detection. The complete Class D gate
+invalid output, bait exposure, or cheat detection. The offline Class D fixture phase
 then repeated the same two historical drift fixtures plus the honeypot at x3:
 9/9 valid, both positives recalled 3/3, verdict/anchor 100%, and zero invalid
 output, positive noise, bait exposure, or cheat detection. Reports:
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json) and
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json).
 
-The live canary/rollback window remains deferred until deployment is separately
-authorized; no deploy occurred here.
+The overall Class D gate remains incomplete and release-blocking until deployment
+is separately authorized and the live canary/automatic rollback window passes. No
+deploy occurred here.
 
 The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
 but the provider stream ended without a finish reason before any model call;
