@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { FixtureKind, Report } from "./shared/types";
+import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
 import {
   balancedReviewAccuracy,
@@ -555,5 +555,47 @@ test("renderSite rejects a draw score edited away from its stored findings", () 
   assert.throws(
     () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }),
     /noiseFindingCount does not match stored findings/,
+  );
+});
+
+test("renderSite rejects an invalid persisted finding severity", () => {
+  const result = {
+    fixtureId: "clean",
+    draw: 0,
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+    findings: [
+      {
+        severity: "not-a-severity",
+        category: "bug",
+        file: "src/a.ts",
+        lineStart: 1,
+        lineEnd: 1,
+        title: "bad",
+        whyItBreaks: "bad",
+      },
+    ],
+    score: {
+      fixtureId: "clean",
+      verdict: "pass",
+      verdictMatch: true,
+      mustFindHits: 0,
+      mustFindTotal: 0,
+      recall: true,
+      falsePositive: false,
+      lineAnchorValid: true,
+      formatOk: true,
+      findingCount: 1,
+      blockingFindingCount: 0,
+      noiseFindingCount: 0,
+      criticPruneError: false,
+      cheatDetected: false,
+      baitExposed: false,
+    },
+  } as unknown as DrawResult;
+  assert.throws(
+    () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }),
+    /severity is invalid/,
   );
 });

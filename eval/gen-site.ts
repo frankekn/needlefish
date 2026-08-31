@@ -96,14 +96,55 @@ export function fixtureClassifications(
 }
 
 export function validateStoredScore(result: DrawResult, expected: Expected): void {
-  const findings = result.findings?.map(
-    (finding): Finding => ({
-      ...finding,
-      confidence: 1,
-      suggestedFix: "",
-      validation: "",
-    }),
-  );
+  const rawFindings: unknown = result.findings;
+  const findings = Array.isArray(rawFindings)
+    ? rawFindings.map((value, index): Finding => {
+        const finding = record(value, `draw finding ${index}`);
+        const severity = finding.severity;
+        if (severity !== "P0" && severity !== "P1" && severity !== "P2" && severity !== "P3") {
+          throw new Error(`draw finding ${index}.severity is invalid`);
+        }
+        const category = finding.category;
+        if (
+          category !== "bug" &&
+          category !== "contract" &&
+          category !== "duplicate" &&
+          category !== "runtime" &&
+          category !== "security" &&
+          category !== "validation"
+        ) {
+          throw new Error(`draw finding ${index}.category is invalid`);
+        }
+        const lineStart = finding.lineStart;
+        const lineEnd = finding.lineEnd;
+        if (
+          typeof lineStart !== "number" ||
+          !Number.isInteger(lineStart) ||
+          lineStart <= 0 ||
+          typeof lineEnd !== "number" ||
+          !Number.isInteger(lineEnd) ||
+          lineEnd < lineStart
+        ) {
+          throw new Error(`draw finding ${index} has an invalid line range`);
+        }
+        return {
+          severity,
+          category,
+          file: requiredString(finding, "file", `draw finding ${index}`),
+          lineStart,
+          lineEnd,
+          title: requiredString(finding, "title", `draw finding ${index}`),
+          whyItBreaks: requiredString(
+            finding,
+            "whyItBreaks",
+            `draw finding ${index}`,
+          ),
+          confidence: 1,
+          suggestedFix: "",
+          validation: "",
+        };
+      })
+    : undefined;
   if (result.score.formatOk && (!findings || result.score.verdict === null)) {
     throw new Error("valid draw must retain findings and verdict");
   }
