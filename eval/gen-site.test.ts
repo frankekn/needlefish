@@ -103,6 +103,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Release 0\.4\.2 is blocked/);
   assert.match(html, /Tier-2/);
   assert.match(html, /Tier-3/);
+  assert.match(html, /Verdict match/);
   assert.match(html, /Balanced Review Accuracy/);
   assert.match(html, /seed 6ba00010/);
 });

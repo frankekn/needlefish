@@ -90,12 +90,20 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		const i = argv.indexOf(flag);
 		return i >= 0 ? (argv[i + 1] ?? null) : null;
 	};
+	const attestationValue = (flag: string): string | null => {
+		if (!argv.includes(flag)) return null;
+		const value = get(flag);
+		if (!value || value.startsWith("--")) {
+			throw new Error(`${flag} requires a non-empty value`);
+		}
+		return value;
+	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
 	const effort = get("--effort");
-	const provider = get("--provider");
-	const route = get("--route");
-	const runnerVersion = get("--runner-version");
+	const provider = attestationValue("--provider");
+	const route = attestationValue("--route");
+	const runnerVersion = attestationValue("--runner-version");
 	const attestation = [provider, route, runnerVersion];
 	if (
 		attestation.some((value) => value !== null) &&

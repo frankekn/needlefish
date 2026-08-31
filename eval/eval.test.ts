@@ -457,6 +457,14 @@ test("writeReport: records a complete operator attestation", (t) => {
     () => parseArgs(["--provider", "OpenAI"]),
     /must be supplied together/,
   );
+  for (const argv of [
+    ["--provider", "--route", "--runner-version", "v"],
+    ["--provider", "", "--route", "r", "--runner-version", "v"],
+    ["--provider", "p", "--route", "", "--runner-version", "v"],
+    ["--provider", "p", "--route", "r", "--runner-version", ""],
+  ]) {
+    assert.throws(() => parseArgs(argv), /requires a non-empty value/);
+  }
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {
