@@ -207,5 +207,12 @@ test("reconcile dispatches without requiring a checkout", () => {
 	assert.match(
 		reconcileScript,
 		/gh workflow run review\.yml --repo "\$REPO" --ref main/,
-	);
+  );
+});
+
+test("reconcile does not dispatch a workflow into reusable callers", () => {
+	const guard = reconcileScript.indexOf('if [ "$REPO" != "$NEEDLEFISH_REPO" ]');
+	const dispatch = reconcileScript.indexOf("gh workflow run review.yml");
+	assert.ok(guard >= 0 && guard < dispatch);
+	assert.match(reconcileScript, /automatic reconciliation is unavailable for reusable caller/);
 });

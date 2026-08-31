@@ -94,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
@@ -346,6 +347,10 @@ jobs:
           infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
+            exit 0
+          fi
+          if [ "$REPO" != "$NEEDLEFISH_REPO" ]; then
+            echo "::warning::automatic reconciliation is unavailable for reusable caller $REPO; rerun its caller workflow explicitly"
             exit 0
           fi
           gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
