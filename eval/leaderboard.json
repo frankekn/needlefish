@@ -8,6 +8,9 @@
       "provider": "OpenAI Codex",
       "route": "Codex subscription",
       "runnerVersion": "Codex CLI 0.151.0",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "high",
       "status": "Deployed"
     },
     {
@@ -16,6 +19,9 @@
       "provider": "OpenAI Codex",
       "route": "Codex subscription",
       "runnerVersion": "Codex CLI 0.151.0",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "xhigh",
       "status": "Candidate"
     },
     {
@@ -24,6 +30,9 @@
       "provider": "OpenAI Codex",
       "route": "Codex subscription",
       "runnerVersion": "Codex CLI 0.151.0",
+      "runner": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
       "status": "Candidate"
     },
     {
@@ -32,6 +41,9 @@
       "provider": "OpenAI Codex",
       "route": "Codex subscription",
       "runnerVersion": "Codex CLI 0.151.0",
+      "runner": "codex",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
       "status": "Candidate"
     },
     {
@@ -40,6 +52,9 @@
       "provider": "xAI Grok",
       "route": "Grok subscription",
       "runnerVersion": "Grok CLI 1.0.5",
+      "runner": "grok",
+      "model": "grok-4.6",
+      "effort": "xhigh",
       "status": "Candidate"
     },
     {
@@ -48,6 +63,9 @@
       "provider": "Z.AI via CLIProxyAPI",
       "route": "Z.AI coding-plan subscription",
       "runnerVersion": "Pi 0.84.4",
+      "runner": "pi",
+      "model": "zai-cliproxy/glm-5.3-flash",
+      "effort": "max",
       "status": "Candidate"
     },
     {
@@ -56,6 +74,9 @@
       "provider": "DeepSeek",
       "route": "Direct DeepSeek API",
       "runnerVersion": "Pi 0.84.4",
+      "runner": "pi",
+      "model": "deepseek/deepseek-v4-flash-vision-exp",
+      "effort": "max",
       "status": "Candidate"
     }
   ],

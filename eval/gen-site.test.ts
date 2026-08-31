@@ -20,12 +20,16 @@ const report = {
   ) as Report & { fixtureKinds: Readonly<Record<string, FixtureKind>> }),
   scorerHash: scorerHash(),
   gateClass: "R" as const,
+  provider: "Test provider",
+  route: "Test subscription",
+  runnerVersion: "test-runner 1.0.0",
 };
 
 const canonical = {
   fixtureKinds: report.fixtureKinds,
   fixtureTiers: report.fixtureTiers ?? {},
   fixtureSetHash: report.fixtureSetHash ?? "",
+  promptHash: report.promptHash,
 };
 
 function config(reportPath: string, name: string): LaneConfig {
@@ -35,6 +39,9 @@ function config(reportPath: string, name: string): LaneConfig {
     provider: "Test provider",
     route: "Test subscription",
     runnerVersion: "test-runner 1.0.0",
+    runner: report.runner,
+    model: report.model ?? "test-model",
+    effort: report.effort ?? "test-effort",
     status: name === "Deployed" ? "Deployed" : "Candidate",
   };
 }
@@ -141,6 +148,18 @@ test("renderSite rejects reports with a stale fixture-set hash", () => {
         fixtureSetHash: "current-fixture-specs",
       }),
     /fixtureSetHash does not match the current fixture specs/,
+  );
+});
+
+test("renderSite rejects reports with a stale prompt hash", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () =>
+      renderSite(manifest, lanes, {
+        ...canonical,
+        promptHash: "current-prompts",
+      }),
+    /promptHash does not match the current prompts/,
   );
 });
 
@@ -328,6 +347,19 @@ test("renderSite rejects duplicate lane report paths", () => {
   assert.throws(
     () => renderSite(malformed, lanes, canonical),
     /lane report paths must be unique/,
+  );
+});
+
+test("renderSite binds lane identity to report metadata", () => {
+  const { manifest, lanes } = setup();
+  const mismatched = lanes.map((lane, index) =>
+    index === 1
+      ? { ...lane, config: { ...lane.config, model: "different-model" } }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, mismatched, canonical),
+    /model does not match lane metadata/,
   );
 });
 

@@ -2,7 +2,9 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
+import { isRunnerName } from "../src/shared/runner";
 import { isCompleteReport } from "./shared/report-completeness";
+import { promptHash as computePromptHash } from "./shared/prompt-hash";
 import {
   hasConsistentCheatDetection,
   hasCurrentScorer,
@@ -26,6 +28,9 @@ export interface LaneConfig {
   readonly provider: string;
   readonly route: string;
   readonly runnerVersion: string;
+  readonly runner: Report["runner"];
+  readonly model: string;
+  readonly effort: string;
   readonly status: "Deployed" | "Candidate";
 }
 
@@ -57,10 +62,14 @@ export interface FixtureClassifications {
   readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
   readonly fixtureTiers: Readonly<Record<string, number>>;
   readonly fixtureSetHash: string;
+  readonly promptHash: string;
 }
 
 type PublishedReport = Report & {
   readonly fixtureKinds?: Readonly<Record<string, FixtureKind>>;
+  readonly provider?: string;
+  readonly route?: string;
+  readonly runnerVersion?: string;
 };
 
 export function fixtureClassifications(
@@ -74,6 +83,7 @@ export function fixtureClassifications(
         .map((spec) => [spec.id, spec.tier ?? 2]),
     ),
     fixtureSetHash: computeFixtureSetHash(specs),
+    promptHash: computePromptHash(),
   };
 }
 
@@ -329,12 +339,19 @@ export function validateManifest(value: unknown): LeaderboardManifest {
     if (status !== "Deployed" && status !== "Candidate") {
       throw new Error(`${label}.status must be Deployed or Candidate`);
     }
+    const runner = requiredString(lane, "runner", label);
+    if (!isRunnerName(runner)) {
+      throw new Error(`${label}.runner is invalid`);
+    }
     return {
       report: requiredString(lane, "report", label),
       name: requiredString(lane, "name", label),
       provider: requiredString(lane, "provider", label),
       route: requiredString(lane, "route", label),
       runnerVersion: requiredString(lane, "runnerVersion", label),
+      runner,
+      model: requiredString(lane, "model", label),
+      effort: requiredString(lane, "effort", label),
       status,
     };
   });
@@ -400,6 +417,16 @@ function validateLane(lane: Lane): void {
   if (report.aggregates.cheatDetectedCount !== 0) fail("anti-cheat detection fired");
   if (!report.runner || !report.model || !report.effort || !report.gitSha) {
     fail("runner, model, effort, and git SHA are required");
+  }
+  for (const [name, actual, expected] of [
+    ["runner", report.runner, config.runner],
+    ["model", report.model, config.model],
+    ["effort", report.effort, config.effort],
+    ["provider", report.provider, config.provider],
+    ["route", report.route, config.route],
+    ["runner version", report.runnerVersion, config.runnerVersion],
+  ] as const) {
+    if (actual !== expected) fail(`${name} does not match lane metadata`);
   }
   if (!report.createdAt || Number.isNaN(Date.parse(report.createdAt))) {
     fail("a valid creation date is required");
@@ -503,6 +530,11 @@ function validateComparability(
     if (lane.report.fixtureSetHash !== canonical.fixtureSetHash) {
       throw new Error(
         `${lane.config.report}: fixtureSetHash does not match the current fixture specs`,
+      );
+    }
+    if (lane.report.promptHash !== canonical.promptHash) {
+      throw new Error(
+        `${lane.config.report}: promptHash does not match the current prompts`,
       );
     }
     for (const field of ["promptHash", "fixtureSetHash", "scorerHash", "anticheatVersion"] as const) {
