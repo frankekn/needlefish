@@ -198,3 +198,48 @@ test("renderSite derives Tier-1 qualification from draw results", () => {
     /Tier-1 recall does not match draw results/,
   );
 });
+
+test("renderSite rejects fixture classification drift", () => {
+  const { manifest, lanes } = setup();
+  const fixtureId = Object.entries(report.fixtureTiers ?? {}).find(
+    ([, tier]) => tier === 2,
+  )?.[0];
+  assert.ok(fixtureId);
+  const changed = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            fixtureTiers: { ...lane.report.fixtureTiers, [fixtureId]: 3 },
+          },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, changed),
+    /fixture classifications do not match the baseline/,
+  );
+});
+
+test("renderSite validates displayed aggregates against draws", () => {
+  const { manifest, lanes } = setup();
+  const changed = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            aggregates: {
+              ...lane.report.aggregates,
+              falsePositiveRate: lane.report.aggregates.falsePositiveRate + 0.01,
+            },
+          },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, changed),
+    /false-positive rate does not match draw results/,
+  );
+});

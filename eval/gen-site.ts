@@ -71,12 +71,14 @@ function percent(value: number, digits = 1): string {
 function reviewRates(report: PublishedReport): {
   readonly recall: number;
   readonly specificity: number;
+  readonly falsePositiveRate: number;
 } {
   if (!report.fixtureKinds) throw new Error("fixture kinds are required");
   let positives = 0;
   let truePositives = 0;
   let negatives = 0;
   let trueNegatives = 0;
+  let falsePositives = 0;
   for (const result of report.results) {
     const kind = report.fixtureKinds[result.fixtureId];
     if (kind === "positive") {
@@ -84,6 +86,7 @@ function reviewRates(report: PublishedReport): {
       if (result.score.recall) truePositives += 1;
     } else if (kind === "negative") {
       negatives += 1;
+      if (result.score.falsePositive) falsePositives += 1;
       if (result.score.formatOk && !result.score.falsePositive) {
         trueNegatives += 1;
       }
@@ -97,6 +100,7 @@ function reviewRates(report: PublishedReport): {
   return {
     recall: truePositives / positives,
     specificity: trueNegatives / negatives,
+    falsePositiveRate: falsePositives / negatives,
   };
 }
 
@@ -125,12 +129,45 @@ function tierOneRecall(report: PublishedReport): number {
   return hits / total;
 }
 
+function displayedMetrics(report: PublishedReport): {
+  readonly recall: number;
+  readonly falsePositiveRate: number;
+  readonly invalidJsonRate: number;
+  readonly verdictMatchRate: number;
+  readonly meanDurationMs: number;
+} {
+  const { recall, falsePositiveRate } = reviewRates(report);
+  return {
+    recall,
+    falsePositiveRate,
+    invalidJsonRate:
+      report.results.filter((result) => !result.score.formatOk).length /
+      report.results.length,
+    verdictMatchRate:
+      report.results.filter((result) => result.score.verdictMatch).length /
+      report.results.length,
+    meanDurationMs:
+      report.results.reduce((sum, result) => sum + result.durationMs, 0) /
+      report.results.length,
+  };
+}
+
+function sameRecord(
+  left: Readonly<Record<string, unknown>> | undefined,
+  right: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+  const leftEntries = Object.entries(left ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const rightEntries = Object.entries(right ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
+}
+
 function compareLanes(a: Lane, b: Lane): number {
+  const aMetrics = displayedMetrics(a.report);
+  const bMetrics = displayedMetrics(b.report);
   return (
     balancedReviewAccuracy(b.report) - balancedReviewAccuracy(a.report) ||
-    b.report.aggregates.recall - a.report.aggregates.recall ||
-    a.report.aggregates.falsePositiveRate -
-      b.report.aggregates.falsePositiveRate
+    bMetrics.recall - aMetrics.recall ||
+    aMetrics.falsePositiveRate - bMetrics.falsePositiveRate
   );
 }
 
@@ -193,6 +230,18 @@ function validateLane(lane: Lane): void {
   if (Math.abs(report.aggregates.recallByTier.t1 - tierOneRecall(report)) > 1e-12) {
     fail("Tier-1 recall does not match draw results");
   }
+  const derived = displayedMetrics(report);
+  for (const [name, stored, computed] of [
+    ["recall", report.aggregates.recall, derived.recall],
+    ["false-positive rate", report.aggregates.falsePositiveRate, derived.falsePositiveRate],
+    ["invalid-output rate", report.aggregates.invalidJsonRate, derived.invalidJsonRate],
+    ["verdict-match rate", report.aggregates.verdictMatchRate, derived.verdictMatchRate],
+    ["mean duration", report.aggregates.meanDurationMs, derived.meanDurationMs],
+  ] as const) {
+    if (Math.abs(stored - computed) > 1e-12) {
+      fail(`${name} does not match draw results`);
+    }
+  }
   if (
     typeof report.aggregates.meanDurationMs !== "number" ||
     !Number.isFinite(report.aggregates.meanDurationMs) ||
@@ -210,6 +259,14 @@ function validateComparability(lanes: readonly Lane[], baselinePath: string): La
     if (!isCompleteReport(lane.report, baseline.report.fixtures)) {
       throw new Error(
         `${lane.config.report}: fixture manifest does not match the baseline`,
+      );
+    }
+    if (
+      !sameRecord(lane.report.fixtureKinds, baseline.report.fixtureKinds) ||
+      !sameRecord(lane.report.fixtureTiers, baseline.report.fixtureTiers)
+    ) {
+      throw new Error(
+        `${lane.config.report}: fixture classifications do not match the baseline`,
       );
     }
     for (const field of ["promptHash", "fixtureSetHash", "scorerHash", "anticheatVersion"] as const) {
@@ -233,15 +290,19 @@ function chart(lanes: readonly Lane[]): string {
   const right = 24;
   const top = 32;
   const bottom = 54;
-  const recalls = lanes.map(({ report }) => report.aggregates.recall);
+  const recalls = lanes.map(({ report }) => displayedMetrics(report).recall);
   const xMin = Math.max(0, Math.min(...recalls) - 0.05);
-  const yMax = Math.max(0.02, ...lanes.map(({ report }) => report.aggregates.falsePositiveRate));
+  const yMax = Math.max(
+    0.02,
+    ...lanes.map(({ report }) => displayedMetrics(report).falsePositiveRate),
+  );
   const x = (value: number) => left + ((value - xMin) / (1 - xMin)) * (width - left - right);
   const y = (value: number) => top + (value / yMax) * (height - top - bottom);
   const points = lanes
     .map(({ config, report }, index) => {
-      const px = x(report.aggregates.recall);
-      const py = y(report.aggregates.falsePositiveRate);
+      const metrics = displayedMetrics(report);
+      const px = x(metrics.recall);
+      const py = y(metrics.falsePositiveRate);
       const anchor = px > width - 170 ? "end" : "start";
       const dx = anchor === "end" ? -12 : 12;
       return `<g><circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="7" class="point point-${index}"/><text x="${(px + dx).toFixed(1)}" y="${(py - 10).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(config.name)}</text></g>`;
@@ -253,12 +314,12 @@ function chart(lanes: readonly Lane[]): string {
 function laneRows(lanes: readonly Lane[], ranked: boolean): string {
   return lanes
     .map(({ config, report }, index) => {
-      const a = report.aggregates;
+      const metrics = displayedMetrics(report);
       const t1 = tierOneRecall(report);
       const tierOneMiss = t1 !== undefined && t1 < 1;
       const rank = ranked ? String(index + 1) : "—";
       const status = tierOneMiss ? "Disqualified: Tier-1 miss" : config.status;
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(a.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${t1 === undefined ? "—" : percent(t1)}</td><td class="number">${percent(a.falsePositiveRate)}</td><td class="number">${percent(a.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(a.meanDurationMs / 1000)}s</td></tr>`;
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${t1 === undefined ? "—" : percent(t1)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
     })
     .join("");
 }
