@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadFixtures } from "./run";
 import { isCompleteReport } from "./shared/report-completeness";
 import {
   hasConsistentCheatDetection,
@@ -9,6 +10,7 @@ import {
 import {
   ANTICHEAT_VERSION,
   type FixtureKind,
+  type FixtureSpec,
   type Report,
 } from "./shared/types";
 
@@ -51,9 +53,27 @@ export interface Lane {
   readonly report: PublishedReport;
 }
 
+export interface FixtureClassifications {
+  readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+  readonly fixtureTiers: Readonly<Record<string, number>>;
+}
+
 type PublishedReport = Report & {
   readonly fixtureKinds?: Readonly<Record<string, FixtureKind>>;
 };
+
+export function fixtureClassifications(
+  specs: readonly FixtureSpec[],
+): FixtureClassifications {
+  return {
+    fixtureKinds: Object.fromEntries(specs.map((spec) => [spec.id, spec.kind])),
+    fixtureTiers: Object.fromEntries(
+      specs
+        .filter((spec) => spec.kind === "positive")
+        .map((spec) => [spec.id, spec.tier ?? 2]),
+    ),
+  };
+}
 
 function escapeHtml(value: unknown): string {
   return String(value)
@@ -161,6 +181,92 @@ function sameRecord(
   return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
 }
 
+function mean(values: readonly number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sampleVariance(values: readonly number[]): number {
+  if (values.length < 2) return 0;
+  const average = mean(values);
+  return (
+    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
+    (values.length - 1)
+  );
+}
+
+function fixtureOutcomes(
+  report: PublishedReport,
+  kind: "positive" | "negative",
+): number[] {
+  if (!report.fixtures || !report.fixtureKinds) {
+    throw new Error("fixture manifest and kinds are required");
+  }
+  return report.fixtures
+    .filter((fixtureId) => report.fixtureKinds?.[fixtureId] === kind)
+    .sort()
+    .map((fixtureId) => {
+      const draws = report.results.filter((result) => result.fixtureId === fixtureId);
+      return mean(
+        draws.map((result) =>
+          kind === "positive"
+            ? Number(result.score.recall)
+            : Number(result.score.formatOk && !result.score.falsePositive),
+        ),
+      );
+    });
+}
+
+function scoreStandardError(report: PublishedReport): number {
+  const positives = fixtureOutcomes(report, "positive");
+  const negatives = fixtureOutcomes(report, "negative");
+  return (
+    0.5 *
+    Math.sqrt(
+      sampleVariance(positives) / positives.length +
+      sampleVariance(negatives) / negatives.length,
+    )
+  );
+}
+
+function scoreConfidenceInterval(report: PublishedReport): readonly [number, number] {
+  const score = balancedReviewAccuracy(report);
+  const margin = 1.96 * scoreStandardError(report);
+  return [Math.max(0, score - margin), Math.min(1, score + margin)];
+}
+
+function statisticallyTied(left: PublishedReport, right: PublishedReport): boolean {
+  const leftPositive = fixtureOutcomes(left, "positive");
+  const rightPositive = fixtureOutcomes(right, "positive");
+  const leftNegative = fixtureOutcomes(left, "negative");
+  const rightNegative = fixtureOutcomes(right, "negative");
+  const positiveDifferences = leftPositive.map(
+    (value, index) => value - rightPositive[index],
+  );
+  const negativeDifferences = leftNegative.map(
+    (value, index) => value - rightNegative[index],
+  );
+  const standardError =
+    0.5 *
+    Math.sqrt(
+      sampleVariance(positiveDifferences) / positiveDifferences.length +
+      sampleVariance(negativeDifferences) / negativeDifferences.length,
+    );
+  return (
+    Math.abs(balancedReviewAccuracy(left) - balancedReviewAccuracy(right)) <=
+    1.96 * standardError
+  );
+}
+
+export function statisticalRanks(lanes: readonly Lane[]): number[] {
+  let groupStart = 0;
+  return lanes.map((lane, index) => {
+    if (index > 0 && !statisticallyTied(lanes[groupStart].report, lane.report)) {
+      groupStart = index;
+    }
+    return groupStart + 1;
+  });
+}
+
 function compareLanes(a: Lane, b: Lane): number {
   const aMetrics = displayedMetrics(a.report);
   const bMetrics = displayedMetrics(b.report);
@@ -216,6 +322,33 @@ function validateLane(lane: Lane): void {
   }
   if (!report.fixtureKinds) fail("fixture kinds are required");
   if (!report.fixtureTiers) fail("fixture tiers are required");
+  for (const rawResult of report.results as readonly unknown[]) {
+    if (typeof rawResult !== "object" || rawResult === null) {
+      fail("draw result must be an object");
+    }
+    const score = (rawResult as { score?: unknown }).score;
+    if (typeof score !== "object" || score === null) {
+      fail("draw score must be an object");
+    }
+    for (const field of [
+      "recall",
+      "falsePositive",
+      "formatOk",
+      "verdictMatch",
+    ] as const) {
+      if (typeof (score as Record<string, unknown>)[field] !== "boolean") {
+        fail(`draw score ${field} must be boolean`);
+      }
+    }
+    const durationMs = (rawResult as { durationMs?: unknown }).durationMs;
+    if (
+      typeof durationMs !== "number" ||
+      !Number.isFinite(durationMs) ||
+      durationMs < 0
+    ) {
+      fail("draw duration must be a finite non-negative number");
+    }
+  }
   for (const [name, value] of [
     ["recall", report.aggregates.recall],
     ["Tier-1 recall", report.aggregates.recallByTier?.t1],
@@ -251,7 +384,11 @@ function validateLane(lane: Lane): void {
   }
 }
 
-function validateComparability(lanes: readonly Lane[], baselinePath: string): Lane {
+function validateComparability(
+  lanes: readonly Lane[],
+  baselinePath: string,
+  canonical: FixtureClassifications,
+): Lane {
   for (const lane of lanes) validateLane(lane);
   const baseline = lanes.find(({ config }) => config.report === baselinePath);
   if (!baseline) throw new Error(`baseline is not a configured lane: ${baselinePath}`);
@@ -262,11 +399,11 @@ function validateComparability(lanes: readonly Lane[], baselinePath: string): La
       );
     }
     if (
-      !sameRecord(lane.report.fixtureKinds, baseline.report.fixtureKinds) ||
-      !sameRecord(lane.report.fixtureTiers, baseline.report.fixtureTiers)
+      !sameRecord(lane.report.fixtureKinds, canonical.fixtureKinds) ||
+      !sameRecord(lane.report.fixtureTiers, canonical.fixtureTiers)
     ) {
       throw new Error(
-        `${lane.config.report}: fixture classifications do not match the baseline`,
+        `${lane.config.report}: fixture classifications do not match the fixture specs`,
       );
     }
     for (const field of ["promptHash", "fixtureSetHash", "scorerHash", "anticheatVersion"] as const) {
@@ -312,20 +449,22 @@ function chart(lanes: readonly Lane[]): string {
 }
 
 function laneRows(lanes: readonly Lane[], ranked: boolean): string {
+  const ranks = ranked ? statisticalRanks(lanes) : [];
   return lanes
     .map(({ config, report }, index) => {
       const metrics = displayedMetrics(report);
       const t1 = tierOneRecall(report);
       const tierOneMiss = t1 !== undefined && t1 < 1;
-      const rank = ranked ? String(index + 1) : "—";
+      const rank = ranked ? String(ranks[index]) : "—";
       const status = tierOneMiss ? "Disqualified: Tier-1 miss" : config.status;
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${t1 === undefined ? "—" : percent(t1)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
+      const [lower, upper] = scoreConfidenceInterval(report);
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${t1 === undefined ? "—" : percent(t1)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
     })
     .join("");
 }
 
 function laneTable(lanes: readonly Lane[], label: string, ranked: boolean): string {
-  return `<div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th>Rank</th><th>Model</th><th class="number">Balanced score</th><th>Status</th><th class="number">Recall</th><th class="number">Usable specificity</th><th class="number">Tier-1</th><th class="number">False positive</th><th class="number">Invalid</th><th>Harness</th><th>Provider / route</th><th>Effort</th><th class="number">Mean time</th></tr></thead><tbody>${laneRows(lanes, ranked)}</tbody></table></div>`;
+  return `<div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th>Rank</th><th>Model</th><th class="number">Balanced score</th><th class="number">95% CI</th><th>Status</th><th class="number">Recall</th><th class="number">Usable specificity</th><th class="number">Tier-1</th><th class="number">False positive</th><th class="number">Invalid</th><th>Harness</th><th>Provider / route</th><th>Effort</th><th class="number">Mean time</th></tr></thead><tbody>${laneRows(lanes, ranked)}</tbody></table></div>`;
 }
 
 function blockedRows(blocked: readonly BlockedConfig[]): string {
@@ -340,8 +479,12 @@ function excludedRows(excluded: readonly ExcludedConfig[]): string {
     .join("");
 }
 
-export function renderSite(manifest: LeaderboardManifest, configured: readonly Lane[]): string {
-  const baseline = validateComparability(configured, manifest.baseline);
+export function renderSite(
+  manifest: LeaderboardManifest,
+  configured: readonly Lane[],
+  canonical: FixtureClassifications,
+): string {
+  const baseline = validateComparability(configured, manifest.baseline, canonical);
   const qualified = configured
     .filter(({ report }) => tierOneRecall(report) === 1)
     .sort(compareLanes);
@@ -389,7 +532,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Disqualified</h2><p class="intro">These complete reports missed at least one Tier-1 defect. Their balanced scores remain visible, but they receive no rank.</p>${laneTable(disqualified, "Disqualified model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(manifest.excluded)}</ul></div></section>` : ""}
-<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Exact score ties favor higher recall, then lower false-positive rate. A Tier-1 miss overrides the score and disqualifies the lane. Verdict match, invalid rate, and speed remain separate diagnostics. Scores are point estimates across three draws; small gaps are not proof of statistical separation.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect disqualifies a lane regardless of its average.</p><h3>False positives</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Lower is better.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
+<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Statistically unresolved lanes share a rank using a paired 95% normal interval over fixture outcomes; the table also shows each lane's 95% interval. A Tier-1 miss overrides the score and disqualifies the lane. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect disqualifies a lane regardless of its average.</p><h3>False positives</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Lower is better.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
 <footer class="shell"><span>Needlefish — strict local PR review.</span><span><a href="${REPO_URL}">Use Needlefish</a> · <a href="${REPO_URL}/blob/main/LICENSE">MIT License</a></span></footer>
 </body>
 </html>`;
@@ -399,7 +542,8 @@ const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileUR
 if (isMain) {
   const manifest = readManifest();
   const lanes = manifest.lanes.map(readLane);
+  const canonical = fixtureClassifications(await loadFixtures(null));
   mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  writeFileSync(OUTPUT_PATH, renderSite(manifest, lanes));
+  writeFileSync(OUTPUT_PATH, renderSite(manifest, lanes, canonical));
   process.stderr.write(`wrote ${path.relative(REPO_ROOT, OUTPUT_PATH)} (${lanes.length} lanes)\n`);
 }

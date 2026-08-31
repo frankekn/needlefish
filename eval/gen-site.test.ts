@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { Report } from "./shared/types";
+import type { FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
 import {
   balancedReviewAccuracy,
   renderSite,
+  statisticalRanks,
   type Lane,
   type LaneConfig,
   type LeaderboardManifest,
@@ -15,9 +16,14 @@ import {
 const report = {
   ...(JSON.parse(
     readFileSync("eval/results/weekly/2026-08-23.json", "utf8"),
-  ) as Report),
+  ) as Report & { fixtureKinds: Readonly<Record<string, FixtureKind>> }),
   scorerHash: scorerHash(),
   gateClass: "R" as const,
+};
+
+const canonical = {
+  fixtureKinds: report.fixtureKinds,
+  fixtureTiers: report.fixtureTiers ?? {},
 };
 
 function config(reportPath: string, name: string): LaneConfig {
@@ -66,7 +72,7 @@ function setup(): { manifest: LeaderboardManifest; lanes: Lane[] } {
 
 test("renderSite publishes comparable lanes and blocked routes", () => {
   const { manifest, lanes } = setup();
-  const html = renderSite(manifest, lanes);
+  const html = renderSite(manifest, lanes, canonical);
   assert.match(html, /Current leaderboard/);
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
@@ -119,7 +125,7 @@ test("renderSite rejects a lane with a different fixture set", () => {
       : lane,
   );
   assert.throws(
-    () => renderSite(manifest, mismatched),
+    () => renderSite(manifest, mismatched, canonical),
     /fixtureSetHash does not match the baseline/,
   );
 });
@@ -132,7 +138,7 @@ test("renderSite rejects a reduced-contract lane", () => {
       : lane,
   );
   assert.throws(
-    () => renderSite(manifest, reduced),
+    () => renderSite(manifest, reduced, canonical),
     /public lanes require gate class R/,
   );
 });
@@ -167,7 +173,7 @@ test("renderSite rejects different fixture IDs with matching hashes", () => {
       : lane,
   );
   assert.throws(
-    () => renderSite(manifest, changed),
+    () => renderSite(manifest, changed, canonical),
     /fixture manifest does not match the baseline/,
   );
 });
@@ -194,31 +200,42 @@ test("renderSite derives Tier-1 qualification from draw results", () => {
       : lane,
   );
   assert.throws(
-    () => renderSite(manifest, changed),
+    () => renderSite(manifest, changed, canonical),
     /Tier-1 recall does not match draw results/,
   );
 });
 
-test("renderSite rejects fixture classification drift", () => {
+test("renderSite rejects fixture classification drift in every lane", () => {
   const { manifest, lanes } = setup();
-  const fixtureId = Object.entries(report.fixtureTiers ?? {}).find(
-    ([, tier]) => tier === 2,
-  )?.[0];
+  const fixtureId = report.results.find(
+    (result) =>
+      report.fixtureTiers?.[result.fixtureId] === 1 && !result.score.recall,
+  )?.fixtureId;
   assert.ok(fixtureId);
-  const changed = lanes.map((lane, index) =>
-    index === 1
-      ? {
-          ...lane,
-          report: {
-            ...lane.report,
-            fixtureTiers: { ...lane.report.fixtureTiers, [fixtureId]: 3 },
-          },
-        }
-      : lane,
+  const remainingTierOne = report.results.filter(
+    (result) =>
+      report.fixtureTiers?.[result.fixtureId] === 1 &&
+      result.fixtureId !== fixtureId,
   );
+  const changed = lanes.map((lane) => ({
+    ...lane,
+    report: {
+      ...lane.report,
+      fixtureTiers: { ...lane.report.fixtureTiers, [fixtureId]: 2 },
+      aggregates: {
+        ...lane.report.aggregates,
+        recallByTier: {
+          ...lane.report.aggregates.recallByTier,
+          t1:
+            remainingTierOne.filter((result) => result.score.recall).length /
+            remainingTierOne.length,
+        },
+      },
+    },
+  }));
   assert.throws(
-    () => renderSite(manifest, changed),
-    /fixture classifications do not match the baseline/,
+    () => renderSite(manifest, changed, canonical),
+    /fixture classifications do not match the fixture specs/,
   );
 });
 
@@ -239,7 +256,29 @@ test("renderSite validates displayed aggregates against draws", () => {
       : lane,
   );
   assert.throws(
-    () => renderSite(manifest, changed),
+    () => renderSite(manifest, changed, canonical),
     /false-positive rate does not match draw results/,
   );
+});
+
+test("renderSite rejects truthy strings in per-draw boolean fields", () => {
+  const { manifest, lanes } = setup();
+  const changed = lanes.map((lane, index) => {
+    if (index !== 1) return lane;
+    const malformed = structuredClone(lane.report);
+    Object.assign(malformed.results[0].score, {
+      recall: "false",
+      formatOk: "false",
+    });
+    return { ...lane, report: malformed };
+  });
+  assert.throws(
+    () => renderSite(manifest, changed, canonical),
+    /draw score recall must be boolean/,
+  );
+});
+
+test("statisticalRanks ties unresolved lanes", () => {
+  const { lanes } = setup();
+  assert.deepEqual(statisticalRanks(lanes), [1, 1, 1]);
 });

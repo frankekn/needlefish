@@ -65,6 +65,7 @@ function runDeploy({
   needlefishRef = verifiedSha,
   mainTip = verifiedSha,
   lsRemoteFails = false,
+  unreleased = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-ci-deploy-"));
   const fakeBin = join(root, "fake-bin");
@@ -72,6 +73,11 @@ function runDeploy({
   const deployLog = join(root, "deploy.log");
   mkdirSync(fakeBin);
   mkdirSync(scriptsDir);
+  writeFileSync(join(root, "package.json"), '{"version":"0.4.2"}\n');
+  writeFileSync(
+    join(root, "CHANGELOG.md"),
+    unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n",
+  );
   writeFileSync(
     join(fakeBin, "git"),
     `#!/usr/bin/env bash
@@ -185,6 +191,15 @@ test("automatic deploy skips when main has moved and still deploys the verified 
   const recovery = runDeploy({ eventName: "workflow_dispatch", mainTip: laterSha });
   assert.equal(recovery.status, 0, recovery.stderr);
   assert.equal(recovery.deployLog, `deployed:${verifiedSha}\n`);
+
+  const unreleased = runDeploy({ unreleased: true });
+  assert.equal(unreleased.status, 0, unreleased.stderr);
+  assert.match(unreleased.stdout, /Skipping automatic deploy of unreleased version 0\.4\.2/);
+  assert.equal(unreleased.deployLog, "");
+
+  const manualUnreleased = runDeploy({ eventName: "workflow_dispatch", unreleased: true });
+  assert.equal(manualUnreleased.status, 0, manualUnreleased.stderr);
+  assert.equal(manualUnreleased.deployLog, `deployed:${verifiedSha}\n`);
 
   const missingTip = runDeploy({ mainTip: "" });
   assert.notEqual(missingTip.status, 0);

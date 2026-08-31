@@ -180,16 +180,16 @@ secondary diagnostic.
 ## Effect on the completed qualified lanes
 
 Using the current published aggregates, both standard two-factor candidates
-preserve the qualified ordering. Values below are illustrative policy
-comparisons, not replacement official scores.
+preserve the point-estimate ordering. The official ranks below tie lanes whose
+paired 95% interval includes zero. Values are illustrative policy comparisons.
 
 | Rank | Lane | Balanced accuracy | Standard G-mean |
 | ---: | --- | ---: | ---: |
 | 1 | DeepSeek V4 Flash Vision Exp max | 94.72% | 94.69% |
-| 2 | Grok 4.6 xhigh | 94.58% | 94.50% |
-| 3 | GLM-5.3-Flash max | 94.44% | 94.28% |
+| 1 | Grok 4.6 xhigh | 94.58% | 94.50% |
+| 1 | GLM-5.3-Flash max | 94.44% | 94.28% |
 | 4 | GPT-5.6 Sol medium | 88.06% | 88.03% |
-| 5 | GPT-5.6 Terra xhigh | 87.64% | 87.64% |
+| 4 | GPT-5.6 Terra xhigh | 87.64% | 87.64% |
 
 Terra high and Luna max remain disqualified and receive no rank under every
 proposal because Tier-1 recall is below 100%.

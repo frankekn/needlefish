@@ -11,32 +11,32 @@ As of 2026-09-01, the deployed **Codex `gpt-5.6-terra` at high effort** lane
 misses the current Tier-1 gate and is disqualified. Release 0.4.2 is blocked
 until this lane is re-qualified or a qualified replacement is selected; this
 change does not make that product decision.
-DeepSeek V4 Flash Vision Exp leads the completed comparison; Grok 4.6 is
-second, and GLM-5.3-Flash is third after its perfect specificity lifts its
-balanced review score. Terra high and Luna max miss Tier-1
-defects and receive no rank.
+DeepSeek V4 Flash Vision Exp has the highest point estimate, but it, Grok 4.6,
+and GLM-5.3-Flash are statistically unresolved and share rank 1. GPT-5.6 Sol
+and Terra xhigh share rank 4. Terra high and Luna max miss Tier-1 defects and
+receive no rank.
 
 Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
 specificity. Invalid model output cannot count as a correct result, so it is
 counted once. Tier-1 recall is a hard gate; validity, verdict match, and speed
-remain separate diagnostics. Exact score ties favor higher recall, then lower
-false-positive rate. Scores are point estimates across three draws; small gaps
-do not establish statistical separation.
+remain separate diagnostics. Statistically unresolved lanes share a rank using
+a paired 95% normal interval over fixture outcomes; each row also shows its
+lane-level 95% interval.
 
-| Rank | Model | Harness | Provider route | Effort | Balanced | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
-| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | [DeepSeek V4 Flash Vision Exp](results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.84.4 | Direct DeepSeek API | max | 94.72% | 92.22% | 97.22% | 100% | 2.78% | 0.39% | 96.90% | 116.0s |
-| 2 | [Grok 4.6](results/2026-08-31-grok-grok46-xhigh-x3-rerun.json) | Grok CLI 1.0.5 | Grok subscription | xhigh | 94.58% | 90.56% | 98.61% | 100% | 1.39% | 0.39% | 96.51% | 228.4s |
-| 3 | [GLM-5.3-Flash](results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json) | Pi 0.84.4 | Z.AI coding-plan subscription | max | 94.44% | 88.89% | 100% | 100% | 0% | 0% | 92.64% | 143.0s |
-| 4 | [GPT-5.6 Sol](results/2026-08-31-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.151.0 | Codex subscription | medium | 88.06% | 90.00% | 86.11% | 100% | 13.89% | 0% | 93.41% | 67.9s |
-| 5 | [GPT-5.6 Terra](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.151.0 | Codex subscription | xhigh | 87.64% | 87.78% | 87.50% | 100% | 12.50% | 0% | 93.80% | 75.1s |
+| Rank | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | [DeepSeek V4 Flash Vision Exp](results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.84.4 | Direct DeepSeek API | max | 94.72% | 90.64–98.81% | 92.22% | 97.22% | 100% | 2.78% | 0.39% | 96.90% | 116.0s |
+| 1 | [Grok 4.6](results/2026-08-31-grok-grok46-xhigh-x3-rerun.json) | Grok CLI 1.0.5 | Grok subscription | xhigh | 94.58% | 91.01–98.16% | 90.56% | 98.61% | 100% | 1.39% | 0.39% | 96.51% | 228.4s |
+| 1 | [GLM-5.3-Flash](results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json) | Pi 0.84.4 | Z.AI coding-plan subscription | max | 94.44% | 91.00–97.89% | 88.89% | 100% | 100% | 0% | 0% | 92.64% | 143.0s |
+| 4 | [GPT-5.6 Sol](results/2026-08-31-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.151.0 | Codex subscription | medium | 88.06% | 80.46–95.65% | 90.00% | 86.11% | 100% | 13.89% | 0% | 93.41% | 67.9s |
+| 4 | [GPT-5.6 Terra](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.151.0 | Codex subscription | xhigh | 87.64% | 80.53–94.75% | 87.78% | 87.50% | 100% | 12.50% | 0% | 93.80% | 75.1s |
 
 Disqualified — not ranked:
 
-| Model | Harness | Provider route | Effort | Balanced | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| [GPT-5.6 Luna](results/2026-08-31-codex-gpt56-luna-max-x3.json) | Codex CLI 0.151.0 | Codex subscription | max | 88.19% | 88.89% | 87.50% | 85.71% | 9.72% | 0.78% | 94.19% | 151.5s |
-| [GPT-5.6 Terra](results/2026-08-30-codex-gpt56-terra-high-x3.json) | Codex CLI 0.151.0 | Codex subscription | high | 88.19% | 83.33% | 93.06% | 90.48% | 5.56% | 0.39% | 93.80% | 54.7s |
+| Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [GPT-5.6 Luna](results/2026-08-31-codex-gpt56-luna-max-x3.json) | Codex CLI 0.151.0 | Codex subscription | max | 88.19% | 81.18–95.21% | 88.89% | 87.50% | 85.71% | 9.72% | 0.78% | 94.19% | 151.5s |
+| [GPT-5.6 Terra](results/2026-08-30-codex-gpt56-terra-high-x3.json) | Codex CLI 0.151.0 | Codex subscription | high | 88.19% | 81.89–94.49% | 83.33% | 93.06% | 90.48% | 5.56% | 0.39% | 93.80% | 54.7s |
 
 All ranked reports contain 86 fixtures × 3 draws, include sealed holdouts, and
 use prompt `e62d0889fc704541`, fixture set `e4969c9fdc2e3497`, scorer

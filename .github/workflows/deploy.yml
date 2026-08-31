@@ -81,5 +81,10 @@ jobs:
               echo "Skipping deploy of $NEEDLEFISH_REF because origin/main is now $tip"
               exit 0
             fi
+            version="$(node -p "require('./package.json').version")"
+            if grep -Fq "## $version — Unreleased" CHANGELOG.md; then
+              echo "Skipping automatic deploy of unreleased version $version"
+              exit 0
+            fi
           fi
           scripts/deploy-ubuntu.sh
