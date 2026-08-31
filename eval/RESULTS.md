@@ -87,11 +87,21 @@ Commit `6b54c9f` makes proxy providers stage only `models.json`, while other
 non-default Pi providers fail closed unless both `models.json` and `auth.json`
 exist. Focused ephemeral-HOME tests pass.
 
-A Class D smoke then reviewed sealed holdout `holdout-error-swallow` through Pi
+A preliminary Class D smoke reviewed sealed holdout `holdout-error-swallow` through Pi
 0.84.4, `cliproxy`, and `gpt-5.5` at max effort. It produced one valid draw in
 62.5s with recall, verdict match, and anchor validity all 100%; invalid output,
 bait exposure, and cheat detection were all zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
+
+The resident Class D provenance suite passed 14/14. The complete model gate
+then ran the historical drift fixtures
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots
+(`honeypot-clean-rename`) at x3 through the same final Pi/cliproxy path. All
+9/9 draws were valid; both positives recalled 3/3; invalid output, bait
+exposure, and cheat detection were zero. Report:
+[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
+The live canary/rollback window remains deferred until deployment is separately
+authorized; no deploy occurred here.
 
 The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
 but the provider stream ended without a finish reason before any model call;
