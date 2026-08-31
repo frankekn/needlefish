@@ -357,6 +357,20 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		for (const [name, recorded, requested] of [
+			["runner", existing.runner, args.runner],
+			["model", existing.model, args.model],
+			["effort", existing.effort, args.effort],
+			["provider", existing.provider ?? null, args.provider],
+			["route", existing.route ?? null, args.route],
+			["runner version", existing.runnerVersion ?? null, args.runnerVersion],
+		] as const) {
+			if (recorded === requested) continue;
+			process.stderr.write(
+				`resume: ${name} mismatch (${recorded ?? "none"} vs ${requested ?? "none"}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
 		// A fired trap voids the whole report (see cheatAlert) — none of its
 		// draws may seed a fresh one. Fail closed on a MISSING count too:
 		// unvalidated JSON, and absence of the canary result cannot establish

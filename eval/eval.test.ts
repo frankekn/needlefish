@@ -849,6 +849,32 @@ test("resumeSlots: refuses a missing or mismatched scorerHash", () => {
   }
 });
 
+test("resumeSlots: refuses draws recorded under another lane identity", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-identity-resume-"));
+  const resumePath = path.join(dir, "report.json");
+  const spec = holdoutSpec("identity-resume", false);
+  const existing = resumeReport(spec, {
+    anticheatVersion: 2,
+    provider: "Provider A",
+    route: "Subscription A",
+    runnerVersion: "runner 1",
+  });
+  writeFileSync(resumePath, JSON.stringify(existing));
+  try {
+    const args = parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--provider", "Provider B",
+      "--route", "Subscription A",
+      "--runner-version", "runner 1",
+    ]);
+    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
   // Draws that never faced canary detection must not populate a new report.
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-resume-"));

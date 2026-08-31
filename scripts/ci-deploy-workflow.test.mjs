@@ -15,6 +15,7 @@ import test from "node:test";
 
 const ci = readFileSync(".github/workflows/ci.yml", "utf8");
 const deploy = readFileSync(".github/workflows/deploy.yml", "utf8");
+const weekly = readFileSync(".github/workflows/weekly-eval.yml", "utf8");
 
 function workflowScript(workflow, stepName) {
   const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -66,6 +67,7 @@ function runDeploy({
   mainTip = verifiedSha,
   lsRemoteFails = false,
   unreleased = false,
+  forceDeploy = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-ci-deploy-"));
   const fakeBin = join(root, "fake-bin");
@@ -106,6 +108,7 @@ printf 'deployed:%s\\n' "$NEEDLEFISH_REF" > "$DEPLOY_LOG"
       ...process.env,
       DEPLOY_LOG: deployLog,
       EVENT_NAME: eventName,
+      FORCE_DEPLOY: forceDeploy ? "true" : "false",
       FAKE_MAIN_TIP: mainTip,
       LS_REMOTE_FAIL: lsRemoteFails ? "1" : "",
       NEEDLEFISH_REF: needlefishRef,
@@ -145,6 +148,7 @@ test("deploy is gated on a successful main-push CI run and keeps workflow_dispat
   assert.match(deploy, /^  workflow_run:$/m);
   assert.match(deploy, /workflows: \[needlefish-ci\]/);
   assert.match(deploy, /^  workflow_dispatch:$/m);
+  assert.match(deploy, /^      force:$/m);
   assert.match(deploy, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(deploy, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(deploy, /github\.event\.workflow_run\.head_branch == 'main'/);
@@ -153,6 +157,8 @@ test("deploy is gated on a successful main-push CI run and keeps workflow_dispat
   assert.match(deploy, /ref: \$\{\{ steps\.sha\.outputs\.sha \}\}/);
   assert.match(deploy, /^    runs-on: self-hosted$/m);
   assert.doesNotMatch(deploy, /secrets\./);
+  assert.match(weekly, /gh workflow run deploy\.yml --ref main/);
+  assert.doesNotMatch(weekly, /-f force=true/);
 });
 
 test("resolve uses the workflow_run head SHA and rejects a missing or invalid SHA", () => {
@@ -194,12 +200,20 @@ test("automatic deploy skips when main has moved and still deploys the verified 
 
   const unreleased = runDeploy({ unreleased: true });
   assert.equal(unreleased.status, 0, unreleased.stderr);
-  assert.match(unreleased.stdout, /Skipping automatic deploy of unreleased version 0\.4\.2/);
+  assert.match(unreleased.stdout, /Skipping deploy of unreleased version 0\.4\.2/);
   assert.equal(unreleased.deployLog, "");
 
   const manualUnreleased = runDeploy({ eventName: "workflow_dispatch", unreleased: true });
   assert.equal(manualUnreleased.status, 0, manualUnreleased.stderr);
-  assert.equal(manualUnreleased.deployLog, `deployed:${verifiedSha}\n`);
+  assert.equal(manualUnreleased.deployLog, "");
+
+  const forcedUnreleased = runDeploy({
+    eventName: "workflow_dispatch",
+    unreleased: true,
+    forceDeploy: true,
+  });
+  assert.equal(forcedUnreleased.status, 0, forcedUnreleased.stderr);
+  assert.equal(forcedUnreleased.deployLog, `deployed:${verifiedSha}\n`);
 
   const missingTip = runDeploy({ mainTip: "" });
   assert.notEqual(missingTip.status, 0);
