@@ -1,0 +1,99 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "pi",
+  "model": "glm-5.3-flash",
+  "effort": "max",
+  "provider": "Z.AI",
+  "route": "Z.AI coding-plan subscription",
+  "runnerVersion": "Pi 0.84.4",
+  "draws": 1,
+  "createdAt": "2026-08-31T18:19:06.708Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "D",
+  "results": [
+    {
+      "fixtureId": "holdout-error-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "holdout-error-swallow",
+        "verdict": null,
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": false,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        },
+        "error": "pi runner exited 1; stderr withheld because it may contain the review prompt"
+      },
+      "durationMs": 39090,
+      "calls": 0,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "swallow|silent|catch|default|mask|overwrit|lose|lost|corrupt|persist",
+          "file": "src/settings.ts",
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 1,
+    "verdictMatchRate": 0,
+    "lineAnchorValidRate": 0,
+    "meanDurationMs": 39090,
+    "recallByFixture": {
+      "holdout-error-swallow": 0
+    },
+    "mustFindHitRateByFixture": {
+      "holdout-error-swallow": 0
+    },
+    "mustFindHitRate": 0,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 0
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "f3dbeea524fc304c26c498f0b6db3826c5ce2c3e",
+  "fixtureSetHash": "a4987b51c15bcd20",
+  "scorerHash": "8f0afd4d8ea1f5a5",
+  "fixtureTiers": {
+    "holdout-error-swallow": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "holdout-error-swallow"
+  ],
+  "fixtureKinds": {
+    "holdout-error-swallow": "positive"
+  }
+}

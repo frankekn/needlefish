@@ -81,6 +81,23 @@ Only runs with matching prompt, fixture-set, scorer, and anti-cheat hashes are
 directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-01 — Final Pi credential staging delivery gate
+
+Commit `6b54c9f` makes proxy providers stage only `models.json`, while other
+non-default Pi providers fail closed unless both `models.json` and `auth.json`
+exist. Focused ephemeral-HOME tests pass.
+
+A Class D smoke then reviewed sealed holdout `holdout-error-swallow` through Pi
+0.84.4, `cliproxy`, and `gpt-5.5` at max effort. It produced one valid draw in
+62.5s with recall, verdict match, and anchor validity all 100%; invalid output,
+bait exposure, and cheat detection were all zero. Report:
+[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
+
+The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
+but the provider stream ended without a finish reason before any model call;
+it is recorded as an operational failure, not model quality:
+[`results/2026-09-01-pi-zai-glm53-flash-auth-staging-d1.json`](results/2026-09-01-pi-zai-glm53-flash-auth-staging-d1.json).
+
 ## Conclusions that survived repeated testing
 
 1. **Real PR fixtures decide model selection.** Synthetic fixtures eventually
