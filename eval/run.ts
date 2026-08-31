@@ -58,6 +58,12 @@ interface RunArgs {
 	env: Record<string, string>;
 }
 
+interface ReportAttestation {
+	readonly provider?: string;
+	readonly route?: string;
+	readonly runnerVersion?: string;
+}
+
 export async function mapLimit<T, R>(
 	items: readonly T[],
 	limit: number,
@@ -90,10 +96,10 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	const provider = get("--provider");
 	const route = get("--route");
 	const runnerVersion = get("--runner-version");
-	const provenanceFields = [provider, route, runnerVersion];
+	const attestation = [provider, route, runnerVersion];
 	if (
-		provenanceFields.some((value) => value !== null) &&
-		provenanceFields.some((value) => value === null)
+		attestation.some((value) => value !== null) &&
+		attestation.some((value) => value === null)
 	) {
 		throw new Error(
 			"--provider, --route, and --runner-version must be supplied together",
@@ -318,7 +324,9 @@ export function resumeSlots(
 	let skipped = 0;
 	if (!args.resume) return { slots, skipped };
 	try {
-		const existing = JSON.parse(readFileSync(args.resume, "utf8")) as Report;
+		const existing = JSON.parse(
+			readFileSync(args.resume, "utf8"),
+		) as Report & ReportAttestation;
 		// Refuse to reuse draws produced under a different prompt or fixture set —
 		// silently mixing them would fabricate a report no run ever produced.
 		if (existing.promptHash !== promptHash()) {
@@ -793,6 +801,9 @@ export function writeReport(
 ): Report & {
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+	readonly provider?: string;
+	readonly route?: string;
+	readonly runnerVersion?: string;
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
@@ -846,6 +857,9 @@ export function writeReport(
 	} satisfies Report & {
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+		readonly provider?: string;
+		readonly route?: string;
+		readonly runnerVersion?: string;
 	};
 	const targetPath = path.resolve(args.report);
 	if (!lastCheckpointCoverage.has(targetPath)) {

@@ -217,9 +217,6 @@ export interface Report {
   readonly runner: RunnerName;
   readonly model: string | null;
   readonly effort: string | null;
-  readonly provider?: string;
-  readonly route?: string;
-  readonly runnerVersion?: string;
   readonly draws: number;
   readonly createdAt: string;
   readonly baseline: boolean;

@@ -37,9 +37,6 @@ function config(reportPath: string, name: string): LaneConfig {
   return {
     report: reportPath,
     name,
-    provider: "Test provider",
-    route: "Test subscription",
-    runnerVersion: "test-runner 1.0.0",
     runner: report.runner,
     model: report.model ?? "test-model",
     effort: report.effort ?? "test-effort",
@@ -87,6 +84,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
   assert.match(html, /Test subscription/);
+  assert.match(html, /operator-attested/);
   assert.match(html, /tree\/main\/eval\/results">Raw reports/);
   assert.match(
     html,
@@ -309,6 +307,52 @@ test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {
       new RegExp(`Tier-${tier} recall does not match draw results`),
     );
   }
+});
+
+test("renderSite disqualifies positive-fixture noise above the production envelope", () => {
+  const { manifest, lanes } = setup();
+  const changed = lanes.map((lane, index) => {
+    if (index !== 0) return lane;
+    const results = lane.report.results.map((result) =>
+      lane.report.fixtureKinds?.[result.fixtureId] === "positive"
+        ? {
+            ...result,
+            score: {
+              ...result.score,
+              recall:
+                lane.report.fixtureTiers?.[result.fixtureId] === 1
+                  ? true
+                  : result.score.recall,
+              noiseFindingCount: 1,
+            },
+          }
+        : result,
+    );
+    const positives = results.filter(
+      (result) => lane.report.fixtureKinds?.[result.fixtureId] === "positive",
+    );
+    return {
+      ...lane,
+      report: {
+        ...lane.report,
+        results,
+        aggregates: {
+          ...lane.report.aggregates,
+          recall:
+            positives.filter((result) => result.score.recall).length /
+            positives.length,
+          recallByTier: {
+            ...lane.report.aggregates.recallByTier,
+            t1: 1,
+          },
+          meanNoisePerPositive: 1,
+        },
+      },
+    };
+  });
+  const html = renderSite(manifest, changed, canonical);
+  assert.match(html, /Disqualified: positive noise/);
+  assert.match(html, /fails a current qualification gate/);
 });
 
 test("renderSite rejects fixture classification drift in every lane", () => {

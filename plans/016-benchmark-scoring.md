@@ -198,7 +198,11 @@ proposal because Tier-1 recall is below 100%.
 
 - Gate before ranking: complete x3 coverage, exact comparable hashes, sealed
   holdouts, current scorer and anti-cheat, zero cheat detections, exact declared
-  model/harness/provider/effort, and Tier-1 recall of 100%.
+  model/harness/provider/effort, Tier-1 recall of 100%, and
+  `meanNoisePerPositive <= 0.12`.
+- Provider, route, and harness-version labels are operator-attested run metadata.
+  Publish them for reproducibility, but do not claim the site independently
+  derives them from generic runner state.
 - Never turn blocked, unavailable, partial, compromised, or verified
   infrastructure-failed lanes into a zero model score.
 - Keep each fixture equally weighted. Because every fixture currently has the

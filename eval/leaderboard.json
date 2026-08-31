@@ -5,9 +5,6 @@
     {
       "report": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
       "name": "GPT-5.6 Terra",
-      "provider": "OpenAI Codex",
-      "route": "Codex subscription",
-      "runnerVersion": "Codex CLI 0.151.0",
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "high",
@@ -16,9 +13,6 @@
     {
       "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
       "name": "GPT-5.6 Terra",
-      "provider": "OpenAI Codex",
-      "route": "Codex subscription",
-      "runnerVersion": "Codex CLI 0.151.0",
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "xhigh",
@@ -27,9 +21,6 @@
     {
       "report": "results/2026-08-31-codex-gpt56-sol-medium-x3.json",
       "name": "GPT-5.6 Sol",
-      "provider": "OpenAI Codex",
-      "route": "Codex subscription",
-      "runnerVersion": "Codex CLI 0.151.0",
       "runner": "codex",
       "model": "gpt-5.6-sol",
       "effort": "medium",
@@ -38,9 +29,6 @@
     {
       "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",
       "name": "GPT-5.6 Luna",
-      "provider": "OpenAI Codex",
-      "route": "Codex subscription",
-      "runnerVersion": "Codex CLI 0.151.0",
       "runner": "codex",
       "model": "gpt-5.6-luna",
       "effort": "max",
@@ -49,9 +37,6 @@
     {
       "report": "results/2026-08-31-grok-grok46-xhigh-x3-rerun.json",
       "name": "Grok 4.6",
-      "provider": "xAI Grok",
-      "route": "Grok subscription",
-      "runnerVersion": "Grok CLI 1.0.5",
       "runner": "grok",
       "model": "grok-4.6",
       "effort": "xhigh",
@@ -60,9 +45,6 @@
     {
       "report": "results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
       "name": "GLM-5.3-Flash",
-      "provider": "Z.AI via CLIProxyAPI",
-      "route": "Z.AI coding-plan subscription",
-      "runnerVersion": "Pi 0.84.4",
       "runner": "pi",
       "model": "zai-cliproxy/glm-5.3-flash",
       "effort": "max",
@@ -71,9 +53,6 @@
     {
       "report": "results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
       "name": "DeepSeek V4 Flash Vision Exp",
-      "provider": "DeepSeek",
-      "route": "Direct DeepSeek API",
-      "runnerVersion": "Pi 0.84.4",
       "runner": "pi",
       "model": "deepseek/deepseek-v4-flash-vision-exp",
       "effort": "max",

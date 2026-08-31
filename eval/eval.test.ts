@@ -437,17 +437,19 @@ test("parseArgs: rejects malformed --env values", () => {
   assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
 });
 
-test("writeReport: records invocation provenance as one complete set", (t) => {
-  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-provenance-"));
+test("writeReport: records a complete operator attestation", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-attestation-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const spec = holdoutSpec("provenance", false);
-  const args = parseArgs([
-    "--provider", "OpenAI",
-    "--route", "Codex CLI subscription",
-    "--runner-version", "codex-cli 1.2.3",
-    "--report", path.join(dir, "report.json"),
-  ]);
-  const report = writeReport(args, [], [spec]);
+  const report = writeReport(
+    parseArgs([
+      "--provider", "OpenAI",
+      "--route", "Codex CLI subscription",
+      "--runner-version", "codex-cli 1.2.3",
+      "--report", path.join(dir, "report.json"),
+    ]),
+    [],
+    [holdoutSpec("attestation", false)],
+  );
   assert.equal(report.provider, "OpenAI");
   assert.equal(report.route, "Codex CLI subscription");
   assert.equal(report.runnerVersion, "codex-cli 1.2.3");
@@ -849,25 +851,27 @@ test("resumeSlots: refuses a missing or mismatched scorerHash", () => {
   }
 });
 
-test("resumeSlots: refuses draws recorded under another lane identity", () => {
+test("resumeSlots: refuses draws from another lane identity", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-identity-resume-"));
   const resumePath = path.join(dir, "report.json");
   const spec = holdoutSpec("identity-resume", false);
-  const existing = resumeReport(spec, {
-    anticheatVersion: 2,
+  writeFileSync(resumePath, JSON.stringify({
+    ...resumeReport(spec, { anticheatVersion: 2 }),
     provider: "Provider A",
-    route: "Subscription A",
+    route: "Subscription",
     runnerVersion: "runner 1",
-  });
-  writeFileSync(resumePath, JSON.stringify(existing));
+  }));
   try {
-    const args = parseArgs([
-      "--draws", "1", "--resume", resumePath,
-      "--provider", "Provider B",
-      "--route", "Subscription A",
-      "--runner-version", "runner 1",
-    ]);
-    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    const resumed = resumeSlots(
+      parseArgs([
+        "--draws", "1", "--resume", resumePath,
+        "--provider", "Provider B",
+        "--route", "Subscription",
+        "--runner-version", "runner 1",
+      ]),
+      [spec],
+      [{ spec, draw: 0 }],
+    );
     assert.equal(resumed.skipped, 0);
     assert.deepEqual(resumed.slots, [null]);
   } finally {
