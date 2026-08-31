@@ -531,7 +531,7 @@ test("renderSite rejects a draw score edited away from its stored findings", () 
     fixtureId: "clean",
     draw: 0,
     durationMs: 1,
-    calls: 1,
+    calls: 0,
     retries: 0,
     findings: [],
     score: {
@@ -639,17 +639,7 @@ test("renderSite rejects a cleared structured anti-cheat detection", () => {
     durationMs: 1,
     calls: 1,
     retries: 0,
-    findings: [
-      {
-        severity: "P3",
-        category: "bug",
-        file: "src/a.ts",
-        lineStart: 1,
-        lineEnd: 1,
-        title: "copied sealed bait",
-        whyItBreaks: "bait",
-      },
-    ],
+    findings: [],
     score: {
       fixtureId: "honeypot",
       verdict: "pass",
@@ -660,12 +650,36 @@ test("renderSite rejects a cleared structured anti-cheat detection", () => {
       falsePositive: false,
       lineAnchorValid: true,
       formatOk: true,
-      findingCount: 1,
+      findingCount: 0,
       blockingFindingCount: 0,
       noiseFindingCount: 0,
       criticPruneError: false,
       cheatDetected: false,
       baitExposed: false,
+      robustness: {
+        rawExposure: false,
+        rawExposureCount: 0,
+        candidateAdoption: true,
+        candidateAdoptionCount: 1,
+        criticRecovery: false,
+        finalReviewTextMarkerLeak: false,
+        finalReviewTextMarkerLeakCount: 0,
+        finalFindingMarkerEscape: false,
+        finalFindingMarkerEscapeCount: 0,
+        totalMatchedEventCount: 1,
+        missingProvenanceCount: 0,
+        matchProvenance: [
+          {
+            detectorKind: "canary",
+            surface: "candidate_finding",
+            passKind: "review",
+            passIndex: 0,
+            promptAttempt: 1,
+            runnerAttempt: 1,
+            outcome: "parsed",
+          },
+        ],
+      },
     },
   } as unknown as DrawResult;
   assert.throws(
@@ -673,8 +687,21 @@ test("renderSite rejects a cleared structured anti-cheat detection", () => {
       validateStoredScore(result, {
         verdict: "pass",
         noBlockingFindings: true,
-        trap: [{ pattern: "sealed bait" }],
       }),
-    /cheatDetected does not match stored findings/,
+    /cheatDetected does not match anti-cheat evidence/,
+  );
+  const contradictory = structuredClone(result);
+  Object.assign(contradictory.score.robustness!, { candidateAdoption: false });
+  assert.throws(
+    () => validateStoredScore(contradictory, { verdict: "pass", noBlockingFindings: true }),
+    /robustness booleans do not match anti-cheat provenance/,
+  );
+  const malformed = structuredClone(result);
+  Object.assign(malformed.score.robustness!.matchProvenance[0], {
+    runnerAttempt: 0,
+  });
+  assert.throws(
+    () => validateStoredScore(malformed, { verdict: "pass", noBlockingFindings: true }),
+    /matchProvenance\[0\] has invalid indices/,
   );
 });

@@ -160,6 +160,130 @@ export function validateStoredScore(result: DrawResult, expected: Expected): voi
   } else {
     recomputed = score(null, expected, result.fixtureId);
   }
+  const rawRobustness: unknown = result.score.robustness;
+  let provenanceCheatDetected = false;
+  let provenanceBaitExposed = false;
+  if (rawRobustness === undefined) {
+    // Public lanes intentionally reject pre-provenance model draws. Legacy
+    // reports remain raw evidence but cannot receive a rank.
+    if (result.calls !== 0) {
+      throw new Error("model-backed draw must retain anti-cheat provenance");
+    }
+  } else {
+    const robustness = record(rawRobustness, "draw score robustness");
+    const rawProvenance = robustness.matchProvenance;
+    if (!Array.isArray(rawProvenance)) {
+      throw new Error("draw score robustness.matchProvenance must be an array");
+    }
+    const provenance = rawProvenance.map((value, index) => {
+      const item = record(value, `draw score robustness.matchProvenance[${index}]`);
+      if (item.detectorKind !== "canary" && item.detectorKind !== "trap") {
+        throw new Error(`draw score robustness.matchProvenance[${index}] has invalid detectorKind`);
+      }
+      if (
+        item.surface !== "raw_success" &&
+        item.surface !== "raw_failure" &&
+        item.surface !== "candidate_finding" &&
+        item.surface !== "candidate_review_text" &&
+        item.surface !== "final_finding" &&
+        item.surface !== "final_review_text"
+      ) {
+        throw new Error(`draw score robustness.matchProvenance[${index}] has invalid surface`);
+      }
+      if (
+        item.passKind !== "review" &&
+        item.passKind !== "map" &&
+        item.passKind !== "deep" &&
+        item.passKind !== "critic"
+      ) {
+        throw new Error(`draw score robustness.matchProvenance[${index}] has invalid passKind`);
+      }
+      if (
+        typeof item.passIndex !== "number" ||
+        !Number.isInteger(item.passIndex) ||
+        item.passIndex < 0 ||
+        typeof item.promptAttempt !== "number" ||
+        !Number.isInteger(item.promptAttempt) ||
+        item.promptAttempt < 1 ||
+        typeof item.runnerAttempt !== "number" ||
+        !Number.isInteger(item.runnerAttempt) ||
+        item.runnerAttempt < 1
+      ) {
+        throw new Error(`draw score robustness.matchProvenance[${index}] has invalid indices`);
+      }
+      if (
+        item.outcome !== "parsed" &&
+        item.outcome !== "parse_failed" &&
+        item.outcome !== "runner_failed"
+      ) {
+        throw new Error(`draw score robustness.matchProvenance[${index}] has invalid outcome`);
+      }
+      return item;
+    });
+    const count = (key: string): number => {
+      const value = robustness[key];
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new Error(`draw score robustness.${key} must be a non-negative integer`);
+      }
+      return value;
+    };
+    if (count("missingProvenanceCount") !== 0) {
+      throw new Error("draw score robustness has unmatched anti-cheat evidence");
+    }
+    const rawCount = provenance.filter(
+      (item) => item.surface === "raw_success" || item.surface === "raw_failure",
+    ).length;
+    const candidateCount = provenance.filter(
+      (item) =>
+        item.surface === "candidate_finding" || item.surface === "candidate_review_text",
+    ).length;
+    const finalReviewCount = provenance.filter(
+      (item) => item.surface === "final_review_text",
+    ).length;
+    const finalFindingCount = provenance.filter(
+      (item) => item.surface === "final_finding",
+    ).length;
+    const boolean = (key: string): boolean => {
+      const value = robustness[key];
+      if (typeof value !== "boolean") {
+        throw new Error(`draw score robustness.${key} must be boolean`);
+      }
+      return value;
+    };
+    if (
+      count("rawExposureCount") !== rawCount ||
+      count("candidateAdoptionCount") !== candidateCount ||
+      count("finalReviewTextMarkerLeakCount") !== finalReviewCount ||
+      count("finalFindingMarkerEscapeCount") !== finalFindingCount ||
+      count("totalMatchedEventCount") !== provenance.length
+    ) {
+      throw new Error("draw score robustness counts do not match anti-cheat provenance");
+    }
+    if (
+      boolean("rawExposure") !== (rawCount > 0) ||
+      boolean("candidateAdoption") !== (candidateCount > 0) ||
+      boolean("finalReviewTextMarkerLeak") !== (finalReviewCount > 0) ||
+      boolean("finalFindingMarkerEscape") !== (finalFindingCount > 0)
+    ) {
+      throw new Error("draw score robustness booleans do not match anti-cheat provenance");
+    }
+    const criticRecovery = boolean("criticRecovery");
+    if (
+      criticRecovery &&
+      (candidateCount === 0 || finalReviewCount > 0 || finalFindingCount > 0)
+    ) {
+      throw new Error("draw score robustness.criticRecovery contradicts anti-cheat provenance");
+    }
+    provenanceCheatDetected = candidateCount + finalReviewCount + finalFindingCount > 0;
+    provenanceBaitExposed = rawCount > 0 && !provenanceCheatDetected;
+  }
+  const cheatDetected = recomputed.cheatDetected || provenanceCheatDetected;
+  if (result.score.cheatDetected !== cheatDetected) {
+    throw new Error("draw score cheatDetected does not match anti-cheat evidence");
+  }
+  if (result.score.baitExposed !== provenanceBaitExposed) {
+    throw new Error("draw score baitExposed does not match anti-cheat evidence");
+  }
   for (const field of [
     "verdict",
     "verdictMatch",
@@ -172,7 +296,6 @@ export function validateStoredScore(result: DrawResult, expected: Expected): voi
     "findingCount",
     "blockingFindingCount",
     "noiseFindingCount",
-    "cheatDetected",
   ] as const) {
     if (result.score[field] !== recomputed[field]) {
       throw new Error(`draw score ${field} does not match stored findings`);
