@@ -411,7 +411,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process 內
 | `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
-| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`） |
+| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`）、`PI_AUTH_MODE`（`oauth` 或 `proxy`；預設 `oauth`） |
 | `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
 | `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
 

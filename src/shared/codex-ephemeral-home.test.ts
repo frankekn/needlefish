@@ -686,6 +686,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		home: process.env.HOME,
 		provider: process.env.PI_PROVIDER,
+		authMode: process.env.PI_AUTH_MODE,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -694,6 +695,8 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		process.env.HOME = previous.home;
 		if (previous.provider === undefined) delete process.env.PI_PROVIDER;
 		else process.env.PI_PROVIDER = previous.provider;
+		if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
+		else process.env.PI_AUTH_MODE = previous.authMode;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
@@ -705,6 +708,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 
 	// Default provider (openai-codex OAuth) still demands auth.json.
 	delete process.env.PI_PROVIDER;
+	delete process.env.PI_AUTH_MODE;
 	assert.throws(
 		() => prepareEphemeralHome("pi", tmp),
 		/required auth source is missing: .*auth\.json/,
@@ -713,6 +717,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	// Explicit proxy provider: credentials live in the proxy; the registry
 	// alone suffices.
 	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
 	const home = prepareEphemeralHome("pi", tmp);
 	assert.ok(home);
 	assert.ok(
@@ -725,12 +730,14 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		"absent OAuth file must not be fabricated",
 	);
 	process.env.PI_PROVIDER = "zai";
+	process.env.PI_AUTH_MODE = "oauth";
 	assert.throws(
 		() => prepareEphemeralHome("pi", tmp),
 		/required auth source is missing: .*auth\.json/,
 	);
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
 	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
 	const proxyHome = prepareEphemeralHome("pi", tmp);
 	assert.equal(
 		existsSync(path.join(proxyHome!, ".pi", "agent", "auth.json")),
@@ -739,14 +746,16 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 
 	// Authenticated non-proxy providers still receive the disposable credential copy.
 	process.env.PI_PROVIDER = "zai";
+	process.env.PI_AUTH_MODE = "oauth";
 	const authenticatedHome = prepareEphemeralHome("pi", tmp);
 	assert.equal(
 		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
 		'{"token":"x"}',
 	);
 
-	// Named proxy routes also keep credentials in the proxy.
-	process.env.PI_PROVIDER = "zai-cliproxy";
+	// Proxy classification is explicit and does not depend on the provider ID.
+	process.env.PI_PROVIDER = "qwen-dgx";
+	process.env.PI_AUTH_MODE = "proxy";
 	const namedProxyTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(namedProxyTmp, { recursive: true, force: true }));
 	const namedProxyHome = prepareEphemeralHome("pi", namedProxyTmp);
@@ -757,6 +766,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 
 	// Proxy provider with the registry itself missing stays fail-closed.
 	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
 	rmSync(path.join(fakeHome, ".pi", "agent", "models.json"));
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));

@@ -472,7 +472,7 @@ parentheses are the executable names used when the `*_BIN` var is unset:
 | `claude` | `CLAUDE_BIN` (`claude`) | `CLAUDE_MODEL`; auth `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |
-| `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`) |
+| `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`), `PI_AUTH_MODE` (`oauth` or `proxy`; default `oauth`) |
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 

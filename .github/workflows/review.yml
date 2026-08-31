@@ -266,6 +266,7 @@ jobs:
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
           PI_PROVIDER: cliproxy
+          PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}

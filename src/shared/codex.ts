@@ -73,7 +73,7 @@ const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
 	],
 	opencode: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
 	grok: ["GROK_BIN", "GROK_MODEL"],
-	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER"],
+	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER", "PI_AUTH_MODE"],
 	openai: [],
 	acp: ["NEEDLEFISH_ACP_BIN"],
 };
@@ -302,7 +302,11 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
 		if (provider !== "openai-codex") {
-			if (!provider.endsWith("cliproxy")) {
+			const authMode = process.env.PI_AUTH_MODE ?? "oauth";
+			if (authMode !== "oauth" && authMode !== "proxy") {
+				throw new Error("PI_AUTH_MODE must be oauth or proxy");
+			}
+			if (authMode === "oauth") {
 				return {
 					required: [".pi/agent/models.json", ".pi/agent/auth.json"],
 					optional: [],

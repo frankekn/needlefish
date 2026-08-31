@@ -102,6 +102,18 @@ then ran the historical drift fixtures
 9/9 draws were valid; both positives recalled 3/3; invalid output, bait
 exposure, and cheat detection were zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
+
+The final follow-up removes provider-name inference and requires explicit
+`PI_AUTH_MODE=proxy|oauth` for non-default Pi routes (default `oauth`, which
+fails closed on missing credentials). A fresh sealed-honeypot smoke through
+`cliproxy` in explicit proxy mode was valid with verdict/anchor 100% and zero
+invalid output, bait exposure, or cheat detection. The complete Class D gate
+then repeated the same two historical drift fixtures plus the honeypot at x3:
+9/9 valid, both positives recalled 3/3, verdict/anchor 100%, and zero invalid
+output, positive noise, bait exposure, or cheat detection. Reports:
+[`results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json) and
+[`results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json).
+
 The live canary/rollback window remains deferred until deployment is separately
 authorized; no deploy occurred here.
 

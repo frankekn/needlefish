@@ -27,6 +27,7 @@ jobs:
         env:
           # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
           PI_PROVIDER: cliproxy
+          PI_AUTH_MODE: proxy
           PI_BIN: /home/termtek/.npm-global/bin/pi
         run: |
           # corepack enable defaults to the node prefix bin (/usr/bin on this
