@@ -1,6 +1,6 @@
 {
   "name": "needlefish",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "description": "Strict local PR review agent.",
@@ -31,6 +31,7 @@
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit",
     "lint": "eslint src eval",
+    "site": "tsx eval/gen-site.ts",
     "test": "node scripts/test.mjs"
   },
   "devDependencies": {

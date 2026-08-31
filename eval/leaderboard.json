@@ -1,0 +1,86 @@
+{
+  "updated": "2026-09-01",
+  "baseline": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
+  "lanes": [
+    {
+      "report": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
+      "name": "GPT-5.6 Terra",
+      "provider": "OpenAI Codex",
+      "route": "Codex subscription",
+      "runnerVersion": "Codex CLI 0.151.0",
+      "status": "Production"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
+      "name": "GPT-5.6 Terra",
+      "provider": "OpenAI Codex",
+      "route": "Codex subscription",
+      "runnerVersion": "Codex CLI 0.151.0",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-sol-medium-x3.json",
+      "name": "GPT-5.6 Sol",
+      "provider": "OpenAI Codex",
+      "route": "Codex subscription",
+      "runnerVersion": "Codex CLI 0.151.0",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",
+      "name": "GPT-5.6 Luna",
+      "provider": "OpenAI Codex",
+      "route": "Codex subscription",
+      "runnerVersion": "Codex CLI 0.151.0",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-grok-grok46-xhigh-x3-rerun.json",
+      "name": "Grok 4.6",
+      "provider": "xAI Grok",
+      "route": "Grok subscription",
+      "runnerVersion": "Grok CLI 1.0.5",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
+      "name": "GLM-5.3-Flash",
+      "provider": "Z.AI via CLIProxyAPI",
+      "route": "Z.AI coding-plan subscription",
+      "runnerVersion": "Pi 0.84.4",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
+      "name": "DeepSeek V4 Flash Vision Exp",
+      "provider": "DeepSeek",
+      "route": "Direct DeepSeek API",
+      "runnerVersion": "Pi 0.84.4",
+      "status": "Candidate"
+    }
+  ],
+  "blocked": [
+    {
+      "name": "Qwen3.8 Flash Next",
+      "model": "qwen3.8-flash-next",
+      "provider": "OpenCode Go subscription",
+      "reason": "Not exposed by the authenticated subscription endpoint or Pi model catalog on 2026-08-31."
+    }
+  ],
+  "excluded": [
+    {
+      "name": "Qwen3.8 Max incomplete run",
+      "model": "opencode-go/qwen3.8-max",
+      "provider": "OpenCode Go subscription",
+      "reason": "Incomplete at 218/258 saved draws, including 158 reusable valid results. The authenticated provider returned a monthly usage-limit error on 2026-08-31 and reported a reset in 16 days; paid balance was not enabled.",
+      "report": "results/2026-08-30-pi-opencode-go-qwen38-max-max-x3.json"
+    },
+    {
+      "name": "Grok 4.6 initial run",
+      "model": "grok-4.6",
+      "provider": "Grok subscription",
+      "reason": "Voided after anti-cheat v2 detected structured canary adoption in candidate and final review text. Excluded from every aggregate and rank.",
+      "report": "results/2026-08-31-grok-grok46-xhigh-x3.json"
+    }
+  ]
+}

@@ -7,50 +7,61 @@ paths.
 
 ## Current decision
 
-As of 2026-08-21, keep **Codex `gpt-5.6-terra` at high effort** as the
-production baseline.
+As of 2026-09-01, keep **Codex `gpt-5.6-terra` at high effort** as the
+production configuration while the expanded gate is published and reviewed.
+DeepSeek V4 Flash Vision Exp leads the completed comparison; Grok 4.6 is
+second, and GLM-5.3-Flash is third after its perfect specificity lifts its
+balanced review score. Terra high and Luna max miss Tier-1
+defects and receive no rank.
 
-DeepSeek is the strongest recent challenger: it produced higher recall, no
-false positives, no invalid JSON, and better anchors. It was also 67% slower,
-and its aggregate result came from one full-set draw rather than three. That is
-enough to justify a full confirmation run, but not enough to replace Terra.
-The later OX Alpha probe did not change this decision: its raw opencode lane
-was format-confounded, while a schema-tolerant semantic probe still trailed
-the established challengers and missed tier-1 defects.
+Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
+specificity. Invalid model output cannot count as a correct result, so it is
+counted once. Tier-1 recall is a hard gate; validity, verdict match, and speed
+remain separate diagnostics. Exact score ties favor higher recall, then lower
+false-positive rate. Scores are point estimates across three draws; small gaps
+do not establish statistical separation.
 
-| Metric | Terra baseline | DeepSeek candidate |
-| --- | ---: | ---: |
-| Completed draws | 252/252 | 84/84 |
-| Full-set repetitions | 3 | 1 |
-| Recall | 87.4% | 89.7% |
-| Tier-1 recall | 100% | 100% |
-| False-positive rate | 5.6% | 0% |
-| Invalid-JSON rate | 1.2% | 0% |
-| Verdict match | 94.4% | 94.0% |
-| Valid anchors | 88.1% | 92.9% |
-| Mean duration | 56.8s | 94.7s |
+| Rank | Model | Harness | Provider route | Effort | Balanced | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | [DeepSeek V4 Flash Vision Exp](results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.84.4 | Direct DeepSeek API | max | 94.72% | 92.22% | 97.22% | 100% | 2.78% | 0.39% | 96.90% | 116.0s |
+| 2 | [Grok 4.6](results/2026-08-31-grok-grok46-xhigh-x3-rerun.json) | Grok CLI 1.0.5 | Grok subscription | xhigh | 94.58% | 90.56% | 98.61% | 100% | 1.39% | 0.39% | 96.51% | 228.4s |
+| 3 | [GLM-5.3-Flash](results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json) | Pi 0.84.4 | Z.AI coding-plan subscription | max | 94.44% | 88.89% | 100% | 100% | 0% | 0% | 92.64% | 143.0s |
+| 4 | [GPT-5.6 Sol](results/2026-08-31-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.151.0 | Codex subscription | medium | 88.06% | 90.00% | 86.11% | 100% | 13.89% | 0% | 93.41% | 67.9s |
+| 5 | [GPT-5.6 Terra](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.151.0 | Codex subscription | xhigh | 87.64% | 87.78% | 87.50% | 100% | 12.50% | 0% | 93.80% | 75.1s |
 
-These runs used prompt `e62d0889fc704541`, fixture set
-`1968a9d2fabe2a56`, scorer `a424d3bb59a40443`, and anti-cheat v2.
+Disqualified — not ranked:
 
-DeepSeek's six divergent fixtures were confirmed separately over three draws:
+| Model | Harness | Provider route | Effort | Balanced | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [GPT-5.6 Luna](results/2026-08-31-codex-gpt56-luna-max-x3.json) | Codex CLI 0.151.0 | Codex subscription | max | 88.19% | 88.89% | 87.50% | 85.71% | 9.72% | 0.78% | 94.19% | 151.5s |
+| [GPT-5.6 Terra](results/2026-08-30-codex-gpt56-terra-high-x3.json) | Codex CLI 0.151.0 | Codex subscription | high | 88.19% | 83.33% | 93.06% | 90.48% | 5.56% | 0.39% | 93.80% | 54.7s |
 
-| Fixture | Hits |
-| --- | ---: |
-| `rs-backend-spec-drift` | 3/3 |
-| `real-pr1-bundle-basesha-mismatch` | 2/3 |
-| `real-pr1-gh-cli-missing-repo-flag` | 1/3 |
-| `real-pr1-lenient-candidate-parse` | 0/3 |
-| `real-pr1-neutral-conclusion` | 1/3 |
-| `real-pr4-hotspot-truncation` | 0/3 |
+All ranked reports contain 86 fixtures × 3 draws, include sealed holdouts, and
+use prompt `e62d0889fc704541`, fixture set `e4969c9fdc2e3497`, scorer
+`8f0afd4d8ea1f5a5`, and anti-cheat v2. Every ranked report has
+`cheatDetectedCount: 0`.
 
-Reports: [DeepSeek full set](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json)
-and [divergence confirmation](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
+Not ranked:
+
+- Qwen3.8 Max via OpenCode Go is incomplete at 218/258 saved draws: 158 are
+  reusable valid results and 60 are operational failures from subscription
+  caps or interrupt cleanup. On 2026-08-31, the authenticated provider reported
+  that its monthly limit resets in 16 days and offered paid balance as the only
+  immediate bypass. Paid balance was not enabled; partial scores are not model
+  rankings.
+- Qwen3.8 Flash Next was not exposed by the authenticated OpenCode Go endpoint
+  or Pi catalog on 2026-08-31. It is blocked, not scored zero.
+- The initial Grok 4.6 report is void because anti-cheat v2 detected structured
+  canary adoption. The clean full rerun above supersedes it for ranking.
 
 ## How to read the numbers
 
 - **Recall** is the share of planted defects found. A hit must match the
   expected pattern and anchor file in the same finding.
+- **Balanced Review Accuracy** is the arithmetic mean of anchored recall and
+  usable specificity. An invalid model output cannot count as a correct result.
+- **Usable specificity** is the share of clean draws that produced valid output
+  without a blocking false positive.
 - **Tier-1 recall** covers defects that must never be missed. Any tier-1 miss
   disqualifies a production lane.
 - **False-positive rate** is measured on known-clean fixtures.

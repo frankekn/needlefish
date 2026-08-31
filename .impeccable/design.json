@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-31T15:58:03Z",
+  "title": "Design System: Needlefish Benchmark",
+  "extensions": {
+    "colorMeta": {
+      "deep-ocean-ink": {
+        "role": "primary",
+        "displayName": "Deep-Ocean Ink",
+        "canonical": "#071f2b",
+        "tonalRamp": ["oklch(15% 0.038 233.4)", "oklch(27% 0.038 233.4)", "oklch(39% 0.038 233.4)", "oklch(51% 0.038 233.4)", "oklch(63% 0.038 233.4)", "oklch(75% 0.038 233.4)", "oklch(87% 0.038 233.4)", "oklch(95% 0.038 233.4)"]
+      },
+      "harbor-muted": {
+        "role": "neutral",
+        "displayName": "Harbor Muted",
+        "canonical": "#49636d",
+        "tonalRamp": ["oklch(15% 0.035 223.6)", "oklch(27% 0.035 223.6)", "oklch(39% 0.035 223.6)", "oklch(51% 0.035 223.6)", "oklch(63% 0.035 223.6)", "oklch(75% 0.035 223.6)", "oklch(87% 0.035 223.6)", "oklch(95% 0.035 223.6)"]
+      },
+      "paper-white": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "#f5f7f3",
+        "tonalRamp": ["oklch(15% 0.006 128.5)", "oklch(27% 0.006 128.5)", "oklch(39% 0.006 128.5)", "oklch(51% 0.006 128.5)", "oklch(63% 0.006 128.5)", "oklch(75% 0.006 128.5)", "oklch(87% 0.006 128.5)", "oklch(95% 0.006 128.5)"]
+      },
+      "pure-white": {
+        "role": "neutral",
+        "displayName": "Pure White",
+        "canonical": "#ffffff",
+        "tonalRamp": ["oklch(15% 0 0)", "oklch(27% 0 0)", "oklch(39% 0 0)", "oklch(51% 0 0)", "oklch(63% 0 0)", "oklch(75% 0 0)", "oklch(87% 0 0)", "oklch(95% 0 0)"]
+      },
+      "data-cyan": {
+        "role": "secondary",
+        "displayName": "Data Cyan",
+        "canonical": "#bdebf1",
+        "tonalRamp": ["oklch(15% 0.048 206.1)", "oklch(27% 0.048 206.1)", "oklch(39% 0.048 206.1)", "oklch(51% 0.048 206.1)", "oklch(63% 0.048 206.1)", "oklch(75% 0.048 206.1)", "oklch(87% 0.048 206.1)", "oklch(95% 0.048 206.1)"]
+      },
+      "evidence-blue": {
+        "role": "primary",
+        "displayName": "Evidence Blue",
+        "canonical": "#0c5670",
+        "tonalRamp": ["oklch(15% 0.079 228.3)", "oklch(27% 0.079 228.3)", "oklch(39% 0.079 228.3)", "oklch(51% 0.079 228.3)", "oklch(63% 0.079 228.3)", "oklch(75% 0.079 228.3)", "oklch(87% 0.079 228.3)", "oklch(95% 0.079 228.3)"]
+      },
+      "exception-orange": {
+        "role": "tertiary",
+        "displayName": "Exception Orange",
+        "canonical": "#c44724",
+        "tonalRamp": ["oklch(15% 0.167 36)", "oklch(27% 0.167 36)", "oklch(39% 0.167 36)", "oklch(51% 0.167 36)", "oklch(63% 0.167 36)", "oklch(75% 0.167 36)", "oklch(87% 0.167 36)", "oklch(95% 0.167 36)"]
+      },
+      "chart-line": {
+        "role": "neutral",
+        "displayName": "Chart Line",
+        "canonical": "#bfd0d2",
+        "tonalRamp": ["oklch(15% 0.019 205.3)", "oklch(27% 0.019 205.3)", "oklch(39% 0.019 205.3)", "oklch(51% 0.019 205.3)", "oklch(63% 0.019 205.3)", "oklch(75% 0.019 205.3)", "oklch(87% 0.019 205.3)", "oklch(95% 0.019 205.3)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The single first-viewport question." },
+      "headline": { "displayName": "Headline", "purpose": "Editorial section openings." },
+      "body": { "displayName": "Body", "purpose": "Methods, explanations, and navigation." },
+      "label": { "displayName": "Label", "purpose": "Table headers and compact evidence labels." },
+      "measurement": { "displayName": "Measurement", "purpose": "Ranks, protocol counts, hashes, identifiers, and code only." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "evidence-reveal", "value": "180ms ease-out", "purpose": "A restrained disclosure reveal, removed under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "760px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Mast Navigation",
+      "kind": "nav",
+      "description": "Sparse evidence routes on the deep-ink mast.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a class=\"ds-brand\" href=\"#\">Needlefish</a><div class=\"ds-links\"><a href=\"#\">Leaderboard</a><a href=\"#\">Method</a><a href=\"#\">Raw reports</a></div></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px;background:var(--ink,#071f2b);font:0.9rem 'Avenir Next','Segoe UI',sans-serif}.ds-brand{color:#fff;font-weight:800;letter-spacing:.08em;text-decoration:none;text-transform:uppercase}.ds-links{display:flex;gap:20px;flex-wrap:wrap}.ds-links a{color:#d8e7e8;text-underline-offset:.18em}.ds-nav a:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-links a:hover{text-decoration-thickness:2px}"
+    },
+    {
+      "name": "Trust Fact",
+      "kind": "card",
+      "description": "A compact protocol fact in the mast's lower rail.",
+      "html": "<div class=\"ds-trust\"><b>86</b><span>current fixtures</span></div>",
+      "css": ".ds-trust{background:var(--ink,#071f2b);color:#fff;border:1px solid #31505a;padding:18px;font-family:'Avenir Next','Segoe UI',sans-serif}.ds-trust b{display:block;font:700 1.35rem/1 ui-monospace,SFMono-Regular,monospace}.ds-trust span{display:block;color:#afc7cb;font-size:.82rem;margin-top:8px}"
+    },
+    {
+      "name": "Evidence Disclosure",
+      "kind": "custom",
+      "description": "Native disclosure for exact model and route evidence.",
+      "html": "<details class=\"ds-evidence\"><summary>GPT-5.6 Sol</summary><dl><div><dt>Exact model</dt><dd><code>gpt-5.6-sol</code></dd></div><div><dt>Route</dt><dd>Codex CLI</dd></div></dl><a href=\"#\">Raw report</a></details>",
+      "css": ".ds-evidence{color:var(--ink,#071f2b);font-family:'Avenir Next','Segoe UI',sans-serif}.ds-evidence summary{cursor:pointer;font-weight:750}.ds-evidence[open] summary{color:var(--blue,#0c5670)}.ds-evidence summary:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-evidence dl{font-size:.82rem;margin:14px 0}.ds-evidence dl div{display:grid;grid-template-columns:80px 1fr;gap:8px;margin:5px 0}.ds-evidence dt{color:var(--muted,#49636d)}.ds-evidence dd{margin:0;overflow-wrap:anywhere}.ds-evidence a{color:var(--blue,#0c5670)}.ds-evidence[open] dl,.ds-evidence[open] summary~a{animation:ds-reveal .18s ease-out}@keyframes ds-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.ds-evidence[open] dl,.ds-evidence[open] summary~a{animation:none}}"
+    },
+    {
+      "name": "Production Status",
+      "kind": "chip",
+      "refersTo": "status",
+      "description": "An outlined status marker whose text carries the state.",
+      "html": "<span class=\"ds-status\">Production</span>",
+      "css": ".ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;color:#0c684f;font:800 .74rem/1.2 'Avenir Next','Segoe UI',sans-serif}"
+    },
+    {
+      "name": "Leaderboard",
+      "kind": "custom",
+      "refersTo": "leaderboard",
+      "description": "A keyboard-focusable evidence table with the primary decision columns first.",
+      "html": "<div class=\"ds-table-wrap\" role=\"region\" aria-label=\"Qualified model leaderboard\" tabindex=\"0\"><table><thead><tr><th>Rank</th><th>Model</th><th>Balanced score</th><th>Status</th></tr></thead><tbody><tr><td class=\"ds-rank\">1</td><th scope=\"row\">GPT-5.6 Sol</th><td class=\"ds-number\">91.28%</td><td><span class=\"ds-status\">Production</span></td></tr></tbody></table></div>",
+      "css": ".ds-table-wrap{overflow-x:auto;border-top:2px solid var(--ink,#071f2b);border-bottom:2px solid var(--ink,#071f2b);background:#fff;scrollbar-color:var(--blue,#0c5670) #dce9e7;scrollbar-width:thin}.ds-table-wrap:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px}.ds-table-wrap table{width:100%;border-collapse:collapse;min-width:620px;color:var(--ink,#071f2b);font:1rem/1.55 'Avenir Next','Segoe UI',sans-serif;font-variant-numeric:tabular-nums}.ds-table-wrap th,.ds-table-wrap td{padding:16px 13px;text-align:left;border-bottom:1px solid var(--line,#bfd0d2);vertical-align:top}.ds-table-wrap thead th{font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#49636d);background:#edf2ef}.ds-rank{font:700 1.15rem/1 ui-monospace,SFMono-Regular,monospace;color:var(--muted,#49636d)}.ds-number{text-align:right;font-weight:800}.ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;color:#0c684f;font-size:.74rem;font-weight:800}"
+    },
+    {
+      "name": "Blocked Route",
+      "kind": "custom",
+      "description": "Operational failure shown as evidence rather than a fabricated score.",
+      "html": "<article class=\"ds-blocked\"><strong>Model route</strong><code>provider/model</code><span>Provider</span><p>Route unavailable during the comparable run.</p></article>",
+      "css": ".ds-blocked{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;padding:20px 0;border-top:2px solid var(--ink,#071f2b);border-bottom:1px solid var(--line,#bfd0d2);color:var(--ink,#071f2b);font:1rem/1.55 'Avenir Next','Segoe UI',sans-serif}.ds-blocked code{font-size:.82rem}.ds-blocked p{grid-column:2/-1;margin:0;color:var(--muted,#49636d)}@media(max-width:760px){.ds-blocked{grid-template-columns:1fr}.ds-blocked p{grid-column:1}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Marine Observation Bulletin",
+    "overview": "Needlefish presents evaluation evidence as a public bulletin from a working marine observatory: sober, exact, and legible at a glance. Deep-ocean ink establishes authority while paper-white reading surfaces keep the result approachable; cyan marks data infrastructure and orange marks exceptions that deserve attention.\n\nThe system is editorial rather than promotional. Oversized questions create entry points, compact measurement type carries proof, and ruled tables expose the comparable evidence before any explanatory narrative. It refuses generic marketing cards and decorative dashboard chrome.",
+    "keyCharacteristics": [
+      "Leaderboard-first editorial hierarchy",
+      "Deep ink and paper surfaces divided by crisp data lines",
+      "Serif questions, plain sans explanation, and monospace measurements",
+      "Cyan data signals with orange reserved for exceptions",
+      "Native, inspectable disclosure behavior with no runtime JavaScript"
+    ],
+    "rules": [
+      { "name": "The Evidence Before Accent Rule", "body": "Color directs attention to data, navigation, or exceptions; it never creates a decorative marketing layer ahead of results.", "section": "colors" },
+      { "name": "The Orange Exception Rule", "body": "Orange stays rare and signals focus or an exceptional state, so its scarcity preserves meaning.", "section": "colors" },
+      { "name": "The Measurement Boundary Rule", "body": "Monospace belongs only to measurements and code; prose, navigation, and status language remain sans-serif.", "section": "typography" },
+      { "name": "The Leaderboard-First Rule", "body": "Result, qualification, and route status precede charts and methodology; explanation never delays access to the evidence.", "section": "layout" },
+      { "name": "The Flat Bulletin Rule", "body": "Surfaces stay flat; hierarchy is earned with contrast, spacing, and rules rather than cards or shadows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do lead with ranked, comparable results and show qualification status beside the score.",
+      "Do preserve direct access to raw reports, hashes, route details, and blocked reasons.",
+      "Do keep native keyboard behavior, visible focus, responsive table scrolling, and reduced-motion handling.",
+      "Do use the self-hosted Newsreader asset with its OFL provenance intact."
+    ],
+    "donts": [
+      "Don't insert marketing cards, feature grids, or decorative claims before the leaderboard.",
+      "Don't turn unavailable routes or invalid reports into zero scores.",
+      "Don't use monospace as a general aesthetic font or orange as ambient decoration.",
+      "Don't hide dense evidence behind runtime JavaScript or replace the semantic table with visual divs."
+    ]
+  }
+}

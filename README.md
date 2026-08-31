@@ -15,6 +15,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
+[Benchmark](docs/index.html) · [Methodology](eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
+
 Needlefish reviews your diff before merge and reports only real defects — bugs,
 regressions, security, data loss, migration/upgrade risk, missing validation,
 duplicate behavior — never style.
@@ -29,7 +31,7 @@ duplicate behavior — never style.
 - **Isolated review targets.** Reviews run against a throwaway clean clone and
   are checked for tampering after every model call.
 - **Guarded evals.** Every prompt/pipeline change is measured against an
-  84-scenario harness with active anti-cheat guards before it ships (see
+  86-scenario harness with active anti-cheat guards before it ships (see
   [Benchmarks](#benchmarks)).
 
 Small PRs use a review pass plus an adversarial critic; large PRs use map/deep
@@ -102,50 +104,23 @@ this repository can comment `@needlefish recheck` or
 
 ## Benchmarks
 
-Needlefish ships with a guarded evaluation harness (`eval/`) and is measured
-against it before any prompt or pipeline change ships. The fixture set is 84
-review scenarios — synthetic planted-bug/negative/honeypot cases plus fixtures
-mined from real PRs. Release baselines run each fixture 3 times; exploratory
-candidates may start with one full-set draw plus targeted x3 confirmation.
-Anti-cheat guards are active on every recorded run: per-draw ephemeral `HOME`,
-a planted bait answer key with a per-run canary, and a full-transcript scan
-(`cheatDetectedCount: 0` on all numbers below; any structured bait use voids a
-report).
+The [public benchmark page](docs/index.html) answers one question: which model,
+agent harness, provider route, and effort catches real PR defects without
+blocking clean changes? Its leaderboard is generated from guarded report JSON;
+scores are never copied by hand.
 
-Current guarded runs (production remains codex `gpt-5.6-terra` @high):
+The primary score is Balanced Review Accuracy: the arithmetic mean of anchored
+recall and usable specificity. Tier-1 recall remains a hard qualification gate.
 
-| Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 2026-08-21 | OX Alpha @max (schema-tolerant semantic probe) | 3 × 26\* | 0.514 | 0.000 | 0.577 |
-| 2026-08-21 | opencode OX Alpha @max (partial) | 176/252\* | 0.235 | 0.000 | 0.483 |
-| 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
-| 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
-| 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
-| 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+The current gate has 86 review scenarios and runs every published lane three
+times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
+when its prompt, fixture-set, scorer, and anti-cheat hashes match the production
+baseline. Provider failures and unavailable subscription models are shown as
+operational outcomes, not zero model scores.
 
-\* OX Alpha is included for transparency, not ranking. Its opencode run was
-stopped after 176 of 252 draws with 51.7% unusable output. The semantic probe
-ran only the 26 remaining fixtures through a temporary adapter that normalized
-the output envelope without inventing findings or anchors; 21.8% of those
-draws were still unusable. Neither result is directly comparable with a full
-production gate.
-
-The DeepSeek candidate hit every tier-1 fixture and produced valid JSON on all
-84 draws, but its single full-set draw is not a promotion result. Six divergent
-fixtures received targeted x3 confirmation; see
-[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md).
-
-Methodology notes, learned the hard way and enforced by the harness:
-
-- Recall is **anchored**: a finding only counts if it matches the expected
-  pattern AND the expected file. Positives carry difficulty tiers; tier-1
-  misses disqualify a lane outright.
-- Provider-side behavior drifts within a day on an identical prompt and
-  config (observed false-positive envelope: 1–5 draws per 72 negatives), so
-  prompt A/B comparisons are only trusted as **same-window paired runs**.
-- Reports are comparable only when prompt hash, fixture-set hash, scorer
-  hash, and anti-cheat generation all match; the harness refuses anything
-  else, including its own pre-guard baselines.
+Production remains Codex `gpt-5.6-terra` at `high` effort until a complete gate
+justifies a change. See [`eval/RESULTS.md`](eval/RESULTS.md) for the chronological
+record and `eval/results/` for raw reports.
 
 ## Development install
 
@@ -554,7 +529,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.4.1. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish
