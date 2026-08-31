@@ -8,6 +8,7 @@ import {
   renderSite,
   statisticalRanks,
   validateManifest,
+  validateStoredScore,
   type Lane,
   type LaneConfig,
   type LeaderboardManifest,
@@ -522,5 +523,37 @@ test("renderSite rejects an invalid draw that claims recall", () => {
   assert.throws(
     () => renderSite(manifest, changed, canonical),
     /invalid draw must not claim a successful outcome/,
+  );
+});
+
+test("renderSite rejects a draw score edited away from its stored findings", () => {
+  const result = {
+    fixtureId: "clean",
+    draw: 0,
+    durationMs: 1,
+    calls: 1,
+    retries: 0,
+    findings: [],
+    score: {
+      fixtureId: "clean",
+      verdict: "pass" as const,
+      verdictMatch: true,
+      mustFindHits: 0,
+      mustFindTotal: 0,
+      recall: true,
+      falsePositive: false,
+      lineAnchorValid: true,
+      formatOk: true,
+      findingCount: 0,
+      blockingFindingCount: 0,
+      noiseFindingCount: 99,
+      criticPruneError: false,
+      cheatDetected: false,
+      baitExposed: false,
+    },
+  };
+  assert.throws(
+    () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }),
+    /noiseFindingCount does not match stored findings/,
   );
 });

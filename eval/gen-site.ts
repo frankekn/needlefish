@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
 import { isRunnerName } from "../src/shared/runner";
+import type { Finding } from "../src/shared/schema";
 import { isCompleteReport } from "./shared/report-completeness";
 import { promptHash as computePromptHash } from "./shared/prompt-hash";
 import {
@@ -11,10 +12,13 @@ import {
 } from "./shared/report-integrity";
 import {
   ANTICHEAT_VERSION,
+  type DrawResult,
+  type Expected,
   type FixtureKind,
   type FixtureSpec,
   type Report,
 } from "./shared/types";
+import { score } from "./shared/score";
 
 const EVAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.dirname(EVAL_DIR);
@@ -62,6 +66,7 @@ export interface FixtureClassifications {
   readonly fixtureTiers: Readonly<Record<string, number>>;
   readonly fixtureSetHash: string;
   readonly promptHash: string;
+  readonly expectedByFixture?: Readonly<Record<string, Expected>>;
 }
 
 type PublishedReport = Report & {
@@ -84,7 +89,48 @@ export function fixtureClassifications(
     ),
     fixtureSetHash: computeFixtureSetHash(specs),
     promptHash: computePromptHash(),
+    expectedByFixture: Object.fromEntries(
+      specs.map((spec) => [spec.id, spec.expected]),
+    ),
   };
+}
+
+export function validateStoredScore(result: DrawResult, expected: Expected): void {
+  const findings = result.findings?.map(
+    (finding): Finding => ({
+      ...finding,
+      confidence: 1,
+      suggestedFix: "",
+      validation: "",
+    }),
+  );
+  if (result.score.formatOk && (!findings || result.score.verdict === null)) {
+    throw new Error("valid draw must retain findings and verdict");
+  }
+  const recomputed = result.score.formatOk
+    ? score(
+        { verdict: result.score.verdict!, findings: findings! },
+        expected,
+        result.fixtureId,
+      )
+    : score(null, expected, result.fixtureId);
+  for (const field of [
+    "verdict",
+    "verdictMatch",
+    "mustFindHits",
+    "mustFindTotal",
+    "recall",
+    "falsePositive",
+    "lineAnchorValid",
+    "formatOk",
+    "findingCount",
+    "blockingFindingCount",
+    "noiseFindingCount",
+  ] as const) {
+    if (result.score[field] !== recomputed[field]) {
+      throw new Error(`draw score ${field} does not match stored findings`);
+    }
+  }
 }
 
 function escapeHtml(value: unknown): string {
@@ -549,7 +595,26 @@ function validateComparability(
   baselinePath: string,
   canonical: FixtureClassifications,
 ): Lane {
-  for (const lane of lanes) validateLane(lane);
+  for (const lane of lanes) {
+    if (canonical.expectedByFixture) {
+      for (const result of lane.report.results) {
+        const expected = canonical.expectedByFixture[result.fixtureId];
+        if (!expected) {
+          throw new Error(`${lane.config.report}: missing current fixture expectations`);
+        }
+        try {
+          validateStoredScore(result, expected);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `${lane.config.report}: ${result.fixtureId} draw ${result.draw}: ${message}`,
+            { cause: error },
+          );
+        }
+      }
+    }
+    validateLane(lane);
+  }
   const baseline = lanes.find(({ config }) => config.report === baselinePath);
   if (!baseline) throw new Error(`baseline is not a configured lane: ${baselinePath}`);
   for (const lane of lanes) {
