@@ -14,7 +14,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
-[Benchmark](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [方法](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-快速開始)
+[Benchmark 頁面原始碼](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [方法](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-快速開始)
 
 Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回歸、安全性、
 資料遺失、遷移／升級風險、缺少驗證或重複行為，不回報單純的風格問題。
@@ -99,7 +99,7 @@ head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR
 
 ## Benchmarks
 
-[公開 benchmark 頁面](https://github.com/frankekn/needlefish/blob/main/docs/index.html)只回答一個問題：哪一組 model、agent
+[已準備的 benchmark 頁面原始碼](https://github.com/frankekn/needlefish/blob/main/docs/index.html)只回答一個問題：哪一組 model、agent
 harness、provider route 與 effort，能抓到真正的 PR 缺陷，又不會阻擋乾淨的
 變更？Leaderboard 直接由受防護的 report JSON 產生，不手抄分數。
 
@@ -110,6 +110,9 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 與 anti-cheat tracing。只有 prompt、fixture-set、scorer 與 anti-cheat hash
 都和 production baseline 相同的 report 才能排名。Provider failure 或訂閱尚未
 提供的模型只會標為 operational outcome，不會算成模型零分。
+
+頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
+開啟原始碼。
 
 目前部署的 Codex `gpt-5.6-terra` @ `high` 未通過 Tier-1 gate。0.4.2 會維持
 blocked，直到該 lane 重新通過資格驗證，或選定合格的替代 lane。詳見

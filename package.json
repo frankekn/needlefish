@@ -31,7 +31,6 @@
     "review": "tsx src/cli.ts",
     "check": "tsc --noEmit",
     "lint": "eslint src eval",
-    "site": "tsx eval/gen-site.ts",
     "test": "node scripts/test.mjs"
   },
   "devDependencies": {

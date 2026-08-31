@@ -109,6 +109,22 @@ export function usableSpecificity(report: PublishedReport): number {
   return reviewRates(report).specificity;
 }
 
+function tierOneRecall(report: PublishedReport): number {
+  if (!report.fixtureTiers) throw new Error("fixture tiers are required");
+  let total = 0;
+  let hits = 0;
+  for (const result of report.results) {
+    if (report.fixtureTiers[result.fixtureId] !== 1) continue;
+    if (report.fixtureKinds?.[result.fixtureId] !== "positive") {
+      throw new Error(`Tier-1 fixture is not positive: ${result.fixtureId}`);
+    }
+    total += 1;
+    if (result.score.recall) hits += 1;
+  }
+  if (total === 0) throw new Error("Tier-1 draws are required");
+  return hits / total;
+}
+
 function compareLanes(a: Lane, b: Lane): number {
   return (
     balancedReviewAccuracy(b.report) - balancedReviewAccuracy(a.report) ||
@@ -162,6 +178,7 @@ function validateLane(lane: Lane): void {
     fail("prompt, fixture-set, and scorer hashes are required");
   }
   if (!report.fixtureKinds) fail("fixture kinds are required");
+  if (!report.fixtureTiers) fail("fixture tiers are required");
   for (const [name, value] of [
     ["recall", report.aggregates.recall],
     ["Tier-1 recall", report.aggregates.recallByTier?.t1],
@@ -172,6 +189,9 @@ function validateLane(lane: Lane): void {
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
       fail(`${name} must be a finite rate from 0 to 1`);
     }
+  }
+  if (Math.abs(report.aggregates.recallByTier.t1 - tierOneRecall(report)) > 1e-12) {
+    fail("Tier-1 recall does not match draw results");
   }
   if (
     typeof report.aggregates.meanDurationMs !== "number" ||
@@ -234,7 +254,7 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
   return lanes
     .map(({ config, report }, index) => {
       const a = report.aggregates;
-      const t1 = a.recallByTier.t1;
+      const t1 = tierOneRecall(report);
       const tierOneMiss = t1 !== undefined && t1 < 1;
       const rank = ranked ? String(index + 1) : "—";
       const status = tierOneMiss ? "Disqualified: Tier-1 miss" : config.status;
@@ -262,10 +282,10 @@ function excludedRows(excluded: readonly ExcludedConfig[]): string {
 export function renderSite(manifest: LeaderboardManifest, configured: readonly Lane[]): string {
   const baseline = validateComparability(configured, manifest.baseline);
   const qualified = configured
-    .filter(({ report }) => report.aggregates.recallByTier.t1 === 1)
+    .filter(({ report }) => tierOneRecall(report) === 1)
     .sort(compareLanes);
   const disqualified = configured
-    .filter(({ report }) => report.aggregates.recallByTier.t1 !== 1)
+    .filter(({ report }) => tierOneRecall(report) !== 1)
     .sort(compareLanes);
   const fixtureCount = baseline.report.fixtures?.length ?? 0;
   const deployment = configured.find(({ config }) => config.status === "Deployed");
@@ -304,7 +324,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <a class="skip" href="#leaderboard">Skip to leaderboard</a>
 <header class="mast"><div class="shell"><nav aria-label="Primary"><a class="brand" href="${REPO_URL}">Needlefish</a><div class="navlinks"><a href="#leaderboard">Leaderboard</a><a href="#method">Method</a><a href="${REPO_URL}/tree/main/eval/results">Raw reports</a><a href="${REPO_URL}">Use Needlefish</a></div></nav><div class="hero"><div><h1>Which AI reviewer catches real bugs?</h1><p class="lede">Needlefish measures which model and review setup finds real pull-request defects without blocking clean changes. Every lane reviews the same guarded scenarios three times, and every score links to raw evidence.</p></div><div class="dive-log"><strong>${fixtureCount} × 3</strong><span>review scenarios × independent draws</span></div></div><div class="trust" aria-label="Benchmark trust facts"><div><b>${fixtureCount}</b><span>current fixtures</span></div><div><b>3</b><span>draws per lane</span></div><div><b>sealed</b><span>holdouts included</span></div><div><b>v${ANTICHEAT_VERSION}</b><span>anti-cheat generation</span></div></div></div></header>
-<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall is a hard gate.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? deployment.report.aggregates.recallByTier.t1 === 1 ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed and passes the current Tier-1 gate.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed but misses the current Tier-1 gate. Release 0.4.2 is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
+<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall is a hard gate.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? tierOneRecall(deployment.report) === 1 ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed and passes the current Tier-1 gate.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed but misses the current Tier-1 gate. Release 0.4.2 is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Disqualified</h2><p class="intro">These complete reports missed at least one Tier-1 defect. Their balanced scores remain visible, but they receive no rank.</p>${laneTable(disqualified, "Disqualified model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(manifest.excluded)}</ul></div></section>` : ""}

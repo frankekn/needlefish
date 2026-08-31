@@ -296,14 +296,14 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		}
 		return { required, optional: [] };
 	}
-	// pi: every explicit non-default provider needs its registry; authenticated
-	// providers may also read Pi's credential store.
+	// pi: every explicit non-default provider needs its registry. cliproxy keeps
+	// credentials in the proxy; authenticated providers read Pi's credential store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
 		if (provider !== "openai-codex") {
 			return {
 				required: [".pi/agent/models.json"],
-				optional: [".pi/agent/auth.json"],
+				optional: provider === "cliproxy" ? [] : [".pi/agent/auth.json"],
 			};
 		}
 	}

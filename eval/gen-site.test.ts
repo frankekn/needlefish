@@ -171,3 +171,30 @@ test("renderSite rejects different fixture IDs with matching hashes", () => {
     /fixture manifest does not match the baseline/,
   );
 });
+
+test("renderSite derives Tier-1 qualification from draw results", () => {
+  const { manifest, lanes } = setup();
+  const tierOneResult = report.results.find(
+    (result) => report.fixtureTiers?.[result.fixtureId] === 1,
+  );
+  assert.ok(tierOneResult);
+  const changed = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result) =>
+              result === tierOneResult
+                ? { ...result, score: { ...result.score, recall: !result.score.recall } }
+                : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, changed),
+    /Tier-1 recall does not match draw results/,
+  );
+});

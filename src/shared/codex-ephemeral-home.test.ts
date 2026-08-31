@@ -679,7 +679,7 @@ test("runCodex ephemeral HOME: opencode stages custom XDG auth roots into dispos
 	assert.equal(existsSync(dump.home), false, "disposable XDG roots must be removed");
 });
 
-test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {
+test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
 	const previous = {
@@ -725,6 +725,14 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 		"absent OAuth file must not be fabricated",
 	);
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
+	const proxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(proxyHome!, ".pi", "agent", "auth.json")),
+		false,
+	);
+
+	// Authenticated non-proxy providers still receive the disposable credential copy.
+	process.env.PI_PROVIDER = "zai";
 	const authenticatedHome = prepareEphemeralHome("pi", tmp);
 	assert.equal(
 		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
@@ -732,6 +740,7 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 	);
 
 	// Proxy provider with the registry itself missing stays fail-closed.
+	process.env.PI_PROVIDER = "cliproxy";
 	rmSync(path.join(fakeHome, ".pi", "agent", "models.json"));
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));

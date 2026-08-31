@@ -15,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
-[Benchmark](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
+[Benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
 
 Needlefish reviews your diff before merge and reports only real defects — bugs,
 regressions, security, data loss, migration/upgrade risk, missing validation,
@@ -104,7 +104,7 @@ this repository can comment `@needlefish recheck` or
 
 ## Benchmarks
 
-The [public benchmark page](https://github.com/frankekn/needlefish/blob/main/docs/index.html) answers one question: which model,
+The prepared [benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) answers one question: which model,
 agent harness, provider route, and effort catches real PR defects without
 blocking clean changes? Its leaderboard is generated from guarded report JSON;
 scores are never copied by hand.
@@ -117,6 +117,9 @@ times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
 when its prompt, fixture-set, scorer, and anti-cheat hashes match the production
 baseline. Provider failures and unavailable subscription models are shown as
 operational outcomes, not zero model scores.
+
+The page is not deployed yet; this link intentionally opens its source until a
+custom domain or GitHub Pages deployment is authorized.
 
 The deployed Codex `gpt-5.6-terra` at `high` effort misses the current Tier-1
 gate. Release 0.4.2 remains blocked until it is re-qualified or a qualified
