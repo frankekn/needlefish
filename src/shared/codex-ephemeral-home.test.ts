@@ -736,6 +736,14 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		/required auth source is missing: .*auth\.json/,
 	);
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
+	delete process.env.PI_PROVIDER;
+	process.env.PI_AUTH_MODE = "proxy";
+	const defaultProxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(defaultProxyHome!, ".pi", "agent", "auth.json")),
+		false,
+		"explicit proxy mode must override the default provider's OAuth staging",
+	);
 	process.env.PI_PROVIDER = "cliproxy";
 	process.env.PI_AUTH_MODE = "proxy";
 	const proxyHome = prepareEphemeralHome("pi", tmp);

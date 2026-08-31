@@ -348,5 +348,5 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
-          gh workflow run review.yml --ref main -f pr_number="$PR_NUM"
+          gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

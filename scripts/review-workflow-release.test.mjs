@@ -32,6 +32,7 @@ function workflowScript(stepName) {
 
 const selectScript = workflowScript("Select Needlefish release");
 const reviewScript = workflowScript("Needlefish review");
+const reconcileScript = workflowScript("Re-dispatch when the latest head lacks a terminal result");
 const pinnedSha = "a".repeat(40);
 const currentSha = "b".repeat(40);
 
@@ -199,5 +200,12 @@ test("review forwards the optional opencode idle timeout without exporting an em
 	assert.match(
 		reviewScript,
 		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
+	);
+});
+
+test("reconcile dispatches without requiring a checkout", () => {
+	assert.match(
+		reconcileScript,
+		/gh workflow run review\.yml --repo "\$REPO" --ref main/,
 	);
 });

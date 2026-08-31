@@ -297,23 +297,23 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		}
 		return { required, optional: [] };
 	}
-	// pi: every explicit non-default provider needs its registry. Proxy routes
-	// keep credentials outside HOME; other providers require Pi's OAuth store.
+	// pi: proxy routes keep credentials outside HOME. Every explicit non-default
+	// provider also needs its registry; OAuth routes require Pi's auth store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		if (provider !== "openai-codex") {
-			const authMode = process.env.PI_AUTH_MODE ?? "oauth";
-			if (authMode !== "oauth" && authMode !== "proxy") {
-				throw new Error("PI_AUTH_MODE must be oauth or proxy");
-			}
-			if (authMode === "oauth") {
-				return {
-					required: [".pi/agent/models.json", ".pi/agent/auth.json"],
-					optional: [],
-				};
-			}
+		const authMode = process.env.PI_AUTH_MODE ?? "oauth";
+		if (authMode !== "oauth" && authMode !== "proxy") {
+			throw new Error("PI_AUTH_MODE must be oauth or proxy");
+		}
+		if (authMode === "proxy") {
 			return {
 				required: [".pi/agent/models.json"],
+				optional: [],
+			};
+		}
+		if (provider !== "openai-codex") {
+			return {
+				required: [".pi/agent/models.json", ".pi/agent/auth.json"],
 				optional: [],
 			};
 		}
