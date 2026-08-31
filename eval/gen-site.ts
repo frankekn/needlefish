@@ -725,6 +725,12 @@ function validateLane(lane: Lane): void {
     ) {
       fail("draw duration must be a finite non-negative number");
     }
+    for (const field of ["calls", "retries"] as const) {
+      const value = (rawResult as Record<string, unknown>)[field];
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        fail(`draw ${field} must be a non-negative integer`);
+      }
+    }
     const noiseFindingCount = (score as Record<string, unknown>).noiseFindingCount;
     if (
       typeof noiseFindingCount !== "number" ||
@@ -800,7 +806,9 @@ function validateComparability(
           validateStoredScore(
             result,
             expected,
-            canonical.fastPathFixtureIds?.includes(result.fixtureId) === true,
+            canonical.fastPathFixtureIds?.includes(result.fixtureId) === true &&
+              (result as DrawResult & { readonly fastPath?: unknown }).fastPath ===
+                "docs",
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

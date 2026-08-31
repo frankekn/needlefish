@@ -462,6 +462,10 @@ test("writeReport: records a complete operator attestation", (t) => {
     ["--provider", "", "--route", "r", "--runner-version", "v"],
     ["--provider", "p", "--route", "", "--runner-version", "v"],
     ["--provider", "p", "--route", "r", "--runner-version", ""],
+    ["--provider", " ", "--route", "r", "--runner-version", "v"],
+    ["--provider", "p", "--route", "\t", "--runner-version", "v"],
+    ["--provider", "p", "--route", "r", "--runner-version", "  "],
+    ["--provider", " --route", "--route", "r", "--runner-version", "v"],
   ]) {
     assert.throws(() => parseArgs(argv), /requires a non-empty value/);
   }

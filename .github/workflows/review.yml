@@ -205,11 +205,6 @@ jobs:
 
           if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
             EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
-            expected_metadata="$HOME/.local/share/needlefish/releases/$EXPECTED_NEEDLEFISH_SHA/release.json"
-            current_metadata="$HOME/.local/share/needlefish/current/release.json"
-            if [ ! -f "$expected_metadata" ] && [ -f "$current_metadata" ]; then
-              EXPECTED_NEEDLEFISH_SHA="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (typeof json.sha === "string") process.stdout.write(json.sha);' "$current_metadata" 2>/dev/null || true)"
-            fi
           fi
 
           if [[ ! "$EXPECTED_NEEDLEFISH_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -344,12 +339,6 @@ jobs:
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
             exit 0
           fi
-          running=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=in_progress" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
-          queued=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=queued" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
-          if [ "$running" -gt 0 ] || [ "$queued" -gt 0 ]; then
-            echo "a needlefish run for $head is still active or queued; letting it finish"
-            exit 0
-          fi
           infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
@@ -365,6 +354,12 @@ jobs:
               -f "output[title]=Needlefish: caller retry required" \
               -f "output[summary]=$summary"
             echo "::warning::$summary"
+            exit 0
+          fi
+          running=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=in_progress" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
+          queued=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=queued" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
+          if [ "$running" -gt 0 ] || [ "$queued" -gt 0 ]; then
+            echo "a needlefish run for $head is still active or queued; letting it finish"
             exit 0
           fi
           gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"

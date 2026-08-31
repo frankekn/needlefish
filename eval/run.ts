@@ -13,6 +13,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
+import { isDocsFastPathEligible } from "../src/shared/classify";
 import { review } from "../src/core/review";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
@@ -93,10 +94,11 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	const attestationValue = (flag: string): string | null => {
 		if (!argv.includes(flag)) return null;
 		const value = get(flag);
-		if (!value || value.startsWith("--")) {
+		const normalized = value?.trim() ?? "";
+		if (!normalized || normalized.startsWith("--")) {
 			throw new Error(`${flag} requires a non-empty value`);
 		}
-		return value;
+		return normalized;
 	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
@@ -272,7 +274,16 @@ async function runOne(
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
 	const findings = result?.findings ?? [];
-	return {
+	const docsFastPath =
+		result !== null &&
+		calls === 0 &&
+		traceEvents.length === 0 &&
+		loaded.bundle.changedFiles.length > 0 &&
+		loaded.bundle.changedFiles.every(
+			(file) =>
+				file.surface === "docs" && isDocsFastPathEligible(file.path),
+		);
+	const drawResult: DrawResult & { readonly fastPath?: "docs" } = {
 		fixtureId: spec.id,
 		draw: 0,
 		score: score(
@@ -293,7 +304,9 @@ async function runOne(
 		candidateMatchEvidence: result?.candidateFindings
 			? matchEvidence(result.candidateFindings, spec.expected)
 			: undefined,
+		...(docsFastPath ? { fastPath: "docs" as const } : {}),
 	};
+	return drawResult;
 }
 
 interface DrawWork {

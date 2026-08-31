@@ -2650,7 +2650,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "neg-docs-only",
@@ -2676,7 +2677,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "neg-docs-only",
@@ -2702,7 +2704,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "neg-hard-dead-code-delete",
@@ -5414,7 +5417,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "py-docs-only",
@@ -5440,7 +5444,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "py-docs-only",
@@ -5466,7 +5471,8 @@
       "calls": 0,
       "retries": 0,
       "findings": [],
-      "matchEvidence": []
+      "matchEvidence": [],
+      "fastPath": "docs"
     },
     {
       "fixtureId": "py-safe-refactor",
