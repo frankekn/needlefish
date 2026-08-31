@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadFixtures } from "./run";
+import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
 import { isCompleteReport } from "./shared/report-completeness";
 import {
   hasConsistentCheatDetection,
@@ -56,6 +56,7 @@ export interface Lane {
 export interface FixtureClassifications {
   readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
   readonly fixtureTiers: Readonly<Record<string, number>>;
+  readonly fixtureSetHash: string;
 }
 
 type PublishedReport = Report & {
@@ -72,6 +73,7 @@ export function fixtureClassifications(
         .filter((spec) => spec.kind === "positive")
         .map((spec) => [spec.id, spec.tier ?? 2]),
     ),
+    fixtureSetHash: computeFixtureSetHash(specs),
   };
 }
 
@@ -493,6 +495,11 @@ function validateComparability(
     ) {
       throw new Error(
         `${lane.config.report}: fixture classifications do not match the fixture specs`,
+      );
+    }
+    if (lane.report.fixtureSetHash !== canonical.fixtureSetHash) {
+      throw new Error(
+        `${lane.config.report}: fixtureSetHash does not match the current fixture specs`,
       );
     }
     for (const field of ["promptHash", "fixtureSetHash", "scorerHash", "anticheatVersion"] as const) {

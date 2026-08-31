@@ -25,6 +25,7 @@ const report = {
 const canonical = {
   fixtureKinds: report.fixtureKinds,
   fixtureTiers: report.fixtureTiers ?? {},
+  fixtureSetHash: report.fixtureSetHash ?? "",
 };
 
 function config(reportPath: string, name: string): LaneConfig {
@@ -127,7 +128,19 @@ test("renderSite rejects a lane with a different fixture set", () => {
   );
   assert.throws(
     () => renderSite(manifest, mismatched, canonical),
-    /fixtureSetHash does not match the baseline/,
+    /fixtureSetHash does not match the current fixture specs/,
+  );
+});
+
+test("renderSite rejects reports with a stale fixture-set hash", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () =>
+      renderSite(manifest, lanes, {
+        ...canonical,
+        fixtureSetHash: "current-fixture-specs",
+      }),
+    /fixtureSetHash does not match the current fixture specs/,
   );
 });
 
