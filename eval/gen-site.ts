@@ -145,19 +145,19 @@ export function usableSpecificity(report: PublishedReport): number {
   return reviewRates(report).specificity;
 }
 
-function tierOneRecall(report: PublishedReport): number {
+function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
   if (!report.fixtureTiers) throw new Error("fixture tiers are required");
   let total = 0;
   let hits = 0;
   for (const result of report.results) {
-    if (report.fixtureTiers[result.fixtureId] !== 1) continue;
+    if (report.fixtureTiers[result.fixtureId] !== tier) continue;
     if (report.fixtureKinds?.[result.fixtureId] !== "positive") {
-      throw new Error(`Tier-1 fixture is not positive: ${result.fixtureId}`);
+      throw new Error(`Tier-${tier} fixture is not positive: ${result.fixtureId}`);
     }
     total += 1;
     if (result.score.recall) hits += 1;
   }
-  if (total === 0) throw new Error("Tier-1 draws are required");
+  if (total === 0) throw new Error(`Tier-${tier} draws are required`);
   return hits / total;
 }
 
@@ -385,6 +385,13 @@ function readManifest(): LeaderboardManifest {
   return validateManifest(parsed);
 }
 
+function readPackageVersion(): string {
+  const parsed: unknown = JSON.parse(
+    readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
+  );
+  return requiredString(record(parsed, "package.json"), "version", "package.json");
+}
+
 function readLane(config: LaneConfig): Lane {
   const reportPath = path.join(EVAL_DIR, config.report);
   return {
@@ -473,6 +480,8 @@ function validateLane(lane: Lane): void {
   for (const [name, value] of [
     ["recall", report.aggregates.recall],
     ["Tier-1 recall", report.aggregates.recallByTier?.t1],
+    ["Tier-2 recall", report.aggregates.recallByTier?.t2],
+    ["Tier-3 recall", report.aggregates.recallByTier?.t3],
     ["false-positive rate", report.aggregates.falsePositiveRate],
     ["invalid-output rate", report.aggregates.invalidJsonRate],
     ["verdict-match rate", report.aggregates.verdictMatchRate],
@@ -481,8 +490,13 @@ function validateLane(lane: Lane): void {
       fail(`${name} must be a finite rate from 0 to 1`);
     }
   }
-  if (Math.abs(report.aggregates.recallByTier.t1 - tierOneRecall(report)) > 1e-12) {
-    fail("Tier-1 recall does not match draw results");
+  for (const tier of [1, 2, 3] as const) {
+    if (
+      Math.abs(report.aggregates.recallByTier[`t${tier}`] - tierRecall(report, tier)) >
+      1e-12
+    ) {
+      fail(`Tier-${tier} recall does not match draw results`);
+    }
   }
   const derived = displayedMetrics(report);
   for (const [name, stored, computed] of [
@@ -584,18 +598,20 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
   return lanes
     .map(({ config, report }, index) => {
       const metrics = displayedMetrics(report);
-      const t1 = tierOneRecall(report);
+      const t1 = tierRecall(report, 1);
+      const t2 = tierRecall(report, 2);
+      const t3 = tierRecall(report, 3);
       const tierOneMiss = t1 !== undefined && t1 < 1;
       const rank = ranked ? String(ranks[index]) : "—";
       const status = tierOneMiss ? "Disqualified: Tier-1 miss" : config.status;
       const [lower, upper] = scoreConfidenceInterval(report);
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${t1 === undefined ? "—" : percent(t1)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(config.runnerVersion)}</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(config.route)}</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Git SHA</dt><dd><code>${escapeHtml(report.gitSha)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${percent(t1)}</td><td class="number">${percent(t2)}</td><td class="number">${percent(t3)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td>${escapeHtml(config.runnerVersion)}</td><td class="route"><strong>${escapeHtml(config.provider)}</strong><small>${escapeHtml(config.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
     })
     .join("");
 }
 
 function laneTable(lanes: readonly Lane[], label: string, ranked: boolean): string {
-  return `<div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th>Rank</th><th>Model</th><th class="number">Balanced score</th><th class="number">95% CI</th><th>Status</th><th class="number">Recall</th><th class="number">Usable specificity</th><th class="number">Tier-1</th><th class="number">False positive</th><th class="number">Invalid</th><th>Harness</th><th>Provider / route</th><th>Effort</th><th class="number">Mean time</th></tr></thead><tbody>${laneRows(lanes, ranked)}</tbody></table></div>`;
+  return `<div class="table-wrap" role="region" aria-label="${escapeHtml(label)}" tabindex="0"><table><thead><tr><th>Rank</th><th>Model</th><th class="number">Balanced score</th><th class="number">95% CI</th><th>Status</th><th class="number">Recall</th><th class="number">Usable specificity</th><th class="number">Tier-1</th><th class="number">Tier-2</th><th class="number">Tier-3</th><th class="number">False positive</th><th class="number">Invalid</th><th>Harness</th><th>Provider / route</th><th>Effort</th><th class="number">Mean time</th></tr></thead><tbody>${laneRows(lanes, ranked)}</tbody></table></div>`;
 }
 
 function blockedRows(blocked: readonly BlockedConfig[]): string {
@@ -616,12 +632,13 @@ export function renderSite(
   canonical: FixtureClassifications,
 ): string {
   validateManifest(manifest);
+  const releaseVersion = readPackageVersion();
   const baseline = validateComparability(configured, manifest.baseline, canonical);
   const qualified = configured
-    .filter(({ report }) => tierOneRecall(report) === 1)
+    .filter(({ report }) => tierRecall(report, 1) === 1)
     .sort(compareLanes);
   const disqualified = configured
-    .filter(({ report }) => tierOneRecall(report) !== 1)
+    .filter(({ report }) => tierRecall(report, 1) !== 1)
     .sort(compareLanes);
   const fixtureCount = baseline.report.fixtures?.length ?? 0;
   const deployment = configured.find(({ config }) => config.status === "Deployed");
@@ -660,7 +677,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <a class="skip" href="#leaderboard">Skip to leaderboard</a>
 <header class="mast"><div class="shell"><nav aria-label="Primary"><a class="brand" href="${REPO_URL}">Needlefish</a><div class="navlinks"><a href="#leaderboard">Leaderboard</a><a href="#method">Method</a><a href="${REPO_URL}/tree/main/eval/results">Raw reports</a><a href="${REPO_URL}">Use Needlefish</a></div></nav><div class="hero"><div><h1>Which AI reviewer catches real bugs?</h1><p class="lede">Needlefish measures which model and review setup finds real pull-request defects without blocking clean changes. Every lane reviews the same guarded scenarios three times, and every score links to raw evidence.</p></div><div class="dive-log"><strong>${fixtureCount} × 3</strong><span>review scenarios × independent draws</span></div></div><div class="trust" aria-label="Benchmark trust facts"><div><b>${fixtureCount}</b><span>current fixtures</span></div><div><b>3</b><span>draws per lane</span></div><div><b>sealed</b><span>holdouts included</span></div><div><b>v${ANTICHEAT_VERSION}</b><span>anti-cheat generation</span></div></div></div></header>
-<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall is a hard gate.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? tierOneRecall(deployment.report) === 1 ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed and passes the current Tier-1 gate.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed but misses the current Tier-1 gate. Release 0.4.2 is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
+<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall is a hard gate.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? tierRecall(deployment.report, 1) === 1 ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed and passes the current Tier-1 gate.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.config.provider)} is deployed but misses the current Tier-1 gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Disqualified</h2><p class="intro">These complete reports missed at least one Tier-1 defect. Their balanced scores remain visible, but they receive no rank.</p>${laneTable(disqualified, "Disqualified model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(manifest.excluded)}</ul></div></section>` : ""}

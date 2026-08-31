@@ -102,6 +102,8 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Scroll horizontally to see every metric/);
   assert.match(html, /Disqualified: Tier-1 miss/);
   assert.match(html, /Release 0\.4\.2 is blocked/);
+  assert.match(html, /Tier-2/);
+  assert.match(html, /Tier-3/);
   assert.match(html, /Balanced Review Accuracy/);
   assert.match(html, /seed 6ba00010/);
 });
@@ -196,6 +198,12 @@ test("renderSite rejects different fixture IDs with matching hashes", () => {
                 kind,
               ]),
             ),
+            fixtureTiers: Object.fromEntries(
+              Object.entries(lane.report.fixtureTiers ?? {}).map(([id, tier]) => [
+                id === originalId ? replacementId : id,
+                tier,
+              ]),
+            ),
             results: lane.report.results.map((result) =>
               result.fixtureId === originalId
                 ? { ...result, fixtureId: replacementId }
@@ -238,6 +246,33 @@ test("renderSite derives Tier-1 qualification from draw results", () => {
   );
 });
 
+test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {
+  const { manifest, lanes } = setup();
+  for (const tier of [2, 3] as const) {
+    const changed = lanes.map((lane, index) =>
+      index === 1
+        ? {
+            ...lane,
+            report: {
+              ...lane.report,
+              aggregates: {
+                ...lane.report.aggregates,
+                recallByTier: {
+                  ...lane.report.aggregates.recallByTier,
+                  [`t${tier}`]: 0,
+                },
+              },
+            },
+          }
+        : lane,
+    );
+    assert.throws(
+      () => renderSite(manifest, changed, canonical),
+      new RegExp(`Tier-${tier} recall does not match draw results`),
+    );
+  }
+});
+
 test("renderSite rejects fixture classification drift in every lane", () => {
   const { manifest, lanes } = setup();
   const fixtureId = report.results.find(
@@ -249,6 +284,11 @@ test("renderSite rejects fixture classification drift in every lane", () => {
     (result) =>
       report.fixtureTiers?.[result.fixtureId] === 1 &&
       result.fixtureId !== fixtureId,
+  );
+  const newTierTwo = report.results.filter(
+    (result) =>
+      report.fixtureTiers?.[result.fixtureId] === 2 ||
+      result.fixtureId === fixtureId,
   );
   const changed = lanes.map((lane) => ({
     ...lane,
@@ -262,6 +302,9 @@ test("renderSite rejects fixture classification drift in every lane", () => {
           t1:
             remainingTierOne.filter((result) => result.score.recall).length /
             remainingTierOne.length,
+          t2:
+            newTierTwo.filter((result) => result.score.recall).length /
+            newTierTwo.length,
         },
       },
     },
