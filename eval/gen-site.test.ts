@@ -297,3 +297,37 @@ test("renderSite rejects an invalid manifest status", () => {
     /blocked must be an array/,
   );
 });
+
+test("renderSite rejects multiple deployed lanes", () => {
+  const { manifest, lanes } = setup();
+  const malformed = structuredClone(manifest);
+  Object.assign(malformed.lanes[1], { status: "Deployed" });
+  assert.throws(
+    () => renderSite(malformed, lanes, canonical),
+    /must not contain multiple deployed lanes/,
+  );
+});
+
+test("renderSite rejects an invalid draw that claims recall", () => {
+  const { manifest, lanes } = setup();
+  const tierOne = report.results.find(
+    (result) => report.fixtureTiers?.[result.fixtureId] === 1,
+  );
+  assert.ok(tierOne);
+  const changed = lanes.map((lane, index) => {
+    if (index !== 1) return lane;
+    const malformed = structuredClone(lane.report);
+    const result = malformed.results.find(
+      (candidate) =>
+        candidate.fixtureId === tierOne.fixtureId &&
+        candidate.draw === tierOne.draw,
+    );
+    assert.ok(result);
+    Object.assign(result.score, { formatOk: false, recall: true });
+    return { ...lane, report: malformed };
+  });
+  assert.throws(
+    () => renderSite(manifest, changed, canonical),
+    /invalid draw must not claim a successful outcome/,
+  );
+});

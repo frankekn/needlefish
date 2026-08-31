@@ -336,6 +336,9 @@ export function validateManifest(value: unknown): LeaderboardManifest {
       status,
     };
   });
+  if (lanes.filter((lane) => lane.status === "Deployed").length > 1) {
+    throw new Error("leaderboard manifest must not contain multiple deployed lanes");
+  }
   return {
     updated: requiredString(manifest, "updated", "leaderboard manifest"),
     baseline: requiredString(manifest, "baseline", "leaderboard manifest"),
@@ -418,6 +421,13 @@ function validateLane(lane: Lane): void {
       if (typeof (score as Record<string, unknown>)[field] !== "boolean") {
         fail(`draw score ${field} must be boolean`);
       }
+    }
+    const typedScore = score as Record<string, boolean>;
+    if (
+      !typedScore.formatOk &&
+      (typedScore.recall || typedScore.falsePositive || typedScore.verdictMatch)
+    ) {
+      fail("invalid draw must not claim a successful outcome");
     }
     const durationMs = (rawResult as { durationMs?: unknown }).durationMs;
     if (
