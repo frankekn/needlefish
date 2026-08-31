@@ -19,8 +19,10 @@ receive no rank.
 Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
 specificity. Invalid model output cannot count as a correct result, so it is
 counted once. Tier-1 recall is a hard gate; validity, verdict match, and speed
-remain separate diagnostics. Statistically unresolved lanes share a rank using
-a paired 95% normal interval over fixture outcomes; each row also shows its
+remain separate diagnostics. Point-sorted uncertainty groups are anchored to
+their highest-scoring lane; lower lanes share that rank while their paired 95%
+normal interval versus the anchor includes zero. This prevents non-transitive
+bridge comparisons from collapsing distinct groups. Each row also shows its
 lane-level 95% interval.
 
 | Rank | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | Tier-1 | FP | Invalid | Verdict | Mean |

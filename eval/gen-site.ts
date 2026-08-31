@@ -258,6 +258,9 @@ function statisticallyTied(left: PublishedReport, right: PublishedReport): boole
 }
 
 export function statisticalRanks(lanes: readonly Lane[]): number[] {
+  // Statistical non-separation is not transitive. Anchor each point-sorted
+  // group to its highest-scoring lane so bridge lanes cannot collapse the
+  // entire leaderboard into one rank.
   let groupStart = 0;
   return lanes.map((lane, index) => {
     if (index > 0 && !statisticallyTied(lanes[groupStart].report, lane.report)) {
@@ -277,8 +280,84 @@ function compareLanes(a: Lane, b: Lane): number {
   );
 }
 
+function record(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredString(
+  value: Record<string, unknown>,
+  key: string,
+  label: string,
+): string {
+  const field = value[key];
+  if (typeof field !== "string" || field.trim().length === 0) {
+    throw new Error(`${label}.${key} must be a non-empty string`);
+  }
+  return field;
+}
+
+function blockedConfig(value: unknown, label: string): BlockedConfig {
+  const item = record(value, label);
+  return {
+    name: requiredString(item, "name", label),
+    model: requiredString(item, "model", label),
+    provider: requiredString(item, "provider", label),
+    reason: requiredString(item, "reason", label),
+  };
+}
+
+export function validateManifest(value: unknown): LeaderboardManifest {
+  const manifest = record(value, "leaderboard manifest");
+  if (!Array.isArray(manifest.lanes) || manifest.lanes.length === 0) {
+    throw new Error("leaderboard manifest.lanes must be a non-empty array");
+  }
+  if (!Array.isArray(manifest.blocked)) {
+    throw new Error("leaderboard manifest.blocked must be an array");
+  }
+  if (manifest.excluded !== undefined && !Array.isArray(manifest.excluded)) {
+    throw new Error("leaderboard manifest.excluded must be an array");
+  }
+  const lanes = manifest.lanes.map((value, index): LaneConfig => {
+    const label = `leaderboard manifest.lanes[${index}]`;
+    const lane = record(value, label);
+    const status = lane.status;
+    if (status !== "Deployed" && status !== "Candidate") {
+      throw new Error(`${label}.status must be Deployed or Candidate`);
+    }
+    return {
+      report: requiredString(lane, "report", label),
+      name: requiredString(lane, "name", label),
+      provider: requiredString(lane, "provider", label),
+      route: requiredString(lane, "route", label),
+      runnerVersion: requiredString(lane, "runnerVersion", label),
+      status,
+    };
+  });
+  return {
+    updated: requiredString(manifest, "updated", "leaderboard manifest"),
+    baseline: requiredString(manifest, "baseline", "leaderboard manifest"),
+    lanes,
+    blocked: manifest.blocked.map((value, index) =>
+      blockedConfig(value, `leaderboard manifest.blocked[${index}]`),
+    ),
+    excluded: (manifest.excluded as unknown[] | undefined)?.map(
+      (value, index) => {
+        const label = `leaderboard manifest.excluded[${index}]`;
+        return {
+          ...blockedConfig(value, label),
+          report: requiredString(record(value, label), "report", label),
+        };
+      },
+    ),
+  };
+}
+
 function readManifest(): LeaderboardManifest {
-  return JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as LeaderboardManifest;
+  const parsed: unknown = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+  return validateManifest(parsed);
 }
 
 function readLane(config: LaneConfig): Lane {
@@ -484,6 +563,7 @@ export function renderSite(
   configured: readonly Lane[],
   canonical: FixtureClassifications,
 ): string {
+  validateManifest(manifest);
   const baseline = validateComparability(configured, manifest.baseline, canonical);
   const qualified = configured
     .filter(({ report }) => tierOneRecall(report) === 1)
@@ -532,7 +612,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Disqualified</h2><p class="intro">These complete reports missed at least one Tier-1 defect. Their balanced scores remain visible, but they receive no rank.</p>${laneTable(disqualified, "Disqualified model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(manifest.excluded)}</ul></div></section>` : ""}
-<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Statistically unresolved lanes share a rank using a paired 95% normal interval over fixture outcomes; the table also shows each lane's 95% interval. A Tier-1 miss overrides the score and disqualifies the lane. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect disqualifies a lane regardless of its average.</p><h3>False positives</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Lower is better.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
+<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Point-sorted uncertainty groups are anchored to their highest-scoring lane; lower lanes share that rank while their paired 95% normal interval versus the anchor includes zero. This avoids non-transitive bridge comparisons. The table also shows each lane's 95% interval. A Tier-1 miss overrides the score and disqualifies the lane. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect disqualifies a lane regardless of its average.</p><h3>False positives</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Lower is better.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
 <footer class="shell"><span>Needlefish — strict local PR review.</span><span><a href="${REPO_URL}">Use Needlefish</a> · <a href="${REPO_URL}/blob/main/LICENSE">MIT License</a></span></footer>
 </body>
 </html>`;

@@ -208,8 +208,11 @@ proposal because Tier-1 recall is below 100%.
 - Report uncertainty from the x3 fixture results. A paired bootstrap over
   fixtures is preferable for head-to-head comparisons because every lane sees
   the same fixture set; at minimum, show a confidence interval and declare
-  statistically unresolved lanes tied. Terminal-Bench's reported standard
-  error is the closest primary benchmark precedent cited above.
+  statistically unresolved lanes tied. Because non-separation is not
+  transitive, point-sort lanes and anchor each uncertainty group to its
+  highest-scoring member; do not let bridge comparisons collapse distinct
+  groups. Terminal-Bench's reported standard error is the closest primary
+  benchmark precedent cited above.
 - Keep duration and provider cost separate from quality. Show a quality/cost or
   quality/latency Pareto view if enough trustworthy billing data exists; do not
   hide an exchange rate between seconds, dollars, misses, and false alarms in

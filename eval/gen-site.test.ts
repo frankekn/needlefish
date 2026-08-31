@@ -7,6 +7,7 @@ import {
   balancedReviewAccuracy,
   renderSite,
   statisticalRanks,
+  validateManifest,
   type Lane,
   type LaneConfig,
   type LeaderboardManifest,
@@ -278,7 +279,21 @@ test("renderSite rejects truthy strings in per-draw boolean fields", () => {
   );
 });
 
-test("statisticalRanks ties unresolved lanes", () => {
+test("statisticalRanks creates leader-anchored uncertainty groups", () => {
   const { lanes } = setup();
   assert.deepEqual(statisticalRanks(lanes), [1, 1, 1]);
+});
+
+test("renderSite rejects an invalid manifest status", () => {
+  const { manifest, lanes } = setup();
+  const malformed = structuredClone(manifest);
+  Object.assign(malformed.lanes[0], { status: "Deployed " });
+  assert.throws(
+    () => renderSite(malformed, lanes, canonical),
+    /status must be Deployed or Candidate/,
+  );
+  assert.throws(
+    () => validateManifest({ ...manifest, blocked: null }),
+    /blocked must be an array/,
+  );
 });
