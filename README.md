@@ -530,7 +530,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-Prepared for v0.4.2 (unreleased). Read-only. Shipped: inline review comments, sticky re-review
+v0.4.2. Prepared but unreleased. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish

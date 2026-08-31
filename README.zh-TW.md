@@ -466,7 +466,7 @@ disposable HOME 的 HOME-relative credential files。
 
 ## 狀態
 
-已準備 v0.4.2（尚未發布）。唯讀。已提供 inline review comment、sticky re-review
+v0.4.2。已準備但尚未發布。唯讀。已提供 inline review comment、sticky re-review
 （fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
 sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／
