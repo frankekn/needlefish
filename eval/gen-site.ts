@@ -341,6 +341,9 @@ export function validateManifest(value: unknown): LeaderboardManifest {
   if (lanes.filter((lane) => lane.status === "Deployed").length > 1) {
     throw new Error("leaderboard manifest must not contain multiple deployed lanes");
   }
+  if (new Set(lanes.map((lane) => lane.report)).size !== lanes.length) {
+    throw new Error("leaderboard manifest lane report paths must be unique");
+  }
   return {
     updated: requiredString(manifest, "updated", "leaderboard manifest"),
     baseline: requiredString(manifest, "baseline", "leaderboard manifest"),

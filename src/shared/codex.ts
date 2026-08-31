@@ -170,13 +170,14 @@ function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
 	);
 }
 
-function hasOpenCodeEnvCredential(): boolean {
-	return (
-		!!process.env.OPENAI_API_KEY ||
-		passthroughNames().some(
-			(name) => name.endsWith("_API_KEY") && !!process.env[name],
-		)
+function hasPassthroughApiKeyCredential(): boolean {
+	return passthroughNames().some(
+		(name) => name.endsWith("_API_KEY") && !!process.env[name],
 	);
+}
+
+function hasOpenCodeEnvCredential(): boolean {
+	return !!process.env.OPENAI_API_KEY || hasPassthroughApiKeyCredential();
 }
 
 function strictCommaList(raw: string, envName: string): string[] {
@@ -296,14 +297,17 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		}
 		return { required, optional: [] };
 	}
-	// pi: every explicit non-default provider needs its registry. cliproxy keeps
-	// credentials in the proxy; authenticated providers read Pi's credential store.
+	// pi: every explicit non-default provider needs its registry. Proxy and
+	// env-key routes keep credentials outside HOME; OAuth providers read Pi's store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
 		if (provider !== "openai-codex") {
 			return {
 				required: [".pi/agent/models.json"],
-				optional: provider === "cliproxy" ? [] : [".pi/agent/auth.json"],
+				optional:
+					provider === "cliproxy" || hasPassthroughApiKeyCredential()
+						? []
+						: [".pi/agent/auth.json"],
 			};
 		}
 	}

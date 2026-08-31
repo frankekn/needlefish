@@ -321,6 +321,16 @@ test("renderSite rejects multiple deployed lanes", () => {
   );
 });
 
+test("renderSite rejects duplicate lane report paths", () => {
+  const { manifest, lanes } = setup();
+  const malformed = structuredClone(manifest);
+  Object.assign(malformed.lanes[1], { report: malformed.lanes[0].report });
+  assert.throws(
+    () => renderSite(malformed, lanes, canonical),
+    /lane report paths must be unique/,
+  );
+});
+
 test("renderSite rejects an invalid draw that claims recall", () => {
   const { manifest, lanes } = setup();
   const tierOne = report.results.find(

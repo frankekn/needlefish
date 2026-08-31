@@ -686,6 +686,8 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		home: process.env.HOME,
 		provider: process.env.PI_PROVIDER,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		zaiKey: process.env.ZAI_API_KEY,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -694,11 +696,18 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		process.env.HOME = previous.home;
 		if (previous.provider === undefined) delete process.env.PI_PROVIDER;
 		else process.env.PI_PROVIDER = previous.provider;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.zaiKey === undefined) delete process.env.ZAI_API_KEY;
+		else process.env.ZAI_API_KEY = previous.zaiKey;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	delete process.env.ZAI_API_KEY;
 	mkdirSync(path.join(fakeHome, ".pi", "agent"), { recursive: true });
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
 	// No auth.json planted.
@@ -738,6 +747,16 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
 		'{"token":"x"}',
 	);
+
+	// A provider key in the explicit passthrough authenticates without exposing
+	// unrelated tokens from Pi's shared credential store.
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "ZAI_API_KEY";
+	process.env.ZAI_API_KEY = "zai-test";
+	const envTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(envTmp, { recursive: true, force: true }));
+	const envHome = prepareEphemeralHome("pi", envTmp);
+	assert.ok(existsSync(path.join(envHome!, ".pi", "agent", "models.json")));
+	assert.equal(existsSync(path.join(envHome!, ".pi", "agent", "auth.json")), false);
 
 	// Proxy provider with the registry itself missing stays fail-closed.
 	process.env.PI_PROVIDER = "cliproxy";
