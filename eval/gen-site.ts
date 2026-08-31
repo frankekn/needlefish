@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
 import { isRunnerName } from "../src/shared/runner";
 import type { Finding, Verdict } from "../src/shared/schema";
+import { classifySurface, isDocsFastPathEligible } from "../src/shared/classify";
 import { isCompleteReport } from "./shared/report-completeness";
 import { promptHash as computePromptHash } from "./shared/prompt-hash";
 import {
@@ -67,6 +68,7 @@ export interface FixtureClassifications {
   readonly fixtureSetHash: string;
   readonly promptHash: string;
   readonly expectedByFixture?: Readonly<Record<string, Expected>>;
+  readonly fastPathFixtureIds?: readonly string[];
 }
 
 type PublishedReport = Report & {
@@ -92,10 +94,32 @@ export function fixtureClassifications(
     expectedByFixture: Object.fromEntries(
       specs.map((spec) => [spec.id, spec.expected]),
     ),
+    fastPathFixtureIds: specs
+      .filter((spec) => {
+        const changed = new Set<string>([
+          ...Object.entries(spec.headFiles)
+            .filter(([file, content]) => spec.baseFiles[file] !== content)
+            .map(([file]) => file),
+          ...(spec.deletedFiles ?? []),
+          ...(spec.renamedFiles ?? []).flatMap(({ from, to }) => [from, to]),
+        ]);
+        return (
+          changed.size > 0 &&
+          [...changed].every(
+            (file) =>
+              classifySurface(file) === "docs" && isDocsFastPathEligible(file),
+          )
+        );
+      })
+      .map((spec) => spec.id),
   };
 }
 
-export function validateStoredScore(result: DrawResult, expected: Expected): void {
+export function validateStoredScore(
+  result: DrawResult,
+  expected: Expected,
+  allowNoProvenance = false,
+): void {
   const rawFindings: unknown = result.findings;
   const findings = Array.isArray(rawFindings)
     ? rawFindings.map((value, index): Finding => {
@@ -166,7 +190,7 @@ export function validateStoredScore(result: DrawResult, expected: Expected): voi
   if (rawRobustness === undefined) {
     // Public lanes intentionally reject pre-provenance model draws. Legacy
     // reports remain raw evidence but cannot receive a rank.
-    if (result.calls !== 0) {
+    if (!allowNoProvenance || result.calls !== 0) {
       throw new Error("model-backed draw must retain anti-cheat provenance");
     }
   } else {
@@ -773,7 +797,11 @@ function validateComparability(
           throw new Error(`${lane.config.report}: missing current fixture expectations`);
         }
         try {
-          validateStoredScore(result, expected);
+          validateStoredScore(
+            result,
+            expected,
+            canonical.fastPathFixtureIds?.includes(result.fixtureId) === true,
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(

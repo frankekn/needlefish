@@ -553,7 +553,7 @@ test("renderSite rejects a draw score edited away from its stored findings", () 
     },
   };
   assert.throws(
-    () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }),
+    () => validateStoredScore(result, { verdict: "pass", noBlockingFindings: true }, true),
     /noiseFindingCount does not match stored findings/,
   );
 });

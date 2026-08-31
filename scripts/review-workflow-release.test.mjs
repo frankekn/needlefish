@@ -128,6 +128,16 @@ fi
 			"bin",
 			"needlefish",
 		),
+		currentBinary: join(
+			home,
+			".local",
+			"share",
+			"needlefish",
+			"releases",
+			currentSha,
+			"bin",
+			"needlefish",
+		),
 		ghLog: existsSync(ghLog) ? readFileSync(ghLog, "utf8") : "",
 		githubEnv: existsSync(githubEnv) ? readFileSync(githubEnv, "utf8") : "",
 	};
@@ -141,7 +151,6 @@ test("selection executes the caller-pinned release even when current is newer", 
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "needlefish 0.4.1\n");
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-	assert.doesNotMatch(selectScript, /needlefish\/current/);
 });
 
 test("selection resolves an omitted pin to the source repository main SHA", () => {
@@ -150,6 +159,13 @@ test("selection resolves an omitted pin to the source repository main SHA", () =
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
+});
+
+test("selection falls back to the installed release when main is not deployed", () => {
+	const result = runSelection({ expectedSha: "", releases: [] });
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.currentBinary}\n`);
 });
 
 test("selection fails closed and posts a check when the pinned release is absent", () => {
@@ -214,5 +230,7 @@ test("reconcile does not dispatch a workflow into reusable callers", () => {
 	const guard = reconcileScript.indexOf('if [ "$REPO" != "$NEEDLEFISH_REPO" ]');
 	const dispatch = reconcileScript.indexOf("gh workflow run review.yml");
 	assert.ok(guard >= 0 && guard < dispatch);
-	assert.match(reconcileScript, /automatic reconciliation is unavailable for reusable caller/);
+	assert.match(reconcileScript, /Automatic reconciliation is unavailable for reusable caller/);
+	assert.match(reconcileScript, /repos\/\$REPO\/check-runs/);
+	assert.match(workflow, /reconcile:[\s\S]*?checks: write/);
 });

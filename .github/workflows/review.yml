@@ -205,6 +205,11 @@ jobs:
 
           if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
             EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
+            expected_metadata="$HOME/.local/share/needlefish/releases/$EXPECTED_NEEDLEFISH_SHA/release.json"
+            current_metadata="$HOME/.local/share/needlefish/current/release.json"
+            if [ ! -f "$expected_metadata" ] && [ -f "$current_metadata" ]; then
+              EXPECTED_NEEDLEFISH_SHA="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (typeof json.sha === "string") process.stdout.write(json.sha);' "$current_metadata" 2>/dev/null || true)"
+            fi
           fi
 
           if [[ ! "$EXPECTED_NEEDLEFISH_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -312,7 +317,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: read
+      checks: write
       actions: write
     steps:
       - name: Re-dispatch when the latest head lacks a terminal result
@@ -351,7 +356,15 @@ jobs:
             exit 0
           fi
           if [ "$REPO" != "$NEEDLEFISH_REPO" ]; then
-            echo "::warning::automatic reconciliation is unavailable for reusable caller $REPO; rerun its caller workflow explicitly"
+            summary="Automatic reconciliation is unavailable for reusable caller $REPO; rerun its caller workflow explicitly."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: caller retry required" \
+              -f "output[summary]=$summary"
+            echo "::warning::$summary"
             exit 0
           fi
           gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
