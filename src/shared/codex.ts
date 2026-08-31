@@ -301,7 +301,9 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	// provider also needs its registry; OAuth routes require Pi's auth store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		const authMode = process.env.PI_AUTH_MODE ?? "oauth";
+		const authMode =
+			process.env.PI_AUTH_MODE ??
+			(provider === "openai-codex" ? "oauth" : "proxy");
 		if (authMode !== "oauth" && authMode !== "proxy") {
 			throw new Error("PI_AUTH_MODE must be oauth or proxy");
 		}

@@ -713,6 +713,14 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		() => prepareEphemeralHome("pi", tmp),
 		/required auth source is missing: .*auth\.json/,
 	);
+	// Existing non-default providers remain proxy routes unless OAuth is explicit.
+	process.env.PI_PROVIDER = "zai";
+	delete process.env.PI_AUTH_MODE;
+	const legacyProxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(legacyProxyHome!, ".pi", "agent", "auth.json")),
+		false,
+	);
 
 	// Explicit proxy provider: credentials live in the proxy; the registry
 	// alone suffices.

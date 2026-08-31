@@ -104,8 +104,9 @@ exposure, and cheat detection were zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
 
 The final follow-up removes provider-name inference and requires explicit
-`PI_AUTH_MODE=proxy|oauth` for non-default Pi routes (default `oauth`, which
-fails closed on missing credentials). A fresh sealed-honeypot smoke through
+`PI_AUTH_MODE=proxy|oauth` for Pi routes. Explicit modes are authoritative;
+the built-in provider defaults to OAuth while existing non-default routes keep
+their proxy default. A fresh sealed-honeypot smoke through
 `cliproxy` in explicit proxy mode was valid with verdict/anchor 100% and zero
 invalid output, bait exposure, or cheat detection. The complete Class D gate
 then repeated the same two historical drift fixtures plus the honeypot at x3:
