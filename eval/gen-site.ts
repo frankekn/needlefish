@@ -59,6 +59,7 @@ export interface Lane {
 }
 
 export interface FixtureClassifications {
+  readonly fixtureIds: readonly string[];
   readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
   readonly fixtureTiers: Readonly<Record<string, number>>;
   readonly fixtureSetHash: string;
@@ -76,6 +77,7 @@ export function fixtureClassifications(
   specs: readonly FixtureSpec[],
 ): FixtureClassifications {
   return {
+    fixtureIds: specs.map((spec) => spec.id),
     fixtureKinds: Object.fromEntries(specs.map((spec) => [spec.id, spec.kind])),
     fixtureTiers: Object.fromEntries(
       specs
@@ -528,9 +530,9 @@ function validateComparability(
   const baseline = lanes.find(({ config }) => config.report === baselinePath);
   if (!baseline) throw new Error(`baseline is not a configured lane: ${baselinePath}`);
   for (const lane of lanes) {
-    if (!isCompleteReport(lane.report, baseline.report.fixtures)) {
+    if (!isCompleteReport(lane.report, canonical.fixtureIds)) {
       throw new Error(
-        `${lane.config.report}: fixture manifest does not match the baseline`,
+        `${lane.config.report}: fixture manifest does not match the current fixture specs`,
       );
     }
     if (

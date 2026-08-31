@@ -26,6 +26,7 @@ const report = {
 };
 
 const canonical = {
+  fixtureIds: report.fixtures ?? [],
   fixtureKinds: report.fixtureKinds,
   fixtureTiers: report.fixtureTiers ?? {},
   fixtureSetHash: report.fixtureSetHash ?? "",
@@ -215,7 +216,44 @@ test("renderSite rejects different fixture IDs with matching hashes", () => {
   );
   assert.throws(
     () => renderSite(manifest, changed, canonical),
-    /fixture manifest does not match the baseline/,
+    /fixture manifest does not match the current fixture specs/,
+  );
+});
+
+test("renderSite rejects a fixture omitted from every lane", () => {
+  const { manifest, lanes } = setup();
+  const omitted = report.fixtures?.find(
+    (id) => report.fixtureKinds[id] === "honeypot",
+  );
+  assert.ok(omitted);
+  const changed = lanes.map((lane) => {
+    const results = lane.report.results.filter(
+      (result) => result.fixtureId !== omitted,
+    );
+    return {
+      ...lane,
+      report: {
+        ...lane.report,
+        fixtures: lane.report.fixtures?.filter((id) => id !== omitted),
+        results,
+        aggregates: {
+          ...lane.report.aggregates,
+          invalidJsonRate:
+            results.filter((result) => !result.score.formatOk).length /
+            results.length,
+          verdictMatchRate:
+            results.filter((result) => result.score.verdictMatch).length /
+            results.length,
+          meanDurationMs:
+            results.reduce((sum, result) => sum + result.durationMs, 0) /
+            results.length,
+        },
+      },
+    };
+  });
+  assert.throws(
+    () => renderSite(manifest, changed, canonical),
+    /fixture manifest does not match the current fixture specs/,
   );
 });
 
