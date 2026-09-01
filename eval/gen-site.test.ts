@@ -26,6 +26,8 @@ const report = {
   route: "Test subscription",
   runnerVersion: "test-runner 1.0.0",
   invocation: "node --import tsx eval/run.ts --runner codex",
+  runnerEnvironment: "[]",
+  privateEnvironment: false,
   reproductionCommand: "node --import tsx eval/run.ts --runner codex --report eval/reports/deployed.json",
 };
 
@@ -133,6 +135,20 @@ test("renderSite rejects a reproduction command that overwrites its raw report",
   assert.throws(
     () => renderSite(manifest, unsafe, canonical),
     /reproduction command must write to eval\/reports\//,
+  );
+});
+
+test("renderSite rejects a lane that requires private environment values", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () => renderSite(
+      manifest,
+      lanes.map((lane, index) => index === 0
+        ? { ...lane, report: { ...lane.report, privateEnvironment: true } }
+        : lane),
+      canonical,
+    ),
+    /public lanes require a public runner-environment attestation/,
   );
 });
 

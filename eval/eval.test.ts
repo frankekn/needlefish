@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, writeReport } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, runnerEnvironment, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
@@ -440,7 +440,7 @@ test("parseArgs: rejects malformed --env values", () => {
 test("writeReport: records a complete operator attestation", (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-attestation-"));
   const previous = new Map(
-    ["PI_PROVIDER", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "DEEPSEEK_API_KEY"].map(
+    ["PI_PROVIDER", "AMBIENT_PROVIDER_API_KEY", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_ACCESS_TOKEN", "XAI_API_KEY", "API_TOKEN", "NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"].map(
       (key) => [key, process.env[key]] as const,
     ),
   );
@@ -452,16 +452,23 @@ test("writeReport: records a complete operator attestation", (t) => {
     }
   });
   process.env.PI_PROVIDER = "ambient-provider";
+  process.env.AMBIENT_PROVIDER_API_KEY = "provider-secret";
   process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "DEEPSEEK_API_KEY";
   process.env.DEEPSEEK_API_KEY = "ambient-secret";
+  process.env.OPENAI_API_KEY = "builtin-secret";
+  process.env.OPENAI_BASE_URL = "https://private.example";
+  process.env.CODEX_ACCESS_TOKEN = "codex-secret";
+  process.env.XAI_API_KEY = "grok-secret";
+  process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "API_TOKEN";
+  process.env.NEEDLEFISH_ACP_AUTH_FILES = "/Users/private/auth.json";
+  process.env.API_TOKEN = "acp-secret";
   const report = writeReport(
     parseArgs([
       "--runner", "pi",
       "--provider", "OpenAI",
       "--route", "Codex CLI subscription",
       "--runner-version", "codex-cli 1.2.3",
-      "--env", "API_TOKEN=secret-value",
-      "--env", `CODEX_BIN=${path.join(dir, "codex")}`,
+      "--env", `PI_BIN=${path.join(dir, "pi")}`,
       "--env", "PI_AUTH_MODE=proxy",
       "--fixtures", path.join(process.cwd(), "eval", "fixtures"),
       "--report", path.join(dir, "report.json"),
@@ -473,18 +480,79 @@ test("writeReport: records a complete operator attestation", (t) => {
   assert.equal(report.route, "Codex CLI subscription");
   assert.equal(report.runnerVersion, "codex-cli 1.2.3");
   assert.match(report.invocation, /--provider OpenAI/);
-  assert.match(report.invocation, /API_TOKEN=<redacted>/);
-  assert.match(report.invocation, /CODEX_BIN=<redacted>/);
+  assert.doesNotMatch(report.invocation, /PI_BIN/);
   assert.match(report.invocation, /PI_AUTH_MODE=proxy/);
   assert.match(report.invocation, /PI_PROVIDER=ambient-provider/);
+  assert.doesNotMatch(report.invocation, /AMBIENT_PROVIDER_API_KEY/);
   assert.match(report.invocation, /NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_API_KEY/);
-  assert.match(report.invocation, /DEEPSEEK_API_KEY=<redacted>/);
+  assert.doesNotMatch(report.invocation, /DEEPSEEK_API_KEY=/);
   assert.match(report.invocation, /--fixtures eval\/fixtures/);
   assert.match(report.invocation, /--report '<redacted>'/);
   assert.match(report.reproductionCommand, /--report eval\/reports\/report\.json/);
-  assert.doesNotMatch(report.invocation, /secret-value/);
-  assert.doesNotMatch(report.invocation, /ambient-secret/);
+  assert.doesNotMatch(report.invocation, /ambient-secret|provider-secret/);
   assert.ok(!report.invocation.includes(dir));
+  assert.match(report.runnerEnvironment, /DEEPSEEK_API_KEY.*<required>/);
+  assert.equal(report.privateEnvironment, true);
+  assert.doesNotMatch(report.runnerEnvironment, /ambient-secret/);
+  const opencodeReport = writeReport(
+    parseArgs([
+      "--runner", "opencode",
+      "--report", path.join(dir, "opencode.json"),
+    ]),
+    [],
+    [holdoutSpec("opencode-attestation", false)],
+  );
+  assert.doesNotMatch(opencodeReport.invocation, /OPENAI_API_KEY/);
+  assert.doesNotMatch(opencodeReport.invocation, /builtin-secret/);
+  assert.match(opencodeReport.runnerEnvironment, /OPENAI_API_KEY.*<required>/);
+  assert.doesNotMatch(opencodeReport.runnerEnvironment, /builtin-secret/);
+  const codexReport = writeReport(
+    parseArgs([
+      "--runner", "codex",
+      "--report", path.join(dir, "codex.json"),
+    ]),
+    [],
+    [holdoutSpec("codex-attestation", false)],
+  );
+  assert.doesNotMatch(codexReport.invocation, /CODEX_ACCESS_TOKEN|OPENAI_API_KEY/);
+  assert.match(codexReport.runnerEnvironment, /CODEX_ACCESS_TOKEN.*<required>/);
+  assert.doesNotMatch(codexReport.invocation, /codex-secret/);
+  const grokReport = writeReport(
+    parseArgs([
+      "--runner", "grok",
+      "--report", path.join(dir, "grok.json"),
+    ]),
+    [],
+    [holdoutSpec("grok-attestation", false)],
+  );
+  assert.doesNotMatch(grokReport.invocation, /XAI_API_KEY/);
+  assert.match(grokReport.runnerEnvironment, /XAI_API_KEY.*<required>/);
+  assert.doesNotMatch(grokReport.invocation, /grok-secret/);
+  const privateReport = writeReport(
+    parseArgs([
+      "--runner", "openai",
+      "--report", path.join(dir, "private.json"),
+    ]),
+    [],
+    [holdoutSpec("private-attestation", false)],
+  );
+  assert.doesNotMatch(privateReport.invocation, /OPENAI_BASE_URL/);
+  assert.match(privateReport.runnerEnvironment, /OPENAI_BASE_URL.*<required>/);
+  assert.doesNotMatch(privateReport.runnerEnvironment, /private\.example/);
+  const acpReport = writeReport(
+    parseArgs([
+      "--runner", "acp",
+      "--report", path.join(dir, "acp.json"),
+    ]),
+    [],
+    [holdoutSpec("acp-attestation", false)],
+  );
+  assert.doesNotMatch(acpReport.invocation, /NEEDLEFISH_ACP_AUTH_FILES/);
+  assert.match(acpReport.runnerEnvironment, /NEEDLEFISH_ACP_AUTH_FILES.*<required>/);
+  assert.doesNotMatch(acpReport.invocation, /API_TOKEN/);
+  assert.doesNotMatch(acpReport.invocation, /acp-secret/);
+  assert.doesNotMatch(acpReport.invocation, /Users\/private/);
+  assert.doesNotMatch(acpReport.runnerEnvironment, /Users\/private/);
   assert.throws(
     () => parseArgs(["--provider", "OpenAI"]),
     /must be supplied together/,
@@ -838,7 +906,10 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
   }
 });
 
-function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
+function resumeReport(
+  spec: FixtureSpec,
+  overrides: Partial<Report & { readonly runnerEnvironment?: string }>,
+): Report & { readonly runnerEnvironment?: string } {
   return {
     promptHash: promptHash(),
     runner: "codex",
@@ -848,6 +919,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     createdAt: "2026-07-13T00:00:00.000Z",
     baseline: false,
     holdout: "include",
+    runnerEnvironment: runnerEnvironment(parseArgs([])),
     fixtureSetHash: fixtureSetHash([spec]),
     scorerHash: scorerHash(),
     fixtures: [spec.id],
@@ -921,6 +993,74 @@ test("resumeSlots: refuses draws from another lane identity", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("resumeSlots: refuses draws from another effective runner environment", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-environment-resume-"));
+  const resumePath = path.join(dir, "report.json");
+  const spec = holdoutSpec("environment-resume", false);
+  const previous = {
+    provider: process.env.PI_PROVIDER,
+    authMode: process.env.PI_AUTH_MODE,
+  };
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    if (previous.provider === undefined) delete process.env.PI_PROVIDER;
+    else process.env.PI_PROVIDER = previous.provider;
+    if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
+    else process.env.PI_AUTH_MODE = previous.authMode;
+  });
+  process.env.PI_PROVIDER = "provider-a";
+  process.env.PI_AUTH_MODE = "oauth";
+  const originalArgs = parseArgs(["--runner", "pi", "--draws", "1"]);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(
+      resumeReport(spec, {
+        anticheatVersion: 2,
+        runner: "pi",
+        runnerEnvironment: runnerEnvironment(originalArgs),
+      }),
+    ),
+  );
+  process.env.PI_PROVIDER = "provider-b";
+  const resumed = resumeSlots(
+    parseArgs(["--runner", "pi", "--draws", "1", "--resume", resumePath]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(resumed.skipped, 0);
+  assert.deepEqual(resumed.slots, [null]);
+
+  delete process.env.PI_PROVIDER;
+  delete process.env.PI_AUTH_MODE;
+  const privateArgs = parseArgs([
+    "--runner", "opencode",
+    "--draws", "1",
+    "--env", "OPENAI_API_KEY=one",
+  ]);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(
+      resumeReport(spec, {
+        anticheatVersion: 2,
+        runner: "opencode",
+        runnerEnvironment: runnerEnvironment(privateArgs),
+      }),
+    ),
+  );
+  const privateResume = resumeSlots(
+    parseArgs([
+      "--draws", "1",
+      "--runner", "opencode",
+      "--resume", resumePath,
+      "--env", "OPENAI_API_KEY=one",
+    ]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(privateResume.skipped, 0);
+  assert.deepEqual(privateResume.slots, [null]);
 });
 
 test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {

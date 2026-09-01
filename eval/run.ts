@@ -64,6 +64,8 @@ interface ReportAttestation {
 	readonly provider?: string;
 	readonly route?: string;
 	readonly runnerVersion?: string;
+	readonly runnerEnvironment?: string;
+	readonly privateEnvironment?: boolean;
 }
 
 export async function mapLimit<T, R>(
@@ -401,6 +403,16 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		if (
+			existing.runnerEnvironment !== runnerEnvironment(args) ||
+			existing.privateEnvironment === true ||
+			hasUnverifiableInvocationEnv(args)
+		) {
+			process.stderr.write(
+				"resume: runner environment mismatch, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
 		// A fired trap voids the whole report (see cheatAlert) — none of its
 		// draws may seed a fresh one. Fail closed on a MISSING count too:
 		// unvalidated JSON, and absence of the canary result cannot establish
@@ -569,6 +581,144 @@ function publicPath(value: string): string {
 			: "<redacted>";
 }
 
+const COMMON_PUBLIC_INVOCATION_ENV = [
+	"NEEDLEFISH_EPHEMERAL_HOME",
+	"NEEDLEFISH_EVAL_TRACE",
+	"NEEDLEFISH_MODEL",
+	"NEEDLEFISH_NO_RETRY",
+	"NEEDLEFISH_RETRY_MS",
+	"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+	"NEEDLEFISH_TIMEOUT_MS",
+] as const;
+const RUNNER_PUBLIC_INVOCATION_ENV: Record<RunnerName, readonly string[]> = {
+	codex: [
+		"CODEX_BIN",
+		"CODEX_MODEL",
+		"CODEX_REASONING_EFFORT",
+		"CODEX_RETRY_MS",
+		"CODEX_SERVICE_TIER",
+		"CODEX_TIMEOUT_MS",
+	],
+	claude: ["CLAUDE_BIN", "CLAUDE_MODEL"],
+	opencode: ["OPENCODE_BIN", "OPENCODE_IDLE_TIMEOUT_MS", "OPENCODE_MODEL"],
+	grok: ["GROK_BIN", "GROK_MODEL"],
+	pi: ["PI_AUTH_MODE", "PI_BIN", "PI_MODEL", "PI_PROVIDER"],
+	openai: ["OPENAI_MODEL"],
+	acp: ["NEEDLEFISH_ACP_BIN"],
+};
+const PUBLIC_INVOCATION_ENV = new Set([
+	...COMMON_PUBLIC_INVOCATION_ENV,
+	...Object.values(RUNNER_PUBLIC_INVOCATION_ENV).flat(),
+]);
+const PATH_INVOCATION_ENV = new Set([
+	"CODEX_BIN",
+	"CLAUDE_BIN",
+	"GROK_BIN",
+	"NEEDLEFISH_ACP_BIN",
+	"OPENCODE_BIN",
+	"PI_BIN",
+]);
+const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
+	codex: [
+		"CODEX_ACCESS_TOKEN",
+		"CODEX_API_KEY",
+		"OPENAI_API_KEY",
+		"OPENAI_BASE_URL",
+		"OPENAI_ORG_ID",
+		"OPENAI_PROJECT_ID",
+	],
+	claude: [
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_BASE_URL",
+		"CLAUDE_CODE_OAUTH_TOKEN",
+	],
+	opencode: [
+		"ANTHROPIC_API_KEY",
+		"DEEPSEEK_API_KEY",
+		"GEMINI_API_KEY",
+		"GOOGLE_API_KEY",
+		"GROK_API_KEY",
+		"MISTRAL_API_KEY",
+		"OPENAI_API_KEY",
+		"OPENAI_BASE_URL",
+		"XAI_API_KEY",
+		"XDG_CONFIG_HOME",
+		"XDG_DATA_HOME",
+		"ZAI_API_KEY",
+	],
+	grok: ["GROK_API_KEY", "GROK_BASE_URL", "XAI_API_KEY", "XAI_BASE_URL"],
+	openai: [
+		"OPENAI_API_KEY",
+		"OPENAI_BASE_URL",
+		"OPENAI_ORG_ID",
+		"OPENAI_PROJECT_ID",
+	],
+	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
+};
+
+function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
+	const effective = { ...args.env };
+	const piProvider = effective.PI_PROVIDER ?? process.env.PI_PROVIDER;
+	const piCredential =
+		args.runner === "pi" && piProvider
+			? [`${piProvider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`]
+			: [];
+	for (const key of [
+		...COMMON_PUBLIC_INVOCATION_ENV,
+		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
+		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
+		...piCredential,
+	]) {
+		const value = process.env[key];
+		if (effective[key] === undefined && value !== undefined) effective[key] = value;
+	}
+	const namedPrivate = [
+		effective.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "",
+		...(args.runner === "acp"
+			? [effective.NEEDLEFISH_ACP_AUTH_ENV_VARS ?? ""]
+			: []),
+	];
+	for (const key of namedPrivate
+		.flatMap((value) => value.split(","))
+		.map((name) => name.trim())
+		.filter(Boolean)) {
+		const value = process.env[key];
+		if (effective[key] === undefined && value !== undefined) effective[key] = value;
+	}
+	return effective;
+}
+
+function publicInvocationEnvValue(key: string, value: string): string | null {
+	if (!PUBLIC_INVOCATION_ENV.has(key)) return null;
+	return PATH_INVOCATION_ENV.has(key) &&
+		(path.isAbsolute(value) || value.includes("/") || value.includes("\\"))
+		? publicPath(value)
+		: value;
+}
+
+export function runnerEnvironment(args: RunArgs): string {
+	return JSON.stringify(
+		Object.entries(effectiveInvocationEnv(args))
+			.sort(([a], [b]) => a.localeCompare(b))
+			.map(([key, value]) => {
+				const publicValue = publicInvocationEnvValue(key, value);
+				return [
+					key,
+					publicValue !== null && publicValue !== "<redacted>"
+						? publicValue
+						: "<required>",
+				];
+			}),
+	);
+}
+
+function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
+	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
+		const publicValue = publicInvocationEnvValue(key, value);
+		return publicValue === null || publicValue === "<redacted>";
+	});
+}
+
 function reportInvocation(args: RunArgs, report = args.report): string {
 	const values = ["node", "--import", "tsx", "eval/run.ts", "--runner", args.runner];
 	const add = (flag: string, value: string | null): void => {
@@ -579,47 +729,13 @@ function reportInvocation(args: RunArgs, report = args.report): string {
 	add("--provider", args.provider);
 	add("--route", args.route);
 	add("--runner-version", args.runnerVersion);
-	const publicEnv = new Set([
-		"CODEX_BIN",
-		"CODEX_REASONING_EFFORT",
-		"CODEX_SERVICE_TIER",
-		"GROK_BIN",
-		"GROK_MODEL",
-		"NEEDLEFISH_EPHEMERAL_HOME",
-		"NEEDLEFISH_EVAL_TRACE",
-		"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
-		"OPENCODE_BIN",
-		"OPENCODE_IDLE_TIMEOUT_MS",
-		"OPENCODE_MODEL",
-		"PI_AUTH_MODE",
-		"PI_BIN",
-		"PI_PROVIDER",
-	]);
-	const pathEnv = new Set(["CODEX_BIN", "GROK_BIN", "OPENCODE_BIN", "PI_BIN"]);
-	const effectiveEnv = { ...args.env };
-	for (const key of publicEnv) {
-		if (effectiveEnv[key] === undefined && process.env[key] !== undefined) {
-			effectiveEnv[key] = process.env[key];
-		}
-	}
-	for (const key of (effectiveEnv.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
-		.split(",")
-		.map((name) => name.trim())
-		.filter(Boolean)) {
-		if (effectiveEnv[key] === undefined && process.env[key] !== undefined) {
-			effectiveEnv[key] = process.env[key];
-		}
-	}
-	for (const [key, value] of Object.entries(effectiveEnv).sort(([a], [b]) =>
+	for (const [key, value] of Object.entries(effectiveInvocationEnv(args)).sort(([a], [b]) =>
 		a.localeCompare(b),
 	)) {
-		const publicValue = !publicEnv.has(key)
-			? "<redacted>"
-			: pathEnv.has(key) &&
-					(path.isAbsolute(value) || value.includes("/") || value.includes("\\"))
-				? publicPath(value)
-				: value;
-		values.push("--env", `${key}=${publicValue}`);
+		const publicValue = publicInvocationEnvValue(key, value);
+		if (publicValue !== null && publicValue !== "<redacted>") {
+			values.push("--env", `${key}=${publicValue}`);
+		}
 	}
 	values.push(
 		"--draws",
@@ -915,6 +1031,8 @@ export function writeReport(
 	readonly runnerVersion?: string;
 	readonly invocation: string;
 	readonly reproductionCommand: string;
+	readonly runnerEnvironment: string;
+	readonly privateEnvironment: boolean;
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
@@ -937,6 +1055,8 @@ export function writeReport(
 				}
 			: {}),
 		invocation: reportInvocation(args),
+		runnerEnvironment: runnerEnvironment(args),
+		privateEnvironment: hasUnverifiableInvocationEnv(args),
 		reproductionCommand: reportInvocation(
 			args,
 			path.join(REPO_ROOT, "eval", "reports", path.basename(args.report)),
@@ -978,6 +1098,8 @@ export function writeReport(
 		readonly runnerVersion?: string;
 		readonly invocation: string;
 		readonly reproductionCommand: string;
+		readonly runnerEnvironment: string;
+		readonly privateEnvironment: boolean;
 	};
 	const targetPath = path.resolve(args.report);
 	if (!lastCheckpointCoverage.has(targetPath)) {

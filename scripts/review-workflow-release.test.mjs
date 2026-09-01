@@ -59,7 +59,6 @@ function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}
 
 function runSelection({
 	expectedSha = pinnedSha,
-	mainSha = pinnedSha,
 	releases = [{ sha: pinnedSha }],
 	current = currentSha,
 } = {}) {
@@ -106,7 +105,6 @@ fi
 			...process.env,
 			EXPECTED_NEEDLEFISH_SHA: expectedSha,
 			GH_LOG: ghLog,
-			GH_MAIN_SHA: mainSha,
 			GH_TOKEN: "test-token",
 			GITHUB_ENV: githubEnv,
 			HOME: home,
@@ -124,7 +122,7 @@ fi
 			"share",
 			"needlefish",
 			"releases",
-			expectedSha || mainSha,
+			expectedSha || current,
 			"bin",
 			"needlefish",
 		),
@@ -141,14 +139,13 @@ test("selection executes the caller-pinned release even when current is newer", 
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "needlefish 0.4.1\n");
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-	assert.doesNotMatch(selectScript, /needlefish\/current/);
 });
 
-test("selection resolves an omitted pin to the source repository main SHA", () => {
+test("selection resolves an omitted pin to the installed current release", () => {
 	const result = runSelection({ expectedSha: "" });
 
 	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
+	assert.doesNotMatch(result.ghLog, /commits\/main/);
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
 });
 

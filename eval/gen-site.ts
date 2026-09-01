@@ -78,6 +78,8 @@ type PublishedReport = Report & {
   readonly runnerVersion?: string;
   readonly invocation?: string;
   readonly reproductionCommand?: string;
+  readonly runnerEnvironment?: string;
+  readonly privateEnvironment?: boolean;
 };
 
 export function fixtureClassifications(
@@ -685,6 +687,9 @@ function validateLane(lane: Lane): void {
   const reproductionReport = `eval/reports/${path.basename(config.report)}`;
   if (!reproductionCommand.endsWith(`--report ${reproductionReport}`)) {
     fail(`reproduction command must write to ${reproductionReport}`);
+  }
+  if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
+    fail("public lanes require a public runner-environment attestation");
   }
   if (!isCompleteReport(report)) fail("report is incomplete");
   if (report.gateClass !== "R") fail("public lanes require gate class R");
