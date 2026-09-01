@@ -533,7 +533,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-Current package version: v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish
