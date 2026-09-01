@@ -381,6 +381,11 @@ jobs:
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
             exit 0
           fi
+          pending=$(gh api "$runs_url" --jq '[.check_runs[] | select(.status != "completed")] | length')
+          if [ "$pending" -gt 0 ]; then
+            echo "head $head still has a pending Needlefish check; letting it finish"
+            exit 0
+          fi
           infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
           if [ "$infra_fails" -ge 2 ]; then
             summary="Needlefish retry cap reached after $infra_fails infrastructure failures."
@@ -429,7 +434,7 @@ jobs:
             echo "a needlefish run for $head is still active or queued; letting it finish"
             exit 0
           fi
-          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO" -f workflow_repo="$WORKFLOW_REPO" -f reconcile_attempt="$((RECONCILE_ATTEMPT + 1))")
+          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO")
           if [ -n "$EXPECTED_NEEDLEFISH_SHA" ]; then dispatch_args+=(-f needlefish_release_sha="$EXPECTED_NEEDLEFISH_SHA"); fi
           if [ -n "$REVIEW_RUNNER" ]; then dispatch_args+=(-f runner="$REVIEW_RUNNER"); fi
           if [ -n "$REVIEW_MODEL" ]; then dispatch_args+=(-f model="$REVIEW_MODEL"); fi
@@ -437,5 +442,14 @@ jobs:
           if [ -n "$REVIEW_IDLE_TIMEOUT_MS" ]; then dispatch_args+=(-f idle_timeout_ms="$REVIEW_IDLE_TIMEOUT_MS"); fi
           if [ -n "$REVIEW_CODEX_EFFORT" ]; then dispatch_args+=(-f codex_reasoning_effort="$REVIEW_CODEX_EFFORT"); fi
           if [ -n "$REVIEW_RUNS_ON" ]; then dispatch_args+=(-f runs_on="$REVIEW_RUNS_ON"); fi
-          gh "${dispatch_args[@]}"
+          legacy_dispatch_args=("${dispatch_args[@]}")
+          dispatch_args+=(-f workflow_repo="$WORKFLOW_REPO" -f reconcile_attempt="$((RECONCILE_ATTEMPT + 1))")
+          if ! dispatch_error=$(gh "${dispatch_args[@]}" 2>&1); then
+            if [[ "$dispatch_error" != *"Unexpected inputs provided"* || "$dispatch_error" != *'"reconcile_attempt"'* || "$dispatch_error" != *'"workflow_repo"'* ]]; then
+              echo "$dispatch_error" >&2
+              exit 1
+            fi
+            echo "main workflow predates bounded reconciliation inputs; using its legacy bounded retry"
+            gh "${legacy_dispatch_args[@]}"
+          fi
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

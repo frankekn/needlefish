@@ -238,6 +238,10 @@ test("reconcile dispatches without requiring a checkout", () => {
 	assert.match(reconcileScript, /-f needlefish_repo="\$NEEDLEFISH_REPO"/);
 	assert.match(reconcileScript, /-f workflow_repo="\$WORKFLOW_REPO"/);
 	assert.match(reconcileScript, /-f reconcile_attempt="\$\(\(RECONCILE_ATTEMPT \+ 1\)\)"/);
+	assert.match(reconcileScript, /pending=\$\(gh api "\$runs_url"/);
+	assert.match(reconcileScript, /still has a pending Needlefish check; letting it finish/);
+	assert.match(reconcileScript, /legacy_dispatch_args=\("\$\{dispatch_args\[@\]\}"\)/);
+	assert.match(reconcileScript, /main workflow predates bounded reconciliation inputs/);
 	assert.match(reconcileScript, /-f needlefish_release_sha="\$EXPECTED_NEEDLEFISH_SHA"/);
 	for (const input of ["runner", "model", "timeout_ms", "idle_timeout_ms", "codex_reasoning_effort", "runs_on"]) {
 		assert.match(reconcileScript, new RegExp(`-f ${input}=`));
