@@ -669,7 +669,14 @@ test("runnerEnvironment: binds Pi provider registry content", (t) => {
   ]);
   const first = runnerEnvironment(args);
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
-  assert.notEqual(runnerEnvironment(args), first);
+  const second = runnerEnvironment(args);
+  assert.notEqual(second, first);
+  Object.assign(args, { environmentIdentity: second });
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://three"}}}');
+  assert.throws(
+    () => runnerEnvironment(args),
+    /runner environment changed during the eval run/,
+  );
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {

@@ -204,13 +204,7 @@ jobs:
           }
 
           if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
-            current_metadata="$HOME/.local/share/needlefish/current/release.json"
-            if [ -f "$current_metadata" ]; then
-              EXPECTED_NEEDLEFISH_SHA="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const normalize = (value) => value.replace(/^https?:\/\/github\.com\//, "").replace(/^git@github\.com:/, "").replace(/\.git\/?$/, "").replace(/\/$/, ""); if (typeof json.sha === "string" && typeof json.repoUrl === "string" && normalize(json.repoUrl) === normalize(process.argv[2])) process.stdout.write(json.sha);' "$current_metadata" "$NEEDLEFISH_REPO" 2>/dev/null || true)"
-            fi
-            if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
-              EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
-            fi
+            EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
           fi
 
           if [[ ! "$EXPECTED_NEEDLEFISH_SHA" =~ ^[0-9a-f]{40}$ ]]; then

@@ -61,6 +61,7 @@ interface RunArgs {
 	holdout: HoldoutMode;
 	gateClass: GateClass;
 	env: Record<string, string>;
+	environmentIdentity: string | null;
 }
 
 export async function mapLimit<T, R>(
@@ -177,6 +178,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		holdout,
 		gateClass: gateClassRaw as GateClass,
 		env,
+		environmentIdentity: null,
 	};
 }
 
@@ -716,7 +718,7 @@ function piProviderRegistryIdentity(args: RunArgs): [string, string] | null {
 
 export function runnerEnvironment(args: RunArgs): string {
 	const piIdentity = piProviderRegistryIdentity(args);
-	return JSON.stringify(
+	const current = JSON.stringify(
 		[
 			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
 				const publicValue = publicInvocationEnvValue(key, value);
@@ -731,6 +733,13 @@ export function runnerEnvironment(args: RunArgs): string {
 		]
 			.sort(([a], [b]) => a.localeCompare(b))
 	);
+	if (
+		args.environmentIdentity !== null &&
+		args.environmentIdentity !== current
+	) {
+		throw new Error("runner environment changed during the eval run");
+	}
+	return current;
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
@@ -1299,6 +1308,7 @@ async function main(): Promise<void> {
 		envPrevious.set(key, process.env[key]);
 		process.env[key] = value;
 	}
+	args.environmentIdentity = runnerEnvironment(args);
 	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") {
 		process.stderr.write(
 			"WARNING: NEEDLEFISH_EPHEMERAL_HOME disabled via --env — draws run without HOME isolation; the report will carry no anticheatVersion and cannot be resumed or compared.\n",
