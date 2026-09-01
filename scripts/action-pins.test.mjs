@@ -134,3 +134,9 @@ test("hosted action pins a version per runner and lets runner_version override",
     assert.match(pinned, PINNED_RUNNER, `${runner} pin must be x.y.z: ${pinned}`);
   }
 });
+
+test("hosted action defaults Codex reviews to Terra xhigh", () => {
+  const action = readFileSync("action.yml", "utf8");
+  assert.match(action, /codex_reasoning_effort:\n[\s\S]*?default: xhigh/);
+  assert.match(action, /RUNNER_INPUT" = "codex" \]; then MODEL_INPUT="gpt-5\.6-terra"/);
+});

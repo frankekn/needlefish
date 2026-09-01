@@ -242,6 +242,18 @@ test("compareWeekly: provider change skips regression comparison", () => {
   assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
 });
 
+test("compareWeekly: private attestations skip regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    privateEnvironment: true,
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    privateEnvironment: true,
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+});
+
 test("compareWeekly: a compromised previous week skips regression comparison", () => {
   // Matching hashes and guard generation, but the previous week's trap fired:
   // its numbers are void and must not produce regression conclusions.

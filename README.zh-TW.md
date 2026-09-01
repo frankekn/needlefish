@@ -92,7 +92,7 @@ jobs:
 diff 的 inline review comment 發布；後續 push 會更新同一份 review，標示
 fresh／still-open／resolved，不會不斷堆疊新 review。
 
-小型 PR 每次審查使用 2 次模型呼叫（composite action 預設 `gpt-5.6-sol` @ `medium`）；大型 PR 使用
+小型 PR 每次審查使用 2 次模型呼叫（預設 `gpt-5.6-terra` @ `xhigh`）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
@@ -393,7 +393,7 @@ COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | 自動偵測 `codex`，然後 `claude`，然後 `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `xhigh`） |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `xhigh`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
 

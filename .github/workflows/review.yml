@@ -94,7 +94,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
           NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
+          EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
@@ -354,7 +356,8 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
-          if [ "$REPO" != "$NEEDLEFISH_REPO" ]; then
+          workflow_repo="${WORKFLOW_REF%%/.github/workflows/*}"
+          if [ "$REPO" != "$workflow_repo" ]; then
             summary="Automatic reconciliation is unavailable for reusable caller $REPO; rerun its caller workflow explicitly."
             gh api -X POST "repos/$REPO/check-runs" \
               -f name="Needlefish" \
@@ -372,5 +375,7 @@ jobs:
             echo "a needlefish run for $head is still active or queued; letting it finish"
             exit 0
           fi
-          gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
+          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO")
+          if [ -n "$EXPECTED_NEEDLEFISH_SHA" ]; then dispatch_args+=(-f needlefish_release_sha="$EXPECTED_NEEDLEFISH_SHA"); fi
+          gh "${dispatch_args[@]}"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

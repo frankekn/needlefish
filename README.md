@@ -96,8 +96,8 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (`gpt-5.6-sol` at `medium` effort
-by default in the composite action), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
+Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `xhigh` effort
+by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers with write access to
 this repository can comment `@needlefish recheck` or
 `@needlefish explain <finding>` on the PR.
@@ -453,7 +453,7 @@ env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `xhigh` for `gpt-5.6-terra`) |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `xhigh` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 
