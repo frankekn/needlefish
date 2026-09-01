@@ -252,6 +252,7 @@ test("reconcile does not dispatch a workflow into reusable callers", () => {
 	assert.ok(retryCap >= 0 && retryCap < guard && guard < activeRunCheck && guard < dispatch);
 	assert.ok(reconcileScript.indexOf('if [ "$RECONCILE_ATTEMPT" -ge 2 ]') < dispatch);
 	assert.match(reconcileScript, /output\[title\]=Needlefish: retry cap reached/);
+	assert.match(reconcileScript, /head_repo=\$\(gh api "repos\/\$REPO\/pulls\/\$PR_NUM" --jq \.head\.repo\.full_name\)/);
 	assert.match(reconcileScript, /fork PR is intentionally skipped; nothing to reconcile/);
 	assert.match(reconcileScript, /Automatic reconciliation is unavailable for reusable caller/);
 	assert.match(reconcileScript, /repos\/\$REPO\/check-runs/);
