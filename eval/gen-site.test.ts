@@ -478,6 +478,18 @@ test("renderSite rejects duplicate lane report paths", () => {
   );
 });
 
+test("renderSite rejects an unsafe report URL", () => {
+  const { manifest, lanes } = setup();
+  const malformed = structuredClone(manifest);
+  Object.assign(malformed.lanes[0], {
+    report: 'results/bad"><svg onload=alert(1)>.json',
+  });
+  assert.throws(
+    () => renderSite(malformed, lanes, canonical),
+    /safe results\/<filename>\.json path/,
+  );
+});
+
 test("renderSite rejects a report listed as both ranked and excluded", () => {
   const { manifest, lanes } = setup();
   const malformed = structuredClone(manifest);

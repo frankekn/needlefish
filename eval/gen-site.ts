@@ -568,6 +568,14 @@ function blockedConfig(value: unknown, label: string): BlockedConfig {
   };
 }
 
+function reportPath(value: Record<string, unknown>, label: string): string {
+  const report = requiredString(value, "report", label);
+  if (!/^results\/[A-Za-z0-9._-]+\.json$/.test(report)) {
+    throw new Error(`${label}.report must be a safe results/<filename>.json path`);
+  }
+  return report;
+}
+
 export function validateManifest(value: unknown): LeaderboardManifest {
   const manifest = record(value, "leaderboard manifest");
   if (!Array.isArray(manifest.lanes) || manifest.lanes.length === 0) {
@@ -591,7 +599,7 @@ export function validateManifest(value: unknown): LeaderboardManifest {
       throw new Error(`${label}.runner is invalid`);
     }
     return {
-      report: requiredString(lane, "report", label),
+      report: reportPath(lane, label),
       name: requiredString(lane, "name", label),
       runner,
       model: requiredString(lane, "model", label),
@@ -610,7 +618,7 @@ export function validateManifest(value: unknown): LeaderboardManifest {
       const label = `leaderboard manifest.excluded[${index}]`;
       return {
         ...blockedConfig(value, label),
-        report: requiredString(record(value, label), "report", label),
+        report: reportPath(record(value, label), label),
       };
     },
   );
@@ -857,7 +865,7 @@ function validateComparability(
 }
 
 function rawUrl(report: string): string {
-  return `${REPO_URL}/blob/main/eval/${report}`;
+  return escapeHtml(`${REPO_URL}/blob/main/eval/${report}`);
 }
 
 function chart(lanes: readonly Lane[]): string {
