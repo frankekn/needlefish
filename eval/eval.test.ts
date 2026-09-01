@@ -2164,6 +2164,27 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
   }
 });
 
+test("resumeSlots: an unattested local report reuses its draws", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-local-resume-"));
+  const resumePath = path.join(dir, "local.json");
+  const spec = holdoutSpec("local-resume", false);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(resumeReport(spec, { anticheatVersion: 2 })),
+  );
+  try {
+    const resumed = resumeSlots(
+      parseArgs(["--draws", "1", "--resume", resumePath]),
+      [spec],
+      [{ spec, draw: 0 }],
+    );
+    assert.equal(resumed.skipped, 1);
+    assert.notEqual(resumed.slots[0], null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("cheatAlert: a detected canary fails the command, a clean report does not", () => {
   const spec = holdoutSpec("cheat-alert-exit", false);
   const previousExitCode = process.exitCode;

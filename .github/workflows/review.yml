@@ -316,7 +316,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: read
+      checks: write
       actions: write
     steps:
       - name: Re-dispatch when the latest head lacks a terminal result
@@ -337,6 +337,16 @@ jobs:
             exit 0
           fi
           head=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.sha)
+          report_retry_required() {
+            summary="$1"
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: caller retry required" \
+              -f "output[summary]=$summary" >/dev/null
+          }
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100"
           valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
           if [ "$valid" -gt 0 ]; then
@@ -363,7 +373,7 @@ jobs:
           workflow_probe=""
           if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/$workflow_file" 2>&1); then
             if [[ "$workflow_probe" == *"HTTP 404"* ]]; then
-              echo "caller repo has no dispatchable $workflow_file; leaving the infra failure terminal"
+              report_retry_required "Caller workflow $workflow_file is unavailable. Add workflow_dispatch with a required pr_number input, then retry this PR review."
               exit 0
             fi
             echo "::error::review workflow probe failed: $workflow_probe"
@@ -371,7 +381,7 @@ jobs:
           fi
           dispatch_error=""
           if ! dispatch_error=$(gh workflow run "$workflow_file" --repo "$REPO" --ref main -f pr_number="$PR_NUM" 2>&1); then
-            echo "::error::could not re-dispatch $workflow_file; the caller workflow must grant actions: write: $dispatch_error"
-            exit 1
+            report_retry_required "Could not dispatch $workflow_file with pr_number. The caller must grant actions: write and declare workflow_dispatch.inputs.pr_number. GitHub reported: $dispatch_error"
+            exit 0
           fi
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

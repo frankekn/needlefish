@@ -232,7 +232,9 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 		/repos\/\$REPO\/actions\/workflows\/\$workflow_file/,
 	);
 	assert.match(workflow, /"HTTP 404"/);
-	assert.match(workflow, /review workflow probe failed/);
+  assert.match(workflow, /review workflow probe failed/);
+  assert.match(workflow, /Needlefish: caller retry required/);
+  assert.match(workflow, /conclusion="failure"/);
 	assert.match(
 		workflow,
 		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
