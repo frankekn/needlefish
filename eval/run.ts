@@ -401,6 +401,15 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		// PATH identity cannot detect an in-place runner upgrade. Checkpoints may
+		// be written without operator attestation, but cross-process reuse needs
+		// an explicit version so one report cannot mix draws from two binaries.
+		if (args.runnerVersion === null) {
+			process.stderr.write(
+				"resume: runner version is required, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
 		if (
 			existing.runnerEnvironment !== runnerEnvironment(args) ||
 			existing.privateEnvironment === true ||
