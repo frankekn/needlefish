@@ -251,6 +251,7 @@ test("reconcile does not dispatch a workflow into reusable callers", () => {
 	const dispatch = reconcileScript.indexOf("dispatch_args=(workflow run review.yml");
 	assert.ok(retryCap >= 0 && retryCap < guard && guard < activeRunCheck && guard < dispatch);
 	assert.ok(reconcileScript.indexOf('if [ "$RECONCILE_ATTEMPT" -ge 2 ]') < dispatch);
+	assert.match(reconcileScript, /output\[title\]=Needlefish: retry cap reached/);
 	assert.match(reconcileScript, /Automatic reconciliation is unavailable for reusable caller/);
 	assert.match(reconcileScript, /repos\/\$REPO\/check-runs/);
 	assert.match(workflow, /reconcile:[\s\S]*?checks: write/);

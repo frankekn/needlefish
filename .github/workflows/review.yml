@@ -378,7 +378,15 @@ jobs:
           fi
           infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
           if [ "$infra_fails" -ge 2 ]; then
-            echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
+            summary="Needlefish retry cap reached after $infra_fails infrastructure failures."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: retry cap reached" \
+              -f "output[summary]=$summary"
+            echo "::error::$summary"
             exit 0
           fi
           if [[ ! "$RECONCILE_ATTEMPT" =~ ^[0-9]+$ ]]; then
@@ -392,7 +400,7 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="failure" \
-              -f "output[title]=Needlefish: review failed" \
+              -f "output[title]=Needlefish: retry cap reached" \
               -f "output[summary]=$summary"
             echo "::error::$summary"
             exit 0
