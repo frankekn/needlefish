@@ -227,13 +227,15 @@ test("review forwards the optional opencode idle timeout without exporting an em
 });
 
 test("reconcile dispatches without requiring a checkout", () => {
-	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REPO: \$\{\{ job\.workflow_repository \}\}/);
+	assert.match(workflow, /workflow_repo:\n\s+description: Repository that owns this reusable workflow/);
+	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REPO: \$\{\{ inputs\.workflow_repo/);
 	assert.match(workflow, /reconcile:[\s\S]*?EXPECTED_NEEDLEFISH_SHA:/);
 	assert.match(
 		reconcileScript,
 		/workflow run review\.yml --repo "\$workflow_repo" --ref main/,
   );
 	assert.match(reconcileScript, /-f needlefish_repo="\$NEEDLEFISH_REPO"/);
+	assert.match(reconcileScript, /-f workflow_repo="\$WORKFLOW_REPO"/);
 	assert.match(reconcileScript, /-f needlefish_release_sha="\$EXPECTED_NEEDLEFISH_SHA"/);
 });
 

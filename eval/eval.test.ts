@@ -575,6 +575,8 @@ test("writeReport: attests only effective runner environment", (t) => {
   const previousProxy = process.env.https_proxy;
   const previousToken = process.env.CODEX_ACCESS_TOKEN;
   const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+  const previousCodexModel = process.env.CODEX_MODEL;
+  const previousCodexEffort = process.env.CODEX_REASONING_EFFORT;
   t.after(() => {
     if (previousProxy === undefined) delete process.env.https_proxy;
     else process.env.https_proxy = previousProxy;
@@ -582,6 +584,10 @@ test("writeReport: attests only effective runner environment", (t) => {
     else process.env.CODEX_ACCESS_TOKEN = previousToken;
     if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+    if (previousCodexModel === undefined) delete process.env.CODEX_MODEL;
+    else process.env.CODEX_MODEL = previousCodexModel;
+    if (previousCodexEffort === undefined) delete process.env.CODEX_REASONING_EFFORT;
+    else process.env.CODEX_REASONING_EFFORT = previousCodexEffort;
   });
   process.env.https_proxy = "https://private-proxy.example";
 
@@ -603,6 +609,13 @@ test("writeReport: attests only effective runner environment", (t) => {
   );
   assert.equal(opencodeReport.privateEnvironment, true);
   assert.match(opencodeReport.runnerEnvironment, /XDG_CONFIG_HOME.*<required>/);
+
+  process.env.CODEX_MODEL = "ambient-model";
+  process.env.CODEX_REASONING_EFFORT = "medium";
+  const explicitCodex = runnerEnvironment(
+    parseArgs(["--runner", "codex", "--model", "explicit-model", "--effort", "xhigh"]),
+  );
+  assert.doesNotMatch(explicitCodex, /CODEX_MODEL|CODEX_REASONING_EFFORT|ambient-model/);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {

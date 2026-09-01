@@ -35,6 +35,10 @@ on:
         description: Needlefish source repo for installed-release validation
         required: false
         default: frankekn/needlefish
+      workflow_repo:
+        description: Repository that owns this reusable workflow
+        required: false
+        default: frankekn/needlefish
   workflow_call:
     inputs:
       pr_number:
@@ -74,6 +78,11 @@ on:
         description: Needlefish source repo for installed-release validation
         type: string
         required: false
+      workflow_repo:
+        description: Repository that owns this reusable workflow
+        type: string
+        required: false
+        default: frankekn/needlefish
 
 permissions:
   contents: read
@@ -329,7 +338,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_REPO: ${{ job.workflow_repository }}
+          WORKFLOW_REPO: ${{ inputs.workflow_repo || github.event.inputs.workflow_repo || 'frankekn/needlefish' }}
           NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
           EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
@@ -375,7 +384,7 @@ jobs:
             echo "a needlefish run for $head is still active or queued; letting it finish"
             exit 0
           fi
-          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO")
+          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO" -f workflow_repo="$WORKFLOW_REPO")
           if [ -n "$EXPECTED_NEEDLEFISH_SHA" ]; then dispatch_args+=(-f needlefish_release_sha="$EXPECTED_NEEDLEFISH_SHA"); fi
           gh "${dispatch_args[@]}"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

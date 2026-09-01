@@ -654,6 +654,13 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		const value = process.env[key];
 		if (effective[key] === undefined && value !== undefined) effective[key] = value;
 	}
+	if (args.model !== null) {
+		delete effective.NEEDLEFISH_MODEL;
+		delete effective[`${args.runner.toUpperCase()}_MODEL`];
+	}
+	if (args.runner === "codex" && args.effort !== null) {
+		delete effective.CODEX_REASONING_EFFORT;
+	}
 	const namedPrivate = [
 		effective.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "",
 		...(args.runner === "acp"
