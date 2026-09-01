@@ -588,6 +588,7 @@ function publicPath(value: string): string {
 }
 
 const COMMON_PUBLIC_INVOCATION_ENV = [
+	"PATH",
 	"NEEDLEFISH_EPHEMERAL_HOME",
 	"NEEDLEFISH_DEEP_CONCURRENCY",
 	"NEEDLEFISH_EVAL_TRACE",
@@ -679,6 +680,9 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 
 function publicInvocationEnvValue(key: string, value: string): string | null {
 	if (!PUBLIC_INVOCATION_ENV.has(key)) return null;
+	if (key === "PATH") {
+		return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+	}
 	return PATH_INVOCATION_ENV.has(key) &&
 		(path.isAbsolute(value) || value.includes("/") || value.includes("\\"))
 		? publicPath(value)
@@ -722,7 +726,7 @@ function reportInvocation(args: RunArgs, report = args.report): string {
 		a.localeCompare(b),
 	)) {
 		const publicValue = publicInvocationEnvValue(key, value);
-		if (publicValue !== null && publicValue !== "<redacted>") {
+		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>") {
 			values.push("--env", `${key}=${publicValue}`);
 		}
 	}

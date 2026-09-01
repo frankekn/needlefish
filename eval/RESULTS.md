@@ -118,9 +118,10 @@ output, positive noise, bait exposure, or cheat detection. Reports:
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json) and
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json).
 
-The overall Class D gate remains incomplete and release-blocking until deployment
-is separately authorized and the live canary/automatic rollback window passes. No
-deploy occurred here.
+The pre-deploy Class D checks are complete. Deployment was separately authorized
+after this evaluation; the live canary and automatic rollback window run after
+deployment and remain blocking for the v0.4.2 tag and publication. No deploy
+occurred during this evaluation.
 
 The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
 but the provider stream ended without a finish reason before any model call;

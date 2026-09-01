@@ -577,6 +577,7 @@ test("writeReport: attests only effective runner environment", (t) => {
   const previousXdgConfig = process.env.XDG_CONFIG_HOME;
   const previousCodexModel = process.env.CODEX_MODEL;
   const previousCodexEffort = process.env.CODEX_REASONING_EFFORT;
+  const previousPath = process.env.PATH;
   t.after(() => {
     if (previousProxy === undefined) delete process.env.https_proxy;
     else process.env.https_proxy = previousProxy;
@@ -588,6 +589,8 @@ test("writeReport: attests only effective runner environment", (t) => {
     else process.env.CODEX_MODEL = previousCodexModel;
     if (previousCodexEffort === undefined) delete process.env.CODEX_REASONING_EFFORT;
     else process.env.CODEX_REASONING_EFFORT = previousCodexEffort;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
   });
   process.env.https_proxy = "https://private-proxy.example";
 
@@ -623,6 +626,18 @@ test("writeReport: attests only effective runner environment", (t) => {
     parseArgs(["--runner", "codex", "--model", "explicit-model", "--effort", "xhigh"]),
   );
   assert.doesNotMatch(explicitCodex, /CODEX_MODEL|CODEX_REASONING_EFFORT|ambient-model/);
+  process.env.PATH = "/private/bin:/usr/bin";
+  const pathIdentity = runnerEnvironment(parseArgs(["--runner", "codex"]));
+  assert.match(pathIdentity, /PATH.*sha256:/);
+  assert.doesNotMatch(pathIdentity, /private\/bin|usr\/bin/);
+  assert.doesNotMatch(
+    writeReport(
+      parseArgs(["--runner", "codex"]),
+      [],
+      [holdoutSpec("path-attestation", false)],
+    ).invocation,
+    /--env PATH=/,
+  );
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {
