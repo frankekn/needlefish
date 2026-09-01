@@ -716,7 +716,28 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			throw error;
 		}
 	});
-	if (piUsesAuthStore(args)) identities.push(["PI_AUTH_JSON", "<required>"]);
+	if (piUsesAuthStore(args)) {
+		const provider =
+			args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+		const authFile = home
+			? path.join(home, ".pi", "agent", "auth.json")
+			: null;
+		if (authFile === null) {
+			identities.push(["PI_AUTH_JSON", "missing"]);
+		} else {
+			const auth = JSON.parse(readFileSync(authFile, "utf8")) as unknown;
+			const entry =
+				typeof auth === "object" && auth !== null
+					? (auth as Record<string, unknown>)[provider]
+					: undefined;
+			identities.push([
+				"PI_AUTH_JSON",
+				entry === undefined
+					? "missing"
+					: `sha256:${createHash("sha256").update(JSON.stringify(entry)).digest("hex").slice(0, 16)}`,
+			]);
+		}
+	}
 	return identities;
 }
 
@@ -757,7 +778,7 @@ export function runnerEnvironment(args: RunArgs): string {
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
-	return piUsesAuthStore(args) || Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
+	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
 		const publicValue = publicInvocationEnvValue(key, value);
 		return publicValue === null || publicValue === "<redacted>";
 	});

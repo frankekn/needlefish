@@ -669,6 +669,8 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
     "--provider", "proxy",
     "--route", "local",
     "--runner-version", "pi 1.0.0",
+    "--env", "PI_AUTH_MODE=proxy",
+    "--env", "PI_PROVIDER=proxy",
   ]);
   const first = runnerEnvironment(args);
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
@@ -705,12 +707,23 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
     "--env", "PI_AUTH_MODE=oauth",
     "--env", "PI_PROVIDER=deepseek",
   ]);
-  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*<required>/);
+  writeFileSync(
+    path.join(registryDir, "auth.json"),
+    '{"deepseek":{"type":"api_key","key":"first-secret"}}',
+  );
+  const firstOauth = runnerEnvironment(oauthArgs);
+  assert.match(firstOauth, /PI_AUTH_JSON.*sha256:/);
+  assert.doesNotMatch(firstOauth, /first-secret/);
   assert.equal(
     writeReport(oauthArgs, [], [holdoutSpec("pi-oauth-private", false)])
       .privateEnvironment,
-    true,
+    false,
   );
+  writeFileSync(
+    path.join(registryDir, "auth.json"),
+    '{"deepseek":{"type":"api_key","key":"second-secret"}}',
+  );
+  assert.notEqual(runnerEnvironment(oauthArgs), firstOauth);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {
