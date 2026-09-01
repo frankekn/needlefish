@@ -122,6 +122,9 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
 
   if (prev) {
     if (
+      prev.runner !== latest.runner ||
+      prev.model !== latest.model ||
+      prev.effort !== latest.effort ||
       prev.promptHash !== latest.promptHash ||
       !prev.fixtureSetHash ||
       !latest.fixtureSetHash ||
@@ -140,9 +143,9 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       prev.aggregates.cheatDetectedCount < 0 ||
       Number.isNaN(prev.aggregates.cheatDetectedCount)
     ) {
-      // Different prompt, fixture set, or guard generation: week-over-week
+      // Different lane, prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation/scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: runner/model/effort, prompt/fixture set, anti-cheat generation, or scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce

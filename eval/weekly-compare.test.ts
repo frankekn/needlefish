@@ -210,8 +210,20 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
   assert.ok(
-    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation/scorer changed")),
+    v.reasons.some((r) => r.includes("skipping regression comparison")),
   );
+});
+
+test("compareWeekly: effort change skips regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    effort: "high",
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    effort: "xhigh",
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("runner/model/effort")));
 });
 
 test("compareWeekly: a compromised previous week skips regression comparison", () => {
@@ -383,7 +395,7 @@ test("compareWeekly: a pre-guard previous week skips regression comparison", () 
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "cross-generation regression must not alert");
   assert.ok(
-    v.reasons.some((r) => r.includes("anti-cheat generation/scorer changed")),
+    v.reasons.some((r) => r.includes("skipping regression comparison")),
   );
 });
 
