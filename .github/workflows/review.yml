@@ -39,6 +39,10 @@ on:
         description: Repository that owns this reusable workflow
         required: false
         default: frankekn/needlefish
+      reconcile_attempt:
+        description: Internal reconciliation attempt count
+        required: false
+        default: "0"
   workflow_call:
     inputs:
       pr_number:
@@ -83,6 +87,11 @@ on:
         type: string
         required: false
         default: frankekn/needlefish
+      reconcile_attempt:
+        description: Internal reconciliation attempt count
+        type: string
+        required: false
+        default: "0"
 
 permissions:
   contents: read
@@ -341,6 +350,13 @@ jobs:
           WORKFLOW_REPO: ${{ inputs.workflow_repo || github.event.inputs.workflow_repo || 'frankekn/needlefish' }}
           NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
           EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
+          REVIEW_RUNNER: ${{ inputs.runner || github.event.inputs.runner }}
+          REVIEW_MODEL: ${{ inputs.model || github.event.inputs.model }}
+          REVIEW_TIMEOUT_MS: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
+          REVIEW_IDLE_TIMEOUT_MS: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
+          REVIEW_CODEX_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          REVIEW_RUNS_ON: ${{ inputs.runs_on || github.event.inputs.runs_on }}
+          RECONCILE_ATTEMPT: ${{ inputs.reconcile_attempt || github.event.inputs.reconcile_attempt || '0' }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
         run: |
           set -eu
@@ -365,6 +381,22 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
+          if [[ ! "$RECONCILE_ATTEMPT" =~ ^[0-9]+$ ]]; then
+            echo "::error::invalid reconciliation attempt '$RECONCILE_ATTEMPT'"
+            exit 1
+          fi
+          if [ "$RECONCILE_ATTEMPT" -ge 2 ]; then
+            summary="Needlefish failed before producing a verdict after $RECONCILE_ATTEMPT reconciliation attempts."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: review failed" \
+              -f "output[summary]=$summary"
+            echo "::error::$summary"
+            exit 0
+          fi
           workflow_repo="$WORKFLOW_REPO"
           if [ "$REPO" != "$workflow_repo" ]; then
             summary="Automatic reconciliation is unavailable for reusable caller $REPO; rerun its caller workflow explicitly."
@@ -384,7 +416,13 @@ jobs:
             echo "a needlefish run for $head is still active or queued; letting it finish"
             exit 0
           fi
-          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO" -f workflow_repo="$WORKFLOW_REPO")
+          dispatch_args=(workflow run review.yml --repo "$workflow_repo" --ref main -f pr_number="$PR_NUM" -f needlefish_repo="$NEEDLEFISH_REPO" -f workflow_repo="$WORKFLOW_REPO" -f reconcile_attempt="$((RECONCILE_ATTEMPT + 1))")
           if [ -n "$EXPECTED_NEEDLEFISH_SHA" ]; then dispatch_args+=(-f needlefish_release_sha="$EXPECTED_NEEDLEFISH_SHA"); fi
+          if [ -n "$REVIEW_RUNNER" ]; then dispatch_args+=(-f runner="$REVIEW_RUNNER"); fi
+          if [ -n "$REVIEW_MODEL" ]; then dispatch_args+=(-f model="$REVIEW_MODEL"); fi
+          if [ -n "$REVIEW_TIMEOUT_MS" ]; then dispatch_args+=(-f timeout_ms="$REVIEW_TIMEOUT_MS"); fi
+          if [ -n "$REVIEW_IDLE_TIMEOUT_MS" ]; then dispatch_args+=(-f idle_timeout_ms="$REVIEW_IDLE_TIMEOUT_MS"); fi
+          if [ -n "$REVIEW_CODEX_EFFORT" ]; then dispatch_args+=(-f codex_reasoning_effort="$REVIEW_CODEX_EFFORT"); fi
+          if [ -n "$REVIEW_RUNS_ON" ]; then dispatch_args+=(-f runs_on="$REVIEW_RUNS_ON"); fi
           gh "${dispatch_args[@]}"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

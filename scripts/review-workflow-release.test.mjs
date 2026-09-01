@@ -228,6 +228,7 @@ test("review forwards the optional opencode idle timeout without exporting an em
 
 test("reconcile dispatches without requiring a checkout", () => {
 	assert.match(workflow, /workflow_repo:\n\s+description: Repository that owns this reusable workflow/);
+	assert.match(workflow, /reconcile_attempt:\n\s+description: Internal reconciliation attempt count/);
 	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REPO: \$\{\{ inputs\.workflow_repo/);
 	assert.match(workflow, /reconcile:[\s\S]*?EXPECTED_NEEDLEFISH_SHA:/);
 	assert.match(
@@ -236,7 +237,11 @@ test("reconcile dispatches without requiring a checkout", () => {
   );
 	assert.match(reconcileScript, /-f needlefish_repo="\$NEEDLEFISH_REPO"/);
 	assert.match(reconcileScript, /-f workflow_repo="\$WORKFLOW_REPO"/);
+	assert.match(reconcileScript, /-f reconcile_attempt="\$\(\(RECONCILE_ATTEMPT \+ 1\)\)"/);
 	assert.match(reconcileScript, /-f needlefish_release_sha="\$EXPECTED_NEEDLEFISH_SHA"/);
+	for (const input of ["runner", "model", "timeout_ms", "idle_timeout_ms", "codex_reasoning_effort", "runs_on"]) {
+		assert.match(reconcileScript, new RegExp(`-f ${input}=`));
+	}
 });
 
 test("reconcile does not dispatch a workflow into reusable callers", () => {
@@ -245,6 +250,7 @@ test("reconcile does not dispatch a workflow into reusable callers", () => {
 	const activeRunCheck = reconcileScript.indexOf("running=$(gh api");
 	const dispatch = reconcileScript.indexOf("dispatch_args=(workflow run review.yml");
 	assert.ok(retryCap >= 0 && retryCap < guard && guard < activeRunCheck && guard < dispatch);
+	assert.ok(reconcileScript.indexOf('if [ "$RECONCILE_ATTEMPT" -ge 2 ]') < dispatch);
 	assert.match(reconcileScript, /Automatic reconciliation is unavailable for reusable caller/);
 	assert.match(reconcileScript, /repos\/\$REPO\/check-runs/);
 	assert.match(workflow, /reconcile:[\s\S]*?checks: write/);
