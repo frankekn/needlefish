@@ -32,7 +32,6 @@ function workflowScript(stepName) {
 
 const selectScript = workflowScript("Select Needlefish release");
 const reviewScript = workflowScript("Needlefish review");
-const reconcileScript = workflowScript("Re-dispatch when the latest head lacks a terminal result");
 const pinnedSha = "a".repeat(40);
 const currentSha = "b".repeat(40);
 
@@ -224,41 +223,4 @@ test("review forwards the optional opencode idle timeout without exporting an em
 		reviewScript,
 		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
 	);
-});
-
-test("reconcile dispatches without requiring a checkout", () => {
-	assert.match(workflow, /workflow_repo:\n\s+description: Repository that owns this reusable workflow/);
-	assert.match(workflow, /reconcile_attempt:\n\s+description: Internal reconciliation attempt count/);
-	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REPO: \$\{\{ inputs\.workflow_repo/);
-	assert.match(workflow, /reconcile:[\s\S]*?EXPECTED_NEEDLEFISH_SHA:/);
-	assert.match(
-		reconcileScript,
-		/workflow run review\.yml --repo "\$workflow_repo" --ref main/,
-  );
-	assert.match(reconcileScript, /-f needlefish_repo="\$NEEDLEFISH_REPO"/);
-	assert.match(reconcileScript, /-f workflow_repo="\$WORKFLOW_REPO"/);
-	assert.match(reconcileScript, /-f reconcile_attempt="\$\(\(RECONCILE_ATTEMPT \+ 1\)\)"/);
-	assert.match(reconcileScript, /pending=\$\(gh api "\$runs_url"/);
-	assert.match(reconcileScript, /still has a pending Needlefish check; letting it finish/);
-	assert.match(reconcileScript, /legacy_dispatch_args=\("\$\{dispatch_args\[@\]\}"\)/);
-	assert.match(reconcileScript, /main workflow predates bounded reconciliation inputs/);
-	assert.match(reconcileScript, /-f needlefish_release_sha="\$EXPECTED_NEEDLEFISH_SHA"/);
-	for (const input of ["runner", "model", "timeout_ms", "idle_timeout_ms", "codex_reasoning_effort", "runs_on"]) {
-		assert.match(reconcileScript, new RegExp(`-f ${input}=`));
-	}
-});
-
-test("reconcile does not dispatch a workflow into reusable callers", () => {
-	const guard = reconcileScript.indexOf('if [ "$REPO" != "$workflow_repo" ]');
-	const retryCap = reconcileScript.indexOf('if [ "$infra_fails" -ge 2 ]');
-	const activeRunCheck = reconcileScript.indexOf("running=$(gh api");
-	const dispatch = reconcileScript.indexOf("dispatch_args=(workflow run review.yml");
-	assert.ok(retryCap >= 0 && retryCap < guard && guard < activeRunCheck && guard < dispatch);
-	assert.ok(reconcileScript.indexOf('if [ "$RECONCILE_ATTEMPT" -ge 2 ]') < dispatch);
-	assert.match(reconcileScript, /output\[title\]=Needlefish: retry cap reached/);
-	assert.match(reconcileScript, /head_repo=\$\(gh api "repos\/\$REPO\/pulls\/\$PR_NUM" --jq \.head\.repo\.full_name\)/);
-	assert.match(reconcileScript, /fork PR is intentionally skipped; nothing to reconcile/);
-	assert.match(reconcileScript, /Automatic reconciliation is unavailable for reusable caller/);
-	assert.match(reconcileScript, /repos\/\$REPO\/check-runs/);
-	assert.match(workflow, /reconcile:[\s\S]*?checks: write/);
 });

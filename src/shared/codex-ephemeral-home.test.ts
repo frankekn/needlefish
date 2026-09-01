@@ -784,6 +784,11 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	const customHome = prepareEphemeralHome("pi", customTmp);
 	assert.equal(existsSync(path.join(customHome!, ".pi", "agent", "auth.json")), false);
 	delete process.env.CUSTOM_PROVIDER_TOKEN;
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{");
+	assert.throws(
+		() => prepareEphemeralHome("pi", customTmp),
+		/Pi provider registry is malformed/,
+	);
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
 
 	// An unrelated forwarded key cannot suppress the selected provider's OAuth.

@@ -191,20 +191,27 @@ function hasPiProviderEnvCredential(provider: string): boolean {
 function piProviderApiKeyEnvNames(provider: string): readonly string[] {
 	const home = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	if (!home) return [];
+	const registry = path.join(home, ".pi", "agent", "models.json");
+	let raw: string;
 	try {
-		const config: unknown = JSON.parse(
-			readFileSync(path.join(home, ".pi", "agent", "models.json"), "utf8"),
-		);
-		if (!isRecord(config) || !isRecord(config.providers)) return [];
-		const selected = config.providers[provider];
-		if (!isRecord(selected) || typeof selected.apiKey !== "string") return [];
-		if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selected.apiKey)) return [selected.apiKey];
-		return [...selected.apiKey.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g)]
-			.map((match) => match[1] ?? match[2])
-			.filter((name): name is string => name !== undefined);
-	} catch {
-		return [];
+		raw = readFileSync(registry, "utf8");
+	} catch (error) {
+		if (isRecord(error) && error.code === "ENOENT") return [];
+		throw error;
 	}
+	let config: unknown;
+	try {
+		config = JSON.parse(raw);
+	} catch {
+		throw new Error(`Pi provider registry is malformed: ${registry}`);
+	}
+	if (!isRecord(config) || !isRecord(config.providers)) return [];
+	const selected = config.providers[provider];
+	if (!isRecord(selected) || typeof selected.apiKey !== "string") return [];
+	if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selected.apiKey)) return [selected.apiKey];
+	return [...selected.apiKey.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g)]
+		.map((match) => match[1] ?? match[2])
+		.filter((name): name is string => name !== undefined);
 }
 
 function strictCommaList(raw: string, envName: string): string[] {
