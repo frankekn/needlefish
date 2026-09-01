@@ -21,12 +21,6 @@ import test from "node:test";
 // second gate, not a reason to put ${{ }} back into the run block.
 
 const workflow = readFileSync(".github/workflows/review.yml", "utf8");
-test("reconcile dispatches the caller workflow", () => {
-	assert.match(workflow, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
-	assert.match(workflow, /gh workflow run "\$workflow_file"/);
-	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
-});
-
 const step = workflow.match(
 	/      - name: Needlefish review\n([\s\S]*?)(?=\n      - name:|$)/,
 );

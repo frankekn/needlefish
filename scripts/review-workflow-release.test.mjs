@@ -226,14 +226,16 @@ test("review forwards the optional opencode idle timeout without exporting an em
 });
 
 test("reconciliation dispatch does not depend on a local checkout", () => {
+	assert.match(workflow, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
 	assert.match(
 		workflow,
-		/repos\/\$REPO\/actions\/workflows\/review\.yml/,
+		/repos\/\$REPO\/actions\/workflows\/\$workflow_file/,
 	);
 	assert.match(workflow, /"HTTP 404"/);
 	assert.match(workflow, /review workflow probe failed/);
 	assert.match(
 		workflow,
-		/gh workflow run review\.yml --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
+		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
 	);
+	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
 });
