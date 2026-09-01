@@ -224,3 +224,10 @@ test("review forwards the optional opencode idle timeout without exporting an em
 		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
 	);
 });
+
+test("reconciliation dispatch does not depend on a local checkout", () => {
+	assert.match(
+		workflow,
+		/gh workflow run review\.yml --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
+	);
+});
