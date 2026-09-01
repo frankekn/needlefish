@@ -86,7 +86,7 @@ Only runs with matching prompt, fixture-set, scorer, and anti-cheat hashes are
 directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
-### 2026-09-01 — Final Pi credential staging delivery gate
+### 2026-09-01 — Pi credential staging evidence and release exception
 
 Commit `6b54c9f` makes proxy and explicit provider API-key routes stage only
 `models.json`; OAuth-backed non-default Pi providers without that key also
@@ -101,7 +101,7 @@ bait exposure, and cheat detection were all zero. Report:
 The resident Class D provenance suite passed 14/14. The offline model-fixture phase
 then ran the historical drift fixtures
 `real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots
-(`honeypot-clean-rename`) at x3 through the same final Pi/cliproxy path. All
+(`honeypot-clean-rename`) at x3 through the then-current Pi/cliproxy path. All
 9/9 draws were valid; both positives recalled 3/3; invalid output, bait
 exposure, and cheat detection were zero. Report:
 [`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
@@ -118,10 +118,13 @@ output, positive noise, bait exposure, or cheat detection. Reports:
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json) and
 [`results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json).
 
-The pre-deploy Class D checks are complete. Deployment was separately authorized
-after this evaluation; the live canary and automatic rollback window run after
-deployment and remain blocking for the v0.4.2 tag and publication. No deploy
-occurred during this evaluation.
+These Class D reports predate later provider-key and explicit-auth routing
+changes and therefore do not attest the final v0.4.2 candidate SHA. The owner
+explicitly declined another model/eval rerun and separately authorized this
+release exception. The reports remain historical evidence; focused resident
+tests plus the post-deploy live canary and automatic rollback window are the
+accepted delivery gate. The live proof remains blocking for the v0.4.2 tag and
+publication. No deploy occurred during this evaluation.
 
 The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
 but the provider stream ended without a finish reason before any model call;
