@@ -353,5 +353,9 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
+          if ! gh api "repos/$REPO/actions/workflows/review.yml" >/dev/null 2>&1; then
+            echo "caller repo has no dispatchable review.yml; leaving the infra failure terminal"
+            exit 0
+          fi
           gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

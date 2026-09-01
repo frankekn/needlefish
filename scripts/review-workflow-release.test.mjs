@@ -228,6 +228,10 @@ test("review forwards the optional opencode idle timeout without exporting an em
 test("reconciliation dispatch does not depend on a local checkout", () => {
 	assert.match(
 		workflow,
+		/repos\/\$REPO\/actions\/workflows\/review\.yml/,
+	);
+	assert.match(
+		workflow,
 		/gh workflow run review\.yml --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
 	);
 });
