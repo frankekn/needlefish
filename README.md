@@ -280,6 +280,7 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
+  actions: write
 jobs:
   review:
     uses: frankekn/needlefish/.github/workflows/review.yml@main

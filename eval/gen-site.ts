@@ -37,6 +37,7 @@ export interface LaneConfig {
   readonly effort: string;
   readonly status: "Deployed" | "Candidate";
   readonly legacyConfigIdentityException?: string;
+  readonly legacyAuthIdentityException?: string;
 }
 
 export interface BlockedConfig {
@@ -620,6 +621,15 @@ export function validateManifest(value: unknown): LeaderboardManifest {
               label,
             ),
           }),
+      ...(lane.legacyAuthIdentityException === undefined
+        ? {}
+        : {
+            legacyAuthIdentityException: requiredString(
+              lane,
+              "legacyAuthIdentityException",
+              label,
+            ),
+          }),
     };
   });
   if (lanes.filter((lane) => lane.status === "Deployed").length > 1) {
@@ -712,6 +722,9 @@ function validateLane(lane: Lane): void {
   }
   const environmentError = runnerEnvironmentAttestationError(report);
   if (environmentError) fail(environmentError);
+  const environment = new Map(
+    JSON.parse(report.runnerEnvironment ?? "[]") as [string, string][],
+  );
   const configIdentityKey =
     report.runner === "pi"
       ? "PI_MODELS_JSON"
@@ -722,14 +735,41 @@ function validateLane(lane: Lane): void {
           : null;
   const hasConfigIdentity =
     configIdentityKey === null ||
-    (JSON.parse(report.runnerEnvironment ?? "[]") as [string, string][]).some(
-      ([key]) => key === configIdentityKey,
-    );
+    environment.has(configIdentityKey);
   if (!hasConfigIdentity && !config.legacyConfigIdentityException) {
     fail(`${configIdentityKey} identity is required`);
   }
   if (hasConfigIdentity && config.legacyConfigIdentityException) {
     fail("legacy config identity exception is stale");
+  }
+  const piAuthSource = report.runner === "pi"
+    ? environment.get("PI_AUTH_SOURCE")
+    : undefined;
+  if (
+    piAuthSource !== undefined &&
+    piAuthSource !== "auth-store" &&
+    piAuthSource !== "environment"
+  ) {
+    fail("PI_AUTH_SOURCE must be auth-store or environment");
+  }
+  const needsLegacyPiAuthIdentity =
+    report.runner === "pi" &&
+    environment.get("PI_AUTH_MODE") === "oauth" &&
+    piAuthSource === undefined;
+  if (needsLegacyPiAuthIdentity && !config.legacyAuthIdentityException) {
+    fail("PI_AUTH_SOURCE and selected OAuth identity are required");
+  }
+  if (
+    piAuthSource === "auth-store" &&
+    !/^sha256:[0-9a-f]{16}$/.test(environment.get("PI_AUTH_JSON") ?? "")
+  ) {
+    fail("a non-missing PI_AUTH_JSON identity is required for Pi auth-store lanes");
+  }
+  if (
+    config.legacyAuthIdentityException &&
+    !needsLegacyPiAuthIdentity
+  ) {
+    fail("legacy auth identity exception is stale");
   }
   if (!isCompleteReport(report)) fail("report is incomplete");
   if (report.gateClass !== "R") fail("public lanes require gate class R");
@@ -979,7 +1019,10 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
       const legacyIdentity = config.legacyConfigIdentityException
         ? `<div><dt>Config identity</dt><dd>Legacy exception: ${escapeHtml(config.legacyConfigIdentityException)}</dd></div>`
         : "";
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(report.runnerVersion)} (operator-attested)</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div>${legacyIdentity}<div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Reproduce</dt><dd><code>${escapeHtml(report.reproductionCommand)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${percent(t1)}</td><td class="number">${percent(t2)}</td><td class="number">${percent(t3)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${metrics.meanNoisePerPositive.toFixed(3)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td class="number">${percent(metrics.verdictMatchRate)}</td><td>${escapeHtml(report.runnerVersion)}</td><td class="route"><strong>${escapeHtml(report.provider)}</strong><small>${escapeHtml(report.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
+      const legacyAuthIdentity = config.legacyAuthIdentityException
+        ? `<div><dt>Auth identity</dt><dd>Legacy exception: ${escapeHtml(config.legacyAuthIdentityException)}</dd></div>`
+        : "";
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(report.runnerVersion)} (operator-attested)</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div>${legacyIdentity}${legacyAuthIdentity}<div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Reproduce</dt><dd><code>${escapeHtml(report.reproductionCommand)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${percent(t1)}</td><td class="number">${percent(t2)}</td><td class="number">${percent(t3)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${metrics.meanNoisePerPositive.toFixed(3)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td class="number">${percent(metrics.verdictMatchRate)}</td><td>${escapeHtml(report.runnerVersion)}</td><td class="route"><strong>${escapeHtml(report.provider)}</strong><small>${escapeHtml(report.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
     })
     .join("");
 }

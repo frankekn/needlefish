@@ -195,6 +195,57 @@ test("renderSite requires staged config identity or an explicit legacy exception
   assert.match(renderSite(manifest, excepted, canonical), /Legacy exception/);
 });
 
+test("renderSite requires Pi auth-store identity or an explicit legacy exception", () => {
+  const { manifest, lanes } = setup();
+  const oauth = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          config: { ...lane.config, runner: "pi" as const },
+          report: {
+            ...lane.report,
+            runner: "pi" as const,
+            runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"],["PI_AUTH_MODE","oauth"],["PI_MODELS_JSON","sha256:test"]]',
+          },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, oauth, canonical),
+    /PI_AUTH_SOURCE and selected OAuth identity are required/,
+  );
+  assert.throws(
+    () => renderSite(
+      manifest,
+      oauth.map((lane, index) => index === 1
+        ? {
+            ...lane,
+            report: {
+              ...lane.report,
+              runnerEnvironment: lane.report.runnerEnvironment?.replace(
+                /]$/,
+                ',["PI_AUTH_SOURCE","auth-store"]]',
+              ),
+            },
+          }
+        : lane),
+      canonical,
+    ),
+    /non-missing PI_AUTH_JSON identity is required/,
+  );
+  const excepted = oauth.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          config: {
+            ...lane.config,
+            legacyAuthIdentityException: "Predates selected auth-entry hashing.",
+          },
+        }
+      : lane,
+  );
+  assert.match(renderSite(manifest, excepted, canonical), /Auth identity.*Legacy exception/s);
+});
+
 test("renderSite rejects redacted public environment values", () => {
   const { manifest, lanes } = setup();
   assert.throws(

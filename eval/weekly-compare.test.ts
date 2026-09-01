@@ -96,6 +96,18 @@ test("compareWeekly: no alert when everything stable", () => {
   assert.equal(v.alert, false);
 });
 
+test("compareWeekly: missing operator identity withholds metrics", () => {
+  const latest = report(drawsFor("a", [true, true, true]), {
+    provider: undefined,
+    route: undefined,
+    runnerVersion: undefined,
+  });
+  const verdict = compareWeekly(null, latest);
+  assert.equal(verdict.alert, true);
+  assert.equal(verdict.unguarded, true);
+  assert.match(verdict.reasons.join("\n"), /attested provider, route, and runner version/);
+});
+
 test("compareWeekly: single mixed-draw flicker does NOT alert", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const latest = report([...drawsFor("a", [true, false, true]), ...drawsFor("b", [true, true, true])]);

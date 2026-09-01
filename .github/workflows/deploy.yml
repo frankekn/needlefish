@@ -90,8 +90,16 @@ jobs:
             fi
           fi
           version="$(node -p "require('./package.json').version")"
-          if [ "$FORCE_DEPLOY" != "true" ] && grep -Fq "## $version — Unreleased" CHANGELOG.md; then
-            echo "Skipping deploy of unreleased version $version"
-            exit 0
+          if [ "$FORCE_DEPLOY" != "true" ]; then
+            changelog_status=0
+            grep -Fq "## $version — Unreleased" CHANGELOG.md || changelog_status=$?
+            if [ "$changelog_status" -eq 0 ]; then
+              echo "Skipping deploy of unreleased version $version"
+              exit 0
+            fi
+            if [ "$changelog_status" -ne 1 ]; then
+              echo "could not verify release state in CHANGELOG.md" >&2
+              exit 1
+            fi
           fi
           scripts/deploy-ubuntu.sh

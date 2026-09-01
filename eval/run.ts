@@ -717,7 +717,10 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			throw error;
 		}
 	});
-	if (piUsesAuthStore(args)) {
+	if (args.runner === "pi") {
+		const usesAuthStore = piUsesAuthStore(args);
+		identities.push(["PI_AUTH_SOURCE", usesAuthStore ? "auth-store" : "environment"]);
+		if (!usesAuthStore) return identities;
 		const provider =
 			args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
 		const authFile = home

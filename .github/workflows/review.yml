@@ -369,5 +369,9 @@ jobs:
             echo "::error::review workflow probe failed: $workflow_probe"
             exit 1
           fi
-          gh workflow run "$workflow_file" --repo "$REPO" --ref main -f pr_number="$PR_NUM"
+          dispatch_error=""
+          if ! dispatch_error=$(gh workflow run "$workflow_file" --repo "$REPO" --ref main -f pr_number="$PR_NUM" 2>&1); then
+            echo "::error::could not re-dispatch $workflow_file; the caller workflow must grant actions: write: $dispatch_error"
+            exit 1
+          fi
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

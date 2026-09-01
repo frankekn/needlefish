@@ -59,7 +59,8 @@
       "model": "deepseek/deepseek-v4-flash-vision-exp",
       "effort": "max",
       "status": "Candidate",
-      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing."
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing.",
+      "legacyAuthIdentityException": "This completed no-rerun OAuth report predates selected Pi auth-entry hashing."
     }
   ],
   "blocked": [

@@ -18,6 +18,13 @@ export function hasCurrentScorer(report: Report): boolean {
 export function runnerEnvironmentAttestationError(
   report: Report & ReportAttestation,
 ): string | null {
+  if (
+    ![report.provider, report.route, report.runnerVersion].every(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    )
+  ) {
+    return "public lanes require attested provider, route, and runner version";
+  }
   if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
     return "public lanes require a public runner-environment attestation";
   }

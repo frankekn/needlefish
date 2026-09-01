@@ -68,6 +68,7 @@ function runDeploy({
   mainTip = verifiedSha,
   lsRemoteFails = false,
   unreleased = false,
+  missingChangelog = false,
   forceDeploy = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-ci-deploy-"));
@@ -77,10 +78,12 @@ function runDeploy({
   mkdirSync(fakeBin);
   mkdirSync(scriptsDir);
   writeFileSync(join(root, "package.json"), '{"version":"0.4.2"}\n');
-  writeFileSync(
-    join(root, "CHANGELOG.md"),
-    unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n",
-  );
+  if (!missingChangelog) {
+    writeFileSync(
+      join(root, "CHANGELOG.md"),
+      unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n",
+    );
+  }
   writeFileSync(
     join(fakeBin, "git"),
     `#!/usr/bin/env bash
@@ -221,6 +224,11 @@ test("automatic deploy skips when main has moved and still deploys the verified 
   });
   assert.equal(forcedUnreleased.status, 0, forcedUnreleased.stderr);
   assert.equal(forcedUnreleased.deployLog, `deployed:${verifiedSha}\n`);
+
+  const missingChangelog = runDeploy({ missingChangelog: true });
+  assert.notEqual(missingChangelog.status, 0);
+  assert.match(missingChangelog.stderr, /could not verify release state/);
+  assert.equal(missingChangelog.deployLog, "");
 
   const missingTip = runDeploy({ mainTip: "" });
   assert.notEqual(missingTip.status, 0);
