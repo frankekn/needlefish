@@ -571,6 +571,21 @@ test("writeReport: records a complete operator attestation", (t) => {
   }
 });
 
+test("writeReport: treats forwarded proxy routing as private", (t) => {
+  const previous = process.env.HTTPS_PROXY;
+  t.after(() => {
+    if (previous === undefined) delete process.env.HTTPS_PROXY;
+    else process.env.HTTPS_PROXY = previous;
+  });
+  process.env.HTTPS_PROXY = "https://private-proxy.example";
+
+  const args = parseArgs(["--runner", "codex"]);
+  assert.equal(JSON.parse(runnerEnvironment(args)).find(([key]: [string]) => key === "HTTPS_PROXY")?.[1], "<required>");
+  const report = writeReport(args, [], [holdoutSpec("proxy-attestation", false)]);
+  assert.equal(report.privateEnvironment, true);
+  assert.doesNotMatch(report.invocation, /private-proxy/);
+});
+
 test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
 });

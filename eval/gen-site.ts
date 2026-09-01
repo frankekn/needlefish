@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
@@ -649,6 +649,17 @@ function readManifest(): LeaderboardManifest {
   return validateManifest(parsed);
 }
 
+export function validateExcludedReportFiles(
+  manifest: LeaderboardManifest,
+  evalDir = EVAL_DIR,
+): void {
+  for (const item of manifest.excluded ?? []) {
+    if (!existsSync(path.join(evalDir, item.report))) {
+      throw new Error(`${item.report}: excluded report is missing`);
+    }
+  }
+}
+
 function readPackageVersion(): string {
   const parsed: unknown = JSON.parse(
     readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
@@ -1025,6 +1036,7 @@ ${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>N
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const manifest = readManifest();
+  validateExcludedReportFiles(manifest);
   const lanes = manifest.lanes.map(readLane);
   const canonical = fixtureClassifications(await loadFixtures(null));
   mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });

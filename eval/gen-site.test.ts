@@ -8,6 +8,7 @@ import {
   balancedReviewAccuracy,
   renderSite,
   statisticalRanks,
+  validateExcludedReportFiles,
   validateManifest,
   validateStoredScore,
   type Lane,
@@ -540,6 +541,14 @@ test("renderSite rejects a report listed as both ranked and excluded", () => {
   assert.throws(
     () => renderSite(malformed, lanes, canonical),
     /ranked and excluded report paths must be unique/,
+  );
+});
+
+test("site generation rejects a missing excluded report", () => {
+  const { manifest } = setup();
+  assert.throws(
+    () => validateExcludedReportFiles(manifest, "/definitely-missing-needlefish-eval"),
+    /results\/compromised\.json: excluded report is missing/,
   );
 });
 

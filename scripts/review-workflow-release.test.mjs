@@ -36,7 +36,15 @@ const reconcileScript = workflowScript("Re-dispatch when the latest head lacks a
 const pinnedSha = "a".repeat(40);
 const currentSha = "b".repeat(40);
 
-function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}) {
+function installRelease(
+	home,
+	sha,
+	{
+		metadataSha = sha,
+		withBinary = true,
+		repoUrl = "https://github.com/frankekn/needlefish.git",
+	} = {},
+) {
 	const release = join(home, ".local", "share", "needlefish", "releases", sha);
 	const bin = join(release, "bin");
 	mkdirSync(bin, { recursive: true });
@@ -45,7 +53,7 @@ function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}
 		`${JSON.stringify({
 			sha: metadataSha,
 			version: "0.4.1",
-			repoUrl: "https://github.com/frankekn/needlefish.git",
+			repoUrl,
 			deployedAt: "2026-08-10T00:00:00Z",
 			node: process.version,
 		}, null, 2)}\n`,
@@ -61,6 +69,8 @@ function runSelection({
 	expectedSha = pinnedSha,
 	releases = [{ sha: pinnedSha }],
 	current = currentSha,
+	mainSha = pinnedSha,
+	needlefishRepo = "frankekn/needlefish",
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-release-"));
 	const home = join(root, "home with spaces");
@@ -107,8 +117,9 @@ fi
 			GH_LOG: ghLog,
 			GH_TOKEN: "test-token",
 			GITHUB_ENV: githubEnv,
+			GH_MAIN_SHA: mainSha,
 			HOME: home,
-			NEEDLEFISH_REPO: "frankekn/needlefish",
+			NEEDLEFISH_REPO: needlefishRepo,
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_HEAD_SHA: "c".repeat(40),
 			REPO: "frankekn/example",
@@ -122,7 +133,8 @@ fi
 			"share",
 			"needlefish",
 			"releases",
-			expectedSha || current,
+			expectedSha ||
+				(needlefishRepo === "frankekn/needlefish" && current ? current : mainSha),
 			"bin",
 			"needlefish",
 		),
@@ -146,6 +158,20 @@ test("selection resolves an omitted pin to the installed current release", () =>
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.doesNotMatch(result.ghLog, /commits\/main/);
+	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
+});
+
+test("selection resolves an omitted pin from the requested repository", () => {
+	const result = runSelection({
+		expectedSha: "",
+		needlefishRepo: "example/fork",
+		releases: [
+			{ sha: pinnedSha, repoUrl: "https://github.com/example/fork.git" },
+		],
+	});
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.ghLog, /api repos\/example\/fork\/commits\/main --jq \.sha/);
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
 });
 

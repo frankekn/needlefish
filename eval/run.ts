@@ -590,6 +590,7 @@ const COMMON_PUBLIC_INVOCATION_ENV = [
 	"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
 	"NEEDLEFISH_TIMEOUT_MS",
 ] as const;
+const COMMON_PRIVATE_INVOCATION_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"] as const;
 const RUNNER_PUBLIC_INVOCATION_ENV: Record<RunnerName, readonly string[]> = {
 	codex: [
 		"CODEX_BIN",
@@ -665,6 +666,7 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 			: [];
 	for (const key of [
 		...COMMON_PUBLIC_INVOCATION_ENV,
+		...COMMON_PRIVATE_INVOCATION_ENV,
 		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
 		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
 		...piCredential,
