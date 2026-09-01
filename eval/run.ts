@@ -689,35 +689,37 @@ function publicInvocationEnvValue(key: string, value: string): string | null {
 		: value;
 }
 
-function piProviderRegistryIdentity(args: RunArgs): [string, string] | null {
-	if (args.runner !== "pi") return null;
+function runnerConfigIdentities(args: RunArgs): [string, string][] {
 	const home =
 		args.env.HOME?.trim() ||
 		args.env.USERPROFILE?.trim() ||
 		process.env.HOME?.trim() ||
 		process.env.USERPROFILE?.trim();
-	if (!home) return ["PI_MODELS_JSON", "missing"];
-	try {
-		const digest = createHash("sha256")
-			.update(readFileSync(path.join(home, ".pi", "agent", "models.json")))
-			.digest("hex")
-			.slice(0, 16);
-		return ["PI_MODELS_JSON", `sha256:${digest}`];
-	} catch (error) {
-		if (
-			typeof error === "object" &&
-			error !== null &&
-			"code" in error &&
-			error.code === "ENOENT"
-		) {
-			return ["PI_MODELS_JSON", "missing"];
+	const files: [string, string | null][] =
+		args.runner === "pi"
+			? [["PI_MODELS_JSON", home ? path.join(home, ".pi", "agent", "models.json") : null]]
+			: args.runner === "grok"
+				? [["GROK_CONFIG_TOML", home ? path.join(home, ".grok", "config.toml") : null]]
+				: args.runner === "opencode"
+					? [["OPENCODE_CONFIG_JSON", home ? path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode", "opencode.json") : null]]
+					: [];
+	return files.map(([key, file]) => {
+		if (file === null) return [key, "missing"];
+		try {
+			const digest = createHash("sha256")
+				.update(readFileSync(file))
+				.digest("hex")
+				.slice(0, 16);
+			return [key, `sha256:${digest}`];
+		} catch (error) {
+			if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [key, "missing"];
+			throw error;
 		}
-		throw error;
-	}
+	});
 }
 
 export function runnerEnvironment(args: RunArgs): string {
-	const piIdentity = piProviderRegistryIdentity(args);
+	const configIdentities = runnerConfigIdentities(args);
 	const current = JSON.stringify(
 		[
 			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
@@ -729,7 +731,7 @@ export function runnerEnvironment(args: RunArgs): string {
 						: "<required>",
 				] as [string, string];
 			}),
-			...(piIdentity ? [piIdentity] : []),
+			...configIdentities,
 		]
 			.sort(([a], [b]) => a.localeCompare(b))
 	);

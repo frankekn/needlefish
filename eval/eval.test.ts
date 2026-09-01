@@ -648,12 +648,15 @@ test("writeReport: attests only effective runner environment", (t) => {
   );
 });
 
-test("runnerEnvironment: binds Pi provider registry content", (t) => {
+test("runnerEnvironment: binds staged routing configuration", (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-pi-registry-"));
   const previousHome = process.env.HOME;
+  const previousXdgConfig = process.env.XDG_CONFIG_HOME;
   t.after(() => {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdgConfig;
     rmSync(dir, { recursive: true, force: true });
   });
   process.env.HOME = dir;
@@ -677,6 +680,25 @@ test("runnerEnvironment: binds Pi provider registry content", (t) => {
     () => runnerEnvironment(args),
     /runner environment changed during the eval run/,
   );
+
+  const grokDir = path.join(dir, ".grok");
+  mkdirSync(grokDir, { recursive: true });
+  const grokConfig = path.join(grokDir, "config.toml");
+  writeFileSync(grokConfig, 'provider = "one"');
+  const grokArgs = parseArgs(["--runner", "grok"]);
+  const firstGrok = runnerEnvironment(grokArgs);
+  writeFileSync(grokConfig, 'provider = "two"');
+  assert.notEqual(runnerEnvironment(grokArgs), firstGrok);
+
+  process.env.XDG_CONFIG_HOME = path.join(dir, "xdg");
+  const opencodeDir = path.join(process.env.XDG_CONFIG_HOME, "opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  const opencodeConfig = path.join(opencodeDir, "opencode.json");
+  writeFileSync(opencodeConfig, '{"provider":"one"}');
+  const opencodeArgs = parseArgs(["--runner", "opencode"]);
+  const firstOpenCode = runnerEnvironment(opencodeArgs);
+  writeFileSync(opencodeConfig, '{"provider":"two"}');
+  assert.notEqual(runnerEnvironment(opencodeArgs), firstOpenCode);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {
