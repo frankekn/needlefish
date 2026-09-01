@@ -344,7 +344,7 @@ Hosted action 只會安裝 `action.yml` 列出的 runner；Grok CLI 不在其中
 使用 Grok 4.5，請使用上方的 self-hosted reusable workflow。
 
 `runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會安裝
-`action.yml` 裡的 per-runner pin（目前 Codex `0.149.0`、Claude `2.1.239`、
+`action.yml` 裡的 per-runner pin（目前 Codex `0.151.0`、Claude `2.1.239`、
 OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳入明確版本
 （或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
 選擇。

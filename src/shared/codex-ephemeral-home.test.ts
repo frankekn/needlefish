@@ -774,7 +774,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	// A custom provider may declare a non-derived API-key variable in models.json.
 	writeFileSync(
 		path.join(fakeHome, ".pi", "agent", "models.json"),
-		'{"providers":{"custom":{"apiKey":"$CUSTOM_PROVIDER_TOKEN"}}}',
+		'{"providers":{"custom":{"apiKey":"CUSTOM_PROVIDER_TOKEN"}}}',
 	);
 	process.env.PI_PROVIDER = "custom";
 	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CUSTOM_PROVIDER_TOKEN";

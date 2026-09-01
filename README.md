@@ -416,7 +416,7 @@ Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 
 `runner_version` overrides the npm version of the selected runner CLI. When
 omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.149.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+Codex `0.151.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
 explicit version — or `latest` — only when you intentionally want something
 other than the pin. A single default cannot be correct for four packages, so
 the pin is chosen from the selected `runner`.

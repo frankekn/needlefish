@@ -198,6 +198,7 @@ function piProviderApiKeyEnvNames(provider: string): readonly string[] {
 		if (!isRecord(config) || !isRecord(config.providers)) return [];
 		const selected = config.providers[provider];
 		if (!isRecord(selected) || typeof selected.apiKey !== "string") return [];
+		if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selected.apiKey)) return [selected.apiKey];
 		return [...selected.apiKey.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g)]
 			.map((match) => match[1] ?? match[2])
 			.filter((name): name is string => name !== undefined);
