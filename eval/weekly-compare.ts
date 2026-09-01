@@ -6,8 +6,11 @@ import {
   hasConsistentCheatDetection,
   hasCurrentScorer,
   runnerEnvironmentAttestationError,
+  type ReportAttestation,
 } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
+
+type WeeklyReport = Report & ReportAttestation;
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
 // ~20 positives, one fixture is ~5pp of recall and single draws flicker, so
@@ -55,7 +58,7 @@ function stableFpFixtures(report: Report): Set<string> {
   return new Set([...byFixture].filter(([, draws]) => draws.every(Boolean)).map(([id]) => id));
 }
 
-function sameWeeklyLane(prev: Report, latest: Report): boolean {
+function sameWeeklyLane(prev: WeeklyReport, latest: WeeklyReport): boolean {
 	if (
 		runnerEnvironmentAttestationError(prev) ||
 		runnerEnvironmentAttestationError(latest)
@@ -67,7 +70,10 @@ function sameWeeklyLane(prev: Report, latest: Report): boolean {
   );
 }
 
-export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdict {
+export function compareWeekly(
+  prev: WeeklyReport | null,
+  latest: WeeklyReport,
+): WeeklyVerdict {
   const reasons: string[] = [];
 
   if (latest.aggregates.cheatDetectedCount > 0) {
@@ -204,11 +210,13 @@ function main(): void {
     process.stderr.write("usage: weekly-compare.ts <latest.json> [prev.json]\n");
     process.exit(1);
   }
-  let latest: Report;
-  let prev: Report | null;
+  let latest: WeeklyReport;
+  let prev: WeeklyReport | null;
   try {
-    latest = JSON.parse(readFileSync(latestPath, "utf8")) as Report;
-    prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
+    latest = JSON.parse(readFileSync(latestPath, "utf8")) as WeeklyReport;
+    prev = prevPath
+      ? (JSON.parse(readFileSync(prevPath, "utf8")) as WeeklyReport)
+      : null;
   } catch (error) {
     process.stderr.write(`weekly-compare: could not read report: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);

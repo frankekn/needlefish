@@ -722,7 +722,10 @@ function validateLane(lane: Lane): void {
   ] as const) {
     if (actual !== expected) fail(`${name} does not match lane metadata`);
   }
-  if (!report.createdAt || Number.isNaN(Date.parse(report.createdAt))) {
+  if (
+    typeof report.createdAt !== "string" ||
+    Number.isNaN(Date.parse(report.createdAt))
+  ) {
     fail("a valid creation date is required");
   }
   if (!report.promptHash || !report.fixtureSetHash || !report.scorerHash) {

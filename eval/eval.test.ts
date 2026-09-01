@@ -648,6 +648,30 @@ test("writeReport: attests only effective runner environment", (t) => {
   );
 });
 
+test("runnerEnvironment: binds Pi provider registry content", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-pi-registry-"));
+  const previousHome = process.env.HOME;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    rmSync(dir, { recursive: true, force: true });
+  });
+  process.env.HOME = dir;
+  const registryDir = path.join(dir, ".pi", "agent");
+  mkdirSync(registryDir, { recursive: true });
+  const registry = path.join(registryDir, "models.json");
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://one"}}}');
+  const args = parseArgs([
+    "--runner", "pi",
+    "--provider", "proxy",
+    "--route", "local",
+    "--runner-version", "pi 1.0.0",
+  ]);
+  const first = runnerEnvironment(args);
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
+  assert.notEqual(runnerEnvironment(args), first);
+});
+
 test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
 });

@@ -33,7 +33,10 @@ import {
 	type HoldoutMode,
 	type Report,
 } from "./shared/types";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import {
+	hasConsistentCheatDetection,
+	type ReportAttestation,
+} from "./shared/report-integrity";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
@@ -58,14 +61,6 @@ interface RunArgs {
 	holdout: HoldoutMode;
 	gateClass: GateClass;
 	env: Record<string, string>;
-}
-
-interface ReportAttestation {
-	readonly provider?: string;
-	readonly route?: string;
-	readonly runnerVersion?: string;
-	readonly runnerEnvironment?: string;
-	readonly privateEnvironment?: boolean;
 }
 
 export async function mapLimit<T, R>(
@@ -692,19 +687,49 @@ function publicInvocationEnvValue(key: string, value: string): string | null {
 		: value;
 }
 
+function piProviderRegistryIdentity(args: RunArgs): [string, string] | null {
+	if (args.runner !== "pi") return null;
+	const home =
+		args.env.HOME?.trim() ||
+		args.env.USERPROFILE?.trim() ||
+		process.env.HOME?.trim() ||
+		process.env.USERPROFILE?.trim();
+	if (!home) return ["PI_MODELS_JSON", "missing"];
+	try {
+		const digest = createHash("sha256")
+			.update(readFileSync(path.join(home, ".pi", "agent", "models.json")))
+			.digest("hex")
+			.slice(0, 16);
+		return ["PI_MODELS_JSON", `sha256:${digest}`];
+	} catch (error) {
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "ENOENT"
+		) {
+			return ["PI_MODELS_JSON", "missing"];
+		}
+		throw error;
+	}
+}
+
 export function runnerEnvironment(args: RunArgs): string {
+	const piIdentity = piProviderRegistryIdentity(args);
 	return JSON.stringify(
-		Object.entries(effectiveInvocationEnv(args))
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([key, value]) => {
+		[
+			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
 				const publicValue = publicInvocationEnvValue(key, value);
 				return [
 					key,
 					publicValue !== null && publicValue !== "<redacted>"
 						? publicValue
 						: "<required>",
-				];
+				] as [string, string];
 			}),
+			...(piIdentity ? [piIdentity] : []),
+		]
+			.sort(([a], [b]) => a.localeCompare(b))
 	);
 }
 

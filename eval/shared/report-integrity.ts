@@ -1,13 +1,23 @@
 import { scorerHash } from "./scorer-hash";
 import type { Report } from "./types";
 
+export interface ReportAttestation {
+  readonly provider?: string;
+  readonly route?: string;
+  readonly runnerVersion?: string;
+  readonly runnerEnvironment?: string;
+  readonly privateEnvironment?: boolean;
+}
+
 // Reports are read from unvalidated JSON. The aggregate is trustworthy only
 // when it exactly accounts for every per-draw detection.
 export function hasCurrentScorer(report: Report): boolean {
   return report.scorerHash === scorerHash();
 }
 
-export function runnerEnvironmentAttestationError(report: Report): string | null {
+export function runnerEnvironmentAttestationError(
+  report: Report & ReportAttestation,
+): string | null {
   if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
     return "public lanes require a public runner-environment attestation";
   }

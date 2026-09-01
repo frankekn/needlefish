@@ -7,7 +7,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
 import { scorerHash } from "./shared/scorer-hash";
+import type { ReportAttestation } from "./shared/report-integrity";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
+
+type WeeklyReport = Report & ReportAttestation;
 
 function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId">): FixtureScore {
   return {
@@ -52,7 +55,10 @@ function aggregatesOf(partial: Partial<Aggregates>): Aggregates {
   };
 }
 
-function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
+function report(
+  results: DrawResult[],
+  partial: Partial<WeeklyReport> = {},
+): WeeklyReport {
   return {
     promptHash: "abc",
     runner: "codex",

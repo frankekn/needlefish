@@ -607,6 +607,20 @@ test("renderSite binds lane identity to report metadata", () => {
   );
 });
 
+test("renderSite rejects a non-string creation date", () => {
+  const { manifest, lanes } = setup();
+  const malformed = lanes.map((lane, index) => {
+    if (index !== 1) return lane;
+    const changed = structuredClone(lane);
+    Object.assign(changed.report, { createdAt: 1 });
+    return changed;
+  });
+  assert.throws(
+    () => renderSite(manifest, malformed, canonical),
+    /a valid creation date is required/,
+  );
+});
+
 test("renderSite rejects an invalid draw that claims recall", () => {
   const { manifest, lanes } = setup();
   const tierOne = report.results.find(
