@@ -56,8 +56,8 @@ function stableFpFixtures(report: Report): Set<string> {
 
 function sameWeeklyLane(prev: Report, latest: Report): boolean {
   if (prev.privateEnvironment !== false || latest.privateEnvironment !== false) return false;
-  const prevLane = [prev.runner, prev.model, prev.effort, prev.provider, prev.route, prev.runnerVersion, prev.runnerEnvironment, prev.privateEnvironment, prev.gateClass];
-  const latestLane = [latest.runner, latest.model, latest.effort, latest.provider, latest.route, latest.runnerVersion, latest.runnerEnvironment, latest.privateEnvironment, latest.gateClass];
+	const prevLane = [prev.runner, prev.model, prev.effort, prev.provider, prev.route, prev.runnerVersion, prev.runnerEnvironment, prev.privateEnvironment, prev.gateClass ?? "R"];
+	const latestLane = [latest.runner, latest.model, latest.effort, latest.provider, latest.route, latest.runnerVersion, latest.runnerEnvironment, latest.privateEnvironment, latest.gateClass ?? "R"];
   return prevLane.every((value, index) =>
     value !== null && value !== undefined && value !== "" && value === latestLane[index]
   );

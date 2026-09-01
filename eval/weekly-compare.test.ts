@@ -232,6 +232,16 @@ test("compareWeekly: effort change skips regression comparison", () => {
   assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
 });
 
+test("compareWeekly: missing legacy gate class compares as R", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    gateClass: undefined,
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("fixtures regressed")));
+});
+
 test("compareWeekly: provider change skips regression comparison", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {

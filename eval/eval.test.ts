@@ -601,6 +601,13 @@ test("writeReport: attests only effective runner environment", (t) => {
   const publicReport = writeReport(args, [], [holdoutSpec("public-attestation", false)]);
   assert.equal(publicReport.privateEnvironment, false);
   assert.doesNotMatch(publicReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|parent-only-token/);
+  const ignoredEnvReport = writeReport(
+    parseArgs(["--runner", "codex", "--env", "FOO=unused"]),
+    [],
+    [holdoutSpec("ignored-env-attestation", false)],
+  );
+  assert.equal(ignoredEnvReport.privateEnvironment, false);
+  assert.doesNotMatch(ignoredEnvReport.runnerEnvironment, /FOO|unused/);
   process.env.XDG_CONFIG_HOME = "/private/opencode-config";
   const opencodeReport = writeReport(
     parseArgs(["--runner", "opencode"]),

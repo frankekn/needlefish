@@ -644,15 +644,15 @@ const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
 };
 
 function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
-	const effective = { ...args.env };
+	const effective: Record<string, string> = {};
 	for (const key of [
 		...COMMON_PUBLIC_INVOCATION_ENV,
 		...COMMON_PRIVATE_INVOCATION_ENV,
 		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
 		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
 	]) {
-		const value = process.env[key];
-		if (effective[key] === undefined && value !== undefined) effective[key] = value;
+		const value = args.env[key] ?? process.env[key];
+		if (value !== undefined) effective[key] = value;
 	}
 	if (args.model !== null) {
 		delete effective.NEEDLEFISH_MODEL;
@@ -671,8 +671,8 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		.flatMap((value) => value.split(","))
 		.map((name) => name.trim())
 		.filter(Boolean)) {
-		const value = process.env[key];
-		if (effective[key] === undefined && value !== undefined) effective[key] = value;
+		const value = args.env[key] ?? process.env[key];
+		if (value !== undefined) effective[key] = value;
 	}
 	return effective;
 }
