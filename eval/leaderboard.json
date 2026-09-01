@@ -8,6 +8,7 @@
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "high",
+      "command": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --provider \"OpenAI Codex\" --route \"Codex subscription\" --runner-version \"Codex CLI 0.151.0\" --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-codex-gpt56-terra-high-x3.json",
       "status": "Deployed"
     },
     {
@@ -16,6 +17,7 @@
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "xhigh",
+      "command": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider \"OpenAI Codex\" --route \"Codex subscription\" --runner-version \"Codex CLI 0.151.0\" --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
       "status": "Candidate"
     },
     {
@@ -24,6 +26,7 @@
       "runner": "codex",
       "model": "gpt-5.6-sol",
       "effort": "medium",
+      "command": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --provider \"OpenAI Codex\" --route \"Codex subscription\" --runner-version \"Codex CLI 0.151.0\" --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-codex-gpt56-sol-medium-x3.json",
       "status": "Candidate"
     },
     {
@@ -32,6 +35,7 @@
       "runner": "codex",
       "model": "gpt-5.6-luna",
       "effort": "max",
+      "command": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-luna --effort max --provider \"OpenAI Codex\" --route \"Codex subscription\" --runner-version \"Codex CLI 0.151.0\" --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-codex-gpt56-luna-max-x3.json",
       "status": "Candidate"
     },
     {
@@ -40,6 +44,7 @@
       "runner": "grok",
       "model": "grok-4.6",
       "effort": "xhigh",
+      "command": "node --import tsx eval/run.ts --runner grok --model grok-4.6 --effort xhigh --provider \"xAI Grok\" --route \"Grok subscription\" --runner-version \"Grok CLI 1.0.5\" --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-grok-grok46-xhigh-x3-rerun.json",
       "status": "Candidate"
     },
     {
@@ -48,6 +53,7 @@
       "runner": "pi",
       "model": "zai-cliproxy/glm-5.3-flash",
       "effort": "max",
+      "command": "node --import tsx eval/run.ts --runner pi --model zai-cliproxy/glm-5.3-flash --effort max --provider \"Z.AI via CLIProxyAPI\" --route \"Z.AI coding-plan subscription\" --runner-version \"Pi 0.84.4\" --env PI_PROVIDER=zai-cliproxy --env PI_AUTH_MODE=proxy --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
       "status": "Candidate"
     },
     {
@@ -56,6 +62,7 @@
       "runner": "pi",
       "model": "deepseek/deepseek-v4-flash-vision-exp",
       "effort": "max",
+      "command": "node --import tsx eval/run.ts --runner pi --model deepseek/deepseek-v4-flash-vision-exp --effort max --provider \"DeepSeek\" --route \"Direct DeepSeek API\" --runner-version \"Pi 0.84.4\" --env PI_PROVIDER=deepseek --env PI_AUTH_MODE=oauth --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
       "status": "Candidate"
     }
   ],

@@ -41,6 +41,7 @@ function config(reportPath: string, name: string): LaneConfig {
     runner: report.runner,
     model: report.model ?? "test-model",
     effort: report.effort ?? "test-effort",
+    command: `node --import tsx eval/run.ts --report ${reportPath}`,
     status: name === "Deployed" ? "Deployed" : "Candidate",
   };
 }
@@ -85,6 +86,8 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
   assert.match(html, /Test subscription/);
+  assert.match(html, /<dt>Invocation<\/dt>/);
+  assert.match(html, /node --import tsx eval\/run\.ts/);
   assert.match(html, /operator-attested/);
   assert.match(html, /tree\/main\/eval\/results">Raw reports/);
   assert.match(
