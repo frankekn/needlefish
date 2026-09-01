@@ -258,7 +258,7 @@ test("compareWeekly: provider change skips regression comparison", () => {
   assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
 });
 
-test("compareWeekly: private attestations skip regression comparison", () => {
+test("compareWeekly: private latest attestations alert", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
     privateEnvironment: true,
   });
@@ -266,18 +266,20 @@ test("compareWeekly: private attestations skip regression comparison", () => {
     privateEnvironment: true,
   });
   const v = compareWeekly(prev, latest);
-  assert.equal(v.alert, false);
-  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+  assert.equal(v.alert, true);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("public runner-environment")));
 });
 
-test("compareWeekly: incomplete public attestations skip regression comparison", () => {
+test("compareWeekly: incomplete latest public attestations alert", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
     runnerEnvironment: "[]",
   });
   const v = compareWeekly(prev, latest);
-  assert.equal(v.alert, false);
-  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+  assert.equal(v.alert, true);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("guarded runner-environment")));
 });
 
 test("compareWeekly: a compromised previous week skips regression comparison", () => {

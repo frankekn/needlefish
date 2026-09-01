@@ -230,6 +230,8 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 		workflow,
 		/repos\/\$REPO\/actions\/workflows\/review\.yml/,
 	);
+	assert.match(workflow, /"HTTP 404"/);
+	assert.match(workflow, /review workflow probe failed/);
 	assert.match(
 		workflow,
 		/gh workflow run review\.yml --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,

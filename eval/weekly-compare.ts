@@ -95,12 +95,14 @@ export function compareWeekly(
   // widened type — the schema says number, the disk may disagree.
   const latestCheatCount: number | undefined =
     latest.aggregates.cheatDetectedCount;
+  const latestEnvironmentError = runnerEnvironmentAttestationError(latest);
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
     !hasCurrentScorer(latest) ||
     typeof latestCheatCount !== "number" ||
     latestCheatCount !== 0 ||
-    !hasConsistentCheatDetection(latest)
+    !hasConsistentCheatDetection(latest) ||
+    latestEnvironmentError !== null
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
     // detection never covered (or never recorded) these draws, so no metric
@@ -110,7 +112,7 @@ export function compareWeekly(
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}), scorerHash is ${latest.scorerHash ?? "none"}, or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report is unguarded or invalid (${latestEnvironmentError ?? "anti-cheat/scorer/detection metadata"}) — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
