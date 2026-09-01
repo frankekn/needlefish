@@ -1025,6 +1025,8 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
   const previous = {
     provider: process.env.PI_PROVIDER,
     authMode: process.env.PI_AUTH_MODE,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+    largePatchChars: process.env.NEEDLEFISH_LARGE_PATCH_CHARS,
   };
   t.after(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -1032,6 +1034,10 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
     else process.env.PI_PROVIDER = previous.provider;
     if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
     else process.env.PI_AUTH_MODE = previous.authMode;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    if (previous.largePatchChars === undefined) delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+    else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previous.largePatchChars;
   });
   process.env.PI_PROVIDER = "provider-a";
   process.env.PI_AUTH_MODE = "oauth";
@@ -1084,6 +1090,22 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
   );
   assert.equal(privateResume.skipped, 0);
   assert.deepEqual(privateResume.slots, [null]);
+
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+  writeFileSync(
+    resumePath,
+    JSON.stringify(resumeReport(spec, { anticheatVersion: 2 })),
+  );
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+  process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "80000";
+  const pipelineResume = resumeSlots(
+    parseArgs(["--draws", "1", "--resume", resumePath]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(pipelineResume.skipped, 0);
+  assert.deepEqual(pipelineResume.slots, [null]);
 });
 
 test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
