@@ -324,6 +324,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -353,14 +354,20 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
+          workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"
+          workflow_file="${workflow_file%@*}"
+          if [ -z "$workflow_file" ] || [ "$workflow_file" = "$WORKFLOW_REF" ] || [[ "$workflow_file" == */* ]]; then
+            echo "::error::invalid caller workflow ref: $WORKFLOW_REF"
+            exit 1
+          fi
           workflow_probe=""
-          if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/review.yml" 2>&1); then
+          if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/$workflow_file" 2>&1); then
             if [[ "$workflow_probe" == *"HTTP 404"* ]]; then
-              echo "caller repo has no dispatchable review.yml; leaving the infra failure terminal"
+              echo "caller repo has no dispatchable $workflow_file; leaving the infra failure terminal"
               exit 0
             fi
             echo "::error::review workflow probe failed: $workflow_probe"
             exit 1
           fi
-          gh workflow run review.yml --repo "$REPO" --ref main -f pr_number="$PR_NUM"
+          gh workflow run "$workflow_file" --repo "$REPO" --ref main -f pr_number="$PR_NUM"
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"
