@@ -703,7 +703,7 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 				: args.runner === "opencode"
 					? [["OPENCODE_CONFIG_JSON", home ? path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode", "opencode.json") : null]]
 					: [];
-	return files.map(([key, file]) => {
+	const identities = files.map(([key, file]): [string, string] => {
 		if (file === null) return [key, "missing"];
 		try {
 			const digest = createHash("sha256")
@@ -716,6 +716,18 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			throw error;
 		}
 	});
+	if (piUsesAuthStore(args)) identities.push(["PI_AUTH_JSON", "<required>"]);
+	return identities;
+}
+
+function piUsesAuthStore(args: RunArgs): boolean {
+	if (args.runner !== "pi") return false;
+	const provider =
+		args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+	return (
+		(args.env.PI_AUTH_MODE ?? process.env.PI_AUTH_MODE ??
+			(provider === "openai-codex" ? "oauth" : "proxy")) === "oauth"
+	);
 }
 
 export function runnerEnvironment(args: RunArgs): string {
@@ -745,7 +757,7 @@ export function runnerEnvironment(args: RunArgs): string {
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
-	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
+	return piUsesAuthStore(args) || Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
 		const publicValue = publicInvocationEnvValue(key, value);
 		return publicValue === null || publicValue === "<redacted>";
 	});

@@ -699,6 +699,18 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const firstOpenCode = runnerEnvironment(opencodeArgs);
   writeFileSync(opencodeConfig, '{"provider":"two"}');
   assert.notEqual(runnerEnvironment(opencodeArgs), firstOpenCode);
+
+  const oauthArgs = parseArgs([
+    "--runner", "pi",
+    "--env", "PI_AUTH_MODE=oauth",
+    "--env", "PI_PROVIDER=deepseek",
+  ]);
+  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*<required>/);
+  assert.equal(
+    writeReport(oauthArgs, [], [holdoutSpec("pi-oauth-private", false)])
+      .privateEnvironment,
+    true,
+  );
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {
