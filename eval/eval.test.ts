@@ -1182,7 +1182,7 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
     else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previous.largePatchChars;
   });
   process.env.PI_PROVIDER = "provider-a";
-  process.env.PI_AUTH_MODE = "oauth";
+  process.env.PI_AUTH_MODE = "proxy";
   const originalArgs = parseArgs([
     "--runner", "pi", "--draws", "1",
     "--provider", "Pi", "--route", "Test", "--runner-version", "pi 1",
