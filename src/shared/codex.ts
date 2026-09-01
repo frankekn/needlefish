@@ -699,11 +699,7 @@ async function runCodexOnce(
 			throw err;
 		}
 	} finally {
-		try {
-			await disposeManagedTempDirectory(tmp);
-		} catch (error) {
-			throw asRunnerOperationalError(error);
-		}
+		await disposeManagedTempDirectory(tmp);
 	}
 }
 
