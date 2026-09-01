@@ -108,6 +108,23 @@ test("compareWeekly: missing operator identity withholds metrics", () => {
   assert.match(verdict.reasons.join("\n"), /attested provider, route, and runner version/);
 });
 
+test("compareWeekly: matching implicit model and effort still compare", () => {
+  const implicit = {
+    model: null,
+    effort: null,
+    runnerEnvironment: '[["CODEX_MODEL","gpt-5.6-terra"],["CODEX_REASONING_EFFORT","xhigh"],["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
+  };
+  const previous = report([
+    ...drawsFor("a", [true, true, true]),
+    ...drawsFor("b", [true, true, true]),
+  ], implicit);
+  const latest = report([
+    ...drawsFor("a", [false, false, false]),
+    ...drawsFor("b", [false, false, false]),
+  ], implicit);
+  assert.equal(compareWeekly(previous, latest).alert, true);
+});
+
 test("compareWeekly: single mixed-draw flicker does NOT alert", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const latest = report([...drawsFor("a", [true, false, true]), ...drawsFor("b", [true, true, true])]);

@@ -65,9 +65,7 @@ function sameWeeklyLane(prev: WeeklyReport, latest: WeeklyReport): boolean {
 	) return false;
 	const prevLane = [prev.runner, prev.model, prev.effort, prev.provider, prev.route, prev.runnerVersion, prev.runnerEnvironment, prev.privateEnvironment, prev.gateClass ?? "R"];
 	const latestLane = [latest.runner, latest.model, latest.effort, latest.provider, latest.route, latest.runnerVersion, latest.runnerEnvironment, latest.privateEnvironment, latest.gateClass ?? "R"];
-  return prevLane.every((value, index) =>
-    value !== null && value !== undefined && value !== "" && value === latestLane[index]
-  );
+  return prevLane.every((value, index) => value === latestLane[index]);
 }
 
 export function compareWeekly(
