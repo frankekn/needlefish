@@ -707,6 +707,7 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
     "--env", "PI_AUTH_MODE=oauth",
     "--env", "PI_PROVIDER=deepseek",
   ]);
+  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*missing/);
   writeFileSync(
     path.join(registryDir, "auth.json"),
     '{"deepseek":{"type":"api_key","key":"first-secret"}}',

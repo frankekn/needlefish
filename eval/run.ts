@@ -729,7 +729,17 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 		if (authFile === null) {
 			identities.push(["PI_AUTH_JSON", "missing"]);
 		} else {
-			const auth = JSON.parse(readFileSync(authFile, "utf8")) as unknown;
+			let raw: string;
+			try {
+				raw = readFileSync(authFile, "utf8");
+			} catch (error) {
+				if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+					identities.push(["PI_AUTH_JSON", "missing"]);
+					return identities;
+				}
+				throw error;
+			}
+			const auth = JSON.parse(raw) as unknown;
 			const entry =
 				typeof auth === "object" && auth !== null
 					? (auth as Record<string, unknown>)[provider]
