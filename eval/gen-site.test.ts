@@ -27,7 +27,7 @@ const report = {
   route: "Test subscription",
   runnerVersion: "test-runner 1.0.0",
   invocation: "node --import tsx eval/run.ts --runner codex",
-  runnerEnvironment: "[]",
+  runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
   privateEnvironment: false,
   reproductionCommand: "node --import tsx eval/run.ts --runner codex --report eval/reports/deployed.json",
 };
@@ -150,6 +150,20 @@ test("renderSite rejects a lane that requires private environment values", () =>
       canonical,
     ),
     /public lanes require a public runner-environment attestation/,
+  );
+});
+
+test("renderSite rejects an incomplete guarded environment attestation", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () => renderSite(
+      manifest,
+      lanes.map((lane, index) => index === 0
+        ? { ...lane, report: { ...lane.report, runnerEnvironment: "[]" } }
+        : lane),
+      canonical,
+    ),
+    /public lanes require guarded runner-environment attestation/,
   );
 });
 

@@ -403,6 +403,12 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		if (args.runnerVersion === null) {
+			process.stderr.write(
+				"resume: runner version is required, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
 		if (
 			existing.runnerEnvironment !== runnerEnvironment(args) ||
 			existing.privateEnvironment === true ||

@@ -931,8 +931,18 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
 
 function resumeReport(
   spec: FixtureSpec,
-  overrides: Partial<Report & { readonly runnerEnvironment?: string }>,
-): Report & { readonly runnerEnvironment?: string } {
+  overrides: Partial<Report & {
+    readonly provider?: string;
+    readonly route?: string;
+    readonly runnerEnvironment?: string;
+    readonly runnerVersion?: string;
+  }>,
+): Report & {
+  readonly provider?: string;
+  readonly route?: string;
+  readonly runnerEnvironment?: string;
+  readonly runnerVersion?: string;
+} {
   return {
     promptHash: promptHash(),
     runner: "codex",
@@ -1041,20 +1051,29 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
   });
   process.env.PI_PROVIDER = "provider-a";
   process.env.PI_AUTH_MODE = "oauth";
-  const originalArgs = parseArgs(["--runner", "pi", "--draws", "1"]);
+  const originalArgs = parseArgs([
+    "--runner", "pi", "--draws", "1",
+    "--provider", "Pi", "--route", "Test", "--runner-version", "pi 1",
+  ]);
   writeFileSync(
     resumePath,
     JSON.stringify(
       resumeReport(spec, {
         anticheatVersion: 2,
         runner: "pi",
+        provider: "Pi",
+        route: "Test",
+        runnerVersion: "pi 1",
         runnerEnvironment: runnerEnvironment(originalArgs),
       }),
     ),
   );
   process.env.PI_PROVIDER = "provider-b";
   const resumed = resumeSlots(
-    parseArgs(["--runner", "pi", "--draws", "1", "--resume", resumePath]),
+    parseArgs([
+      "--runner", "pi", "--draws", "1", "--resume", resumePath,
+      "--provider", "Pi", "--route", "Test", "--runner-version", "pi 1",
+    ]),
     [spec],
     [{ spec, draw: 0 }],
   );
@@ -1066,6 +1085,7 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
   const privateArgs = parseArgs([
     "--runner", "opencode",
     "--draws", "1",
+    "--provider", "OpenCode", "--route", "Test", "--runner-version", "opencode 1",
     "--env", "OPENAI_API_KEY=one",
   ]);
   writeFileSync(
@@ -1074,6 +1094,9 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
       resumeReport(spec, {
         anticheatVersion: 2,
         runner: "opencode",
+        provider: "OpenCode",
+        route: "Test",
+        runnerVersion: "opencode 1",
         runnerEnvironment: runnerEnvironment(privateArgs),
       }),
     ),
@@ -1083,6 +1106,7 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
       "--draws", "1",
       "--runner", "opencode",
       "--resume", resumePath,
+      "--provider", "OpenCode", "--route", "Test", "--runner-version", "opencode 1",
       "--env", "OPENAI_API_KEY=one",
     ]),
     [spec],
@@ -1095,12 +1119,20 @@ test("resumeSlots: refuses draws from another effective runner environment", (t)
   delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
   writeFileSync(
     resumePath,
-    JSON.stringify(resumeReport(spec, { anticheatVersion: 2 })),
+    JSON.stringify(resumeReport(spec, {
+      anticheatVersion: 2,
+      provider: "Codex",
+      route: "Test",
+      runnerVersion: "codex 1",
+    })),
   );
   process.env.NEEDLEFISH_NO_FAST_PATH = "1";
   process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "80000";
   const pipelineResume = resumeSlots(
-    parseArgs(["--draws", "1", "--resume", resumePath]),
+    parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]),
     [spec],
     [{ spec, draw: 0 }],
   );
@@ -1960,10 +1992,24 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
   const spec = holdoutSpec("current-anticheat-resume", false);
   writeFileSync(
     resumePath,
-    JSON.stringify(resumeReport(spec, { anticheatVersion: 2 })),
+    JSON.stringify(resumeReport(spec, {
+      anticheatVersion: 2,
+      provider: "Codex",
+      route: "Test",
+      runnerVersion: "codex 1",
+    })),
   );
   try {
-    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
+    const unavailable = resumeSlots(
+      parseArgs(["--draws", "1", "--resume", resumePath]),
+      [spec],
+      [{ spec, draw: 0 }],
+    );
+    assert.equal(unavailable.skipped, 0);
+    const args = parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]);
     const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
     assert.equal(resumed.skipped, 1);
     assert.notEqual(resumed.slots[0], null);
