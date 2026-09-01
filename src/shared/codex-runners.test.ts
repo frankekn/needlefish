@@ -10,7 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCodex } from "./codex";
+import { runCodex, RunnerOperationalError } from "./codex";
 import {
 	commitAll,
 	gitText,
@@ -406,6 +406,7 @@ test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t
 		caught = err;
 	}
 	assert.ok(caught instanceof Error);
+	assert.ok(caught instanceof RunnerOperationalError);
 	const err = caught as Error & { rawOutput?: string };
 	assert.match(
 		err.message,

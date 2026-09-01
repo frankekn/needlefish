@@ -135,6 +135,18 @@ test("compareWeekly: unresolved implicit model and effort withhold comparison", 
   assert.match(verdict.reasons.join("\n"), /resolved model and effort/);
 });
 
+test("compareWeekly: malformed model and effort types withhold metrics", () => {
+  for (const malformed of [{ model: 1 }, { effort: 1 }]) {
+    const latest = {
+      ...report(drawsFor("a", [true, true, true])),
+      ...malformed,
+    } as unknown as WeeklyReport;
+    const verdict = compareWeekly(null, latest);
+    assert.equal(verdict.unguarded, true);
+    assert.match(verdict.reasons.join("\n"), /resolved model and effort/);
+  }
+});
+
 test("compareWeekly: single mixed-draw flicker does NOT alert", () => {
   const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const latest = report([...drawsFor("a", [true, false, true]), ...drawsFor("b", [true, true, true])]);

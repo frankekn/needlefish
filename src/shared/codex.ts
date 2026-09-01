@@ -19,6 +19,22 @@ import {
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
+
+export class RunnerOperationalError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "RunnerOperationalError";
+	}
+}
+
+function asRunnerOperationalError(error: unknown): RunnerOperationalError {
+	return error instanceof RunnerOperationalError
+		? error
+		: new RunnerOperationalError(
+				error instanceof Error ? error.message : String(error),
+				{ cause: error },
+			);
+}
 import {
 	createManagedTempDirectory,
 	disposeManagedTempDirectory,
@@ -565,33 +581,52 @@ async function runCodexOnce(
 			opts.onRaw?.(raw, runnerAttempt),
 		);
 	}
-	const tmp = await createManagedTempDirectory();
+	let tmp: string;
+	try {
+		tmp = await createManagedTempDirectory();
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
 	try {
 		const ghConfigDir = path.join(tmp, "gh-empty");
 		mkdirSync(ghConfigDir, { recursive: true });
-		const ephemeralHome = prepareEphemeralHome(runner, tmp);
-		const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
-		const sandbox = prepareRunnerSandbox({
-			runner,
-			repoPath: opts.repoPath,
-			prompt,
-			targetHeadSha: opts.targetHeadSha,
-			...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
-			tmp,
-		});
-		const invocation = {
-			prompt: sandbox.prompt,
-			repoPath: sandbox.repoPath,
-			model,
-			reasoningEffort: opts.reasoningEffort,
-			timeoutMs,
-			env,
-			tmp,
-		};
-		const result = await runRunner(runner, invocation);
+		const { invocation, sandbox } = (() => {
+			try {
+				const ephemeralHome = prepareEphemeralHome(runner, tmp);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+				const sandbox = prepareRunnerSandbox({
+					runner,
+					repoPath: opts.repoPath,
+					prompt,
+					targetHeadSha: opts.targetHeadSha,
+					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
+					tmp,
+				});
+				return {
+					sandbox,
+					invocation: {
+						prompt: sandbox.prompt,
+						repoPath: sandbox.repoPath,
+						model,
+						reasoningEffort: opts.reasoningEffort,
+						timeoutMs,
+						env,
+						tmp,
+					},
+				};
+			} catch (error) {
+				throw asRunnerOperationalError(error);
+			}
+		})();
+		let result: RunnerResult;
+		try {
+			result = await runRunner(runner, invocation);
+		} catch (error) {
+			throw asRunnerOperationalError(error);
+		}
 
 		// A runner that crashes or exits nonzero may already have emitted output;
 		// ride it along on the error (message unchanged) so the eval canary scan
@@ -614,14 +649,20 @@ async function runCodexOnce(
 			}
 			return err;
 		};
-		if (result.res.error) throw withRunnerOutput(result.res.error);
+		if (result.res.error) {
+			throw withRunnerOutput(
+				new RunnerOperationalError(result.res.error.message, {
+					cause: result.res.error,
+				}),
+			);
+		}
 		if (result.res.status !== 0) {
 			// Surface only allowlisted, prompt-free cause tokens extracted from
 			// stderr (auth/quota/network classifications). Raw stderr stays
 			// withheld — it may contain the review prompt.
 			const cause = safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
-				new Error(
+				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt`,
 				),
 			);
@@ -658,7 +699,11 @@ async function runCodexOnce(
 			throw err;
 		}
 	} finally {
-		await disposeManagedTempDirectory(tmp);
+		try {
+			await disposeManagedTempDirectory(tmp);
+		} catch (error) {
+			throw asRunnerOperationalError(error);
+		}
 	}
 }
 
@@ -1067,9 +1112,9 @@ async function runOpenAIDirect(
 	).replace(/\/$/, "");
 	const apiKey = process.env.OPENAI_API_KEY;
 	if (!apiKey)
-		throw new Error("OPENAI_API_KEY is required for the openai runner");
+		throw new RunnerOperationalError("OPENAI_API_KEY is required for the openai runner");
 	if (!model)
-		throw new Error(
+		throw new RunnerOperationalError(
 			"model is required for the openai runner (use --model or OPENAI_MODEL)",
 		);
 	const controller = new AbortController();
@@ -1098,7 +1143,7 @@ async function runOpenAIDirect(
 		};
 		if (!res.ok)
 			throw withBody(
-				new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
+				new RunnerOperationalError(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
 			);
 		let json: { choices?: { message?: { content?: string } }[] };
 		try {
@@ -1107,7 +1152,7 @@ async function runOpenAIDirect(
 			};
 		} catch {
 			throw withBody(
-				new Error(
+				new RunnerOperationalError(
 					`openai runner: non-JSON response body: ${text.slice(0, 500)}`,
 				),
 			);
@@ -1115,13 +1160,15 @@ async function runOpenAIDirect(
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
 			throw withBody(
-				new Error(
+				new RunnerOperationalError(
 					`openai runner: empty content in response: ${text.slice(0, 500)}`,
 				),
 			);
 		}
 		onRaw?.(text);
 		return content;
+	} catch (error) {
+		throw asRunnerOperationalError(error);
 	} finally {
 		clearTimeout(timer);
 	}

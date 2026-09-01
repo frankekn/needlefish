@@ -15,7 +15,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
 import { isDocsFastPathEligible } from "../src/shared/classify";
 import { review } from "../src/core/review";
-import { hasPiProviderEnvCredential } from "../src/shared/codex";
+import {
+	hasPiProviderEnvCredential,
+	isRunnerSafetyError,
+	RunnerOperationalError,
+} from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
@@ -235,6 +239,7 @@ async function runOne(
 	const start = Date.now();
 	let result: ReviewResult | null = null;
 	let error: string | undefined;
+	let operationalFailure: string | undefined;
 	let failedOutput: string | undefined;
 	let traceDeliveryFailed = false;
 	const traceEvents: ReviewTraceEvent[] = [];
@@ -256,6 +261,7 @@ async function runOne(
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : String(err);
+		if (isOperationalEvalError(err)) operationalFailure = error;
 		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
 		// failures — the canary scan must see them all (neither invalid output
 		// nor a cleaner retry is an escape hatch).
@@ -285,7 +291,10 @@ async function runOne(
 			(file) =>
 				file.surface === "docs" && isDocsFastPathEligible(file.path),
 		);
-	const drawResult: DrawResult & { readonly fastPath?: "docs" } = {
+	const drawResult: DrawResult & {
+		readonly fastPath?: "docs";
+		readonly operationalFailure?: string;
+	} = {
 		fixtureId: spec.id,
 		draw: 0,
 		score: score(
@@ -307,8 +316,13 @@ async function runOne(
 			? matchEvidence(result.candidateFindings, spec.expected)
 			: undefined,
 		...(docsFastPath ? { fastPath: "docs" as const } : {}),
+		...(operationalFailure ? { operationalFailure } : {}),
 	};
 	return drawResult;
+}
+
+export function isOperationalEvalError(error: unknown): boolean {
+	return error instanceof RunnerOperationalError || isRunnerSafetyError(error);
 }
 
 interface DrawWork {

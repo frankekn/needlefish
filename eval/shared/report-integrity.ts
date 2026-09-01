@@ -46,7 +46,12 @@ export function hasResolvedModelIdentity(
     (report.runner === "codex"
       ? environment.get("CODEX_REASONING_EFFORT")
       : undefined);
-  return Boolean(model?.trim() && effort?.trim());
+  return (
+    typeof model === "string" &&
+    model.trim().length > 0 &&
+    typeof effort === "string" &&
+    effort.trim().length > 0
+  );
 }
 
 // Reports are read from unvalidated JSON. The aggregate is trustworthy only

@@ -85,6 +85,19 @@ type PublishedReport = Report & {
   readonly privateEnvironment?: boolean;
 };
 
+type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
+
+function operationalFailures(report: PublishedReport): string[] {
+  return report.results.flatMap((result) => {
+    const failure = (result as PublishedDraw).operationalFailure;
+    if (failure === undefined) return [];
+    if (typeof failure !== "string" || failure.trim().length === 0) {
+      throw new Error("operational failure must be a non-empty string");
+    }
+    return [failure];
+  });
+}
+
 export function fixtureClassifications(
   specs: readonly FixtureSpec[],
 ): FixtureClassifications {
@@ -1058,14 +1071,29 @@ export function renderSite(
   validateManifest(manifest);
   const releaseVersion = readPackageVersion();
   const baseline = validateComparability(configured, manifest.baseline, canonical);
-  const qualified = configured
+  const operational = configured.filter(({ report }) => operationalFailures(report).length > 0);
+  const scored = configured.filter(({ report }) => operationalFailures(report).length === 0);
+  const qualified = scored
     .filter(({ report }) => qualifies(report))
     .sort(compareLanes);
-  const disqualified = configured
+  const disqualified = scored
     .filter(({ report }) => !qualifies(report))
     .sort(compareLanes);
   const fixtureCount = baseline.report.fixtures?.length ?? 0;
   const deployment = configured.find(({ config }) => config.status === "Deployed");
+  const deploymentOperational = deployment
+    ? operationalFailures(deployment.report).length > 0
+    : false;
+  const notRanked: ExcludedConfig[] = [
+    ...(manifest.excluded ?? []),
+    ...operational.map(({ config, report }) => ({
+      name: config.name,
+      model: config.model,
+      provider: report.provider ?? "Unknown provider",
+      reason: `${operationalFailures(report).length} provider or infrastructure draw failure(s); excluded from model scoring.`,
+      report: config.report,
+    })),
+  ];
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1101,10 +1129,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <a class="skip" href="#leaderboard">Skip to leaderboard</a>
 <header class="mast"><div class="shell"><nav aria-label="Primary"><a class="brand" href="${REPO_URL}">Needlefish</a><div class="navlinks"><a href="#leaderboard">Leaderboard</a><a href="#method">Method</a><a href="${REPO_URL}/tree/main/eval/results">Raw reports</a><a href="${REPO_URL}">Use Needlefish</a></div></nav><div class="hero"><div><h1>Which AI reviewer catches real bugs?</h1><p class="lede">Needlefish measures which model and review setup finds real pull-request defects without blocking clean changes. Every lane reviews the same guarded scenarios three times, and every score links to raw evidence.</p></div><div class="dive-log"><strong>${fixtureCount} × 3</strong><span>review scenarios × independent draws</span></div></div><div class="trust" aria-label="Benchmark trust facts"><div><b>${fixtureCount}</b><span>current fixtures</span></div><div><b>3</b><span>draws per lane</span></div><div><b>sealed</b><span>holdouts included</span></div><div><b>v${ANTICHEAT_VERSION}</b><span>anti-cheat generation</span></div></div></div></header>
-<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall and positive-fixture noise ≤ 0.12 are hard gates.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? qualifies(deployment.report) ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed and passes the current qualification gates.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
+<main><section class="section" id="leaderboard"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall and positive-fixture noise ≤ 0.12 are hard gates.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? deploymentOperational ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} has an operationally invalid report. Release ${escapeHtml(releaseVersion)} is blocked until the lane completes without provider or infrastructure failures.` : qualifies(deployment.report) ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed and passes the current qualification gates.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}</p></div><p class="table-hint">Scroll horizontally to see every metric.</p>${laneTable(qualified, "Qualified model leaderboard", true)}${chart(qualified)}</div></section>
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Disqualified</h2><p class="intro">These complete reports missed a Tier-1 defect or exceeded the 0.12 positive-noise envelope. Their balanced scores remain visible, but they receive no rank.</p>${laneTable(disqualified, "Disqualified model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
-${manifest.excluded?.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(manifest.excluded)}</ul></div></section>` : ""}
+${notRanked.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(notRanked)}</ul></div></section>` : ""}
 <section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Point-sorted uncertainty groups are anchored to their highest-scoring lane; lower lanes share that rank while their paired 95% normal interval versus the anchor includes zero. This avoids non-transitive bridge comparisons. The table also shows each lane's 95% interval. A Tier-1 miss or positive-fixture noise above 0.12 overrides the score and disqualifies the lane. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect disqualifies a lane regardless of its average.</p><h3>False positives and noise</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Positive-fixture noise counts unrelated blocking findings on buggy changes; recall bought with noise above the production envelope is not qualified.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Harness, provider, and route labels are operator-attested report metadata, not independently derived by the site generator. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
 <footer class="shell"><span>Needlefish — strict local PR review.</span><span><a href="${REPO_URL}">Use Needlefish</a> · <a href="${REPO_URL}/blob/main/LICENSE">MIT License</a></span></footer>
 </body>

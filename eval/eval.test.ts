@@ -6,13 +6,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, runnerEnvironment, writeReport } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, isOperationalEvalError, resumeSlots, runnerEnvironment, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
 import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
+import { RunnerOperationalError } from "../src/shared/codex";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
@@ -745,6 +746,14 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
 
 test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
+});
+
+test("isOperationalEvalError separates provider failures from malformed output", () => {
+  assert.equal(isOperationalEvalError(new RunnerOperationalError("timeout")), true);
+  assert.equal(isOperationalEvalError(new RunnerOperationalError("request failed", { cause: { code: "ECONNRESET" } })), true);
+  assert.equal(isOperationalEvalError(new Error("pi runner exited 1; likely cause: usage limit")), false);
+  assert.equal(isOperationalEvalError(new Error("invalid JSON in codex output")), false);
+  assert.equal(isOperationalEvalError(new Error("malformed critic output: unknown finding")), false);
 });
 
 test("parseArgs: --gate-class defaults to R and accepts only R|D", () => {

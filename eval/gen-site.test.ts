@@ -310,6 +310,32 @@ test("balancedReviewAccuracy counts an invalid negative once", () => {
   );
 });
 
+test("renderSite excludes operational failures from model scoring", () => {
+  const { manifest, lanes } = setup();
+  const operational = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result, drawIndex) =>
+              drawIndex === 0
+                ? { ...result, operationalFailure: "provider unavailable" }
+                : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  const html = renderSite(manifest, operational, canonical);
+  const leaderboard = html.slice(
+    html.indexOf("Current leaderboard"),
+    html.indexOf("Not run"),
+  );
+  assert.doesNotMatch(leaderboard, /Candidate A/);
+  assert.match(html, /Not ranked[\s\S]*Candidate A[\s\S]*1 provider or infrastructure draw failure/);
+});
+
 test("renderSite rejects a lane with a different fixture set", () => {
   const { manifest, lanes } = setup();
   const mismatched = lanes.map((lane, index) =>
