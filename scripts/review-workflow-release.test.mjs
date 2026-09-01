@@ -227,7 +227,7 @@ test("review forwards the optional opencode idle timeout without exporting an em
 });
 
 test("reconcile dispatches without requiring a checkout", () => {
-	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
+	assert.match(workflow, /reconcile:[\s\S]*?WORKFLOW_REPO: \$\{\{ job\.workflow_repository \}\}/);
 	assert.match(workflow, /reconcile:[\s\S]*?EXPECTED_NEEDLEFISH_SHA:/);
 	assert.match(
 		reconcileScript,

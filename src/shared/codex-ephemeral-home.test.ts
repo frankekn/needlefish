@@ -689,6 +689,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		authMode: process.env.PI_AUTH_MODE,
 		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
 		deepseekKey: process.env.DEEPSEEK_API_KEY,
+		customKey: process.env.CUSTOM_PROVIDER_TOKEN,
 		unrelatedKey: process.env.UNRELATED_API_KEY,
 	};
 	t.after(() => {
@@ -705,6 +706,8 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
 		if (previous.deepseekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
 		else process.env.DEEPSEEK_API_KEY = previous.deepseekKey;
+		if (previous.customKey === undefined) delete process.env.CUSTOM_PROVIDER_TOKEN;
+		else process.env.CUSTOM_PROVIDER_TOKEN = previous.customKey;
 		if (previous.unrelatedKey === undefined) delete process.env.UNRELATED_API_KEY;
 		else process.env.UNRELATED_API_KEY = previous.unrelatedKey;
 		rmSync(tmp, { recursive: true, force: true });
@@ -767,6 +770,21 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	const keyHome = prepareEphemeralHome("pi", keyTmp);
 	assert.ok(existsSync(path.join(keyHome!, ".pi", "agent", "models.json")));
 	assert.equal(existsSync(path.join(keyHome!, ".pi", "agent", "auth.json")), false);
+
+	// A custom provider may declare a non-derived API-key variable in models.json.
+	writeFileSync(
+		path.join(fakeHome, ".pi", "agent", "models.json"),
+		'{"providers":{"custom":{"apiKey":"$CUSTOM_PROVIDER_TOKEN"}}}',
+	);
+	process.env.PI_PROVIDER = "custom";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CUSTOM_PROVIDER_TOKEN";
+	process.env.CUSTOM_PROVIDER_TOKEN = "custom-test";
+	const customTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(customTmp, { recursive: true, force: true }));
+	const customHome = prepareEphemeralHome("pi", customTmp);
+	assert.equal(existsSync(path.join(customHome!, ".pi", "agent", "auth.json")), false);
+	delete process.env.CUSTOM_PROVIDER_TOKEN;
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
 
 	// An unrelated forwarded key cannot suppress the selected provider's OAuth.
 	delete process.env.DEEPSEEK_API_KEY;

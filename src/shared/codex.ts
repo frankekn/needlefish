@@ -181,8 +181,29 @@ function hasOpenCodeEnvCredential(): boolean {
 }
 
 function hasPiProviderEnvCredential(provider: string): boolean {
-	const key = `${provider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`;
-	return hasPassthroughCredential([key]);
+	const names = piProviderApiKeyEnvNames(provider);
+	const required = names.length > 0
+		? names
+		: [`${provider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`];
+	return required.every((name) => hasPassthroughCredential([name]));
+}
+
+function piProviderApiKeyEnvNames(provider: string): readonly string[] {
+	const home = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
+	if (!home) return [];
+	try {
+		const config: unknown = JSON.parse(
+			readFileSync(path.join(home, ".pi", "agent", "models.json"), "utf8"),
+		);
+		if (!isRecord(config) || !isRecord(config.providers)) return [];
+		const selected = config.providers[provider];
+		if (!isRecord(selected) || typeof selected.apiKey !== "string") return [];
+		return [...selected.apiKey.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g)]
+			.map((match) => match[1] ?? match[2])
+			.filter((name): name is string => name !== undefined);
+	} catch {
+		return [];
+	}
 }
 
 function strictCommaList(raw: string, envName: string): string[] {
