@@ -694,6 +694,9 @@ function validateRunnerEnvironment(report: PublishedReport, fail: (reason: strin
     fail("runner-environment attestation must contain string pairs");
   }
   const environment = new Map(entries as [string, string][]);
+  if ([...environment.values()].includes("<required>")) {
+    fail("public lanes cannot contain redacted runner-environment values");
+  }
   if (
     environment.get("NEEDLEFISH_EPHEMERAL_HOME") !== "1" ||
     environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"

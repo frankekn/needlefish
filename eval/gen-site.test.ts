@@ -167,6 +167,20 @@ test("renderSite rejects an incomplete guarded environment attestation", () => {
   );
 });
 
+test("renderSite rejects redacted public environment values", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () => renderSite(
+      manifest,
+      lanes.map((lane, index) => index === 0
+        ? { ...lane, report: { ...lane.report, runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"],["TOKEN","<required>"]]' } }
+        : lane),
+      canonical,
+    ),
+    /public lanes cannot contain redacted runner-environment values/,
+  );
+});
+
 test("balancedReviewAccuracy counts an invalid negative once", () => {
   const scored = {
     ...report,

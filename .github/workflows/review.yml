@@ -357,11 +357,17 @@ jobs:
           REVIEW_CODEX_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
           REVIEW_RUNS_ON: ${{ inputs.runs_on || github.event.inputs.runs_on }}
           RECONCILE_ATTEMPT: ${{ inputs.reconcile_attempt || github.event.inputs.reconcile_attempt || '0' }}
+          EXPLICIT_PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number }}
+          EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
             echo "no PR number in context; nothing to reconcile" >&2
+            exit 0
+          fi
+          if [ -z "$EXPLICIT_PR_NUM" ] && [ -n "$EVENT_HEAD_REPO" ] && [ "$EVENT_HEAD_REPO" != "$REPO" ]; then
+            echo "fork PR is intentionally skipped; nothing to reconcile"
             exit 0
           fi
           state=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .state)
