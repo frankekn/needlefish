@@ -315,7 +315,8 @@ For reproducible reviews, pin the reusable workflow and
 `needlefish_release_sha` to the same full commit SHA. The workflow executes that
 immutable release from `~/.local/share/needlefish/releases/<sha>` even when a
 newer deployment has moved the shared `current` symlink. Callers using `@main`
-without an explicit release pin resolve the current Needlefish `main` SHA.
+without an explicit release pin use the installed `current` release only when
+its source repository matches `needlefish_repo`.
 The workflow never reinstalls the tool during a PR job; the selected release must
 already have been deployed on the runner.
 

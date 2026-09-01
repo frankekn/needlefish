@@ -134,7 +134,7 @@ fi
 			"share",
 			"needlefish",
 			"releases",
-			expectedSha || (repo === needlefishRepo && current ? current : mainSha),
+			expectedSha || (needlefishRepo === "frankekn/needlefish" && current ? current : mainSha),
 			"bin",
 			"needlefish",
 		),
@@ -153,16 +153,8 @@ test("selection executes the caller-pinned release even when current is newer", 
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
 });
 
-test("selection resolves an external caller's omitted pin to source main", () => {
+test("selection resolves an omitted pin to the matching installed current release", () => {
 	const result = runSelection({ expectedSha: "" });
-
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
-	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-});
-
-test("selection uses current only when Needlefish reviews itself", () => {
-	const result = runSelection({ expectedSha: "", repo: "frankekn/needlefish" });
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.doesNotMatch(result.ghLog, /commits\/main/);
