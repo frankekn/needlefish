@@ -599,9 +599,9 @@ async function runCodexOnce(
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
 	try {
 		const ghConfigDir = path.join(tmp, "gh-empty");
-		mkdirSync(ghConfigDir, { recursive: true });
 		const { invocation, sandbox } = (() => {
 			try {
+				mkdirSync(ghConfigDir, { recursive: true });
 				const ephemeralHome = prepareEphemeralHome(runner, tmp);
 				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
 				const sandbox = prepareRunnerSandbox({
@@ -625,6 +625,7 @@ async function runCodexOnce(
 					},
 				};
 			} catch (error) {
+				if (isRunnerSafetyError(error)) throw error;
 				throw asRunnerOperationalError(error);
 			}
 		})();
@@ -632,6 +633,7 @@ async function runCodexOnce(
 		try {
 			result = await runRunner(runner, invocation);
 		} catch (error) {
+			if (isRunnerSafetyError(error)) throw error;
 			throw asRunnerOperationalError(error);
 		}
 
