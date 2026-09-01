@@ -36,6 +36,7 @@ import {
 } from "./shared/types";
 import {
 	hasConsistentCheatDetection,
+	hasResolvedModelIdentity,
 	type ReportAttestation,
 } from "./shared/report-integrity";
 
@@ -410,8 +411,23 @@ export function resumeSlots(
 			);
 			return { slots, skipped };
 		}
+		const currentRunnerEnvironment = runnerEnvironment(args);
 		if (
-			existing.runnerEnvironment !== runnerEnvironment(args) ||
+			!hasResolvedModelIdentity(existing) ||
+			!hasResolvedModelIdentity({
+				runner: args.runner,
+				model: args.model,
+				effort: args.effort,
+				runnerEnvironment: currentRunnerEnvironment,
+			})
+		) {
+			process.stderr.write(
+				"resume: resolved model and effort are required, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
+		if (
+			existing.runnerEnvironment !== currentRunnerEnvironment ||
 			existing.privateEnvironment === true ||
 			hasUnverifiableInvocationEnv(args)
 		) {
@@ -802,7 +818,11 @@ function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
 	});
 }
 
-function reportInvocation(args: RunArgs, report = args.report): string {
+function reportInvocation(
+	args: RunArgs,
+	report = args.report,
+	includeResume = true,
+): string {
 	const values = ["node", "--import", "tsx", "eval/run.ts", "--runner", args.runner];
 	const add = (flag: string, value: string | null): void => {
 		if (value !== null) values.push(flag, value);
@@ -833,7 +853,7 @@ function reportInvocation(args: RunArgs, report = args.report): string {
 	if (args.baseline) values.push("--baseline");
 	if (args.dryRun) values.push("--dry-run");
 	add("--fixtures", args.fixtures ? publicPath(args.fixtures) : null);
-	add("--resume", args.resume ? publicPath(args.resume) : null);
+	if (includeResume) add("--resume", args.resume ? publicPath(args.resume) : null);
 	add("--compare", args.compare ? publicPath(args.compare) : null);
 	values.push("--report", publicPath(report));
 	return values.map(shellQuote).join(" ");
@@ -1143,6 +1163,7 @@ export function writeReport(
 		reproductionCommand: reportInvocation(
 			args,
 			path.join(REPO_ROOT, "eval", "reports", path.basename(args.report)),
+			false,
 		),
 		draws: args.draws,
 		createdAt: new Date().toISOString(),

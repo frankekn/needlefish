@@ -9,6 +9,46 @@ export interface ReportAttestation {
   readonly privateEnvironment?: boolean;
 }
 
+const RUNNER_MODEL_ENV: Partial<Record<Report["runner"], string>> = {
+  codex: "CODEX_MODEL",
+  claude: "CLAUDE_MODEL",
+  opencode: "OPENCODE_MODEL",
+  openai: "OPENAI_MODEL",
+  grok: "GROK_MODEL",
+  pi: "PI_MODEL",
+};
+
+export function hasResolvedModelIdentity(
+  report: Pick<Report, "runner" | "model" | "effort"> &
+    Pick<ReportAttestation, "runnerEnvironment">,
+): boolean {
+  let pairs: unknown;
+  try {
+    pairs = JSON.parse(report.runnerEnvironment ?? "");
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(pairs)) return false;
+  const environment = new Map(
+    pairs.filter(
+      (entry): entry is [string, string] =>
+        Array.isArray(entry) &&
+        entry.length === 2 &&
+        entry.every((value) => typeof value === "string"),
+    ),
+  );
+  const model =
+    report.model ??
+    environment.get("NEEDLEFISH_MODEL") ??
+    environment.get(RUNNER_MODEL_ENV[report.runner] ?? "");
+  const effort =
+    report.effort ??
+    (report.runner === "codex"
+      ? environment.get("CODEX_REASONING_EFFORT")
+      : undefined);
+  return Boolean(model?.trim() && effort?.trim());
+}
+
 // Reports are read from unvalidated JSON. The aggregate is trustworthy only
 // when it exactly accounts for every per-draw detection.
 export function hasCurrentScorer(report: Report): boolean {
@@ -58,6 +98,9 @@ export function runnerEnvironmentAttestationError(
     environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"
   ) {
     return "public lanes require guarded runner-environment attestation";
+  }
+  if (!hasResolvedModelIdentity(report)) {
+    return "public lanes require a resolved model and effort identity";
   }
   return null;
 }

@@ -31,6 +31,10 @@ import type { DrawResult, FixtureSpec, Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RUNNER_ATTESTATION_ARGS = [
+	"--model",
+	"test-model",
+	"--effort",
+	"medium",
 	"--provider",
 	"Test provider",
 	"--route",

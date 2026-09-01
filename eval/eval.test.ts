@@ -471,6 +471,7 @@ test("writeReport: records a complete operator attestation", (t) => {
       "--env", `PI_BIN=${path.join(dir, "pi")}`,
       "--env", "PI_AUTH_MODE=proxy",
       "--fixtures", path.join(process.cwd(), "eval", "fixtures"),
+      "--resume", path.join(dir, "checkpoint.json"),
       "--report", path.join(dir, "report.json"),
     ]),
     [],
@@ -488,7 +489,9 @@ test("writeReport: records a complete operator attestation", (t) => {
   assert.doesNotMatch(report.invocation, /DEEPSEEK_API_KEY=/);
   assert.match(report.invocation, /--fixtures eval\/fixtures/);
   assert.match(report.invocation, /--report '<redacted>'/);
+  assert.match(report.invocation, /--resume '<redacted>'/);
   assert.match(report.reproductionCommand, /--report eval\/reports\/report\.json/);
+  assert.doesNotMatch(report.reproductionCommand, /--resume/);
   assert.doesNotMatch(report.invocation, /ambient-secret|provider-secret/);
   assert.ok(!report.invocation.includes(dir));
   assert.match(report.runnerEnvironment, /DEEPSEEK_API_KEY.*<required>/);
@@ -2156,7 +2159,27 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
       "--draws", "1", "--resume", resumePath,
       "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
     ]);
-    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    const unresolved = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(unresolved.skipped, 0);
+    writeFileSync(
+      resumePath,
+      JSON.stringify(resumeReport(spec, {
+        anticheatVersion: 2,
+        model: "test-model",
+        effort: "medium",
+        provider: "Codex",
+        route: "Test",
+        runnerVersion: "codex 1",
+        runnerEnvironment: runnerEnvironment(parseArgs([
+          "--model", "test-model", "--effort", "medium",
+        ])),
+      })),
+    );
+    const resumed = resumeSlots(parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--model", "test-model", "--effort", "medium",
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]), [spec], [{ spec, draw: 0 }]);
     assert.equal(resumed.skipped, 1);
     assert.notEqual(resumed.slots[0], null);
   } finally {
