@@ -180,6 +180,11 @@ function hasOpenCodeEnvCredential(): boolean {
 	return !!process.env.OPENAI_API_KEY || hasPassthroughApiKeyCredential();
 }
 
+function hasPiProviderEnvCredential(provider: string): boolean {
+	const key = `${provider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`;
+	return hasPassthroughCredential([key]);
+}
+
 function strictCommaList(raw: string, envName: string): string[] {
 	const entries = raw.split(",").map((entry) => entry.trim());
 	if (entries.some((entry) => entry.length === 0)) {
@@ -307,7 +312,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		if (authMode !== "oauth" && authMode !== "proxy") {
 			throw new Error("PI_AUTH_MODE must be oauth or proxy");
 		}
-		if (authMode === "proxy") {
+		if (authMode === "proxy" || hasPiProviderEnvCredential(provider)) {
 			return {
 				required: [".pi/agent/models.json"],
 				optional: [],

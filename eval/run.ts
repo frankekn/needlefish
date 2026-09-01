@@ -587,6 +587,7 @@ function reportInvocation(args: RunArgs, report = args.report): string {
 		"GROK_MODEL",
 		"NEEDLEFISH_EPHEMERAL_HOME",
 		"NEEDLEFISH_EVAL_TRACE",
+		"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
 		"OPENCODE_BIN",
 		"OPENCODE_IDLE_TIMEOUT_MS",
 		"OPENCODE_MODEL",
@@ -595,7 +596,21 @@ function reportInvocation(args: RunArgs, report = args.report): string {
 		"PI_PROVIDER",
 	]);
 	const pathEnv = new Set(["CODEX_BIN", "GROK_BIN", "OPENCODE_BIN", "PI_BIN"]);
-	for (const [key, value] of Object.entries(args.env).sort(([a], [b]) =>
+	const effectiveEnv = { ...args.env };
+	for (const key of publicEnv) {
+		if (effectiveEnv[key] === undefined && process.env[key] !== undefined) {
+			effectiveEnv[key] = process.env[key];
+		}
+	}
+	for (const key of (effectiveEnv.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+		.split(",")
+		.map((name) => name.trim())
+		.filter(Boolean)) {
+		if (effectiveEnv[key] === undefined && process.env[key] !== undefined) {
+			effectiveEnv[key] = process.env[key];
+		}
+	}
+	for (const [key, value] of Object.entries(effectiveEnv).sort(([a], [b]) =>
 		a.localeCompare(b),
 	)) {
 		const publicValue = !publicEnv.has(key)

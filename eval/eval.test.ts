@@ -439,9 +439,24 @@ test("parseArgs: rejects malformed --env values", () => {
 
 test("writeReport: records a complete operator attestation", (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-attestation-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const previous = new Map(
+    ["PI_PROVIDER", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "DEEPSEEK_API_KEY"].map(
+      (key) => [key, process.env[key]] as const,
+    ),
+  );
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  process.env.PI_PROVIDER = "ambient-provider";
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "DEEPSEEK_API_KEY";
+  process.env.DEEPSEEK_API_KEY = "ambient-secret";
   const report = writeReport(
     parseArgs([
+      "--runner", "pi",
       "--provider", "OpenAI",
       "--route", "Codex CLI subscription",
       "--runner-version", "codex-cli 1.2.3",
@@ -461,10 +476,14 @@ test("writeReport: records a complete operator attestation", (t) => {
   assert.match(report.invocation, /API_TOKEN=<redacted>/);
   assert.match(report.invocation, /CODEX_BIN=<redacted>/);
   assert.match(report.invocation, /PI_AUTH_MODE=proxy/);
+  assert.match(report.invocation, /PI_PROVIDER=ambient-provider/);
+  assert.match(report.invocation, /NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_API_KEY/);
+  assert.match(report.invocation, /DEEPSEEK_API_KEY=<redacted>/);
   assert.match(report.invocation, /--fixtures eval\/fixtures/);
   assert.match(report.invocation, /--report '<redacted>'/);
   assert.match(report.reproductionCommand, /--report eval\/reports\/report\.json/);
   assert.doesNotMatch(report.invocation, /secret-value/);
+  assert.doesNotMatch(report.invocation, /ambient-secret/);
   assert.ok(!report.invocation.includes(dir));
   assert.throws(
     () => parseArgs(["--provider", "OpenAI"]),

@@ -687,6 +687,9 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		home: process.env.HOME,
 		provider: process.env.PI_PROVIDER,
 		authMode: process.env.PI_AUTH_MODE,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		deepseekKey: process.env.DEEPSEEK_API_KEY,
+		unrelatedKey: process.env.UNRELATED_API_KEY,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -697,11 +700,21 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		else process.env.PI_PROVIDER = previous.provider;
 		if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
 		else process.env.PI_AUTH_MODE = previous.authMode;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.deepseekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+		else process.env.DEEPSEEK_API_KEY = previous.deepseekKey;
+		if (previous.unrelatedKey === undefined) delete process.env.UNRELATED_API_KEY;
+		else process.env.UNRELATED_API_KEY = previous.unrelatedKey;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	delete process.env.DEEPSEEK_API_KEY;
+	delete process.env.UNRELATED_API_KEY;
 	mkdirSync(path.join(fakeHome, ".pi", "agent"), { recursive: true });
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
 	// No auth.json planted.
@@ -743,6 +756,30 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 		() => prepareEphemeralHome("pi", tmp),
 		/required auth source is missing: .*auth\.json/,
 	);
+	// A key for the selected provider is sufficient even when the route keeps
+	// the explicit oauth label; the shared OAuth store must stay out.
+	process.env.PI_PROVIDER = "deepseek";
+	process.env.PI_AUTH_MODE = "oauth";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "DEEPSEEK_API_KEY";
+	process.env.DEEPSEEK_API_KEY = "deepseek-test";
+	const keyTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(keyTmp, { recursive: true, force: true }));
+	const keyHome = prepareEphemeralHome("pi", keyTmp);
+	assert.ok(existsSync(path.join(keyHome!, ".pi", "agent", "models.json")));
+	assert.equal(existsSync(path.join(keyHome!, ".pi", "agent", "auth.json")), false);
+
+	// An unrelated forwarded key cannot suppress the selected provider's OAuth.
+	delete process.env.DEEPSEEK_API_KEY;
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "UNRELATED_API_KEY";
+	process.env.UNRELATED_API_KEY = "unrelated-test";
+	const unrelatedTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(unrelatedTmp, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("pi", unrelatedTmp),
+		/required auth source is missing: .*auth\.json/,
+	);
+	delete process.env.UNRELATED_API_KEY;
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
 	delete process.env.PI_PROVIDER;
 	process.env.PI_AUTH_MODE = "proxy";
