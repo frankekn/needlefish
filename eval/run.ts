@@ -260,6 +260,7 @@ async function runOne(
 			);
 		}
 	} catch (err) {
+		if (isRunnerSafetyError(err)) throw err;
 		error = err instanceof Error ? err.message : String(err);
 		if (isOperationalEvalError(err)) operationalFailure = error;
 		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
@@ -322,7 +323,7 @@ async function runOne(
 }
 
 export function isOperationalEvalError(error: unknown): boolean {
-	return error instanceof RunnerOperationalError || isRunnerSafetyError(error);
+	return error instanceof RunnerOperationalError;
 }
 
 interface DrawWork {

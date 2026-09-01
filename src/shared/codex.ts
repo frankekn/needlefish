@@ -27,6 +27,13 @@ export class RunnerOperationalError extends Error {
 	}
 }
 
+class RunnerOutputError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "RunnerOutputError";
+	}
+}
+
 function asRunnerOperationalError(error: unknown): RunnerOperationalError {
 	return error instanceof RunnerOperationalError
 		? error
@@ -1156,7 +1163,7 @@ async function runOpenAIDirect(
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
 			throw withBody(
-				new RunnerOperationalError(
+				new RunnerOutputError(
 					`openai runner: empty content in response: ${text.slice(0, 500)}`,
 				),
 			);
@@ -1164,6 +1171,7 @@ async function runOpenAIDirect(
 		onRaw?.(text);
 		return content;
 	} catch (error) {
+		if (error instanceof RunnerOutputError) throw error;
 		throw asRunnerOperationalError(error);
 	} finally {
 		clearTimeout(timer);
