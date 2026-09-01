@@ -40,7 +40,8 @@
       "runner": "grok",
       "model": "grok-4.6",
       "effort": "xhigh",
-      "status": "Candidate"
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Grok config hashing."
     },
     {
       "report": "results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
@@ -48,7 +49,8 @@
       "runner": "pi",
       "model": "zai-cliproxy/glm-5.3-flash",
       "effort": "max",
-      "status": "Candidate"
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing."
     },
     {
       "report": "results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
@@ -56,7 +58,8 @@
       "runner": "pi",
       "model": "deepseek/deepseek-v4-flash-vision-exp",
       "effort": "max",
-      "status": "Candidate"
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing."
     }
   ],
   "blocked": [

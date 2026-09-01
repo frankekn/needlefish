@@ -167,6 +167,34 @@ test("renderSite rejects an incomplete guarded environment attestation", () => {
   );
 });
 
+test("renderSite requires staged config identity or an explicit legacy exception", () => {
+  const { manifest, lanes } = setup();
+  const piLanes = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          config: { ...lane.config, runner: "pi" as const },
+          report: { ...lane.report, runner: "pi" as const },
+        }
+      : lane,
+  );
+  assert.throws(
+    () => renderSite(manifest, piLanes, canonical),
+    /PI_MODELS_JSON identity is required/,
+  );
+  const excepted = piLanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          config: {
+            ...lane.config,
+            legacyConfigIdentityException: "Predates config hashing.",
+          },
+        }
+      : lane,
+  );
+  assert.match(renderSite(manifest, excepted, canonical), /Legacy exception/);
+});
+
 test("renderSite rejects redacted public environment values", () => {
   const { manifest, lanes } = setup();
   assert.throws(
