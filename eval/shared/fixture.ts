@@ -11,7 +11,6 @@ const IDENTITY = [
 	"-c",
 	"user.name=needlefish-eval",
 ];
-const DIFF = ["-c", "diff.algorithm=myers", "diff"] as const;
 
 // Win32 strips trailing spaces and periods from each path component (except
 // "." / "..") before the name hits the filesystem. Model that here so bait
@@ -209,7 +208,7 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 			);
 			return git(
 				[
-					...DIFF,
+					"diff",
 					"--no-renames",
 					...formatArgs,
 					baseSha,
@@ -227,7 +226,7 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 		): string =>
 			git(
 				[
-					...DIFF,
+					"diff",
 					"-M1%",
 					...formatArgs,
 					baseSha,

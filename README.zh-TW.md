@@ -92,7 +92,7 @@ jobs:
 diff 的 inline review comment 發布；後續 push 會更新同一份 review，標示
 fresh／still-open／resolved，不會不斷堆疊新 review。
 
-小型 PR 每次審查使用 2 次模型呼叫（workflow 預設 `gpt-5.6-terra` @ `high`，約 56 秒）；大型 PR 使用
+小型 PR 每次審查使用 2 次模型呼叫（workflow 預設 `gpt-5.6-sol` @ `medium`）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
@@ -114,8 +114,8 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
 開啟原始碼。
 
-目前部署的 Codex `gpt-5.6-terra` @ `high` 未通過 Tier-1 gate。0.4.2 會維持
-blocked，直到該 lane 重新通過資格驗證，或選定合格的替代 lane。詳見
+目前部署的 Codex `gpt-5.6-sol` @ `medium` 已通過 Tier-1 與 positive-noise
+資格門檻。詳見
 [時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)與
 [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)。
 
@@ -250,9 +250,9 @@ jobs:
     uses: frankekn/needlefish/.github/workflows/review.yml@main
     with:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-      # 可選；預設 codex + gpt-5.6-terra
+      # 可選；預設 codex + gpt-5.6-sol
       # runner: codex
-      # model: gpt-5.6-terra
+      # model: gpt-5.6-sol
       # codex_reasoning_effort: high
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # 僅 opencode
@@ -393,7 +393,7 @@ COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | 自動偵測 `codex`，然後 `claude`，然後 `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `high`） |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-sol` 時為 `medium`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
 

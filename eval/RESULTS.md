@@ -7,10 +7,8 @@ paths.
 
 ## Current decision
 
-As of 2026-09-01, the deployed **Codex `gpt-5.6-terra` at high effort** lane
-misses the current Tier-1 gate and is disqualified. Release 0.4.2 is blocked
-until this lane is re-qualified or a qualified replacement is selected; this
-change does not make that product decision.
+As of 2026-09-01, the deployed lane is **Codex `gpt-5.6-sol` at medium effort**.
+It has 100% Tier-1 recall and qualifies under the current positive-noise gate.
 DeepSeek V4 Flash Vision Exp has the highest point estimate, but it, Grok 4.6,
 and GLM-5.3-Flash are statistically unresolved and share rank 1. GPT-5.6 Sol
 and Terra xhigh share rank 4. Terra high and Luna max miss Tier-1 defects and
@@ -46,6 +44,11 @@ reports contain 86 fixtures × 3 draws, include sealed holdouts, and
 use prompt `e62d0889fc704541`, fixture set `e4969c9fdc2e3497`, scorer
 `8f0afd4d8ea1f5a5`, and anti-cheat v2. Every ranked report has
 `cheatDetectedCount: 0`.
+
+The completed reports predate content-addressed Pi `models.json` provenance and
+an explicit fixture diff-renderer version. Those are documented limitations,
+not retroactively asserted evidence; the next benchmark generation will bind
+both before allowing resume or cross-generation comparison.
 
 Not ranked:
 

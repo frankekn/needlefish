@@ -8,7 +8,7 @@
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "high",
-      "status": "Deployed"
+      "status": "Candidate"
     },
     {
       "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
@@ -24,7 +24,7 @@
       "runner": "codex",
       "model": "gpt-5.6-sol",
       "effort": "medium",
-      "status": "Candidate"
+      "status": "Deployed"
     },
     {
       "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",

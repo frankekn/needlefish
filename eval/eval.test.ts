@@ -59,17 +59,13 @@ test("loadFixture materializes a git repo and builds a bundle with the defect di
   }
 });
 
-test("loadFixture forces deterministic diff settings over ambient Git config", () => {
+test("loadFixture forces deterministic rename detection when git config disables it", () => {
   const previousCount = process.env.GIT_CONFIG_COUNT;
   const previousKey = process.env.GIT_CONFIG_KEY_0;
   const previousValue = process.env.GIT_CONFIG_VALUE_0;
-  const previousAlgorithmKey = process.env.GIT_CONFIG_KEY_1;
-  const previousAlgorithmValue = process.env.GIT_CONFIG_VALUE_1;
-  process.env.GIT_CONFIG_COUNT = "2";
+  process.env.GIT_CONFIG_COUNT = "1";
   process.env.GIT_CONFIG_KEY_0 = "diff.renames";
   process.env.GIT_CONFIG_VALUE_0 = "false";
-  process.env.GIT_CONFIG_KEY_1 = "diff.algorithm";
-  process.env.GIT_CONFIG_VALUE_1 = "minimal";
 
   let loaded: ReturnType<typeof loadFixture> | undefined;
   try {
@@ -95,10 +91,6 @@ test("loadFixture forces deterministic diff settings over ambient Git config", (
     else process.env.GIT_CONFIG_KEY_0 = previousKey;
     if (previousValue === undefined) delete process.env.GIT_CONFIG_VALUE_0;
     else process.env.GIT_CONFIG_VALUE_0 = previousValue;
-    if (previousAlgorithmKey === undefined) delete process.env.GIT_CONFIG_KEY_1;
-    else process.env.GIT_CONFIG_KEY_1 = previousAlgorithmKey;
-    if (previousAlgorithmValue === undefined) delete process.env.GIT_CONFIG_VALUE_1;
-    else process.env.GIT_CONFIG_VALUE_1 = previousAlgorithmValue;
   }
 });
 
