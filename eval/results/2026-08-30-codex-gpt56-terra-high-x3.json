@@ -16960,5 +16960,6 @@
     "real-pr8": "positive",
     "real-pr9": "positive"
   },
-  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.151.0' --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-codex-gpt56-terra-high-x3.json"
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.151.0' --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-codex-gpt56-terra-high-x3.json",
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.151.0' --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/reports/2026-08-30-codex-gpt56-terra-high-x3.json"
 }

@@ -16836,5 +16836,6 @@
     "real-pr8": "positive",
     "real-pr9": "positive"
   },
-  "invocation": "node --import tsx eval/run.ts --runner pi --model zai-cliproxy/glm-5.3-flash --effort max --provider 'Z.AI via CLIProxyAPI' --route 'Z.AI coding-plan subscription' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=proxy --env PI_PROVIDER=zai-cliproxy --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json"
+  "invocation": "node --import tsx eval/run.ts --runner pi --model zai-cliproxy/glm-5.3-flash --effort max --provider 'Z.AI via CLIProxyAPI' --route 'Z.AI coding-plan subscription' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=proxy --env PI_PROVIDER=zai-cliproxy --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
+  "reproductionCommand": "node --import tsx eval/run.ts --runner pi --model zai-cliproxy/glm-5.3-flash --effort max --provider 'Z.AI via CLIProxyAPI' --route 'Z.AI coding-plan subscription' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=proxy --env PI_PROVIDER=zai-cliproxy --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/reports/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json"
 }

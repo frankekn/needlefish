@@ -16921,5 +16921,6 @@
     "real-pr8": "positive",
     "real-pr9": "positive"
   },
-  "invocation": "node --import tsx eval/run.ts --runner pi --model deepseek/deepseek-v4-flash-vision-exp --effort max --provider DeepSeek --route 'Direct DeepSeek API' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=oauth --env PI_PROVIDER=deepseek --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json"
+  "invocation": "node --import tsx eval/run.ts --runner pi --model deepseek/deepseek-v4-flash-vision-exp --effort max --provider DeepSeek --route 'Direct DeepSeek API' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=oauth --env PI_PROVIDER=deepseek --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
+  "reproductionCommand": "node --import tsx eval/run.ts --runner pi --model deepseek/deepseek-v4-flash-vision-exp --effort max --provider DeepSeek --route 'Direct DeepSeek API' --runner-version 'Pi 0.84.4' --env PI_AUTH_MODE=oauth --env PI_PROVIDER=deepseek --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/reports/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json"
 }

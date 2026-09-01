@@ -463,6 +463,7 @@ test("writeReport: records a complete operator attestation", (t) => {
   assert.match(report.invocation, /PI_AUTH_MODE=proxy/);
   assert.match(report.invocation, /--fixtures eval\/fixtures/);
   assert.match(report.invocation, /--report '<redacted>'/);
+  assert.match(report.reproductionCommand, /--report eval\/reports\/report\.json/);
   assert.doesNotMatch(report.invocation, /secret-value/);
   assert.ok(!report.invocation.includes(dir));
   assert.throws(

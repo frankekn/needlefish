@@ -569,7 +569,7 @@ function publicPath(value: string): string {
 			: "<redacted>";
 }
 
-function reportInvocation(args: RunArgs): string {
+function reportInvocation(args: RunArgs, report = args.report): string {
 	const values = ["node", "--import", "tsx", "eval/run.ts", "--runner", args.runner];
 	const add = (flag: string, value: string | null): void => {
 		if (value !== null) values.push(flag, value);
@@ -621,7 +621,7 @@ function reportInvocation(args: RunArgs): string {
 	add("--fixtures", args.fixtures ? publicPath(args.fixtures) : null);
 	add("--resume", args.resume ? publicPath(args.resume) : null);
 	add("--compare", args.compare ? publicPath(args.compare) : null);
-	values.push("--report", publicPath(args.report));
+	values.push("--report", publicPath(report));
 	return values.map(shellQuote).join(" ");
 }
 
@@ -899,6 +899,7 @@ export function writeReport(
 	readonly route?: string;
 	readonly runnerVersion?: string;
 	readonly invocation: string;
+	readonly reproductionCommand: string;
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
@@ -921,6 +922,10 @@ export function writeReport(
 				}
 			: {}),
 		invocation: reportInvocation(args),
+		reproductionCommand: reportInvocation(
+			args,
+			path.join(REPO_ROOT, "eval", "reports", path.basename(args.report)),
+		),
 		draws: args.draws,
 		createdAt: new Date().toISOString(),
 		baseline: args.baseline,
@@ -957,6 +962,7 @@ export function writeReport(
 		readonly route?: string;
 		readonly runnerVersion?: string;
 		readonly invocation: string;
+		readonly reproductionCommand: string;
 	};
 	const targetPath = path.resolve(args.report);
 	if (!lastCheckpointCoverage.has(targetPath)) {

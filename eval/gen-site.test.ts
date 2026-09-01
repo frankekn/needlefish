@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
@@ -25,6 +26,7 @@ const report = {
   route: "Test subscription",
   runnerVersion: "test-runner 1.0.0",
   invocation: "node --import tsx eval/run.ts --runner codex",
+  reproductionCommand: "node --import tsx eval/run.ts --runner codex --report eval/reports/deployed.json",
 };
 
 const canonical = {
@@ -75,7 +77,13 @@ function setup(): { manifest: LeaderboardManifest; lanes: Lane[] } {
         },
       ],
     },
-    lanes: configs.map((laneConfig) => ({ config: laneConfig, report })),
+    lanes: configs.map((laneConfig) => ({
+      config: laneConfig,
+      report: {
+        ...report,
+        reproductionCommand: `node --import tsx eval/run.ts --runner codex --report eval/reports/${path.basename(laneConfig.report)}`,
+      },
+    })),
   };
 }
 
@@ -86,7 +94,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
   assert.match(html, /Test subscription/);
-  assert.match(html, /<dt>Invocation<\/dt>/);
+  assert.match(html, /<dt>Reproduce<\/dt>/);
   assert.match(html, /node --import tsx eval\/run\.ts --runner codex/);
   assert.match(html, /operator-attested/);
   assert.match(html, /tree\/main\/eval\/results">Raw reports/);
@@ -111,6 +119,21 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Positive noise \/ review/);
   assert.match(html, /Balanced Review Accuracy/);
   assert.match(html, /seed 6ba00010/);
+});
+
+test("renderSite rejects a reproduction command that overwrites its raw report", () => {
+  const { manifest, lanes } = setup();
+  const unsafe = lanes.map((lane) => ({
+    ...lane,
+    report: {
+      ...lane.report,
+      reproductionCommand: `node eval/run.ts --report eval/${lane.config.report}`,
+    },
+  }));
+  assert.throws(
+    () => renderSite(manifest, unsafe, canonical),
+    /reproduction command must write to eval\/reports\//,
+  );
 });
 
 test("balancedReviewAccuracy counts an invalid negative once", () => {
