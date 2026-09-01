@@ -735,7 +735,7 @@ function validateLane(lane: Lane): void {
           : null;
   const hasConfigIdentity =
     configIdentityKey === null ||
-    environment.has(configIdentityKey);
+    /^sha256:[0-9a-f]{16}$/.test(environment.get(configIdentityKey) ?? "");
   if (!hasConfigIdentity && !config.legacyConfigIdentityException) {
     fail(`${configIdentityKey} identity is required`);
   }

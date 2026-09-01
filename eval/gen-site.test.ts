@@ -181,6 +181,25 @@ test("renderSite requires staged config identity or an explicit legacy exception
     () => renderSite(manifest, piLanes, canonical),
     /PI_MODELS_JSON identity is required/,
   );
+  assert.throws(
+    () => renderSite(
+      manifest,
+      piLanes.map((lane, index) => index === 1
+        ? {
+            ...lane,
+            report: {
+              ...lane.report,
+              runnerEnvironment: lane.report.runnerEnvironment?.replace(
+                /]$/,
+                ',["PI_MODELS_JSON","missing"]]',
+              ),
+            },
+          }
+        : lane),
+      canonical,
+    ),
+    /PI_MODELS_JSON identity is required/,
+  );
   const excepted = piLanes.map((lane, index) =>
     index === 1
       ? {
@@ -204,7 +223,7 @@ test("renderSite requires Pi auth-store identity or an explicit legacy exception
           report: {
             ...lane.report,
             runner: "pi" as const,
-            runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"],["PI_AUTH_MODE","oauth"],["PI_MODELS_JSON","sha256:test"]]',
+            runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"],["PI_AUTH_MODE","oauth"],["PI_MODELS_JSON","sha256:0123456789abcdef"]]',
           },
         }
       : lane,
