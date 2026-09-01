@@ -724,6 +724,19 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
     '{"deepseek":{"type":"api_key","key":"second-secret"}}',
   );
   assert.notEqual(runnerEnvironment(oauthArgs), firstOauth);
+
+  writeFileSync(
+    registry,
+    '{"providers":{"deepseek":{"apiKey":"$DEEPSEEK_TOKEN"}}}',
+  );
+  const envOauthArgs = parseArgs([
+    "--runner", "pi",
+    "--env", "PI_AUTH_MODE=oauth",
+    "--env", "PI_PROVIDER=deepseek",
+    "--env", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_TOKEN",
+    "--env", "DEEPSEEK_TOKEN=env-secret",
+  ]);
+  assert.doesNotMatch(runnerEnvironment(envOauthArgs), /PI_AUTH_JSON/);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {

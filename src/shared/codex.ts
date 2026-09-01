@@ -153,8 +153,10 @@ const EPHEMERAL_HOME_ENV_CONFIG_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
-function passthroughNames(): readonly string[] {
-	return (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+type RunnerEnvironment = Readonly<Record<string, string | undefined>>;
+
+function passthroughNames(env: RunnerEnvironment = process.env): readonly string[] {
+	return (env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
@@ -164,9 +166,12 @@ function passthroughNames(): readonly string[] {
 // supported auth mode that never reads the runner's HOME files. Only actual
 // credential variables count (model/endpoint vars configure, they don't
 // authenticate), and only when non-empty.
-function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
-	return passthroughNames().some(
-		(name) => credentialVars.includes(name) && !!process.env[name],
+function hasPassthroughCredential(
+	credentialVars: readonly string[],
+	env: RunnerEnvironment = process.env,
+): boolean {
+	return passthroughNames(env).some(
+		(name) => credentialVars.includes(name) && !!env[name],
 	);
 }
 
@@ -180,16 +185,22 @@ function hasOpenCodeEnvCredential(): boolean {
 	return !!process.env.OPENAI_API_KEY || hasPassthroughApiKeyCredential();
 }
 
-function hasPiProviderEnvCredential(provider: string): boolean {
-	const names = piProviderApiKeyEnvNames(provider);
+export function hasPiProviderEnvCredential(
+	provider: string,
+	env: RunnerEnvironment = process.env,
+): boolean {
+	const names = piProviderApiKeyEnvNames(provider, env);
 	const required = names.length > 0
 		? names
 		: [`${provider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`];
-	return required.every((name) => hasPassthroughCredential([name]));
+	return required.every((name) => hasPassthroughCredential([name], env));
 }
 
-function piProviderApiKeyEnvNames(provider: string): readonly string[] {
-	const home = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
+function piProviderApiKeyEnvNames(
+	provider: string,
+	env: RunnerEnvironment = process.env,
+): readonly string[] {
+	const home = env.HOME?.trim() || env.USERPROFILE?.trim();
 	if (!home) return [];
 	const registry = path.join(home, ".pi", "agent", "models.json");
 	let raw: string;

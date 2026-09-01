@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
 import { isDocsFastPathEligible } from "../src/shared/classify";
 import { review } from "../src/core/review";
+import { hasPiProviderEnvCredential } from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
@@ -747,7 +748,8 @@ function piUsesAuthStore(args: RunArgs): boolean {
 		args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
 	return (
 		(args.env.PI_AUTH_MODE ?? process.env.PI_AUTH_MODE ??
-			(provider === "openai-codex" ? "oauth" : "proxy")) === "oauth"
+			(provider === "openai-codex" ? "oauth" : "proxy")) === "oauth" &&
+		!hasPiProviderEnvCredential(provider, { ...process.env, ...args.env })
 	);
 }
 
