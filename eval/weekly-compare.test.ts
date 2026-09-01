@@ -56,8 +56,13 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
   return {
     promptHash: "abc",
     runner: "codex",
-    model: null,
-    effort: null,
+    model: "gpt-5.6-terra",
+    effort: "high",
+    provider: "OpenAI",
+    route: "Codex CLI subscription",
+    runnerVersion: "codex-cli 1.0.0",
+    runnerEnvironment: "[]",
+    privateEnvironment: false,
     draws: 3,
     createdAt: "2026-07-09T00:00:00.000Z",
     baseline: false,
@@ -69,6 +74,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     scorerHash: scorerHash(),
     fixtureTiers: {},
     anticheatVersion: 2,
+    gateClass: "R",
     ...partial,
   };
 }
@@ -223,7 +229,17 @@ test("compareWeekly: effort change skips regression comparison", () => {
   });
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false);
-  assert.ok(v.reasons.some((reason) => reason.includes("runner/model/effort")));
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+});
+
+test("compareWeekly: provider change skips regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    provider: "Different provider",
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
 });
 
 test("compareWeekly: a compromised previous week skips regression comparison", () => {

@@ -96,8 +96,8 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `xhigh` effort
-by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
+Cost: 2 model calls per review on small PRs (`gpt-5.6-sol` at `medium` effort
+by default in the composite action), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers with write access to
 this repository can comment `@needlefish recheck` or
 `@needlefish explain <finding>` on the PR.
@@ -533,7 +533,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.4.2. Released 2026-09-01. Read-only. Shipped: inline review comments, sticky re-review
+Current package version: v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish

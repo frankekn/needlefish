@@ -54,6 +54,14 @@ function stableFpFixtures(report: Report): Set<string> {
   return new Set([...byFixture].filter(([, draws]) => draws.every(Boolean)).map(([id]) => id));
 }
 
+function sameWeeklyLane(prev: Report, latest: Report): boolean {
+  const prevLane = [prev.runner, prev.model, prev.effort, prev.provider, prev.route, prev.runnerVersion, prev.runnerEnvironment, prev.privateEnvironment, prev.gateClass];
+  const latestLane = [latest.runner, latest.model, latest.effort, latest.provider, latest.route, latest.runnerVersion, latest.runnerEnvironment, latest.privateEnvironment, latest.gateClass];
+  return prevLane.every((value, index) =>
+    value !== null && value !== undefined && value !== "" && value === latestLane[index]
+  );
+}
+
 export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdict {
   const reasons: string[] = [];
 
@@ -122,9 +130,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
 
   if (prev) {
     if (
-      prev.runner !== latest.runner ||
-      prev.model !== latest.model ||
-      prev.effort !== latest.effort ||
+      !sameWeeklyLane(prev, latest) ||
       prev.promptHash !== latest.promptHash ||
       !prev.fixtureSetHash ||
       !latest.fixtureSetHash ||
@@ -145,7 +151,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
     ) {
       // Different lane, prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: runner/model/effort, prompt/fixture set, anti-cheat generation, or scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: attested lane, prompt/fixture set, anti-cheat generation, or scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce

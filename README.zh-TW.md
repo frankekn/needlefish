@@ -92,7 +92,7 @@ jobs:
 diff 的 inline review comment 發布；後續 push 會更新同一份 review，標示
 fresh／still-open／resolved，不會不斷堆疊新 review。
 
-小型 PR 每次審查使用 2 次模型呼叫（workflow 預設 `gpt-5.6-terra` @ `xhigh`）；大型 PR 使用
+小型 PR 每次審查使用 2 次模型呼叫（composite action 預設 `gpt-5.6-sol` @ `medium`）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
@@ -470,7 +470,7 @@ disposable HOME 的 HOME-relative credential files。
 
 ## 狀態
 
-v0.4.2。已準備但尚未發布。唯讀。已提供 inline review comment、sticky re-review
+目前 package 版本：v0.4.2。唯讀。已提供 inline review comment、sticky re-review
 （fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
 sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／
