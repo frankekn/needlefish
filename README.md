@@ -96,7 +96,7 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (`gpt-5.6-sol` at `medium` effort
+Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `xhigh` effort
 by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers with write access to
 this repository can comment `@needlefish recheck` or
@@ -121,7 +121,7 @@ operational outcomes, not zero model scores.
 The page is not deployed yet; this link intentionally opens its source until a
 custom domain or GitHub Pages deployment is authorized.
 
-The deployed Codex `gpt-5.6-sol` at `medium` effort passes the current Tier-1
+The deployed Codex `gpt-5.6-terra` at `xhigh` effort passes the current Tier-1
 and positive-noise qualification gates. See the [chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
 and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
@@ -287,8 +287,8 @@ jobs:
       pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
       # Optional:
       # runner: codex
-      # model: gpt-5.6-sol
-      # codex_reasoning_effort: high
+      # model: gpt-5.6-terra
+      # codex_reasoning_effort: xhigh
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # opencode only
     secrets: inherit
@@ -424,7 +424,7 @@ the pin is chosen from the selected `runner`.
 Cost and behavior notes:
 
 - Small PRs use 2 model calls per PR (review + critic) at the workflow default,
-  `gpt-5.6-sol` at `medium` effort. Large PRs use 1 map call + N deep calls
+  `gpt-5.6-terra` at `xhigh` effort. Large PRs use 1 map call + N deep calls
   (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
   Same-head re-runs use 0 model calls unless forced with `--recheck`.
 - Fork PRs don't receive secrets by default. The `if:` gate above skips them.
@@ -453,7 +453,7 @@ env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `medium` for `gpt-5.6-sol`) |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `xhigh` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 

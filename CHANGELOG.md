@@ -8,7 +8,7 @@
 - Eval: publish a guarded, provider-explicit new-model comparison ranked by
   Balanced Review Accuracy, with Tier-1 misses and unavailable subscription
   models kept out of ranking.
-- GitHub: select qualified Codex `gpt-5.6-sol` at medium effort as the default
+- GitHub: select qualified Codex `gpt-5.6-terra` at xhigh effort as the default
   self-hosted review and weekly-eval lane.
 - Docs: add a generated, domain-ready public benchmark page with raw-report
   provenance and simplify the README path into the results.

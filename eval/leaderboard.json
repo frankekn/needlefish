@@ -1,6 +1,6 @@
 {
   "updated": "2026-09-01",
-  "baseline": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
+  "baseline": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
   "lanes": [
     {
       "report": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
@@ -16,7 +16,7 @@
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "xhigh",
-      "status": "Candidate"
+      "status": "Deployed"
     },
     {
       "report": "results/2026-08-31-codex-gpt56-sol-medium-x3.json",
@@ -24,7 +24,7 @@
       "runner": "codex",
       "model": "gpt-5.6-sol",
       "effort": "medium",
-      "status": "Deployed"
+      "status": "Candidate"
     },
     {
       "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",

@@ -7,7 +7,7 @@ paths.
 
 ## Current decision
 
-As of 2026-09-01, the deployed lane is **Codex `gpt-5.6-sol` at medium effort**.
+As of 2026-09-01, the deployed lane is **Codex `gpt-5.6-terra` at xhigh effort**.
 It has 100% Tier-1 recall and qualifies under the current positive-noise gate.
 DeepSeek V4 Flash Vision Exp has the highest point estimate, but it, Grok 4.6,
 and GLM-5.3-Flash are statistically unresolved and share rank 1. GPT-5.6 Sol
