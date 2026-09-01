@@ -85,9 +85,9 @@ change both output quality and reliability.
 
 ### 2026-09-01 — Final Pi credential staging delivery gate
 
-Commit `6b54c9f` makes proxy providers stage only `models.json`, while other
-non-default Pi providers fail closed unless both `models.json` and `auth.json`
-exist. Focused ephemeral-HOME tests pass.
+Commit `6b54c9f` makes proxy and explicit provider API-key routes stage only
+`models.json`; OAuth-backed non-default Pi providers without that key also
+require `auth.json`. Focused ephemeral-HOME tests pass.
 
 A preliminary Class D smoke reviewed sealed holdout `holdout-error-swallow` through Pi
 0.84.4, `cliproxy`, and `gpt-5.5` at max effort. It produced one valid draw in

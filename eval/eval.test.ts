@@ -515,7 +515,7 @@ test("writeReport: records a complete operator attestation", (t) => {
     [holdoutSpec("codex-attestation", false)],
   );
   assert.doesNotMatch(codexReport.invocation, /CODEX_ACCESS_TOKEN|OPENAI_API_KEY/);
-  assert.match(codexReport.runnerEnvironment, /CODEX_ACCESS_TOKEN.*<required>/);
+  assert.doesNotMatch(codexReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|OPENAI_API_KEY/);
   assert.doesNotMatch(codexReport.invocation, /codex-secret/);
   const grokReport = writeReport(
     parseArgs([
@@ -526,7 +526,7 @@ test("writeReport: records a complete operator attestation", (t) => {
     [holdoutSpec("grok-attestation", false)],
   );
   assert.doesNotMatch(grokReport.invocation, /XAI_API_KEY/);
-  assert.match(grokReport.runnerEnvironment, /XAI_API_KEY.*<required>/);
+  assert.doesNotMatch(grokReport.runnerEnvironment, /XAI_API_KEY/);
   assert.doesNotMatch(grokReport.invocation, /grok-secret/);
   const privateReport = writeReport(
     parseArgs([
@@ -571,19 +571,27 @@ test("writeReport: records a complete operator attestation", (t) => {
   }
 });
 
-test("writeReport: treats forwarded proxy routing as private", (t) => {
-  const previous = process.env.HTTPS_PROXY;
+test("writeReport: attests only effective runner environment", (t) => {
+  const previousProxy = process.env.https_proxy;
+  const previousToken = process.env.CODEX_ACCESS_TOKEN;
   t.after(() => {
-    if (previous === undefined) delete process.env.HTTPS_PROXY;
-    else process.env.HTTPS_PROXY = previous;
+    if (previousProxy === undefined) delete process.env.https_proxy;
+    else process.env.https_proxy = previousProxy;
+    if (previousToken === undefined) delete process.env.CODEX_ACCESS_TOKEN;
+    else process.env.CODEX_ACCESS_TOKEN = previousToken;
   });
-  process.env.HTTPS_PROXY = "https://private-proxy.example";
+  process.env.https_proxy = "https://private-proxy.example";
 
   const args = parseArgs(["--runner", "codex"]);
-  assert.equal(JSON.parse(runnerEnvironment(args)).find(([key]: [string]) => key === "HTTPS_PROXY")?.[1], "<required>");
+  assert.equal(JSON.parse(runnerEnvironment(args)).find(([key]: [string]) => key === "https_proxy")?.[1], "<required>");
   const report = writeReport(args, [], [holdoutSpec("proxy-attestation", false)]);
   assert.equal(report.privateEnvironment, true);
   assert.doesNotMatch(report.invocation, /private-proxy/);
+  delete process.env.https_proxy;
+  process.env.CODEX_ACCESS_TOKEN = "parent-only-token";
+  const publicReport = writeReport(args, [], [holdoutSpec("public-attestation", false)]);
+  assert.equal(publicReport.privateEnvironment, false);
+  assert.doesNotMatch(publicReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|parent-only-token/);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {

@@ -590,7 +590,14 @@ const COMMON_PUBLIC_INVOCATION_ENV = [
 	"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
 	"NEEDLEFISH_TIMEOUT_MS",
 ] as const;
-const COMMON_PRIVATE_INVOCATION_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"] as const;
+const COMMON_PRIVATE_INVOCATION_ENV = [
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
+] as const;
 const RUNNER_PUBLIC_INVOCATION_ENV: Record<RunnerName, readonly string[]> = {
 	codex: [
 		"CODEX_BIN",
@@ -620,56 +627,19 @@ const PATH_INVOCATION_ENV = new Set([
 	"PI_BIN",
 ]);
 const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
-	codex: [
-		"CODEX_ACCESS_TOKEN",
-		"CODEX_API_KEY",
-		"OPENAI_API_KEY",
-		"OPENAI_BASE_URL",
-		"OPENAI_ORG_ID",
-		"OPENAI_PROJECT_ID",
-	],
-	claude: [
-		"ANTHROPIC_API_KEY",
-		"ANTHROPIC_BASE_URL",
-		"CLAUDE_CODE_OAUTH_TOKEN",
-	],
-	opencode: [
-		"ANTHROPIC_API_KEY",
-		"DEEPSEEK_API_KEY",
-		"GEMINI_API_KEY",
-		"GOOGLE_API_KEY",
-		"GROK_API_KEY",
-		"MISTRAL_API_KEY",
-		"OPENAI_API_KEY",
-		"OPENAI_BASE_URL",
-		"XAI_API_KEY",
-		"XDG_CONFIG_HOME",
-		"XDG_DATA_HOME",
-		"ZAI_API_KEY",
-	],
-	grok: ["GROK_API_KEY", "GROK_BASE_URL", "XAI_API_KEY", "XAI_BASE_URL"],
-	openai: [
-		"OPENAI_API_KEY",
-		"OPENAI_BASE_URL",
-		"OPENAI_ORG_ID",
-		"OPENAI_PROJECT_ID",
-	],
+	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+	opencode: ["OPENAI_API_KEY"],
+	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
 	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
 };
 
 function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 	const effective = { ...args.env };
-	const piProvider = effective.PI_PROVIDER ?? process.env.PI_PROVIDER;
-	const piCredential =
-		args.runner === "pi" && piProvider
-			? [`${piProvider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`]
-			: [];
 	for (const key of [
 		...COMMON_PUBLIC_INVOCATION_ENV,
 		...COMMON_PRIVATE_INVOCATION_ENV,
 		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
 		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
-		...piCredential,
 	]) {
 		const value = process.env[key];
 		if (effective[key] === undefined && value !== undefined) effective[key] = value;

@@ -71,6 +71,7 @@ function runSelection({
 	current = currentSha,
 	mainSha = pinnedSha,
 	needlefishRepo = "frankekn/needlefish",
+	repo = "frankekn/example",
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-release-"));
 	const home = join(root, "home with spaces");
@@ -122,7 +123,7 @@ fi
 			NEEDLEFISH_REPO: needlefishRepo,
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_HEAD_SHA: "c".repeat(40),
-			REPO: "frankekn/example",
+			REPO: repo,
 		},
 	});
 	const output = {
@@ -133,8 +134,7 @@ fi
 			"share",
 			"needlefish",
 			"releases",
-			expectedSha ||
-				(needlefishRepo === "frankekn/needlefish" && current ? current : mainSha),
+			expectedSha || (repo === needlefishRepo && current ? current : mainSha),
 			"bin",
 			"needlefish",
 		),
@@ -153,8 +153,16 @@ test("selection executes the caller-pinned release even when current is newer", 
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
 });
 
-test("selection resolves an omitted pin to the installed current release", () => {
+test("selection resolves an external caller's omitted pin to source main", () => {
 	const result = runSelection({ expectedSha: "" });
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
+	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
+});
+
+test("selection uses current only when Needlefish reviews itself", () => {
+	const result = runSelection({ expectedSha: "", repo: "frankekn/needlefish" });
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.doesNotMatch(result.ghLog, /commits\/main/);
