@@ -181,6 +181,20 @@ test("renderSite rejects redacted public environment values", () => {
   );
 });
 
+test("renderSite rejects duplicate public environment keys", () => {
+  const { manifest, lanes } = setup();
+  assert.throws(
+    () => renderSite(
+      manifest,
+      lanes.map((lane, index) => index === 0
+        ? { ...lane, report: { ...lane.report, runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]' } }
+        : lane),
+      canonical,
+    ),
+    /public runner-environment attestation cannot contain duplicate keys/,
+  );
+});
+
 test("balancedReviewAccuracy counts an invalid negative once", () => {
   const scored = {
     ...report,

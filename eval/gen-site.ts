@@ -693,7 +693,11 @@ function validateRunnerEnvironment(report: PublishedReport, fail: (reason: strin
   ) {
     fail("runner-environment attestation must contain string pairs");
   }
-  const environment = new Map(entries as [string, string][]);
+  const pairs = entries as [string, string][];
+  if (new Set(pairs.map(([key]) => key)).size !== pairs.length) {
+    fail("public runner-environment attestation cannot contain duplicate keys");
+  }
+  const environment = new Map(pairs);
   if ([...environment.values()].includes("<required>")) {
     fail("public lanes cannot contain redacted runner-environment values");
   }
