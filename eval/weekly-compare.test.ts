@@ -61,7 +61,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     provider: "OpenAI",
     route: "Codex CLI subscription",
     runnerVersion: "codex-cli 1.0.0",
-    runnerEnvironment: "[]",
+    runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
     privateEnvironment: false,
     draws: 3,
     createdAt: "2026-07-09T00:00:00.000Z",
@@ -258,6 +258,16 @@ test("compareWeekly: private attestations skip regression comparison", () => {
   });
   const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
     privateEnvironment: true,
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+});
+
+test("compareWeekly: incomplete public attestations skip regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    runnerEnvironment: "[]",
   });
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false);

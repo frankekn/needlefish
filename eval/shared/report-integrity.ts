@@ -7,6 +7,44 @@ export function hasCurrentScorer(report: Report): boolean {
   return report.scorerHash === scorerHash();
 }
 
+export function runnerEnvironmentAttestationError(report: Report): string | null {
+  if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
+    return "public lanes require a public runner-environment attestation";
+  }
+  let entries: unknown;
+  try {
+    entries = JSON.parse(report.runnerEnvironment);
+  } catch {
+    return "runner-environment attestation must be valid JSON";
+  }
+  if (
+    !Array.isArray(entries) ||
+    entries.some(
+      (entry) =>
+        !Array.isArray(entry) ||
+        entry.length !== 2 ||
+        entry.some((value) => typeof value !== "string"),
+    )
+  ) {
+    return "runner-environment attestation must contain string pairs";
+  }
+  const pairs = entries as [string, string][];
+  if (new Set(pairs.map(([key]) => key)).size !== pairs.length) {
+    return "public runner-environment attestation cannot contain duplicate keys";
+  }
+  const environment = new Map(pairs);
+  if ([...environment.values()].includes("<required>")) {
+    return "public lanes cannot contain redacted runner-environment values";
+  }
+  if (
+    environment.get("NEEDLEFISH_EPHEMERAL_HOME") !== "1" ||
+    environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"
+  ) {
+    return "public lanes require guarded runner-environment attestation";
+  }
+  return null;
+}
+
 export function hasConsistentCheatDetection(report: Report): boolean {
   const count = report.aggregates?.cheatDetectedCount as number | undefined;
   const exposureCount = report.aggregates?.baitExposureCount as

@@ -10,6 +10,7 @@ import { promptHash as computePromptHash } from "./shared/prompt-hash";
 import {
   hasConsistentCheatDetection,
   hasCurrentScorer,
+  runnerEnvironmentAttestationError,
 } from "./shared/report-integrity";
 import {
   ANTICHEAT_VERSION,
@@ -675,40 +676,6 @@ function readLane(config: LaneConfig): Lane {
   };
 }
 
-function validateRunnerEnvironment(report: PublishedReport, fail: (reason: string) => never): void {
-  let entries: unknown;
-  try {
-    entries = JSON.parse(report.runnerEnvironment ?? "");
-  } catch {
-    fail("runner-environment attestation must be valid JSON");
-  }
-  if (
-    !Array.isArray(entries) ||
-    entries.some(
-      (entry) =>
-        !Array.isArray(entry) ||
-        entry.length !== 2 ||
-        entry.some((value) => typeof value !== "string"),
-    )
-  ) {
-    fail("runner-environment attestation must contain string pairs");
-  }
-  const pairs = entries as [string, string][];
-  if (new Set(pairs.map(([key]) => key)).size !== pairs.length) {
-    fail("public runner-environment attestation cannot contain duplicate keys");
-  }
-  const environment = new Map(pairs);
-  if ([...environment.values()].includes("<required>")) {
-    fail("public lanes cannot contain redacted runner-environment values");
-  }
-  if (
-    environment.get("NEEDLEFISH_EPHEMERAL_HOME") !== "1" ||
-    environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"
-  ) {
-    fail("public lanes require guarded runner-environment attestation");
-  }
-}
-
 function validateLane(lane: Lane): void {
   const { config, report } = lane;
   const reproductionCommand = report.reproductionCommand ?? "";
@@ -733,10 +700,8 @@ function validateLane(lane: Lane): void {
   if (!reproductionCommand.endsWith(`--report ${reproductionReport}`)) {
     fail(`reproduction command must write to ${reproductionReport}`);
   }
-  if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
-    fail("public lanes require a public runner-environment attestation");
-  }
-  validateRunnerEnvironment(report, fail);
+  const environmentError = runnerEnvironmentAttestationError(report);
+  if (environmentError) fail(environmentError);
   if (!isCompleteReport(report)) fail("report is incomplete");
   if (report.gateClass !== "R") fail("public lanes require gate class R");
   if (report.draws !== 3) fail("public lanes require exactly 3 draws");

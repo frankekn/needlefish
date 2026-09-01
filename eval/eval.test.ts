@@ -611,6 +611,14 @@ test("writeReport: attests only effective runner environment", (t) => {
   );
   assert.equal(ignoredEnvReport.privateEnvironment, false);
   assert.doesNotMatch(ignoredEnvReport.runnerEnvironment, /FOO|unused/);
+  const overriddenHomeReport = writeReport(
+    parseArgs(["--runner", "codex", "--env", "HOME=/private/auth-home"]),
+    [],
+    [holdoutSpec("home-attestation", false)],
+  );
+  assert.equal(overriddenHomeReport.privateEnvironment, true);
+  assert.match(overriddenHomeReport.runnerEnvironment, /HOME.*<required>/);
+  assert.doesNotMatch(overriddenHomeReport.runnerEnvironment, /private\/auth-home/);
   process.env.XDG_CONFIG_HOME = "/private/opencode-config";
   const opencodeReport = writeReport(
     parseArgs(["--runner", "opencode"]),

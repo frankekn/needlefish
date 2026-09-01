@@ -655,6 +655,9 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		const value = args.env[key] ?? process.env[key];
 		if (value !== undefined) effective[key] = value;
 	}
+	for (const key of ["HOME", "USERPROFILE"] as const) {
+		if (Object.hasOwn(args.env, key)) effective[key] = args.env[key];
+	}
 	if (args.model !== null) {
 		delete effective.NEEDLEFISH_MODEL;
 		delete effective[`${args.runner.toUpperCase()}_MODEL`];
