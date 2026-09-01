@@ -59,13 +59,17 @@ test("loadFixture materializes a git repo and builds a bundle with the defect di
   }
 });
 
-test("loadFixture forces deterministic rename detection when git config disables it", () => {
+test("loadFixture forces deterministic diff settings over ambient Git config", () => {
   const previousCount = process.env.GIT_CONFIG_COUNT;
   const previousKey = process.env.GIT_CONFIG_KEY_0;
   const previousValue = process.env.GIT_CONFIG_VALUE_0;
-  process.env.GIT_CONFIG_COUNT = "1";
+  const previousAlgorithmKey = process.env.GIT_CONFIG_KEY_1;
+  const previousAlgorithmValue = process.env.GIT_CONFIG_VALUE_1;
+  process.env.GIT_CONFIG_COUNT = "2";
   process.env.GIT_CONFIG_KEY_0 = "diff.renames";
   process.env.GIT_CONFIG_VALUE_0 = "false";
+  process.env.GIT_CONFIG_KEY_1 = "diff.algorithm";
+  process.env.GIT_CONFIG_VALUE_1 = "minimal";
 
   let loaded: ReturnType<typeof loadFixture> | undefined;
   try {
@@ -91,6 +95,10 @@ test("loadFixture forces deterministic rename detection when git config disables
     else process.env.GIT_CONFIG_KEY_0 = previousKey;
     if (previousValue === undefined) delete process.env.GIT_CONFIG_VALUE_0;
     else process.env.GIT_CONFIG_VALUE_0 = previousValue;
+    if (previousAlgorithmKey === undefined) delete process.env.GIT_CONFIG_KEY_1;
+    else process.env.GIT_CONFIG_KEY_1 = previousAlgorithmKey;
+    if (previousAlgorithmValue === undefined) delete process.env.GIT_CONFIG_VALUE_1;
+    else process.env.GIT_CONFIG_VALUE_1 = previousAlgorithmValue;
   }
 });
 
@@ -574,11 +582,14 @@ test("writeReport: records a complete operator attestation", (t) => {
 test("writeReport: attests only effective runner environment", (t) => {
   const previousProxy = process.env.https_proxy;
   const previousToken = process.env.CODEX_ACCESS_TOKEN;
+  const previousXdgConfig = process.env.XDG_CONFIG_HOME;
   t.after(() => {
     if (previousProxy === undefined) delete process.env.https_proxy;
     else process.env.https_proxy = previousProxy;
     if (previousToken === undefined) delete process.env.CODEX_ACCESS_TOKEN;
     else process.env.CODEX_ACCESS_TOKEN = previousToken;
+    if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdgConfig;
   });
   process.env.https_proxy = "https://private-proxy.example";
 
@@ -592,6 +603,14 @@ test("writeReport: attests only effective runner environment", (t) => {
   const publicReport = writeReport(args, [], [holdoutSpec("public-attestation", false)]);
   assert.equal(publicReport.privateEnvironment, false);
   assert.doesNotMatch(publicReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|parent-only-token/);
+  process.env.XDG_CONFIG_HOME = "/private/opencode-config";
+  const opencodeReport = writeReport(
+    parseArgs(["--runner", "opencode"]),
+    [],
+    [holdoutSpec("xdg-attestation", false)],
+  );
+  assert.equal(opencodeReport.privateEnvironment, true);
+  assert.match(opencodeReport.runnerEnvironment, /XDG_CONFIG_HOME.*<required>/);
 });
 
 test("parseArgs: --concurrency defaults to 4", () => {

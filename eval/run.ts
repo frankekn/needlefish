@@ -638,7 +638,7 @@ const PATH_INVOCATION_ENV = new Set([
 ]);
 const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
 	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-	opencode: ["OPENAI_API_KEY"],
+	opencode: ["OPENAI_API_KEY", "XDG_CONFIG_HOME", "XDG_DATA_HOME"],
 	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
 	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
 };
