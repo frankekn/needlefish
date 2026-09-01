@@ -34,7 +34,6 @@ export interface LaneConfig {
   readonly runner: Report["runner"];
   readonly model: string;
   readonly effort: string;
-  readonly command: string;
   readonly status: "Deployed" | "Candidate";
 }
 
@@ -77,6 +76,7 @@ type PublishedReport = Report & {
   readonly provider?: string;
   readonly route?: string;
   readonly runnerVersion?: string;
+  readonly invocation?: string;
 };
 
 export function fixtureClassifications(
@@ -605,7 +605,6 @@ export function validateManifest(value: unknown): LeaderboardManifest {
       runner,
       model: requiredString(lane, "model", label),
       effort: requiredString(lane, "effort", label),
-      command: requiredString(lane, "command", label),
       status,
     };
   });
@@ -668,11 +667,11 @@ function validateLane(lane: Lane): void {
     throw new Error(`${config.report}: ${reason}`);
   };
   if (
-    ![config.name, report.provider, report.route, report.runnerVersion].every(
+    ![config.name, report.provider, report.route, report.runnerVersion, report.invocation].every(
       (value) => typeof value === "string" && value.trim().length > 0,
     )
   ) {
-    fail("display name and attested provider, route, and runner version are required");
+    fail("display name, invocation, and attested provider, route, and runner version are required");
   }
   if (!isCompleteReport(report)) fail("report is incomplete");
   if (report.gateClass !== "R") fail("public lanes require gate class R");
@@ -916,7 +915,7 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
           ? "Disqualified: positive noise"
           : config.status;
       const [lower, upper] = scoreConfidenceInterval(report);
-      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(report.runnerVersion)} (operator-attested)</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Invocation</dt><dd><code>${escapeHtml(config.command)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${percent(t1)}</td><td class="number">${percent(t2)}</td><td class="number">${percent(t3)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${metrics.meanNoisePerPositive.toFixed(3)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td class="number">${percent(metrics.verdictMatchRate)}</td><td>${escapeHtml(report.runnerVersion)}</td><td class="route"><strong>${escapeHtml(report.provider)}</strong><small>${escapeHtml(report.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
+      return `<tr><td class="rank">${rank}</td><th scope="row"><details><summary>${escapeHtml(config.name)}</summary><dl><div><dt>Exact model</dt><dd><code>${escapeHtml(report.model)}</code></dd></div><div><dt>Harness</dt><dd>${escapeHtml(report.runnerVersion)} (operator-attested)</dd></div><div><dt>Runner ID</dt><dd><code>${escapeHtml(report.runner)}</code></dd></div><div><dt>Route</dt><dd>${escapeHtml(report.route)} (operator-attested)</dd></div><div><dt>Run</dt><dd><time datetime="${escapeHtml(report.createdAt)}">${escapeHtml(report.createdAt.slice(0, 10))}</time> · ${report.fixtures?.length} fixtures × ${report.draws} draws · ${escapeHtml(report.holdout)} holdouts · anti-cheat v${report.anticheatVersion}</dd></div><div><dt>Release</dt><dd><a href="${escapeHtml(`${REPO_URL}/commit/${report.gitSha}`)}"><code>${escapeHtml(report.gitSha)}</code></a></dd></div><div><dt>Invocation</dt><dd><code>${escapeHtml(report.invocation)}</code></dd></div><div><dt>Hashes</dt><dd><code>${escapeHtml(report.promptHash)} / ${escapeHtml(report.fixtureSetHash)} / ${escapeHtml(report.scorerHash)}</code></dd></div></dl><a href="${rawUrl(config.report)}">Raw ${escapeHtml(config.name)} ${escapeHtml(report.effort)} report</a></details></th><td class="number strong">${percent(balancedReviewAccuracy(report), 2)}</td><td class="number">${percent(lower)}–${percent(upper)}</td><td><span class="status status-${tierOneMiss || noiseMiss ? "disqualified" : config.status.toLowerCase()}">${escapeHtml(status)}</span></td><td class="number">${percent(metrics.recall)}</td><td class="number">${percent(usableSpecificity(report))}</td><td class="number">${percent(t1)}</td><td class="number">${percent(t2)}</td><td class="number">${percent(t3)}</td><td class="number">${percent(metrics.falsePositiveRate)}</td><td class="number">${metrics.meanNoisePerPositive.toFixed(3)}</td><td class="number">${percent(metrics.invalidJsonRate)}</td><td class="number">${percent(metrics.verdictMatchRate)}</td><td>${escapeHtml(report.runnerVersion)}</td><td class="route"><strong>${escapeHtml(report.provider)}</strong><small>${escapeHtml(report.route)}</small></td><td><code>${escapeHtml(report.effort)}</code></td><td class="number">${Math.round(metrics.meanDurationMs / 1000)}s</td></tr>`;
     })
     .join("");
 }

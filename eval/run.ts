@@ -36,6 +36,7 @@ import {
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.join(__dirname, "..");
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
 const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
 
@@ -552,6 +553,78 @@ function repoGitSha(): string | null {
 	}
 }
 
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=+-]+$/.test(value)
+		? value
+		: `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function publicPath(value: string): string {
+	if (value.includes("\\") && path.sep !== "\\") return "<redacted>";
+	const relative = path.relative(REPO_ROOT, path.resolve(value));
+	return relative && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+		? relative.split(path.sep).join("/")
+		: relative === ""
+			? "."
+			: "<redacted>";
+}
+
+function reportInvocation(args: RunArgs): string {
+	const values = ["node", "--import", "tsx", "eval/run.ts", "--runner", args.runner];
+	const add = (flag: string, value: string | null): void => {
+		if (value !== null) values.push(flag, value);
+	};
+	add("--model", args.model);
+	add("--effort", args.effort);
+	add("--provider", args.provider);
+	add("--route", args.route);
+	add("--runner-version", args.runnerVersion);
+	const publicEnv = new Set([
+		"CODEX_BIN",
+		"CODEX_REASONING_EFFORT",
+		"CODEX_SERVICE_TIER",
+		"GROK_BIN",
+		"GROK_MODEL",
+		"NEEDLEFISH_EPHEMERAL_HOME",
+		"NEEDLEFISH_EVAL_TRACE",
+		"OPENCODE_BIN",
+		"OPENCODE_IDLE_TIMEOUT_MS",
+		"OPENCODE_MODEL",
+		"PI_AUTH_MODE",
+		"PI_BIN",
+		"PI_PROVIDER",
+	]);
+	const pathEnv = new Set(["CODEX_BIN", "GROK_BIN", "OPENCODE_BIN", "PI_BIN"]);
+	for (const [key, value] of Object.entries(args.env).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)) {
+		const publicValue = !publicEnv.has(key)
+			? "<redacted>"
+			: pathEnv.has(key) &&
+					(path.isAbsolute(value) || value.includes("/") || value.includes("\\"))
+				? publicPath(value)
+				: value;
+		values.push("--env", `${key}=${publicValue}`);
+	}
+	values.push(
+		"--draws",
+		String(args.draws),
+		"--concurrency",
+		String(args.concurrency),
+		"--holdout",
+		args.holdout,
+		"--gate-class",
+		args.gateClass,
+	);
+	if (args.baseline) values.push("--baseline");
+	if (args.dryRun) values.push("--dry-run");
+	add("--fixtures", args.fixtures ? publicPath(args.fixtures) : null);
+	add("--resume", args.resume ? publicPath(args.resume) : null);
+	add("--compare", args.compare ? publicPath(args.compare) : null);
+	values.push("--report", publicPath(args.report));
+	return values.map(shellQuote).join(" ");
+}
+
 export function aggregateMustFindHitRates(
 	results: readonly {
 		readonly fixtureId: string;
@@ -825,6 +898,7 @@ export function writeReport(
 	readonly provider?: string;
 	readonly route?: string;
 	readonly runnerVersion?: string;
+	readonly invocation: string;
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
@@ -846,6 +920,7 @@ export function writeReport(
 					runnerVersion: args.runnerVersion,
 				}
 			: {}),
+		invocation: reportInvocation(args),
 		draws: args.draws,
 		createdAt: new Date().toISOString(),
 		baseline: args.baseline,
@@ -881,6 +956,7 @@ export function writeReport(
 		readonly provider?: string;
 		readonly route?: string;
 		readonly runnerVersion?: string;
+		readonly invocation: string;
 	};
 	const targetPath = path.resolve(args.report);
 	if (!lastCheckpointCoverage.has(targetPath)) {

@@ -16800,5 +16800,6 @@
     "real-pr4-options-not-forwarded": "positive",
     "real-pr8": "positive",
     "real-pr9": "positive"
-  }
+  },
+  "invocation": "node --import tsx eval/run.ts --runner grok --model grok-4.6 --effort xhigh --provider 'xAI Grok' --route 'Grok subscription' --runner-version 'Grok CLI 1.0.5' --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-grok-grok46-xhigh-x3-rerun.json"
 }

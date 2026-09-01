@@ -445,6 +445,10 @@ test("writeReport: records a complete operator attestation", (t) => {
       "--provider", "OpenAI",
       "--route", "Codex CLI subscription",
       "--runner-version", "codex-cli 1.2.3",
+      "--env", "API_TOKEN=secret-value",
+      "--env", `CODEX_BIN=${path.join(dir, "codex")}`,
+      "--env", "PI_AUTH_MODE=proxy",
+      "--fixtures", path.join(process.cwd(), "eval", "fixtures"),
       "--report", path.join(dir, "report.json"),
     ]),
     [],
@@ -453,6 +457,14 @@ test("writeReport: records a complete operator attestation", (t) => {
   assert.equal(report.provider, "OpenAI");
   assert.equal(report.route, "Codex CLI subscription");
   assert.equal(report.runnerVersion, "codex-cli 1.2.3");
+  assert.match(report.invocation, /--provider OpenAI/);
+  assert.match(report.invocation, /API_TOKEN=<redacted>/);
+  assert.match(report.invocation, /CODEX_BIN=<redacted>/);
+  assert.match(report.invocation, /PI_AUTH_MODE=proxy/);
+  assert.match(report.invocation, /--fixtures eval\/fixtures/);
+  assert.match(report.invocation, /--report '<redacted>'/);
+  assert.doesNotMatch(report.invocation, /secret-value/);
+  assert.ok(!report.invocation.includes(dir));
   assert.throws(
     () => parseArgs(["--provider", "OpenAI"]),
     /must be supplied together/,

@@ -17229,5 +17229,6 @@
     "real-pr4-options-not-forwarded": "positive",
     "real-pr8": "positive",
     "real-pr9": "positive"
-  }
+  },
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-sol --effort medium --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.151.0' --draws 3 --concurrency 4 --holdout include --gate-class R --report eval/results/2026-08-31-codex-gpt56-sol-medium-x3.json"
 }
