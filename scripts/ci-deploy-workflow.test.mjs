@@ -69,6 +69,7 @@ function runDeploy({
   lsRemoteFails = false,
   unreleased = false,
   missingChangelog = false,
+  changelog,
   forceDeploy = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-ci-deploy-"));
@@ -81,7 +82,7 @@ function runDeploy({
   if (!missingChangelog) {
     writeFileSync(
       join(root, "CHANGELOG.md"),
-      unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n",
+      changelog ?? (unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n"),
     );
   }
   writeFileSync(
@@ -229,6 +230,13 @@ test("automatic deploy skips when main has moved and still deploys the verified 
   assert.notEqual(missingChangelog.status, 0);
   assert.match(missingChangelog.stderr, /could not verify release state/);
   assert.equal(missingChangelog.deployLog, "");
+
+  for (const changelog of ["## Unreleased\n", "## 0.4.1 — 2026-08-01\n"]) {
+    const missingRelease = runDeploy({ changelog });
+    assert.notEqual(missingRelease.status, 0);
+    assert.match(missingRelease.stderr, /no released heading for version 0\.4\.2/);
+    assert.equal(missingRelease.deployLog, "");
+  }
 
   const missingTip = runDeploy({ mainTip: "" });
   assert.notEqual(missingTip.status, 0);
