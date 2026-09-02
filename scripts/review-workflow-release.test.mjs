@@ -227,6 +227,7 @@ test("review forwards the optional opencode idle timeout without exporting an em
 
 test("reconciliation dispatch does not depend on a local checkout", () => {
 	assert.match(workflow, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
+	assert.match(workflow, /if \[ "\$head_repo" != "\$REPO" \]; then/);
 	assert.match(
 		workflow,
 		/repos\/\$REPO\/actions\/workflows\/\$workflow_file/,

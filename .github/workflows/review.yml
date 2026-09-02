@@ -336,6 +336,11 @@ jobs:
             echo "PR #$PR_NUM is $state; nothing to reconcile"
             exit 0
           fi
+          head_repo=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.repo.full_name)
+          if [ "$head_repo" != "$REPO" ]; then
+            echo "PR #$PR_NUM comes from $head_repo; fork reviews are skipped"
+            exit 0
+          fi
           head=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.sha)
           report_retry_required() {
             summary="$1"
