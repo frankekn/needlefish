@@ -279,6 +279,9 @@ async function runOne(
 		loaded.cleanup();
 	}
 	const durationMs = Date.now() - start;
+	if (result !== null && hasFailedDeepPass(traceEvents)) {
+		operationalFailure = "deep review pass failed";
+	}
 	const stats = result?.stats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
@@ -320,6 +323,22 @@ async function runOne(
 		...(operationalFailure ? { operationalFailure } : {}),
 	};
 	return drawResult;
+}
+
+export function hasFailedDeepPass(
+	events: readonly Pick<ReviewTraceEvent, "passKind" | "passIndex" | "outcome">[],
+): boolean {
+	const passed = new Set(
+		events
+			.filter((event) => event.passKind === "deep" && event.outcome === "parsed")
+			.map((event) => event.passIndex),
+	);
+	return events.some(
+		(event) =>
+			event.passKind === "deep" &&
+			event.outcome !== "parsed" &&
+			!passed.has(event.passIndex),
+	);
 }
 
 export function isOperationalEvalError(error: unknown): boolean {

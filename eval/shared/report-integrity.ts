@@ -40,7 +40,8 @@ export function hasResolvedModelIdentity(
   const model =
     report.model ??
     environment.get("NEEDLEFISH_MODEL") ??
-    environment.get(RUNNER_MODEL_ENV[report.runner] ?? "");
+    environment.get(RUNNER_MODEL_ENV[report.runner] ?? "") ??
+    (report.runner === "pi" ? "gpt-5.6-sol" : undefined);
   const effort =
     report.effort ??
     (report.runner === "codex"

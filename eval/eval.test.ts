@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, isOperationalEvalError, resumeSlots, runnerEnvironment, writeReport } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
@@ -20,6 +20,12 @@ import negStyleOnly from "./fixtures/neg-style-only/spec";
 import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+test("hasFailedDeepPass ignores recovered attempts", () => {
+  const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
+  assert.equal(hasFailedDeepPass([failed]), true);
+  assert.equal(hasFailedDeepPass([failed, { ...failed, outcome: "parsed" }]), false);
+});
 
 function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreaks" | "file" | "lineStart">): Finding {
   return {

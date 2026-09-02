@@ -124,6 +124,7 @@ test("compareWeekly: matching implicit model and effort still compare", () => {
   ], implicit);
   assert.equal(compareWeekly(previous, latest).alert, true);
   assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: null, runnerEnvironment: "[]" }), true);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: null, effort: null, runnerEnvironment: "[]" }), true);
 });
 
 test("compareWeekly: unresolved implicit model and effort withhold comparison", () => {
