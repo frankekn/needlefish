@@ -82,7 +82,7 @@ permissions:
 
 concurrency:
   group: needlefish-${{ github.repository }}-${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -312,7 +312,7 @@ jobs:
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Superseded runs
-  # (cancel-in-progress) and crashed runs would otherwise leave a head with no
+  # Crashed runs would otherwise leave a head with no
   # verdict at all. Bounded: at most two infra-failed checks on a head are
   # tolerated before the finalizer gives up loudly.
   reconcile:
