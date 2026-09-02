@@ -225,6 +225,10 @@ test("review forwards the optional opencode idle timeout without exporting an em
 	);
 });
 
+test("review gives the Terra xhigh lane a production timeout", () => {
+	assert.match(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"/);
+});
+
 test("reconciliation dispatch does not depend on a local checkout", () => {
 	assert.match(workflow, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
 	assert.match(workflow, /if \[ "\$head_repo" != "\$REPO" \]; then/);

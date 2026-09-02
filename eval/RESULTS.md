@@ -82,8 +82,8 @@ Not ranked:
 - **x1** is directional. Model rankings require at least **x3**, because
   single-draw rankings repeatedly changed under confirmation.
 
-Only runs with matching prompt, fixture-set, scorer, and anti-cheat hashes are
-directly comparable. A runner and model form one lane; changing the runner can
+Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
+version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
 ### 2026-09-01 — Pi credential staging evidence and release exception

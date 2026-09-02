@@ -297,6 +297,9 @@ jobs:
               gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
             esac
           fi
+          if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
+            NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"
+          fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi

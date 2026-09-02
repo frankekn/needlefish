@@ -114,8 +114,8 @@ recall and usable specificity. Tier-1 recall remains a hard qualification gate.
 
 The current gate has 86 review scenarios and runs every published lane three
 times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
-when its prompt, fixture-set, scorer, and anti-cheat hashes match the production
-baseline. Provider failures and unavailable subscription models are shown as
+when its prompt, fixture-set, and scorer hashes and anti-cheat version match the
+production baseline. Provider failures and unavailable subscription models are shown as
 operational outcomes, not zero model scores.
 
 The page is not deployed yet; this link intentionally opens its source until a
