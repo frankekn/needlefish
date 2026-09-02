@@ -45,7 +45,9 @@ export function hasResolvedModelIdentity(
     report.effort ??
     (report.runner === "codex"
       ? environment.get("CODEX_REASONING_EFFORT")
-      : undefined);
+      : report.runner === "pi"
+        ? "medium"
+        : undefined);
   return (
     typeof model === "string" &&
     model.trim().length > 0 &&

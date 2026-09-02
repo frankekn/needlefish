@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
 import { scorerHash } from "./shared/scorer-hash";
-import type { ReportAttestation } from "./shared/report-integrity";
+import { hasResolvedModelIdentity, type ReportAttestation } from "./shared/report-integrity";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
 
 type WeeklyReport = Report & ReportAttestation;
@@ -123,6 +123,7 @@ test("compareWeekly: matching implicit model and effort still compare", () => {
     ...drawsFor("b", [false, false, false]),
   ], implicit);
   assert.equal(compareWeekly(previous, latest).alert, true);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: null, runnerEnvironment: "[]" }), true);
 });
 
 test("compareWeekly: unresolved implicit model and effort withhold comparison", () => {
