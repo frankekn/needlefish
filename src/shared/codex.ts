@@ -592,6 +592,7 @@ async function runCodexOnce(
 	try {
 		tmp = await createManagedTempDirectory();
 	} catch (error) {
+		if (isRunnerSafetyError(error)) throw error;
 		throw asRunnerOperationalError(error);
 	}
 	// Everything after temp allocation lives inside the try: a preparation failure
