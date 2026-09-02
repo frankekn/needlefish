@@ -25,6 +25,7 @@ test("hasFailedDeepPass ignores recovered attempts", () => {
   const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
   assert.equal(hasFailedDeepPass([failed]), true);
   assert.equal(hasFailedDeepPass([failed, { ...failed, outcome: "parsed" }]), false);
+  assert.equal(hasFailedDeepPass([{ ...failed, outcome: "parse_failed" }]), false);
 });
 
 function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreaks" | "file" | "lineStart">): Finding {

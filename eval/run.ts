@@ -336,7 +336,7 @@ export function hasFailedDeepPass(
 	return events.some(
 		(event) =>
 			event.passKind === "deep" &&
-			event.outcome !== "parsed" &&
+			event.outcome === "runner_failed" &&
 			!passed.has(event.passIndex),
 	);
 }
