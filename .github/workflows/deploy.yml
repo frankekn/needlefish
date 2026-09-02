@@ -14,6 +14,12 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Deploy an Unreleased version intentionally
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -65,6 +71,7 @@ jobs:
         env:
           NEEDLEFISH_REF: ${{ steps.sha.outputs.sha }}
           EVENT_NAME: ${{ github.event_name }}
+          FORCE_DEPLOY: ${{ inputs.force || false }}
         run: |
           set -euo pipefail
           if ! printf '%s\n' "$NEEDLEFISH_REF" | grep -Eq '^[0-9a-f]{40}$'; then
@@ -80,6 +87,23 @@ jobs:
             if [ "$NEEDLEFISH_REF" != "$tip" ]; then
               echo "Skipping deploy of $NEEDLEFISH_REF because origin/main is now $tip"
               exit 0
+            fi
+          fi
+          version="$(node -p "require('./package.json').version")"
+          if [ "$FORCE_DEPLOY" != "true" ]; then
+            if [ ! -r CHANGELOG.md ]; then
+              echo "could not verify release state in CHANGELOG.md" >&2
+              exit 1
+            fi
+            if grep -Fqx "## $version — Unreleased" CHANGELOG.md; then
+              echo "Skipping deploy of unreleased version $version"
+              exit 0
+            fi
+            if ! awk -v heading="## $version — " \
+              'index($0, heading) == 1 && $0 ~ /^## [^ ]+ — [0-9]{4}-[0-9]{2}-[0-9]{2}$/ { found=1 } END { exit !found }' \
+              CHANGELOG.md; then
+              echo "CHANGELOG.md has no released heading for version $version" >&2
+              exit 1
             fi
           fi
           scripts/deploy-ubuntu.sh

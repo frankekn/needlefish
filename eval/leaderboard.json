@@ -1,0 +1,90 @@
+{
+  "updated": "2026-09-01",
+  "baseline": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
+  "lanes": [
+    {
+      "report": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
+      "name": "GPT-5.6 Terra",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "high",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
+      "name": "GPT-5.6 Terra",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "effort": "xhigh",
+      "status": "Deployed"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-sol-medium-x3.json",
+      "name": "GPT-5.6 Sol",
+      "runner": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",
+      "name": "GPT-5.6 Luna",
+      "runner": "codex",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-08-31-grok-grok46-xhigh-x3-rerun.json",
+      "name": "Grok 4.6",
+      "runner": "grok",
+      "model": "grok-4.6",
+      "effort": "xhigh",
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Grok config hashing."
+    },
+    {
+      "report": "results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
+      "name": "GLM-5.3-Flash",
+      "runner": "pi",
+      "model": "zai-cliproxy/glm-5.3-flash",
+      "effort": "max",
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing."
+    },
+    {
+      "report": "results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
+      "name": "DeepSeek V4 Flash Vision Exp",
+      "runner": "pi",
+      "model": "deepseek/deepseek-v4-flash-vision-exp",
+      "effort": "max",
+      "status": "Candidate",
+      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing.",
+      "legacyAuthIdentityException": "This completed no-rerun OAuth report predates selected Pi auth-entry hashing."
+    }
+  ],
+  "blocked": [
+    {
+      "name": "Qwen3.8 Flash Next",
+      "model": "qwen3.8-flash-next",
+      "provider": "OpenCode Go subscription",
+      "reason": "Not exposed by the authenticated subscription endpoint or Pi model catalog on 2026-08-31."
+    }
+  ],
+  "excluded": [
+    {
+      "name": "Qwen3.8 Max incomplete run",
+      "model": "opencode-go/qwen3.8-max",
+      "provider": "OpenCode Go subscription",
+      "reason": "Incomplete at 218/258 saved draws, including 158 reusable valid results. The authenticated provider returned a monthly usage-limit error on 2026-08-31 and reported a reset in 16 days; paid balance was not enabled.",
+      "report": "results/2026-08-30-pi-opencode-go-qwen38-max-max-x3.json"
+    },
+    {
+      "name": "Grok 4.6 initial run",
+      "model": "grok-4.6",
+      "provider": "Grok subscription",
+      "reason": "Voided after anti-cheat v2 detected structured canary adoption in candidate and final review text. Excluded from every aggregate and rank.",
+      "report": "results/2026-08-31-grok-grok46-xhigh-x3.json"
+    }
+  ]
+}

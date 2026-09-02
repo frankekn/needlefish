@@ -32,7 +32,7 @@ on:
         required: false
         default: self-hosted
       needlefish_repo:
-        description: Needlefish source repo for the release staleness check
+        description: Needlefish source repo for installed-release validation
         required: false
         default: frankekn/needlefish
   workflow_call:
@@ -71,7 +71,7 @@ on:
         type: string
         required: false
       needlefish_repo:
-        description: Needlefish source repo for the release staleness check
+        description: Needlefish source repo for installed-release validation
         type: string
         required: false
 
@@ -82,7 +82,7 @@ permissions:
 
 concurrency:
   group: needlefish-${{ github.repository }}-${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -94,6 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
@@ -266,6 +267,7 @@ jobs:
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
           PI_PROVIDER: cliproxy
+          PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
@@ -284,12 +286,22 @@ jobs:
           args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
-              codex|pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-terra" ;;
+              codex) NEEDLEFISH_MODEL_INPUT="gpt-5.6-terra" ;;
+              pi) NEEDLEFISH_MODEL_INPUT="gpt-5.6-terra" ;;
               grok) NEEDLEFISH_MODEL_INPUT="grok-4.5" ;;
             esac
           fi
-          if [ -z "$CODEX_REASONING_EFFORT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ]; then
-            export CODEX_REASONING_EFFORT="high"
+          if [ -z "$CODEX_REASONING_EFFORT" ]; then
+            case "$NEEDLEFISH_MODEL_INPUT" in
+              gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
+              gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
+            esac
+          fi
+          if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
+            NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"
+          fi
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
+            export CODEX_SERVICE_TIER="fast"
           fi
           if [ -n "$NEEDLEFISH_RUNNER_INPUT" ]; then args+=(--runner "$NEEDLEFISH_RUNNER_INPUT"); fi
           if [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then args+=(--model "$NEEDLEFISH_MODEL_INPUT"); fi
@@ -300,7 +312,7 @@ jobs:
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Superseded runs
-  # (cancel-in-progress) and crashed runs would otherwise leave a head with no
+  # Crashed runs would otherwise leave a head with no
   # verdict at all. Bounded: at most two infra-failed checks on a head are
   # tolerated before the finalizer gives up loudly.
   reconcile:
@@ -310,7 +322,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: read
+      checks: write
       actions: write
     steps:
       - name: Re-dispatch when the latest head lacks a terminal result
@@ -318,6 +330,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -329,7 +342,22 @@ jobs:
             echo "PR #$PR_NUM is $state; nothing to reconcile"
             exit 0
           fi
+          head_repo=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.repo.full_name)
+          if [ "$head_repo" != "$REPO" ]; then
+            echo "PR #$PR_NUM comes from $head_repo; fork reviews are skipped"
+            exit 0
+          fi
           head=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .head.sha)
+          report_retry_required() {
+            summary="$1"
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: caller retry required" \
+              -f "output[summary]=$summary" >/dev/null
+          }
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100"
           valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
           if [ "$valid" -gt 0 ]; then
@@ -347,5 +375,29 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
-          gh workflow run review.yml --ref main -f pr_number="$PR_NUM"
+          workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"
+          workflow_file="${workflow_file%@*}"
+          if [ -z "$workflow_file" ] || [ "$workflow_file" = "$WORKFLOW_REF" ] || [[ "$workflow_file" == */* ]]; then
+            echo "::error::invalid caller workflow ref: $WORKFLOW_REF"
+            exit 1
+          fi
+          workflow_probe=""
+          if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/$workflow_file" 2>&1); then
+            if [[ "$workflow_probe" == *"HTTP 404"* ]]; then
+              report_retry_required "Caller workflow $workflow_file is unavailable. Add workflow_dispatch with a required pr_number input, then retry this PR review."
+              exit 0
+            fi
+            echo "::error::review workflow probe failed: $workflow_probe"
+            exit 1
+          fi
+          dispatch_error=""
+          default_branch=$(gh api "repos/$REPO" --jq .default_branch)
+          if [ -z "$default_branch" ]; then
+            echo "::error::repository default branch is unavailable"
+            exit 1
+          fi
+          if ! dispatch_error=$(gh workflow run "$workflow_file" --repo "$REPO" --ref "$default_branch" -f pr_number="$PR_NUM" 2>&1); then
+            report_retry_required "Could not dispatch $workflow_file with pr_number. The caller must grant actions: write and declare workflow_dispatch.inputs.pr_number. GitHub reported: $dispatch_error"
+            exit 0
+          fi
           echo "reconciliation dispatched for PR #$PR_NUM head ${head:0:10} (infra failures so far: $infra_fails)"

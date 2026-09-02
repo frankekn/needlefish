@@ -27,6 +27,7 @@ jobs:
         env:
           # pi routes through the local CLIProxyAPI (ccp) on ubuntu-needlefish.
           PI_PROVIDER: cliproxy
+          PI_AUTH_MODE: proxy
           PI_BIN: /home/termtek/.npm-global/bin/pi
         run: |
           # corepack enable defaults to the node prefix bin (/usr/bin on this
@@ -37,7 +38,10 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           pnpm install --frozen-lockfile
           mkdir -p eval/results/weekly
-          node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --draws 3 --concurrency 4 \
+          runner_bin="${CODEX_BIN:-codex}"
+          node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh \
+            --provider "OpenAI" --route "Codex CLI subscription" --runner-version "$("$runner_bin" --version)" \
+            --draws 3 --concurrency 4 \
             --report "eval/results/weekly/$(date -u +%Y-%m-%d).json"
       - name: Compare with previous week and commit report
         env:

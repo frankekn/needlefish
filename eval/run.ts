@@ -13,7 +13,13 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../src/shared/repo";
+import { isDocsFastPathEligible } from "../src/shared/classify";
 import { review } from "../src/core/review";
+import {
+	hasPiProviderEnvCredential,
+	isRunnerSafetyError,
+	RunnerOperationalError,
+} from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
@@ -32,9 +38,14 @@ import {
 	type HoldoutMode,
 	type Report,
 } from "./shared/types";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import {
+	hasConsistentCheatDetection,
+	hasResolvedModelIdentity,
+	type ReportAttestation,
+} from "./shared/report-integrity";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.join(__dirname, "..");
 const FIXTURES_DIR = path.join(__dirname, "fixtures");
 const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
 
@@ -42,6 +53,9 @@ interface RunArgs {
 	runner: RunnerName;
 	model: string | null;
 	effort: string | null;
+	provider: string | null;
+	route: string | null;
+	runnerVersion: string | null;
 	draws: number;
 	concurrency: number;
 	baseline: boolean;
@@ -53,6 +67,7 @@ interface RunArgs {
 	holdout: HoldoutMode;
 	gateClass: GateClass;
 	env: Record<string, string>;
+	environmentIdentity: string | null;
 }
 
 export async function mapLimit<T, R>(
@@ -81,9 +96,30 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		const i = argv.indexOf(flag);
 		return i >= 0 ? (argv[i + 1] ?? null) : null;
 	};
+	const attestationValue = (flag: string): string | null => {
+		if (!argv.includes(flag)) return null;
+		const value = get(flag);
+		const normalized = value?.trim() ?? "";
+		if (!normalized || normalized.startsWith("--")) {
+			throw new Error(`${flag} requires a non-empty value`);
+		}
+		return normalized;
+	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
 	const effort = get("--effort");
+	const provider = attestationValue("--provider");
+	const route = attestationValue("--route");
+	const runnerVersion = attestationValue("--runner-version");
+	const attestation = [provider, route, runnerVersion];
+	if (
+		attestation.some((value) => value !== null) &&
+		attestation.some((value) => value === null)
+	) {
+		throw new Error(
+			"--provider, --route, and --runner-version must be supplied together",
+		);
+	}
 	const draws = Number(get("--draws") ?? "1");
 	if (!Number.isInteger(draws) || draws < 1)
 		throw new Error("--draws must be a positive integer");
@@ -134,6 +170,9 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		runner,
 		model,
 		effort,
+		provider,
+		route,
+		runnerVersion,
 		draws,
 		concurrency,
 		baseline,
@@ -145,6 +184,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		holdout,
 		gateClass: gateClassRaw as GateClass,
 		env,
+		environmentIdentity: null,
 	};
 }
 
@@ -199,6 +239,7 @@ async function runOne(
 	const start = Date.now();
 	let result: ReviewResult | null = null;
 	let error: string | undefined;
+	let operationalFailure: string | undefined;
 	let failedOutput: string | undefined;
 	let traceDeliveryFailed = false;
 	const traceEvents: ReviewTraceEvent[] = [];
@@ -219,7 +260,9 @@ async function runOne(
 			);
 		}
 	} catch (err) {
+		if (isRunnerSafetyError(err)) throw err;
 		error = err instanceof Error ? err.message : String(err);
+		if (isOperationalEvalError(err)) operationalFailure = error;
 		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
 		// failures — the canary scan must see them all (neither invalid output
 		// nor a cleaner retry is an escape hatch).
@@ -236,11 +279,26 @@ async function runOne(
 		loaded.cleanup();
 	}
 	const durationMs = Date.now() - start;
+	if (hasFailedDeepPass(traceEvents)) {
+		operationalFailure = "deep review pass failed";
+	}
 	const stats = result?.stats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
 	const findings = result?.findings ?? [];
-	return {
+	const docsFastPath =
+		result !== null &&
+		calls === 0 &&
+		traceEvents.length === 0 &&
+		loaded.bundle.changedFiles.length > 0 &&
+		loaded.bundle.changedFiles.every(
+			(file) =>
+				file.surface === "docs" && isDocsFastPathEligible(file.path),
+		);
+	const drawResult: DrawResult & {
+		readonly fastPath?: "docs";
+		readonly operationalFailure?: string;
+	} = {
 		fixtureId: spec.id,
 		draw: 0,
 		score: score(
@@ -261,7 +319,30 @@ async function runOne(
 		candidateMatchEvidence: result?.candidateFindings
 			? matchEvidence(result.candidateFindings, spec.expected)
 			: undefined,
+		...(docsFastPath ? { fastPath: "docs" as const } : {}),
+		...(operationalFailure ? { operationalFailure } : {}),
 	};
+	return drawResult;
+}
+
+export function hasFailedDeepPass(
+	events: readonly Pick<ReviewTraceEvent, "passKind" | "passIndex" | "outcome">[],
+): boolean {
+	const passed = new Set(
+		events
+			.filter((event) => event.passKind === "deep" && event.outcome === "parsed")
+			.map((event) => event.passIndex),
+	);
+	return events.some(
+		(event) =>
+			event.passKind === "deep" &&
+			event.outcome === "runner_failed" &&
+			!passed.has(event.passIndex),
+	);
+}
+
+export function isOperationalEvalError(error: unknown): boolean {
+	return error instanceof RunnerOperationalError;
 }
 
 interface DrawWork {
@@ -300,7 +381,9 @@ export function resumeSlots(
 	let skipped = 0;
 	if (!args.resume) return { slots, skipped };
 	try {
-		const existing = JSON.parse(readFileSync(args.resume, "utf8")) as Report;
+		const existing = JSON.parse(
+			readFileSync(args.resume, "utf8"),
+		) as Report & ReportAttestation;
 		// Refuse to reuse draws produced under a different prompt or fixture set —
 		// silently mixing them would fabricate a report no run ever produced.
 		if (existing.promptHash !== promptHash()) {
@@ -336,6 +419,54 @@ export function resumeSlots(
 		if ((existing.gateClass ?? "R") !== args.gateClass) {
 			process.stderr.write(
 				`resume: gate class mismatch (${existing.gateClass ?? "R"} vs ${args.gateClass}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
+		for (const [name, recorded, requested] of [
+			["runner", existing.runner, args.runner],
+			["model", existing.model, args.model],
+			["effort", existing.effort, args.effort],
+			["provider", existing.provider ?? null, args.provider],
+			["route", existing.route ?? null, args.route],
+			["runner version", existing.runnerVersion ?? null, args.runnerVersion],
+		] as const) {
+			if (recorded === requested) continue;
+			process.stderr.write(
+				`resume: ${name} mismatch (${recorded ?? "none"} vs ${requested ?? "none"}), ignoring resume file\n`,
+			);
+			return { slots, skipped };
+		}
+		// PATH identity cannot detect an in-place runner upgrade. Checkpoints may
+		// be written without operator attestation, but cross-process reuse needs
+		// an explicit version so one report cannot mix draws from two binaries.
+		if (args.runnerVersion === null) {
+			process.stderr.write(
+				"resume: runner version is required, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
+		const currentRunnerEnvironment = runnerEnvironment(args);
+		if (
+			!hasResolvedModelIdentity(existing) ||
+			!hasResolvedModelIdentity({
+				runner: args.runner,
+				model: args.model,
+				effort: args.effort,
+				runnerEnvironment: currentRunnerEnvironment,
+			})
+		) {
+			process.stderr.write(
+				"resume: resolved model and effort are required, ignoring resume file\n",
+			);
+			return { slots, skipped };
+		}
+		if (
+			existing.runnerEnvironment !== currentRunnerEnvironment ||
+			existing.privateEnvironment === true ||
+			hasUnverifiableInvocationEnv(args)
+		) {
+			process.stderr.write(
+				"resume: runner environment mismatch, ignoring resume file\n",
 			);
 			return { slots, skipped };
 		}
@@ -489,6 +620,277 @@ function repoGitSha(): string | null {
 	} catch {
 		return null;
 	}
+}
+
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=+-]+$/.test(value)
+		? value
+		: `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function publicPath(value: string): string {
+	if (value.includes("\\") && path.sep !== "\\") return "<redacted>";
+	const relative = path.relative(REPO_ROOT, path.resolve(value));
+	return relative && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+		? relative.split(path.sep).join("/")
+		: relative === ""
+			? "."
+			: "<redacted>";
+}
+
+const COMMON_PUBLIC_INVOCATION_ENV = [
+	"PATH",
+	"NEEDLEFISH_EPHEMERAL_HOME",
+	"NEEDLEFISH_DEEP_CONCURRENCY",
+	"NEEDLEFISH_EVAL_TRACE",
+	"NEEDLEFISH_LARGE_FILE_COUNT",
+	"NEEDLEFISH_LARGE_PATCH_CHARS",
+	"NEEDLEFISH_MODEL",
+	"NEEDLEFISH_NO_FAST_PATH",
+	"NEEDLEFISH_NO_RETRY",
+	"NEEDLEFISH_RETRY_MS",
+	"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+	"NEEDLEFISH_TIMEOUT_MS",
+] as const;
+const COMMON_PRIVATE_INVOCATION_ENV = [
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
+] as const;
+const RUNNER_PUBLIC_INVOCATION_ENV: Record<RunnerName, readonly string[]> = {
+	codex: [
+		"CODEX_BIN",
+		"CODEX_MODEL",
+		"CODEX_REASONING_EFFORT",
+		"CODEX_RETRY_MS",
+		"CODEX_SERVICE_TIER",
+		"CODEX_TIMEOUT_MS",
+	],
+	claude: ["CLAUDE_BIN", "CLAUDE_MODEL"],
+	opencode: ["OPENCODE_BIN", "OPENCODE_IDLE_TIMEOUT_MS", "OPENCODE_MODEL"],
+	grok: ["GROK_BIN", "GROK_MODEL"],
+	pi: ["PI_AUTH_MODE", "PI_BIN", "PI_MODEL", "PI_PROVIDER"],
+	openai: ["OPENAI_MODEL"],
+	acp: ["NEEDLEFISH_ACP_BIN"],
+};
+const PUBLIC_INVOCATION_ENV = new Set([
+	...COMMON_PUBLIC_INVOCATION_ENV,
+	...Object.values(RUNNER_PUBLIC_INVOCATION_ENV).flat(),
+]);
+const PATH_INVOCATION_ENV = new Set([
+	"CODEX_BIN",
+	"CLAUDE_BIN",
+	"GROK_BIN",
+	"NEEDLEFISH_ACP_BIN",
+	"OPENCODE_BIN",
+	"PI_BIN",
+]);
+const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
+	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+	opencode: ["OPENAI_API_KEY", "XDG_CONFIG_HOME", "XDG_DATA_HOME"],
+	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
+};
+
+function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
+	const effective: Record<string, string> = {};
+	for (const key of [
+		...COMMON_PUBLIC_INVOCATION_ENV,
+		...COMMON_PRIVATE_INVOCATION_ENV,
+		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
+		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
+	]) {
+		const value = args.env[key] ?? process.env[key];
+		if (value !== undefined) effective[key] = value;
+	}
+	for (const key of ["HOME", "USERPROFILE"] as const) {
+		if (Object.hasOwn(args.env, key)) effective[key] = args.env[key];
+	}
+	if (args.model !== null) {
+		delete effective.NEEDLEFISH_MODEL;
+		delete effective[`${args.runner.toUpperCase()}_MODEL`];
+	}
+	if (args.runner === "codex" && args.effort !== null) {
+		delete effective.CODEX_REASONING_EFFORT;
+	}
+	const namedPrivate = [
+		effective.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "",
+		...(args.runner === "acp"
+			? [effective.NEEDLEFISH_ACP_AUTH_ENV_VARS ?? ""]
+			: []),
+	];
+	for (const key of namedPrivate
+		.flatMap((value) => value.split(","))
+		.map((name) => name.trim())
+		.filter(Boolean)) {
+		const value = args.env[key] ?? process.env[key];
+		if (value !== undefined) effective[key] = value;
+	}
+	return effective;
+}
+
+function publicInvocationEnvValue(key: string, value: string): string | null {
+	if (!PUBLIC_INVOCATION_ENV.has(key)) return null;
+	if (key === "PATH") {
+		return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+	}
+	return PATH_INVOCATION_ENV.has(key) &&
+		(path.isAbsolute(value) || value.includes("/") || value.includes("\\"))
+		? publicPath(value)
+		: value;
+}
+
+function runnerConfigIdentities(args: RunArgs): [string, string][] {
+	const home =
+		args.env.HOME?.trim() ||
+		args.env.USERPROFILE?.trim() ||
+		process.env.HOME?.trim() ||
+		process.env.USERPROFILE?.trim();
+	const files: [string, string | null][] =
+		args.runner === "pi"
+			? [["PI_MODELS_JSON", home ? path.join(home, ".pi", "agent", "models.json") : null]]
+			: args.runner === "grok"
+				? [["GROK_CONFIG_TOML", home ? path.join(home, ".grok", "config.toml") : null]]
+				: args.runner === "opencode"
+					? [["OPENCODE_CONFIG_JSON", home ? path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode", "opencode.json") : null]]
+					: [];
+	const identities = files.map(([key, file]): [string, string] => {
+		if (file === null) return [key, "missing"];
+		try {
+			const digest = createHash("sha256")
+				.update(readFileSync(file))
+				.digest("hex")
+				.slice(0, 16);
+			return [key, `sha256:${digest}`];
+		} catch (error) {
+			if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [key, "missing"];
+			throw error;
+		}
+	});
+	if (args.runner === "pi") {
+		const usesAuthStore = piUsesAuthStore(args);
+		identities.push(["PI_AUTH_SOURCE", usesAuthStore ? "auth-store" : "environment"]);
+		if (!usesAuthStore) return identities;
+		const provider =
+			args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+		const authFile = home
+			? path.join(home, ".pi", "agent", "auth.json")
+			: null;
+		if (authFile === null) {
+			identities.push(["PI_AUTH_JSON", "missing"]);
+		} else {
+			let raw: string;
+			try {
+				raw = readFileSync(authFile, "utf8");
+			} catch (error) {
+				if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+					identities.push(["PI_AUTH_JSON", "missing"]);
+					return identities;
+				}
+				throw error;
+			}
+			const auth = JSON.parse(raw) as unknown;
+			const entry =
+				typeof auth === "object" && auth !== null
+					? (auth as Record<string, unknown>)[provider]
+					: undefined;
+			identities.push([
+				"PI_AUTH_JSON",
+				entry === undefined
+					? "missing"
+					: `sha256:${createHash("sha256").update(JSON.stringify(entry)).digest("hex").slice(0, 16)}`,
+			]);
+		}
+	}
+	return identities;
+}
+
+function piUsesAuthStore(args: RunArgs): boolean {
+	if (args.runner !== "pi") return false;
+	const provider =
+		args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+	return (
+		(args.env.PI_AUTH_MODE ?? process.env.PI_AUTH_MODE ??
+			(provider === "openai-codex" ? "oauth" : "proxy")) === "oauth" &&
+		!hasPiProviderEnvCredential(provider, { ...process.env, ...args.env })
+	);
+}
+
+export function runnerEnvironment(args: RunArgs): string {
+	const configIdentities = runnerConfigIdentities(args);
+	const current = JSON.stringify(
+		[
+			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
+				const publicValue = publicInvocationEnvValue(key, value);
+				return [
+					key,
+					publicValue !== null && publicValue !== "<redacted>"
+						? publicValue
+						: "<required>",
+				] as [string, string];
+			}),
+			...configIdentities,
+		]
+			.sort(([a], [b]) => a.localeCompare(b))
+	);
+	if (
+		args.environmentIdentity !== null &&
+		args.environmentIdentity !== current
+	) {
+		throw new Error("runner environment changed during the eval run");
+	}
+	return current;
+}
+
+function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
+	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
+		const publicValue = publicInvocationEnvValue(key, value);
+		return publicValue === null || publicValue === "<redacted>";
+	});
+}
+
+function reportInvocation(
+	args: RunArgs,
+	report = args.report,
+	includeResume = true,
+): string {
+	const values = ["node", "--import", "tsx", "eval/run.ts", "--runner", args.runner];
+	const add = (flag: string, value: string | null): void => {
+		if (value !== null) values.push(flag, value);
+	};
+	add("--model", args.model);
+	add("--effort", args.effort);
+	add("--provider", args.provider);
+	add("--route", args.route);
+	add("--runner-version", args.runnerVersion);
+	for (const [key, value] of Object.entries(effectiveInvocationEnv(args)).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)) {
+		const publicValue = publicInvocationEnvValue(key, value);
+		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>") {
+			values.push("--env", `${key}=${publicValue}`);
+		}
+	}
+	values.push(
+		"--draws",
+		String(args.draws),
+		"--concurrency",
+		String(args.concurrency),
+		"--holdout",
+		args.holdout,
+		"--gate-class",
+		args.gateClass,
+	);
+	if (args.baseline) values.push("--baseline");
+	if (args.dryRun) values.push("--dry-run");
+	add("--fixtures", args.fixtures ? publicPath(args.fixtures) : null);
+	if (includeResume) add("--resume", args.resume ? publicPath(args.resume) : null);
+	add("--compare", args.compare ? publicPath(args.compare) : null);
+	values.push("--report", publicPath(report));
+	return values.map(shellQuote).join(" ");
 }
 
 export function aggregateMustFindHitRates(
@@ -761,6 +1163,13 @@ export function writeReport(
 ): Report & {
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+	readonly provider?: string;
+	readonly route?: string;
+	readonly runnerVersion?: string;
+	readonly invocation: string;
+	readonly reproductionCommand: string;
+	readonly runnerEnvironment: string;
+	readonly privateEnvironment: boolean;
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
@@ -773,6 +1182,23 @@ export function writeReport(
 		runner: args.runner,
 		model: args.model,
 		effort: args.effort,
+		...(args.provider !== null &&
+		args.route !== null &&
+		args.runnerVersion !== null
+			? {
+					provider: args.provider,
+					route: args.route,
+					runnerVersion: args.runnerVersion,
+				}
+			: {}),
+		invocation: reportInvocation(args),
+		runnerEnvironment: runnerEnvironment(args),
+		privateEnvironment: hasUnverifiableInvocationEnv(args),
+		reproductionCommand: reportInvocation(
+			args,
+			path.join(REPO_ROOT, "eval", "reports", path.basename(args.report)),
+			false,
+		),
 		draws: args.draws,
 		createdAt: new Date().toISOString(),
 		baseline: args.baseline,
@@ -805,6 +1231,13 @@ export function writeReport(
 	} satisfies Report & {
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+		readonly provider?: string;
+		readonly route?: string;
+		readonly runnerVersion?: string;
+		readonly invocation: string;
+		readonly reproductionCommand: string;
+		readonly runnerEnvironment: string;
+		readonly privateEnvironment: boolean;
 	};
 	const targetPath = path.resolve(args.report);
 	if (!lastCheckpointCoverage.has(targetPath)) {
@@ -983,6 +1416,7 @@ async function main(): Promise<void> {
 		envPrevious.set(key, process.env[key]);
 		process.env[key] = value;
 	}
+	args.environmentIdentity = runnerEnvironment(args);
 	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") {
 		process.stderr.write(
 			"WARNING: NEEDLEFISH_EPHEMERAL_HOME disabled via --env — draws run without HOME isolation; the report will carry no anticheatVersion and cannot be resumed or compared.\n",

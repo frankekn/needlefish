@@ -15,6 +15,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
+[Benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
+
 Needlefish reviews your diff before merge and reports only real defects — bugs,
 regressions, security, data loss, migration/upgrade risk, missing validation,
 duplicate behavior — never style.
@@ -29,7 +31,7 @@ duplicate behavior — never style.
 - **Isolated review targets.** Reviews run against a throwaway clean clone and
   are checked for tampering after every model call.
 - **Guarded evals.** Every prompt/pipeline change is measured against an
-  84-scenario harness with active anti-cheat guards before it ships (see
+  86-scenario harness with active anti-cheat guards before it ships (see
   [Benchmarks](#benchmarks)).
 
 Small PRs use a review pass plus an adversarial critic; large PRs use map/deep
@@ -94,58 +96,34 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (~56s at the workflow default,
-`gpt-5.6-terra` at `high` effort), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
+Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `xhigh` effort
+by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers with write access to
 this repository can comment `@needlefish recheck` or
 `@needlefish explain <finding>` on the PR.
 
 ## Benchmarks
 
-Needlefish ships with a guarded evaluation harness (`eval/`) and is measured
-against it before any prompt or pipeline change ships. The fixture set is 84
-review scenarios — synthetic planted-bug/negative/honeypot cases plus fixtures
-mined from real PRs. Release baselines run each fixture 3 times; exploratory
-candidates may start with one full-set draw plus targeted x3 confirmation.
-Anti-cheat guards are active on every recorded run: per-draw ephemeral `HOME`,
-a planted bait answer key with a per-run canary, and a full-transcript scan
-(`cheatDetectedCount: 0` on all numbers below; any structured bait use voids a
-report).
+The prepared [benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) answers one question: which model,
+agent harness, provider route, and effort catches real PR defects without
+blocking clean changes? Its leaderboard is generated from guarded report JSON;
+scores are never copied by hand.
 
-Current guarded runs (production remains codex `gpt-5.6-terra` @high):
+The primary score is Balanced Review Accuracy: the arithmetic mean of anchored
+recall and usable specificity. Tier-1 recall remains a hard qualification gate.
 
-| Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 2026-08-21 | OX Alpha @max (schema-tolerant semantic probe) | 3 × 26\* | 0.514 | 0.000 | 0.577 |
-| 2026-08-21 | opencode OX Alpha @max (partial) | 176/252\* | 0.235 | 0.000 | 0.483 |
-| 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
-| 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
-| 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
-| 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+The current gate has 86 review scenarios and runs every published lane three
+times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
+when its prompt, fixture-set, and scorer hashes and anti-cheat version match the
+production baseline. Provider failures and unavailable subscription models are shown as
+operational outcomes, not zero model scores.
 
-\* OX Alpha is included for transparency, not ranking. Its opencode run was
-stopped after 176 of 252 draws with 51.7% unusable output. The semantic probe
-ran only the 26 remaining fixtures through a temporary adapter that normalized
-the output envelope without inventing findings or anchors; 21.8% of those
-draws were still unusable. Neither result is directly comparable with a full
-production gate.
+The page is not deployed yet; this link intentionally opens its source until a
+custom domain or GitHub Pages deployment is authorized.
 
-The DeepSeek candidate hit every tier-1 fixture and produced valid JSON on all
-84 draws, but its single full-set draw is not a promotion result. Six divergent
-fixtures received targeted x3 confirmation; see
-[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md).
-
-Methodology notes, learned the hard way and enforced by the harness:
-
-- Recall is **anchored**: a finding only counts if it matches the expected
-  pattern AND the expected file. Positives carry difficulty tiers; tier-1
-  misses disqualify a lane outright.
-- Provider-side behavior drifts within a day on an identical prompt and
-  config (observed false-positive envelope: 1–5 draws per 72 negatives), so
-  prompt A/B comparisons are only trusted as **same-window paired runs**.
-- Reports are comparable only when prompt hash, fixture-set hash, scorer
-  hash, and anti-cheat generation all match; the harness refuses anything
-  else, including its own pre-guard baselines.
+The deployed Codex `gpt-5.6-terra` at `xhigh` effort passes the current Tier-1
+and positive-noise qualification gates. See the [chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
+and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
 ## Development install
 
@@ -302,6 +280,7 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
+  actions: write
 jobs:
   review:
     uses: frankekn/needlefish/.github/workflows/review.yml@main
@@ -310,7 +289,7 @@ jobs:
       # Optional:
       # runner: codex
       # model: gpt-5.6-terra
-      # codex_reasoning_effort: high
+      # codex_reasoning_effort: xhigh
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # opencode only
     secrets: inherit
@@ -335,8 +314,8 @@ restrictions. Use them only on a self-hosted runner you control.
 For reproducible reviews, pin the reusable workflow and
 `needlefish_release_sha` to the same full commit SHA. The workflow executes that
 immutable release from `~/.local/share/needlefish/releases/<sha>` even when a
-newer deployment has moved the shared `current` symlink. Callers using `@main`
-without an explicit release pin resolve the current Needlefish `main` SHA.
+newer deployment has moved the shared `current` symlink. Without an explicit
+release pin, the workflow resolves `needlefish_repo`'s current `main` SHA.
 The workflow never reinstalls the tool during a PR job; the selected release must
 already have been deployed on the runner.
 
@@ -437,15 +416,15 @@ Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 
 `runner_version` overrides the npm version of the selected runner CLI. When
 omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.149.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+Codex `0.151.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
 explicit version — or `latest` — only when you intentionally want something
 other than the pin. A single default cannot be correct for four packages, so
 the pin is chosen from the selected `runner`.
 
 Cost and behavior notes:
 
-- Small PRs use 2 model calls per PR (review + critic), about 56s at the
-  workflow default, `gpt-5.6-terra` at `high` effort. Large PRs use 1 map call + N deep calls
+- Small PRs use 2 model calls per PR (review + critic) at the workflow default,
+  `gpt-5.6-terra` at `xhigh` effort. Large PRs use 1 map call + N deep calls
   (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
   Same-head re-runs use 0 model calls unless forced with `--recheck`.
 - Fork PRs don't receive secrets by default. The `if:` gate above skips them.
@@ -474,7 +453,7 @@ env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (reusable workflow: `high` for `gpt-5.6-terra`) |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `xhigh` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 
@@ -493,7 +472,7 @@ parentheses are the executable names used when the `*_BIN` var is unset:
 | `claude` | `CLAUDE_BIN` (`claude`) | `CLAUDE_MODEL`; auth `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |
-| `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`) |
+| `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`), `PI_AUTH_MODE` (`oauth` or `proxy`; defaults to OAuth for `openai-codex`, proxy for an explicit provider) |
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
@@ -554,7 +533,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.4.1. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish

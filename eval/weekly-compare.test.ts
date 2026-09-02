@@ -7,7 +7,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareWeekly } from "./weekly-compare";
 import { scorerHash } from "./shared/scorer-hash";
+import { hasResolvedModelIdentity, type ReportAttestation } from "./shared/report-integrity";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
+
+type WeeklyReport = Report & ReportAttestation;
 
 function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId">): FixtureScore {
   return {
@@ -52,12 +55,20 @@ function aggregatesOf(partial: Partial<Aggregates>): Aggregates {
   };
 }
 
-function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
+function report(
+  results: DrawResult[],
+  partial: Partial<WeeklyReport> = {},
+): WeeklyReport {
   return {
     promptHash: "abc",
     runner: "codex",
-    model: null,
-    effort: null,
+    model: "gpt-5.6-terra",
+    effort: "high",
+    provider: "OpenAI",
+    route: "Codex CLI subscription",
+    runnerVersion: "codex-cli 1.0.0",
+    runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
+    privateEnvironment: false,
     draws: 3,
     createdAt: "2026-07-09T00:00:00.000Z",
     baseline: false,
@@ -69,6 +80,7 @@ function report(results: DrawResult[], partial: Partial<Report> = {}): Report {
     scorerHash: scorerHash(),
     fixtureTiers: {},
     anticheatVersion: 2,
+    gateClass: "R",
     ...partial,
   };
 }
@@ -82,6 +94,59 @@ test("compareWeekly: no alert when everything stable", () => {
   const latest = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false);
+});
+
+test("compareWeekly: missing operator identity withholds metrics", () => {
+  const latest = report(drawsFor("a", [true, true, true]), {
+    provider: undefined,
+    route: undefined,
+    runnerVersion: undefined,
+  });
+  const verdict = compareWeekly(null, latest);
+  assert.equal(verdict.alert, true);
+  assert.equal(verdict.unguarded, true);
+  assert.match(verdict.reasons.join("\n"), /attested provider, route, and runner version/);
+});
+
+test("compareWeekly: matching implicit model and effort still compare", () => {
+  const implicit = {
+    model: null,
+    effort: null,
+    runnerEnvironment: '[["CODEX_MODEL","gpt-5.6-terra"],["CODEX_REASONING_EFFORT","xhigh"],["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
+  };
+  const previous = report([
+    ...drawsFor("a", [true, true, true]),
+    ...drawsFor("b", [true, true, true]),
+  ], implicit);
+  const latest = report([
+    ...drawsFor("a", [false, false, false]),
+    ...drawsFor("b", [false, false, false]),
+  ], implicit);
+  assert.equal(compareWeekly(previous, latest).alert, true);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: null, runnerEnvironment: "[]" }), true);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: null, effort: null, runnerEnvironment: "[]" }), true);
+});
+
+test("compareWeekly: unresolved implicit model and effort withhold comparison", () => {
+  const implicit = { model: null, effort: null };
+  const previous = report(drawsFor("a", [true, true, true]), implicit);
+  const latest = report(drawsFor("a", [false, false, false]), implicit);
+  const verdict = compareWeekly(previous, latest);
+  assert.equal(verdict.alert, true);
+  assert.equal(verdict.unguarded, true);
+  assert.match(verdict.reasons.join("\n"), /resolved model and effort/);
+});
+
+test("compareWeekly: malformed model and effort types withhold metrics", () => {
+  for (const malformed of [{ model: 1 }, { effort: 1 }]) {
+    const latest = {
+      ...report(drawsFor("a", [true, true, true])),
+      ...malformed,
+    } as unknown as WeeklyReport;
+    const verdict = compareWeekly(null, latest);
+    assert.equal(verdict.unguarded, true);
+    assert.match(verdict.reasons.join("\n"), /resolved model and effort/);
+  }
 });
 
 test("compareWeekly: single mixed-draw flicker does NOT alert", () => {
@@ -210,8 +275,64 @@ test("compareWeekly: prompt change skips regression comparison but keeps cheat a
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "regression across prompt change is not comparable");
   assert.ok(
-    v.reasons.some((r) => r.includes("prompt/fixture set/anti-cheat generation/scorer changed")),
+    v.reasons.some((r) => r.includes("skipping regression comparison")),
   );
+});
+
+test("compareWeekly: effort change skips regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    effort: "high",
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    effort: "xhigh",
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+});
+
+test("compareWeekly: missing legacy gate class compares as R", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    gateClass: undefined,
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])]);
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("fixtures regressed")));
+});
+
+test("compareWeekly: provider change skips regression comparison", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    provider: "Different provider",
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, false);
+  assert.ok(v.reasons.some((reason) => reason.includes("attested lane")));
+});
+
+test("compareWeekly: private latest attestations alert", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])], {
+    privateEnvironment: true,
+  });
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    privateEnvironment: true,
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("public runner-environment")));
+});
+
+test("compareWeekly: incomplete latest public attestations alert", () => {
+  const prev = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
+  const latest = report([...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false])], {
+    runnerEnvironment: "[]",
+  });
+  const v = compareWeekly(prev, latest);
+  assert.equal(v.alert, true);
+  assert.equal(v.unguarded, true);
+  assert.ok(v.reasons.some((reason) => reason.includes("guarded runner-environment")));
 });
 
 test("compareWeekly: a compromised previous week skips regression comparison", () => {
@@ -383,7 +504,7 @@ test("compareWeekly: a pre-guard previous week skips regression comparison", () 
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false, "cross-generation regression must not alert");
   assert.ok(
-    v.reasons.some((r) => r.includes("anti-cheat generation/scorer changed")),
+    v.reasons.some((r) => r.includes("skipping regression comparison")),
   );
 });
 

@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-09-01
+
+- Runner: stage Pi's credential store into the disposable HOME when present,
+  allowing authenticated non-proxy providers without weakening proxy-only
+  setups.
+- Eval: publish a guarded, provider-explicit new-model comparison ranked by
+  Balanced Review Accuracy, with Tier-1 misses and unavailable subscription
+  models kept out of ranking.
+- GitHub: select qualified Codex `gpt-5.6-terra` at xhigh effort as the default
+  hosted review, self-hosted review, and weekly-eval lane.
+- Docs: add a generated, domain-ready public benchmark page with raw-report
+  provenance and simplify the README path into the results.
 
 - GitHub: pin third-party Actions to commit SHAs and pin hosted-action runner
   CLI defaults per runner, with `runner_version` as an explicit override.

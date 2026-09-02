@@ -14,6 +14,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
+[Benchmark 頁面原始碼](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [方法](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-快速開始)
+
 Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回歸、安全性、
 資料遺失、遷移／升級風險、缺少驗證或重複行為，不回報單純的風格問題。
 
@@ -25,7 +27,7 @@ Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回
   finding 依固定規則推導，不由模型自由決定。
 - **隔離的審查目標。** 審查會在 throwaway clean clone 中執行，並在每次模型
   呼叫後檢查是否遭竄改。
-- **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 84 個情境的
+- **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 86 個情境的
   harness（啟用 anti-cheat guards）量測（見 [Benchmarks](#benchmarks)）。
 
 小型 PR 會執行審查與對抗式 critic；大型 PR 會先執行 map／deep 階段，再交給
@@ -90,53 +92,32 @@ jobs:
 diff 的 inline review comment 發布；後續 push 會更新同一份 review，標示
 fresh／still-open／resolved，不會不斷堆疊新 review。
 
-小型 PR 每次審查使用 2 次模型呼叫（workflow 預設 `gpt-5.6-terra` @ `high`，約 56 秒）；大型 PR 使用
+小型 PR 每次審查使用 2 次模型呼叫（預設 `gpt-5.6-terra` @ `xhigh`）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
 
 ## Benchmarks
 
-Needlefish 內建一套有防護的評測 harness（`eval/`），任何 prompt 或 pipeline
-變更上線前都會先對它量測。fixture 集共 84 個審查情境——合成的 planted-bug／
-negative／honeypot 案例，加上從真實 PR 萃取的 fixture。發行 baseline
-每個 fixture 各跑 3 次；探索性 candidate 可先跑 1 次完整集，再對分歧案例
-做 x3 確認。每筆記錄的 run 都啟用 anti-cheat guards：per-draw ephemeral
-`HOME`、帶 per-run canary 的 planted bait answer key，以及全 transcript 掃描
-（下列所有數字皆 `cheatDetectedCount: 0`；任何結構化的 bait 使用都會使該
-report 作廢）。
+[已準備的 benchmark 頁面原始碼](https://github.com/frankekn/needlefish/blob/main/docs/index.html)只回答一個問題：哪一組 model、agent
+harness、provider route 與 effort，能抓到真正的 PR 缺陷，又不會阻擋乾淨的
+變更？Leaderboard 直接由受防護的 report JSON 產生，不手抄分數。
 
-目前受防護的 runs（正式 lane 仍是 codex `gpt-5.6-terra` @high）：
+主要分數採用 Balanced Review Accuracy，也就是 anchored recall 與 usable
+specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 
-| Test date | Lane | Draws | Anchored recall | False-positive rate | Verdict match |
-| --- | --- | ---: | ---: | ---: | ---: |
-| 2026-08-21 | OX Alpha @max（schema-tolerant semantic probe） | 3 × 26\* | 0.514 | 0.000 | 0.577 |
-| 2026-08-21 | opencode OX Alpha @max（部分完成） | 176/252\* | 0.235 | 0.000 | 0.483 |
-| 2026-07-31 | opencode DeepSeek V4 Flash free @max (candidate) | 1 | 0.897 | 0.000 | 0.940 |
-| 2026-07-19 | terra high (current baseline) | 3 | 0.874 | 0.056 | 0.944 |
-| 2026-07-18 | terra high | 3 | 0.885 | 0.014 | 0.972 |
-| 2026-07-18 | sol medium (previous default) | 3 | 0.879 | 0.111 | 0.944 |
+目前 gate 有 86 個審查情境；每個公開 lane 都完整跑三次，包含 sealed holdout
+與 anti-cheat tracing。只有 prompt、fixture-set、scorer 與 anti-cheat hash
+都和 production baseline 相同的 report 才能排名。Provider failure 或訂閱尚未
+提供的模型只會標為 operational outcome，不會算成模型零分。
 
-\* OX Alpha 僅為透明揭露，不參與排名。它的 opencode run 在 252 draws 中完成
-176 draws 後停止，其中 51.7% 為不可用輸出。Semantic probe 只針對剩餘 26 個
-fixtures，透過臨時 adapter 正規化輸出 envelope，但不創造 finding 或 anchor；
-其中仍有 21.8% draws 不可用。這兩筆結果都不能與完整 production gate 直接比較。
+頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
+開啟原始碼。
 
-DeepSeek candidate 命中所有 tier-1 fixture，84 個 draw 也都產生有效 JSON，但單次
-完整集不算 promotion result。六個分歧 fixture 另做了 x3 確認；詳見
-[`eval/RESULTS.md`](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)。
-
-從錯誤中學到、並由 harness 強制的方法論注記：
-
-- Recall 是 **anchored** 的：一個 finding 只有同時符合預期的 pattern 與
-  預期的 file 才算數。Positive 帶有 difficulty tier；tier-1 漏掉會直接讓該
-  lane 失格。
-- Provider 端的行為在同一天、相同 prompt 與 config 下也會漂移（觀察到的
-  false-positive 範圍：72 個 negative 中 1–5 draw），因此 prompt 的 A/B
-  比較只有在 **same-window paired runs** 下才被採信。
-- 只有當 prompt hash、fixture-set hash、scorer hash 與 anti-cheat generation
-  全部相符時，report 之間才可比較；否則 harness 一律拒絕，包含它自己在
-  加上防護之前的 baseline。
+目前部署的 Codex `gpt-5.6-terra` @ `xhigh` 已通過 Tier-1 與 positive-noise
+資格門檻。詳見
+[時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)與
+[raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)。
 
 ## 開發環境安裝
 
@@ -272,7 +253,7 @@ jobs:
       # 可選；預設 codex + gpt-5.6-terra
       # runner: codex
       # model: gpt-5.6-terra
-      # codex_reasoning_effort: high
+      # codex_reasoning_effort: xhigh
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # 僅 opencode
     secrets: inherit
@@ -295,8 +276,8 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
 需要可重現的 review 時，reusable workflow ref 與
 `needlefish_release_sha` 必須 pin 到同一個完整 commit SHA。workflow 會直接執行
 `~/.local/share/needlefish/releases/<sha>` 的 immutable release；即使較新的部署
-切換了共用的 `current` symlink，已 pin 的 repo 也不受影響。使用 `@main` 且未
-指定 release SHA 時，workflow 會解析 Needlefish `main` 的目前 SHA。PR job
+切換了共用的 `current` symlink，已 pin 的 repo 也不受影響。未指定 release SHA
+時，workflow 會解析 `needlefish_repo` 當前的 `main` SHA。PR job
 不會重新安裝 Needlefish，因此該 release 必須已部署在 runner。
 
 ```yaml
@@ -362,7 +343,7 @@ Hosted action 只會安裝 `action.yml` 列出的 runner；Grok CLI 不在其中
 使用 Grok 4.5，請使用上方的 self-hosted reusable workflow。
 
 `runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會安裝
-`action.yml` 裡的 per-runner pin（目前 Codex `0.149.0`、Claude `2.1.239`、
+`action.yml` 裡的 per-runner pin（目前 Codex `0.151.0`、Claude `2.1.239`、
 OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳入明確版本
 （或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
 選擇。
@@ -411,7 +392,7 @@ COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | 自動偵測 `codex`，然後 `claude`，然後 `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（reusable workflow：`gpt-5.6-terra` 時為 `high`） |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `xhigh`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
 
@@ -430,7 +411,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process 內
 | `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
-| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`） |
+| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`）、`PI_AUTH_MODE`（`oauth` 或 `proxy`；`openai-codex` 預設 OAuth，明確指定 provider 時預設 proxy） |
 | `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
 | `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
 
@@ -488,7 +469,7 @@ disposable HOME 的 HOME-relative credential files。
 
 ## 狀態
 
-v0.4.1。唯讀。已提供 inline review comment、sticky re-review
+v0.4.2。唯讀。已提供 inline review comment、sticky re-review
 （fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
 sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／

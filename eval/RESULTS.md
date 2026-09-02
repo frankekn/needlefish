@@ -7,50 +7,70 @@ paths.
 
 ## Current decision
 
-As of 2026-08-21, keep **Codex `gpt-5.6-terra` at high effort** as the
-production baseline.
+As of 2026-09-01, the deployed lane is **Codex `gpt-5.6-terra` at xhigh effort**.
+It has 100% Tier-1 recall and qualifies under the current positive-noise gate.
+DeepSeek V4 Flash Vision Exp has the highest point estimate, but it, Grok 4.6,
+and GLM-5.3-Flash are statistically unresolved and share rank 1. GPT-5.6 Sol
+and Terra xhigh share rank 4. Terra high and Luna max miss Tier-1 defects and
+receive no rank.
 
-DeepSeek is the strongest recent challenger: it produced higher recall, no
-false positives, no invalid JSON, and better anchors. It was also 67% slower,
-and its aggregate result came from one full-set draw rather than three. That is
-enough to justify a full confirmation run, but not enough to replace Terra.
-The later OX Alpha probe did not change this decision: its raw opencode lane
-was format-confounded, while a schema-tolerant semantic probe still trailed
-the established challengers and missed tier-1 defects.
+Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
+specificity. Invalid model output cannot count as a correct result, so it is
+counted once. Tier-1 recall and `meanNoisePerPositive <= 0.12` are hard gates;
+validity, verdict match, and speed remain separate diagnostics. Point-sorted uncertainty groups are anchored to
+their highest-scoring lane; lower lanes share that rank while their paired 95%
+normal interval versus the anchor includes zero. This prevents non-transitive
+bridge comparisons from collapsing distinct groups. Each row also shows its
+lane-level 95% interval.
 
-| Metric | Terra baseline | DeepSeek candidate |
-| --- | ---: | ---: |
-| Completed draws | 252/252 | 84/84 |
-| Full-set repetitions | 3 | 1 |
-| Recall | 87.4% | 89.7% |
-| Tier-1 recall | 100% | 100% |
-| False-positive rate | 5.6% | 0% |
-| Invalid-JSON rate | 1.2% | 0% |
-| Verdict match | 94.4% | 94.0% |
-| Valid anchors | 88.1% | 92.9% |
-| Mean duration | 56.8s | 94.7s |
+| Rank | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | T1 | T2 | T3 | FP | Noise/review | Invalid | Verdict | Mean |
+| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | [DeepSeek V4 Flash Vision Exp](results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.84.4 | Direct DeepSeek API | max | 94.72% | 90.64–98.81% | 92.22% | 97.22% | 100% | 93.33% | 87.04% | 2.78% | 0.028 | 0.39% | 96.90% | 116.0s |
+| 1 | [Grok 4.6](results/2026-08-31-grok-grok46-xhigh-x3-rerun.json) | Grok CLI 1.0.5 | Grok subscription | xhigh | 94.58% | 91.01–98.16% | 90.56% | 98.61% | 100% | 92.38% | 83.33% | 1.39% | 0.028 | 0.39% | 96.51% | 228.4s |
+| 1 | [GLM-5.3-Flash](results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json) | Pi 0.84.4 | Z.AI coding-plan subscription | max | 94.44% | 91.00–97.89% | 88.89% | 100% | 100% | 89.52% | 83.33% | 0% | 0.028 | 0% | 92.64% | 143.0s |
+| 4 | [GPT-5.6 Sol](results/2026-08-31-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.151.0 | Codex subscription | medium | 88.06% | 80.46–95.65% | 90.00% | 86.11% | 100% | 94.29% | 77.78% | 13.89% | 0.083 | 0% | 93.41% | 67.9s |
+| 4 | [GPT-5.6 Terra](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.151.0 | Codex subscription | xhigh | 87.64% | 80.53–94.75% | 87.78% | 87.50% | 100% | 91.43% | 75.93% | 12.50% | 0.100 | 0% | 93.80% | 75.1s |
 
-These runs used prompt `e62d0889fc704541`, fixture set
-`1968a9d2fabe2a56`, scorer `a424d3bb59a40443`, and anti-cheat v2.
+Disqualified — not ranked:
 
-DeepSeek's six divergent fixtures were confirmed separately over three draws:
+| Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | T1 | T2 | T3 | FP | Noise/review | Invalid | Verdict | Mean |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [GPT-5.6 Luna](results/2026-08-31-codex-gpt56-luna-max-x3.json) | Codex CLI 0.151.0 | Codex subscription | max | 88.19% | 81.18–95.21% | 88.89% | 87.50% | 85.71% | 92.38% | 83.33% | 9.72% | 0.133 | 0.78% | 94.19% | 151.5s |
+| [GPT-5.6 Terra](results/2026-08-30-codex-gpt56-terra-high-x3.json) | Codex CLI 0.151.0 | Codex subscription | high | 88.19% | 81.89–94.49% | 83.33% | 93.06% | 90.48% | 84.76% | 77.78% | 5.56% | 0.106 | 0.39% | 93.80% | 54.7s |
 
-| Fixture | Hits |
-| --- | ---: |
-| `rs-backend-spec-drift` | 3/3 |
-| `real-pr1-bundle-basesha-mismatch` | 2/3 |
-| `real-pr1-gh-cli-missing-repo-flag` | 1/3 |
-| `real-pr1-lenient-candidate-parse` | 0/3 |
-| `real-pr1-neutral-conclusion` | 1/3 |
-| `real-pr4-hotspot-truncation` | 0/3 |
+Harness, provider, and route labels are operator-attested report metadata; the
+site does not independently derive them from generic runner state. All ranked
+reports contain 86 fixtures × 3 draws, include sealed holdouts, and
+use prompt `e62d0889fc704541`, fixture set `e4969c9fdc2e3497`, scorer
+`8f0afd4d8ea1f5a5`, and anti-cheat v2. Every ranked report has
+`cheatDetectedCount: 0`.
 
-Reports: [DeepSeek full set](results/2026-07-31-opencode-deepseek-v4-flash-max-x1.json)
-and [divergence confirmation](results/2026-07-31-opencode-deepseek-v4-flash-max-confirm-x3.json).
+The completed reports predate content-addressed Pi `models.json` provenance and
+an explicit fixture diff-renderer version. Those are documented limitations,
+not retroactively asserted evidence; the next benchmark generation will bind
+both before allowing resume or cross-generation comparison.
+
+Not ranked:
+
+- Qwen3.8 Max via OpenCode Go is incomplete at 218/258 saved draws: 158 are
+  reusable valid results and 60 are operational failures from subscription
+  caps or interrupt cleanup. On 2026-08-31, the authenticated provider reported
+  that its monthly limit resets in 16 days and offered paid balance as the only
+  immediate bypass. Paid balance was not enabled; partial scores are not model
+  rankings.
+- Qwen3.8 Flash Next was not exposed by the authenticated OpenCode Go endpoint
+  or Pi catalog on 2026-08-31. It is blocked, not scored zero.
+- The initial Grok 4.6 report is void because anti-cheat v2 detected structured
+  canary adoption. The clean full rerun above supersedes it for ranking.
 
 ## How to read the numbers
 
 - **Recall** is the share of planted defects found. A hit must match the
   expected pattern and anchor file in the same finding.
+- **Balanced Review Accuracy** is the arithmetic mean of anchored recall and
+  usable specificity. An invalid model output cannot count as a correct result.
+- **Usable specificity** is the share of clean draws that produced valid output
+  without a blocking false positive.
 - **Tier-1 recall** covers defects that must never be missed. Any tier-1 miss
   disqualifies a production lane.
 - **False-positive rate** is measured on known-clean fixtures.
@@ -62,9 +82,54 @@ and [divergence confirmation](results/2026-07-31-opencode-deepseek-v4-flash-max-
 - **x1** is directional. Model rankings require at least **x3**, because
   single-draw rankings repeatedly changed under confirmation.
 
-Only runs with matching prompt, fixture-set, scorer, and anti-cheat hashes are
-directly comparable. A runner and model form one lane; changing the runner can
+Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
+version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
+
+### 2026-09-01 — Pi credential staging evidence and release exception
+
+Commit `6b54c9f` makes proxy and explicit provider API-key routes stage only
+`models.json`; OAuth-backed non-default Pi providers without that key also
+require `auth.json`. Focused ephemeral-HOME tests pass.
+
+A preliminary Class D smoke reviewed sealed holdout `holdout-error-swallow` through Pi
+0.84.4, `cliproxy`, and `gpt-5.5` at max effort. It produced one valid draw in
+62.5s with recall, verdict match, and anchor validity all 100%; invalid output,
+bait exposure, and cheat detection were all zero. Report:
+[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d1.json).
+
+The resident Class D provenance suite passed 14/14. The offline model-fixture phase
+then ran the historical drift fixtures
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots
+(`honeypot-clean-rename`) at x3 through the then-current Pi/cliproxy path. All
+9/9 draws were valid; both positives recalled 3/3; invalid output, bait
+exposure, and cheat detection were zero. Report:
+[`results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json`](results/2026-09-01-pi-cliproxy-gpt55-auth-staging-d-gate-x3.json).
+
+The final follow-up removes provider-name inference and supports explicit
+`PI_AUTH_MODE=proxy|oauth` for Pi routes. Supplied modes are authoritative;
+the built-in provider defaults to OAuth while existing non-default routes keep
+their proxy default. A fresh sealed-honeypot smoke through
+`cliproxy` in explicit proxy mode was valid with verdict/anchor 100% and zero
+invalid output, bait exposure, or cheat detection. The offline Class D fixture phase
+then repeated the same two historical drift fixtures plus the honeypot at x3:
+9/9 valid, both positives recalled 3/3, verdict/anchor 100%, and zero invalid
+output, positive noise, bait exposure, or cheat detection. Reports:
+[`results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d1.json) and
+[`results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json`](results/2026-09-01-pi-explicit-proxy-auth-mode-d-gate-x3.json).
+
+These Class D reports predate later provider-key and explicit-auth routing
+changes and therefore do not attest the final v0.4.2 candidate SHA. The owner
+explicitly declined another model/eval rerun and separately authorized this
+release exception. The reports remain historical evidence; focused resident
+tests plus the post-deploy live canary and automatic rollback window are the
+accepted delivery gate. The live proof remains blocking for the v0.4.2 tag and
+publication. No deploy occurred during this evaluation.
+
+The preceding direct Z.AI smoke reached Pi with both real and disposable HOME
+but the provider stream ended without a finish reason before any model call;
+it is recorded as an operational failure, not model quality:
+[`results/2026-09-01-pi-zai-glm53-flash-auth-staging-d1.json`](results/2026-09-01-pi-zai-glm53-flash-auth-staging-d1.json).
 
 ## Conclusions that survived repeated testing
 

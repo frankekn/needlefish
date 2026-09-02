@@ -30,6 +30,18 @@ import { score } from "./shared/score";
 import type { DrawResult, FixtureSpec, Report } from "./shared/types";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const RUNNER_ATTESTATION_ARGS = [
+	"--model",
+	"test-model",
+	"--effort",
+	"medium",
+	"--provider",
+	"Test provider",
+	"--route",
+	"Test route",
+	"--runner-version",
+	"test-runner 1",
+] as const;
 
 function checkpointSpec(id: string): FixtureSpec {
 	return {
@@ -441,7 +453,9 @@ test("resumeSlots: reuses already-checkpointed draws from a partially-completed 
 	const reportPath = path.join(dir, "report.json");
 	const spec = checkpointSpec("checkpoint-partial-resume");
 	const specs = [spec];
-	const writeArgs = parseArgs(["--draws", "2", "--report", reportPath]);
+	const writeArgs = parseArgs([
+		"--draws", "2", "--report", reportPath, ...RUNNER_ATTESTATION_ARGS,
+	]);
 	// Only draw 0 completed before the process was interrupted; draw 1 never ran.
 	writeReport(writeArgs, [makeDraw(spec, 0)], specs);
 
@@ -452,6 +466,7 @@ test("resumeSlots: reuses already-checkpointed draws from a partially-completed 
 		reportPath,
 		"--resume",
 		reportPath,
+		...RUNNER_ATTESTATION_ARGS,
 	]);
 	const work = [
 		{ spec, draw: 0 },
@@ -492,7 +507,9 @@ test("resumeSlots: reuses a draw only under its own recorded draw number, never 
 	const reportPath = path.join(dir, "report.json");
 	const spec = checkpointSpec("checkpoint-draw-index");
 	const specs = [spec];
-	const writeArgs = parseArgs(["--draws", "2", "--report", reportPath]);
+	const writeArgs = parseArgs([
+		"--draws", "2", "--report", reportPath, ...RUNNER_ATTESTATION_ARGS,
+	]);
 	const failedDraw0 = makeDraw(spec, 0);
 	const goodDraw1 = makeDraw(spec, 1);
 	const invalidDraw0 = {
@@ -508,6 +525,7 @@ test("resumeSlots: reuses a draw only under its own recorded draw number, never 
 		reportPath,
 		"--resume",
 		reportPath,
+		...RUNNER_ATTESTATION_ARGS,
 	]);
 	const work = [
 		{ spec, draw: 0 },
@@ -572,7 +590,11 @@ test("checkpoint: an interrupted fresh run leaves a partial report a later proce
 	const drawB = makeDraw(specB, 0);
 	const specs = [specA, specB];
 
-	writeReport(parseArgs(["--draws", "1", "--report", reportPath]), [drawA], specs);
+	writeReport(
+		parseArgs(["--draws", "1", "--report", reportPath, ...RUNNER_ATTESTATION_ARGS]),
+		[drawA],
+		specs,
+	);
 
 	const withoutResume = resumeSlots(
 		parseArgs(["--draws", "1", "--report", reportPath]),
@@ -590,7 +612,7 @@ test("checkpoint: an interrupted fresh run leaves a partial report a later proce
 const specs = ${JSON.stringify(specs)};
 const draws = ${JSON.stringify([drawA, drawB])};
 const reportPath = ${JSON.stringify(reportPath)};
-const args = parseArgs(["--draws", "1", "--report", reportPath, "--resume", reportPath]);
+const args = parseArgs(["--draws", "1", "--report", reportPath, "--resume", reportPath, ${JSON.stringify([...RUNNER_ATTESTATION_ARGS])}].flat());
 const work = specs.map((spec) => ({ spec, draw: 0 }));
 const resumed = resumeSlots(args, specs, work);
 if (resumed.skipped !== 1) {
@@ -661,6 +683,38 @@ function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
 	});
 }
 
+function killChildTree(child: ChildProcess): void {
+	if (child.pid === undefined) return;
+	if (process.platform === "win32") {
+		child.kill("SIGKILL");
+		return;
+	}
+	try {
+		process.kill(-child.pid, "SIGKILL");
+	} catch (error) {
+		if (!isMissingProcess(error)) throw error;
+	}
+}
+
+async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<void> {
+	if (process.platform === "win32") return;
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			process.kill(-pid, 0);
+		} catch (error) {
+			if (isMissingProcess(error)) return;
+			throw error;
+		}
+		await delay(10);
+	}
+	throw new Error("eval child process group did not exit after SIGKILL");
+}
+
+function isMissingProcess(error: unknown): boolean {
+	return error instanceof Error && "code" in error && error.code === "ESRCH";
+}
+
 // Drives eval/run.ts main(), not writeReport: a fresh weekly-shaped run
 // (no --resume) must checkpoint after each draw. Gating that callback on
 // args.resume is the issue #58 bug and must fail this test.
@@ -691,6 +745,7 @@ test("eval CLI: an interrupted dry-run without --resume leaves a partial report"
 		],
 		{
 			cwd: path.resolve(__dirname, ".."),
+			detached: process.platform !== "win32",
 			env: {
 				...process.env,
 				TMPDIR: childTmp,
@@ -702,9 +757,11 @@ test("eval CLI: an interrupted dry-run without --resume leaves a partial report"
 		},
 	);
 	const output = collectOutput(child);
-	t.after(() => {
+	t.after(async () => {
 		if (child.exitCode === null && child.signalCode === null) {
-			child.kill("SIGKILL");
+			killChildTree(child);
+			await waitForExit(child, 10_000);
+			if (child.pid !== undefined) await waitForProcessGroupExit(child.pid, 10_000);
 		}
 	});
 
@@ -726,8 +783,9 @@ test("eval CLI: an interrupted dry-run without --resume leaves a partial report"
 		null,
 		`report appeared only after the process finished (final write, not a per-draw checkpoint); stderr=${output.stderr}`,
 	);
-	child.kill("SIGKILL");
+	killChildTree(child);
 	await waitForExit(child, 10_000);
+	if (child.pid !== undefined) await waitForProcessGroupExit(child.pid, 10_000);
 
 	const onDisk = readReport(reportPath);
 	assert.ok(

@@ -110,6 +110,14 @@ test("review invokes needlefish with a valid numeric PR number", () => {
 	assert.match(result.argvLog, /<--github>\n<--pr>\n<42>\n/);
 });
 
+test("review defaults Codex to the selected Terra xhigh lane", () => {
+	const result = runReview("42", { runner: "codex" });
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.argvLog, /<--model>\n<gpt-5\.6-terra>\n/);
+	assert.match(script, /gpt-5\.6-terra\) export CODEX_REASONING_EFFORT="xhigh"/);
+});
+
 test("review uses an installed user-local Codex CLI when CODEX_BIN is unset", () => {
 	const result = runReview("42", { runner: "codex", homeCodex: true });
 

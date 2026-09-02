@@ -15,6 +15,7 @@ import test from "node:test";
 
 const ci = readFileSync(".github/workflows/ci.yml", "utf8");
 const deploy = readFileSync(".github/workflows/deploy.yml", "utf8");
+const weekly = readFileSync(".github/workflows/weekly-eval.yml", "utf8");
 
 function workflowScript(workflow, stepName) {
   const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -32,6 +33,7 @@ function workflowScript(workflow, stepName) {
 
 const resolveScript = workflowScript(deploy, "Resolve deploy SHA");
 const deployScript = workflowScript(deploy, "Deploy verified SHA");
+const weeklyEvalScript = workflowScript(weekly, "Run full eval");
 const verifiedSha = "a".repeat(40);
 const laterSha = "b".repeat(40);
 
@@ -65,6 +67,10 @@ function runDeploy({
   needlefishRef = verifiedSha,
   mainTip = verifiedSha,
   lsRemoteFails = false,
+  unreleased = false,
+  missingChangelog = false,
+  changelog,
+  forceDeploy = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-ci-deploy-"));
   const fakeBin = join(root, "fake-bin");
@@ -72,6 +78,13 @@ function runDeploy({
   const deployLog = join(root, "deploy.log");
   mkdirSync(fakeBin);
   mkdirSync(scriptsDir);
+  writeFileSync(join(root, "package.json"), '{"version":"0.4.2"}\n');
+  if (!missingChangelog) {
+    writeFileSync(
+      join(root, "CHANGELOG.md"),
+      changelog ?? (unreleased ? "## 0.4.2 — Unreleased\n" : "## 0.4.2 — 2026-09-01\n"),
+    );
+  }
   writeFileSync(
     join(fakeBin, "git"),
     `#!/usr/bin/env bash
@@ -100,6 +113,7 @@ printf 'deployed:%s\\n' "$NEEDLEFISH_REF" > "$DEPLOY_LOG"
       ...process.env,
       DEPLOY_LOG: deployLog,
       EVENT_NAME: eventName,
+      FORCE_DEPLOY: forceDeploy ? "true" : "false",
       FAKE_MAIN_TIP: mainTip,
       LS_REMOTE_FAIL: lsRemoteFails ? "1" : "",
       NEEDLEFISH_REF: needlefishRef,
@@ -139,6 +153,7 @@ test("deploy is gated on a successful main-push CI run and keeps workflow_dispat
   assert.match(deploy, /^  workflow_run:$/m);
   assert.match(deploy, /workflows: \[needlefish-ci\]/);
   assert.match(deploy, /^  workflow_dispatch:$/m);
+  assert.match(deploy, /^      force:$/m);
   assert.match(deploy, /github\.event\.workflow_run\.conclusion == 'success'/);
   assert.match(deploy, /github\.event\.workflow_run\.event == 'push'/);
   assert.match(deploy, /github\.event\.workflow_run\.head_branch == 'main'/);
@@ -147,6 +162,14 @@ test("deploy is gated on a successful main-push CI run and keeps workflow_dispat
   assert.match(deploy, /ref: \$\{\{ steps\.sha\.outputs\.sha \}\}/);
   assert.match(deploy, /^    runs-on: self-hosted$/m);
   assert.doesNotMatch(deploy, /secrets\./);
+  assert.match(weekly, /gh workflow run deploy\.yml --ref main/);
+  assert.doesNotMatch(weekly, /-f force=true/);
+});
+
+test("weekly eval attests the configured Codex executable", () => {
+  assert.match(weeklyEvalScript, /runner_bin="\$\{CODEX_BIN:-codex\}"/);
+  assert.match(weeklyEvalScript, /--runner-version "\$\("\$runner_bin" --version\)"/);
+  assert.doesNotMatch(weeklyEvalScript, /\$\(codex --version\)/);
 });
 
 test("resolve uses the workflow_run head SHA and rejects a missing or invalid SHA", () => {
@@ -185,6 +208,35 @@ test("automatic deploy skips when main has moved and still deploys the verified 
   const recovery = runDeploy({ eventName: "workflow_dispatch", mainTip: laterSha });
   assert.equal(recovery.status, 0, recovery.stderr);
   assert.equal(recovery.deployLog, `deployed:${verifiedSha}\n`);
+
+  const unreleased = runDeploy({ unreleased: true });
+  assert.equal(unreleased.status, 0, unreleased.stderr);
+  assert.match(unreleased.stdout, /Skipping deploy of unreleased version 0\.4\.2/);
+  assert.equal(unreleased.deployLog, "");
+
+  const manualUnreleased = runDeploy({ eventName: "workflow_dispatch", unreleased: true });
+  assert.equal(manualUnreleased.status, 0, manualUnreleased.stderr);
+  assert.equal(manualUnreleased.deployLog, "");
+
+  const forcedUnreleased = runDeploy({
+    eventName: "workflow_dispatch",
+    unreleased: true,
+    forceDeploy: true,
+  });
+  assert.equal(forcedUnreleased.status, 0, forcedUnreleased.stderr);
+  assert.equal(forcedUnreleased.deployLog, `deployed:${verifiedSha}\n`);
+
+  const missingChangelog = runDeploy({ missingChangelog: true });
+  assert.notEqual(missingChangelog.status, 0);
+  assert.match(missingChangelog.stderr, /could not verify release state/);
+  assert.equal(missingChangelog.deployLog, "");
+
+  for (const changelog of ["## Unreleased\n", "## 0.4.1 — 2026-08-01\n"]) {
+    const missingRelease = runDeploy({ changelog });
+    assert.notEqual(missingRelease.status, 0);
+    assert.match(missingRelease.stderr, /no released heading for version 0\.4\.2/);
+    assert.equal(missingRelease.deployLog, "");
+  }
 
   const missingTip = runDeploy({ mainTip: "" });
   assert.notEqual(missingTip.status, 0);

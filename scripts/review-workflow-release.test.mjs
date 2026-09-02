@@ -35,7 +35,15 @@ const reviewScript = workflowScript("Needlefish review");
 const pinnedSha = "a".repeat(40);
 const currentSha = "b".repeat(40);
 
-function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}) {
+function installRelease(
+	home,
+	sha,
+	{
+		metadataSha = sha,
+		withBinary = true,
+		repoUrl = "https://github.com/frankekn/needlefish.git",
+	} = {},
+) {
 	const release = join(home, ".local", "share", "needlefish", "releases", sha);
 	const bin = join(release, "bin");
 	mkdirSync(bin, { recursive: true });
@@ -44,7 +52,7 @@ function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}
 		`${JSON.stringify({
 			sha: metadataSha,
 			version: "0.4.1",
-			repoUrl: "https://github.com/frankekn/needlefish.git",
+			repoUrl,
 			deployedAt: "2026-08-10T00:00:00Z",
 			node: process.version,
 		}, null, 2)}\n`,
@@ -58,9 +66,11 @@ function installRelease(home, sha, { metadataSha = sha, withBinary = true } = {}
 
 function runSelection({
 	expectedSha = pinnedSha,
-	mainSha = pinnedSha,
 	releases = [{ sha: pinnedSha }],
 	current = currentSha,
+	mainSha = pinnedSha,
+	needlefishRepo = "frankekn/needlefish",
+	repo = "frankekn/example",
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-release-"));
 	const home = join(root, "home with spaces");
@@ -105,14 +115,14 @@ fi
 			...process.env,
 			EXPECTED_NEEDLEFISH_SHA: expectedSha,
 			GH_LOG: ghLog,
-			GH_MAIN_SHA: mainSha,
 			GH_TOKEN: "test-token",
 			GITHUB_ENV: githubEnv,
+			GH_MAIN_SHA: mainSha,
 			HOME: home,
-			NEEDLEFISH_REPO: "frankekn/needlefish",
+			NEEDLEFISH_REPO: needlefishRepo,
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_HEAD_SHA: "c".repeat(40),
-			REPO: "frankekn/example",
+			REPO: repo,
 		},
 	});
 	const output = {
@@ -140,14 +150,27 @@ test("selection executes the caller-pinned release even when current is newer", 
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.stdout, "needlefish 0.4.1\n");
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-	assert.doesNotMatch(selectScript, /needlefish\/current/);
 });
 
-test("selection resolves an omitted pin to the source repository main SHA", () => {
+test("selection resolves an omitted pin from the requested repository main SHA", () => {
 	const result = runSelection({ expectedSha: "" });
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
+	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
+});
+
+test("selection resolves an omitted pin from the requested repository", () => {
+	const result = runSelection({
+		expectedSha: "",
+		needlefishRepo: "example/fork",
+		releases: [
+			{ sha: pinnedSha, repoUrl: "https://github.com/example/fork.git" },
+		],
+	});
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.ghLog, /api repos\/example\/fork\/commits\/main --jq \.sha/);
 	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
 });
 
@@ -200,4 +223,32 @@ test("review forwards the optional opencode idle timeout without exporting an em
 		reviewScript,
 		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
 	);
+});
+
+test("review gives the Terra xhigh lane a production timeout", () => {
+	assert.match(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"/);
+	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
+});
+
+test("reconciliation dispatch does not depend on a local checkout", () => {
+	assert.match(workflow, /cancel-in-progress: false/);
+	assert.match(workflow, /WORKFLOW_REF: \$\{\{ github\.workflow_ref \}\}/);
+	assert.match(workflow, /if \[ "\$head_repo" != "\$REPO" \]; then/);
+	assert.match(
+		workflow,
+		/repos\/\$REPO\/actions\/workflows\/\$workflow_file/,
+	);
+	assert.match(workflow, /"HTTP 404"/);
+  assert.match(workflow, /review workflow probe failed/);
+  assert.match(workflow, /Needlefish: caller retry required/);
+  assert.match(workflow, /conclusion="failure"/);
+	assert.match(
+		workflow,
+		/default_branch=\$\(gh api "repos\/\$REPO" --jq \.default_branch\)/,
+	);
+	assert.match(
+		workflow,
+		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref "\$default_branch" -f pr_number="\$PR_NUM"/,
+	);
+	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
 });

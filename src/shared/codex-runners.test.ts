@@ -10,7 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCodex } from "./codex";
+import { runCodex, RunnerOperationalError } from "./codex";
 import {
 	commitAll,
 	gitText,
@@ -18,6 +18,25 @@ import {
 	initRepo,
 	readStringArray,
 } from "./codex-runner-test-fixtures";
+
+test("runCodex classifies invalid timeout configuration as operational", async (t) => {
+	const previous = {
+		timeout: process.env.NEEDLEFISH_TIMEOUT_MS,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	t.after(() => {
+		if (previous.timeout === undefined) delete process.env.NEEDLEFISH_TIMEOUT_MS;
+		else process.env.NEEDLEFISH_TIMEOUT_MS = previous.timeout;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+	});
+	process.env.NEEDLEFISH_TIMEOUT_MS = "invalid";
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	await assert.rejects(
+		() => runCodex("prompt", { runner: "codex", repoPath: process.cwd(), targetHeadSha: "HEAD" }),
+		RunnerOperationalError,
+	);
+});
 
 test("runCodex invokes claude without permission restrictions", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
@@ -406,6 +425,7 @@ test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t
 		caught = err;
 	}
 	assert.ok(caught instanceof Error);
+	assert.ok(caught instanceof RunnerOperationalError);
 	const err = caught as Error & { rawOutput?: string };
 	assert.match(
 		err.message,

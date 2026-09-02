@@ -55,7 +55,7 @@ runs:
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex) pkg="@openai/codex"; pinned="0.149.0" ;;
+          codex) pkg="@openai/codex"; pinned="0.151.0" ;;
           claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.239" ;;
           opencode) pkg="opencode-ai"; pinned="1.18.21" ;;
           pi) pkg="@mariozechner/pi"; pinned="0.70.6" ;;
@@ -101,6 +101,13 @@ runs:
         fi
         args=(--github --pr "$pr" --repo "$TARGET_REPO_PATH")
         if [ -n "$RUNNER_INPUT" ]; then args+=(--runner "$RUNNER_INPUT"); fi
+        if [ -z "$MODEL_INPUT" ] && [ "$RUNNER_INPUT" = "codex" ]; then MODEL_INPUT="gpt-5.6-terra"; fi
+        if [ "$RUNNER_INPUT" = "codex" ] && [ -z "$CODEX_REASONING_EFFORT" ]; then
+          case "$MODEL_INPUT" in
+            gpt-5.6-terra) CODEX_REASONING_EFFORT="xhigh" ;;
+            gpt-5.6-sol) CODEX_REASONING_EFFORT="medium" ;;
+          esac
+        fi
         if [ -n "$MODEL_INPUT" ]; then args+=(--model "$MODEL_INPUT"); fi
         if [ -n "$TIMEOUT_INPUT" ]; then args+=(--timeout-ms "$TIMEOUT_INPUT"); fi
         pnpm review "${args[@]}"

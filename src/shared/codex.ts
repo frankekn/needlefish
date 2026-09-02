@@ -19,6 +19,29 @@ import {
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
+
+export class RunnerOperationalError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "RunnerOperationalError";
+	}
+}
+
+class RunnerOutputError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "RunnerOutputError";
+	}
+}
+
+function asRunnerOperationalError(error: unknown): RunnerOperationalError {
+	return error instanceof RunnerOperationalError
+		? error
+		: new RunnerOperationalError(
+				error instanceof Error ? error.message : String(error),
+				{ cause: error },
+			);
+}
 import {
 	createManagedTempDirectory,
 	disposeManagedTempDirectory,
@@ -73,7 +96,7 @@ const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
 	],
 	opencode: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
 	grok: ["GROK_BIN", "GROK_MODEL"],
-	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER"],
+	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER", "PI_AUTH_MODE"],
 	openai: [],
 	acp: ["NEEDLEFISH_ACP_BIN"],
 };
@@ -153,8 +176,10 @@ const EPHEMERAL_HOME_ENV_CONFIG_FILES: Record<RunnerName, readonly string[]> = {
 	acp: [],
 };
 
-function passthroughNames(): readonly string[] {
-	return (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+type RunnerEnvironment = Readonly<Record<string, string | undefined>>;
+
+function passthroughNames(env: RunnerEnvironment = process.env): readonly string[] {
+	return (env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
@@ -164,19 +189,63 @@ function passthroughNames(): readonly string[] {
 // supported auth mode that never reads the runner's HOME files. Only actual
 // credential variables count (model/endpoint vars configure, they don't
 // authenticate), and only when non-empty.
-function hasPassthroughCredential(credentialVars: readonly string[]): boolean {
+function hasPassthroughCredential(
+	credentialVars: readonly string[],
+	env: RunnerEnvironment = process.env,
+): boolean {
+	return passthroughNames(env).some(
+		(name) => credentialVars.includes(name) && !!env[name],
+	);
+}
+
+function hasPassthroughApiKeyCredential(): boolean {
 	return passthroughNames().some(
-		(name) => credentialVars.includes(name) && !!process.env[name],
+		(name) => name.endsWith("_API_KEY") && !!process.env[name],
 	);
 }
 
 function hasOpenCodeEnvCredential(): boolean {
-	return (
-		!!process.env.OPENAI_API_KEY ||
-		passthroughNames().some(
-			(name) => name.endsWith("_API_KEY") && !!process.env[name],
-		)
-	);
+	return !!process.env.OPENAI_API_KEY || hasPassthroughApiKeyCredential();
+}
+
+export function hasPiProviderEnvCredential(
+	provider: string,
+	env: RunnerEnvironment = process.env,
+): boolean {
+	const names = piProviderApiKeyEnvNames(provider, env);
+	const required = names.length > 0
+		? names
+		: [`${provider.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_API_KEY`];
+	return required.every((name) => hasPassthroughCredential([name], env));
+}
+
+function piProviderApiKeyEnvNames(
+	provider: string,
+	env: RunnerEnvironment = process.env,
+): readonly string[] {
+	const home = env.HOME?.trim() || env.USERPROFILE?.trim();
+	if (!home) return [];
+	const registry = path.join(home, ".pi", "agent", "models.json");
+	let raw: string;
+	try {
+		raw = readFileSync(registry, "utf8");
+	} catch (error) {
+		if (isRecord(error) && error.code === "ENOENT") return [];
+		throw error;
+	}
+	let config: unknown;
+	try {
+		config = JSON.parse(raw);
+	} catch {
+		throw new Error(`Pi provider registry is malformed: ${registry}`);
+	}
+	if (!isRecord(config) || !isRecord(config.providers)) return [];
+	const selected = config.providers[provider];
+	if (!isRecord(selected) || typeof selected.apiKey !== "string") return [];
+	if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(selected.apiKey)) return [selected.apiKey];
+	return [...selected.apiKey.matchAll(/(?<!\$)\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g)]
+		.map((match) => match[1] ?? match[2])
+		.filter((name): name is string => name !== undefined);
 }
 
 function strictCommaList(raw: string, envName: string): string[] {
@@ -296,13 +365,25 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		}
 		return { required, optional: [] };
 	}
-	// pi: an explicit non-default PI_PROVIDER routes through a proxy whose
-	// credentials live in the proxy — only the provider registry is read.
+	// pi: proxy routes keep credentials outside HOME. Every explicit non-default
+	// provider also needs its registry; OAuth routes require Pi's auth store.
 	if (runner === "pi") {
 		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		if (provider !== "openai-codex") {
+		const authMode =
+			process.env.PI_AUTH_MODE ??
+			(provider === "openai-codex" ? "oauth" : "proxy");
+		if (authMode !== "oauth" && authMode !== "proxy") {
+			throw new Error("PI_AUTH_MODE must be oauth or proxy");
+		}
+		if (authMode === "proxy" || hasPiProviderEnvCredential(provider)) {
 			return {
 				required: [".pi/agent/models.json"],
+				optional: [],
+			};
+		}
+		if (provider !== "openai-codex") {
+			return {
+				required: [".pi/agent/models.json", ".pi/agent/auth.json"],
 				optional: [],
 			};
 		}
@@ -396,7 +477,23 @@ export function prepareEphemeralHome(
 		// this only stops default-path resolution; a same-uid child that
 		// hunts absolute paths can still read the real HOME. Detection of
 		// that behavior is G3's job (bait + canary), not G1's.
-		copyFileSync(src, dest);
+		if (runner === "pi" && rel === ".pi/agent/auth.json") {
+			const provider = process.env.PI_PROVIDER ?? "openai-codex";
+			let auth: unknown;
+			try {
+				auth = JSON.parse(readFileSync(src, "utf8"));
+			} catch {
+				throw new Error(`Pi auth store is malformed: ${src}`);
+			}
+			if (!isRecord(auth) || !Object.hasOwn(auth, provider)) {
+				throw new Error(`Pi auth store has no entry for provider ${provider}`);
+			}
+			writeFileSync(dest, `${JSON.stringify({ [provider]: auth[provider] })}\n`, {
+				mode: 0o600,
+			});
+		} else {
+			copyFileSync(src, dest);
+		}
 	}
 	return home;
 }
@@ -444,7 +541,12 @@ export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
 ): Promise<string> {
-	const runner = resolveRunner(opts);
+	let runner: RunnerName;
+	try {
+		runner = resolveRunner(opts);
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
@@ -485,7 +587,12 @@ export async function runCodex(
 			}
 			lastErr = err;
 			if (attempt < maxAttempts) {
-				const backoff = retryMsFor(runner);
+				let backoff: number;
+				try {
+					backoff = retryMsFor(runner);
+				} catch (error) {
+					throw asRunnerOperationalError(error);
+				}
 				await new Promise<void>((resolve) => setTimeout(resolve, backoff));
 			}
 		}
@@ -501,39 +608,66 @@ async function runCodexOnce(
 	runnerAttempt: number,
 ): Promise<string> {
 	const model = resolveModel(opts, runner);
-	const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+	let timeoutMs: number;
+	try {
+		timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 	if (runner === "openai") {
 		return runOpenAIDirect(prompt, model, timeoutMs, (raw) =>
 			opts.onRaw?.(raw, runnerAttempt),
 		);
 	}
-	const tmp = await createManagedTempDirectory();
+	let tmp: string;
+	try {
+		tmp = await createManagedTempDirectory();
+	} catch (error) {
+		if (isRunnerSafetyError(error)) throw error;
+		throw asRunnerOperationalError(error);
+	}
 	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
 	try {
 		const ghConfigDir = path.join(tmp, "gh-empty");
-		mkdirSync(ghConfigDir, { recursive: true });
-		const ephemeralHome = prepareEphemeralHome(runner, tmp);
-		const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
-		const sandbox = prepareRunnerSandbox({
-			runner,
-			repoPath: opts.repoPath,
-			prompt,
-			targetHeadSha: opts.targetHeadSha,
-			...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
-			tmp,
-		});
-		const invocation = {
-			prompt: sandbox.prompt,
-			repoPath: sandbox.repoPath,
-			model,
-			reasoningEffort: opts.reasoningEffort,
-			timeoutMs,
-			env,
-			tmp,
-		};
-		const result = await runRunner(runner, invocation);
+		const { invocation, sandbox } = (() => {
+			try {
+				mkdirSync(ghConfigDir, { recursive: true });
+				const ephemeralHome = prepareEphemeralHome(runner, tmp);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+				const sandbox = prepareRunnerSandbox({
+					runner,
+					repoPath: opts.repoPath,
+					prompt,
+					targetHeadSha: opts.targetHeadSha,
+					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
+					tmp,
+				});
+				return {
+					sandbox,
+					invocation: {
+						prompt: sandbox.prompt,
+						repoPath: sandbox.repoPath,
+						model,
+						reasoningEffort: opts.reasoningEffort,
+						timeoutMs,
+						env,
+						tmp,
+					},
+				};
+			} catch (error) {
+				if (isRunnerSafetyError(error)) throw error;
+				throw asRunnerOperationalError(error);
+			}
+		})();
+		let result: RunnerResult;
+		try {
+			result = await runRunner(runner, invocation);
+		} catch (error) {
+			if (isRunnerSafetyError(error)) throw error;
+			throw asRunnerOperationalError(error);
+		}
 
 		// A runner that crashes or exits nonzero may already have emitted output;
 		// ride it along on the error (message unchanged) so the eval canary scan
@@ -556,14 +690,20 @@ async function runCodexOnce(
 			}
 			return err;
 		};
-		if (result.res.error) throw withRunnerOutput(result.res.error);
+		if (result.res.error) {
+			throw withRunnerOutput(
+				new RunnerOperationalError(result.res.error.message, {
+					cause: result.res.error,
+				}),
+			);
+		}
 		if (result.res.status !== 0) {
 			// Surface only allowlisted, prompt-free cause tokens extracted from
 			// stderr (auth/quota/network classifications). Raw stderr stays
 			// withheld — it may contain the review prompt.
 			const cause = safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
-				new Error(
+				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt`,
 				),
 			);
@@ -1009,9 +1149,9 @@ async function runOpenAIDirect(
 	).replace(/\/$/, "");
 	const apiKey = process.env.OPENAI_API_KEY;
 	if (!apiKey)
-		throw new Error("OPENAI_API_KEY is required for the openai runner");
+		throw new RunnerOperationalError("OPENAI_API_KEY is required for the openai runner");
 	if (!model)
-		throw new Error(
+		throw new RunnerOperationalError(
 			"model is required for the openai runner (use --model or OPENAI_MODEL)",
 		);
 	const controller = new AbortController();
@@ -1040,7 +1180,7 @@ async function runOpenAIDirect(
 		};
 		if (!res.ok)
 			throw withBody(
-				new Error(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
+				new RunnerOperationalError(`openai runner HTTP ${res.status}: ${text.slice(0, 2000)}`),
 			);
 		let json: { choices?: { message?: { content?: string } }[] };
 		try {
@@ -1049,7 +1189,7 @@ async function runOpenAIDirect(
 			};
 		} catch {
 			throw withBody(
-				new Error(
+				new RunnerOperationalError(
 					`openai runner: non-JSON response body: ${text.slice(0, 500)}`,
 				),
 			);
@@ -1057,13 +1197,16 @@ async function runOpenAIDirect(
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
 			throw withBody(
-				new Error(
+				new RunnerOutputError(
 					`openai runner: empty content in response: ${text.slice(0, 500)}`,
 				),
 			);
 		}
 		onRaw?.(text);
 		return content;
+	} catch (error) {
+		if (error instanceof RunnerOutputError) throw error;
+		throw asRunnerOperationalError(error);
 	} finally {
 		clearTimeout(timer);
 	}

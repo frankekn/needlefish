@@ -6,19 +6,27 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, resumeSlots, writeReport } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
 import { hasConsistentCheatDetection } from "./shared/report-integrity";
 import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
+import { RunnerOperationalError } from "../src/shared/codex";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
 import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+test("hasFailedDeepPass ignores recovered attempts", () => {
+  const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
+  assert.equal(hasFailedDeepPass([failed]), true);
+  assert.equal(hasFailedDeepPass([failed, { ...failed, outcome: "parsed" }]), false);
+  assert.equal(hasFailedDeepPass([{ ...failed, outcome: "parse_failed" }]), false);
+});
 
 function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreaks" | "file" | "lineStart">): Finding {
   return {
@@ -437,8 +445,322 @@ test("parseArgs: rejects malformed --env values", () => {
   assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
 });
 
+test("writeReport: records a complete operator attestation", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-attestation-"));
+  const previous = new Map(
+    ["PI_PROVIDER", "AMBIENT_PROVIDER_API_KEY", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_ACCESS_TOKEN", "XAI_API_KEY", "API_TOKEN", "NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"].map(
+      (key) => [key, process.env[key]] as const,
+    ),
+  );
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  process.env.PI_PROVIDER = "ambient-provider";
+  process.env.AMBIENT_PROVIDER_API_KEY = "provider-secret";
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "DEEPSEEK_API_KEY";
+  process.env.DEEPSEEK_API_KEY = "ambient-secret";
+  process.env.OPENAI_API_KEY = "builtin-secret";
+  process.env.OPENAI_BASE_URL = "https://private.example";
+  process.env.CODEX_ACCESS_TOKEN = "codex-secret";
+  process.env.XAI_API_KEY = "grok-secret";
+  process.env.NEEDLEFISH_ACP_AUTH_ENV_VARS = "API_TOKEN";
+  process.env.NEEDLEFISH_ACP_AUTH_FILES = "/Users/private/auth.json";
+  process.env.API_TOKEN = "acp-secret";
+  const report = writeReport(
+    parseArgs([
+      "--runner", "pi",
+      "--provider", "OpenAI",
+      "--route", "Codex CLI subscription",
+      "--runner-version", "codex-cli 1.2.3",
+      "--env", `PI_BIN=${path.join(dir, "pi")}`,
+      "--env", "PI_AUTH_MODE=proxy",
+      "--fixtures", path.join(process.cwd(), "eval", "fixtures"),
+      "--resume", path.join(dir, "checkpoint.json"),
+      "--report", path.join(dir, "report.json"),
+    ]),
+    [],
+    [holdoutSpec("attestation", false)],
+  );
+  assert.equal(report.provider, "OpenAI");
+  assert.equal(report.route, "Codex CLI subscription");
+  assert.equal(report.runnerVersion, "codex-cli 1.2.3");
+  assert.match(report.invocation, /--provider OpenAI/);
+  assert.doesNotMatch(report.invocation, /PI_BIN/);
+  assert.match(report.invocation, /PI_AUTH_MODE=proxy/);
+  assert.match(report.invocation, /PI_PROVIDER=ambient-provider/);
+  assert.doesNotMatch(report.invocation, /AMBIENT_PROVIDER_API_KEY/);
+  assert.match(report.invocation, /NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_API_KEY/);
+  assert.doesNotMatch(report.invocation, /DEEPSEEK_API_KEY=/);
+  assert.match(report.invocation, /--fixtures eval\/fixtures/);
+  assert.match(report.invocation, /--report '<redacted>'/);
+  assert.match(report.invocation, /--resume '<redacted>'/);
+  assert.match(report.reproductionCommand, /--report eval\/reports\/report\.json/);
+  assert.doesNotMatch(report.reproductionCommand, /--resume/);
+  assert.doesNotMatch(report.invocation, /ambient-secret|provider-secret/);
+  assert.ok(!report.invocation.includes(dir));
+  assert.match(report.runnerEnvironment, /DEEPSEEK_API_KEY.*<required>/);
+  assert.equal(report.privateEnvironment, true);
+  assert.doesNotMatch(report.runnerEnvironment, /ambient-secret/);
+  const opencodeReport = writeReport(
+    parseArgs([
+      "--runner", "opencode",
+      "--report", path.join(dir, "opencode.json"),
+    ]),
+    [],
+    [holdoutSpec("opencode-attestation", false)],
+  );
+  assert.doesNotMatch(opencodeReport.invocation, /OPENAI_API_KEY/);
+  assert.doesNotMatch(opencodeReport.invocation, /builtin-secret/);
+  assert.match(opencodeReport.runnerEnvironment, /OPENAI_API_KEY.*<required>/);
+  assert.doesNotMatch(opencodeReport.runnerEnvironment, /builtin-secret/);
+  const codexReport = writeReport(
+    parseArgs([
+      "--runner", "codex",
+      "--report", path.join(dir, "codex.json"),
+    ]),
+    [],
+    [holdoutSpec("codex-attestation", false)],
+  );
+  assert.doesNotMatch(codexReport.invocation, /CODEX_ACCESS_TOKEN|OPENAI_API_KEY/);
+  assert.doesNotMatch(codexReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|OPENAI_API_KEY/);
+  assert.doesNotMatch(codexReport.invocation, /codex-secret/);
+  const grokReport = writeReport(
+    parseArgs([
+      "--runner", "grok",
+      "--report", path.join(dir, "grok.json"),
+    ]),
+    [],
+    [holdoutSpec("grok-attestation", false)],
+  );
+  assert.doesNotMatch(grokReport.invocation, /XAI_API_KEY/);
+  assert.doesNotMatch(grokReport.runnerEnvironment, /XAI_API_KEY/);
+  assert.doesNotMatch(grokReport.invocation, /grok-secret/);
+  const privateReport = writeReport(
+    parseArgs([
+      "--runner", "openai",
+      "--report", path.join(dir, "private.json"),
+    ]),
+    [],
+    [holdoutSpec("private-attestation", false)],
+  );
+  assert.doesNotMatch(privateReport.invocation, /OPENAI_BASE_URL/);
+  assert.match(privateReport.runnerEnvironment, /OPENAI_BASE_URL.*<required>/);
+  assert.doesNotMatch(privateReport.runnerEnvironment, /private\.example/);
+  const acpReport = writeReport(
+    parseArgs([
+      "--runner", "acp",
+      "--report", path.join(dir, "acp.json"),
+    ]),
+    [],
+    [holdoutSpec("acp-attestation", false)],
+  );
+  assert.doesNotMatch(acpReport.invocation, /NEEDLEFISH_ACP_AUTH_FILES/);
+  assert.match(acpReport.runnerEnvironment, /NEEDLEFISH_ACP_AUTH_FILES.*<required>/);
+  assert.doesNotMatch(acpReport.invocation, /API_TOKEN/);
+  assert.doesNotMatch(acpReport.invocation, /acp-secret/);
+  assert.doesNotMatch(acpReport.invocation, /Users\/private/);
+  assert.doesNotMatch(acpReport.runnerEnvironment, /Users\/private/);
+  assert.throws(
+    () => parseArgs(["--provider", "OpenAI"]),
+    /must be supplied together/,
+  );
+  for (const argv of [
+    ["--provider", "--route", "--runner-version", "v"],
+    ["--provider", "", "--route", "r", "--runner-version", "v"],
+    ["--provider", "p", "--route", "", "--runner-version", "v"],
+    ["--provider", "p", "--route", "r", "--runner-version", ""],
+    ["--provider", " ", "--route", "r", "--runner-version", "v"],
+    ["--provider", "p", "--route", "\t", "--runner-version", "v"],
+    ["--provider", "p", "--route", "r", "--runner-version", "  "],
+    ["--provider", " --route", "--route", "r", "--runner-version", "v"],
+  ]) {
+    assert.throws(() => parseArgs(argv), /requires a non-empty value/);
+  }
+});
+
+test("writeReport: attests only effective runner environment", (t) => {
+  const previousProxy = process.env.https_proxy;
+  const previousToken = process.env.CODEX_ACCESS_TOKEN;
+  const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+  const previousCodexModel = process.env.CODEX_MODEL;
+  const previousCodexEffort = process.env.CODEX_REASONING_EFFORT;
+  const previousPath = process.env.PATH;
+  t.after(() => {
+    if (previousProxy === undefined) delete process.env.https_proxy;
+    else process.env.https_proxy = previousProxy;
+    if (previousToken === undefined) delete process.env.CODEX_ACCESS_TOKEN;
+    else process.env.CODEX_ACCESS_TOKEN = previousToken;
+    if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+    if (previousCodexModel === undefined) delete process.env.CODEX_MODEL;
+    else process.env.CODEX_MODEL = previousCodexModel;
+    if (previousCodexEffort === undefined) delete process.env.CODEX_REASONING_EFFORT;
+    else process.env.CODEX_REASONING_EFFORT = previousCodexEffort;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  });
+  process.env.https_proxy = "https://private-proxy.example";
+
+  const args = parseArgs(["--runner", "codex"]);
+  assert.equal(JSON.parse(runnerEnvironment(args)).find(([key]: [string]) => key === "https_proxy")?.[1], "<required>");
+  const report = writeReport(args, [], [holdoutSpec("proxy-attestation", false)]);
+  assert.equal(report.privateEnvironment, true);
+  assert.doesNotMatch(report.invocation, /private-proxy/);
+  delete process.env.https_proxy;
+  process.env.CODEX_ACCESS_TOKEN = "parent-only-token";
+  const publicReport = writeReport(args, [], [holdoutSpec("public-attestation", false)]);
+  assert.equal(publicReport.privateEnvironment, false);
+  assert.doesNotMatch(publicReport.runnerEnvironment, /CODEX_ACCESS_TOKEN|parent-only-token/);
+  const ignoredEnvReport = writeReport(
+    parseArgs(["--runner", "codex", "--env", "FOO=unused"]),
+    [],
+    [holdoutSpec("ignored-env-attestation", false)],
+  );
+  assert.equal(ignoredEnvReport.privateEnvironment, false);
+  assert.doesNotMatch(ignoredEnvReport.runnerEnvironment, /FOO|unused/);
+  const overriddenHomeReport = writeReport(
+    parseArgs(["--runner", "codex", "--env", "HOME=/private/auth-home"]),
+    [],
+    [holdoutSpec("home-attestation", false)],
+  );
+  assert.equal(overriddenHomeReport.privateEnvironment, true);
+  assert.match(overriddenHomeReport.runnerEnvironment, /HOME.*<required>/);
+  assert.doesNotMatch(overriddenHomeReport.runnerEnvironment, /private\/auth-home/);
+  process.env.XDG_CONFIG_HOME = "/private/opencode-config";
+  const opencodeReport = writeReport(
+    parseArgs(["--runner", "opencode"]),
+    [],
+    [holdoutSpec("xdg-attestation", false)],
+  );
+  assert.equal(opencodeReport.privateEnvironment, true);
+  assert.match(opencodeReport.runnerEnvironment, /XDG_CONFIG_HOME.*<required>/);
+
+  process.env.CODEX_MODEL = "ambient-model";
+  process.env.CODEX_REASONING_EFFORT = "medium";
+  const explicitCodex = runnerEnvironment(
+    parseArgs(["--runner", "codex", "--model", "explicit-model", "--effort", "xhigh"]),
+  );
+  assert.doesNotMatch(explicitCodex, /CODEX_MODEL|CODEX_REASONING_EFFORT|ambient-model/);
+  process.env.PATH = "/private/bin:/usr/bin";
+  const pathIdentity = runnerEnvironment(parseArgs(["--runner", "codex"]));
+  assert.match(pathIdentity, /PATH.*sha256:/);
+  assert.doesNotMatch(pathIdentity, /private\/bin|usr\/bin/);
+  assert.doesNotMatch(
+    writeReport(
+      parseArgs(["--runner", "codex"]),
+      [],
+      [holdoutSpec("path-attestation", false)],
+    ).invocation,
+    /--env PATH=/,
+  );
+});
+
+test("runnerEnvironment: binds staged routing configuration", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-pi-registry-"));
+  const previousHome = process.env.HOME;
+  const previousXdgConfig = process.env.XDG_CONFIG_HOME;
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdgConfig;
+    rmSync(dir, { recursive: true, force: true });
+  });
+  process.env.HOME = dir;
+  const registryDir = path.join(dir, ".pi", "agent");
+  mkdirSync(registryDir, { recursive: true });
+  const registry = path.join(registryDir, "models.json");
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://one"}}}');
+  const args = parseArgs([
+    "--runner", "pi",
+    "--provider", "proxy",
+    "--route", "local",
+    "--runner-version", "pi 1.0.0",
+    "--env", "PI_AUTH_MODE=proxy",
+    "--env", "PI_PROVIDER=proxy",
+  ]);
+  const first = runnerEnvironment(args);
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
+  const second = runnerEnvironment(args);
+  assert.notEqual(second, first);
+  Object.assign(args, { environmentIdentity: second });
+  writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://three"}}}');
+  assert.throws(
+    () => runnerEnvironment(args),
+    /runner environment changed during the eval run/,
+  );
+
+  const grokDir = path.join(dir, ".grok");
+  mkdirSync(grokDir, { recursive: true });
+  const grokConfig = path.join(grokDir, "config.toml");
+  writeFileSync(grokConfig, 'provider = "one"');
+  const grokArgs = parseArgs(["--runner", "grok"]);
+  const firstGrok = runnerEnvironment(grokArgs);
+  writeFileSync(grokConfig, 'provider = "two"');
+  assert.notEqual(runnerEnvironment(grokArgs), firstGrok);
+
+  process.env.XDG_CONFIG_HOME = path.join(dir, "xdg");
+  const opencodeDir = path.join(process.env.XDG_CONFIG_HOME, "opencode");
+  mkdirSync(opencodeDir, { recursive: true });
+  const opencodeConfig = path.join(opencodeDir, "opencode.json");
+  writeFileSync(opencodeConfig, '{"provider":"one"}');
+  const opencodeArgs = parseArgs(["--runner", "opencode"]);
+  const firstOpenCode = runnerEnvironment(opencodeArgs);
+  writeFileSync(opencodeConfig, '{"provider":"two"}');
+  assert.notEqual(runnerEnvironment(opencodeArgs), firstOpenCode);
+
+  const oauthArgs = parseArgs([
+    "--runner", "pi",
+    "--env", "PI_AUTH_MODE=oauth",
+    "--env", "PI_PROVIDER=deepseek",
+  ]);
+  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*missing/);
+  writeFileSync(
+    path.join(registryDir, "auth.json"),
+    '{"deepseek":{"type":"api_key","key":"first-secret"}}',
+  );
+  const firstOauth = runnerEnvironment(oauthArgs);
+  assert.match(firstOauth, /PI_AUTH_JSON.*sha256:/);
+  assert.doesNotMatch(firstOauth, /first-secret/);
+  assert.equal(
+    writeReport(oauthArgs, [], [holdoutSpec("pi-oauth-private", false)])
+      .privateEnvironment,
+    false,
+  );
+  writeFileSync(
+    path.join(registryDir, "auth.json"),
+    '{"deepseek":{"type":"api_key","key":"second-secret"}}',
+  );
+  assert.notEqual(runnerEnvironment(oauthArgs), firstOauth);
+
+  writeFileSync(
+    registry,
+    '{"providers":{"deepseek":{"apiKey":"$DEEPSEEK_TOKEN"}}}',
+  );
+  const envOauthArgs = parseArgs([
+    "--runner", "pi",
+    "--env", "PI_AUTH_MODE=oauth",
+    "--env", "PI_PROVIDER=deepseek",
+    "--env", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_TOKEN",
+    "--env", "DEEPSEEK_TOKEN=env-secret",
+  ]);
+  assert.doesNotMatch(runnerEnvironment(envOauthArgs), /PI_AUTH_JSON/);
+});
+
 test("parseArgs: --concurrency defaults to 4", () => {
   assert.equal(parseArgs([]).concurrency, 4);
+});
+
+test("isOperationalEvalError separates provider failures from malformed output", () => {
+  assert.equal(isOperationalEvalError(new RunnerOperationalError("timeout")), true);
+  assert.equal(isOperationalEvalError(new RunnerOperationalError("request failed", { cause: { code: "ECONNRESET" } })), true);
+  assert.equal(isOperationalEvalError(new Error("pi runner exited 1; likely cause: usage limit")), false);
+  assert.equal(isOperationalEvalError(new Error("invalid JSON in codex output")), false);
+  assert.equal(isOperationalEvalError(new Error("malformed critic output: unknown finding")), false);
 });
 
 test("parseArgs: --gate-class defaults to R and accepts only R|D", () => {
@@ -772,7 +1094,20 @@ test("resumeSlots: a legacy report without fixtureSetHash reuses zero draws", ()
   }
 });
 
-function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
+function resumeReport(
+  spec: FixtureSpec,
+  overrides: Partial<Report & {
+    readonly provider?: string;
+    readonly route?: string;
+    readonly runnerEnvironment?: string;
+    readonly runnerVersion?: string;
+  }>,
+): Report & {
+  readonly provider?: string;
+  readonly route?: string;
+  readonly runnerEnvironment?: string;
+  readonly runnerVersion?: string;
+} {
   return {
     promptHash: promptHash(),
     runner: "codex",
@@ -782,6 +1117,7 @@ function resumeReport(spec: FixtureSpec, overrides: Partial<Report>): Report {
     createdAt: "2026-07-13T00:00:00.000Z",
     baseline: false,
     holdout: "include",
+    runnerEnvironment: runnerEnvironment(parseArgs([])),
     fixtureSetHash: fixtureSetHash([spec]),
     scorerHash: scorerHash(),
     fixtures: [spec.id],
@@ -827,6 +1163,146 @@ test("resumeSlots: refuses a missing or mismatched scorerHash", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("resumeSlots: refuses draws from another lane identity", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-identity-resume-"));
+  const resumePath = path.join(dir, "report.json");
+  const spec = holdoutSpec("identity-resume", false);
+  writeFileSync(resumePath, JSON.stringify({
+    ...resumeReport(spec, { anticheatVersion: 2 }),
+    provider: "Provider A",
+    route: "Subscription",
+    runnerVersion: "runner 1",
+  }));
+  try {
+    const resumed = resumeSlots(
+      parseArgs([
+        "--draws", "1", "--resume", resumePath,
+        "--provider", "Provider B",
+        "--route", "Subscription",
+        "--runner-version", "runner 1",
+      ]),
+      [spec],
+      [{ spec, draw: 0 }],
+    );
+    assert.equal(resumed.skipped, 0);
+    assert.deepEqual(resumed.slots, [null]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resumeSlots: refuses draws from another effective runner environment", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-environment-resume-"));
+  const resumePath = path.join(dir, "report.json");
+  const spec = holdoutSpec("environment-resume", false);
+  const previous = {
+    provider: process.env.PI_PROVIDER,
+    authMode: process.env.PI_AUTH_MODE,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+    largePatchChars: process.env.NEEDLEFISH_LARGE_PATCH_CHARS,
+  };
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    if (previous.provider === undefined) delete process.env.PI_PROVIDER;
+    else process.env.PI_PROVIDER = previous.provider;
+    if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
+    else process.env.PI_AUTH_MODE = previous.authMode;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    if (previous.largePatchChars === undefined) delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+    else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previous.largePatchChars;
+  });
+  process.env.PI_PROVIDER = "provider-a";
+  process.env.PI_AUTH_MODE = "proxy";
+  const originalArgs = parseArgs([
+    "--runner", "pi", "--draws", "1",
+    "--provider", "Pi", "--route", "Test", "--runner-version", "pi 1",
+  ]);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(
+      resumeReport(spec, {
+        anticheatVersion: 2,
+        runner: "pi",
+        provider: "Pi",
+        route: "Test",
+        runnerVersion: "pi 1",
+        runnerEnvironment: runnerEnvironment(originalArgs),
+      }),
+    ),
+  );
+  process.env.PI_PROVIDER = "provider-b";
+  const resumed = resumeSlots(
+    parseArgs([
+      "--runner", "pi", "--draws", "1", "--resume", resumePath,
+      "--provider", "Pi", "--route", "Test", "--runner-version", "pi 1",
+    ]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(resumed.skipped, 0);
+  assert.deepEqual(resumed.slots, [null]);
+
+  delete process.env.PI_PROVIDER;
+  delete process.env.PI_AUTH_MODE;
+  const privateArgs = parseArgs([
+    "--runner", "opencode",
+    "--draws", "1",
+    "--provider", "OpenCode", "--route", "Test", "--runner-version", "opencode 1",
+    "--env", "OPENAI_API_KEY=one",
+  ]);
+  writeFileSync(
+    resumePath,
+    JSON.stringify(
+      resumeReport(spec, {
+        anticheatVersion: 2,
+        runner: "opencode",
+        provider: "OpenCode",
+        route: "Test",
+        runnerVersion: "opencode 1",
+        runnerEnvironment: runnerEnvironment(privateArgs),
+      }),
+    ),
+  );
+  const privateResume = resumeSlots(
+    parseArgs([
+      "--draws", "1",
+      "--runner", "opencode",
+      "--resume", resumePath,
+      "--provider", "OpenCode", "--route", "Test", "--runner-version", "opencode 1",
+      "--env", "OPENAI_API_KEY=one",
+    ]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(privateResume.skipped, 0);
+  assert.deepEqual(privateResume.slots, [null]);
+
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+  writeFileSync(
+    resumePath,
+    JSON.stringify(resumeReport(spec, {
+      anticheatVersion: 2,
+      provider: "Codex",
+      route: "Test",
+      runnerVersion: "codex 1",
+    })),
+  );
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+  process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "80000";
+  const pipelineResume = resumeSlots(
+    parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]),
+    [spec],
+    [{ spec, draw: 0 }],
+  );
+  assert.equal(pipelineResume.skipped, 0);
+  assert.deepEqual(pipelineResume.slots, [null]);
 });
 
 test("resumeSlots: a report from before the anti-cheat guards reuses zero draws", () => {
@@ -1681,11 +2157,45 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
   const spec = holdoutSpec("current-anticheat-resume", false);
   writeFileSync(
     resumePath,
-    JSON.stringify(resumeReport(spec, { anticheatVersion: 2 })),
+    JSON.stringify(resumeReport(spec, {
+      anticheatVersion: 2,
+      provider: "Codex",
+      route: "Test",
+      runnerVersion: "codex 1",
+    })),
   );
   try {
-    const args = parseArgs(["--draws", "1", "--resume", resumePath]);
-    const resumed = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    const unavailable = resumeSlots(
+      parseArgs(["--draws", "1", "--resume", resumePath]),
+      [spec],
+      [{ spec, draw: 0 }],
+    );
+    assert.equal(unavailable.skipped, 0);
+    const args = parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]);
+    const unresolved = resumeSlots(args, [spec], [{ spec, draw: 0 }]);
+    assert.equal(unresolved.skipped, 0);
+    writeFileSync(
+      resumePath,
+      JSON.stringify(resumeReport(spec, {
+        anticheatVersion: 2,
+        model: "test-model",
+        effort: "medium",
+        provider: "Codex",
+        route: "Test",
+        runnerVersion: "codex 1",
+        runnerEnvironment: runnerEnvironment(parseArgs([
+          "--model", "test-model", "--effort", "medium",
+        ])),
+      })),
+    );
+    const resumed = resumeSlots(parseArgs([
+      "--draws", "1", "--resume", resumePath,
+      "--model", "test-model", "--effort", "medium",
+      "--provider", "Codex", "--route", "Test", "--runner-version", "codex 1",
+    ]), [spec], [{ spec, draw: 0 }]);
     assert.equal(resumed.skipped, 1);
     assert.notEqual(resumed.slots[0], null);
   } finally {

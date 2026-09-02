@@ -5,8 +5,12 @@ import { isCompleteReport } from "./shared/report-completeness";
 import {
   hasConsistentCheatDetection,
   hasCurrentScorer,
+  runnerEnvironmentAttestationError,
+  type ReportAttestation,
 } from "./shared/report-integrity";
 import { ANTICHEAT_VERSION, type Report } from "./shared/types";
+
+type WeeklyReport = Report & ReportAttestation;
 
 // Weekly regression verdict. Built around the noise floor of this eval: with
 // ~20 positives, one fixture is ~5pp of recall and single draws flicker, so
@@ -54,7 +58,20 @@ function stableFpFixtures(report: Report): Set<string> {
   return new Set([...byFixture].filter(([, draws]) => draws.every(Boolean)).map(([id]) => id));
 }
 
-export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdict {
+function sameWeeklyLane(prev: WeeklyReport, latest: WeeklyReport): boolean {
+	if (
+		runnerEnvironmentAttestationError(prev) ||
+		runnerEnvironmentAttestationError(latest)
+	) return false;
+	const prevLane = [prev.runner, prev.model, prev.effort, prev.provider, prev.route, prev.runnerVersion, prev.runnerEnvironment, prev.privateEnvironment, prev.gateClass ?? "R"];
+	const latestLane = [latest.runner, latest.model, latest.effort, latest.provider, latest.route, latest.runnerVersion, latest.runnerEnvironment, latest.privateEnvironment, latest.gateClass ?? "R"];
+  return prevLane.every((value, index) => value === latestLane[index]);
+}
+
+export function compareWeekly(
+  prev: WeeklyReport | null,
+  latest: WeeklyReport,
+): WeeklyVerdict {
   const reasons: string[] = [];
 
   if (latest.aggregates.cheatDetectedCount > 0) {
@@ -76,12 +93,14 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
   // widened type — the schema says number, the disk may disagree.
   const latestCheatCount: number | undefined =
     latest.aggregates.cheatDetectedCount;
+  const latestEnvironmentError = runnerEnvironmentAttestationError(latest);
   if (
     latest.anticheatVersion !== ANTICHEAT_VERSION ||
     !hasCurrentScorer(latest) ||
     typeof latestCheatCount !== "number" ||
     latestCheatCount !== 0 ||
-    !hasConsistentCheatDetection(latest)
+    !hasConsistentCheatDetection(latest) ||
+    latestEnvironmentError !== null
   ) {
     // Not proven void (unlike CHEAT), but unguarded: the current generation's
     // detection never covered (or never recorded) these draws, so no metric
@@ -91,7 +110,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       alert: true,
       unguarded: true,
       reasons: [
-        `latest report anti-cheat generation is ${latest.anticheatVersion ?? "none"} (current is ${ANTICHEAT_VERSION}), scorerHash is ${latest.scorerHash ?? "none"}, or its cheatDetectedCount is missing or invalid — metrics withheld; re-run the weekly lane under the current guards`,
+        `latest report is unguarded or invalid (${latestEnvironmentError ?? "anti-cheat/scorer/detection metadata"}) — metrics withheld; re-run the weekly lane under the current guards`,
       ],
     };
   }
@@ -122,6 +141,7 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
 
   if (prev) {
     if (
+      !sameWeeklyLane(prev, latest) ||
       prev.promptHash !== latest.promptHash ||
       !prev.fixtureSetHash ||
       !latest.fixtureSetHash ||
@@ -140,9 +160,9 @@ export function compareWeekly(prev: Report | null, latest: Report): WeeklyVerdic
       prev.aggregates.cheatDetectedCount < 0 ||
       Number.isNaN(prev.aggregates.cheatDetectedCount)
     ) {
-      // Different prompt, fixture set, or guard generation: week-over-week
+      // Different lane, prompt, fixture set, or guard generation: week-over-week
       // deltas are meaningless.
-      return { alert: reasons.length > 0, reasons: [...reasons, "note: prompt/fixture set/anti-cheat generation/scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
+      return { alert: reasons.length > 0, reasons: [...reasons, "note: attested lane, prompt/fixture set, anti-cheat generation, or scorer changed since last week (or previous cheatDetectedCount is missing/invalid); skipping regression comparison"] };
     }
     if (prev.aggregates.cheatDetectedCount > 0) {
       // A fired trap voids the whole report — void numbers must not produce
@@ -190,11 +210,13 @@ function main(): void {
     process.stderr.write("usage: weekly-compare.ts <latest.json> [prev.json]\n");
     process.exit(1);
   }
-  let latest: Report;
-  let prev: Report | null;
+  let latest: WeeklyReport;
+  let prev: WeeklyReport | null;
   try {
-    latest = JSON.parse(readFileSync(latestPath, "utf8")) as Report;
-    prev = prevPath ? (JSON.parse(readFileSync(prevPath, "utf8")) as Report) : null;
+    latest = JSON.parse(readFileSync(latestPath, "utf8")) as WeeklyReport;
+    prev = prevPath
+      ? (JSON.parse(readFileSync(prevPath, "utf8")) as WeeklyReport)
+      : null;
   } catch (error) {
     process.stderr.write(`weekly-compare: could not read report: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exit(1);

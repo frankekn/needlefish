@@ -1,0 +1,115 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "pi",
+  "model": "gpt-5.5",
+  "effort": "max",
+  "provider": "CLIProxyAPI",
+  "route": "Authenticated local subscription proxy",
+  "runnerVersion": "Pi 0.84.4",
+  "draws": 1,
+  "createdAt": "2026-08-31T18:24:19.671Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "D",
+  "results": [
+    {
+      "fixtureId": "holdout-error-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "holdout-error-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 62469,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/settings.ts",
+          "lineStart": 14,
+          "lineEnd": 15,
+          "title": "Propagate invalid settings instead of saving defaults",
+          "whyItBreaks": "The new catch block converts JSON.parse failures and schema validation errors into DEFAULTS. updateFontSize consumes parseSettings and always saves the returned object, so malformed or invalid stored settings now get overwritten with {theme:\"light\", fontSize:size}; previously the parse/validation error propagated and prevented the save."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "swallow|silent|catch|default|mask|overwrit|lose|lost|corrupt|persist",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "swallow|silent|catch|default|mask|overwrit|lose|lost|corrupt|persist",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 62469,
+    "recallByFixture": {
+      "holdout-error-swallow": 1
+    },
+    "mustFindHitRateByFixture": {
+      "holdout-error-swallow": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "6b54c9f392a2c6e02f787408eec4a2714718f4df",
+  "fixtureSetHash": "a4987b51c15bcd20",
+  "scorerHash": "8f0afd4d8ea1f5a5",
+  "fixtureTiers": {
+    "holdout-error-swallow": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "holdout-error-swallow"
+  ],
+  "fixtureKinds": {
+    "holdout-error-swallow": "positive"
+  }
+}

@@ -679,13 +679,18 @@ test("runCodex ephemeral HOME: opencode stages custom XDG auth roots into dispos
 	assert.equal(existsSync(dump.home), false, "disposable XDG roots must be removed");
 });
 
-test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", (t) => {
+test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
 	const previous = {
 		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
 		home: process.env.HOME,
 		provider: process.env.PI_PROVIDER,
+		authMode: process.env.PI_AUTH_MODE,
+		passthrough: process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH,
+		deepseekKey: process.env.DEEPSEEK_API_KEY,
+		customKey: process.env.CUSTOM_PROVIDER_TOKEN,
+		unrelatedKey: process.env.UNRELATED_API_KEY,
 	};
 	t.after(() => {
 		if (previous.ephemeral === undefined)
@@ -694,25 +699,49 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 		process.env.HOME = previous.home;
 		if (previous.provider === undefined) delete process.env.PI_PROVIDER;
 		else process.env.PI_PROVIDER = previous.provider;
+		if (previous.authMode === undefined) delete process.env.PI_AUTH_MODE;
+		else process.env.PI_AUTH_MODE = previous.authMode;
+		if (previous.passthrough === undefined)
+			delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+		else process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = previous.passthrough;
+		if (previous.deepseekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+		else process.env.DEEPSEEK_API_KEY = previous.deepseekKey;
+		if (previous.customKey === undefined) delete process.env.CUSTOM_PROVIDER_TOKEN;
+		else process.env.CUSTOM_PROVIDER_TOKEN = previous.customKey;
+		if (previous.unrelatedKey === undefined) delete process.env.UNRELATED_API_KEY;
+		else process.env.UNRELATED_API_KEY = previous.unrelatedKey;
 		rmSync(tmp, { recursive: true, force: true });
 		rmSync(fakeHome, { recursive: true, force: true });
 	});
 	process.env.HOME = fakeHome;
 	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	delete process.env.DEEPSEEK_API_KEY;
+	delete process.env.UNRELATED_API_KEY;
 	mkdirSync(path.join(fakeHome, ".pi", "agent"), { recursive: true });
 	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
 	// No auth.json planted.
 
 	// Default provider (openai-codex OAuth) still demands auth.json.
 	delete process.env.PI_PROVIDER;
+	delete process.env.PI_AUTH_MODE;
 	assert.throws(
 		() => prepareEphemeralHome("pi", tmp),
 		/required auth source is missing: .*auth\.json/,
+	);
+	// Existing non-default providers remain proxy routes unless OAuth is explicit.
+	process.env.PI_PROVIDER = "zai";
+	delete process.env.PI_AUTH_MODE;
+	const legacyProxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(legacyProxyHome!, ".pi", "agent", "auth.json")),
+		false,
 	);
 
 	// Explicit proxy provider: credentials live in the proxy; the registry
 	// alone suffices.
 	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
 	const home = prepareEphemeralHome("pi", tmp);
 	assert.ok(home);
 	assert.ok(
@@ -724,8 +753,99 @@ test("prepareEphemeralHome: pi proxy provider needs models.json but not OAuth", 
 		false,
 		"absent OAuth file must not be fabricated",
 	);
+	process.env.PI_PROVIDER = "zai";
+	process.env.PI_AUTH_MODE = "oauth";
+	assert.throws(
+		() => prepareEphemeralHome("pi", tmp),
+		/required auth source is missing: .*auth\.json/,
+	);
+	// A key for the selected provider is sufficient even when the route keeps
+	// the explicit oauth label; the shared OAuth store must stay out.
+	process.env.PI_PROVIDER = "deepseek";
+	process.env.PI_AUTH_MODE = "oauth";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "DEEPSEEK_API_KEY";
+	process.env.DEEPSEEK_API_KEY = "deepseek-test";
+	const keyTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(keyTmp, { recursive: true, force: true }));
+	const keyHome = prepareEphemeralHome("pi", keyTmp);
+	assert.ok(existsSync(path.join(keyHome!, ".pi", "agent", "models.json")));
+	assert.equal(existsSync(path.join(keyHome!, ".pi", "agent", "auth.json")), false);
+
+	// A custom provider may declare a non-derived API-key variable in models.json.
+	writeFileSync(
+		path.join(fakeHome, ".pi", "agent", "models.json"),
+		'{"providers":{"custom":{"apiKey":"CUSTOM_PROVIDER_TOKEN"}}}',
+	);
+	process.env.PI_PROVIDER = "custom";
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CUSTOM_PROVIDER_TOKEN";
+	process.env.CUSTOM_PROVIDER_TOKEN = "custom-test";
+	const customTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(customTmp, { recursive: true, force: true }));
+	const customHome = prepareEphemeralHome("pi", customTmp);
+	assert.equal(existsSync(path.join(customHome!, ".pi", "agent", "auth.json")), false);
+	delete process.env.CUSTOM_PROVIDER_TOKEN;
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{");
+	assert.throws(
+		() => prepareEphemeralHome("pi", customTmp),
+		/Pi provider registry is malformed/,
+	);
+	writeFileSync(path.join(fakeHome, ".pi", "agent", "models.json"), "{}");
+
+	// An unrelated forwarded key cannot suppress the selected provider's OAuth.
+	delete process.env.DEEPSEEK_API_KEY;
+	process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "UNRELATED_API_KEY";
+	process.env.UNRELATED_API_KEY = "unrelated-test";
+	const unrelatedTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(unrelatedTmp, { recursive: true, force: true }));
+	assert.throws(
+		() => prepareEphemeralHome("pi", unrelatedTmp),
+		/required auth source is missing: .*auth\.json/,
+	);
+	delete process.env.UNRELATED_API_KEY;
+	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
+	writeFileSync(
+		path.join(fakeHome, ".pi", "agent", "auth.json"),
+		'{"zai":{"token":"selected"},"other":{"token":"unrelated"}}',
+	);
+	delete process.env.PI_PROVIDER;
+	process.env.PI_AUTH_MODE = "proxy";
+	const defaultProxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(defaultProxyHome!, ".pi", "agent", "auth.json")),
+		false,
+		"explicit proxy mode must override the default provider's OAuth staging",
+	);
+	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
+	const proxyHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		existsSync(path.join(proxyHome!, ".pi", "agent", "auth.json")),
+		false,
+	);
+
+	// Authenticated non-proxy providers still receive the disposable credential copy.
+	process.env.PI_PROVIDER = "zai";
+	process.env.PI_AUTH_MODE = "oauth";
+	const authenticatedHome = prepareEphemeralHome("pi", tmp);
+	assert.equal(
+		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
+		'{"zai":{"token":"selected"}}\n',
+	);
+
+	// Proxy classification is explicit and does not depend on the provider ID.
+	process.env.PI_PROVIDER = "qwen-dgx";
+	process.env.PI_AUTH_MODE = "proxy";
+	const namedProxyTmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	t.after(() => rmSync(namedProxyTmp, { recursive: true, force: true }));
+	const namedProxyHome = prepareEphemeralHome("pi", namedProxyTmp);
+	assert.equal(
+		existsSync(path.join(namedProxyHome!, ".pi", "agent", "auth.json")),
+		false,
+	);
 
 	// Proxy provider with the registry itself missing stays fail-closed.
+	process.env.PI_PROVIDER = "cliproxy";
+	process.env.PI_AUTH_MODE = "proxy";
 	rmSync(path.join(fakeHome, ".pi", "agent", "models.json"));
 	const tmp2 = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	t.after(() => rmSync(tmp2, { recursive: true, force: true }));
