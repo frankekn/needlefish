@@ -803,7 +803,10 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	);
 	delete process.env.UNRELATED_API_KEY;
 	delete process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH;
-	writeFileSync(path.join(fakeHome, ".pi", "agent", "auth.json"), '{"token":"x"}');
+	writeFileSync(
+		path.join(fakeHome, ".pi", "agent", "auth.json"),
+		'{"zai":{"token":"selected"},"other":{"token":"unrelated"}}',
+	);
 	delete process.env.PI_PROVIDER;
 	process.env.PI_AUTH_MODE = "proxy";
 	const defaultProxyHome = prepareEphemeralHome("pi", tmp);
@@ -826,7 +829,7 @@ test("prepareEphemeralHome: pi proxy provider excludes OAuth credentials", (t) =
 	const authenticatedHome = prepareEphemeralHome("pi", tmp);
 	assert.equal(
 		readFileSync(path.join(authenticatedHome!, ".pi", "agent", "auth.json"), "utf8"),
-		'{"token":"x"}',
+		'{"zai":{"token":"selected"}}\n',
 	);
 
 	// Proxy classification is explicit and does not depend on the provider ID.

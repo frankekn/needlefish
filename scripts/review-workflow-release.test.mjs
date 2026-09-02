@@ -238,7 +238,11 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
   assert.match(workflow, /conclusion="failure"/);
 	assert.match(
 		workflow,
-		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref main -f pr_number="\$PR_NUM"/,
+		/default_branch=\$\(gh api "repos\/\$REPO" --jq \.default_branch\)/,
+	);
+	assert.match(
+		workflow,
+		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref "\$default_branch" -f pr_number="\$PR_NUM"/,
 	);
 	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
 });

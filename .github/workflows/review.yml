@@ -385,7 +385,12 @@ jobs:
             exit 1
           fi
           dispatch_error=""
-          if ! dispatch_error=$(gh workflow run "$workflow_file" --repo "$REPO" --ref main -f pr_number="$PR_NUM" 2>&1); then
+          default_branch=$(gh api "repos/$REPO" --jq .default_branch)
+          if [ -z "$default_branch" ]; then
+            echo "::error::repository default branch is unavailable"
+            exit 1
+          fi
+          if ! dispatch_error=$(gh workflow run "$workflow_file" --repo "$REPO" --ref "$default_branch" -f pr_number="$PR_NUM" 2>&1); then
             report_retry_required "Could not dispatch $workflow_file with pr_number. The caller must grant actions: write and declare workflow_dispatch.inputs.pr_number. GitHub reported: $dispatch_error"
             exit 0
           fi

@@ -477,7 +477,23 @@ export function prepareEphemeralHome(
 		// this only stops default-path resolution; a same-uid child that
 		// hunts absolute paths can still read the real HOME. Detection of
 		// that behavior is G3's job (bait + canary), not G1's.
-		copyFileSync(src, dest);
+		if (runner === "pi" && rel === ".pi/agent/auth.json") {
+			const provider = process.env.PI_PROVIDER ?? "openai-codex";
+			let auth: unknown;
+			try {
+				auth = JSON.parse(readFileSync(src, "utf8"));
+			} catch {
+				throw new Error(`Pi auth store is malformed: ${src}`);
+			}
+			if (!isRecord(auth) || !Object.hasOwn(auth, provider)) {
+				throw new Error(`Pi auth store has no entry for provider ${provider}`);
+			}
+			writeFileSync(dest, `${JSON.stringify({ [provider]: auth[provider] })}\n`, {
+				mode: 0o600,
+			});
+		} else {
+			copyFileSync(src, dest);
+		}
 	}
 	return home;
 }
@@ -525,7 +541,12 @@ export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
 ): Promise<string> {
-	const runner = resolveRunner(opts);
+	let runner: RunnerName;
+	try {
+		runner = resolveRunner(opts);
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
@@ -566,7 +587,12 @@ export async function runCodex(
 			}
 			lastErr = err;
 			if (attempt < maxAttempts) {
-				const backoff = retryMsFor(runner);
+				let backoff: number;
+				try {
+					backoff = retryMsFor(runner);
+				} catch (error) {
+					throw asRunnerOperationalError(error);
+				}
 				await new Promise<void>((resolve) => setTimeout(resolve, backoff));
 			}
 		}
@@ -582,7 +608,12 @@ async function runCodexOnce(
 	runnerAttempt: number,
 ): Promise<string> {
 	const model = resolveModel(opts, runner);
-	const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+	let timeoutMs: number;
+	try {
+		timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 	if (runner === "openai") {
 		return runOpenAIDirect(prompt, model, timeoutMs, (raw) =>
 			opts.onRaw?.(raw, runnerAttempt),

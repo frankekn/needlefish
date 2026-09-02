@@ -279,7 +279,7 @@ async function runOne(
 		loaded.cleanup();
 	}
 	const durationMs = Date.now() - start;
-	if (result !== null && hasFailedDeepPass(traceEvents)) {
+	if (hasFailedDeepPass(traceEvents)) {
 		operationalFailure = "deep review pass failed";
 	}
 	const stats = result?.stats;
