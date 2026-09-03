@@ -664,6 +664,7 @@ const RUNNER_PUBLIC_INVOCATION_ENV: Record<RunnerName, readonly string[]> = {
 	codex: [
 		"CODEX_BIN",
 		"CODEX_MODEL",
+		"NEEDLEFISH_CODEX_PROXY_REQUIRED",
 		"CODEX_REASONING_EFFORT",
 		"CODEX_RETRY_MS",
 		"CODEX_SERVICE_TIER",
@@ -690,6 +691,7 @@ const PATH_INVOCATION_ENV = new Set([
 ]);
 const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
 	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+	codex: ["CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY"],
 	opencode: ["OPENAI_API_KEY", "XDG_CONFIG_HOME", "XDG_DATA_HOME"],
 	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
 	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
@@ -850,6 +852,25 @@ function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
 		const publicValue = publicInvocationEnvValue(key, value);
 		return publicValue === null || publicValue === "<redacted>";
 	});
+}
+
+export function validateProviderRouteAttestation(args: RunArgs): void {
+	if (args.provider?.trim().toLowerCase() !== "cliproxyapi") return;
+	if (args.runner !== "codex") {
+		throw new Error("CLIProxyAPI eval attestation requires --runner codex");
+	}
+	const env = { ...process.env, ...args.env };
+	if (env.NEEDLEFISH_CODEX_PROXY_REQUIRED !== "1") {
+		throw new Error(
+			"CLIProxyAPI eval attestation requires NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
+		);
+	}
+	if (!env.CODEX_PROXY_BASE_URL?.trim()) {
+		throw new Error("CLIProxyAPI eval attestation requires CODEX_PROXY_BASE_URL");
+	}
+	if (!env.CODEX_PROXY_API_KEY?.trim()) {
+		throw new Error("CLIProxyAPI eval attestation requires CODEX_PROXY_API_KEY");
+	}
 }
 
 function reportInvocation(
@@ -1402,6 +1423,7 @@ export function cheatAlert(report: Report): void {
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
+	validateProviderRouteAttestation(args);
 	// Eval-integrity guards, applied once here (not per-draw) alongside user
 	// --env overrides, and restored in finally. A user `--env KEY=...` wins.
 	// - NEEDLEFISH_EVAL_TRACE: critic prune-error trace.

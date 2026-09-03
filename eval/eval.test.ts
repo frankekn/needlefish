@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, writeReport } from "./run";
+import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, validateProviderRouteAttestation, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
@@ -443,6 +443,59 @@ test("parseArgs: rejects malformed --env values", () => {
   assert.throws(() => parseArgs(["--env"]), /--env requires KEY=VALUE/);
   assert.throws(() => parseArgs(["--env", "NOEQUALS"]), /--env requires KEY=VALUE, got: NOEQUALS/);
   assert.throws(() => parseArgs(["--env", "=value"]), /--env requires KEY=VALUE, got: =value/);
+});
+
+test("CLIProxyAPI eval attestation fails closed and records only route requirements", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-cliproxyapi-attestation-"));
+  const keys = [
+    "CODEX_PROXY_BASE_URL",
+    "CODEX_PROXY_API_KEY",
+    "NEEDLEFISH_CODEX_PROXY_REQUIRED",
+  ] as const;
+  const previous = new Map(keys.map((key) => [key, process.env[key]] as const));
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  for (const key of keys) delete process.env[key];
+
+  const attested = parseArgs([
+    "--runner", "codex",
+    "--provider", "CLIProxyAPI",
+    "--route", "Private managed proxy",
+    "--runner-version", "Codex CLI 0.153.0",
+    "--report", path.join(dir, "report.json"),
+    "--env", "NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
+    "--env", "CODEX_PROXY_BASE_URL=https://private.invalid/v1",
+    "--env", "CODEX_PROXY_API_KEY=proxy-secret-test-key",
+  ]);
+  assert.doesNotThrow(() => validateProviderRouteAttestation(attested));
+  const environment = runnerEnvironment(attested);
+  assert.match(environment, /CODEX_PROXY_API_KEY.*<required>/);
+  assert.match(environment, /CODEX_PROXY_BASE_URL.*<required>/);
+  assert.match(environment, /NEEDLEFISH_CODEX_PROXY_REQUIRED.*1/);
+  assert.doesNotMatch(environment, /private\.invalid|proxy-secret-test-key/);
+  const report = writeReport(attested, [], [holdoutSpec("cliproxyapi-attestation", false)]);
+  assert.match(report.invocation, /NEEDLEFISH_CODEX_PROXY_REQUIRED=1/);
+  assert.doesNotMatch(report.invocation, /CODEX_PROXY_(?:BASE_URL|API_KEY)|private\.invalid|proxy-secret-test-key/);
+
+  for (const env of [
+    [],
+    ["--env", "NEEDLEFISH_CODEX_PROXY_REQUIRED=1"],
+    ["--env", "NEEDLEFISH_CODEX_PROXY_REQUIRED=1", "--env", "CODEX_PROXY_BASE_URL=https://private.invalid/v1"],
+  ]) {
+    const incomplete = parseArgs([
+      "--runner", "codex",
+      "--provider", "CLIProxyAPI",
+      "--route", "Private managed proxy",
+      "--runner-version", "Codex CLI 0.153.0",
+      ...env,
+    ]);
+    assert.throws(() => validateProviderRouteAttestation(incomplete), /CLIProxyAPI eval attestation requires/);
+  }
 });
 
 test("writeReport: records a complete operator attestation", (t) => {
