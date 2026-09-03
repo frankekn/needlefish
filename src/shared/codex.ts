@@ -84,6 +84,7 @@ const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
 	codex: [
 		"CODEX_BIN",
 		"CODEX_MODEL",
+		"CODEX_PROXY_API_KEY",
 		"CODEX_REASONING_EFFORT",
 		"CODEX_RETRY_MS",
 		"CODEX_TIMEOUT_MS",
@@ -208,6 +209,10 @@ function hasOpenCodeEnvCredential(): boolean {
 	return !!process.env.OPENAI_API_KEY || hasPassthroughApiKeyCredential();
 }
 
+function hasCodexProxyEnvCredential(): boolean {
+	return !!process.env.CODEX_PROXY_BASE_URL?.trim() && !!process.env.CODEX_PROXY_API_KEY;
+}
+
 export function hasPiProviderEnvCredential(
 	provider: string,
 	env: RunnerEnvironment = process.env,
@@ -301,6 +306,12 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly optional: readonly string[];
 } {
 	if (runner === "codex") {
+		if (hasCodexProxyEnvCredential()) {
+			return {
+				required: [],
+				optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.codex,
+			};
+		}
 		// CODEX_API_KEY through the passthrough authenticates without auth.json.
 		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
 			return {
@@ -535,6 +546,32 @@ interface RunnerInvocation {
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
+	readonly codexProxy: CodexProxyConfig | undefined;
+}
+
+interface CodexProxyConfig {
+	readonly baseUrl: string;
+}
+
+function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
+	const rawBaseUrl = process.env.CODEX_PROXY_BASE_URL;
+	const rawApiKey = process.env.CODEX_PROXY_API_KEY;
+	const required = envFlagOn("NEEDLEFISH_CODEX_PROXY_REQUIRED");
+	const configured = rawBaseUrl !== undefined || rawApiKey !== undefined;
+	if (!required && !configured) return undefined;
+
+	const baseUrl = rawBaseUrl?.trim();
+	if (!baseUrl) {
+		throw new Error(
+			"CODEX_PROXY_BASE_URL is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
+		);
+	}
+	if (!rawApiKey) {
+		throw new Error(
+			"CODEX_PROXY_API_KEY is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
+		);
+	}
+	return { baseUrl };
 }
 
 export async function runCodex(
@@ -542,8 +579,10 @@ export async function runCodex(
 	opts: CodexOptions,
 ): Promise<string> {
 	let runner: RunnerName;
+	let codexProxy: CodexProxyConfig | undefined;
 	try {
 		runner = resolveRunner(opts);
+		codexProxy = runner === "codex" ? resolveCodexProxyConfig() : undefined;
 	} catch (error) {
 		throw asRunnerOperationalError(error);
 	}
@@ -566,7 +605,7 @@ export async function runCodex(
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		attempts = attempt;
 		try {
-			const out = await runCodexOnce(prompt, opts, runner, attempt);
+			const out = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
 			emitStat(true);
 			return out;
 		} catch (err) {
@@ -606,6 +645,7 @@ async function runCodexOnce(
 	opts: CodexOptions,
 	runner: RunnerName,
 	runnerAttempt: number,
+	codexProxy: CodexProxyConfig | undefined,
 ): Promise<string> {
 	const model = resolveModel(opts, runner);
 	let timeoutMs: number;
@@ -654,6 +694,7 @@ async function runCodexOnce(
 						timeoutMs,
 						env,
 						tmp,
+						codexProxy,
 					},
 				};
 			} catch (error) {
@@ -921,7 +962,9 @@ async function runCodexCli(
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
 	const reasoningEffort = resolveCodexReasoningEffort();
-	const serviceTier = resolveCodexServiceTier();
+	const serviceTier = invocation.codexProxy
+		? undefined
+		: resolveCodexServiceTier();
 	const args = [
 		"exec",
 		"--color",
@@ -935,6 +978,23 @@ async function runCodexCli(
 		"--output-last-message",
 		lastMsg,
 	];
+	if (invocation.codexProxy) {
+		const provider = "model_providers.cliproxyapi";
+		args.push(
+			"-c",
+			'model_provider="cliproxyapi"',
+			"-c",
+			`${provider}.name="CLIProxyAPI"`,
+			"-c",
+			`${provider}.base_url=${JSON.stringify(invocation.codexProxy.baseUrl)}`,
+			"-c",
+			`${provider}.env_key="CODEX_PROXY_API_KEY"`,
+			"-c",
+			`${provider}.wire_api="responses"`,
+			"-c",
+			`${provider}.requires_openai_auth=false`,
+		);
+	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
 	if (invocation.reasoningEffort)

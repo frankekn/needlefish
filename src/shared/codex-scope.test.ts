@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -50,14 +50,20 @@ test("runCodex hides dirty target files from codex runner", async (t) => {
   assert.equal(args.includes('model_reasoning_effort="medium"'), true);
 });
 
-function setupCodexStub(t: TestContext): { repo: string; argsPath: string } {
+function setupCodexStub(t: TestContext): { repo: string; argsPath: string; envPath: string } {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const argsPath = path.join(tmp, "args.json");
+  const envPath = path.join(tmp, "env.json");
   const previousBin = process.env.CODEX_BIN;
   const previousServiceTier = process.env.CODEX_SERVICE_TIER;
   const previousNoRetry = process.env.NEEDLEFISH_NO_RETRY;
+  const previousProxy = {
+    baseUrl: process.env.CODEX_PROXY_BASE_URL,
+    key: process.env.CODEX_PROXY_API_KEY,
+    required: process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED,
+  };
   t.after(() => {
     if (previousBin === undefined) delete process.env.CODEX_BIN;
     else process.env.CODEX_BIN = previousBin;
@@ -65,6 +71,12 @@ function setupCodexStub(t: TestContext): { repo: string; argsPath: string } {
     else process.env.CODEX_SERVICE_TIER = previousServiceTier;
     if (previousNoRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
     else process.env.NEEDLEFISH_NO_RETRY = previousNoRetry;
+    if (previousProxy.baseUrl === undefined) delete process.env.CODEX_PROXY_BASE_URL;
+    else process.env.CODEX_PROXY_BASE_URL = previousProxy.baseUrl;
+    if (previousProxy.key === undefined) delete process.env.CODEX_PROXY_API_KEY;
+    else process.env.CODEX_PROXY_API_KEY = previousProxy.key;
+    if (previousProxy.required === undefined) delete process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED;
+    else process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = previousProxy.required;
     rmSync(tmp, { recursive: true, force: true });
   });
   writeFileSync(
@@ -74,6 +86,7 @@ function setupCodexStub(t: TestContext): { repo: string; argsPath: string } {
       "const fs = require('node:fs');",
       "const args = process.argv.slice(2);",
       `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
+      `fs.writeFileSync(${JSON.stringify(envPath)}, JSON.stringify({ key: process.env.CODEX_PROXY_API_KEY ?? null, baseUrl: process.env.CODEX_PROXY_BASE_URL ?? null, required: process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED ?? null }));`,
       "const out = args[args.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, 'ok');",
     ].join("\n")
@@ -81,7 +94,10 @@ function setupCodexStub(t: TestContext): { repo: string; argsPath: string } {
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
   delete process.env.CODEX_SERVICE_TIER;
-  return { repo, argsPath };
+  delete process.env.CODEX_PROXY_BASE_URL;
+  delete process.env.CODEX_PROXY_API_KEY;
+  delete process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED;
+  return { repo, argsPath, envPath };
 }
 
 function runStubbedCodex(repo: string): Promise<string> {
@@ -126,4 +142,62 @@ test("runCodex rejects an invalid CODEX_SERVICE_TIER", async (t) => {
   await assert.rejects(runStubbedCodex(repo), {
     message: "CODEX_SERVICE_TIER must be one of: fast, priority",
   });
+});
+
+test("runCodex configures the fail-closed CLIProxyAPI provider without putting its key in argv", async (t) => {
+  const { repo, argsPath, envPath } = setupCodexStub(t);
+  process.env.CODEX_PROXY_BASE_URL = "http://127.0.0.1:8317/v1";
+  process.env.CODEX_PROXY_API_KEY = "proxy-secret-test-key";
+  process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = "1";
+  process.env.CODEX_SERVICE_TIER = "fast";
+
+  await runStubbedCodex(repo);
+
+  const args = readStringArray(argsPath);
+  assert.equal(args.includes("--ignore-user-config"), true);
+  for (const override of [
+    'model_provider="cliproxyapi"',
+    'model_providers.cliproxyapi.name="CLIProxyAPI"',
+    'model_providers.cliproxyapi.base_url="http://127.0.0.1:8317/v1"',
+    'model_providers.cliproxyapi.env_key="CODEX_PROXY_API_KEY"',
+    'model_providers.cliproxyapi.wire_api="responses"',
+    "model_providers.cliproxyapi.requires_openai_auth=false",
+  ]) {
+    const index = args.indexOf(override);
+    assert.notEqual(index, -1, `missing Codex config override: ${override}`);
+    assert.equal(args[index - 1], "-c");
+  }
+  assert.equal(JSON.stringify(args).includes("proxy-secret-test-key"), false);
+  assert.equal(args.some((arg) => arg.includes("service_tier")), false);
+  assert.deepEqual(JSON.parse(readFileSync(envPath, "utf8")), {
+    key: "proxy-secret-test-key",
+    baseUrl: null,
+    required: null,
+  });
+});
+
+test("runCodex fails closed before invocation when the required proxy configuration is incomplete", async (t) => {
+  const { repo, argsPath } = setupCodexStub(t);
+  process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = "1";
+
+  await assert.rejects(runStubbedCodex(repo), {
+    name: "RunnerOperationalError",
+    message: /CODEX_PROXY_BASE_URL is required/,
+  });
+  assert.equal(existsSync(argsPath), false);
+
+  process.env.CODEX_PROXY_BASE_URL = "http://127.0.0.1:8317/v1";
+  await assert.rejects(runStubbedCodex(repo), {
+    name: "RunnerOperationalError",
+    message: /CODEX_PROXY_API_KEY is required/,
+  });
+  assert.equal(existsSync(argsPath), false);
+});
+
+test("runCodex treats partial optional proxy configuration as an error instead of falling back to OAuth", async (t) => {
+  const { repo, argsPath } = setupCodexStub(t);
+  process.env.CODEX_PROXY_API_KEY = "proxy-secret-test-key";
+
+  await assert.rejects(runStubbedCodex(repo), /CODEX_PROXY_BASE_URL is required/);
+  assert.equal(existsSync(argsPath), false);
 });
