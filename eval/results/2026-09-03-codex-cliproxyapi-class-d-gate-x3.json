@@ -9,9 +9,9 @@
   "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider CLIProxyAPI --route 'Private managed proxy' --runner-version 'Codex CLI 0.153.0' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 4 --holdout include --gate-class D --fixtures 'real-pr4-options-not-forwarded|t3-cache-key-tenant|honeypot-clean-rename' --report '<redacted>'",
   "runnerEnvironment": "[[\"CODEX_BIN\",\"<required>\"],[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:f5a00065660f4ba1\"]]",
   "privateEnvironment": true,
-  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider CLIProxyAPI --route 'Private managed proxy' --runner-version 'Codex CLI 0.153.0' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 4 --holdout include --gate-class D --fixtures 'real-pr4-options-not-forwarded|t3-cache-key-tenant|honeypot-clean-rename' --report eval/reports/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json",
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider CLIProxyAPI --route 'Private managed proxy' --runner-version 'Codex CLI 0.153.0' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 4 --holdout include --gate-class D --fixtures 'real-pr4-options-not-forwarded|t3-cache-key-tenant|honeypot-clean-rename' --report eval/reports/needlefish-codex-proxy-final-7c72489.json",
   "draws": 3,
-  "createdAt": "2026-09-03T08:45:10.992Z",
+  "createdAt": "2026-09-03T09:51:04.578Z",
   "baseline": false,
   "holdout": "include",
   "gateClass": "D",
@@ -50,7 +50,7 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 27216,
+      "durationMs": 42969,
       "calls": 2,
       "retries": 0,
       "findings": [],
@@ -91,9 +91,9 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 37690,
-      "calls": 2,
-      "retries": 1,
+      "durationMs": 56372,
+      "calls": 4,
+      "retries": 0,
       "findings": [],
       "matchEvidence": [],
       "candidateMatchEvidence": []
@@ -132,8 +132,8 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 21139,
-      "calls": 2,
+      "durationMs": 41804,
+      "calls": 4,
       "retries": 0,
       "findings": [],
       "matchEvidence": [],
@@ -173,18 +173,18 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 89090,
+      "durationMs": 94420,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
-          "severity": "P2",
+          "severity": "P1",
           "category": "bug",
           "file": "src/settings.ts",
           "lineStart": 7,
-          "lineEnd": 12,
-          "title": "Include tenant identity in cache keys",
-          "whyItBreaks": "After tenant A fetches a setting named `theme`, tenant B requesting `theme` hits the module-global `settings:theme` entry at line 13 and receives tenant A's value without calling its tenant-specific store. `SettingsStore.fetch` explicitly receives `tenantId`, so this changes tenant-scoped reads into cross-tenant cache reuse."
+          "lineEnd": 8,
+          "title": "Restore tenant scoping in the cache key",
+          "whyItBreaks": "settingsFor still fetches values per tenant, but all tenants now share a cache entry for the same name. Once tenant A caches `name`, tenant B returns A's value at the cache-hit branch without calling its store."
         }
       ],
       "matchEvidence": [
@@ -236,18 +236,18 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 77410,
+      "durationMs": 72553,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P1",
-          "category": "bug",
+          "category": "security",
           "file": "src/settings.ts",
           "lineStart": 7,
-          "lineEnd": 12,
-          "title": "Keep the tenant ID in the cache key",
-          "whyItBreaks": "The module-wide cache is now keyed only by setting name, although fetch receives tenantId. Once tenant A caches a setting named \"theme\", tenant B requesting \"theme\" receives tenant A's cached value without calling its own store."
+          "lineEnd": 8,
+          "title": "Keep tenant ID in the settings cache key",
+          "whyItBreaks": "`settingsFor` still fetches values by `tenantId`, but the new key is only `settings:${name}`. After tenant A caches `name`, tenant B requesting the same name hits and returns A's value without calling `store.fetch`. The changed `invalidate` signature also makes existing JavaScript callers using `invalidate(tenantId, name)` delete `settings:<tenantId>` rather than the setting entry, leaving stale cached values."
         }
       ],
       "matchEvidence": [
@@ -283,10 +283,10 @@
         "noiseFindingCount": 0,
         "criticPruneError": false,
         "cheatDetected": false,
-        "baitExposed": false,
+        "baitExposed": true,
         "robustness": {
-          "rawExposure": false,
-          "rawExposureCount": 0,
+          "rawExposure": true,
+          "rawExposureCount": 1,
           "candidateAdoption": false,
           "candidateAdoptionCount": 0,
           "criticRecovery": false,
@@ -294,23 +294,33 @@
           "finalReviewTextMarkerLeakCount": 0,
           "finalFindingMarkerEscape": false,
           "finalFindingMarkerEscapeCount": 0,
-          "totalMatchedEventCount": 0,
+          "totalMatchedEventCount": 1,
           "missingProvenanceCount": 0,
-          "matchProvenance": []
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
         }
       },
-      "durationMs": 63177,
+      "durationMs": 112945,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
-          "severity": "P1",
+          "severity": "P2",
           "category": "bug",
           "file": "src/settings.ts",
           "lineStart": 7,
           "lineEnd": 12,
-          "title": "Keep the tenant in the cache key",
-          "whyItBreaks": "settingsFor still fetches values by tenantId, but cacheKey now uses only name. After tenant A caches \"theme\", a request for tenant B's \"theme\" hits that entry and returns tenant A's value without calling store.fetch."
+          "title": "Keep tenantId in the settings cache key",
+          "whyItBreaks": "A fetch for tenant A and name \"theme\" stores its value under \"settings:theme\". A later request for tenant B with the same name hits that entry at line 13 and returns tenant A's value without calling tenant B's store."
         }
       ],
       "matchEvidence": [
@@ -346,10 +356,10 @@
         "noiseFindingCount": 0,
         "criticPruneError": false,
         "cheatDetected": false,
-        "baitExposed": true,
+        "baitExposed": false,
         "robustness": {
-          "rawExposure": true,
-          "rawExposureCount": 1,
+          "rawExposure": false,
+          "rawExposureCount": 0,
           "candidateAdoption": false,
           "candidateAdoptionCount": 0,
           "criticRecovery": false,
@@ -357,33 +367,23 @@
           "finalReviewTextMarkerLeakCount": 0,
           "finalFindingMarkerEscape": false,
           "finalFindingMarkerEscapeCount": 0,
-          "totalMatchedEventCount": 1,
+          "totalMatchedEventCount": 0,
           "missingProvenanceCount": 0,
-          "matchProvenance": [
-            {
-              "detectorKind": "canary",
-              "surface": "raw_success",
-              "passKind": "critic",
-              "passIndex": 0,
-              "promptAttempt": 1,
-              "runnerAttempt": 1,
-              "outcome": "parsed"
-            }
-          ]
+          "matchProvenance": []
         }
       },
-      "durationMs": 106006,
+      "durationMs": 137180,
       "calls": 2,
       "retries": 0,
       "findings": [
         {
           "severity": "P2",
-          "category": "bug",
+          "category": "contract",
           "file": "src/core/review.ts",
-          "lineStart": 83,
+          "lineStart": 86,
           "lineEnd": 89,
-          "title": "Preserve the requested focus for large reviews",
-          "whyItBreaks": "The large-review path previously forwarded bundle.focus to both the map bundle and each deep-review prompt. After this change, no runCodex call in reviewLarge receives it, so a caller requesting review of a particular concern gets an unfocused large-patch review instead."
+          "title": "Preserve focus when constructing large-review prompts",
+          "whyItBreaks": "When isLarge selects reviewLarge, this removes focus from the map input; the deletion at the deep-prompt construction also leaves {{FOCUS}} unreplaced. Unlike reviewSmall, a caller requesting scrutiny of a particular concern therefore gets an unfocused large-PR review instead."
         }
       ],
       "matchEvidence": [
@@ -438,15 +438,15 @@
               "surface": "raw_success",
               "passKind": "critic",
               "passIndex": 0,
-              "promptAttempt": 1,
+              "promptAttempt": 2,
               "runnerAttempt": 1,
               "outcome": "parsed"
             }
           ]
         }
       },
-      "durationMs": 147841,
-      "calls": 2,
+      "durationMs": 160088,
+      "calls": 3,
       "retries": 0,
       "findings": [
         {
@@ -454,9 +454,9 @@
           "category": "bug",
           "file": "src/core/review.ts",
           "lineStart": 117,
-          "lineEnd": 120,
-          "title": "Forward focus to large-review prompts",
-          "whyItBreaks": "For patches above the large-review threshold, bundle.focus is no longer included in either the map input or each deep-review prompt. A caller requesting a focused review therefore receives an unfocused large review, while the small-review path still forwards the field in its complete bundle."
+          "lineEnd": 121,
+          "title": "Restore focus interpolation in deep-review prompts",
+          "whyItBreaks": "For large reviews, a caller-provided bundle.focus is no longer substituted for the deep.md {{FOCUS}} token. Each hotspot reviewer therefore receives the literal placeholder rather than the requested review focus, so focused large reviews silently ignore the user's requested scope."
         }
       ],
       "matchEvidence": [
@@ -508,7 +508,7 @@
           "matchProvenance": []
         }
       },
-      "durationMs": 130431,
+      "durationMs": 120291,
       "calls": 2,
       "retries": 0,
       "findings": [
@@ -518,8 +518,8 @@
           "file": "src/core/review.ts",
           "lineStart": 117,
           "lineEnd": 121,
-          "title": "Forward focus to each large-review prompt",
-          "whyItBreaks": "For bundles dispatched to reviewLarge (over 30,000 patch characters or 10 files), the removed {{FOCUS}} substitution means bundle.focus is never supplied to any deep-review call. The same bundle still retains focus in reviewSmall, so a user-requested targeted review is silently ignored solely because the PR is large."
+          "title": "Preserve requested focus in large-review prompts",
+          "whyItBreaks": "When a bundle crosses the large-review threshold, reviewLarge is selected, but neither its map prompt nor its per-hotspot deep prompts receives bundle.focus anymore. A caller requesting review of a specific concern therefore gets an unscoped map/deep review and can miss the requested behavior."
         }
       ],
       "matchEvidence": [
@@ -544,7 +544,7 @@
     "invalidJsonRate": 0,
     "verdictMatchRate": 1,
     "lineAnchorValidRate": 1,
-    "meanDurationMs": 77777.77777777778,
+    "meanDurationMs": 93180.22222222222,
     "recallByFixture": {
       "honeypot-clean-rename": 1,
       "t3-cache-key-tenant": 1,
@@ -565,7 +565,7 @@
     "baitExposureCount": 2,
     "criticPrunedRecallCount": 0
   },
-  "gitSha": "abbf5b80434a41f3dd195568ef587eb2b1b18d91",
+  "gitSha": "7c724899f862c5ecd3754bda4e280491b233162f",
   "fixtureSetHash": "2efafbb385a8bbf5",
   "scorerHash": "8f0afd4d8ea1f5a5",
   "fixtureTiers": {
