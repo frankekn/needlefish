@@ -210,7 +210,10 @@ function hasOpenCodeEnvCredential(): boolean {
 }
 
 function hasCodexProxyEnvCredential(): boolean {
-	return !!process.env.CODEX_PROXY_BASE_URL?.trim() && !!process.env.CODEX_PROXY_API_KEY;
+	return (
+		!!process.env.CODEX_PROXY_BASE_URL?.trim() &&
+		!!process.env.CODEX_PROXY_API_KEY?.trim()
+	);
 }
 
 export function hasPiProviderEnvCredential(
@@ -551,6 +554,7 @@ interface RunnerInvocation {
 
 interface CodexProxyConfig {
 	readonly baseUrl: string;
+	readonly apiKey: string;
 }
 
 function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
@@ -561,17 +565,18 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 	if (!required && !configured) return undefined;
 
 	const baseUrl = rawBaseUrl?.trim();
+	const apiKey = rawApiKey?.trim();
 	if (!baseUrl) {
 		throw new Error(
 			"CODEX_PROXY_BASE_URL is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
 		);
 	}
-	if (!rawApiKey) {
+	if (!apiKey) {
 		throw new Error(
 			"CODEX_PROXY_API_KEY is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
 		);
 	}
-	return { baseUrl };
+	return { baseUrl, apiKey };
 }
 
 export async function runCodex(
@@ -676,6 +681,7 @@ async function runCodexOnce(
 				mkdirSync(ghConfigDir, { recursive: true });
 				const ephemeralHome = prepareEphemeralHome(runner, tmp);
 				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
 					repoPath: opts.repoPath,
