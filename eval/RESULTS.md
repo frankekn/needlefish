@@ -88,7 +88,7 @@ change both output quality and reliability.
 
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
-Commit `abbf5b80434a41f3dd195568ef587eb2b1b18d91` adds fail-closed Codex
+Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
 custom-provider routing for self-hosted reviews. This is Class D: the review
 pipeline and prompts are unchanged; the change only selects and authenticates
 the Codex transport before a review starts.
@@ -105,11 +105,15 @@ anti-cheat contract. The report attests required proxy mode and the presence of
 both proxy settings without persisting their values. Report:
 [`results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json`](results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json).
 
-The live rollout harness also exercised automatic rollback: an intentionally
-failed first canary restored Codex CLI 0.152.1 and verified the restored
-version before the candidate was reinstalled. The corrected exact-SHA gate
-above then passed on 0.153.0. Credentials remained in a mode-600 environment
-file and were not placed in process arguments or the persisted report.
+The final-candidate deployment first exposed a stale user-local wrapper that
+could not locate its real Codex binary inside the ephemeral HOME. The fleet
+install contract was applied to the exact executable selected by the workflow,
+then the gate above passed on 0.153.0. The rollout harness also exercised its
+automatic rollback branch with an intentional failed probe: it restored the
+last-known-good release, verified that release's metadata and executable, and
+then restored and reverified the final candidate. Credentials remained in a
+mode-600 environment file and were not placed in model-runner arguments or the
+persisted report.
 
 ### 2026-09-01 — Pi credential staging evidence and release exception
 
