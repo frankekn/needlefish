@@ -300,8 +300,9 @@ jobs:
 4. Codex fleet 固定使用 `@openai/codex@0.153.0`；以 runner service account
    安裝並確認版本：
    ```bash
-   npm install -g @openai/codex@0.153.0
-   codex --version
+   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.0
+   CODEX_BIN="$HOME/.local/bin/codex"
+   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.0"
    ```
    呼叫 reusable workflow 時傳入 `codex_proxy_base_url`、
    `codex_proxy_required: true` 與 `codex_proxy_api_key` workflow secret。

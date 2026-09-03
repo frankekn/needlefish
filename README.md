@@ -342,8 +342,9 @@ jobs:
    fleet contract is `@openai/codex@0.153.0`; install and verify that exact
    version as the runner service account:
    ```bash
-   npm install -g @openai/codex@0.153.0
-   codex --version
+   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.0
+   CODEX_BIN="$HOME/.local/bin/codex"
+   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.0"
    ```
 4. Supply Codex's proxy route to the reusable workflow with
    `codex_proxy_base_url`, `codex_proxy_required: true`, and the

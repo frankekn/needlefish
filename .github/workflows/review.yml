@@ -304,18 +304,30 @@ jobs:
             echo "PR number must be a positive integer, received '$PR_NUM'." >&2
             exit 1
           fi
-          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
-            export CODEX_BIN="$HOME/.local/bin/codex"
-          fi
-          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
-            if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
-              echo "Codex proxy base URL and API key must be supplied together." >&2
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
+            if [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
+              export CODEX_BIN="$HOME/.local/bin/codex"
+            fi
+            codex_bin="${CODEX_BIN:-codex}"
+            codex_version=$("$codex_bin" --version) || {
+              echo "Unable to run the selected Codex CLI." >&2
+              exit 1
+            }
+            if [ "$codex_version" != "codex-cli 0.153.0" ]; then
+              echo "Selected Codex CLI must be codex-cli 0.153.0; found '$codex_version'." >&2
               exit 1
             fi
-            export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"
-            export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"
+            export CODEX_BIN="$codex_bin"
+            if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
+              if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
+                echo "Codex proxy base URL and API key must be supplied together." >&2
+                exit 1
+              fi
+              export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"
+              export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"
+            fi
+            if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
           fi
-          if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
           args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
