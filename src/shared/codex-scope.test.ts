@@ -205,3 +205,14 @@ test("runCodex treats partial optional proxy configuration as an error instead o
   await assert.rejects(runStubbedCodex(repo), /CODEX_PROXY_BASE_URL is required/);
   assert.equal(existsSync(argsPath), false);
 });
+
+test("runCodex treats empty optional proxy variables as unconfigured", async (t) => {
+  const { repo, argsPath } = setupCodexStub(t);
+  process.env.CODEX_PROXY_BASE_URL = "";
+  process.env.CODEX_PROXY_API_KEY = "";
+
+  await runStubbedCodex(repo);
+
+  const args = readStringArray(argsPath);
+  assert.equal(args.some((arg) => arg.includes("model_provider")), false);
+});
