@@ -285,9 +285,9 @@ jobs:
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
-          CODEX_PROXY_BASE_URL: ${{ inputs.codex_proxy_base_url }}
-          CODEX_PROXY_API_KEY: ${{ secrets.codex_proxy_api_key }}
-          NEEDLEFISH_CODEX_PROXY_REQUIRED: ${{ inputs.codex_proxy_required && '1' || '' }}
+          CODEX_PROXY_BASE_URL_INPUT: ${{ inputs.codex_proxy_base_url }}
+          CODEX_PROXY_API_KEY_INPUT: ${{ secrets.codex_proxy_api_key }}
+          NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: ${{ inputs.codex_proxy_required && '1' || '' }}
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
           PI_PROVIDER: cliproxy
@@ -307,6 +307,9 @@ jobs:
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
             export CODEX_BIN="$HOME/.local/bin/codex"
           fi
+          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ]; then export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"; fi
+          if [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"; fi
+          if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
           args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
             case "$NEEDLEFISH_RUNNER_INPUT" in
