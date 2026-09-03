@@ -230,18 +230,49 @@ test("review gives the Terra xhigh lane a production timeout", () => {
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
 });
 
-test("review maps supplied Codex proxy values without erasing runner defaults", () => {
+test("review maps supplied Codex proxy values atomically without erasing runner defaults", (t) => {
 	assert.match(workflow, /codex_proxy_base_url:\n\s+description: Optional CLIProxyAPI base URL for Codex/);
 	assert.match(workflow, /codex_proxy_api_key:\n\s+description: CLIProxyAPI credential for Codex/);
 	assert.match(workflow, /codex_proxy_required:\n\s+description: Prohibit Codex OAuth fallback\n\s+type: boolean/);
 	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \}\}/);
 	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
-	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \]; then export CODEX_PROXY_BASE_URL="\$CODEX_PROXY_BASE_URL_INPUT"; fi/);
-	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then export CODEX_PROXY_API_KEY="\$CODEX_PROXY_API_KEY_INPUT"; fi/);
+	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
+	assert.match(reviewScript, /if \[ -z "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -z "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
+	assert.match(reviewScript, /export CODEX_PROXY_BASE_URL="\$CODEX_PROXY_BASE_URL_INPUT"/);
+	assert.match(reviewScript, /export CODEX_PROXY_API_KEY="\$CODEX_PROXY_API_KEY_INPUT"/);
 	assert.match(reviewScript, /if \[ -n "\$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" \]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="\$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi/);
 	assert.doesNotMatch(workflow, /^\s+CODEX_PROXY_(?:BASE_URL|API_KEY):/m);
 	assert.doesNotMatch(workflow, /^\s+NEEDLEFISH_CODEX_PROXY_REQUIRED:/m);
+
+	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-proxy-pair-"));
+	const binary = join(root, "needlefish");
+	const invoked = join(root, "invoked");
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	writeFileSync(binary, `#!/bin/sh\nprintf invoked > "${invoked}"\n`);
+	chmodSync(binary, 0o755);
+	const result = spawnSync("bash", ["-c", reviewScript], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			HOME: root,
+			NEEDLEFISH_BIN: binary,
+			PR_NUM: "98",
+			NEEDLEFISH_RUNNER_INPUT: "codex",
+			NEEDLEFISH_MODEL_INPUT: "gpt-5.6-terra",
+			NEEDLEFISH_TIMEOUT_MS_INPUT: "",
+			OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
+			CODEX_REASONING_EFFORT: "xhigh",
+			CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1",
+			CODEX_PROXY_API_KEY_INPUT: "",
+			CODEX_PROXY_API_KEY: "inherited-service-key",
+			NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "",
+			NEEDLEFISH_RECHECK_INPUT: "",
+		},
+	});
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /base URL and API key must be supplied together/);
+	assert.equal(existsSync(invoked), false);
 });
 
 test("reconciliation dispatch does not depend on a local checkout", () => {
