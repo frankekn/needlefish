@@ -24,8 +24,12 @@ function workflowScript(stepName) {
 	assert.ok(step, `${stepName} step must exist`);
 	const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
 	assert.ok(runBlock, `${stepName} must have a run block`);
-	return runBlock[1]
-		.split("\n")
+	const scriptLines = [];
+	for (const line of runBlock[1].split("\n")) {
+		if (line.length > 0 && !line.startsWith("          ")) break;
+		scriptLines.push(line);
+	}
+	return scriptLines
 		.map((line) => line.replace(/^          /, ""))
 		.join("\n");
 }
@@ -249,7 +253,10 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	const binary = join(root, "needlefish");
 	const invoked = join(root, "invoked");
 	t.after(() => rmSync(root, { recursive: true, force: true }));
-	writeFileSync(binary, `#!/bin/sh\nprintf invoked > "${invoked}"\n`);
+	mkdirSync(join(root, ".local", "bin"), { recursive: true });
+	writeFileSync(join(root, ".local", "bin", "codex"), "#!/bin/sh\nprintf 'codex-cli 0.153.0\\n'\n");
+	chmodSync(join(root, ".local", "bin", "codex"), 0o755);
+	writeFileSync(binary, `#!/bin/sh\nprintf '%s\\n' "$*" > "${invoked}"\n`);
 	chmodSync(binary, 0o755);
 	const result = spawnSync("bash", ["-c", reviewScript], {
 		encoding: "utf8",
@@ -273,6 +280,28 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /base URL and API key must be supplied together/);
 	assert.equal(existsSync(invoked), false);
+
+	const nonCodexResult = spawnSync("bash", ["-c", reviewScript], {
+		encoding: "utf8",
+		env: {
+			...process.env,
+			HOME: root,
+			NEEDLEFISH_BIN: binary,
+			PR_NUM: "98",
+			NEEDLEFISH_RUNNER_INPUT: "claude",
+			NEEDLEFISH_MODEL_INPUT: "claude-sonnet-4-5",
+			NEEDLEFISH_TIMEOUT_MS_INPUT: "",
+			OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
+			CODEX_REASONING_EFFORT: "",
+			CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1",
+			CODEX_PROXY_API_KEY_INPUT: "",
+			CODEX_PROXY_API_KEY: "inherited-service-key",
+			NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1",
+			NEEDLEFISH_RECHECK_INPUT: "",
+		},
+	});
+	assert.equal(nonCodexResult.status, 0, nonCodexResult.stderr);
+	assert.match(readFileSync(invoked, "utf8"), /--runner claude/);
 });
 
 test("reconciliation dispatch does not depend on a local checkout", () => {

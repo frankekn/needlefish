@@ -139,7 +139,9 @@ test("hosted action pins a version per runner and lets runner_version override",
 test("self-hosted fleet docs install the supported Codex version", () => {
   for (const file of ["README.md", "README.zh-TW.md"]) {
     const readme = readFileSync(file, "utf8");
-    assert.match(readme, /npm install -g @openai\/codex@0\.153\.0/);
+    assert.match(readme, /npm install --global --prefix "\$HOME\/\.local" @openai\/codex@0\.153\.0/);
+    assert.match(readme, /CODEX_BIN="\$HOME\/\.local\/bin\/codex"/);
+    assert.match(readme, /test "\$\("\$CODEX_BIN" --version\)" = "codex-cli 0\.153\.0"/);
   }
 });
 
