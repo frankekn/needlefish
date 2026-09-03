@@ -303,8 +303,9 @@ jobs:
    npm install -g @openai/codex@0.153.0
    codex --version
    ```
-   Codex job 執行時注入 `CODEX_PROXY_BASE_URL`、`CODEX_PROXY_API_KEY` 與
-   `NEEDLEFISH_CODEX_PROXY_REQUIRED=1`。Needlefish 會在命令列註冊
+   呼叫 reusable workflow 時傳入 `codex_proxy_base_url`、
+   `codex_proxy_required: true` 與 `codex_proxy_api_key` workflow secret。
+   Needlefish 會在命令列註冊
    `cliproxyapi` custom provider，但 credential 只存在子程序環境；required
    模式缺少任一設定會直接失敗，不會退回 OAuth，且 proxy invocation 不帶
    direct subscription 的 `service_tier` override。Grok 則依 provider 完成

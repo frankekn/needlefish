@@ -345,8 +345,9 @@ jobs:
    npm install -g @openai/codex@0.153.0
    codex --version
    ```
-4. Supply Codex's proxy route at job runtime with `CODEX_PROXY_BASE_URL`,
-   `CODEX_PROXY_API_KEY`, and `NEEDLEFISH_CODEX_PROXY_REQUIRED=1`. Needlefish
+4. Supply Codex's proxy route to the reusable workflow with
+   `codex_proxy_base_url`, `codex_proxy_required: true`, and the
+   `codex_proxy_api_key` workflow secret. Needlefish
    registers the `cliproxyapi` custom provider on the command line while the
    credential remains only in the child environment; required mode rejects
    incomplete configuration instead of falling back to OAuth. Proxy invocations
