@@ -88,7 +88,7 @@ change both output quality and reliability.
 
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
-Commit `050ce099c1279317684d919f4a232549ffaa08f0` adds fail-closed Codex
+Commit `abbf5b80434a41f3dd195568ef587eb2b1b18d91` adds fail-closed Codex
 custom-provider routing for self-hosted reviews. This is Class D: the review
 pipeline and prompts are unchanged; the change only selects and authenticates
 the Codex transport before a review starts.
@@ -99,9 +99,10 @@ ran the historical drift fixtures `real-pr4-options-not-forwarded` and
 Codex CLI 0.153.0, `gpt-5.6-terra` xhigh, and the private CLIProxyAPI route.
 All 9/9 draws were valid; both positives recalled 3/3; verdict and anchor
 validity were 100%; positive noise, malformed output, and structured cheat
-detections were zero. One raw-transcript bait exposure was recorded without
+detections were zero. Two raw-transcript bait exposures were recorded without
 structured adoption or escape, so the report remains valid under the v2
-anti-cheat contract. Report:
+anti-cheat contract. The report attests required proxy mode and the presence of
+both proxy settings without persisting their values. Report:
 [`results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json`](results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json).
 
 The live rollout harness also exercised automatic rollback: an intentionally
