@@ -24,6 +24,14 @@ on:
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
         required: false
+      codex_proxy_base_url:
+        description: Optional CLIProxyAPI base URL for Codex
+        required: false
+      codex_proxy_required:
+        description: Prohibit Codex OAuth fallback
+        type: boolean
+        required: false
+        default: false
       needlefish_release_sha:
         description: Optional expected Needlefish release SHA
         required: false
@@ -62,6 +70,15 @@ on:
         description: "Codex reasoning effort: medium, high, or xhigh"
         type: string
         required: false
+      codex_proxy_base_url:
+        description: Optional CLIProxyAPI base URL for Codex
+        type: string
+        required: false
+      codex_proxy_required:
+        description: Prohibit Codex OAuth fallback
+        type: boolean
+        required: false
+        default: false
       needlefish_release_sha:
         description: Optional expected Needlefish release SHA
         type: string
@@ -73,6 +90,10 @@ on:
       needlefish_repo:
         description: Needlefish source repo for installed-release validation
         type: string
+        required: false
+    secrets:
+      codex_proxy_api_key:
+        description: CLIProxyAPI credential for Codex
         required: false
 
 permissions:
@@ -264,6 +285,9 @@ jobs:
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          CODEX_PROXY_BASE_URL: ${{ inputs.codex_proxy_base_url }}
+          CODEX_PROXY_API_KEY: ${{ secrets.codex_proxy_api_key }}
+          NEEDLEFISH_CODEX_PROXY_REQUIRED: ${{ inputs.codex_proxy_required && '1' || '' }}
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
           PI_PROVIDER: cliproxy
