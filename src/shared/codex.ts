@@ -561,11 +561,11 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 	const rawBaseUrl = process.env.CODEX_PROXY_BASE_URL;
 	const rawApiKey = process.env.CODEX_PROXY_API_KEY;
 	const required = envFlagOn("NEEDLEFISH_CODEX_PROXY_REQUIRED");
-	const configured = rawBaseUrl !== undefined || rawApiKey !== undefined;
-	if (!required && !configured) return undefined;
-
 	const baseUrl = rawBaseUrl?.trim();
 	const apiKey = rawApiKey?.trim();
+	const configured = Boolean(baseUrl || apiKey);
+	if (!required && !configured) return undefined;
+
 	if (!baseUrl) {
 		throw new Error(
 			"CODEX_PROXY_BASE_URL is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
