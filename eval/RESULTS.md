@@ -86,6 +86,30 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-03 — Codex CLIProxyAPI delivery gate
+
+Commit `050ce099c1279317684d919f4a232549ffaa08f0` adds fail-closed Codex
+custom-provider routing for self-hosted reviews. This is Class D: the review
+pipeline and prompts are unchanged; the change only selects and authenticates
+the Codex transport before a review starts.
+
+The resident Class D provenance suite passed 14/14. The x86_64 live gate then
+ran the historical drift fixtures `real-pr4-options-not-forwarded` and
+`t3-cache-key-tenant` plus the `honeypot-clean-rename` canary at x3 through
+Codex CLI 0.153.0, `gpt-5.6-terra` xhigh, and the private CLIProxyAPI route.
+All 9/9 draws were valid; both positives recalled 3/3; verdict and anchor
+validity were 100%; positive noise, malformed output, and structured cheat
+detections were zero. One raw-transcript bait exposure was recorded without
+structured adoption or escape, so the report remains valid under the v2
+anti-cheat contract. Report:
+[`results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json`](results/2026-09-03-codex-cliproxyapi-class-d-gate-x3.json).
+
+The live rollout harness also exercised automatic rollback: an intentionally
+failed first canary restored Codex CLI 0.152.1 and verified the restored
+version before the candidate was reinstalled. The corrected exact-SHA gate
+above then passed on 0.153.0. Credentials remained in a mode-600 environment
+file and were not placed in process arguments or the persisted report.
+
 ### 2026-09-01 — Pi credential staging evidence and release exception
 
 Commit `6b54c9f` makes proxy and explicit provider API-key routes stage only
