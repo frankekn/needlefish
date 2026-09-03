@@ -147,7 +147,7 @@ test("runCodex rejects an invalid CODEX_SERVICE_TIER", async (t) => {
 test("runCodex configures the fail-closed CLIProxyAPI provider without putting its key in argv", async (t) => {
   const { repo, argsPath, envPath } = setupCodexStub(t);
   process.env.CODEX_PROXY_BASE_URL = "http://127.0.0.1:8317/v1";
-  process.env.CODEX_PROXY_API_KEY = "proxy-secret-test-key";
+  process.env.CODEX_PROXY_API_KEY = " proxy-secret-test-key\n";
   process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = "1";
   process.env.CODEX_SERVICE_TIER = "fast";
 
@@ -191,6 +191,10 @@ test("runCodex fails closed before invocation when the required proxy configurat
     name: "RunnerOperationalError",
     message: /CODEX_PROXY_API_KEY is required/,
   });
+  assert.equal(existsSync(argsPath), false);
+
+  process.env.CODEX_PROXY_API_KEY = "   ";
+  await assert.rejects(runStubbedCodex(repo), /CODEX_PROXY_API_KEY is required/);
   assert.equal(existsSync(argsPath), false);
 });
 
