@@ -1423,6 +1423,44 @@ test("prepareEphemeralHome: codex API key via passthrough makes HOME files optio
 	);
 });
 
+test("prepareEphemeralHome: Codex proxy env credentials do not require or stage auth.json", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	const previous = {
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		home: process.env.HOME,
+		baseUrl: process.env.CODEX_PROXY_BASE_URL,
+		key: process.env.CODEX_PROXY_API_KEY,
+	};
+	t.after(() => {
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		if (previous.baseUrl === undefined) delete process.env.CODEX_PROXY_BASE_URL;
+		else process.env.CODEX_PROXY_BASE_URL = previous.baseUrl;
+		if (previous.key === undefined) delete process.env.CODEX_PROXY_API_KEY;
+		else process.env.CODEX_PROXY_API_KEY = previous.key;
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	process.env.CODEX_PROXY_BASE_URL = "http://127.0.0.1:8317/v1";
+	process.env.CODEX_PROXY_API_KEY = "proxy-secret-test-key";
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(
+		path.join(fakeHome, ".codex", "auth.json"),
+		'{"token":"must-not-stage"}',
+	);
+
+	const home = prepareEphemeralHome("codex", tmp);
+
+	assert.ok(home);
+	assert.equal(existsSync(path.join(home, ".codex", "auth.json")), false);
+});
+
 // HOME="" (sanitized environments) must fall through to USERPROFILE, not be
 // selected as an empty path root.
 test("prepareEphemeralHome falls back to USERPROFILE when HOME is empty", (t) => {

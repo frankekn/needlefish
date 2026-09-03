@@ -338,13 +338,21 @@ jobs:
    shared ARM installation used by two runner services. Deploy the same release
    SHA to both installations and verify their installed metadata before trusting
    the fleet.
-3. Ensure the runner has `gh` and the selected model CLI on `PATH`.
-4. On that runner, auth the selected CLI once. For Codex:
+3. Ensure the runner has `gh` and the selected model CLI on `PATH`. The Codex
+   fleet contract is `@openai/codex@0.153.0`; install and verify that exact
+   version as the runner service account:
    ```bash
-   printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
+   npm install -g @openai/codex@0.153.0
+   codex --version
    ```
-   For Grok, complete the provider's CLI login or key setup as appropriate
-   and verify that `grok` runs as the runner service account.
+4. Supply Codex's proxy route at job runtime with `CODEX_PROXY_BASE_URL`,
+   `CODEX_PROXY_API_KEY`, and `NEEDLEFISH_CODEX_PROXY_REQUIRED=1`. Needlefish
+   registers the `cliproxyapi` custom provider on the command line while the
+   credential remains only in the child environment; required mode rejects
+   incomplete configuration instead of falling back to OAuth. Proxy invocations
+   omit the direct-subscription `service_tier` override. For Grok,
+   complete the provider's CLI login or key setup as appropriate and verify
+   that `grok` runs as the runner service account.
 5. If needlefish is **private**, the caller repo must be allowed to call this
    reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is enough.
 6. **Runner global-instructions caveat:** model CLIs may auto-load global
@@ -416,7 +424,7 @@ Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 
 `runner_version` overrides the npm version of the selected runner CLI. When
 omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.151.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+Codex `0.153.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
 explicit version — or `latest` — only when you intentionally want something
 other than the pin. A single default cannot be correct for four packages, so
 the pin is chosen from the selected `runner`.
@@ -468,7 +476,7 @@ parentheses are the executable names used when the `*_BIN` var is unset:
 
 | runner | binary | model / other |
 | --- | --- | --- |
-| `codex` | `CODEX_BIN` (`codex`) | `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, `CODEX_RETRY_MS`, `CODEX_REASONING_EFFORT` |
+| `codex` | `CODEX_BIN` (`codex`) | `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, `CODEX_RETRY_MS`, `CODEX_REASONING_EFFORT`; proxy `CODEX_PROXY_BASE_URL`, `CODEX_PROXY_API_KEY`, `NEEDLEFISH_CODEX_PROXY_REQUIRED=1` |
 | `claude` | `CLAUDE_BIN` (`claude`) | `CLAUDE_MODEL`; auth `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |

@@ -297,11 +297,18 @@ jobs:
    共用的 ARM 安裝。兩份安裝都要部署相同 release SHA，並確認 installed
    metadata 一致。
 3. 確認 `gh` 與選定的模型 CLI 位於 `PATH`。
-4. 以 runner service account 登入 CLI。Codex 例如：
+4. Codex fleet 固定使用 `@openai/codex@0.153.0`；以 runner service account
+   安裝並確認版本：
    ```bash
-   printf '%s' "$CODEX_API_KEY" | codex login --with-api-key -c 'service_tier="fast"'
+   npm install -g @openai/codex@0.153.0
+   codex --version
    ```
-   Grok 則依 provider 完成 CLI 登入或 key 設定，並確認 `grok` 可執行。
+   Codex job 執行時注入 `CODEX_PROXY_BASE_URL`、`CODEX_PROXY_API_KEY` 與
+   `NEEDLEFISH_CODEX_PROXY_REQUIRED=1`。Needlefish 會在命令列註冊
+   `cliproxyapi` custom provider，但 credential 只存在子程序環境；required
+   模式缺少任一設定會直接失敗，不會退回 OAuth，且 proxy invocation 不帶
+   direct subscription 的 `service_tier` override。Grok 則依 provider 完成
+   CLI 登入或 key 設定，並確認 `grok` 可執行。
 5. 若 Needlefish 是 private repo，caller repo 必須被允許呼叫 reusable workflow。
 6. 模型 CLI 可能讀取 runner home 的 global instructions。若要避免外部指令
    混入，請保持 runner home 沒有不相關的 instruction 檔案。
@@ -343,7 +350,7 @@ Hosted action 只會安裝 `action.yml` 列出的 runner；Grok CLI 不在其中
 使用 Grok 4.5，請使用上方的 self-hosted reusable workflow。
 
 `runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會安裝
-`action.yml` 裡的 per-runner pin（目前 Codex `0.151.0`、Claude `2.1.239`、
+`action.yml` 裡的 per-runner pin（目前 Codex `0.153.0`、Claude `2.1.239`、
 OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳入明確版本
 （或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
 選擇。
@@ -407,7 +414,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process 內
 
 | runner | binary | model／其他 |
 | --- | --- | --- |
-| `codex` | `CODEX_BIN`（`codex`） | `CODEX_MODEL`、`CODEX_TIMEOUT_MS`、`CODEX_RETRY_MS`、`CODEX_REASONING_EFFORT` |
+| `codex` | `CODEX_BIN`（`codex`） | `CODEX_MODEL`、`CODEX_TIMEOUT_MS`、`CODEX_RETRY_MS`、`CODEX_REASONING_EFFORT`；proxy `CODEX_PROXY_BASE_URL`、`CODEX_PROXY_API_KEY`、`NEEDLEFISH_CODEX_PROXY_REQUIRED=1` |
 | `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
 | `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
