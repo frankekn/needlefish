@@ -45,7 +45,10 @@ function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "
 	const argvLog = join(root, "argv.log");
 	const codexBinLog = join(root, "codex-bin.log");
 	const needlefishBin = join(fakeBin, "needlefish");
+	const pathCodex = join(fakeBin, "codex");
 	mkdirSync(fakeBin);
+	writeFileSync(pathCodex, "#!/bin/sh\nprintf 'codex-cli 0.153.0\\n'\n");
+	chmodSync(pathCodex, 0o755);
 	const expectedHomeCodex = join(root, ".local", "bin", "codex");
 	const expectedConfiguredCodex = join(root, "configured-codex");
 	if (homeCodex) {
