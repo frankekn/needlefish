@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -215,4 +216,51 @@ test("runCodex treats empty optional proxy variables as unconfigured", async (t)
 
   const args = readStringArray(argsPath);
   assert.equal(args.some((arg) => arg.includes("model_provider")), false);
+});
+
+// The runner, not a test helper, is the adversary: this stub does exactly
+// what a misbehaving CLI would do from inside its sandbox — enumerate
+// remotes and try to push a scratch branch to origin — and the assertion is on
+// the ORIGINAL repository's refs afterwards.
+test("runCodex sandbox exposes no origin remote to the runner and rejects a push back to the source", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const { spawnSync } = require('node:child_process');",
+      "const args = process.argv.slice(2);",
+      "const out = args[args.indexOf('--output-last-message') + 1];",
+      "const remotes = spawnSync('git', ['remote'], { encoding: 'utf8' }).stdout.trim();",
+      "const push = spawnSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/needlefish-runner-scratch'], { encoding: 'utf8' });",
+      "fs.writeFileSync(out, JSON.stringify({ remotes, pushStatus: push.status, pushStderr: push.stderr }));",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  const refsBefore = spawnSync("git", ["for-each-ref"], { cwd: repo, encoding: "utf8" }).stdout;
+
+  const output = await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 5000,
+  });
+
+  const observed: unknown = JSON.parse(output);
+  assert.ok(typeof observed === "object" && observed !== null);
+  const { remotes, pushStatus, pushStderr } = observed as { remotes: string; pushStatus: number; pushStderr: string };
+  assert.equal(remotes, "", "runner must see no remote inside the sandbox");
+  assert.notEqual(pushStatus, 0, "push via origin must fail from inside the runner");
+  assert.match(pushStderr, /'origin' does not appear to be a git repository/);
+  assert.equal(spawnSync("git", ["for-each-ref"], { cwd: repo, encoding: "utf8" }).stdout, refsBefore, "source refs must be unchanged");
 });

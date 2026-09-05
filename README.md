@@ -510,7 +510,13 @@ kill path as the CLI runners. Closed PRs are skipped before diffing or model
 invocation. All CLI runners execute inside a throwaway clean clone at the review
 head commit; needlefish checks that clone with
 `git status --porcelain --untracked-files=all --ignored=matching` and verifies
-`HEAD` did not move after each successful model call.
+`HEAD` did not move after each successful model call. The clone carries no
+remote: its `origin` (which would point at the original repository on the same
+filesystem) is removed before the runner starts, so an ordinary `git push` from
+inside the sandbox cannot create, force-update, or delete branches in the
+original. This closes the ready-made push route only; it is not an OS-level
+boundary, and a runner that learns the original path can still write there
+directly.
 
 ### Runner subprocess environment
 
