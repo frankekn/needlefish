@@ -821,7 +821,9 @@ succeeding from inside a prepared sandbox; only the source's checked-out
 branch was refused, and only by git's default `receive.denyCurrentBranch`.
 The post-run integrity check inspects the sandbox, never the source's refs.
 
-Change (commit `e67c314`): both the committed and WORKING sandbox paths remove
+Change (commit `e67c314`, cherry-picked as `2ff6799` onto the standalone
+#103 branch with identical source; the gate below ran on `e67c314`): both
+the committed and WORKING sandbox paths remove
 every remote and `.git/FETCH_HEAD` after checkout and before the metadata
 baseline is recorded (a baseline taken first would flag the config edit as a
 runner mutation). The guarantee is narrow and documented as such: it closes
