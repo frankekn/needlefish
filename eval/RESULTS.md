@@ -812,3 +812,44 @@ Maintainer-dispatched review run
 then required that exact deployed SHA on controlled PR #94 and completed a real
 Codex review plus critic pass (2 model calls) with a terminal `pass` verdict and
 no infrastructure failure. The rollback threshold was not crossed.
+### 21. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05
+
+Trigger: the review sandbox is a `git clone` of the target repository and kept
+the clone's `origin` remote pointing at the maintainer's real local repo.
+Real-Git probes showed `git push origin`, `--force`, and `--delete` all
+succeeding from inside a prepared sandbox; only the source's checked-out
+branch was refused, and only by git's default `receive.denyCurrentBranch`.
+The post-run integrity check inspects the sandbox, never the source's refs.
+
+Change (commit `e67c314`): both the committed and WORKING sandbox paths remove
+every remote and `.git/FETCH_HEAD` after checkout and before the metadata
+baseline is recorded (a baseline taken first would flag the config edit as a
+runner mutation). The guarantee is narrow and documented as such: it closes
+the ready-made push route; it is not an OS-level boundary against a same-uid
+process that already knows the source path.
+
+Classification: **Class D** by provenance containment. A differential over a
+prepared sandbox before and after the change shows byte-identical prompt,
+worktree listing, HEAD, commit log, and `base..head` diff; the only deltas are
+the two `refs/remotes/origin/*` refs, the `[remote "origin"]` config stanza,
+and the FETCH_HEAD file. No prompt references remotes, so nothing a model is
+told changes. Successful-path review output is unchanged; the only new
+behaviour is a push failure on a route the review never used.
+
+Gate criteria, declared before the run:
+
+1. Resident suite: `runner-sandbox.test.ts` gains two tests that compare the
+   ORIGINAL repository's refs and worktree before/after create, force-update,
+   and delete push attempts through `origin` for both sandbox kinds, and
+   `codex-scope.test.ts` gains a through-`runCodex` test whose runner stub
+   itself enumerates remotes and attempts the push. All three fail against
+   the pre-fix sandbox (verified by swapping the implementation) and pass
+   after. Full suite, `pnpm check`, `pnpm lint` green.
+2. Codex / `gpt-5.6-terra` / xhigh x3 on `honeypot-clean-rename`,
+   `t3-cache-key-tenant`, and `real-pr4-options-not-forwarded`, holdouts
+   included: 9/9 completed, zero malformed-output errors, zero cheat
+   detections, recall 1.0 on both positives (same D contract as gate 20).
+3. Live canary window after deploy retains automatic rollback to the
+   last-known-good install.
+
+Result: pending.
