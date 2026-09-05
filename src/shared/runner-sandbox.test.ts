@@ -946,3 +946,118 @@ test("assertRunnerSandboxClean still reports an ordinary hook change as a metada
   assert.match(child.stdout, /SAFETY=true/);
   assert.match(child.stdout, /MESSAGE=.*\.git\/config or hooks changed/);
 });
+
+// The sandbox is a clone of the source repository, and a clone keeps an
+// `origin` remote pointing at its source. Left in place, that remote is an
+// ordinary, credential-free push route from the unrestricted runner back into
+// the maintainer's real repository, and the post-run integrity check never
+// looks there. The regression compares the SOURCE repository's refs and
+// worktree before and after each attempt; a clean sandbox proves nothing.
+function sourceRefs(repo: string): string {
+  return execFileSync("git", ["for-each-ref", "--format=%(refname) %(objectname)"], {
+    cwd: repo,
+    encoding: "utf8",
+  });
+}
+
+function sourceWorktree(repo: string): string {
+  return execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+    cwd: repo,
+    encoding: "utf8",
+  });
+}
+
+function assertNoSourceWriteBack(
+  sandboxPath: string,
+  source: string,
+  targetBranch: string
+): void {
+  const refsBefore = sourceRefs(source);
+  const worktreeBefore = sourceWorktree(source);
+  assert.equal(
+    execFileSync("git", ["remote"], { cwd: sandboxPath, encoding: "utf8" }).trim(),
+    "",
+    "sandbox must have no remote before the runner starts"
+  );
+  const fetchHead = path.join(sandboxPath, ".git", "FETCH_HEAD");
+  if (existsSync(fetchHead)) {
+    assert.equal(
+      readFileSync(fetchHead, "utf8").includes(source),
+      false,
+      "FETCH_HEAD must not retain the source repository location"
+    );
+  }
+
+  const push = (args: readonly string[]) =>
+    spawnSync("git", ["push", "--quiet", ...args], { cwd: sandboxPath, encoding: "utf8" });
+  const attempts = [
+    push(["origin", "HEAD:refs/heads/needlefish-runner-scratch"]),
+    push(["--force", "origin", `HEAD:refs/heads/${targetBranch}`]),
+    push(["origin", "--delete", targetBranch]),
+  ];
+  for (const attempt of attempts) {
+    assert.notEqual(attempt.status, 0, `push via origin must fail: ${attempt.stderr}`);
+    assert.match(attempt.stderr, /'origin' does not appear to be a git repository/);
+  }
+  assert.equal(sourceRefs(source), refsBefore, "source refs changed");
+  assert.equal(sourceWorktree(source), worktreeBefore, "source worktree changed");
+}
+
+test("prepareRunnerSandbox leaves no origin write-back route for a committed target", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-origin-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repoRoot = path.join(tmp, "source");
+  const sandboxTmp = path.join(tmp, "sandbox");
+  mkdirSync(repoRoot);
+  mkdirSync(sandboxTmp);
+  const repo = initRepo(repoRoot);
+  execFileSync("git", ["branch", "-M", "main"], { cwd: repo });
+  execFileSync("git", ["checkout", "-q", "-b", "feature"], { cwd: repo });
+  writeFileSync(path.join(repo, "feature.txt"), "feature\n");
+  commitAll(repo, "feature");
+  const target = headSha(repo);
+  execFileSync("git", ["checkout", "-q", "main"], { cwd: repo });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "",
+    targetHeadSha: target,
+    tmp: sandboxTmp,
+  });
+
+  assert.equal(headSha(sandbox.repoPath), target);
+  assertNoSourceWriteBack(sandbox.repoPath, repo, "feature");
+  // Required history and the post-run check still work without the remote.
+  assert.equal(
+    execFileSync("git", ["rev-parse", "HEAD~1"], { cwd: sandbox.repoPath, encoding: "utf8" }).trim(),
+    execFileSync("git", ["rev-parse", "main"], { cwd: repo, encoding: "utf8" }).trim()
+  );
+  assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
+test("prepareRunnerSandbox leaves no origin write-back route for a WORKING target", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-origin-working-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repoRoot = path.join(tmp, "source");
+  const sandboxTmp = path.join(tmp, "sandbox");
+  mkdirSync(repoRoot);
+  mkdirSync(sandboxTmp);
+  const repo = initRepo(repoRoot);
+  execFileSync("git", ["branch", "-M", "main"], { cwd: repo });
+  execFileSync("git", ["branch", "other"], { cwd: repo });
+  writeFileSync(path.join(repo, "README.md"), "fixture\nworking edit\n");
+  const patch = execFileSync("git", ["diff", "--", "README.md"], { cwd: repo, encoding: "utf8" });
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "",
+    targetHeadSha: "WORKING",
+    targetPatch: patch,
+    tmp: sandboxTmp,
+  });
+
+  assertNoSourceWriteBack(sandbox.repoPath, repo, "other");
+  assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+});

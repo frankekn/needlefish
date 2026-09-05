@@ -10,6 +10,7 @@ import {
   opendirSync,
   openSync,
   readSync,
+  rmSync,
   type Stats,
   writeFileSync,
 } from "node:fs";
@@ -91,6 +92,7 @@ export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandb
   git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", sourceRepoPath, sandboxPath], sourceRepoPath);
   git(["fetch", "--quiet", sourceRepoPath, options.targetHeadSha], sandboxPath);
   git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandboxPath);
+  severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
   return {
     repoPath: sandboxPath,
@@ -138,12 +140,40 @@ function prepareWorkingSandbox(
     sandboxPath
   );
   const expectedHeadSha = git(["rev-parse", "HEAD"], sandboxPath);
+  severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
   return {
     repoPath: sandboxPath,
     prompt: withLfsDisclosure(options.prompt.split(sourceRepoPath).join(sandboxPath), sandboxPath),
     expectedHeadSha,
   };
+}
+
+// A clone keeps `origin` pointing at its source, and the source here is the
+// maintainer's real repository on the same filesystem. That remote is an
+// ordinary, credential-free push route: `git push origin`, `--force`, and
+// `--delete` all succeed against it (only the source's checked-out branch is
+// refused, and only by git's default receive.denyCurrentBranch). Token
+// stripping does not help against a local path, and the post-run integrity
+// check inspects the sandbox, never the source's refs, so a write-back would
+// leave no trace. Remove every remote and the FETCH_HEAD record of the source
+// location before the metadata baseline is taken: `git remote remove` edits
+// .git/config, and a baseline recorded first would flag the removal itself as
+// a runner mutation. Nothing the review needs lives behind the remote — the
+// target and its history are already local objects reachable from HEAD.
+//
+// Guarantee, precisely: this closes the ordinary push-back route. It is not an
+// OS-level boundary. A same-uid runner that learns the source path (the prompt
+// carries it) can still `git push <path>` or write files there directly; the
+// sandbox model accepts that (see the threat-model note in
+// assertRunnerSandboxClean) and only refuses to hand the runner a ready-made
+// channel.
+function severSourceRemote(sandboxPath: string): void {
+  const remotes = runGit(["remote"], sandboxPath).split("\n").filter(Boolean);
+  for (const remote of remotes) {
+    git(["remote", "remove", remote], sandboxPath);
+  }
+  rmSync(path.join(sandboxPath, ".git", "FETCH_HEAD"), { force: true });
 }
 
 export function assertRunnerSandboxClean(
