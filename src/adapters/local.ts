@@ -10,6 +10,7 @@ import {
   fetchPrRefInfo,
   ghText,
   git,
+  gitPathList,
   makeBundle,
   prDiffFromShas,
   readAgentsAt,
@@ -57,17 +58,6 @@ function hasHeadCommit(cwd: string): boolean {
     if (err instanceof Error) return false;
     throw err;
   }
-}
-
-function gitLines(args: readonly string[], cwd: string): string[] {
-  return git(args, cwd).split("\n").filter(Boolean);
-}
-
-function gitNulFields(args: readonly string[], cwd: string): string[] {
-  const output = git(args, cwd);
-  if (!output) return [];
-  const fields = output.endsWith("\0") ? output.slice(0, -1).split("\0") : output.split("\0");
-  return fields.filter(Boolean);
 }
 
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
@@ -165,11 +155,16 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const trackedPatchStat = headExists
     ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
-  const trackedPaths = headExists ? gitNulFields(trackedDiffArgs(["--name-only", "-z"], trackedBinaryPaths), cwd) : [];
+  // Rename detection off for the name list only: a `git mv` into a docs path
+  // must keep its removed source path, or classification sees docs alone and
+  // the fast path skips the review. The patch above keeps its rename headers.
+  const trackedPaths = headExists
+    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
+    : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
-    ? gitLines(["ls-files", "--others", "--exclude-standard"], cwd)
-    : gitLines(["ls-files", "--cached", "--others", "--exclude-standard"], cwd);
+    ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
+    : gitPathList(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd);
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 

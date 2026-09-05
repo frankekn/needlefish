@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Review: collect changed and untracked pathnames NUL-delimited with rename
+  detection off, so C-quoted filenames and files renamed into a docs path can
+  no longer drop out of classification and ride the docs-only fast path
+  unreviewed (#99).
+
 ## 0.4.2 — 2026-09-01
 
 - Runner: stage Pi's credential store into the disposable HOME when present,

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { ensurePrCommits, git, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
+import { changedFiles, ensurePrCommits, git, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -141,4 +141,58 @@ test("makeBundle preserves review target disclosure", () => {
     bundle.reviewTarget,
     "Review target: local base..head\nPR context: #24 metadata only"
   );
+});
+
+// `git diff --name-only` applies rename detection and reports only the
+// destination of a rename. A workflow, policy, or source file moved into a
+// docs path then looked docs-only to classification, so the fast path passed
+// the removal without a model call.
+test("changedFiles reports both sides of a rename", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-rename-"));
+  try {
+    const work = join(tmp, "work");
+    gitText(["init", "-q", work], tmp);
+    mkdirSync(join(work, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(work, ".github", "workflows", "ci.yml"), "name: ci\non: push\njobs: {}\n");
+    writeFileSync(join(work, "AGENTS.md"), "# policy\nnever run tests\n");
+    commitAll(work, "base");
+    const baseSha = headSha(work);
+    mkdirSync(join(work, "docs"));
+    gitText(["mv", ".github/workflows/ci.yml", "docs/ci-notes.md"], work);
+    gitText(["mv", "AGENTS.md", "docs/guide.md"], work);
+    commitAll(work, "rename into docs");
+    const targetHeadSha = headSha(work);
+
+    const paths = changedFiles(work, baseSha, targetHeadSha).map((file) => `${file.surface}:${file.path}`).sort();
+    assert.deepEqual(paths, [
+      "docs:AGENTS.md",
+      "docs:docs/ci-notes.md",
+      "docs:docs/guide.md",
+      "workflow:.github/workflows/ci.yml",
+    ]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Newline-delimited pathname output is C-quoted for non-ASCII and control
+// bytes; those strings are not paths and misclassify.
+test("changedFiles preserves committed pathnames Git would C-quote", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-quoted-"));
+  try {
+    const work = join(tmp, "work");
+    gitText(["init", "-q", work], tmp);
+    writeFileSync(join(work, "README.md"), "base\n");
+    commitAll(work, "base");
+    const baseSha = headSha(work);
+    const names = ["新功能.ts", " padded .ts", 'quo"te.ts', "back\\slash.ts", "new\nline.ts"];
+    for (const name of names) writeFileSync(join(work, name), "export const v = 1;\n");
+    commitAll(work, "odd names");
+    const targetHeadSha = headSha(work);
+
+    const paths = changedFiles(work, baseSha, targetHeadSha).map((file) => file.path).sort();
+    assert.deepEqual(paths, [...names].sort());
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

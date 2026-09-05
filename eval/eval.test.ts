@@ -90,7 +90,7 @@ test("loadFixture forces deterministic rename detection when git config disables
     assert.match(loaded.bundle.patch, /rename from src\/old\.ts/);
     assert.match(loaded.bundle.patch, /rename to src\/new\.ts/);
     assert.match(loaded.bundle.patchStat, /src\/\{old\.ts => new\.ts\}/);
-    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts"]);
+    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts", "src/old.ts"]);
   } finally {
     loaded?.cleanup();
     if (previousCount === undefined) delete process.env.GIT_CONFIG_COUNT;

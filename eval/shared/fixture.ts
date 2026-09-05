@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { changedFilesFromPaths, git, makeBundle } from "../../src/shared/repo";
+import { changedFilesFromPaths, git, gitPathList, makeBundle } from "../../src/shared/repo";
 import type { Bundle } from "../../src/shared/schema";
 import type { FixtureSpec } from "./types";
 
@@ -255,15 +255,17 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 		]
 			.filter(Boolean)
 			.join("\n");
-		const changedPaths = [
-			renderOrdinarySegment(["--name-only"]),
-			...renamedFiles.map((rename) =>
-				renderRenameSegment(rename, ["--name-only"]),
+		// Same collector contract as production `changedFiles`: NUL-delimited,
+		// rename detection off, so an explicit rename contributes BOTH paths.
+		// The rendered patch above still carries the rename headers; only the
+		// classification list must see the removed source path, or a file moved
+		// into a docs path looks docs-only and rides the fast path unreviewed.
+		const files = changedFilesFromPaths(
+			gitPathList(
+				["diff", "--name-only", "-z", "--no-renames", baseSha, headSha],
+				tmp,
 			),
-		]
-			.filter(Boolean)
-			.flatMap((segment) => segment.split("\n"));
-		const files = changedFilesFromPaths([...new Set(changedPaths)]);
+		);
 
 		const bundle = makeBundle({
 			repoPath: tmp,

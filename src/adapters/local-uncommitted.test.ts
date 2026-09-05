@@ -411,3 +411,74 @@ test("local CLI --branch keeps dirty worktree on the old branch diff path", (t) 
   assert.match(prompts, /diff --git a\/src\/feature\.ts b\/src\/feature\.ts/);
   assert.equal(prompts.includes("dirty.ts"), false);
 });
+
+// Git C-quotes pathnames with non-ASCII bytes (core.quotePath default) in
+// newline-delimited output. Treating that representation as a filesystem
+// path made the file "not a regular file", dropped it from the bundle, and
+// let the docs-only fast path pass a source change unreviewed.
+test("runLocal reviews an untracked source file whose name Git would C-quote", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-quoted-name-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(join(repo, "README.md"), "fixture\nmore\n");
+  const quoted = "新功能.ts";
+  writeFileSync(join(repo, quoted), "export const feature = 1;\n");
+  assert.match(gitText(["ls-files", "--others", "--exclude-standard"], repo), /^"\\346/m);
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.notEqual(result.summary, "Docs-only change (1 file(s)); model review skipped.");
+  assert.equal(result.reviewTarget?.includes("Skipped untracked files"), false);
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.match(prompts, /\+export const feature = 1;/);
+  assert.equal(prompts.includes(`"path": "${quoted}"`), true);
+});
+
+test("runLocal preserves untracked pathnames with spaces, quotes, backslashes, and newlines", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-odd-names-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  const names = [" leading and trailing ", 'quo"te.ts', "back\\slash.ts", "new\nline.ts"];
+  for (const name of names) writeFileSync(join(repo, name), `export const v = ${JSON.stringify(name)};\n`);
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.equal(result.reviewTarget?.includes("Skipped untracked files"), false);
+  const prompts = readFileSync(promptPath, "utf8");
+  for (const name of names) {
+    assert.equal(prompts.includes(`"path": ${JSON.stringify(name)}`), true, name);
+    assert.equal(prompts.includes(`+export const v = ${JSON.stringify(name)};`), true, name);
+  }
+});
+
+// `git diff --name-only` applies rename detection, so a tracked file moved
+// into a docs path reported only its destination; the removal of the source
+// path never reached classification and the docs-only fast path fired.
+test("runLocal keeps the removed source path when a tracked file is renamed into docs", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-rename-docs-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(repo, ".github", "workflows", "ci.yml"), "name: ci\non: push\njobs: {}\n");
+  commitAll(repo, "add ci");
+  mkdirSync(join(repo, "docs"));
+  gitText(["mv", ".github/workflows/ci.yml", "docs/ci-notes.md"], repo);
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.notEqual(result.summary, "Docs-only change (1 file(s)); model review skipped.");
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.equal(prompts.includes('"path": ".github/workflows/ci.yml"'), true);
+  assert.equal(prompts.includes('"path": "docs/ci-notes.md"'), true);
+});
