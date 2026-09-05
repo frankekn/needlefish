@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Runner: remove the sandbox clone's `origin` remote and `FETCH_HEAD` before a
+  model runner starts, closing the ordinary `git push` route back into the
+  original repository (#103).
+
 ## 0.4.2 — 2026-09-01
 
 - Runner: stage Pi's credential store into the disposable HOME when present,
