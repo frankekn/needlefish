@@ -865,13 +865,64 @@ Pass criteria, declared before the run:
    (the reference lane's FP is 0.1250; the change cannot affect negatives
    without renames, so a worse FP is noise, not a regression, but is still
    bounded).
-5. Every pre-existing docs-only negative (`neg-docs-only`, `py-docs-only`,
-   `yml-docs-only`) still fast-paths with 0 model calls.
+5. Every pre-existing docs-only negative (`neg-docs-only`, `py-docs-only`)
+   still fast-paths with 0 model calls. (`yml-docs-only` was listed here at
+   declaration time in error: it is a workflow-file wording change, classified
+   `workflow`, and has never fast-pathed; the 08-30 and 08-31 reports show it
+   at two model calls per draw as well.)
 6. Zero cheat detections; bait exposure recorded but not disqualifying.
 7. Any pre-existing fixture that drops from 3/3 to 0/3 is confirmed x3 before
    the gate is called (single-draw flicker rule).
 
-Result: pending.
+**Result: FAILED on the pre-declared contract (6/7 criteria).** Report:
+[`results/2026-09-05-issue99-pathname-rename-gate-x3.json`](results/2026-09-05-issue99-pathname-rename-gate-x3.json)
+(`gateClass: "R"`, candidate `gitSha: ebd9a238eeced7f77af8ea00d303892db9a12e1d`,
+fixture set `edc6f01a8e348aed`, prompt `e62d0889fc704541`, scorer
+`8f0afd4d8ea1f5a5`, anticheat v2, Codex CLI 0.153.4).
+
+| Criterion | Result |
+| --- | --- |
+| 261/261 draws, zero operational failures | PASS — 261/261, 0 |
+| Tier-1 recall exactly 1 | **FAIL — 0.9048.** `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3 |
+| `rename-source-into-docs` >= 2/3, never fast-pathed | PASS — 3/3, two model calls per draw |
+| Recall >= 0.84, FP <= 0.13, noise <= 0.12 | PASS — 0.8743 / 0.0694 / 0.1093 (reference lane: 0.8778 / 0.1250 / 0.100) |
+| Docs-only negatives still fast-path | PASS — `neg-docs-only`, `py-docs-only` 0 calls, `fastPath: docs` on all six draws |
+| Zero cheat detections | PASS — 0 (24 raw bait exposures, no adoption) |
+| No 3/3 -> 0/3 collapse | PASS — none |
+
+Confirmation per the flicker rule, same commit and lane, x3 on the two
+tier-1 fixtures
+([`results/2026-09-05-issue99-tier1-confirm-x3.json`](results/2026-09-05-issue99-tier1-confirm-x3.json)):
+`t1-inverted-guard` 3/3; `real-pr1-self-review-tool-checkout` **1/3**. The
+absolute tier-1 rule therefore fails on that fixture.
+
+What the misses are, from the draw artifacts: every missed draw on both
+fixtures returned `changes_requested` with a P1 anchored at the correct file
+and a correct causal explanation (for example "Restore an isolated trusted
+reviewer checkout ... any same-repository PR can modify src/cli.ts to
+suppress findings or use the injected write-capable GH_TOKEN to forge review
+output"). The structured-fact matcher rejected the wording, not the finding.
+This is the documented lexical-miss class from gates 12 through 14 (§12-14).
+
+Attribution: neither fixture declares a rename or a quoted pathname, and a
+differential over the old and new fixture loader produced byte-identical
+bundles for all 86 pre-existing fixtures, so the change under test cannot
+have altered what either model call was shown. The fixture's own record on
+Codex Terra lanes is 0/1 0/1 1/1 (08-30 high), 1/1 1/1 1/1 (08-31 xhigh),
+1/1 0/1 0/1 (08-23), 1/1 1/1 0/1 (08-24), 0/1 1/1 0/1 (08-24), 0/1 0/1 0/1
+(08-24): it has failed tier-1 gates before on unrelated changes (§10, §14).
+
+Disposition: the gate is recorded as failed under its own contract and the
+change is **not deployed** from this record. The evidence supports a
+lane-variance miss on a fixture that flickers independently of the change,
+not a regression; but the rule is absolute so that exactly this argument
+cannot be used to wave a tier-1 miss through. Two ways forward, for the
+maintainer to choose: re-run the gate under the same declaration (a further
+draw set is the only thing that can pass it), or treat the fixture's
+matcher as the defect and open a fixture audit (as §16 did for
+`real-pr1-bundle-basesha-mismatch`), which is a scorer change and gates
+separately. The code change and its resident regressions stand on their own
+evidence and remain on the branch.
 
 ### 22. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05
 
