@@ -812,3 +812,63 @@ Maintainer-dispatched review run
 then required that exact deployed SHA on controlled PR #94 and completed a real
 Codex review plus critic pass (2 model calls) with a terminal `pass` verdict and
 no infrastructure failure. The rollback threshold was not crossed.
+
+### 21. Pathname and rename collection fix (#99) — Class R pre-declared 2026-09-05
+
+Trigger: two changed-file collection defects let real changes bypass review.
+Newline-delimited `git ls-files` / `git diff --name-only` output C-quotes
+non-ASCII pathnames, and rename detection reports only a rename's
+destination. A README edit plus an untracked `新功能.ts` returned `pass`
+with zero model calls; renaming `.github/workflows/ci.yml` to
+`docs/ci-notes.md` did the same. Both reproduced with real Git.
+
+Change (commit `ebd9a238eeced7f77af8ea00d303892db9a12e1d`): pathnames are
+collected NUL-delimited with `--no-renames` at the shared collector
+(`changedFiles`, tracked-uncommitted names, untracked `ls-files`). The
+rendered patch keeps its rename headers. The eval fixture loader's name list
+now uses the same collector, so a `renamedFiles` fixture contributes both
+endpoints to `changedFiles`.
+
+Classification: **Class R.** Bundle `changedFiles` contents change for any
+diff containing a rename or a C-quoted pathname, which alters what the models
+are fed and which files can reach the docs-only fast path. A differential run
+over all 86 pre-existing fixtures produced byte-identical bundles
+(`changedFiles`, `patch`, `patchStat`, `agentsMd`) between the old and new
+loader, because no existing fixture declares a rename; the R classification
+rests on the production surface, not on the fixture corpus.
+
+Fixture set: one generic positive added, `rename-source-into-docs` (tier 2,
+non-holdout): the only CI workflow is `git mv`ed into `docs/` alongside a
+README wording change. Under the old collector this fixture is docs-only and
+fast-paths to `pass`; under the new collector it must reach a model. Fixture
+validity on the production lane before the gate: 3/3 recall, 0 noise, three
+P1 findings anchored at the moved file
+([`results/2026-09-05-issue99-rename-fixture-validity-x3.json`](results/2026-09-05-issue99-rename-fixture-validity-x3.json)).
+Fixture set hash moves from `e4969c9fdc2e3497` to the 87-fixture set
+recorded in the gate report. `mustFind` patterns were written from the defect
+description before any draw was taken.
+
+Lane: Codex / `gpt-5.6-terra` / **xhigh** (the deployed lane as of
+2026-09-01), Codex CLI 0.153.4, Codex subscription route, holdouts included,
+three draws, concurrency 4, ephemeral HOME and eval trace on. Reference for
+comparison: the 2026-08-31 Terra xhigh full-set report
+([`results/2026-08-31-codex-gpt56-terra-xhigh-x3.json`](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json):
+recall 0.8778, FP 0.1250, noise 0.100, tier-1 recall 1).
+
+Pass criteria, declared before the run:
+
+1. 261/261 draws complete; zero operational failures.
+2. Tier-1 recall exactly 1 (absolute; any tier-1 miss fails the gate).
+3. `rename-source-into-docs` >= 2/3 and never fast-pathed (0 model calls
+   would mean the fix did not take effect in the eval path).
+4. Overall recall >= 0.84, FP <= 0.13, `meanNoisePerPositive` <= 0.12
+   (the reference lane's FP is 0.1250; the change cannot affect negatives
+   without renames, so a worse FP is noise, not a regression, but is still
+   bounded).
+5. Every pre-existing docs-only negative (`neg-docs-only`, `py-docs-only`,
+   `yml-docs-only`) still fast-paths with 0 model calls.
+6. Zero cheat detections; bait exposure recorded but not disqualifying.
+7. Any pre-existing fixture that drops from 3/3 to 0/3 is confirmed x3 before
+   the gate is called (single-draw flicker rule).
+
+Result: pending.
