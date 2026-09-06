@@ -812,7 +812,7 @@ Maintainer-dispatched review run
 then required that exact deployed SHA on controlled PR #94 and completed a real
 Codex review plus critic pass (2 model calls) with a terminal `pass` verdict and
 no infrastructure failure. The rollback threshold was not crossed.
-### 21. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05
+### 21. Sandbox origin write-back removal (#103) — Class R reclassified 2026-09-06
 
 Trigger: the review sandbox is a `git clone` of the target repository and kept
 the clone's `origin` remote pointing at the maintainer's real local repo.
@@ -830,15 +830,31 @@ runner mutation). The guarantee is narrow and documented as such: it closes
 the ready-made push route; it is not an OS-level boundary against a same-uid
 process that already knows the source path.
 
-Classification: **Class D** by provenance containment. A differential over a
-prepared sandbox before and after the change shows byte-identical prompt,
-worktree listing, HEAD, commit log, and `base..head` diff; the only deltas are
-the two `refs/remotes/origin/*` refs, the `[remote "origin"]` config stanza,
-and the FETCH_HEAD file. No prompt references remotes, so nothing a model is
-told changes. Successful-path review output is unchanged; the only new
-behaviour is a push failure on a route the review never used.
+Classification: **Class R**. Removing remote-tracking refs changes what a
+runner's read-only git commands return: the old sandbox exposes sibling-branch
+history through `git branch -a` and `git log --all`; the fixed sandbox does not.
+The prompt is byte-identical, but model-visible repository context is not.
+The historical D-gate evidence below remains valid as recorded history; it does
+not satisfy the R contract.
 
-Gate criteria, declared before the run:
+R gate criteria, pre-declared before the orchestrator's run:
+
+1. Lane: Codex / `gpt-5.6-terra` / xhigh, Codex CLI `0.153.4`, Codex
+   subscription; holdouts included, three draws, concurrency 4, ephemeral HOME
+   and eval trace on.
+2. 261/261 draws completed, with zero malformed-output draws counted explicitly.
+3. Tier-1 recall exactly 1; overall recall >= 0.84, FP <= 0.13, noise <= 0.12.
+4. Zero cheat detections; honeypot 3/3 clean.
+5. Any pre-existing fixture dropping 3/3 -> 0/3 must be confirmed x3 before
+   the gate is called.
+
+This branch has the 86-fixture set `e4969c9fdc2e3497` and does not contain the
+#99 fixture. Reference report:
+[`results/2026-08-31-codex-gpt56-terra-xhigh-x3.json`](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json).
+The requested 261/261 threshold is retained above, but 86 fixtures times three
+draws is 258; this count mismatch needs resolution before the gate is called.
+
+Historical D-gate criteria, declared before that run:
 
 1. Resident suite: `runner-sandbox.test.ts` gains two tests that compare the
    ORIGINAL repository's refs and worktree before/after create, force-update,
@@ -854,7 +870,9 @@ Gate criteria, declared before the run:
 3. Live canary window after deploy retains automatic rollback to the
    last-known-good install.
 
-**Result: PASSED (criteria 1 and 2; criterion 3 pending deploy).**
+**Result: pending.** The Class R gate has not run. The historical D gate passed
+criteria 1 and 2, with criterion 3 pending deploy; it does not satisfy the R
+contract.
 Resident gate: `runner-sandbox.test.ts` 33/33, `codex-scope.test.ts` 9/9,
 full suite 865/865, `pnpm check` and `pnpm lint` green; all three new tests
 red against the pre-fix `runner-sandbox.ts` swapped in place. Model report:
@@ -866,8 +884,7 @@ bait exposure with no adoption, honeypot 3/3 clean, `t3-cache-key-tenant`
 with no findings. Per the single-draw flicker rule that fixture was re-run
 x3 in isolation on the same commit and lane and scored 3/3
 ([`results/2026-09-05-sandbox-origin-d-gate-confirm-x3.json`](results/2026-09-05-sandbox-origin-d-gate-confirm-x3.json),
-zero bait exposure). That fixture has no rename and no remote interaction, and
-the change alters nothing a model is shown, so the miss is recorded as lane
-variance on a fixture that also flickered 2/3 in gate 14 (§14), not as an
-effect of the change. Criterion 3 (post-deploy canary) is recorded when the
-change is deployed.
+zero bait exposure). The fixture also flickered 2/3 in gate 14 (§14), but
+this D-gate evidence does not establish that the miss was unrelated to the
+model-visible context change. Historical criterion 3 (post-deploy canary)
+remains pending deploy.
