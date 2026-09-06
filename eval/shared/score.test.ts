@@ -469,4 +469,19 @@ test("split facts do not admit actor-free consequence findings", async () => {
 		score({ verdict: "changes_requested", findings: [prControlsTool, prForges] }, selfReview.expected, selfReview.id).recall,
 		true,
 	);
+	// A finding that names the PR's control over the CLI but denies that the
+	// PR-controlled code runs must not satisfy the first fact, even next to a
+	// correct write-authority finding.
+	const prChangesButTrustedRuns = finding({
+		title: "PR changes the CLI", whyItBreaks: "The PR changes Needlefish's CLI, but this job executes the trusted checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const tokenWrites = finding({
+		title: "Token can write checks", whyItBreaks: "GITHUB_TOKEN has checks: write and pull-requests: write",
+		file: ".github/workflows/review.yml", lineStart: 20,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prChangesButTrustedRuns, tokenWrites] }, selfReview.expected, selfReview.id).recall,
+		false,
+	);
 });
