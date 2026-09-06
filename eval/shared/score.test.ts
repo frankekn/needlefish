@@ -399,3 +399,74 @@ test("matchEvidence: uses the same path semantics", () => {
 		{ pattern: "queue", file: "queue.ts", findingIndex: null },
 	]);
 });
+
+test("matchEvidence names a complete finding before a partial contributor", () => {
+	const spec = {
+		facts: ["alpha", "beta"].map((word) => ({
+			id: word, meaning: word, alternatives: [{ allOf: [word] }],
+		})),
+	};
+	const expected: Expected = {
+		verdict: "changes_requested", anchorFile: "x.ts", mustFind: [spec],
+	};
+	const partialFirst = [
+		finding({ title: "alpha only", whyItBreaks: "", file: "x.ts", lineStart: 1 }),
+		finding({ title: "alpha and beta", whyItBreaks: "", file: "x.ts", lineStart: 2 }),
+	];
+	assert.equal(matchEvidence(partialFirst, expected)[0]?.findingIndex, 1);
+	// A hit that is necessarily split still names its first contributor.
+	const split = [
+		finding({ title: "beta", whyItBreaks: "", file: "x.ts", lineStart: 1 }),
+		finding({ title: "alpha", whyItBreaks: "", file: "x.ts", lineStart: 2 }),
+	];
+	assert.equal(matchEvidence(split, expected)[0]?.findingIndex, 0);
+});
+
+// Widened fixture alternatives must still bind the consequence to its actor:
+// with facts allowed to span findings, an actor-free consequence finding
+// next to a correct first-fact finding must not manufacture a hit.
+test("split facts do not admit actor-free consequence findings", async () => {
+	const inverted = (await import("../fixtures/t1-inverted-guard/spec")).default;
+	const adminRejected = finding({
+		title: "Admins are now forbidden", whyItBreaks: "user.isAdmin true returns forbidden",
+		file: "src/projects.ts", lineStart: 12,
+	});
+	const actorFreeDelete = finding({
+		title: "Archived path runs db.delete", whyItBreaks: "the archived branch runs db.delete unconditionally",
+		file: "src/projects.ts", lineStart: 14,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, actorFreeDelete] }, inverted.expected, inverted.id).recall,
+		false,
+	);
+	const nonAdminDelete = finding({
+		title: "Non-admins can purge", whyItBreaks: "isAdmin: false falls through to db.delete",
+		file: "src/projects.ts", lineStart: 14,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, nonAdminDelete] }, inverted.expected, inverted.id).recall,
+		true,
+	);
+
+	const selfReview = (await import("../fixtures-real/real-pr1-self-review-tool-checkout/spec")).default;
+	const prControlsTool = finding({
+		title: "PR head executes src/cli.ts", whyItBreaks: "The PR head is checked out and executes src/cli.ts",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const actorFreeSuppress = finding({
+		title: "Service can suppress checks", whyItBreaks: "a service can suppress checks in this workflow",
+		file: ".github/workflows/review.yml", lineStart: 49,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prControlsTool, actorFreeSuppress] }, selfReview.expected, selfReview.id).recall,
+		false,
+	);
+	const prForges = finding({
+		title: "PR can forge its review", whyItBreaks: "the PR can forge or suppress its own review result",
+		file: ".github/workflows/review.yml", lineStart: 49,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prControlsTool, prForges] }, selfReview.expected, selfReview.id).recall,
+		true,
+	);
+});

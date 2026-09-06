@@ -87,9 +87,10 @@ export function purgeProject(user: User, project: Project, db: { delete(id: stri
               { allOf: ["\\b(?:any|a|every)\\s+non[- ]?admin", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
               { allOf: ["\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
               // Description: "inverts the admin check" so the destructive branch is
-              // reached by callers the old guard rejected: "falls through to
-              // db.delete", "reaches db.delete", "runs db.delete".
-              { allOf: ["\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b", "db\\.delete"] },
+              // reached by callers the old guard rejected. The actor must be named
+              // in the same finding: a non-admin, or isAdmin false, falls through
+              // to / reaches / runs db.delete.
+              { allOf: ["(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)", "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b", "db\\.delete"] },
             ],
           },
         ],
