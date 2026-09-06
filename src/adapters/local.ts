@@ -59,10 +59,6 @@ function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function gitLines(args: readonly string[], cwd: string): string[] {
-  return git(args, cwd).split("\n").filter(Boolean);
-}
-
 function gitNulFields(args: readonly string[], cwd: string): string[] {
   const output = git(args, cwd);
   if (!output) return [];
@@ -168,8 +164,8 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const trackedPaths = headExists ? gitNulFields(trackedDiffArgs(["--name-only", "-z"], trackedBinaryPaths), cwd) : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
-    ? gitLines(["ls-files", "--others", "--exclude-standard"], cwd)
-    : gitLines(["ls-files", "--cached", "--others", "--exclude-standard"], cwd);
+    ? gitNulFields(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
+    : gitNulFields(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd);
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
