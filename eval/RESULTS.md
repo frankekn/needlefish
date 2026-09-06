@@ -874,7 +874,7 @@ Pass criteria, declared before the run:
 7. Any pre-existing fixture that drops from 3/3 to 0/3 is confirmed x3 before
    the gate is called (single-draw flicker rule).
 
-**Result: FAILED on the pre-declared contract (6/7 criteria).** Report:
+**Result: FAILED on the pre-declared contract (5/7 criteria).** Report:
 [`results/2026-09-05-issue99-pathname-rename-gate-x3.json`](results/2026-09-05-issue99-pathname-rename-gate-x3.json)
 (`gateClass: "R"`, candidate `gitSha: ebd9a238eeced7f77af8ea00d303892db9a12e1d`,
 fixture set `edc6f01a8e348aed`, prompt `e62d0889fc704541`, scorer
@@ -882,7 +882,7 @@ fixture set `edc6f01a8e348aed`, prompt `e62d0889fc704541`, scorer
 
 | Criterion | Result |
 | --- | --- |
-| 261/261 draws, zero operational failures | PASS — 261/261, 0 |
+| 261/261 draws, zero operational failures | **FAIL — 261 draws recorded, 260 usable; invalidJsonRate 1/261.** `neg-hard-dead-code-delete` draw 2 has verdict `null`: "critic produced no summary or checked list (likely malformed output)" |
 | Tier-1 recall exactly 1 | **FAIL — 0.9048.** `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3 |
 | `rename-source-into-docs` >= 2/3, never fast-pathed | PASS — 3/3, two model calls per draw |
 | Recall >= 0.84, FP <= 0.13, noise <= 0.12 | PASS — 0.8743 / 0.0694 / 0.1093 (reference lane: 0.8778 / 0.1250 / 0.100) |
@@ -906,16 +906,17 @@ This is the documented lexical-miss class from gates 12 through 14 (§12-14).
 
 Attribution: neither fixture declares a rename or a quoted pathname, and a
 differential over the old and new fixture loader produced byte-identical
-bundles for all 86 pre-existing fixtures, so the change under test cannot
-have altered what either model call was shown. The fixture's own record on
+initial bundles for all 86 pre-existing fixtures. This does not prove that
+the critic's candidate text was identical: consistent with lane variance;
+a regression is not causally excluded. The fixture's own record on
 Codex Terra lanes is 0/1 0/1 1/1 (08-30 high), 1/1 1/1 1/1 (08-31 xhigh),
 1/1 0/1 0/1 (08-23), 1/1 1/1 0/1 (08-24), 0/1 1/1 0/1 (08-24), 0/1 0/1 0/1
 (08-24): it has failed tier-1 gates before on unrelated changes (§10, §14).
 
 Disposition: the gate is recorded as failed under its own contract and the
-change is **not deployed** from this record. The evidence supports a
-lane-variance miss on a fixture that flickers independently of the change,
-not a regression; but the rule is absolute so that exactly this argument
+change is **not deployed** from this record. The evidence is consistent with
+lane variance on a fixture that has flickered on unrelated changes; a
+regression is not causally excluded. The rule is absolute so that this argument
 cannot be used to wave a tier-1 miss through. Two ways forward, for the
 maintainer to choose: re-run the gate under the same declaration (a further
 draw set is the only thing that can pass it), or treat the fixture's
