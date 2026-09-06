@@ -1948,6 +1948,16 @@ test("gen-baseline-doc refuses unsafe or incomplete reports", async (t) => {
   assert.doesNotMatch(noArg.stderr, /refusing to generate baseline doc/);
 });
 
+test("renderResults does not attach historical run conclusions to current inputs", () => {
+  const spec = holdoutSpec("current-report-notes", false);
+  const report = resumeReport(spec, { anticheatVersion: 2 });
+  for (const reports of [[], [{ stem: "current-run", report }]]) {
+    const md = renderResults([], reports);
+    assert.doesNotMatch(md, /grok-build-0\.1|grok-composer-2\.5-fast|codex medium|claude opus-47/);
+    assert.match(md, /\[Historical experiment notes\]\(RESULTS_HISTORY\.md\)/);
+  }
+});
+
 test("renderResults: mixed prompt hashes are reported, not asserted shared", () => {
   const spec = holdoutSpec("gen-results-hashes", false);
   const a = resumeReport(spec, { anticheatVersion: 2, effort: "xhigh" });
