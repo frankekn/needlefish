@@ -20,12 +20,22 @@ export function ghText(args: readonly string[], cwd?: string, input?: string): s
   return runText("gh", args, { cwd, input });
 }
 
+// Pathname output is NUL-delimited and never trimmed: newline-delimited
+// listings C-quote non-ASCII and control bytes, and trimming would mangle
+// names with leading or trailing whitespace. Either way the "path" is no
+// longer a path, the file drops out of classification, and a source change
+// can ride the docs-only fast path. Rename detection is off for the same
+// reason: a rename lists only its destination, so moving a workflow, policy,
+// or source file into a docs path would hide the removal of the original.
+export function gitPathList(args: readonly string[], cwd: string): string[] {
+  const output = runText("git", args, { cwd, preserveOutput: true });
+  return output.split("\0").filter(Boolean);
+}
+
 export function changedFiles(cwd: string, baseSha: string, headSha = "HEAD"): ChangedFile[] {
-  // NUL output preserves repository-controlled pathnames (including newlines,
-  // quotes, and leading/trailing whitespace). Disable rename detection so the
-  // removed source path remains visible to docs-only classification.
-  const nameOnly = git(["diff", "--name-only", "-z", "--no-renames", baseSha, headSha], cwd);
-  return changedFilesFromPaths(nameOnly.split("\0"));
+  return changedFilesFromPaths(
+    gitPathList(["diff", "--name-only", "-z", "--no-renames", baseSha, headSha], cwd)
+  );
 }
 
 export function changedFilesFromPaths(paths: readonly string[]): ChangedFile[] {

@@ -16,6 +16,7 @@ import { scorerHash } from "./shared/scorer-hash";
 import { RunnerOperationalError } from "../src/shared/codex";
 import type { Expected, FixtureSpec, Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
+import renameSourceIntoDocs from "./fixtures/rename-source-into-docs/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
 import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec";
 
@@ -39,6 +40,29 @@ function finding(partial: Partial<Finding> & Pick<Finding, "title" | "whyItBreak
     ...partial,
   };
 }
+
+test("rename-source-into-docs requires the workflow consequence in one anchored finding", () => {
+  const evaluate = (findings: Finding[]) => score(
+    { verdict: "changes_requested", findings },
+    renameSourceIntoDocs.expected,
+    renameSourceIntoDocs.id,
+  );
+  const unrelated = [
+    finding({ title: "CI wording typo", whyItBreaks: "The README misspells workflow.", file: "README.md", lineStart: 1 }),
+    finding({ title: "Remove unused variable", whyItBreaks: "The unused variable should be removed.", file: "src/index.ts", lineStart: 1 }),
+  ];
+  assert.equal(evaluate(unrelated).recall, false);
+  // Even at the right anchor, separate findings cannot supply separate concepts.
+  assert.equal(evaluate(unrelated.map((item) => ({ ...item, file: "docs/ci.md" }))).recall, false);
+  const workflow = finding({
+    title: "CI workflow renamed to docs",
+    whyItBreaks: "It no longer runs on every push and PR, so tests and lint stop running.",
+    file: "docs/ci.md",
+    lineStart: 1,
+  });
+  assert.equal(evaluate([workflow]).recall, true);
+  assert.equal(evaluate([{ ...workflow, file: "README.md" }]).recall, false);
+});
 
 test("aggregateMustFindHitRates averages partial hits by fixture and excludes zero totals", () => {
   const score = (mustFindHits: number, mustFindTotal: number) => ({ mustFindHits, mustFindTotal });
@@ -90,7 +114,7 @@ test("loadFixture forces deterministic rename detection when git config disables
     assert.match(loaded.bundle.patch, /rename from src\/old\.ts/);
     assert.match(loaded.bundle.patch, /rename to src\/new\.ts/);
     assert.match(loaded.bundle.patchStat, /src\/\{old\.ts => new\.ts\}/);
-    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts"]);
+    assert.deepEqual(loaded.bundle.changedFiles.map((file) => file.path), ["src/new.ts", "src/old.ts"]);
   } finally {
     loaded?.cleanup();
     if (previousCount === undefined) delete process.env.GIT_CONFIG_COUNT;

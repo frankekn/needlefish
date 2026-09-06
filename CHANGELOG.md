@@ -12,6 +12,10 @@
   instead of a literal workflow name and the head SHA. A second cap stops retries
   after three completed failed or cancelled runs for the PR, including failures
   before check-run creation (#100).
+- Review: collect changed and untracked pathnames NUL-delimited with rename
+  detection off, so C-quoted filenames and files renamed into a docs path can
+  no longer drop out of classification and ride the docs-only fast path
+  unreviewed (#99).
 - Runner: remove the sandbox clone's `origin` remote and `FETCH_HEAD` before a
   model runner starts, closing the ordinary `git push` route back into the
   original repository (#103). Sibling-branch remote-tracking refs are no longer

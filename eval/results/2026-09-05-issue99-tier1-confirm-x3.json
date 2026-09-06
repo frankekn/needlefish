@@ -1,0 +1,1613 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "xhigh",
+  "provider": "OpenAI Codex",
+  "route": "Codex subscription",
+  "runnerVersion": "Codex CLI 0.153.4",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.153.4' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(t1-inverted-guard|real-pr1-self-review-tool-checkout)$' --report eval/results/2026-09-05-issue99-tier1-confirm-x3.json",
+  "runnerEnvironment": "[[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:c452343845d37cd1\"]]",
+  "privateEnvironment": false,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.153.4' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(t1-inverted-guard|real-pr1-self-review-tool-checkout)$' --report eval/reports/2026-09-05-issue99-tier1-confirm-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-05T16:43:44.297Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 68237,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Require administrators before deleting projects",
+          "whyItBreaks": "`user.isAdmin === true` now returns `forbidden`; conversely, a non-admin with an archived project proceeds to `db.delete`. This reverses the prior authorization condition and permits unauthorized destructive deletion."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 78622,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 15,
+          "title": "Require an administrator before purging projects",
+          "whyItBreaks": "`user.isAdmin === true` now returns \"forbidden\", while a non-admin with an archived project reaches `db.delete(project.id)`. This is an authorization bypass that permits destructive deletion by non-admin users and blocks the intended administrator workflow."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 54378,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 15,
+          "title": "Restore the admin authorization check before deletion",
+          "whyItBreaks": "`user.isAdmin === true` now returns \"forbidden\", while `user.isAdmin === false` and `project.archived === true` reaches `db.delete(project.id)`. This reverses the prior authorization behavior and lets non-admin callers delete archived projects."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 181141,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 51,
+          "lineEnd": 59,
+          "title": "Keep the reviewer code outside the PR checkout",
+          "whyItBreaks": "The job checks out the PR head and then installs and executes its package and src/cli.ts. An internal PR can alter either path, so arbitrary PR code runs on the self-hosted runner with GH_TOKEN explicitly granted pull-requests:write and checks:write; it can forge review results or compromise the runner."
+        },
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 49,
+          "lineEnd": 51,
+          "title": "Restore a checkout containing Needlefish's manifest",
+          "whyItBreaks": "The checked-out head tree contains only .github/workflows/review.yml and .needlefish/answers.json; it has no package.json or pnpm-lock.yaml. Running pnpm install --frozen-lockfile in the repository root therefore fails before the review command can run."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 2,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 128771,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 43,
+          "lineEnd": 59,
+          "title": "Restore a trusted reviewer checkout",
+          "whyItBreaks": "A same-repository PR can supply package scripts and src/cli.ts in its head commit. This job checks out that head, runs pnpm install, then executes it with a token allowed to write pull-request reviews and checks. The PR can therefore forge or suppress its own review result."
+        },
+        {
+          "severity": "P1",
+          "category": "runtime",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 49,
+          "lineEnd": 59,
+          "title": "Provide the tool files before invoking them",
+          "whyItBreaks": "The reviewed head contains only .github/workflows/review.yml and .needlefish/answers.json; it has no package.json, pnpm-lock.yaml, or src/cli.ts. Consequently pnpm install fails before a review can run (and the tsx invocation would also reference a nonexistent file)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 73252,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 59,
+          "lineEnd": 59,
+          "title": "Restore an isolated trusted reviewer checkout",
+          "whyItBreaks": "The checkout at the PR-head ref is now also the tool source, so any same-repository PR can modify src/cli.ts to suppress findings or use the injected write-capable GH_TOKEN to forge review output. Previously the command used a separate checkout of frankekn/needlefish@main, preventing the review target from controlling the reviewer."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.6666666666666666,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 0.6666666666666666,
+    "meanDurationMs": 97400.16666666667,
+    "recallByFixture": {
+      "t1-inverted-guard": 1,
+      "real-pr1-self-review-tool-checkout": 0.3333333333333333
+    },
+    "mustFindHitRateByFixture": {
+      "t1-inverted-guard": 1,
+      "real-pr1-self-review-tool-checkout": 0.3333333333333333
+    },
+    "mustFindHitRate": 0.6666666666666666,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 0.6666666666666666
+    },
+    "meanNoisePerPositive": 0.6666666666666666,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 1,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "ebd9a238eeced7f77af8ea00d303892db9a12e1d",
+  "fixtureSetHash": "00f3e101a34446e1",
+  "scorerHash": "8f0afd4d8ea1f5a5",
+  "fixtureTiers": {
+    "t1-inverted-guard": 1,
+    "real-pr1-self-review-tool-checkout": 1
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "t1-inverted-guard",
+    "real-pr1-self-review-tool-checkout"
+  ],
+  "fixtureKinds": {
+    "t1-inverted-guard": "positive",
+    "real-pr1-self-review-tool-checkout": "positive"
+  }
+}

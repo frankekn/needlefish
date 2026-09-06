@@ -1,0 +1,761 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "xhigh",
+  "provider": "OpenAI Codex",
+  "route": "Codex subscription",
+  "runnerVersion": "Codex CLI 0.153.4",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.153.4' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^t1-inverted-guard$' --report eval/results/2026-09-06-issue99-tier1-confirm2-x3.json",
+  "runnerEnvironment": "[[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:c452343845d37cd1\"]]",
+  "privateEnvironment": false,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort xhigh --provider 'OpenAI Codex' --route 'Codex subscription' --runner-version 'Codex CLI 0.153.4' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^t1-inverted-guard$' --report eval/reports/2026-09-06-issue99-tier1-confirm2-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-06T06:56:17.833Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 72040,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Permit admins to purge archived projects",
+          "whyItBreaks": "For user.isAdmin=true and project.archived=true, this new guard immediately returns \"forbidden\" and never deletes the project. The base implementation purged this exact authorized case."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 61878,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Restore admin authorization for project purges",
+          "whyItBreaks": "For an archived project, `isAdmin: false` now falls through to `db.delete`, while `isAdmin: true` returns \"forbidden\". This is a privilege-escalation path with destructive data loss."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 71500,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Require an administrator before purging",
+          "whyItBreaks": "The new early return rejects users where user.isAdmin is true, then permits any non-admin to delete an archived project at line 14. The base implementation allowed deletion only when both isAdmin and archived were true."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 0,
+    "meanDurationMs": 68472.66666666667,
+    "recallByFixture": {
+      "t1-inverted-guard": 0
+    },
+    "mustFindHitRateByFixture": {
+      "t1-inverted-guard": 0
+    },
+    "mustFindHitRate": 0,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 0
+    },
+    "meanNoisePerPositive": 1,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "8b0d3462f78cd7917344188c5c8392156d3b3447",
+  "fixtureSetHash": "8e6def7487cd87ce",
+  "scorerHash": "35801ea6db0bcbb2",
+  "fixtureTiers": {
+    "t1-inverted-guard": 1
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "t1-inverted-guard"
+  ],
+  "fixtureKinds": {
+    "t1-inverted-guard": "positive"
+  }
+}
