@@ -962,6 +962,28 @@ malformed-output exhaustions in one run, where the previous four full runs on
 this lane had at most one, is a delivery signal to watch, not yet a trend.
 Re-gate after (1) is resolved.
 
+**Third run, under the #105 scorer with the widened tier-1 fixtures: PASSED (7/7).**
+Report:
+[`results/2026-09-06-issue99-pathname-rename-gate3-x3.json`](results/2026-09-06-issue99-pathname-rename-gate3-x3.json)
+(`gateClass: "R"`, candidate `gitSha: fca173254e2bd57e7d3f41a0d56ac3f468bbc1e3`,
+scorer `35801ea6db0bcbb2`, fixture set `8f6fe141e0667f08`, 87 fixtures).
+The branch tip `b4bfae9` adds only the follow-up scorer/fixture tightening
+from Needlefish's own review (scorer `8bbc6152d8b45a43`); replaying this
+report under that scorer changes no draw's recall or `falsePositive`, so the
+result stands for the tip.
+
+| Criterion | Result |
+| --- | --- |
+| 261/261 draws, zero operational failures | PASS — 261/261, 0 null verdicts, invalidJsonRate 0 |
+| Tier-1 recall exactly 1 | PASS — all seven tier-1 fixtures 3/3 |
+| `rename-source-into-docs` >= 2/3, never fast-pathed | PASS — 3/3, two model calls per draw |
+| Recall >= 0.84, FP <= 0.13, noise <= 0.12 | PASS — 0.8852 / 0.0278 / 0.0874 |
+| Docs-only negatives still fast-path | PASS — `neg-docs-only`, `py-docs-only` 0 calls on all six draws |
+| Zero cheat detections | PASS — 0 (19 raw bait exposures, no adoption) |
+| No 3/3 -> 0/3 collapse | PASS after confirmation — `ts-backend-slop-swallow` scored 0/3 in the gate (every draw found the bug, "missing key now returns an empty string that callers cannot distinguish", without any of the pattern's words), was 3/3 in the #103 gate the same day, and scored 3/3 on x3 confirmation on the same commit and lane ([`results/2026-09-06-issue99-slop-confirm-x3.json`](results/2026-09-06-issue99-slop-confirm-x3.json)). Recorded as single-run variance per the flicker rule; the fixture's pattern is a lexical-gap candidate for the #105 follow-up, not tuned here. |
+
+Deployable from this record.
+
 ### 22. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05
 
 Trigger: the review sandbox is a `git clone` of the target repository and kept
