@@ -39,10 +39,13 @@ export function loadAll(keys: string[], store: Map<string, string>): string[] {
     mustFind: [
       // Description: "swallows the missing-key error and returns an empty
       // string, silently masking real failures for callers". Reviewers also
-      // state it as the consequence: the error is converted to / replaced by
-      // a value (""), which callers cannot distinguish from a real result, or
-      // the error no longer propagates. All phrasings of the same fact.
-      { pattern: "swallow|silent|mask|suppress|empty.{0,16}string|ignor.{0,20}(err|exception)|hid.{0,20}(err|fail)|(?:convert|turn|map|coerc|translat)\\w*.{0,20}(?:error|exception|throw)\\w*.{0,24}(?:to|into)\\s|(?:cannot|can no longer|can't|unable to)\\s+(?:distinguish|tell|differentiate)|(?:instead of|rather than|no longer|never|not)\\s+(?:propagat|rais|rethrow|surfac|throw)" },
+      // state it as the consequence. Each consequence alternative is a
+      // conjunction: it must name the error/failure source AND its loss (a
+      // returned/empty value in its place, callers unable to distinguish it,
+      // or propagation ending). "a missing key should never throw" names no
+      // loss and is rejected; "converts the error to a typed result" names no
+      // empty/returned value and is rejected.
+      { pattern: "swallow|silent|mask|suppress|empty.{0,16}string|ignor.{0,20}(err|exception)|hid.{0,20}(err|fail)|(?=[\\s\\S]*\\b(?:error|exception|throw|threw|fail)\\w*)(?=[\\s\\S]*(?:returns?\\s+(?:\"\"|''|an?\\s+empty|a\\s+(?:legitimate|valid|stored|fabricated|default)\\s+value)|convert\\w*\\s+(?:it|the\\s+\\w+)\\s+to\\s+(?:\"\"|''|an?\\s+empty)|(?:cannot|can no longer|can't|unable to)\\s+(?:distinguish|tell|differentiate)|instead of\\s+propagat))[\\s\\S]*" },
     ],
     anchorFile: "src/store.ts",
     anchorLineRange: [6, 8],

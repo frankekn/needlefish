@@ -532,4 +532,8 @@ test("slop-swallow oracle admits consequence phrasings on the anchor only", asyn
 	for (const why of phrasings) assert.equal(run(why), true, why);
 	for (const why of phrasings) assert.equal(run(why, "src/other.ts"), false, "anchor still required");
 	assert.equal(run("The lookup is slower because the map is copied on every call"), false);
+	// Opposite or unrelated claims on the anchor must not score: no loss named.
+	assert.equal(run("A missing key should never throw; this change is correct"), false);
+	assert.equal(run("The catch converts the error into a typed Result and callers must check it"), false);
+	assert.equal(run("The error is not propagated to the logger, only to the caller"), false);
 });
