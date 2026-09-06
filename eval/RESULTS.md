@@ -812,3 +812,43 @@ Maintainer-dispatched review run
 then required that exact deployed SHA on controlled PR #94 and completed a real
 Codex review plus critic pass (2 model calls) with a terminal `pass` verdict and
 no infrastructure failure. The rollback threshold was not crossed.
+
+### 22. Structured facts may span anchored findings (#105) — scorer change 2026-09-06
+
+Trigger: `real-pr1-self-review-tool-checkout` (tier 1) failed the absolute
+tier-1 rule on three unrelated commits (§21 of the #99 and #103 branches)
+while every other tier-1 fixture scored 3/3. Every missed draw found the
+defect but split it across two correct findings on `review.yml:43` and `:49`;
+the matcher required both structured facts in one finding, and which fact it
+rejected flipped between draws.
+
+Owner disposition (issue #105): option (a), a scorer change.
+
+Change (commit `e802adb`): a `mustFind` spec with `facts` is satisfied when
+each fact is matched by some finding in the anchor-filtered pool; different
+facts may come from different findings. `matchEvidence`, `criticPruneError`,
+`lineAnchorValid`, and the noise count use the same pool. `pattern` specs,
+`mustNotFind`, `trap`, and cheat scans keep single-finding semantics; the
+anchor stays mandatory. The fixture gains alternatives for both facts written
+from the review thread's own sentences (`provenance.evidenceUrl`), each
+annotated with its source; the loosest was tightened after a precision scan.
+
+`scorerHash` moves from `8f0afd4d8ea1f5a5` to `35801ea6db0bcbb2`. Reports
+under the old hash are not comparable to reports under the new one; `--compare`
+and `--baseline` enforce this. The ranked table under "Current decision" was
+scored under the old hash and stands as recorded history until re-run.
+
+Evidence, all deterministic replays of recorded draws through the new scorer:
+
+| Run (Terra) | this fixture, per draw, old -> new hits |
+| --- | --- |
+| 08-30 high | 0->1 0->0 1->1 |
+| 08-31 xhigh | 1->1 1->1 1->1 |
+| 09-05 #99 gate | 1->1 1->1 0->1 |
+| 09-05 #99 confirm | 1->1 0->1 0->1 |
+| 09-06 #103 gate | 0->1 0->1 1->1 |
+
+The one remaining miss reported only the install failure. No other fixture's
+recall or `falsePositive` changed in any replayed run. Precision: 806 findings
+from other fixtures, none satisfies both facts. The #103 and #99 Class R gates
+are re-run under this scorer and recorded in their own sections.
