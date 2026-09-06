@@ -427,7 +427,10 @@ test("runLocal reviews an untracked source file whose name Git would C-quote", a
   writeFileSync(join(repo, "README.md"), "fixture\nmore\n");
   const quoted = "新功能.ts";
   writeFileSync(join(repo, quoted), "export const feature = 1;\n");
-  assert.match(gitText(["ls-files", "--others", "--exclude-standard"], repo), /^"\\346/m);
+  // Pin the quoting the old collector tripped over on the command line, so an
+  // environment with core.quotePath=false (a common global setting, and one
+  // GIT_CONFIG_* can inject) still exercises the bug path this test guards.
+  assert.match(gitText(["-c", "core.quotePath=true", "ls-files", "--others", "--exclude-standard"], repo), /^"\\346/m);
 
   const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
 
