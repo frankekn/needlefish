@@ -238,7 +238,7 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	assert.match(workflow, /codex_proxy_base_url:\n\s+description: Optional CLIProxyAPI base URL for Codex/);
 	assert.match(workflow, /codex_proxy_api_key:\n\s+description: CLIProxyAPI credential for Codex/);
 	assert.match(workflow, /codex_proxy_required:\n\s+description: Prohibit Codex OAuth fallback\n\s+type: boolean/);
-	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \}\}/);
+	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL \}\}/);
 	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
 	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);

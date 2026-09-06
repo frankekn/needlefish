@@ -77,10 +77,6 @@ export function purgeProject(user: User, project: Project, db: { delete(id: stri
               { allOf: ["users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
               { allOf: ["if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']", "db\\.delete\\s*\\("] },
               { allOf: ["user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
-              // Description: "non-admins can now purge". Reviewers also state the
-              // same fact as the truth value the code tests: "isAdmin: false" or
-              // "isAdmin=false" reaching db.delete / the purge path.
-              { allOf: ["isAdmin\\s*[:=]\\s*false", "\\b(?:purge|delete|db\\.delete)(?:s|d|ing)?\\b"] },
               // Description: "non-admins can now purge" stated as a negation of
               // admin: "any non-admin", "a non-admin ... deletes", "without being an
               // admin", "regardless of admin".

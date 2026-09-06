@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- GitHub: the review workflow falls back to the `CODEX_PROXY_BASE_URL`
+  repository variable when the `codex_proxy_base_url` input is absent, so
+  `pull_request` events can use the proxy route instead of failing closed when
+  only the secret is set.
 - GitHub: the reconcile job now reads check-runs with `filter=all`, so its
   two-infra-failure retry cap can actually trip, and detects an active review
   for the same PR by workflow file and the PR number carried in `run-name`
