@@ -355,7 +355,10 @@ jobs:
    ```
 4. Supply Codex's proxy route to the reusable workflow with
    `codex_proxy_base_url`, `codex_proxy_required: true`, and the
-   `codex_proxy_api_key` workflow secret. Needlefish
+   `codex_proxy_api_key` workflow secret. `pull_request` events carry no
+   workflow inputs, so for this repo's own reviews set the repository variable
+   `CODEX_PROXY_BASE_URL` alongside the secret; the workflow falls back to it
+   when the input is absent. Needlefish
    registers the `cliproxyapi` custom provider on the command line while the
    credential remains only in the child environment; required mode rejects
    incomplete configuration instead of falling back to OAuth. Proxy invocations
