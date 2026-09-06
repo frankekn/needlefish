@@ -370,7 +370,9 @@ function headLineCount(
 	file: string,
 ): number | null {
 	try {
-		const content = git(["show", `${headSha}:${file}`], repoPath);
+		const content = git(["show", `${headSha}:${file}`], repoPath, {
+			preserveOutput: true,
+		});
 		if (content === "") return 0;
 		return (content.endsWith("\n") ? content.slice(0, -1) : content).split("\n")
 			.length;

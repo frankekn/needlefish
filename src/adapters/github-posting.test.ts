@@ -44,6 +44,7 @@ type Fixture = {
 type FixtureOptions = {
 	readonly prNumber: number;
 	readonly rawReview: string;
+	readonly readmeContent?: string;
 	readonly staleHeadAfterReview?: boolean;
 	readonly paginatePreviousReviewOnSecondPage?: boolean;
 	// Each review becomes its own slurp page, last page newest. Used to prove
@@ -182,7 +183,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	gitText(["branch", "-M", "main"], repo);
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
-	writeFileSync(path.join(repo, "README.md"), "feature\n");
+	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
 	commitAll(repo, "feature");
 	const targetHeadSha = headSha(repo);
 	let latestHeadSha = targetHeadSha;
@@ -464,6 +465,45 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 		"**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```",
 	);
 });
+
+for (const { name, content, line } of [
+	{ name: "leading blank line", content: "\nfeature\n", line: 2 },
+	{ name: "trailing blank line", content: "feature\n\n", line: 2 },
+	{ name: "no final newline", content: "feature", line: 1 },
+	{ name: "empty file", content: "", line: 1 },
+]) {
+	test(`runGithub uses committed line bounds for suggestions: ${name}`, async (t) => {
+		const fixture = setupFixture(t, {
+			prNumber: 17,
+			readmeContent: content,
+			rawReview: JSON.stringify({
+				summary: "review",
+				findings: [mkFinding({
+					lineStart: line,
+					lineEnd: line,
+					replacement: { lines: ["fixed"] },
+				})],
+				checked: ["checked"],
+				residual_risks: [],
+			}),
+		});
+
+		await runGithub(fixture.repo, 17, { timeoutMs: 1000 });
+
+		const reviewPost = postedReview(readPosts(fixture.postLog), 17);
+		assert.ok(reviewPost);
+		const payload = parseReviewPayload(reviewPost.payload);
+		assert.equal(payload.commit_id, fixture.headSha);
+		if (content === "") {
+			assert.equal(payload.comments.length, 0);
+			assert.doesNotMatch(payload.body, /```suggestion/);
+		} else {
+			assert.equal(payload.comments.length, 1);
+			assert.equal(payload.comments[0].line, line);
+			assert.match(String(payload.comments[0].body), /```suggestion\nfixed\n```/);
+		}
+	});
+}
 
 test("runGithub omits fence-breaking suggestions but still posts inline comments", async (t) => {
 	const fixture = setupFixture(t, {
