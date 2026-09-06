@@ -21,8 +21,11 @@ export function ghText(args: readonly string[], cwd?: string, input?: string): s
 }
 
 export function changedFiles(cwd: string, baseSha: string, headSha = "HEAD"): ChangedFile[] {
-  const nameOnly = git(["diff", "--name-only", baseSha, headSha], cwd);
-  return changedFilesFromPaths(nameOnly.split("\n"));
+  // NUL output preserves repository-controlled pathnames (including newlines,
+  // quotes, and leading/trailing whitespace). Disable rename detection so the
+  // removed source path remains visible to docs-only classification.
+  const nameOnly = git(["diff", "--name-only", "-z", "--no-renames", baseSha, headSha], cwd);
+  return changedFilesFromPaths(nameOnly.split("\0"));
 }
 
 export function changedFilesFromPaths(paths: readonly string[]): ChangedFile[] {
