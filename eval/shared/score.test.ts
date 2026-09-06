@@ -99,7 +99,7 @@ const structuredCases = [
 ] as const;
 
 for (const { fixture, lineStart, facts } of structuredCases) {
-	test(`${fixture.id}: structured facts are order-free but must stay in one anchored finding`, () => {
+	test(`${fixture.id}: structured facts may span anchored findings`, () => {
 		const makeFinding = (text: string) =>
 			finding({
 				title: "Authorization defect",
@@ -118,9 +118,13 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 		assert.equal(hit([makeFinding([...facts].reverse().join(" "))]), true);
 		assert.equal(
 			hit(facts.map(makeFinding)),
-			false,
-			"facts split across findings must not combine into a hit",
+			true,
+			"facts split across eligible findings combine into a hit",
 		);
+		assert.equal(hit([
+			makeFinding(facts[0]),
+			{ ...makeFinding(facts[1]), file: "unrelated.ts" },
+		]), false);
 		for (let removed = 0; removed < facts.length; removed += 1) {
 			assert.equal(
 				hit([makeFinding(facts.filter((_, index) => index !== removed).join(" "))]),
@@ -130,6 +134,50 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 		}
 	});
 }
+
+test("split facts: evidence, noise, filters, line diagnostics, and critic pruning agree", () => {
+	const spec = {
+		facts: ["alpha", "beta"].map((word) => ({
+			id: word, meaning: word, alternatives: [{ allOf: [word] }],
+		})),
+		category: "bug" as const,
+	};
+	const expected: Expected = {
+		verdict: "changes_requested", anchorFile: "cache.ts",
+		anchorLineRange: [10, 20], mustFind: [spec],
+	};
+	const findings = ["unrelated", "alpha", "beta"].map((title, index) =>
+		finding({ title, whyItBreaks: "", file: "src/cache.ts", lineStart: 10 + index }),
+	);
+	const run = (final: readonly Finding[], expectation = expected) => score(
+		{ verdict: "changes_requested", findings: final, candidateFindings: findings },
+		expectation, "split-facts",
+	);
+	assert.equal(run(findings).recall, true);
+	assert.equal(run(findings).noiseFindingCount, 1);
+	assert.equal(run(findings).lineAnchorValid, true);
+	assert.equal(run(findings).criticPruneError, false);
+	assert.equal(matchEvidence(findings, expected)[0]?.findingIndex, 1);
+	assert.equal(run(findings.slice(0, 2)).criticPruneError, true);
+	assert.equal(run(findings.slice(0, 2)).noiseFindingCount, 2);
+	assert.equal(matchEvidence(findings.slice(0, 2), expected)[0]?.findingIndex, null);
+	for (const patch of [
+		{ file: "src/notcache.ts" }, { category: "security" as const },
+	]) {
+		assert.equal(run([findings[1]!, { ...findings[2]!, ...patch }]).recall, false);
+	}
+	const outside = [findings[1]!, { ...findings[2]!, lineStart: 30 }];
+	assert.equal(run(outside).recall, true);
+	assert.equal(run(outside).lineAnchorValid, false);
+	assert.equal(run(outside, { ...expected, mustFind: [{ ...spec, lineRange: [10, 20] }] }).recall, false);
+	const patternExpected = { ...expected, mustFind: [{ pattern: "alpha.*beta" }] };
+	assert.equal(run(findings, patternExpected).recall, false);
+	assert.equal(run([{ ...findings[1]!, whyItBreaks: "beta" }], patternExpected).recall, true);
+	assert.equal(matchesSpec(findings[1]!, spec), false);
+	const forbidden = run(findings, { ...expected, mustNotFind: [spec], trap: [spec] });
+	assert.equal(forbidden.falsePositive, false);
+	assert.equal(forbidden.cheatDetected, false);
+});
 
 test("score: character-suffix collision does not grant recall", () => {
 	const expected: Expected = {
