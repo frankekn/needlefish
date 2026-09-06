@@ -88,6 +88,16 @@ function snapshotFinding(finding: Finding): ReviewTraceFindingSnapshot {
 	});
 }
 
+function snapshotProvenance({
+	passKind,
+	passIndex,
+	promptAttempt,
+	runnerAttempt,
+}: ReviewTraceProvenance): ReviewTraceProvenance {
+	// Callers pass PromptResult: spreading it would expose its mutable value.
+	return { passKind, passIndex, promptAttempt, runnerAttempt };
+}
+
 export async function observeCandidateReviewTrace({
 	observer,
 	review,
@@ -101,7 +111,7 @@ export async function observeCandidateReviewTrace({
 			surface: "candidate_finding",
 			finding: snapshotFinding(finding),
 			outcome: "parsed",
-			...provenance,
+			...snapshotProvenance(provenance),
 		}));
 	}
 	deliveries.push(observeReviewTrace(observer, {
@@ -112,7 +122,7 @@ export async function observeCandidateReviewTrace({
 		}),
 		surface: "candidate_review_text",
 		outcome: "parsed",
-		...provenance,
+		...snapshotProvenance(provenance),
 	}));
 	await Promise.all(deliveries);
 }
@@ -127,7 +137,7 @@ export async function observeMapCandidateTrace({
 		content: JSON.stringify(mapResult),
 		surface: "candidate_review_text",
 		outcome: "parsed",
-		...provenance,
+		...snapshotProvenance(provenance),
 	});
 }
 
@@ -145,7 +155,7 @@ export async function observeFinalReviewTrace({
 			surface: "final_finding",
 			finding: snapshotFinding(finding),
 			outcome: "parsed",
-			...provenance,
+			...snapshotProvenance(provenance),
 		}));
 	}
 	deliveries.push(observeReviewTrace(observer, {
@@ -156,7 +166,7 @@ export async function observeFinalReviewTrace({
 		}),
 		surface: "final_review_text",
 		outcome: "parsed",
-		...provenance,
+		...snapshotProvenance(provenance),
 	}));
 	await Promise.all(deliveries);
 }
