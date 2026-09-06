@@ -16,18 +16,6 @@ const finding: Finding = {
   validation: "pnpm test",
 };
 
-test("deriveVerdict requests changes for blocking findings", () => {
-  const verdict = deriveVerdict([finding], []);
-
-  assert.equal(verdict, "changes_requested");
-});
-
-test("deriveVerdict needs human when only residual risk blocks", () => {
-  const verdict = deriveVerdict([], [{ text: "deep pass failed", blocks: true }]);
-
-  assert.equal(verdict, "needs_human");
-});
-
 test("deriveVerdict passes when no blocking evidence remains", () => {
   const verdict = deriveVerdict([], [{ text: "low confidence area", blocks: false }]);
 

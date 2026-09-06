@@ -1,13 +1,5 @@
 import type { Finding, MapResult, RawReview } from "../shared/schema.js";
 
-export type ReviewTraceSurface =
-	| "raw_success"
-	| "raw_failure"
-	| "candidate_finding"
-	| "candidate_review_text"
-	| "final_finding"
-	| "final_review_text";
-
 export type ReviewTracePassKind = "review" | "map" | "deep" | "critic";
 
 export type ReviewTraceOutcome =
