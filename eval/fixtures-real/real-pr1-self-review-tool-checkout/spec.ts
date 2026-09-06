@@ -33,6 +33,16 @@ const spec: FixtureSpec = {
               { allOf: ["(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)", "(?:src/cli\\.ts|Needlefish)", "\\b(?:tool|reviewer|review)\\b"] },
               { allOf: ["self[- ]review\\s+mode", "PR\\s+checkout(?:'s)?\\s+own\\s+src", "\\btool\\b"] },
               { allOf: ["ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}", "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"] },
+              // Review thread: "A PR that changes Needlefish itself can replace the review
+              // logic" — the candidate PR controls, supplies, or modifies the reviewer code
+              // (src/cli.ts / the CLI / the tool) that the job then runs.
+              { allOf: ["\\b(?:PR|pull request)\\b", "\\b(?:controls?|supply|supplies|supplied|modif(?:y|ies|ied)|alter(?:s|ed)?|replace(?:s|d)?|change(?:s|d)?)\\b", "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|review(?:er)? (?:logic|tool|code))"] },
+              // Review thread: "executes src/cli.ts from that same checkout" — the checked-out
+              // PR / head commit is what gets installed and executed as the reviewer.
+              { allOf: ["\\b(?:checks? out|checked[- ]out|checkout)\\b", "\\b(?:PR|pull request|head)\\b", "\\b(?:executes?|executed|runs?|installs?)\\b", "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"] },
+              // Review thread: the merge gate "is controlled by the candidate code it is
+              // supposed to evaluate" — the PR-head checkout is also the tool source.
+              { allOf: ["(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)", "\\b(?:also|now)\\b", "\\btool\\s+source\\b|\\breviewer\\b"] },
             ],
           },
           {
@@ -46,6 +56,16 @@ const spec: FixtureSpec = {
               { allOf: ["(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
               { allOf: ["(?:Needlefish|reviewer|review tool)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
               { allOf: ["(?:GH_TOKEN|GITHUB_TOKEN)", "\\bwrite[- ]scoped\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
+              // Review thread: "write-scoped PR/check permissions" — a token or permission
+              // described as allowing writes to pull requests, reviews, or checks, in any
+              // word order ("pull-request and checks write tokens", "token allowed to write
+              // pull-request reviews and checks", "write-capable GH_TOKEN").
+              { allOf: ["\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b", "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
+              // Review thread: "post a passing review/check" — the PR can forge or suppress
+              // its own review or check result. "post" alone is too common a verb in other
+              // fixtures' findings; require forge/suppress, or "own" with post.
+              { allOf: ["\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b", "\\b(?:review|check)s?(?:/checks?)?\\b"] },
+              { allOf: ["\\bpost(?:s|ed|ing)?\\b", "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"] },
             ],
           },
         ],
