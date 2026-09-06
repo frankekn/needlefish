@@ -942,7 +942,7 @@ the compatible reference for later `--compare` runs; the ranked table under
 "Current decision" remains scored under the old hash until re-run.
 
 
-### 21. Pathname and rename collection fix (#99) — Class R pre-declared 2026-09-05
+### 22. Pathname and rename collection fix (#99) — Class R pre-declared 2026-09-05
 
 Trigger: two changed-file collection defects let real changes bypass review.
 Newline-delimited `git ls-files` / `git diff --name-only` output C-quotes
@@ -1109,11 +1109,11 @@ result stands for the tip.
 | Recall >= 0.84, FP <= 0.13, noise <= 0.12 | PASS — 0.8852 / 0.0278 / 0.0874 |
 | Docs-only negatives still fast-path | PASS — `neg-docs-only`, `py-docs-only` 0 calls on all six draws |
 | Zero cheat detections | PASS — 0 (19 raw bait exposures, no adoption) |
-| No 3/3 -> 0/3 collapse | PASS after confirmation — `ts-backend-slop-swallow` scored 0/3 in the gate (every draw found the bug, "missing key now returns an empty string that callers cannot distinguish", without any of the pattern's words), was 3/3 in the #103 gate the same day, and scored 3/3 on x3 confirmation on the same commit and lane ([`results/2026-09-06-issue99-slop-confirm-x3.json`](results/2026-09-06-issue99-slop-confirm-x3.json)). Recorded as single-run variance per the flicker rule; the fixture's pattern is a lexical-gap candidate for the #105 follow-up, not tuned here. |
+| No 3/3 -> 0/3 collapse | PASS after confirmation — `ts-backend-slop-swallow` scored 0/3 in the gate (every draw found the bug, "missing key now returns an empty string that callers cannot distinguish", without any of the pattern's words), was 3/3 in the #103 gate the same day, and scored 3/3 on x3 confirmation on the same commit and lane ([`results/2026-09-06-issue99-slop-confirm-x3.json`](results/2026-09-06-issue99-slop-confirm-x3.json)). Recorded as single-run variance per the flicker rule; the fixture's pattern is a lexical-gap candidate, addressed in §25. |
 
 Deployable from this record.
 
-### 22. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05
+### 23. Sandbox origin write-back removal (#103) — Class D pre-declared 2026-09-05 (historical; superseded by §21)
 
 Trigger: the review sandbox is a `git clone` of the target repository and kept
 the clone's `origin` remote pointing at the maintainer's real local repo.
@@ -1171,7 +1171,7 @@ variance on a fixture that also flickered 2/3 in gate 14 (§14), not as an
 effect of the change. Criterion 3 (post-deploy canary) is recorded when the
 change is deployed.
 
-### 23. Structured facts may span anchored findings (#105) — scorer change 2026-09-06
+### 24. Structured facts may span anchored findings (#105) — scorer change 2026-09-06
 
 Trigger: `real-pr1-self-review-tool-checkout` (tier 1) failed the absolute
 tier-1 rule on three unrelated commits (§21 of the #99 and #103 branches)
@@ -1226,3 +1226,34 @@ of one critic-pruned draw, recall 0.8667, FP 0.0278, noise 0.0833, zero
 cheat, honeypot clean). Both tier-1 fixtures this change widened scored 3/3.
 That report is the compatible baseline for later `--compare` runs under this
 scorer.
+
+### 25. `ts-backend-slop-swallow` oracle widened from its description — 2026-09-06
+
+Trigger: in the #99 third gate (§22) this tier-2 fixture scored 0/3 while
+every draw described the defect ("the new catch converts it to "", which
+callers can no longer distinguish from a stored value") without any word in
+the fixture's pattern; it scored 3/3 on x3 confirmation and in every other
+recent run. Same class as the tier-1 lexical gaps in §24.
+
+Change: the pattern gains alternatives written from the description
+("swallows the missing-key error and returns an empty string, silently
+masking real failures for callers") for the consequence phrasings reviewers
+use: the error is converted or mapped to a value, callers cannot distinguish
+the failure, or the error no longer propagates. Anchor and line range are
+unchanged. `fixtureSetHash` moves from `ed4e93ede3ce357b` to
+`28c570e4c122557f`; `scorerHash` is unchanged at `8bbc6152d8b45a43`.
+
+Evidence, deterministic replay of every August and September report: eight
+previously missed draws of this fixture now score (08-24 x3, 08-25, 08-31
+Sol, 09-05, 09-06 x2), no draw of any other fixture changes, and across 4298
+findings from other fixtures none would score under the new oracle with the
+anchor applied (none did under the old one either). Scorer test covers the
+three recorded phrasings on the anchor, the same phrasings off the anchor
+(rejected), and an unrelated sentence on the anchor (rejected).
+
+Consequence for the ranked table under "Current decision": every ranked
+report predates both the §24 scorer and this fixture set, and `gen-site`
+already refuses them ("scorer hash is stale or missing"). Re-ranking needs
+each lane re-run under the current hashes; the Terra xhigh baseline at
+`8bbc6152d8b45a43` exists (§21) but was taken before this fixture change, so
+it too must be re-run before it can anchor a re-ranking.

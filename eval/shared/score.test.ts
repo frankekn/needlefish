@@ -511,3 +511,25 @@ test("split facts do not admit actor-free consequence findings", async () => {
 		false,
 	);
 });
+
+// ts-backend-slop-swallow: the description's fact ("swallows the error and
+// returns an empty string, masking failures for callers") is stated by real
+// reviews as the consequence rather than the verb. Each phrasing below came
+// from a recorded miss; the anchor is still required.
+test("slop-swallow oracle admits consequence phrasings on the anchor only", async () => {
+	const spec = (await import("../fixtures/ts-backend-slop-swallow/spec")).default;
+	const run = (whyItBreaks: string, file = "src/store.ts") =>
+		score(
+			{ verdict: "changes_requested", findings: [finding({ title: "Preserve missing-key errors from load", whyItBreaks, file, lineStart: 6 })] },
+			spec.expected,
+			spec.id,
+		).recall;
+	const phrasings = [
+		'the new catch converts it to "", which is a legitimate stored value. Direct callers can no longer distinguish a failed lookup from an empty value',
+		'A missing key now returns "", which is also a valid value. loadAll returns an apparently successful array instead of propagating the missing-key error',
+		"A missing key previously threw; it now returns an empty string that callers cannot distinguish from a stored value",
+	];
+	for (const why of phrasings) assert.equal(run(why), true, why);
+	for (const why of phrasings) assert.equal(run(why, "src/other.ts"), false, "anchor still required");
+	assert.equal(run("The lookup is slower because the map is copied on every call"), false);
+});

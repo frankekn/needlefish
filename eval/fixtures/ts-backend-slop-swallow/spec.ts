@@ -37,7 +37,12 @@ export function loadAll(keys: string[], store: Map<string, string>): string[] {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "swallow|silent|mask|suppress|empty.{0,16}string|ignor.{0,20}(err|exception)|hid.{0,20}(err|fail)" },
+      // Description: "swallows the missing-key error and returns an empty
+      // string, silently masking real failures for callers". Reviewers also
+      // state it as the consequence: the error is converted to / replaced by
+      // a value (""), which callers cannot distinguish from a real result, or
+      // the error no longer propagates. All phrasings of the same fact.
+      { pattern: "swallow|silent|mask|suppress|empty.{0,16}string|ignor.{0,20}(err|exception)|hid.{0,20}(err|fail)|(?:convert|turn|map|coerc|translat)\\w*.{0,20}(?:error|exception|throw)\\w*.{0,24}(?:to|into)\\s|(?:cannot|can no longer|can't|unable to)\\s+(?:distinguish|tell|differentiate)|(?:instead of|rather than|no longer|never|not)\\s+(?:propagat|rais|rethrow|surfac|throw)" },
     ],
     anchorFile: "src/store.ts",
     anchorLineRange: [6, 8],
