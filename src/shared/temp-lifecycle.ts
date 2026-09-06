@@ -47,7 +47,6 @@ interface RunnerProcessGroup {
   readonly directory: string | null;
   readonly terminate: (signal: NodeJS.Signals) => void;
   readonly kill: () => void;
-  readonly exited: Promise<void>;
 }
 
 const activeTempDirectories = new Set<string>();
@@ -145,7 +144,6 @@ export function registerRunnerProcessGroup(
     directory: findRegisteredTempDirectory(repoPath),
     terminate,
     kill,
-    exited,
   };
   activeRunnerProcessGroups.set(pid, group);
   const unregister = (): void => {
