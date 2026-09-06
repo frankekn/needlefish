@@ -65,18 +65,12 @@ jobs:
   },
   expected: {
     verdict: "changes_requested",
-    // Either rename endpoint is a legitimate anchor for "the workflow left
-    // the effective path", so no fixture-level anchorFile: the deleted source
-    // has no head lines to cite and the docs destination is where the bytes
-    // now live. The pattern must name the consequence, not the mechanics.
+    // Tightening this oracle changes fixtureSetHash; the gate must be re-run.
+    anchorFile: "docs/ci.md",
     mustFind: [
       {
         pattern:
-          "workflow|pipeline|\\bci\\b|github actions|actions/",
-      },
-      {
-        pattern:
-          "no longer (run|trigger|execut)|stops? (running|triggering)|(won't|will not|does not|doesn't|never) (run|trigger|execut)|disabl|remov|delet|mov(ed|es|ing)? (out|to docs|into docs)|not (be )?(run|execut|pick|recogni|honou?r)",
+          "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
       },
     ],
   },
