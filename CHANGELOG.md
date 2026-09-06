@@ -12,6 +12,11 @@
   instead of a literal workflow name and the head SHA. A second cap stops retries
   after three completed failed or cancelled runs for the PR, including failures
   before check-run creation (#100).
+- Runner: remove the sandbox clone's `origin` remote and `FETCH_HEAD` before a
+  model runner starts, closing the ordinary `git push` route back into the
+  original repository (#103). Sibling-branch remote-tracking refs are no longer
+  visible inside the sandbox, and the runner subprocess ignores global and
+  system git config so a remote defined there cannot resurrect the route.
 
 ## 0.4.2 — 2026-09-01
 
