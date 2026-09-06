@@ -295,6 +295,13 @@ jobs:
     secrets: inherit
 ```
 
+The reconciliation active-run guard and pre-check-run retry cap require the caller's
+run name to end with the PR number. Add this at the caller workflow's top level:
+
+```yaml
+run-name: "needlefish PR #${{ github.event.pull_request.number || inputs.pr_number }}"
+```
+
 To use Grok 4.5, replace the `runner` and `model` overrides with
 `runner: grok` and `model: grok-4.5`. The self-hosted workflow requires the
 authenticated `grok` CLI on the runner's `PATH`; it does not install or log in

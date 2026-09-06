@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- GitHub: the reconcile job now reads check-runs with `filter=all`, so its
+  two-infra-failure retry cap can actually trip, and detects an active review
+  for the same PR by workflow file and the PR number carried in `run-name`
+  instead of a literal workflow name and the head SHA. A second cap stops retries
+  after three completed failed or cancelled runs for the PR, including failures
+  before check-run creation (#100).
 - Review: collect changed and untracked pathnames NUL-delimited with rename
   detection off, so C-quoted filenames and files renamed into a docs path can
   no longer drop out of classification and ride the docs-only fast path

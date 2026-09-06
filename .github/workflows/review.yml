@@ -1,4 +1,8 @@
 name: needlefish-review
+# Carries the PR number so reconciliation can find every run for one PR
+# (a workflow_dispatch run reports the default branch's SHA, not the PR head).
+# The active-run guard is only effective when the caller's run-name carries " PR #<n>".
+run-name: "needlefish-review PR #${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}"
 
 on:
   pull_request:
@@ -356,10 +360,12 @@ jobs:
           "$NEEDLEFISH_BIN" "${args[@]}"
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
-  # terminal Needlefish check that is not an infra error. Superseded runs
-  # Crashed runs would otherwise leave a head with no
-  # verdict at all. Bounded: at most two infra-failed checks on a head are
-  # tolerated before the finalizer gives up loudly.
+  # terminal Needlefish check that is not an infra error. Crashed runs would
+  # otherwise leave a head with no verdict at all. Bounded: at most two
+  # infra-failed checks on a head are tolerated before the finalizer gives up
+  # loudly. The cap counts ALL check-runs on the head (filter=all); a
+  # usage-limited runner does not recover in minutes, and every re-dispatch
+  # spends a full model call before failing again.
   reconcile:
     needs: review
     if: always()
@@ -376,11 +382,16 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
             echo "no PR number in context; nothing to reconcile" >&2
             exit 0
+          fi
+          if [[ ! "$PR_NUM" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::PR number must be a positive integer, received '$PR_NUM'"
+            exit 1
           fi
           state=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .state)
           if [ "$state" != "open" ]; then
@@ -403,21 +414,13 @@ jobs:
               -f "output[title]=Needlefish: caller retry required" \
               -f "output[summary]=$summary" >/dev/null
           }
-          runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100"
+          # filter=all: the default (latest) returns one check-run per name, and
+          # every review check is named "Needlefish", so the retry cap below would
+          # otherwise never see more than one failure and could never trip.
+          runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100&filter=all"
           valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
-            exit 0
-          fi
-          running=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=in_progress" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
-          queued=$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=queued" --jq '[.workflow_runs[] | select(.name == "needlefish")] | length')
-          if [ "$running" -gt 0 ] || [ "$queued" -gt 0 ]; then
-            echo "a needlefish run for $head is still active or queued; letting it finish"
-            exit 0
-          fi
-          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
-          if [ "$infra_fails" -ge 2 ]; then
-            echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
           workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"
@@ -434,6 +437,30 @@ jobs:
             fi
             echo "::error::review workflow probe failed: $workflow_probe"
             exit 1
+          fi
+          # Active runs are matched by THIS workflow file and the PR number in
+          # run-name, never by head_sha or a literal workflow name: a
+          # workflow_dispatch run reports the default branch's SHA, and caller
+          # repos name the workflow whatever they like. This run is excluded.
+          active=0
+          for status in in_progress queued; do
+            n=$(gh api "repos/$REPO/actions/workflows/$workflow_file/runs?status=$status&per_page=100" --jq "[.workflow_runs[] | select(.id != $RUN_ID) | select(.display_title | test(\" PR #$PR_NUM\$\"))] | length")
+            active=$((active + n))
+          done
+          if [ "$active" -gt 0 ]; then
+            echo "a $workflow_file run for PR #$PR_NUM is still active or queued; letting it finish"
+            exit 0
+          fi
+          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
+          if [ "$infra_fails" -ge 2 ]; then
+            echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
+            exit 0
+          fi
+          # Runs that fail before creating a check must also exhaust retries.
+          completed_fails=$(gh api "repos/$REPO/actions/workflows/$workflow_file/runs?status=completed&per_page=100" --jq "[.workflow_runs[] | select(.conclusion == \"failure\" or .conclusion == \"cancelled\") | select(.display_title | test(\" PR #$PR_NUM\$\"))] | length")
+          if [ "$completed_fails" -ge 3 ]; then
+            echo "::error::$workflow_file for PR #$PR_NUM has $completed_fails completed failed or cancelled runs; retry cap reached, not re-dispatching"
+            exit 0
           fi
           dispatch_error=""
           default_branch=$(gh api "repos/$REPO" --jq .default_branch)
