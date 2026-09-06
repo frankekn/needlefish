@@ -484,4 +484,30 @@ test("split facts do not admit actor-free consequence findings", async () => {
 		score({ verdict: "changes_requested", findings: [prChangesButTrustedRuns, tokenWrites] }, selfReview.expected, selfReview.id).recall,
 		false,
 	);
+	// The PR checkout is mentioned but the install comes FROM the trusted
+	// checkout: the fact is denied, so no hit and the finding counts as noise.
+	const trustedInstall = finding({
+		title: "PR-head checkout is present", whyItBreaks: "The PR-head checkout is present, but the job installs Needlefish from the trusted checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const trustedInstallResult = score({ verdict: "changes_requested", findings: [trustedInstall, tokenWrites] }, selfReview.expected, selfReview.id);
+	assert.equal(trustedInstallResult.recall, false);
+	assert.ok(trustedInstallResult.noiseFindingCount > 0);
+	// The real phrasing still hits: the reviewer is run FROM the PR checkout.
+	const fromPrCheckout = finding({
+		title: "Reviewer runs from the PR checkout", whyItBreaks: "The job installs it and executes src/cli.ts from that same PR checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	assert.equal(score({ verdict: "changes_requested", findings: [fromPrCheckout, tokenWrites] }, selfReview.expected, selfReview.id).recall, true);
+
+	// t1-inverted-guard: "isAdmin: false returns forbidden, so the user cannot
+	// purge" asserts the OPPOSITE of the destructive-reachability fact.
+	const forbiddenNonAdmin = finding({
+		title: "Forbidden path is unreachable", whyItBreaks: "isAdmin: false returns forbidden, so the user cannot purge",
+		file: "src/projects.ts", lineStart: 12,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, forbiddenNonAdmin] }, inverted.expected, inverted.id).recall,
+		false,
+	);
 });

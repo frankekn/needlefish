@@ -33,11 +33,14 @@ const spec: FixtureSpec = {
               { allOf: ["(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)", "(?:src/cli\\.ts|Needlefish)", "\\b(?:tool|reviewer|review)\\b"] },
               { allOf: ["self[- ]review\\s+mode", "PR\\s+checkout(?:'s)?\\s+own\\s+src", "\\btool\\b"] },
               { allOf: ["ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}", "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"] },
-              // Review thread: "executes src/cli.ts from that same checkout" — the checked-out
-              // PR / head commit is what gets installed and executed as the reviewer. A
-              // finding that mentions the PR checkout but says the job executes the
-              // TRUSTED checkout denies the defect; the negative lookahead rejects it.
-              { allOf: ["^(?![\\s\\S]*\\b(?:executes?|executed|runs?|running|uses?|using)\\s+(?:the\\s+|a\\s+)?trusted\\b)", "\\b(?:checks? out|checked[- ]out|checkout)\\b", "\\b(?:PR|pull request|head)\\b", "\\b(?:executes?|executed|runs?|installs?)\\b", "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"] },
+              // Review thread: "executes src/cli.ts from that same checkout" — the PR or
+              // head checkout is the SOURCE the job installs or executes as the reviewer:
+              // "executes src/cli.ts from the PR checkout", "installs it from that head",
+              // "runs the checked-out PR's src/cli.ts". A finding that mentions the PR
+              // checkout but installs or runs Needlefish FROM the trusted checkout does
+              // not contain this phrase and is rejected.
+              { allOf: ["\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)", "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"] },
+              { allOf: ["\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['\u2019]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)", "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"] },
               // Review thread: the merge gate "is controlled by the candidate code it is
               // supposed to evaluate" — the PR-head checkout is also the tool source.
               { allOf: ["(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)", "\\b(?:also|now)\\b", "\\btool\\s+source\\b|\\breviewer\\b"] },
