@@ -95,6 +95,48 @@ test("review preserves deep evidence through tail coverage", async (t) => {
 	};
 
 	const result = await review(bundle);
+	const events: ReviewTraceEvent[] = [];
+	const observed = await review(bundle, {}, (event) => {
+		events.push(event);
+		const value: unknown = Reflect.get(event, "value");
+		if (typeof value === "object" && value !== null) {
+			Reflect.set(value, "summary", "observer-mutated");
+			for (const key of ["findings", "hotspots"]) {
+				const entries: unknown = Reflect.get(value, key);
+				if (Array.isArray(entries)) entries.length = 0;
+			}
+		}
+	});
+	assert.deepEqual(
+		{
+			...observed,
+			stats: observed.stats?.map((stat) => ({ ...stat, durationMs: 0 })),
+			totalDurationMs: 0,
+			traceDeliveryFailed: false,
+		},
+		{
+			...result,
+			stats: result.stats?.map((stat) => ({ ...stat, durationMs: 0 })),
+			totalDurationMs: 0,
+			traceDeliveryFailed: false,
+		},
+		"trace observers must not mutate map, candidate, or final pipeline values",
+	);
+	assert.equal(observed.traceDeliveryFailed, false);
+	assert.ok(events.every((event) => !Object.hasOwn(event, "value")));
+	assert.deepEqual(
+		events.map((event) => [event.passKind, event.surface]),
+		[
+			["map", "raw_success"],
+			["map", "candidate_review_text"],
+			["deep", "raw_success"],
+			["deep", "candidate_finding"],
+			["deep", "candidate_review_text"],
+			["critic", "raw_success"],
+			["critic", "final_finding"],
+			["critic", "final_review_text"],
+		],
+	);
 
 	assert.equal(result.verdict, "changes_requested");
 	assert.deepEqual(result.checked, [
