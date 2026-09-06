@@ -918,7 +918,7 @@ Deployable from this record. Historical criterion 3 (post-deploy canary)
 is recorded at deploy.
 
 
-### 23. Structured facts may span anchored findings (#105) — scorer change 2026-09-06
+### 22. Structured facts may span anchored findings (#105) — scorer change 2026-09-06
 
 Trigger: `real-pr1-self-review-tool-checkout` (tier 1) failed the absolute
 tier-1 rule on three unrelated commits (§21 of the #99 and #103 branches)
