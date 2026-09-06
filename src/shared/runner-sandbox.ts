@@ -163,9 +163,10 @@ function prepareWorkingSandbox(
 // target and its history are already local objects reachable from HEAD.
 //
 // Guarantee, precisely: this closes the ordinary push-back route. It is not an
-// OS-level boundary. A same-uid runner that learns the source path (the prompt
-// carries it) can still `git push <path>` or write files there directly; the
-// sandbox model accepts that (see the threat-model note in
+// OS-level boundary. A same-uid runner can still learn the source path by
+// other means (e.g. inspecting the host filesystem), then `git push <path>`
+// or write files there directly. The sandbox model accepts that (see the
+// threat-model note in
 // assertRunnerSandboxClean) and only refuses to hand the runner a ready-made
 // channel.
 function severSourceRemote(sandboxPath: string): void {

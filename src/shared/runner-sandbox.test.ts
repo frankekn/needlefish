@@ -1036,6 +1036,47 @@ test("prepareRunnerSandbox leaves no origin write-back route for a committed tar
   assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
 });
 
+test("prepareRunnerSandbox hides sibling-branch history while preserving target ancestry", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-sibling-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repoRoot = path.join(tmp, "source");
+  const sandboxTmp = path.join(tmp, "sandbox");
+  mkdirSync(repoRoot);
+  mkdirSync(sandboxTmp);
+  const repo = initRepo(repoRoot);
+  const parent = headSha(repo);
+  execFileSync("git", ["branch", "-M", "main"], { cwd: repo });
+  execFileSync("git", ["checkout", "-q", "-b", "sibling"], { cwd: repo });
+  const sideSubject = "sibling-only commit";
+  writeFileSync(path.join(repo, "sibling.txt"), "sibling\n");
+  commitAll(repo, sideSubject);
+  const sideCommit = headSha(repo);
+  execFileSync("git", ["checkout", "-q", "main"], { cwd: repo });
+  writeFileSync(path.join(repo, "target.txt"), "target\n");
+  commitAll(repo, "target commit");
+  const target = headSha(repo);
+  assert.equal(spawnSync("git", ["merge-base", "--is-ancestor", sideCommit, target], {
+    cwd: repo,
+  }).status, 1);
+  assert.ok(git(["log", "--all", "--format=%s"], repo).split("\n").includes(sideSubject));
+
+  const sandbox = prepareRunnerSandbox({
+    runner: "claude",
+    repoPath: repo,
+    prompt: "",
+    targetHeadSha: target,
+    tmp: sandboxTmp,
+  });
+
+  assert.equal(headSha(sandbox.repoPath), target);
+  assert.equal(git(["for-each-ref", "--format=%(refname)", "refs/remotes/"], sandbox.repoPath), "");
+  assert.equal(
+    git(["log", "--all", "--format=%s"], sandbox.repoPath).split("\n").includes(sideSubject),
+    false
+  );
+  assert.equal(git(["rev-parse", "HEAD~1"], sandbox.repoPath), parent);
+});
+
 test("prepareRunnerSandbox leaves no origin write-back route for a WORKING target", (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-sandbox-origin-working-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));

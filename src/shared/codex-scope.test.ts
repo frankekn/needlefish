@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -263,4 +263,59 @@ test("runCodex sandbox exposes no origin remote to the runner and rejects a push
   assert.notEqual(pushStatus, 0, "push via origin must fail from inside the runner");
   assert.match(pushStderr, /'origin' does not appear to be a git repository/);
   assert.equal(spawnSync("git", ["for-each-ref"], { cwd: repo, encoding: "utf8" }).stdout, refsBefore, "source refs must be unchanged");
+});
+
+// A remote defined in the runner's GLOBAL gitconfig would survive
+// severSourceRemote, which only edits the clone's own config. The runner env
+// must drop global and system git config so that route cannot be resurrected.
+test("runCodex sandbox ignores a global gitconfig remote pointing at the source", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const home = path.join(tmp, "home");
+  const bin = path.join(tmp, "codex-bin.js");
+  const previous = { bin: process.env.CODEX_BIN, home: process.env.HOME };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.home === undefined) delete process.env.HOME;
+    else process.env.HOME = previous.home;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  mkdirSync(home);
+  writeFileSync(
+    path.join(home, ".gitconfig"),
+    `[remote "origin"]\n\turl = ${repo}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n`
+  );
+  spawnSync("git", ["branch", "victim"], { cwd: repo });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const { spawnSync } = require('node:child_process');",
+      "const args = process.argv.slice(2);",
+      "const out = args[args.indexOf('--output-last-message') + 1];",
+      "const remotes = spawnSync('git', ['remote'], { encoding: 'utf8' }).stdout.trim();",
+      "const push = spawnSync('git', ['push', '--quiet', '--force', 'origin', 'HEAD:refs/heads/victim'], { encoding: 'utf8' });",
+      "fs.writeFileSync(out, JSON.stringify({ remotes, pushStatus: push.status }));",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.HOME = home;
+  const victimBefore = spawnSync("git", ["rev-parse", "victim"], { cwd: repo, encoding: "utf8" }).stdout;
+
+  const output = await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 5000,
+  });
+
+  const observed: unknown = JSON.parse(output);
+  assert.ok(typeof observed === "object" && observed !== null);
+  const { remotes, pushStatus } = observed as { remotes: string; pushStatus: number };
+  assert.equal(remotes, "", "global gitconfig remote must not be visible inside the sandbox");
+  assert.notEqual(pushStatus, 0, "push via a global-config origin must fail");
+  assert.equal(spawnSync("git", ["rev-parse", "victim"], { cwd: repo, encoding: "utf8" }).stdout, victimBefore, "source branch must be unchanged");
 });
