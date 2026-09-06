@@ -99,7 +99,7 @@ const structuredCases = [
 ] as const;
 
 for (const { fixture, lineStart, facts } of structuredCases) {
-	test(`${fixture.id}: structured facts are order-free but must stay in one anchored finding`, () => {
+	test(`${fixture.id}: structured facts may span anchored findings`, () => {
 		const makeFinding = (text: string) =>
 			finding({
 				title: "Authorization defect",
@@ -118,9 +118,13 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 		assert.equal(hit([makeFinding([...facts].reverse().join(" "))]), true);
 		assert.equal(
 			hit(facts.map(makeFinding)),
-			false,
-			"facts split across findings must not combine into a hit",
+			true,
+			"facts split across eligible findings combine into a hit",
 		);
+		assert.equal(hit([
+			makeFinding(facts[0]),
+			{ ...makeFinding(facts[1]), file: "unrelated.ts" },
+		]), false);
 		for (let removed = 0; removed < facts.length; removed += 1) {
 			assert.equal(
 				hit([makeFinding(facts.filter((_, index) => index !== removed).join(" "))]),
@@ -130,6 +134,50 @@ for (const { fixture, lineStart, facts } of structuredCases) {
 		}
 	});
 }
+
+test("split facts: evidence, noise, filters, line diagnostics, and critic pruning agree", () => {
+	const spec = {
+		facts: ["alpha", "beta"].map((word) => ({
+			id: word, meaning: word, alternatives: [{ allOf: [word] }],
+		})),
+		category: "bug" as const,
+	};
+	const expected: Expected = {
+		verdict: "changes_requested", anchorFile: "cache.ts",
+		anchorLineRange: [10, 20], mustFind: [spec],
+	};
+	const findings = ["unrelated", "alpha", "beta"].map((title, index) =>
+		finding({ title, whyItBreaks: "", file: "src/cache.ts", lineStart: 10 + index }),
+	);
+	const run = (final: readonly Finding[], expectation = expected) => score(
+		{ verdict: "changes_requested", findings: final, candidateFindings: findings },
+		expectation, "split-facts",
+	);
+	assert.equal(run(findings).recall, true);
+	assert.equal(run(findings).noiseFindingCount, 1);
+	assert.equal(run(findings).lineAnchorValid, true);
+	assert.equal(run(findings).criticPruneError, false);
+	assert.equal(matchEvidence(findings, expected)[0]?.findingIndex, 1);
+	assert.equal(run(findings.slice(0, 2)).criticPruneError, true);
+	assert.equal(run(findings.slice(0, 2)).noiseFindingCount, 2);
+	assert.equal(matchEvidence(findings.slice(0, 2), expected)[0]?.findingIndex, null);
+	for (const patch of [
+		{ file: "src/notcache.ts" }, { category: "security" as const },
+	]) {
+		assert.equal(run([findings[1]!, { ...findings[2]!, ...patch }]).recall, false);
+	}
+	const outside = [findings[1]!, { ...findings[2]!, lineStart: 30 }];
+	assert.equal(run(outside).recall, true);
+	assert.equal(run(outside).lineAnchorValid, false);
+	assert.equal(run(outside, { ...expected, mustFind: [{ ...spec, lineRange: [10, 20] }] }).recall, false);
+	const patternExpected = { ...expected, mustFind: [{ pattern: "alpha.*beta" }] };
+	assert.equal(run(findings, patternExpected).recall, false);
+	assert.equal(run([{ ...findings[1]!, whyItBreaks: "beta" }], patternExpected).recall, true);
+	assert.equal(matchesSpec(findings[1]!, spec), false);
+	const forbidden = run(findings, { ...expected, mustNotFind: [spec], trap: [spec] });
+	assert.equal(forbidden.falsePositive, false);
+	assert.equal(forbidden.cheatDetected, false);
+});
 
 test("score: character-suffix collision does not grant recall", () => {
 	const expected: Expected = {
@@ -350,4 +398,116 @@ test("matchEvidence: uses the same path semantics", () => {
 		{ pattern: "ttl", file: "cache.ts", findingIndex: 0 },
 		{ pattern: "queue", file: "queue.ts", findingIndex: null },
 	]);
+});
+
+test("matchEvidence names a complete finding before a partial contributor", () => {
+	const spec = {
+		facts: ["alpha", "beta"].map((word) => ({
+			id: word, meaning: word, alternatives: [{ allOf: [word] }],
+		})),
+	};
+	const expected: Expected = {
+		verdict: "changes_requested", anchorFile: "x.ts", mustFind: [spec],
+	};
+	const partialFirst = [
+		finding({ title: "alpha only", whyItBreaks: "", file: "x.ts", lineStart: 1 }),
+		finding({ title: "alpha and beta", whyItBreaks: "", file: "x.ts", lineStart: 2 }),
+	];
+	assert.equal(matchEvidence(partialFirst, expected)[0]?.findingIndex, 1);
+	// A hit that is necessarily split still names its first contributor.
+	const split = [
+		finding({ title: "beta", whyItBreaks: "", file: "x.ts", lineStart: 1 }),
+		finding({ title: "alpha", whyItBreaks: "", file: "x.ts", lineStart: 2 }),
+	];
+	assert.equal(matchEvidence(split, expected)[0]?.findingIndex, 0);
+});
+
+// Widened fixture alternatives must still bind the consequence to its actor:
+// with facts allowed to span findings, an actor-free consequence finding
+// next to a correct first-fact finding must not manufacture a hit.
+test("split facts do not admit actor-free consequence findings", async () => {
+	const inverted = (await import("../fixtures/t1-inverted-guard/spec")).default;
+	const adminRejected = finding({
+		title: "Admins are now forbidden", whyItBreaks: "user.isAdmin true returns forbidden",
+		file: "src/projects.ts", lineStart: 12,
+	});
+	const actorFreeDelete = finding({
+		title: "Archived path runs db.delete", whyItBreaks: "the archived branch runs db.delete unconditionally",
+		file: "src/projects.ts", lineStart: 14,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, actorFreeDelete] }, inverted.expected, inverted.id).recall,
+		false,
+	);
+	const nonAdminDelete = finding({
+		title: "Non-admins can purge", whyItBreaks: "isAdmin: false falls through to db.delete",
+		file: "src/projects.ts", lineStart: 14,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, nonAdminDelete] }, inverted.expected, inverted.id).recall,
+		true,
+	);
+
+	const selfReview = (await import("../fixtures-real/real-pr1-self-review-tool-checkout/spec")).default;
+	const prControlsTool = finding({
+		title: "PR head executes src/cli.ts", whyItBreaks: "The PR head is checked out and executes src/cli.ts",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const actorFreeSuppress = finding({
+		title: "Service can suppress checks", whyItBreaks: "a service can suppress checks in this workflow",
+		file: ".github/workflows/review.yml", lineStart: 49,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prControlsTool, actorFreeSuppress] }, selfReview.expected, selfReview.id).recall,
+		false,
+	);
+	const prForges = finding({
+		title: "PR can forge its review", whyItBreaks: "the PR can forge or suppress its own review result",
+		file: ".github/workflows/review.yml", lineStart: 49,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prControlsTool, prForges] }, selfReview.expected, selfReview.id).recall,
+		true,
+	);
+	// A finding that names the PR's control over the CLI but denies that the
+	// PR-controlled code runs must not satisfy the first fact, even next to a
+	// correct write-authority finding.
+	const prChangesButTrustedRuns = finding({
+		title: "PR changes the CLI", whyItBreaks: "The PR changes Needlefish's CLI, but this job executes the trusted checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const tokenWrites = finding({
+		title: "Token can write checks", whyItBreaks: "GITHUB_TOKEN has checks: write and pull-requests: write",
+		file: ".github/workflows/review.yml", lineStart: 20,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [prChangesButTrustedRuns, tokenWrites] }, selfReview.expected, selfReview.id).recall,
+		false,
+	);
+	// The PR checkout is mentioned but the install comes FROM the trusted
+	// checkout: the fact is denied, so no hit and the finding counts as noise.
+	const trustedInstall = finding({
+		title: "PR-head checkout is present", whyItBreaks: "The PR-head checkout is present, but the job installs Needlefish from the trusted checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	const trustedInstallResult = score({ verdict: "changes_requested", findings: [trustedInstall, tokenWrites] }, selfReview.expected, selfReview.id);
+	assert.equal(trustedInstallResult.recall, false);
+	assert.ok(trustedInstallResult.noiseFindingCount > 0);
+	// The real phrasing still hits: the reviewer is run FROM the PR checkout.
+	const fromPrCheckout = finding({
+		title: "Reviewer runs from the PR checkout", whyItBreaks: "The job installs it and executes src/cli.ts from that same PR checkout",
+		file: ".github/workflows/review.yml", lineStart: 43,
+	});
+	assert.equal(score({ verdict: "changes_requested", findings: [fromPrCheckout, tokenWrites] }, selfReview.expected, selfReview.id).recall, true);
+
+	// t1-inverted-guard: "isAdmin: false returns forbidden, so the user cannot
+	// purge" asserts the OPPOSITE of the destructive-reachability fact.
+	const forbiddenNonAdmin = finding({
+		title: "Forbidden path is unreachable", whyItBreaks: "isAdmin: false returns forbidden, so the user cannot purge",
+		file: "src/projects.ts", lineStart: 12,
+	});
+	assert.equal(
+		score({ verdict: "changes_requested", findings: [adminRejected, forbiddenNonAdmin] }, inverted.expected, inverted.id).recall,
+		false,
+	);
 });

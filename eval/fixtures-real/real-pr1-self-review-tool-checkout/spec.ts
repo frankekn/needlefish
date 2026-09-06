@@ -33,6 +33,17 @@ const spec: FixtureSpec = {
               { allOf: ["(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)", "(?:src/cli\\.ts|Needlefish)", "\\b(?:tool|reviewer|review)\\b"] },
               { allOf: ["self[- ]review\\s+mode", "PR\\s+checkout(?:'s)?\\s+own\\s+src", "\\btool\\b"] },
               { allOf: ["ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}", "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"] },
+              // Review thread: "executes src/cli.ts from that same checkout" — the PR or
+              // head checkout is the SOURCE the job installs or executes as the reviewer:
+              // "executes src/cli.ts from the PR checkout", "installs it from that head",
+              // "runs the checked-out PR's src/cli.ts". A finding that mentions the PR
+              // checkout but installs or runs Needlefish FROM the trusted checkout does
+              // not contain this phrase and is rejected.
+              { allOf: ["\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)", "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"] },
+              { allOf: ["\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['\u2019]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)", "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"] },
+              // Review thread: the merge gate "is controlled by the candidate code it is
+              // supposed to evaluate" — the PR-head checkout is also the tool source.
+              { allOf: ["(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)", "\\b(?:also|now)\\b", "\\btool\\s+source\\b|\\breviewer\\b"] },
             ],
           },
           {
@@ -46,6 +57,17 @@ const spec: FixtureSpec = {
               { allOf: ["(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
               { allOf: ["(?:Needlefish|reviewer|review tool)", "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b", "\\b(?:pull[- ]request|review|check)s?\\b"] },
               { allOf: ["(?:GH_TOKEN|GITHUB_TOKEN)", "\\bwrite[- ]scoped\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
+              // Review thread: "write-scoped PR/check permissions" — a token or permission
+              // described as allowing writes to pull requests, reviews, or checks, in any
+              // word order ("pull-request and checks write tokens", "token allowed to write
+              // pull-request reviews and checks", "write-capable GH_TOKEN").
+              { allOf: ["\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b", "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
+              // Review thread: "A PR that changes Needlefish itself can ... post a passing
+              // review/check" — the PR, the untrusted/PR-controlled reviewer, or its token
+              // forges, suppresses, or posts its own review or check. The actor must be in
+              // the same finding; "a service can suppress checks" attributes nothing.
+              { allOf: ["\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)", "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b", "\\b(?:review|check)s?(?:/checks?)?\\b"] },
+              { allOf: ["\\b(?:PR|pull request)\\b", "\\bpost(?:s|ed|ing)?\\b", "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"] },
             ],
           },
         ],

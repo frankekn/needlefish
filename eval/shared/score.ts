@@ -44,14 +44,22 @@ export function matchesSpec(
 	return spec.pattern !== undefined && new RegExp(spec.pattern, "i").test(text);
 }
 
-// The recall matcher: a single finding must satisfy the pattern AND the
-// anchor. A mustFind spec without its own `file` inherits the fixture-level
+// The recall matcher. For a spec with structured `facts`, each fact must be
+// satisfied by SOME finding in the anchor-filtered pool; different facts may
+// come from different findings. Real reviews split one defect across two
+// correct findings on the same file (the defect's cause on one line, its
+// consequence on another), and demanding both facts in one finding turned
+// that into a tier-1 miss on three unrelated commits (issue #105). A `pattern`
+// spec still requires a single finding. mustNotFind, trap, and cheat scans
+// keep single-finding semantics via matchesSpec. Reports scored under scorer
+// hash 8f0afd4d8ea1f5a5 are not comparable to reports under the new hash.
+// A mustFind spec without `file` inherits the fixture-level
 // anchorFile, so a keyword hit on an unrelated file never scores.
 // Line ranges are only enforced when a spec sets them explicitly; the
 // fixture-level anchorLineRange stays a separate diagnostic (lineAnchorValid)
 // because legitimate findings sometimes anchor at the caller.
 export function recallMatch(
-	finding: Finding,
+	findings: readonly Finding[],
 	spec: MatchSpec,
 	expected: Expected,
 ): boolean {
@@ -59,7 +67,26 @@ export function recallMatch(
 		spec.file || !expected.anchorFile
 			? spec
 			: { ...spec, file: expected.anchorFile };
-	return matchesSpec(finding, effective);
+	return effective.facts
+		? effective.facts.every((fact) =>
+			findings.some((finding) =>
+				matchesSpec(finding, { ...effective, facts: [fact] }),
+			),
+		)
+		: findings.some((finding) => matchesSpec(finding, effective));
+}
+
+// Only contributors to a complete hit count as evidence or escape noise.
+function contributesToRecall(
+	finding: Finding,
+	spec: MatchSpec,
+	expected: Expected,
+): boolean {
+	return spec.facts
+		? spec.facts.some((fact) =>
+			recallMatch([finding], { ...spec, facts: [fact] }, expected),
+		)
+		: recallMatch([finding], spec, expected);
 }
 
 export function drawFindings(findings: readonly Finding[]): DrawFinding[] {
@@ -83,9 +110,21 @@ export function matchEvidence(
 			spec.file || !expected.anchorFile
 				? spec
 				: { ...spec, file: expected.anchorFile };
-		const findingIndex = findings.findIndex((finding) =>
+		if (!recallMatch(findings, spec, expected)) {
+			return { ...effective, findingIndex: null };
+		}
+		// Evidence should name a finding that satisfies the whole spec when one
+		// exists; only a hit that is necessarily split across findings falls back
+		// to the first partial contributor.
+		const complete = findings.findIndex((finding) =>
 			matchesSpec(finding, effective),
 		);
+		const findingIndex =
+			complete >= 0
+				? complete
+				: findings.findIndex((finding) =>
+					contributesToRecall(finding, spec, expected),
+				);
 		return { ...effective, findingIndex: findingIndex < 0 ? null : findingIndex };
 	});
 }
@@ -107,8 +146,8 @@ function criticPruneError(
 	if (!candidate || candidate.length === 0) return false;
 	return mustFind.some(
 		(spec) =>
-			candidate.some((f) => recallMatch(f, spec, expected)) &&
-			!final.some((f) => recallMatch(f, spec, expected)),
+			recallMatch(candidate, spec, expected) &&
+			!recallMatch(final, spec, expected),
 	);
 }
 
@@ -121,12 +160,6 @@ function lineAnchorValid(
 	if (!expected.anchorFile) return true;
 	const mustFind = expected.mustFind ?? [];
 	const range = expected.anchorLineRange;
-	const anchored = (f: Finding, spec: MatchSpec): boolean => {
-		if (!recallMatch(f, spec, expected)) return false;
-		const effectiveRange = spec.lineRange ?? range;
-		if (!effectiveRange) return true;
-		return f.lineStart >= effectiveRange[0] && f.lineStart <= effectiveRange[1];
-	};
 	if (mustFind.length === 0) {
 		// No mustFind (negatives with an anchor): keep the old any-finding check.
 		return findings.some((f) => {
@@ -135,7 +168,9 @@ function lineAnchorValid(
 			return f.lineStart >= range[0] && f.lineStart <= range[1];
 		});
 	}
-	return mustFind.every((spec) => findings.some((f) => anchored(f, spec)));
+	return mustFind.every((spec) =>
+		recallMatch(findings, { ...spec, lineRange: spec.lineRange ?? range }, expected),
+	);
 }
 
 export function score(
@@ -218,9 +253,8 @@ export function score(
 
 	const findings = result.findings;
 	const mustFind = expected.mustFind ?? [];
-	const mustFindHits = mustFind.filter((spec) =>
-		findings.some((f) => recallMatch(f, spec, expected)),
-	).length;
+	const hitSpecs = mustFind.filter((spec) => recallMatch(findings, spec, expected));
+	const mustFindHits = hitSpecs.length;
 	const recall =
 		mustFind.length === 0 ? true : mustFindHits === mustFind.length;
 
@@ -230,12 +264,14 @@ export function score(
 		) ||
 		(expected.noBlockingFindings === true && findings.some(isBlocking));
 
-	const mayFind = expected.mayFind ?? [];
+	const mayFind = (expected.mayFind ?? []).filter((spec) =>
+		recallMatch(findings, spec, expected),
+	);
 	const noiseFindingCount = findings.filter(
 		(f) =>
 			isBlocking(f) &&
-			!mustFind.some((spec) => recallMatch(f, spec, expected)) &&
-			!mayFind.some((spec) => recallMatch(f, spec, expected)),
+			!hitSpecs.some((spec) => contributesToRecall(f, spec, expected)) &&
+			!mayFind.some((spec) => contributesToRecall(f, spec, expected)),
 	).length;
 
 	// Scan pre-critic candidates too: with eval tracing on, a runner that

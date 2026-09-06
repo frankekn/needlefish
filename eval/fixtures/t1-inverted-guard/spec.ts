@@ -60,6 +60,10 @@ export function purgeProject(user: User, project: Project, db: { delete(id: stri
               { allOf: ["\\badministrators?\\b", "\\b(?:forbidden|rejected|blocked|denied)\\b"] },
               { allOf: ["admin(?:istrator)?\\s+(?:check|guard)", "\\binvert(?:ed|s|ing)\\b", "\\b(?:forbidden|rejected|blocked|denied)\\b"] },
               { allOf: ["if\\s*\\(\\s*user\\.isAdmin\\s*\\)", "return\\s+[\"']forbidden[\"']"] },
+              // Description: "admins are rejected". Reviewers also state the same
+              // fact as the truth value the guard tests: "isAdmin is true" /
+              // "isAdmin=true" is rejected, forbidden, or returned early.
+              { allOf: ["isAdmin\\s*(?:[:=]+|is)\\s*true", "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"] },
             ],
           },
           {
@@ -73,6 +77,16 @@ export function purgeProject(user: User, project: Project, db: { delete(id: stri
               { allOf: ["users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
               { allOf: ["if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']", "db\\.delete\\s*\\("] },
               { allOf: ["user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              // Description: "non-admins can now purge" stated as a negation of
+              // admin: "any non-admin", "a non-admin ... deletes", "without being an
+              // admin", "regardless of admin".
+              { allOf: ["\\b(?:any|a|every)\\s+non[- ]?admin", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              { allOf: ["\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin", "\\b(?:purge|delete)(?:s|d|ing)?\\b"] },
+              // Description: "inverts the admin check" so the destructive branch is
+              // reached by callers the old guard rejected. The actor must be named
+              // in the same finding: a non-admin, or isAdmin false, falls through
+              // to / reaches / runs db.delete.
+              { allOf: ["(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)", "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b", "db\\.delete"] },
             ],
           },
         ],
