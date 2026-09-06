@@ -852,3 +852,19 @@ The one remaining miss reported only the install failure. No other fixture's
 recall or `falsePositive` changed in any replayed run. Precision: 806 findings
 from other fixtures, none satisfies both facts. The #103 and #99 Class R gates
 are re-run under this scorer and recorded in their own sections.
+
+Final-scorer Class R gate, requested by Needlefish's own reviews of #107 and
+#104: the scorer went through two review-driven tightenings after the first
+replay (`35801ea6db0bcbb2` -> `8bbc6152d8b45a43`; matchEvidence names a
+complete finding first, and every widened fixture alternative binds its
+consequence to an actor, source, or direction). A full production-lane gate
+was then run at the final hash on the #103 branch, whose source is the
+sandbox change plus this scorer:
+[`results/2026-09-06-sandbox-origin-r-gate3-baseline-x3.json`](results/2026-09-06-sandbox-origin-r-gate3-baseline-x3.json)
+(`baseline: true`, concurrency 4, 258/258, tier-1 1.0 after the x3
+confirmation in
+[`results/2026-09-06-sandbox-origin-secret-confirm-x3.json`](results/2026-09-06-sandbox-origin-secret-confirm-x3.json)
+of one critic-pruned draw, recall 0.8667, FP 0.0278, noise 0.0833, zero
+cheat, honeypot clean). Both tier-1 fixtures this change widened scored 3/3.
+That report is the compatible baseline for later `--compare` runs under this
+scorer.
