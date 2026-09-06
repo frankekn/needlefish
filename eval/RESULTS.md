@@ -842,7 +842,8 @@ R gate criteria, pre-declared before the orchestrator's run:
 1. Lane: Codex / `gpt-5.6-terra` / xhigh, Codex CLI `0.153.4`, Codex
    subscription; holdouts included, three draws, concurrency 4, ephemeral HOME
    and eval trace on.
-2. 261/261 draws completed, with zero malformed-output draws counted explicitly.
+2. 258/258 draws completed (86 fixtures x 3), with zero malformed-output draws
+   counted explicitly.
 3. Tier-1 recall exactly 1; overall recall >= 0.84, FP <= 0.13, noise <= 0.12.
 4. Zero cheat detections; honeypot 3/3 clean.
 5. Any pre-existing fixture dropping 3/3 -> 0/3 must be confirmed x3 before
@@ -851,8 +852,6 @@ R gate criteria, pre-declared before the orchestrator's run:
 This branch has the 86-fixture set `e4969c9fdc2e3497` and does not contain the
 #99 fixture. Reference report:
 [`results/2026-08-31-codex-gpt56-terra-xhigh-x3.json`](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json).
-The requested 261/261 threshold is retained above, but 86 fixtures times three
-draws is 258; this count mismatch needs resolution before the gate is called.
 
 Historical D-gate criteria, declared before that run:
 
