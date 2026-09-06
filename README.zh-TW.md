@@ -306,7 +306,9 @@ jobs:
    ```
    呼叫 reusable workflow 時傳入 `codex_proxy_base_url`、
    `codex_proxy_required: true` 與 `codex_proxy_api_key` workflow secret。
-   Needlefish 會在命令列註冊
+   `pull_request` 事件不帶 workflow input，所以本 repo 自己的 review 要另外
+   設定 repository variable `CODEX_PROXY_BASE_URL`；input 缺席時 workflow 會
+   退回使用這個變數。Needlefish 會在命令列註冊
    `cliproxyapi` custom provider，但 credential 只存在子程序環境；required
    模式缺少任一設定會直接失敗，不會退回 OAuth，且 proxy invocation 不帶
    direct subscription 的 `service_tier` override。Grok 則依 provider 完成
