@@ -1030,7 +1030,7 @@ async function runCodexCli(
 	try {
 		out = readFileSync(lastMsg, "utf8");
 	} catch {
-		out = res.stdout ?? "";
+		out = res.stdout;
 	}
 	return { res, out };
 }
@@ -1070,7 +1070,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
-	return { res, out: res.stdout ?? "" };
+	return { res, out: res.stdout };
 }
 
 async function runOpenCode(
@@ -1109,7 +1109,7 @@ async function runOpenCode(
 			OPENCODE_CONFIG_CONTENT: unrestrictedConfig,
 		},
 	});
-	return { res, out: res.stdout ?? "" };
+	return { res, out: res.stdout };
 }
 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
@@ -1139,7 +1139,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
-	return { res, out: res.stdout ?? "" };
+	return { res, out: res.stdout };
 }
 
 const PI_THINKING_LEVELS = [
@@ -1194,25 +1194,11 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
-	return { res, out: res.stdout ?? "" };
+	return { res, out: res.stdout };
 }
 
 function outputFor(runner: RunnerName, result: RunnerResult): string {
-	switch (runner) {
-		case "codex":
-		case "claude":
-			return result.out;
-		case "opencode":
-			return extractOpenCodeText(result.out);
-		case "openai":
-			return result.out;
-		case "grok":
-			return result.out;
-		case "pi":
-			return result.out;
-		case "acp":
-			return result.out;
-	}
+	return runner === "opencode" ? extractOpenCodeText(result.out) : result.out;
 }
 
 async function runOpenAIDirect(

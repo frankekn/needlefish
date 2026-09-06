@@ -43,7 +43,6 @@ export interface ManagedRunnerProcessInvocation {
   readonly env: NodeJS.ProcessEnv;
   readonly onSpawn?: RunnerLifecycleHandler;
   readonly onStdout?: RunnerChunkHandler;
-  readonly onStderr?: RunnerChunkHandler;
   readonly onTimeout?: RunnerLifecycleHandler;
 }
 
@@ -283,12 +282,6 @@ export async function runManagedRunnerProcess(
     child.stderr.on("data", (chunk: unknown) => {
       const text = collect(stderr, stderrBytes, chunk);
       if (text !== null) refreshIdleTimer();
-      if (text === null || invocation.onStderr === undefined) return;
-      try {
-        invocation.onStderr(text, controller);
-      } catch (error) {
-        failFromHandler(error);
-      }
     });
     child.stdin.on("error", (error) => {
       if (timeoutError === undefined && bufferError === undefined && spawnError === undefined) {

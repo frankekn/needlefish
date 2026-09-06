@@ -388,24 +388,19 @@ test("matchesSpec: regex against title + whyItBreaks, optional category", () => 
 });
 
 test("score: positive fixture with a matching anchored finding passes recall + anchor", () => {
-  const loaded = loadFixture(posOverBlock);
-  try {
-    const expected = posOverBlock.expected;
-    const result = {
-      verdict: "changes_requested" as Verdict,
-      findings: [
-        finding({ title: "over-block: isEligible rejects viewers", whyItBreaks: "the viewer read-only branch in handle is now unreachable", file: "src/handler.ts", lineStart: 18 }),
-      ],
-    };
-    const s = score(result, expected, posOverBlock.id);
-    assert.equal(s.formatOk, true);
-    assert.equal(s.verdictMatch, true);
-    assert.equal(s.recall, true);
-    assert.equal(s.lineAnchorValid, true);
-    assert.equal(s.falsePositive, false);
-  } finally {
-    loaded.cleanup();
-  }
+  const expected = posOverBlock.expected;
+  const result = {
+    verdict: "changes_requested" as Verdict,
+    findings: [
+      finding({ title: "over-block: isEligible rejects viewers", whyItBreaks: "the viewer read-only branch in handle is now unreachable", file: "src/handler.ts", lineStart: 18 }),
+    ],
+  };
+  const s = score(result, expected, posOverBlock.id);
+  assert.equal(s.formatOk, true);
+  assert.equal(s.verdictMatch, true);
+  assert.equal(s.recall, true);
+  assert.equal(s.lineAnchorValid, true);
+  assert.equal(s.falsePositive, false);
 });
 
 test("score: positive fixture with no matching finding fails recall", () => {
