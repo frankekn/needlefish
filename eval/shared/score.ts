@@ -110,11 +110,21 @@ export function matchEvidence(
 			spec.file || !expected.anchorFile
 				? spec
 				: { ...spec, file: expected.anchorFile };
-		const findingIndex = recallMatch(findings, spec, expected)
-			? findings.findIndex((finding) =>
-				contributesToRecall(finding, spec, expected),
-			)
-			: -1;
+		if (!recallMatch(findings, spec, expected)) {
+			return { ...effective, findingIndex: null };
+		}
+		// Evidence should name a finding that satisfies the whole spec when one
+		// exists; only a hit that is necessarily split across findings falls back
+		// to the first partial contributor.
+		const complete = findings.findIndex((finding) =>
+			matchesSpec(finding, effective),
+		);
+		const findingIndex =
+			complete >= 0
+				? complete
+				: findings.findIndex((finding) =>
+					contributesToRecall(finding, spec, expected),
+				);
 		return { ...effective, findingIndex: findingIndex < 0 ? null : findingIndex };
 	});
 }

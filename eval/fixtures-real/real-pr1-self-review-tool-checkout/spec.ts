@@ -61,11 +61,12 @@ const spec: FixtureSpec = {
               // word order ("pull-request and checks write tokens", "token allowed to write
               // pull-request reviews and checks", "write-capable GH_TOKEN").
               { allOf: ["\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b", "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b", "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"] },
-              // Review thread: "post a passing review/check" — the PR can forge or suppress
-              // its own review or check result. "post" alone is too common a verb in other
-              // fixtures' findings; require forge/suppress, or "own" with post.
-              { allOf: ["\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b", "\\b(?:review|check)s?(?:/checks?)?\\b"] },
-              { allOf: ["\\bpost(?:s|ed|ing)?\\b", "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"] },
+              // Review thread: "A PR that changes Needlefish itself can ... post a passing
+              // review/check" — the PR, the untrusted/PR-controlled reviewer, or its token
+              // forges, suppresses, or posts its own review or check. The actor must be in
+              // the same finding; "a service can suppress checks" attributes nothing.
+              { allOf: ["\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)", "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b", "\\b(?:review|check)s?(?:/checks?)?\\b"] },
+              { allOf: ["\\b(?:PR|pull request)\\b", "\\bpost(?:s|ed|ing)?\\b", "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"] },
             ],
           },
         ],
