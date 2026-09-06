@@ -1,6 +1,7 @@
 name: needlefish-review
 # Carries the PR number so reconciliation can find every run for one PR
 # (a workflow_dispatch run reports the default branch's SHA, not the PR head).
+# The active-run guard is only effective when the caller's run-name carries " PR #<n>".
 run-name: "needlefish-review PR #${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}"
 
 on:
@@ -388,6 +389,10 @@ jobs:
             echo "no PR number in context; nothing to reconcile" >&2
             exit 0
           fi
+          if [[ ! "$PR_NUM" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::PR number must be a positive integer, received '$PR_NUM'"
+            exit 1
+          fi
           state=$(gh api "repos/$REPO/pulls/$PR_NUM" --jq .state)
           if [ "$state" != "open" ]; then
             echo "PR #$PR_NUM is $state; nothing to reconcile"
@@ -424,6 +429,15 @@ jobs:
             echo "::error::invalid caller workflow ref: $WORKFLOW_REF"
             exit 1
           fi
+          workflow_probe=""
+          if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/$workflow_file" 2>&1); then
+            if [[ "$workflow_probe" == *"HTTP 404"* ]]; then
+              report_retry_required "Caller workflow $workflow_file is unavailable. Add workflow_dispatch with a required pr_number input, then retry this PR review."
+              exit 0
+            fi
+            echo "::error::review workflow probe failed: $workflow_probe"
+            exit 1
+          fi
           # Active runs are matched by THIS workflow file and the PR number in
           # run-name, never by head_sha or a literal workflow name: a
           # workflow_dispatch run reports the default branch's SHA, and caller
@@ -442,14 +456,11 @@ jobs:
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0
           fi
-          workflow_probe=""
-          if ! workflow_probe=$(gh api "repos/$REPO/actions/workflows/$workflow_file" 2>&1); then
-            if [[ "$workflow_probe" == *"HTTP 404"* ]]; then
-              report_retry_required "Caller workflow $workflow_file is unavailable. Add workflow_dispatch with a required pr_number input, then retry this PR review."
-              exit 0
-            fi
-            echo "::error::review workflow probe failed: $workflow_probe"
-            exit 1
+          # Runs that fail before creating a check must also exhaust retries.
+          completed_fails=$(gh api "repos/$REPO/actions/workflows/$workflow_file/runs?status=completed&per_page=100" --jq "[.workflow_runs[] | select(.conclusion == \"failure\" or .conclusion == \"cancelled\") | select(.display_title | test(\" PR #$PR_NUM\$\"))] | length")
+          if [ "$completed_fails" -ge 3 ]; then
+            echo "::error::$workflow_file for PR #$PR_NUM has $completed_fails completed failed or cancelled runs; retry cap reached, not re-dispatching"
+            exit 0
           fi
           dispatch_error=""
           default_branch=$(gh api "repos/$REPO" --jq .default_branch)

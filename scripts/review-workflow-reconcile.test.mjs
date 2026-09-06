@@ -56,6 +56,8 @@ function runReconcile({
 	checkRunsAll = [],
 	checkRunsLatest = null,
 	activeRuns = [],
+	completedRuns = [],
+	workflowMissing = false,
 	workflowRef = `${REPO}/.github/workflows/review.yml@refs/heads/main`,
 } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-reconcile-"));
@@ -71,6 +73,7 @@ function runReconcile({
 		checkRunsAll: JSON.stringify({ check_runs: checkRunsAll }),
 		checkRunsLatest: JSON.stringify({ check_runs: latest }),
 		activeRuns: JSON.stringify({ workflow_runs: activeRuns }),
+		completedRuns: JSON.stringify({ workflow_runs: completedRuns }),
 		workflow: JSON.stringify({ id: 1, path: ".github/workflows/review.yml" }),
 		repo: JSON.stringify({ default_branch: "main" }),
 	};
@@ -100,9 +103,12 @@ case "$path" in
   *"/check-runs?"*"filter=all"*) body=$(pick checkRunsAll) ;;
   *"/check-runs?"*) body=$(pick checkRunsLatest) ;;
   repos/*/check-runs) body='{}' ;;
+  *"/actions/workflows/"*"/runs?status=completed&per_page=100") body=$(pick completedRuns) ;;
   *"/actions/workflows/"*"/runs?"*) body=$(pick activeRuns) ;;
-  *"/actions/runs?"*) echo "legacy head_sha runs query must not be used: $path" >&2; exit 2 ;;
-  *"/actions/workflows/"*) body=$(pick workflow) ;;
+  *"/actions/runs?"*) body='{"workflow_runs": []}' ;;
+  *"/actions/workflows/"*)
+    if [ "$WORKFLOW_MISSING" = "1" ]; then echo "HTTP 404" >&2; exit 1; fi
+    body=$(pick workflow) ;;
   *"/pulls/"*) body=$(pick pulls) ;;
   repos/*) body=$(pick repo) ;;
   *) echo "unexpected api path $path" >&2; exit 2 ;;
@@ -123,6 +129,7 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
 			WORKFLOW_REF: workflowRef,
+			WORKFLOW_MISSING: workflowMissing ? "1" : "0",
 		},
 	});
 	const log = existsSync(ghLog) ? readFileSync(ghLog, "utf8") : "";
@@ -219,4 +226,60 @@ test("reconcile does nothing without a PR number", () => {
 	assert.equal(r.status, 0);
 	assert.equal(r.dispatched, 0);
 	assert.doesNotMatch(r.log, /api/);
+});
+
+test("reconcile reports a missing caller workflow before querying its runs", () => {
+	const r = runReconcile({ workflowMissing: true });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	const posts = r.log.split("\n").filter((line) => line.startsWith("api -X POST "));
+	assert.equal(posts.length, 1);
+	assert.match(posts[0], /check-runs .*output\[title\]=Needlefish: caller retry required/);
+	assert.doesNotMatch(r.log, /actions\/workflows\/review.yml\/runs\?/);
+});
+
+test("reconcile rejects a PR number containing regex syntax before any API call", () => {
+	const r = runReconcile({ prNum: "42|.*" });
+	assert.equal(r.status, 1);
+	assert.match(r.stdout, /PR number must be a positive integer/);
+	assert.equal(r.dispatched, 0);
+	assert.doesNotMatch(r.log, /api/);
+});
+
+test("reconcile caps three completed failed runs before any check-run exists", () => {
+	const r = runReconcile({
+		completedRuns: [1, 2, 3].map((id) => ({
+			...activeRun(id, "needlefish-review PR #42"),
+			conclusion: "failure",
+		})),
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
+});
+
+test("reconcile dispatches below the completed-run cap and ignores other PRs and conclusions", () => {
+	const r = runReconcile({
+		completedRuns: [
+			{ ...activeRun(1, "needlefish-review PR #42"), conclusion: "failure" },
+			{ ...activeRun(2, "needlefish-review PR #42"), conclusion: "failure" },
+			{ ...activeRun(3, "needlefish-review PR #420"), conclusion: "failure" },
+			{ ...activeRun(4, "needlefish-review PR #7"), conclusion: "failure" },
+			{ ...activeRun(5, "needlefish-review PR #42"), conclusion: "success" },
+		],
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 1);
+});
+
+test("reconcile includes cancelled runs in the completed-run cap", () => {
+	const r = runReconcile({
+		completedRuns: ["failure", "cancelled", "cancelled"].map((conclusion, id) => ({
+			...activeRun(id, "needlefish-review PR #42"),
+			conclusion,
+		})),
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.dispatched, 0);
+	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
 });
