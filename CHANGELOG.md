@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
+  full fixture set through the runner host's direct Codex subscription, which
+  is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.
+  Lane qualification is done by the explicit Class R gates recorded in
+  `eval/RESULTS.md`; the weekly reports under `eval/results/weekly/` and
+  `eval/weekly-compare.ts` stay as history and a reusable comparator.
+
 ## 0.4.3 — 2026-09-07
 
 - GitHub: select Codex `gpt-5.6-terra` at `high` effort as the default hosted
