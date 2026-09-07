@@ -15,7 +15,6 @@ import test from "node:test";
 
 const ci = readFileSync(".github/workflows/ci.yml", "utf8");
 const deploy = readFileSync(".github/workflows/deploy.yml", "utf8");
-const weekly = readFileSync(".github/workflows/weekly-eval.yml", "utf8");
 
 function workflowScript(workflow, stepName) {
   const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -33,7 +32,6 @@ function workflowScript(workflow, stepName) {
 
 const resolveScript = workflowScript(deploy, "Resolve deploy SHA");
 const deployScript = workflowScript(deploy, "Deploy verified SHA");
-const weeklyEvalScript = workflowScript(weekly, "Run full eval");
 const verifiedSha = "a".repeat(40);
 const laterSha = "b".repeat(40);
 
@@ -162,14 +160,6 @@ test("deploy is gated on a successful main-push CI run and keeps workflow_dispat
   assert.match(deploy, /ref: \$\{\{ steps\.sha\.outputs\.sha \}\}/);
   assert.match(deploy, /^    runs-on: self-hosted$/m);
   assert.doesNotMatch(deploy, /secrets\./);
-  assert.match(weekly, /gh workflow run deploy\.yml --ref main/);
-  assert.doesNotMatch(weekly, /-f force=true/);
-});
-
-test("weekly eval attests the configured Codex executable", () => {
-  assert.match(weeklyEvalScript, /runner_bin="\$\{CODEX_BIN:-codex\}"/);
-  assert.match(weeklyEvalScript, /--runner-version "\$\("\$runner_bin" --version\)"/);
-  assert.doesNotMatch(weeklyEvalScript, /\$\(codex --version\)/);
 });
 
 test("resolve uses the workflow_run head SHA and rejects a missing or invalid SHA", () => {

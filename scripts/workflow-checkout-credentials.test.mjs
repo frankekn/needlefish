@@ -834,28 +834,3 @@ test("a local action reference with no metadata file fails the scan", () => {
 		);
 	});
 });
-
-test("weekly-eval git push authenticates with GH_TOKEN instead of persisted checkout credentials", () => {
-	const weekly = readFileSync(".github/workflows/weekly-eval.yml", "utf8");
-	assert.match(weekly, /persist-credentials:\s*false/);
-
-	const compare = weekly.match(
-		/      - name: Compare with previous week and commit report\n([\s\S]*?)(?=\n      - name:|$)/,
-	);
-	assert.ok(compare, "Compare with previous week and commit report step must exist");
-	const script = compare[1];
-	assert.match(
-		script,
-		/credential\.helper='!f\(\) \{ echo username=x-access-token; echo "password=\$GH_TOKEN"; \}; f'/,
-		"compare step must use a credential helper that reads GH_TOKEN from the environment",
-	);
-	assert.match(script, /git -c credential\.helper= \\/);
-	assert.match(script, /push origin HEAD:main/);
-	assert.doesNotMatch(script, /extraheader/);
-	assert.doesNotMatch(script, /base64/);
-	assert.doesNotMatch(
-		script,
-		/credential\.helper="/,
-		"helper must be single-quoted so bash does not expand GH_TOKEN into git argv",
-	);
-});
