@@ -49,8 +49,10 @@ reports contain 87 fixtures × 3 draws, include sealed holdouts, were taken at
 commit `a5a0c68` with Class R declared, and use prompt `e62d0889fc704541`,
 fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`, and anti-cheat v2.
 Every report has `cheatDetectedCount: 0`. Each Pi report binds the staged
-`models.json` and selected auth entry; the Grok report binds its staged
-config. No legacy identity exceptions remain in the manifest.
+`models.json` hash and records `PI_AUTH_SOURCE=environment` (provider keys
+supplied through the environment, so no auth-store entry is selected or
+hashed); the Grok report binds its staged config. No legacy identity
+exceptions remain in the manifest.
 
 Not ranked:
 
