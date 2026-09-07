@@ -121,9 +121,26 @@ operational outcomes, not zero model scores.
 The page is not deployed yet; this link intentionally opens its source until a
 custom domain or GitHub Pages deployment is authorized.
 
+Current standing (rerank of 2026-09-06, scorer `8bbc6152d8b45a43`, all seven
+published lanes at 87 × 3):
+
+| Rank | Lane | Balanced | Tier-1 | FP | Noise/review |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | Grok 4.6 xhigh (Grok CLI) | 95.5% | 100% | 1.4% | 0.011 |
+| 2 | GPT-5.6 Terra high (Codex CLI), **deployed** | 90.0% | 100% | 9.7% | 0.077 |
+| 2 | GPT-5.6 Sol medium (Codex CLI) | 88.4% | 100% | 13.9% | 0.077 |
+
+GLM-5.3-Flash, DeepSeek V4 Flash Vision Exp, Terra xhigh, and Luna max score
+in the same band but miss at least one Tier-1 draw in their full report, so
+they are shown without a rank. Terra xhigh also exceeds the 0.12 positive-noise
+gate. Grok 4.6 leads but is 3.7× slower per review and needs the Grok CLI
+authenticated on the runner; it remains a candidate.
+
 The deployed Codex `gpt-5.6-terra` at `high` effort passes the current Tier-1
-and positive-noise qualification gates. See the [chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
-and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results).
+and positive-noise qualification gates. The full ranked table with confidence
+intervals lives under "Current decision" in the
+[chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md);
+every row links its [raw report](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
 ## Development install
 

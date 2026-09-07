@@ -114,10 +114,25 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
 開啟原始碼。
 
+目前排名（2026-09-06 重跑，scorer `8bbc6152d8b45a43`，七個公開 lane 皆為
+87 × 3）：
+
+| 名次 | Lane | Balanced | Tier-1 | FP | Noise/review |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1 | Grok 4.6 xhigh（Grok CLI） | 95.5% | 100% | 1.4% | 0.011 |
+| 2 | GPT-5.6 Terra high（Codex CLI），**目前部署** | 90.0% | 100% | 9.7% | 0.077 |
+| 2 | GPT-5.6 Sol medium（Codex CLI） | 88.4% | 100% | 13.9% | 0.077 |
+
+GLM-5.3-Flash、DeepSeek V4 Flash Vision Exp、Terra xhigh 與 Luna max 分數
+落在同一區間，但完整 report 中至少漏掉一個 Tier-1 draw，因此不給名次；
+Terra xhigh 另外超過 0.12 的 positive-noise 門檻。Grok 4.6 領先，但每次審查
+慢 3.7 倍，且需要 runner 上已登入的 Grok CLI，目前仍是 candidate。
+
 目前部署的 Codex `gpt-5.6-terra` @ `high` 已通過 Tier-1 與 positive-noise
-資格門檻。詳見
-[時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)與
-[raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)。
+資格門檻。含信賴區間的完整排名表在
+[時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)的
+「Current decision」；每一列都連到各自的
+[raw report](https://github.com/frankekn/needlefish/tree/main/eval/results)。
 
 ## 開發環境安裝
 
