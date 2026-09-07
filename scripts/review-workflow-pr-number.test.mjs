@@ -39,7 +39,7 @@ const script = scriptLines
 	.map((line) => line.replace(/^          /, ""))
 	.join("\n");
 
-function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.153.0", configuredCodex = false } = {}) {
+function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.153.4", configuredCodex = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
@@ -47,7 +47,7 @@ function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "
 	const needlefishBin = join(fakeBin, "needlefish");
 	const pathCodex = join(fakeBin, "codex");
 	mkdirSync(fakeBin);
-	writeFileSync(pathCodex, "#!/bin/sh\nprintf 'codex-cli 0.153.0\\n'\n");
+	writeFileSync(pathCodex, "#!/bin/sh\nprintf 'codex-cli 0.153.4\\n'\n");
 	chmodSync(pathCodex, 0o755);
 	const expectedHomeCodex = join(root, ".local", "bin", "codex");
 	const expectedConfiguredCodex = join(root, "configured-codex");
@@ -57,7 +57,7 @@ function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "
 		chmodSync(expectedHomeCodex, 0o755);
 	}
 	if (configuredCodex) {
-		writeFileSync(expectedConfiguredCodex, "#!/bin/sh\nprintf 'codex-cli 0.153.0\\n'\n");
+		writeFileSync(expectedConfiguredCodex, "#!/bin/sh\nprintf 'codex-cli 0.153.4\\n'\n");
 		chmodSync(expectedConfiguredCodex, 0o755);
 	}
 	writeFileSync(
@@ -153,7 +153,7 @@ test("review rejects a stale user-local Codex CLI before invoking needlefish", (
 	});
 
 	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /must be codex-cli 0\.153\.0/);
+	assert.match(result.stderr, /must be codex-cli 0\.153\.4/);
 	assert.equal(result.argvLog, "");
 });
 

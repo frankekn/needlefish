@@ -346,12 +346,12 @@ jobs:
    SHA to both installations and verify their installed metadata before trusting
    the fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`. The Codex
-   fleet contract is `@openai/codex@0.153.0`; install and verify that exact
+   fleet contract is `@openai/codex@0.153.4`; install and verify that exact
    version as the runner service account:
    ```bash
-   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.0
+   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
    CODEX_BIN="$HOME/.local/bin/codex"
-   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.0"
+   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
    ```
 4. Supply Codex's proxy route to the reusable workflow with
    `codex_proxy_base_url`, `codex_proxy_required: true`, and the
@@ -436,7 +436,7 @@ Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 
 `runner_version` overrides the npm version of the selected runner CLI. When
 omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.153.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+Codex `0.153.4`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
 explicit version — or `latest` — only when you intentionally want something
 other than the pin. A single default cannot be correct for four packages, so
 the pin is chosen from the selected `runner`.

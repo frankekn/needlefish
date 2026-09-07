@@ -297,12 +297,12 @@ jobs:
    共用的 ARM 安裝。兩份安裝都要部署相同 release SHA，並確認 installed
    metadata 一致。
 3. 確認 `gh` 與選定的模型 CLI 位於 `PATH`。
-4. Codex fleet 固定使用 `@openai/codex@0.153.0`；以 runner service account
+4. Codex fleet 固定使用 `@openai/codex@0.153.4`；以 runner service account
    安裝並確認版本：
    ```bash
-   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.0
+   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
    CODEX_BIN="$HOME/.local/bin/codex"
-   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.0"
+   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
    ```
    呼叫 reusable workflow 時傳入 `codex_proxy_base_url`、
    `codex_proxy_required: true` 與 `codex_proxy_api_key` workflow secret。
@@ -354,7 +354,7 @@ Hosted action 只會安裝 `action.yml` 列出的 runner；Grok CLI 不在其中
 使用 Grok 4.5，請使用上方的 self-hosted reusable workflow。
 
 `runner_version` 可覆寫所選 runner CLI 的 npm 版本。未設定時，action 會安裝
-`action.yml` 裡的 per-runner pin（目前 Codex `0.153.0`、Claude `2.1.239`、
+`action.yml` 裡的 per-runner pin（目前 Codex `0.153.4`、Claude `2.1.239`、
 OpenCode `1.18.21`、pi `0.70.6`）。只有在你刻意要偏離 pin 時才傳入明確版本
 （或 `latest`）。四個套件無法共用一個正確的預設值，所以 pin 依 `runner`
 選擇。

@@ -1325,6 +1325,14 @@ delivery change with its own live canary. `review.yml`, `action.yml`, and
 production timeout and fast service tier remain available when that effort is
 selected explicitly.
 
+Harness pin: the rerank ran on Codex CLI 0.153.4 while production pinned
+0.153.0 (review PR #119, Codex reviewer). A lane includes its harness, so
+rather than re-gating on 0.153.0 the owner moved the fleet contract to
+0.153.4: `action.yml` pin, `review.yml` version check, README install steps,
+and the self-hosted `ubuntu-needlefish` runner (`~/.local/bin/codex` verified
+`codex-cli 0.153.4` on 2026-09-07). The 0.4.2 Class D proxy gate (§ "2026-09-03")
+stays on record for 0.153.0 as history.
+
 Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls

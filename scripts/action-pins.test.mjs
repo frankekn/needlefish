@@ -126,7 +126,7 @@ test("hosted action pins a version per runner and lets runner_version override",
     "every hosted runner must have its own pin",
   );
   assert.equal(pins.codex.pkg, "@openai/codex");
-  assert.equal(pins.codex.pinned, "0.153.0");
+  assert.equal(pins.codex.pinned, "0.153.4");
   assert.equal(pins.claude.pkg, "@anthropic-ai/claude-code");
   assert.equal(pins.opencode.pkg, "opencode-ai");
   assert.equal(pins.pi.pkg, "@mariozechner/pi");
@@ -139,9 +139,9 @@ test("hosted action pins a version per runner and lets runner_version override",
 test("self-hosted fleet docs install the supported Codex version", () => {
   for (const file of ["README.md", "README.zh-TW.md"]) {
     const readme = readFileSync(file, "utf8");
-    assert.match(readme, /npm install --global --prefix "\$HOME\/\.local" @openai\/codex@0\.153\.0/);
+    assert.match(readme, /npm install --global --prefix "\$HOME\/\.local" @openai\/codex@0\.153\.4/);
     assert.match(readme, /CODEX_BIN="\$HOME\/\.local\/bin\/codex"/);
-    assert.match(readme, /test "\$\("\$CODEX_BIN" --version\)" = "codex-cli 0\.153\.0"/);
+    assert.match(readme, /test "\$\("\$CODEX_BIN" --version\)" = "codex-cli 0\.153\.4"/);
   }
 });
 

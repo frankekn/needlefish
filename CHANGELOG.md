@@ -8,6 +8,10 @@
   sits above the 0.12 positive-noise gate; Terra high passes both gates with
   100% Tier-1 recall. Grok 4.6 ranks first and stays a candidate pending
   runner credentials and a live canary.
+- GitHub: pin the Codex CLI fleet contract to `0.153.4` in the composite
+  action, the reusable workflow's version check, and the runner install
+  docs, so production runs the harness the 0.4.3 qualification reports were
+  taken on.
 - Eval: re-run all seven published lanes at the final scorer
   (`8bbc6152d8b45a43`) and fixture set (`e9923bbc7753a04a`), regenerate the
   leaderboard and benchmark page from those reports, and drop every legacy
