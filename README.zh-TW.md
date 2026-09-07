@@ -114,14 +114,14 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
 開啟原始碼。
 
-目前排名（2026-09-06 重跑，scorer `8bbc6152d8b45a43`，七個公開 lane 皆為
-87 × 3）：
+**量測條件：2026-09-06 重跑**，七個公開 lane 皆為 87 × 3，scorer
+`8bbc6152d8b45a43`。粗體標示目前部署的 lane 與每欄最佳值。
 
-| 名次 | Lane | Balanced | Tier-1 | FP | Noise/review |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | Grok 4.6 xhigh（Grok CLI） | 95.5% | 100% | 1.4% | 0.011 |
-| 2 | GPT-5.6 Terra high（Codex CLI），**目前部署** | 90.0% | 100% | 9.7% | 0.077 |
-| 2 | GPT-5.6 Sol medium（Codex CLI） | 88.4% | 100% | 13.9% | 0.077 |
+| 名次 | Lane | Balanced | Tier-1 | FP | Noise/review | 平均時間 |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Grok 4.6 xhigh（Grok CLI） | **95.5%** | 100% | **1.4%** | **0.011** | 230s |
+| 2 | **GPT-5.6 Terra high（Codex CLI），目前部署** | 90.0% | 100% | 9.7% | 0.077 | **63s** |
+| 2 | GPT-5.6 Sol medium（Codex CLI） | 88.4% | 100% | 13.9% | 0.077 | 75s |
 
 GLM-5.3-Flash、DeepSeek V4 Flash Vision Exp、Terra xhigh 與 Luna max 分數
 落在同一區間，但完整 report 中至少漏掉一個 Tier-1 draw，因此不給名次；

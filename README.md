@@ -121,14 +121,15 @@ operational outcomes, not zero model scores.
 The page is not deployed yet; this link intentionally opens its source until a
 custom domain or GitHub Pages deployment is authorized.
 
-Current standing (rerank of 2026-09-06, scorer `8bbc6152d8b45a43`, all seven
-published lanes at 87 × 3):
+**Measured on the 2026-09-06 rerank**, all seven published lanes at 87 × 3,
+scorer `8bbc6152d8b45a43`. Bold marks the deployed lane and the best value in
+each column.
 
-| Rank | Lane | Balanced | Tier-1 | FP | Noise/review |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 1 | Grok 4.6 xhigh (Grok CLI) | 95.5% | 100% | 1.4% | 0.011 |
-| 2 | GPT-5.6 Terra high (Codex CLI), **deployed** | 90.0% | 100% | 9.7% | 0.077 |
-| 2 | GPT-5.6 Sol medium (Codex CLI) | 88.4% | 100% | 13.9% | 0.077 |
+| Rank | Lane | Balanced | Tier-1 | FP | Noise/review | Mean |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | Grok 4.6 xhigh (Grok CLI) | **95.5%** | 100% | **1.4%** | **0.011** | 230s |
+| 2 | **GPT-5.6 Terra high (Codex CLI), deployed** | 90.0% | 100% | 9.7% | 0.077 | **63s** |
+| 2 | GPT-5.6 Sol medium (Codex CLI) | 88.4% | 100% | 13.9% | 0.077 | 75s |
 
 GLM-5.3-Flash, DeepSeek V4 Flash Vision Exp, Terra xhigh, and Luna max score
 in the same band but miss at least one Tier-1 draw in their full report, so

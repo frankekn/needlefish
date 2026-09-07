@@ -7,26 +7,69 @@ paths.
 
 ## Current decision
 
-As of 2026-09-07, the deployed lane is **Codex `gpt-5.6-terra` at high
-effort**. Under the current scorer (`8bbc6152d8b45a43`) and fixture set
-(`e9923bbc7753a04a`, 87 fixtures), it has 100% Tier-1 recall and 0.077
-positive noise. Grok 4.6 ranks 1 alone; Terra high and GPT-5.6 Sol share rank
-2. The previously deployed Terra xhigh lane, GLM-5.3-Flash, DeepSeek V4 Flash
-Vision Exp, and Luna max each miss at least one Tier-1 draw in their full
-report and receive no rank. Terra xhigh, GLM, and DeepSeek each recovered 3/3
-on x3 confirmation of the missed fixture (§26); the site ranks the full
-report, not the confirmation, so they stay unranked. Terra xhigh also sits at
-0.1202 positive noise, over the 0.12 gate. Luna misses `t1-inverted-guard`
-0/3, which is not flicker.
+**Deployed lane: Codex `gpt-5.6-terra` at `high` effort** (selected
+2026-09-07). Grok 4.6 ranks first alone; Terra high and GPT-5.6 Sol share
+rank 2. Four lanes score in the same band but miss a hard gate and receive
+no rank (table below).
+
+**Measured on the 2026-09-06 rerank**, commit `a5a0c68`, 87 fixtures × 3
+draws, sealed holdouts included, Class R, anti-cheat v2; prompt
+`e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`. Every report has `cheatDetectedCount: 0`. Bold marks the
+deployed lane and the best value in each column.
+
+| Rank | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |
+| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | [Grok 4.6](results/2026-09-06-grok-grok46-xhigh-x3.json) | Grok CLI 1.0.13 | xhigh | **95.48%** | 92.2–98.8% | 100% | **1.39%** | **0.011** | 230s |
+| 2 | **[GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-high-x3.json) (deployed)** | Codex CLI 0.153.4 | high | 89.95% | 83.8–96.1% | 100% | 9.72% | 0.077 | **63s** |
+| 2 | [GPT-5.6 Sol](results/2026-09-06-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.153.4 | medium | 88.41% | 81.1–95.7% | 100% | 13.89% | 0.077 | 75s |
+
+Reading: Grok 4.6 leads on accuracy and noise but is 3.7× slower per review
+and needs the Grok CLI authenticated on the runner, so it stays a candidate.
+Terra high and Sol are statistically unresolved against each other; Terra
+high is faster and cleaner on clean fixtures.
+
+**Unranked lanes**, same run. A lane whose full report misses any Tier-1 draw
+or exceeds 0.12 positive noise receives no rank; a later x3 confirmation is
+recorded (§26) but does not restore the rank.
+
+| Lane | Balanced | Gate missed in the full report | x3 confirmation on the missed fixture |
+| --- | ---: | --- | --- |
+| [GLM-5.3-Flash](results/2026-09-06-pi-zai-glm53-flash-max-x3.json) max | 94.81% | Tier-1 95.24%: `real-pr1-self-review-tool-checkout` 2/3 | 3/3 |
+| [DeepSeek V4 Flash Vision Exp](results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) max | 91.66% | Tier-1 95.24%: `real-pr1-codex-no-sandbox-flag` 2/3 | 3/3 |
+| [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) xhigh | 90.39% | Tier-1 90.48%: `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.120 > 0.12 | 3/3 and 3/3; the noise gate is not re-testable by confirmation |
+| [GPT-5.6 Luna](results/2026-09-06-codex-gpt56-luna-max-x3.json) max | 88.43% | Tier-1 76.19%: `t1-inverted-guard` 0/3 plus two fixtures at 2/3; noise 0.131 | not run: 0/3 is not flicker |
+
+**Deployed-lane change, Terra xhigh → Terra high**, same model, subscription,
+harness, and run. Bold marks the better value in each row.
+
+| | xhigh (before) | high (now) | Δ |
+| --- | ---: | ---: | ---: |
+| Balanced | **90.39%** | 89.95% | −0.4 pt |
+| Tier-1 recall | 90.48% | **100%** | +9.5 pt |
+| Anchored recall | 86.34% | **89.62%** | +3.3 pt |
+| Tier-3 recall | 72.22% | **77.78%** | +5.6 pt |
+| Usable specificity | **94.44%** | 90.28% | −4.2 pt |
+| False positives (of 72 clean draws) | **4.17% (3)** | 9.72% (7) | +4 draws |
+| Positive noise / review | 0.120 | **0.077** | −0.043 |
+| Invalid output | 0.38% | **0%** | −1 draw |
+| Mean review time | 80s | **63s** | −21% |
+
+Reading: the switch buys Tier-1 completeness, recall, and speed at the cost of
+four more blocked clean draws. Sol medium was the alternative at rank 2; it
+has higher recall but nearly double the false-positive rate of Terra high.
+
+<details>
+<summary>Full metric tables (every column the site publishes)</summary>
 
 Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
 specificity. Invalid model output cannot count as a correct result, so it is
 counted once. Tier-1 recall and `meanNoisePerPositive <= 0.12` are hard gates;
-validity, verdict match, and speed remain separate diagnostics. Point-sorted uncertainty groups are anchored to
-their highest-scoring lane; lower lanes share that rank while their paired 95%
-normal interval versus the anchor includes zero. This prevents non-transitive
-bridge comparisons from collapsing distinct groups. Each row also shows its
-lane-level 95% interval.
+validity, verdict match, and speed remain separate diagnostics. Point-sorted
+uncertainty groups are anchored to their highest-scoring lane; lower lanes
+share that rank while their paired 95% normal interval versus the anchor
+includes zero. This prevents non-transitive bridge comparisons from collapsing
+distinct groups. Each row also shows its lane-level 95% interval.
 
 | Rank | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | T1 | T2 | T3 | FP | Noise/review | Invalid | Verdict | Mean |
 | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -43,18 +86,16 @@ Disqualified — not ranked:
 | [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.153.4 | Codex subscription | xhigh | 90.39% | 85.3–95.5% | 86.34% | 94.44% | 90.48% | 92.59% | 72.22% | 4.17% | 0.120 | 0.38% | 96.17% | 80s |
 | [GPT-5.6 Luna](results/2026-09-06-codex-gpt56-luna-max-x3.json) | Codex CLI 0.153.4 | Codex subscription | max | 88.43% | 81.6–95.2% | 87.98% | 88.89% | 76.19% | 92.59% | 83.33% | 5.56% | 0.131 | 1.92% | 94.64% | 147s |
 
-Harness, provider, and route labels are operator-attested report metadata; the
-site does not independently derive them from generic runner state. All ranked
-reports contain 87 fixtures × 3 draws, include sealed holdouts, were taken at
-commit `a5a0c68` with Class R declared, and use prompt `e62d0889fc704541`,
-fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`, and anti-cheat v2.
-Every report has `cheatDetectedCount: 0`. Each Pi report binds the staged
-`models.json` hash and records `PI_AUTH_SOURCE=environment` (provider keys
-supplied through the environment, so no auth-store entry is selected or
-hashed); the Grok report binds its staged config. No legacy identity
-exceptions remain in the manifest.
+</details>
 
-Not ranked:
+Harness, provider, and route labels are operator-attested report metadata; the
+site does not independently derive them from generic runner state. Each Pi
+report binds the staged `models.json` hash and records
+`PI_AUTH_SOURCE=environment` (provider keys supplied through the environment,
+so no auth-store entry is selected or hashed); the Grok report binds its
+staged config. No legacy identity exceptions remain in the manifest.
+
+Not ranked for operational reasons:
 
 - Qwen3.8 Max via OpenCode Go and Qwen3.8 Flash Next were not re-run; the
   provider's monthly cap (reset expected mid-September 2026) and the missing
