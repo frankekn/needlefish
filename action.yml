@@ -104,7 +104,7 @@ runs:
         if [ -z "$MODEL_INPUT" ] && [ "$RUNNER_INPUT" = "codex" ]; then MODEL_INPUT="gpt-5.6-terra"; fi
         if [ "$RUNNER_INPUT" = "codex" ] && [ -z "$CODEX_REASONING_EFFORT" ]; then
           case "$MODEL_INPUT" in
-            gpt-5.6-terra) CODEX_REASONING_EFFORT="xhigh" ;;
+            gpt-5.6-terra) CODEX_REASONING_EFFORT="high" ;;
             gpt-5.6-sol) CODEX_REASONING_EFFORT="medium" ;;
           esac
         fi

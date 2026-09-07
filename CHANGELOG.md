@@ -1,7 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 — 2026-09-07
 
+- GitHub: select Codex `gpt-5.6-terra` at `high` effort as the default hosted
+  review, self-hosted review, and weekly-eval lane. Under the current scorer
+  and 87-fixture set, Terra xhigh misses Tier-1 draws in its full report and
+  sits above the 0.12 positive-noise gate; Terra high passes both gates with
+  100% Tier-1 recall. Grok 4.6 ranks first and stays a candidate pending
+  runner credentials and a live canary.
+- Eval: re-run all seven published lanes at the final scorer
+  (`8bbc6152d8b45a43`) and fixture set (`e9923bbc7753a04a`), regenerate the
+  leaderboard and benchmark page from those reports, and drop every legacy
+  config-identity exception from the manifest.
+- Eval: structured facts may be satisfied across different anchored findings
+  (#105); tier-1 and real-PR oracles gain description-derived alternatives
+  bound to actor, source, and direction.
+- Review: fix trace provenance so an observer can no longer mutate map, review,
+  or critic values through the emitted event; keep blank lines when counting
+  head-file lines for GitHub suggestion validation; keep historical
+  conclusions out of generated eval reports.
 - GitHub: the review workflow falls back to the `CODEX_PROXY_BASE_URL`
   repository variable when the `codex_proxy_base_url` input is absent, so
   `pull_request` events can use the proxy route instead of failing closed when

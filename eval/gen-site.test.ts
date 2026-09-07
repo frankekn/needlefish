@@ -115,7 +115,8 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
   assert.match(html, /Scroll horizontally to see every metric/);
   assert.match(html, /Disqualified: Tier-1 miss/);
-  assert.match(html, /Release 0\.4\.2 is blocked/);
+  const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
+  assert.match(html, new RegExp(`Release ${releaseVersion.replaceAll(".", "\\.")} is blocked`));
   assert.match(html, /Tier-2/);
   assert.match(html, /Tier-3/);
   assert.match(html, /Verdict match/);

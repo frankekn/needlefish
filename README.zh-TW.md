@@ -27,7 +27,7 @@ Needlefish 會在 merge 前檢查 diff，只回報真正的缺陷：錯誤、回
   finding 依固定規則推導，不由模型自由決定。
 - **隔離的審查目標。** 審查會在 throwaway clean clone 中執行，並在每次模型
   呼叫後檢查是否遭竄改。
-- **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 86 個情境的
+- **有防護的 evals。** 每次 prompt／pipeline 變更上線前，都會用 87 個情境的
   harness（啟用 anti-cheat guards）量測（見 [Benchmarks](#benchmarks)）。
 
 小型 PR 會執行審查與對抗式 critic；大型 PR 會先執行 map／deep 階段，再交給
@@ -92,7 +92,7 @@ jobs:
 diff 的 inline review comment 發布；後續 push 會更新同一份 review，標示
 fresh／still-open／resolved，不會不斷堆疊新 review。
 
-小型 PR 每次審查使用 2 次模型呼叫（預設 `gpt-5.6-terra` @ `xhigh`）；大型 PR 使用
+小型 PR 每次審查使用 2 次模型呼叫（預設 `gpt-5.6-terra` @ `high`）；大型 PR 使用
 1 次 map、N 次 deep（預設並行數 3）及 1 次 critic。純文件 PR 與未變更的
 head 會跳過模型。對此儲存庫具有寫入權限的維護者可以在 PR 留言
 `@needlefish recheck` 或 `@needlefish explain <finding>`。
@@ -106,7 +106,7 @@ harness、provider route 與 effort，能抓到真正的 PR 缺陷，又不會�
 主要分數採用 Balanced Review Accuracy，也就是 anchored recall 與 usable
 specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 
-目前 gate 有 86 個審查情境；每個公開 lane 都完整跑三次，包含 sealed holdout
+目前 gate 有 87 個審查情境；每個公開 lane 都完整跑三次，包含 sealed holdout
 與 anti-cheat tracing。只有 prompt、fixture-set、scorer 與 anti-cheat hash
 都和 production baseline 相同的 report 才能排名。Provider failure 或訂閱尚未
 提供的模型只會標為 operational outcome，不會算成模型零分。
@@ -114,7 +114,7 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 頁面尚未部署；在 custom domain 或 GitHub Pages 部署獲得授權前，此連結會刻意
 開啟原始碼。
 
-目前部署的 Codex `gpt-5.6-terra` @ `xhigh` 已通過 Tier-1 與 positive-noise
+目前部署的 Codex `gpt-5.6-terra` @ `high` 已通過 Tier-1 與 positive-noise
 資格門檻。詳見
 [時間序實驗記錄](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)與
 [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)。
@@ -253,7 +253,7 @@ jobs:
       # 可選；預設 codex + gpt-5.6-terra
       # runner: codex
       # model: gpt-5.6-terra
-      # codex_reasoning_effort: xhigh
+      # codex_reasoning_effort: high
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # 僅 opencode
     secrets: inherit
@@ -403,7 +403,7 @@ COLLABORATOR）的 `@needlefish recheck` 與 `@needlefish explain <finding>`
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | 自動偵測 `codex`，然後 `claude`，然後 `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `xhigh`） |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `high`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
 
@@ -480,7 +480,7 @@ disposable HOME 的 HOME-relative credential files。
 
 ## 狀態
 
-v0.4.2。唯讀。已提供 inline review comment、sticky re-review
+v0.4.3。唯讀。已提供 inline review comment、sticky re-review
 （fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、以及 hosted runner 的 repo inspection（best-effort AppArmor
 sysctl）。`--fix` 仍刻意未實作。維護者 `@needlefish recheck`／

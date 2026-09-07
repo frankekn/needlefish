@@ -7,12 +7,17 @@ paths.
 
 ## Current decision
 
-As of 2026-09-01, the deployed lane is **Codex `gpt-5.6-terra` at xhigh effort**.
-It has 100% Tier-1 recall and qualifies under the current positive-noise gate.
-DeepSeek V4 Flash Vision Exp has the highest point estimate, but it, Grok 4.6,
-and GLM-5.3-Flash are statistically unresolved and share rank 1. GPT-5.6 Sol
-and Terra xhigh share rank 4. Terra high and Luna max miss Tier-1 defects and
-receive no rank.
+As of 2026-09-07, the deployed lane is **Codex `gpt-5.6-terra` at high
+effort**. Under the current scorer (`8bbc6152d8b45a43`) and fixture set
+(`e9923bbc7753a04a`, 87 fixtures), it has 100% Tier-1 recall and 0.077
+positive noise. Grok 4.6 ranks 1 alone; Terra high and GPT-5.6 Sol share rank
+2. The previously deployed Terra xhigh lane, GLM-5.3-Flash, DeepSeek V4 Flash
+Vision Exp, and Luna max each miss at least one Tier-1 draw in their full
+report and receive no rank. Terra xhigh, GLM, and DeepSeek each recovered 3/3
+on x3 confirmation of the missed fixture (§26); the site ranks the full
+report, not the confirmation, so they stay unranked. Terra xhigh also sits at
+0.1202 positive noise, over the 0.12 gate. Luna misses `t1-inverted-guard`
+0/3, which is not flicker.
 
 Balanced Review Accuracy is the arithmetic mean of anchored recall and usable
 specificity. Invalid model output cannot count as a correct result, so it is
@@ -25,43 +30,37 @@ lane-level 95% interval.
 
 | Rank | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | T1 | T2 | T3 | FP | Noise/review | Invalid | Verdict | Mean |
 | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | [DeepSeek V4 Flash Vision Exp](results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.84.4 | Direct DeepSeek API | max | 94.72% | 90.64–98.81% | 92.22% | 97.22% | 100% | 93.33% | 87.04% | 2.78% | 0.028 | 0.39% | 96.90% | 116.0s |
-| 1 | [Grok 4.6](results/2026-08-31-grok-grok46-xhigh-x3-rerun.json) | Grok CLI 1.0.5 | Grok subscription | xhigh | 94.58% | 91.01–98.16% | 90.56% | 98.61% | 100% | 92.38% | 83.33% | 1.39% | 0.028 | 0.39% | 96.51% | 228.4s |
-| 1 | [GLM-5.3-Flash](results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json) | Pi 0.84.4 | Z.AI coding-plan subscription | max | 94.44% | 91.00–97.89% | 88.89% | 100% | 100% | 89.52% | 83.33% | 0% | 0.028 | 0% | 92.64% | 143.0s |
-| 4 | [GPT-5.6 Sol](results/2026-08-31-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.151.0 | Codex subscription | medium | 88.06% | 80.46–95.65% | 90.00% | 86.11% | 100% | 94.29% | 77.78% | 13.89% | 0.083 | 0% | 93.41% | 67.9s |
-| 4 | [GPT-5.6 Terra](results/2026-08-31-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.151.0 | Codex subscription | xhigh | 87.64% | 80.53–94.75% | 87.78% | 87.50% | 100% | 91.43% | 75.93% | 12.50% | 0.100 | 0% | 93.80% | 75.1s |
+| 1 | [Grok 4.6](results/2026-09-06-grok-grok46-xhigh-x3.json) | Grok CLI 1.0.13 | Grok subscription | xhigh | 95.48% | 92.2–98.8% | 92.35% | 98.61% | 100% | 96.30% | 81.48% | 1.39% | 0.011 | 0% | 97.32% | 230s |
+| 2 | [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-high-x3.json) (deployed) | Codex CLI 0.153.4 | Codex subscription | high | 89.95% | 83.8–96.1% | 89.62% | 90.28% | 100% | 93.52% | 77.78% | 9.72% | 0.077 | 0% | 95.02% | 63s |
+| 2 | [GPT-5.6 Sol](results/2026-09-06-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.153.4 | Codex subscription | medium | 88.41% | 81.1–95.7% | 90.71% | 86.11% | 100% | 94.44% | 79.63% | 13.89% | 0.077 | 0% | 93.49% | 75s |
 
 Disqualified — not ranked:
 
 | Model | Harness | Provider route | Effort | Balanced | 95% CI | Recall | Specificity | T1 | T2 | T3 | FP | Noise/review | Invalid | Verdict | Mean |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| [GPT-5.6 Luna](results/2026-08-31-codex-gpt56-luna-max-x3.json) | Codex CLI 0.151.0 | Codex subscription | max | 88.19% | 81.18–95.21% | 88.89% | 87.50% | 85.71% | 92.38% | 83.33% | 9.72% | 0.133 | 0.78% | 94.19% | 151.5s |
-| [GPT-5.6 Terra](results/2026-08-30-codex-gpt56-terra-high-x3.json) | Codex CLI 0.151.0 | Codex subscription | high | 88.19% | 81.89–94.49% | 83.33% | 93.06% | 90.48% | 84.76% | 77.78% | 5.56% | 0.106 | 0.39% | 93.80% | 54.7s |
+| [GLM-5.3-Flash](results/2026-09-06-pi-zai-glm53-flash-max-x3.json) | Pi 0.85.1 | Z.AI coding-plan subscription (direct API) | max | 94.81% | 91.5–98.1% | 89.62% | 100% | 95.24% | 92.59% | 81.48% | 0% | 0.022 | 0% | 95.02% | 164s |
+| [DeepSeek V4 Flash Vision Exp](results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) | Pi 0.85.1 | DeepSeek API through private managed proxy | max | 91.66% | 87.7–95.6% | 84.70% | 98.61% | 95.24% | 87.04% | 75.93% | 1.39% | 0.022 | 0.77% | 90.80% | 116s |
+| [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) | Codex CLI 0.153.4 | Codex subscription | xhigh | 90.39% | 85.3–95.5% | 86.34% | 94.44% | 90.48% | 92.59% | 72.22% | 4.17% | 0.120 | 0.38% | 96.17% | 80s |
+| [GPT-5.6 Luna](results/2026-09-06-codex-gpt56-luna-max-x3.json) | Codex CLI 0.153.4 | Codex subscription | max | 88.43% | 81.6–95.2% | 87.98% | 88.89% | 76.19% | 92.59% | 83.33% | 5.56% | 0.131 | 1.92% | 94.64% | 147s |
 
 Harness, provider, and route labels are operator-attested report metadata; the
 site does not independently derive them from generic runner state. All ranked
-reports contain 86 fixtures × 3 draws, include sealed holdouts, and
-use prompt `e62d0889fc704541`, fixture set `e4969c9fdc2e3497`, scorer
-`8f0afd4d8ea1f5a5`, and anti-cheat v2. Every ranked report has
-`cheatDetectedCount: 0`.
-
-The completed reports predate content-addressed Pi `models.json` provenance and
-an explicit fixture diff-renderer version. Those are documented limitations,
-not retroactively asserted evidence; the next benchmark generation will bind
-both before allowing resume or cross-generation comparison.
+reports contain 87 fixtures × 3 draws, include sealed holdouts, were taken at
+commit `a5a0c68` with Class R declared, and use prompt `e62d0889fc704541`,
+fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`, and anti-cheat v2.
+Every report has `cheatDetectedCount: 0`. Each Pi report binds the staged
+`models.json` and selected auth entry; the Grok report binds its staged
+config. No legacy identity exceptions remain in the manifest.
 
 Not ranked:
 
-- Qwen3.8 Max via OpenCode Go is incomplete at 218/258 saved draws: 158 are
-  reusable valid results and 60 are operational failures from subscription
-  caps or interrupt cleanup. On 2026-08-31, the authenticated provider reported
-  that its monthly limit resets in 16 days and offered paid balance as the only
-  immediate bypass. Paid balance was not enabled; partial scores are not model
-  rankings.
-- Qwen3.8 Flash Next was not exposed by the authenticated OpenCode Go endpoint
-  or Pi catalog on 2026-08-31. It is blocked, not scored zero.
-- The initial Grok 4.6 report is void because anti-cheat v2 detected structured
-  canary adoption. The clean full rerun above supersedes it for ranking.
+- Qwen3.8 Max via OpenCode Go and Qwen3.8 Flash Next were not re-run; the
+  provider's monthly cap (reset expected mid-September 2026) and the missing
+  catalog entry recorded on 2026-08-31 still hold. They remain blocked, not
+  scored zero.
+- The initial 2026-08-31 Grok 4.6 report is void because anti-cheat v2
+  detected structured canary adoption. The 2026-09-06 run above has zero bait
+  exposure and supersedes it.
 
 ## How to read the numbers
 
@@ -1257,3 +1256,76 @@ already refuses them ("scorer hash is stale or missing"). Re-ranking needs
 each lane re-run under the current hashes; the Terra xhigh baseline at
 `8bbc6152d8b45a43` exists (§21) but was taken before this fixture change, so
 it too must be re-run before it can anchor a re-ranking.
+
+### 26. Rerank under the final scorer and fixture set — 2026-09-06 to 2026-09-07
+
+Trigger: §24 and §25 left every ranked report on a stale scorer or fixture
+hash, and `gen-site` refused the manifest. All seven lanes were re-run at
+commit `a5a0c68` (main after #111) with the same invocation shape as their
+2026-08-30/31 predecessors: 87 fixtures, 3 draws, holdouts included, Class R,
+`NEEDLEFISH_EPHEMERAL_HOME=1`, `NEEDLEFISH_EVAL_TRACE=1`. Terra xhigh carried
+`--baseline`. Codex lanes ran at concurrency 4, Grok and Pi at 3. Route
+changes since August: GLM ran through Pi's direct Z.AI endpoint
+(`zai-direct/glm-5.3-flash`) because the CLIProxyAPI GLM route rejected Pi's
+role layout ("Incorrect role information"); DeepSeek ran through CLIProxyAPI
+(`cliproxy-deepseek/...`) instead of the direct DeepSeek API. Both are
+attested in the reports. Codex CLI moved from 0.151.0 to 0.153.4, Pi from
+0.84.4 to 0.85.1, Grok CLI from 1.0.5 to 1.0.13.
+
+Results (full reports in `results/2026-09-06-*-x3.json`; the ranked table
+under "Current decision" is generated from them):
+
+| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Nulls | Bait exposure |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
+| Terra xhigh (baseline) | 0.8634 | 0.0417 | 0.1202 | 0.905 | `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3 | 1 | 28 |
+| Terra high | 0.8962 | 0.0972 | 0.0765 | 1.000 | none | 0 | 15 |
+| Sol medium | 0.9071 | 0.1389 | 0.0765 | 1.000 | none | 0 | 16 |
+| Luna max | 0.8798 | 0.0556 | 0.1311 | 0.762 | `t1-inverted-guard` 0/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3 | 5 | 68 |
+| Grok 4.6 xhigh | 0.9235 | 0.0139 | 0.0109 | 1.000 | none | 0 | 0 |
+| GLM-5.3-Flash max | 0.8962 | 0.0000 | 0.0219 | 0.952 | `real-pr1-self-review-tool-checkout` 2/3 | 0 | 0 |
+| DeepSeek V4 Flash Vision Exp max | 0.8470 | 0.0139 | 0.0219 | 0.952 | `real-pr1-codex-no-sandbox-flag` 2/3 | 2 | 0 |
+
+Every report has `cheatDetectedCount: 0`; bait exposure is raw-transcript
+only and does not void. Nulls are draws whose verdict is null (malformed
+critic output or invalid JSON), counted once against the lane. DeepSeek was
+resumed once from its checkpoint after the harness aborted on a
+`src/__pycache__` file the Pi runner left in the sandbox; the resumed report
+keeps the same invocation identity and hashes.
+
+Flicker confirmation (same commit and lane, x3 on the missed fixture):
+
+- Terra xhigh: `t1-inverted-guard` 3/3 and `real-pr1-self-review-tool-checkout`
+  3/3 ([`results/2026-09-06-codex-gpt56-terra-xhigh-tier1-confirm-x3.json`](results/2026-09-06-codex-gpt56-terra-xhigh-tier1-confirm-x3.json)).
+- GLM: `real-pr1-self-review-tool-checkout` 3/3
+  ([`results/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json`](results/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json)).
+- DeepSeek: `real-pr1-codex-no-sandbox-flag` 3/3
+  ([`results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json`](results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json)).
+- Luna: not confirmed. `t1-inverted-guard` is 0/3 in the full report, which
+  the flicker rule does not cover; the lane is disqualified on its own
+  evidence.
+
+Confirmation is recorded per the single-draw flicker rule and does not alter
+the ranked table: `gen-site` scores the full report, and a lane whose full
+report misses a Tier-1 draw is shown as disqualified regardless of a later
+3/3. The result is that the three confirmed lanes are known-good on the
+missed fixture but unranked until a clean full run.
+
+Decision (owner, 2026-09-07): the deployed lane moves from Terra xhigh to
+**Terra high**. Terra xhigh is disqualified twice over in the full report: the
+Tier-1 misses above, and positive noise 0.1202 against the 0.12 gate (22 noise
+findings over 183 positive draws; the top contributors are
+`t3-check-then-act-race` 5, `holdout-pagination-round-down` 3, and
+`real-pr1-self-review-tool-checkout` 3). Terra high is the same model and
+subscription at lower effort, passes both gates with 100% Tier-1, and is the
+best-ranked lane that needs no new runner credential on the self-hosted host.
+Grok 4.6 ranks first and remains a candidate: it is 3.7× slower per review
+and the runner host has no Grok auth staged, so switching to it is a separate
+delivery change with its own live canary. `review.yml`, `action.yml`, and
+`weekly-eval.yml` now map `gpt-5.6-terra` to `high`; the Terra xhigh
+production timeout and fast service tier remain available when that effort is
+selected explicitly.
+
+Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
+89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
+from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
+from 94.4% to 90.3%. Mean review time drops from 80s to 63s.

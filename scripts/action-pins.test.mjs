@@ -145,9 +145,9 @@ test("self-hosted fleet docs install the supported Codex version", () => {
   }
 });
 
-test("hosted action defaults Codex reviews to Terra xhigh", () => {
+test("hosted action defaults Codex reviews to Terra high", () => {
   const action = readFileSync("action.yml", "utf8");
   assert.match(action, /RUNNER_INPUT" = "codex" \]; then MODEL_INPUT="gpt-5\.6-terra"/);
-  assert.match(action, /gpt-5\.6-terra\) CODEX_REASONING_EFFORT="xhigh"/);
+  assert.match(action, /gpt-5\.6-terra\) CODEX_REASONING_EFFORT="high"/);
   assert.match(action, /gpt-5\.6-sol\) CODEX_REASONING_EFFORT="medium"/);
 });
