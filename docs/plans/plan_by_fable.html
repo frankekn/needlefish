@@ -348,6 +348,7 @@ pnpm test           # node:test 全套,必須全綠(先驗 bin/needlefish --vers
 <p><strong>回滾</strong>(發錯版時,一分鐘):<code>git tag -f v0 &lt;上一個好版的 SHA&gt; && git push -f origin v0</code>。不可變 tag(vX.Y.Z)永不改。</p>
 
 <h3 id="s4-6">4.6 Weekly eval 看守</h3>
+<p><span class="warn">已於 2026-09-07 退役</span>:workflow 已從 repo 移除並在 GitHub 停用(runner 主機的直連 Codex 訂閱額度耗盡,連續兩週失敗)。lane 資格改由 <code>eval/RESULTS.md</code> 記錄的明確 Class R gate 決定;<code>eval/results/weekly/</code> 與 <code>eval/weekly-compare.ts</code> 保留為歷史。以下為當時的設計,僅供參考。</p>
 <p><code>.github/workflows/weekly-eval.yml</code>:每週日 18:00 UTC 在 self-hosted runner 跑全量 × 3 draws @ medium,報告 commit 進 <code>eval/results/weekly/</code>。兩種 issue 會自動開:</p>
 <ul>
 <li><strong>recall 掉 &gt;5pp</strong> → 照 PB4 處理(先 confirm 再診斷,不要直接改 prompt)。</li>
