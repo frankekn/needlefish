@@ -37,7 +37,7 @@ recorded (§26) but does not restore the rank.
 | --- | ---: | --- | --- |
 | [GLM-5.3-Flash](results/2026-09-06-pi-zai-glm53-flash-max-x3.json) max | 94.81% | Tier-1 95.24%: `real-pr1-self-review-tool-checkout` 2/3 | 3/3 |
 | [DeepSeek V4 Flash Vision Exp](results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) max | 91.66% | Tier-1 95.24%: `real-pr1-codex-no-sandbox-flag` 2/3 | 3/3 |
-| [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) xhigh | 90.39% | Tier-1 90.48%: `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.120 > 0.12 | 3/3 and 3/3; the noise gate is not re-testable by confirmation |
+| [GPT-5.6 Terra](results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) xhigh | 90.39% | Tier-1 90.48%: `t1-inverted-guard` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.1202 > 0.12 | 3/3 and 3/3; the noise gate is not re-testable by confirmation |
 | [GPT-5.6 Luna](results/2026-09-06-codex-gpt56-luna-max-x3.json) max | 88.43% | Tier-1 76.19%: `t1-inverted-guard` 0/3 plus two fixtures at 2/3; noise 0.131 | not run: 0/3 is not flicker |
 
 **Deployed-lane change, Terra xhigh → Terra high**, same model, subscription,
@@ -51,7 +51,7 @@ harness, and run. Bold marks the better value in each row.
 | Tier-3 recall | 72.22% | **77.78%** | +5.6 pt |
 | Usable specificity | **94.44%** | 90.28% | −4.2 pt |
 | False positives (of 72 clean draws) | **4.17% (3)** | 9.72% (7) | +4 draws |
-| Positive noise / review | 0.120 | **0.077** | −0.043 |
+| Positive noise / review | 0.1202 | **0.0765** | −0.0437 |
 | Invalid output | 0.38% | **0%** | −1 draw |
 | Mean review time | 80s | **63s** | −21% |
 

@@ -115,7 +115,9 @@ specificity 的算術平均；Tier-1 recall 仍是不可繞過的資格門檻。
 開啟原始碼。
 
 **量測條件：2026-09-06 重跑**，七個公開 lane 皆為 87 × 3，scorer
-`8bbc6152d8b45a43`。粗體標示目前部署的 lane 與每欄最佳值。
+`8bbc6152d8b45a43`。此表是從 `eval/RESULTS.md` 產生的排名表手動摘錄，
+以該檔為準；benchmark 頁面本身不會手動修改。粗體標示目前部署的 lane 與
+每欄最佳值。
 
 | 名次 | Lane | Balanced | Tier-1 | FP | Noise/review | 平均時間 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |

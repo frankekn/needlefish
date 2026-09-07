@@ -122,8 +122,10 @@ The page is not deployed yet; this link intentionally opens its source until a
 custom domain or GitHub Pages deployment is authorized.
 
 **Measured on the 2026-09-06 rerank**, all seven published lanes at 87 × 3,
-scorer `8bbc6152d8b45a43`. Bold marks the deployed lane and the best value in
-each column.
+scorer `8bbc6152d8b45a43`. This table is a hand-copied excerpt of the
+generated ranked table in `eval/RESULTS.md`, which is the source of truth;
+the benchmark page itself is never hand-edited. Bold marks the deployed lane
+and the best value in each column.
 
 | Rank | Lane | Balanced | Tier-1 | FP | Noise/review | Mean |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: |
