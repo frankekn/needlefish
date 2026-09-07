@@ -254,7 +254,7 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	const invoked = join(root, "invoked");
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	mkdirSync(join(root, ".local", "bin"), { recursive: true });
-	writeFileSync(join(root, ".local", "bin", "codex"), "#!/bin/sh\nprintf 'codex-cli 0.153.0\\n'\n");
+	writeFileSync(join(root, ".local", "bin", "codex"), "#!/bin/sh\nprintf 'codex-cli 0.153.4\\n'\n");
 	chmodSync(join(root, ".local", "bin", "codex"), 0o755);
 	writeFileSync(binary, `#!/bin/sh\nprintf '%s\\n' "$*" > "${invoked}"\n`);
 	chmodSync(binary, 0o755);

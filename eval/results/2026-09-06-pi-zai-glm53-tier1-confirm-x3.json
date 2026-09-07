@@ -1,0 +1,1115 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "pi",
+  "model": "zai-direct/glm-5.3-flash",
+  "effort": "max",
+  "provider": "Z.AI",
+  "route": "Z.AI coding-plan subscription (direct API)",
+  "runnerVersion": "Pi 0.85.1",
+  "invocation": "node --import tsx eval/run.ts --runner pi --model zai-direct/glm-5.3-flash --effort max --provider Z.AI --route 'Z.AI coding-plan subscription (direct API)' --runner-version 'Pi 0.85.1' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env PI_AUTH_MODE=proxy --env PI_PROVIDER=zai-direct --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr1-self-review-tool-checkout$' --report eval/results/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json",
+  "runnerEnvironment": "[[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:c452343845d37cd1\"],[\"PI_AUTH_MODE\",\"proxy\"],[\"PI_AUTH_SOURCE\",\"environment\"],[\"PI_MODELS_JSON\",\"sha256:17609936bc659374\"],[\"PI_PROVIDER\",\"zai-direct\"]]",
+  "privateEnvironment": false,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner pi --model zai-direct/glm-5.3-flash --effort max --provider Z.AI --route 'Z.AI coding-plan subscription (direct API)' --runner-version 'Pi 0.85.1' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env PI_AUTH_MODE=proxy --env PI_PROVIDER=zai-direct --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr1-self-review-tool-checkout$' --report eval/reports/2026-09-06-pi-zai-glm53-tier1-confirm-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-06T15:15:37.779Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 432476,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 43,
+          "lineEnd": 59,
+          "title": "PR now executes its own reviewer: trusted-tool checkout removed",
+          "whyItBreaks": "Base checked out frankekn/needlefish@main as the tool and ran it against the PR checkout, explicitly to 'prevent a PR from controlling its own review by modifying the tool'. Head deletes that checkout (old lines 50-58) and runs ./node_modules/.bin/tsx src/cli.ts (line 59) from the single PR-head checkout, plus pnpm install --frozen-lockfile (line 51) executes PR-controlled postinstall scripts. Substitution: a branch whose src/cli.ts posts an approving review (gh pr review --approve) and echoes $GH_TOKEN is executed verbatim at line 59 with GH_TOKEN (contents:read, pull-requests:write, checks:write @16-19) in env, on a self-hosted runner (line 23) — the PR certifies its own merge-readiness and can exfiltrate the token/compromise the runner. The workflow_dispatch path (job if @24 is bypassed by dispatch, per input description @13) now runs arbitrary PR-head code where base ran only trusted code, and same-repo branch PRs — the population the review gate exists to scrutinize — can self-approve."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 519682,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 49,
+          "lineEnd": 59,
+          "title": "PR head now executes as its own reviewer on self-hosted runner with write token",
+          "whyItBreaks": "Base (4e78c62) checked out the reviewer from frankekn/needlefish@main and only read the PR tree (path: target) — PR code was never installed or executed, exactly as the removed comment documented ('prevents a PR from controlling its own review by modifying the tool'). Head runs `pnpm install --frozen-lockfile` in the PR checkout (line 51), executing PR-controlled lifecycle scripts, then `tsx src/cli.ts` (line 59) with GH_TOKEN scoped to pull-requests:write + checks:write (lines 16-19, 56) on a persistent self-hosted runner (line 23). A same-repo PR touching only src/ or package.json — with no visible workflow change — can now (a) fabricate its own review verdict via --github, defeating the review gate, and (b) run arbitrary code / poison runner state, a capability src-only PRs did not have before. The job's same-repo guard (line 24) does not close this: same-repo PR authors are the subjects of the review."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-self-review-tool-checkout",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-self-review-tool-checkout",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 315636,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 43,
+          "lineEnd": 59,
+          "title": "Reviewer now executed from untrusted PR head; PR can forge its own review",
+          "whyItBreaks": "The base workflow's own comment stated the trusted-tool pattern 'prevents a PR from controlling its own review by modifying the tool.' This diff removes the `Checkout trusted tool (main)` step and switches execution to the PR head: `pnpm install --frozen-lockfile` (line 51) and `./node_modules/.bin/tsx src/cli.ts` (line 59) now run entirely from the PR-head checkout that lines 43-47 place at the workspace root. The job's `if:` guard (line 24) only excludes fork PRs — a same-repo branch PR (pushable by anyone with branch write, not necessarily merge approval) can (a) modify src/cli.ts so the 'reviewer' posts an approving review/check, bypassing the merge gate, and (b) add a lifecycle-script dependency to package.json/pnpm-lock.yaml, executed at line 51 — previously install ran only in the trusted needlefish/ checkout and PR code was never installed or executed. All of this runs on `runs-on: self-hosted` (line 23, a persistent runner GitHub documents as unsafe for untrusted code) with GH_TOKEN granted `pull-requests: write` + `checks: write` (lines 18-19, 56). This is a merge-gate bypass plus arbitrary code execution introduced by this diff."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "pr_controls_executed_reviewer",
+              "meaning": "The workflow executes Needlefish's reviewer implementation from the untrusted PR-head checkout.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:runs?|running|executes?|executed|executing|loads?|loaded|loading)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "untrusted\\s+(?:checkout|code|PR)",
+                    "\\b(?:runs?|running|executes?|executed|executing)\\b",
+                    "(?:reviewer|review tool|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "PR[- ]controlled",
+                    "(?:reviewer|review tool|src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR|pull request)[ -]?head",
+                    "\\b(?:invokes?|invoked|invoking|calls?|called|calling)\\b",
+                    "(?:src/cli\\.ts|Needlefish)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:same|PR[- ]head|untrusted)\\s+(?:checkout|worktree)",
+                    "(?:src/cli\\.ts|Needlefish)",
+                    "\\b(?:tool|reviewer|review)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "self[- ]review\\s+mode",
+                    "PR\\s+checkout(?:'s)?\\s+own\\s+src",
+                    "\\btool\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "ref\\s*:\\s*\\$\\{\\{\\s*steps\\.refs\\.outputs\\.head\\s*\\}\\}",
+                    "(?:run\\s*:\\s*)?[^\\r\\n]*src/cli\\.ts\\s+--github"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed|invok(?:es|ed))\\b[^.;]{0,60}\\bfrom\\s+(?:that|the|this|its)?\\s*(?:same\\s+)?(?:PR|pull[- ]request|head|untrusted)[- ]?(?:head\\s+)?(?:checkout|commit|tree|ref)",
+                    "(?:src/cli\\.ts|Needlefish|\\bthe CLI\\b|\\bits? package\\b|reviewer)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:checked[- ]out|checks? out)\\s+(?:PR|pull[- ]request|head)(?:['’]s)?\\b[^.;]{0,40}\\b(?:src/cli\\.ts|Needlefish|the CLI|package)",
+                    "\\b(?:executes?|executed|runs?|running|installs?|installed)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]head|head)\\s+(?:ref|checkout|commit)",
+                    "\\b(?:also|now)\\b",
+                    "\\btool\\s+source\\b|\\breviewer\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "reviewer_has_write_authority",
+              "meaning": "The PR-controlled reviewer can write pull-request reviews or checks.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "(?:pull-requests|checks)\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "write\\s+(?:permission|access|authority)",
+                    "(?:pull[- ]requests?|reviews?|checks?)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:post|publish|forge|approve)(?:s|ed|ing)?\\b",
+                    "own\\s+(?:passing\\s+)?(?:review|check)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "pull-requests\\s*:\\s*write",
+                    "checks\\s*:\\s*write"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:PR[- ]controlled|untrusted)\\s+(?:reviewer|code|tool|checkout)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:Needlefish|reviewer|review tool)",
+                    "\\b(?:can|could|may|able\\s+to)\\s+(?:write|post|publish|create|update|approve|forge)\\b",
+                    "\\b(?:pull[- ]request|review|check)s?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\bwrite[- ]scoped\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:token|permission|GH_TOKEN|GITHUB_TOKEN)s?\\b",
+                    "\\bwrite(?:s|[- ]capable|[- ]scoped)?\\b",
+                    "\\b(?:pull[- ]requests?|reviews?|checks?)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request|untrusted|PR[- ]controlled|malicious)\\b|(?:GH_TOKEN|GITHUB_TOKEN)",
+                    "\\b(?:forg(?:e|es|ed|ing)|suppress(?:es|ed|ing)?)\\b",
+                    "\\b(?:review|check)s?(?:/checks?)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:PR|pull request)\\b",
+                    "\\bpost(?:s|ed|ing)?\\b",
+                    "\\bown\\s+(?:passing\\s+)?(?:review|check)s?\\b"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 422598,
+    "recallByFixture": {
+      "real-pr1-self-review-tool-checkout": 1
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr1-self-review-tool-checkout": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92",
+  "fixtureSetHash": "bb6884c1fc2ffb35",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "real-pr1-self-review-tool-checkout": 1
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr1-self-review-tool-checkout"
+  ],
+  "fixtureKinds": {
+    "real-pr1-self-review-tool-checkout": "positive"
+  }
+}

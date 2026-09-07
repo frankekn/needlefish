@@ -1,0 +1,245 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "pi",
+  "model": "cliproxy-deepseek/deepseek-v4-flash-vision-exp",
+  "effort": "max",
+  "provider": "DeepSeek via CLIProxyAPI",
+  "route": "DeepSeek API through private managed proxy",
+  "runnerVersion": "Pi 0.85.1",
+  "invocation": "node --import tsx eval/run.ts --runner pi --model cliproxy-deepseek/deepseek-v4-flash-vision-exp --effort max --provider 'DeepSeek via CLIProxyAPI' --route 'DeepSeek API through private managed proxy' --runner-version 'Pi 0.85.1' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env PI_AUTH_MODE=proxy --env PI_PROVIDER=cliproxy-deepseek --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr1-codex-no-sandbox-flag$' --report eval/results/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json",
+  "runnerEnvironment": "[[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:c452343845d37cd1\"],[\"PI_AUTH_MODE\",\"proxy\"],[\"PI_AUTH_SOURCE\",\"environment\"],[\"PI_MODELS_JSON\",\"sha256:17609936bc659374\"],[\"PI_PROVIDER\",\"cliproxy-deepseek\"]]",
+  "privateEnvironment": false,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner pi --model cliproxy-deepseek/deepseek-v4-flash-vision-exp --effort max --provider 'DeepSeek via CLIProxyAPI' --route 'DeepSeek API through private managed proxy' --runner-version 'Pi 0.85.1' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env PI_AUTH_MODE=proxy --env PI_PROVIDER=cliproxy-deepseek --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr1-codex-no-sandbox-flag$' --report eval/reports/2026-09-06-pi-cliproxy-deepseek-tier1-confirm-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-06T15:00:35.660Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "real-pr1-codex-no-sandbox-flag",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-codex-no-sandbox-flag",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 286490,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/shared/codex.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Restore read-only sandbox for codex exec",
+          "whyItBreaks": "The diff deletes `-s read-only` from the codex invocation. `-s`/`--sandbox` is the ONLY thing constraining codex to read-only (possible values: read-only, workspace-write, danger-full-access). Without it, codex falls back to its default sandbox mode (`workspace-write`), so the `spawnSync(bin, args, { cwd: opts.repoPath, input: prompt })` call now lets the model-generated shell commands create/modify/delete files and run tooling inside `opts.repoPath` instead of being limited to reads. This is a security regression in a harness that runs an AI agent against a target repo; a prompt or model misstep can now mutate/corrupt the repository rather than merely read it."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-codex-no-sandbox-flag",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-codex-no-sandbox-flag",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 243951,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "security",
+          "file": "src/shared/codex.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Removing -s read-only drops enforced read-only sandbox on codex agent",
+          "whyItBreaks": "`runCodex` spawns `codex exec` with `cwd: opts.repoPath` (line 24), so the sandbox policy governs the target repo it operates on. The diff deletes the explicit `-s read-only` arg, which previously FIXED the sandbox to read-only for every call. After the change the sandbox mode is whatever codex defaults to or reads from the caller's `~/.codex/config.toml` (or an injected `-c sandbox_mode=...`). Codex's `-s/--sandbox` accepts `read-only`, `workspace-write`, `danger-full-access` (verified via `codex exec --help`); any writable ambient config now lets the spawned agent write to / run commands in the repo it was asked to inspect. `runCodex` is exported and its prior contract was 'run codex read-only'; that guarantee is gone and callers can no longer rely on non-mutation. If writable behavior was intended it should be explicit and opt-in, not inherited from an unrelated global config. Note: codex's default sandbox is read-only, so under a pristine config this is behaviorally a no-op; the regression materializes when a caller's config permits writes."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-codex-no-sandbox-flag",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-codex-no-sandbox-flag",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 1065183,
+      "calls": 2,
+      "retries": 1,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "security",
+          "file": "src/shared/codex.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Restore read-only sandbox for codex subprocess",
+          "whyItBreaks": "`runCodex` spawns `codex exec` against `opts.repoPath` and feeds it a prompt; `-s`/`--sandbox` selects the sandbox policy used when executing *model-generated shell commands* (possible values `read-only`, `workspace-write`, `danger-full-access` — verified via `codex exec --help`). The removed `-s read-only` forced those commands to be read-only. Without it, the sandbox mode falls back to the codex config's `sandbox_mode`, which is environment-dependent and overridable to a write-permissive value (in this box `~/.codex/config.toml` sets `sandbox_mode = \"danger-full-access\"` and the `codex` shim adds `--dangerously-bypass-approvals-and-sandbox`). A codex agent analyzing a repo can now modify the repo/files instead of being constrained to read, and the write path does not depend on the `--output-last-message` write (that file lives in `os.tmpdir()`, outside the sandboxed workspace), so removing the flag is not needed for output. The helper is exported and is the only codex invocation path, so every caller loses the read-only guarantee."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "sandbox|read.?only|workspace.?write|danger.?full.?access|approval.?policy|mutate|edit.{0,20}(repo|file)|inherit.{0,20}config",
+          "file": "src/shared/codex.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 531874.6666666666,
+    "recallByFixture": {
+      "real-pr1-codex-no-sandbox-flag": 1
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr1-codex-no-sandbox-flag": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92",
+  "fixtureSetHash": "b6798742749473ab",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "real-pr1-codex-no-sandbox-flag": 1
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr1-codex-no-sandbox-flag"
+  ],
+  "fixtureKinds": {
+    "real-pr1-codex-no-sandbox-flag": "positive"
+  }
+}

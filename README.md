@@ -31,7 +31,7 @@ duplicate behavior — never style.
 - **Isolated review targets.** Reviews run against a throwaway clean clone and
   are checked for tampering after every model call.
 - **Guarded evals.** Every prompt/pipeline change is measured against an
-  86-scenario harness with active anti-cheat guards before it ships (see
+  87-scenario harness with active anti-cheat guards before it ships (see
   [Benchmarks](#benchmarks)).
 
 Small PRs use a review pass plus an adversarial critic; large PRs use map/deep
@@ -96,7 +96,7 @@ Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
 inline review comments anchored to the diff; pushes update the same review
 in place (fresh / still-open / resolved) instead of stacking new ones.
 
-Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `xhigh` effort
+Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `high` effort
 by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
 unchanged heads skip the model entirely. Maintainers with write access to
 this repository can comment `@needlefish recheck` or
@@ -112,7 +112,7 @@ scores are never copied by hand.
 The primary score is Balanced Review Accuracy: the arithmetic mean of anchored
 recall and usable specificity. Tier-1 recall remains a hard qualification gate.
 
-The current gate has 86 review scenarios and runs every published lane three
+The current gate has 87 review scenarios and runs every published lane three
 times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
 when its prompt, fixture-set, and scorer hashes and anti-cheat version match the
 production baseline. Provider failures and unavailable subscription models are shown as
@@ -121,7 +121,7 @@ operational outcomes, not zero model scores.
 The page is not deployed yet; this link intentionally opens its source until a
 custom domain or GitHub Pages deployment is authorized.
 
-The deployed Codex `gpt-5.6-terra` at `xhigh` effort passes the current Tier-1
+The deployed Codex `gpt-5.6-terra` at `high` effort passes the current Tier-1
 and positive-noise qualification gates. See the [chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
 and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
@@ -289,7 +289,7 @@ jobs:
       # Optional:
       # runner: codex
       # model: gpt-5.6-terra
-      # codex_reasoning_effort: xhigh
+      # codex_reasoning_effort: high
       # timeout_ms: "600000"
       # idle_timeout_ms: "600000" # opencode only
     secrets: inherit
@@ -346,12 +346,12 @@ jobs:
    SHA to both installations and verify their installed metadata before trusting
    the fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`. The Codex
-   fleet contract is `@openai/codex@0.153.0`; install and verify that exact
+   fleet contract is `@openai/codex@0.153.4`; install and verify that exact
    version as the runner service account:
    ```bash
-   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.0
+   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
    CODEX_BIN="$HOME/.local/bin/codex"
-   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.0"
+   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
    ```
 4. Supply Codex's proxy route to the reusable workflow with
    `codex_proxy_base_url`, `codex_proxy_required: true`, and the
@@ -436,7 +436,7 @@ Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
 
 `runner_version` overrides the npm version of the selected runner CLI. When
 omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.153.0`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
+Codex `0.153.4`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
 explicit version — or `latest` — only when you intentionally want something
 other than the pin. A single default cannot be correct for four packages, so
 the pin is chosen from the selected `runner`.
@@ -444,7 +444,7 @@ the pin is chosen from the selected `runner`.
 Cost and behavior notes:
 
 - Small PRs use 2 model calls per PR (review + critic) at the workflow default,
-  `gpt-5.6-terra` at `xhigh` effort. Large PRs use 1 map call + N deep calls
+  `gpt-5.6-terra` at `high` effort. Large PRs use 1 map call + N deep calls
   (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
   Same-head re-runs use 0 model calls unless forced with `--recheck`.
 - Fork PRs don't receive secrets by default. The `if:` gate above skips them.
@@ -473,7 +473,7 @@ env vars:
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `xhigh` for `gpt-5.6-terra`) |
+| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `high` for `gpt-5.6-terra`) |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 
@@ -559,7 +559,7 @@ P3-only findings are reported but do not block (check stays green).
 
 ## Status
 
-v0.4.2. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.3. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish

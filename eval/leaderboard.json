@@ -1,25 +1,25 @@
 {
-  "updated": "2026-09-01",
-  "baseline": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
+  "updated": "2026-09-07",
+  "baseline": "results/2026-09-06-codex-gpt56-terra-xhigh-x3.json",
   "lanes": [
     {
-      "report": "results/2026-08-30-codex-gpt56-terra-high-x3.json",
+      "report": "results/2026-09-06-codex-gpt56-terra-high-x3.json",
       "name": "GPT-5.6 Terra",
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "high",
-      "status": "Candidate"
+      "status": "Deployed"
     },
     {
-      "report": "results/2026-08-31-codex-gpt56-terra-xhigh-x3.json",
+      "report": "results/2026-09-06-codex-gpt56-terra-xhigh-x3.json",
       "name": "GPT-5.6 Terra",
       "runner": "codex",
       "model": "gpt-5.6-terra",
       "effort": "xhigh",
-      "status": "Deployed"
+      "status": "Candidate"
     },
     {
-      "report": "results/2026-08-31-codex-gpt56-sol-medium-x3.json",
+      "report": "results/2026-09-06-codex-gpt56-sol-medium-x3.json",
       "name": "GPT-5.6 Sol",
       "runner": "codex",
       "model": "gpt-5.6-sol",
@@ -27,7 +27,7 @@
       "status": "Candidate"
     },
     {
-      "report": "results/2026-08-31-codex-gpt56-luna-max-x3.json",
+      "report": "results/2026-09-06-codex-gpt56-luna-max-x3.json",
       "name": "GPT-5.6 Luna",
       "runner": "codex",
       "model": "gpt-5.6-luna",
@@ -35,32 +35,28 @@
       "status": "Candidate"
     },
     {
-      "report": "results/2026-08-31-grok-grok46-xhigh-x3-rerun.json",
+      "report": "results/2026-09-06-grok-grok46-xhigh-x3.json",
       "name": "Grok 4.6",
       "runner": "grok",
       "model": "grok-4.6",
       "effort": "xhigh",
-      "status": "Candidate",
-      "legacyConfigIdentityException": "This completed no-rerun report predates staged Grok config hashing."
+      "status": "Candidate"
     },
     {
-      "report": "results/2026-08-30-pi-zai-cliproxy-glm53-flash-max-x3.json",
+      "report": "results/2026-09-06-pi-zai-glm53-flash-max-x3.json",
       "name": "GLM-5.3-Flash",
       "runner": "pi",
-      "model": "zai-cliproxy/glm-5.3-flash",
+      "model": "zai-direct/glm-5.3-flash",
       "effort": "max",
-      "status": "Candidate",
-      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing."
+      "status": "Candidate"
     },
     {
-      "report": "results/2026-08-30-pi-deepseek-v4-flash-vision-exp-max-x3.json",
+      "report": "results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json",
       "name": "DeepSeek V4 Flash Vision Exp",
       "runner": "pi",
-      "model": "deepseek/deepseek-v4-flash-vision-exp",
+      "model": "cliproxy-deepseek/deepseek-v4-flash-vision-exp",
       "effort": "max",
-      "status": "Candidate",
-      "legacyConfigIdentityException": "This completed no-rerun report predates staged Pi registry hashing.",
-      "legacyAuthIdentityException": "This completed no-rerun OAuth report predates selected Pi auth-entry hashing."
+      "status": "Candidate"
     }
   ],
   "blocked": [

@@ -320,8 +320,8 @@ jobs:
               echo "Unable to run the selected Codex CLI." >&2
               exit 1
             }
-            if [ "$codex_version" != "codex-cli 0.153.0" ]; then
-              echo "Selected Codex CLI must be codex-cli 0.153.0; found '$codex_version'." >&2
+            if [ "$codex_version" != "codex-cli 0.153.4" ]; then
+              echo "Selected Codex CLI must be codex-cli 0.153.4; found '$codex_version'." >&2
               exit 1
             fi
             export CODEX_BIN="$codex_bin"
@@ -346,7 +346,7 @@ jobs:
           if [ -z "$CODEX_REASONING_EFFORT" ]; then
             case "$NEEDLEFISH_MODEL_INPUT" in
               gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
-              gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
+              gpt-5.6-terra) export CODEX_REASONING_EFFORT="high" ;;
             esac
           fi
           if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
