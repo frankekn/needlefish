@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-31T15:58:03Z",
+  "generatedAt": "2026-09-08T05:12:13Z",
   "title": "Design System: Needlefish Benchmark",
   "extensions": {
     "colorMeta": {
@@ -80,30 +80,30 @@
       "name": "Trust Fact",
       "kind": "card",
       "description": "A compact protocol fact in the mast's lower rail.",
-      "html": "<div class=\"ds-trust\"><b>86</b><span>current fixtures</span></div>",
+      "html": "<div class=\"ds-trust\"><b>87</b><span>current fixtures</span></div>",
       "css": ".ds-trust{background:var(--ink,#071f2b);color:#fff;border:1px solid #31505a;padding:18px;font-family:'Avenir Next','Segoe UI',sans-serif}.ds-trust b{display:block;font:700 1.35rem/1 ui-monospace,SFMono-Regular,monospace}.ds-trust span{display:block;color:#afc7cb;font-size:.82rem;margin-top:8px}"
     },
     {
       "name": "Evidence Disclosure",
       "kind": "custom",
-      "description": "Native disclosure for exact model and route evidence.",
-      "html": "<details class=\"ds-evidence\"><summary>GPT-5.6 Sol</summary><dl><div><dt>Exact model</dt><dd><code>gpt-5.6-sol</code></dd></div><div><dt>Route</dt><dd>Codex CLI</dd></div></dl><a href=\"#\">Raw report</a></details>",
-      "css": ".ds-evidence{color:var(--ink,#071f2b);font-family:'Avenir Next','Segoe UI',sans-serif}.ds-evidence summary{cursor:pointer;font-weight:750}.ds-evidence[open] summary{color:var(--blue,#0c5670)}.ds-evidence summary:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-evidence dl{font-size:.82rem;margin:14px 0}.ds-evidence dl div{display:grid;grid-template-columns:80px 1fr;gap:8px;margin:5px 0}.ds-evidence dt{color:var(--muted,#49636d)}.ds-evidence dd{margin:0;overflow-wrap:anywhere}.ds-evidence a{color:var(--blue,#0c5670)}.ds-evidence[open] dl,.ds-evidence[open] summary~a{animation:ds-reveal .18s ease-out}@keyframes ds-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.ds-evidence[open] dl,.ds-evidence[open] summary~a{animation:none}}"
+      "description": "A native disclosure in the model cell toggles a full-width evidence slip beneath the row.",
+      "html": "<div class=\"ds-evidence\"><details><summary>GPT-5.6 Terra</summary></details></div><div class=\"ds-slip\"><dl><div><dt>Exact model</dt><dd><code>gpt-5.6-terra</code></dd></div><div><dt>Route</dt><dd>Codex subscription (operator-attested)</dd></div></dl><a href=\"#\">Raw report</a></div>",
+      "css": ".ds-evidence{color:var(--ink,#071f2b);font-family:'Avenir Next','Segoe UI',sans-serif}.ds-evidence summary{cursor:pointer;font-weight:700}.ds-evidence details[open] summary{color:var(--blue,#0c5670)}.ds-evidence summary:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-slip{display:none;background:#fff;padding:4px 20px 20px 60px;border-bottom:1px solid var(--line,#bfd0d2)}.ds-evidence:has(details[open])+.ds-slip{display:block;animation:ds-reveal .18s ease-out}.ds-slip dl{font-size:.82rem;margin:0}.ds-slip dl div{display:grid;grid-template-columns:110px 1fr;gap:8px;margin:5px 0}.ds-slip dt{color:var(--muted,#49636d)}.ds-slip dd{margin:0;overflow-wrap:anywhere}.ds-slip a{color:var(--blue,#0c5670)}@keyframes ds-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.ds-evidence:has(details[open])+.ds-slip{animation:none}}"
     },
     {
-      "name": "Production Status",
+      "name": "Status Marker",
       "kind": "chip",
       "refersTo": "status",
-      "description": "An outlined status marker whose text carries the state.",
-      "html": "<span class=\"ds-status\">Production</span>",
-      "css": ".ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;color:#0c684f;font:800 .74rem/1.2 'Avenir Next','Segoe UI',sans-serif}"
+      "description": "Outlined status markers whose text always carries the state: deployed green, candidate brown, disqualified orange.",
+      "html": "<span class=\"ds-status ds-deployed\">Deployed</span> <span class=\"ds-status ds-candidate\">Candidate</span> <span class=\"ds-status ds-disqualified\">Disqualified</span>",
+      "css": ".ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;font:800 .74rem/1.2 'Avenir Next','Segoe UI',sans-serif}.ds-deployed{color:#0c684f}.ds-candidate{color:#8b3e24}.ds-disqualified{color:var(--orange,#c44724)}"
     },
     {
       "name": "Leaderboard",
       "kind": "custom",
       "refersTo": "leaderboard",
       "description": "A keyboard-focusable evidence table with the primary decision columns first.",
-      "html": "<div class=\"ds-table-wrap\" role=\"region\" aria-label=\"Qualified model leaderboard\" tabindex=\"0\"><table><thead><tr><th>Rank</th><th>Model</th><th>Balanced score</th><th>Status</th></tr></thead><tbody><tr><td class=\"ds-rank\">1</td><th scope=\"row\">GPT-5.6 Sol</th><td class=\"ds-number\">91.28%</td><td><span class=\"ds-status\">Production</span></td></tr></tbody></table></div>",
+      "html": "<div class=\"ds-table-wrap\" role=\"region\" aria-label=\"Qualified model leaderboard\" tabindex=\"0\"><table><thead><tr><th>Rank</th><th>Model</th><th>Balanced score</th><th>Status</th></tr></thead><tbody><tr><td class=\"ds-rank\">1</td><th scope=\"row\">GPT-5.6 Terra</th><td class=\"ds-number\">89.95%</td><td><span class=\"ds-status\">Deployed</span></td></tr></tbody></table></div>",
       "css": ".ds-table-wrap{overflow-x:auto;border-top:2px solid var(--ink,#071f2b);border-bottom:2px solid var(--ink,#071f2b);background:#fff;scrollbar-color:var(--blue,#0c5670) #dce9e7;scrollbar-width:thin}.ds-table-wrap:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px}.ds-table-wrap table{width:100%;border-collapse:collapse;min-width:620px;color:var(--ink,#071f2b);font:1rem/1.55 'Avenir Next','Segoe UI',sans-serif;font-variant-numeric:tabular-nums}.ds-table-wrap th,.ds-table-wrap td{padding:16px 13px;text-align:left;border-bottom:1px solid var(--line,#bfd0d2);vertical-align:top}.ds-table-wrap thead th{font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#49636d);background:#edf2ef}.ds-rank{font:700 1.15rem/1 ui-monospace,SFMono-Regular,monospace;color:var(--muted,#49636d)}.ds-number{text-align:right;font-weight:800}.ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;color:#0c684f;font-size:.74rem;font-weight:800}"
     },
     {
