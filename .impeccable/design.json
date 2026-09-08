@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-08T05:12:13Z",
+  "generatedAt": "2026-09-08T05:23:34Z",
   "title": "Design System: Needlefish Benchmark",
   "extensions": {
     "colorMeta": {
@@ -74,14 +74,14 @@
       "kind": "nav",
       "description": "Sparse evidence routes on the deep-ink mast.",
       "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a class=\"ds-brand\" href=\"#\">Needlefish</a><div class=\"ds-links\"><a href=\"#\">Leaderboard</a><a href=\"#\">Method</a><a href=\"#\">Raw reports</a></div></nav>",
-      "css": ".ds-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px;background:var(--ink,#071f2b);font:0.9rem 'Avenir Next','Segoe UI',sans-serif}.ds-brand{color:#fff;font-weight:800;letter-spacing:.08em;text-decoration:none;text-transform:uppercase}.ds-links{display:flex;gap:20px;flex-wrap:wrap}.ds-links a{color:#d8e7e8;text-underline-offset:.18em}.ds-nav a:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-links a:hover{text-decoration-thickness:2px}"
+      "css": ".ds-nav{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px;background:var(--paper,#f5f7f3);font:0.9rem 'Avenir Next','Segoe UI',sans-serif}.ds-brand{color:var(--ink,#071f2b);font-weight:800;letter-spacing:.08em;text-decoration:none;text-transform:uppercase}.ds-links{display:flex;gap:20px;flex-wrap:wrap}.ds-links a{color:var(--blue,#0c5670);text-underline-offset:.18em;padding:6px 0}.ds-nav a:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-links a:hover{text-decoration-thickness:2px}"
     },
     {
       "name": "Trust Fact",
       "kind": "card",
       "description": "A compact protocol fact in the mast's lower rail.",
       "html": "<div class=\"ds-trust\"><b>87</b><span>current fixtures</span></div>",
-      "css": ".ds-trust{background:var(--ink,#071f2b);color:#fff;border:1px solid #31505a;padding:18px;font-family:'Avenir Next','Segoe UI',sans-serif}.ds-trust b{display:block;font:700 1.35rem/1 ui-monospace,SFMono-Regular,monospace}.ds-trust span{display:block;color:#afc7cb;font-size:.82rem;margin-top:8px}"
+      "css": ".ds-trust{background:#fff;color:var(--ink,#071f2b);border:1px solid var(--line,#bfd0d2);padding:18px;font-family:'Avenir Next','Segoe UI',sans-serif}.ds-trust b{display:block;font:700 1.35rem/1 ui-monospace,SFMono-Regular,monospace}.ds-trust span{display:block;color:var(--muted,#49636d);font-size:.82rem;margin-top:8px}"
     },
     {
       "name": "Evidence Disclosure",

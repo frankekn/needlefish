@@ -71,7 +71,7 @@ components:
 
 **Creative North Star: "The Marine Observation Bulletin"**
 
-Needlefish presents evaluation evidence as a public bulletin from a working marine observatory: sober, exact, and legible at a glance. Deep-ocean ink establishes authority while paper-white reading surfaces keep the result approachable; cyan marks data infrastructure and orange marks exceptions that deserve attention.
+Needlefish presents evaluation evidence as a public bulletin from a working marine observatory: sober, exact, and legible at a glance. The page is a single light paper field; deep-ocean ink carries text and the strongest structural rules, cyan marks data infrastructure, and orange marks exceptions that deserve attention.
 
 The system is editorial rather than promotional. Oversized questions create entry points, compact measurement type carries proof, and ruled tables expose the comparable evidence before any explanatory narrative. It refuses generic marketing cards and decorative dashboard chrome.
 
@@ -89,7 +89,7 @@ The palette feels like ink, instrument paper, and marked exceptions rather than 
 
 ### Primary
 
-- **Deep-Ocean Ink:** The dominant mast, primary text, and strongest structural rules.
+- **Deep-Ocean Ink:** Primary text, the wordmark, and the strongest structural rules.
 - **Evidence Blue:** Links, active disclosures, chart marks, and themed scrollbars that lead toward inspectable evidence.
 
 ### Secondary
@@ -147,7 +147,7 @@ At 760px and below, the hero, decision, methodology, blocked-route rows, and foo
 
 ## Elevation & Depth
 
-The system uses no shadows. Depth comes from tonal contrast, ruled edges, table headers, and the transition between deep ink and paper. White evidence surfaces sit on paper through color and borders, not simulated elevation.
+The system uses no shadows. Depth comes from tonal contrast, ruled edges, and table headers. White evidence surfaces sit on paper through color and borders, not simulated elevation.
 
 **The Flat Bulletin Rule.** Surfaces stay flat; hierarchy is earned with contrast, spacing, and rules rather than cards or shadows.
 
@@ -159,13 +159,13 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 
 ### Mast Navigation
 
-- **Style:** An uppercase Needlefish wordmark anchors a sparse row of evidence routes on deep ink.
+- **Style:** An uppercase Needlefish wordmark anchors a sparse row of evidence routes on the paper mast.
 - **State:** Links remain underlined by native text behavior and gain a thick orange focus outline for keyboard use.
 - **Mobile:** Links wrap rather than collapsing into scripted navigation.
 
 ### Trust Rail
 
-- **Style:** Four ink cells separated by cool blue-gray rules pair a monospace fact with a small sans label.
+- **Style:** Four white cells separated by hairline rules pair a monospace fact with a small sans label.
 - **Responsive:** The rail becomes a two-column grid on mobile.
 
 ### Leaderboard
