@@ -141,7 +141,7 @@ The page uses a centered shell capped at 1180px, with 20px desktop gutters and 1
 
 Sections use an 88px vertical rhythm on wide screens and 64px below 760px. Editorial pairings use asymmetric grids: the hero favors the question, decisions reserve one third for the label, and methodology reserves a narrow evidence rail beside the explanation.
 
-At 760px and below, the hero, decision, methodology, blocked-route rows, and footer become single-column flows; the trust rail becomes two columns. The leaderboard remains a real table with horizontal overflow. Its first columns are Rank, Model, Balanced score, and Status so the primary judgment appears before a visitor scrolls to diagnostics.
+At 760px and below, the hero, decision, methodology, blocked-route rows, and footer become single-column flows; the trust rail becomes two columns. The leaderboard shows only the judgment columns — rank, model, balanced score, interval, and status — so the verdict reads without scrolling on desktop; every lane opens into a full-width evidence slip that carries its diagnostics, identity, and reproduce evidence.
 
 **The Leaderboard-First Rule.** Result, qualification, and route status precede charts and methodology; explanation never delays access to the evidence.
 
@@ -171,7 +171,7 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 ### Leaderboard
 
 - **Structure:** A white, horizontally scrollable table bounded by strong ink rules and quiet row dividers.
-- **Priority:** Rank, model, balanced score, and status appear first; diagnostic columns follow.
+- **Priority:** Only rank, model, balanced score, interval, and status appear in the table; diagnostic metrics live in the lane's evidence slip.
 - **Interaction:** The scroll region is keyboard-focusable, has a visible focus outline, and uses a thin evidence-blue scrollbar on a pale track.
 
 ### Evidence Disclosure

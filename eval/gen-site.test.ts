@@ -113,7 +113,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /aria-label="Benchmark trust facts"/);
   assert.match(html, /Skip to leaderboard/);
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
-  assert.match(html, /Scroll horizontally to see every metric/);
+  assert.match(html, /Scroll horizontally to see every column/);
   assert.match(html, /Disqualified: Tier-1 miss/);
   const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, new RegExp(`Release ${releaseVersion.replaceAll(".", "\\.")} is blocked`));
