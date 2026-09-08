@@ -322,119 +322,52 @@ runner 上執行 `needlefish explain`。把該檔案複製到其他 repo 之前�
 
 ### Self-hosted runner
 
-目標 repo 透過**呼叫本 repo 的 reusable workflow** 來使用 needlefish。
-在目標 repo 新增一個薄 caller（例如 `.github/workflows/needlefish.yml`）：
+本安裝使用自行管理的 Needlefish bundle。Review workflow 不抓上游原始碼、
+不解析上游 `main` SHA，也不部署 release。各消費專案保存僅有 `workflow_call`
+的 `.github/workflows/needlefish-review-local.yml`；原 caller 負責 PR 與手動
+觸發，避免同一事件啟動兩次 review。
 
 ```yaml
-name: needlefish
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      pr_number: { description: PR number to review (manual trigger), required: true }
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-  actions: write
 jobs:
   review:
-    uses: frankekn/needlefish/.github/workflows/review.yml@main
+    uses: ./.github/workflows/needlefish-review-local.yml
     with:
-      pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-      # Optional:
-      # runner: codex
-      # model: gpt-5.6-terra
-      # codex_reasoning_effort: high
-      # timeout_ms: "600000"
-      # idle_timeout_ms: "600000" # opencode only
+      pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      runner: codex
+      model: gpt-5.6-terra
+      codex_reasoning_effort: xhigh
     secrets: inherit
 ```
 
-reconciliation 的 active-run guard 與 pre-check-run retry cap 要求
-caller 的 run name 以 PR 編號結尾。請在 caller workflow 的頂層加上：
+Caller 保留 `workflow_dispatch.inputs.pr_number`、`actions: write`，以及以
+` PR #<編號>` 結尾的 run-name，供有次數上限的 reconciliation 使用。Reconcile
+維持在 GitHub-hosted Ubuntu 執行，不依賴 review runner 是否正常。
 
-```yaml
-run-name: "needlefish PR #${{ github.event.pull_request.number || inputs.pr_number }}"
-```
+以 runner 的 service account 安裝已驗證 bundle 至
+`~/.local/share/needlefish-self/releases/<self_version>`，保留 `release.json`、
+`self-managed.patch` 與 frozen `pnpm-lock.yaml`，由操作者把獨立的
+`needlefish-self/current` 指向該版本。Review 每次只解析一次 current，驗證
+metadata 與 patch／lockfile digest，並固定使用該不可變版本。安裝缺漏或無效
+即拒絕執行。手動 `needlefish-deploy` 只驗證已安裝版本；source push 與上游
+release 不會自動覆蓋自用版。
 
-Closed 或 forked PR 在每個階段都會被跳過：reusable workflow 在
-self-hosted job 啟動前跳過；手動與 reusable dispatch 會先解析 PR
-metadata，在 checkout 或模型呼叫前跳過；發布任何結果前，CLI 會重新讀
-取 PR，若 PR 已關閉或 head SHA 已移動就跳過輸出。
+相同 service account 必須能執行 Codex CLI `0.153.4`。Review lane 為
+`gpt-5.6-terra / xhigh / fast`；bundle 包含 proxy tier 傳遞修復，因此 custom
+provider 也會收到 fast 設定。Provider 是否接受及實際提供哪種 tier，仍需
+provider 回應佐證。
 
-**Grok 4.5：** 將 `runner` 與 `model` override 換成 `runner: grok` 與
-`model: grok-4.5`。self-hosted workflow 要求 runner 的 `PATH` 上有已登入
-的 `grok` CLI；它不會幫你安裝或登入該 CLI。不改 caller workflow 的一次
-性 Grok 審查：
 
 ```bash
-PR_NUMBER=123 # replace with the PR number
-gh workflow run review.yml -R frankekn/needlefish --ref main \
-  -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
+npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
+export CODEX_BIN="$HOME/.local/bin/codex"
+test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
 ```
 
-**可重現的審查：** 將 reusable workflow 與 `needlefish_release_sha` pin 到
-同一個完整 commit SHA：
-
-```yaml
-jobs:
-  review:
-    uses: frankekn/needlefish/.github/workflows/review.yml@<full-commit-sha>
-    with:
-      needlefish_release_sha: <full-commit-sha>
-```
-
-workflow 會直接執行
-`~/.local/share/needlefish/releases/<sha>` 的 immutable release，即使較新
-的部署已移動共用的 `current` symlink。未明確 pin release 時，會解析
-`needlefish_repo` 目前的 `main` SHA。workflow 絕不會在 PR job 中重新安
-裝工具——所選 release 必須已部署在 runner 上。
-
-#### Runner 設定（一次性）
-
-1. 在目標 repo 註冊 **self-hosted runner**（免費、不限分鐘數）。保持在
-   你控制的機器上（EC2／pod／Mac）。
-2. 在該 runner 上部署一次 needlefish。之後推到 `main` 的 push 會執行
-   `needlefish-deploy` 並自動更新 runner：
-   ```bash
-   ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
-   ```
-   目前 production fleet 使用一份共用 x64 安裝，加上一份由兩個 runner
-   service 共用的 ARM 安裝。兩份安裝都要部署相同的 release SHA，並在信
-   任 fleet 前驗證其 installed metadata。
-3. 確認 runner 的 `PATH` 上有 `gh` 與所選模型 CLI。Codex fleet 合約是
-   `@openai/codex@0.153.4`；以 runner service account 安裝並驗證該確切
-   版本：
-   ```bash
-   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
-   CODEX_BIN="$HOME/.local/bin/codex"
-   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
-   ```
-4. 用 `codex_proxy_base_url`、`codex_proxy_required: true` 與
-   `codex_proxy_api_key` workflow secret 把 Codex 的 proxy route 提供給
-   reusable workflow。`pull_request` 事件不帶 workflow input，所以本
-   repo 自己的 review 要另外設定 repository variable
-   `CODEX_PROXY_BASE_URL` 與該 secret；input 缺席時 workflow 會退回使用
-   這個變數。Needlefish 會在命令列註冊 `cliproxyapi` custom provider，
-   而 credential 只存在子程序環境；required 模式會拒絕不完整的設定，而
-   不是退回 OAuth。Proxy invocation 會省略 direct-subscription 的
-   `service_tier` override。Grok 則依 provider 完成 CLI 登入或 key 設
-   定，並確認 `grok` 能以 runner service account 執行。
-5. 若 needlefish 是 **private**，caller repo 必須被允許呼叫此 reusable
-   workflow；否則（public）預設的 `GITHUB_TOKEN` 就足夠。
-6. **Runner global-instructions 注意事項：** 模型 CLI 可能自動載入
-   runner home 目錄的 global instructions。Needlefish 會指示模型只把目
-   標 repo 的 `AGENTS.md` 當作政策，忽略其他來源；但若要零洩漏，請保
-   持 runner home 沒有不相關的 instruction 檔案。
-
-所有 production 模型 runner 執行時都不套用各自 process-level 的權限限
-制。請只在你控制的 self-hosted runner 上使用。
-
-> Self-hosted runner 會在你的機器上執行 PR code。只在自己的 repo 單獨使
-> 用沒問題；若未來開放外部 contributor 的 PR，請隔離 runner（ephemeral
-> container），讓 contributor code 無法觸及你的持久化主機。
+各 caller 保留原認證路徑。Proxy caller 使用 `codex_proxy_base_url`、
+`codex_proxy_required: true` 與 `codex_proxy_api_key`；本 repo 直接觸發可由
+repository variable `CODEX_PROXY_BASE_URL` 指定端點。Required 模式缺憑證即
+失敗，不退回 OAuth；憑證只進入子程序環境。Fork／closed／stale PR 防護、
+checkout 憑證隔離與獨立 hosted finalization 都保留。
 
 ## Runners
 

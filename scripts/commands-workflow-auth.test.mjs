@@ -125,7 +125,7 @@ test("permission lookup is on ubuntu-latest before any side effect or self-hoste
 	const parseStepIndex = workflow.indexOf("      - name: Parse command");
 	const ackIndex = workflow.indexOf("      - name: Acknowledge");
 	const dispatchIndex = workflow.indexOf("      - name: Dispatch recheck");
-	const selfHostedIndex = workflow.indexOf("runs-on: self-hosted");
+	const selfHostedIndex = workflow.indexOf("runs-on: [self-hosted, Linux, X64]");
 
 	assert.ok(parseIndex !== -1 && parseIndex < authIndex);
 	assert.ok(authIndex < parseStepIndex);

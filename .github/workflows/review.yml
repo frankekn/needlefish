@@ -1,3 +1,4 @@
+# Self-managed workflow: installed binary only; no upstream deployment.
 name: needlefish-review
 # Carries the PR number so reconciliation can find every run for one PR
 # (a workflow_dispatch run reports the default branch's SHA, not the PR head).
@@ -36,17 +37,10 @@ on:
         type: boolean
         required: false
         default: false
-      needlefish_release_sha:
-        description: Optional expected Needlefish release SHA
-        required: false
       runs_on:
         description: Runner label for the review job
         required: false
         default: self-hosted
-      needlefish_repo:
-        description: Needlefish source repo for installed-release validation
-        required: false
-        default: frankekn/needlefish
   workflow_call:
     inputs:
       pr_number:
@@ -83,16 +77,8 @@ on:
         type: boolean
         required: false
         default: false
-      needlefish_release_sha:
-        description: Optional expected Needlefish release SHA
-        type: string
-        required: false
       runs_on:
         description: Runner label for the review job
-        type: string
-        required: false
-      needlefish_repo:
-        description: Needlefish source repo for installed-release validation
         type: string
         required: false
     secrets:
@@ -104,6 +90,7 @@ permissions:
   contents: read
   pull-requests: write
   checks: write
+  actions: write
 
 concurrency:
   group: needlefish-${{ github.repository }}-${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
@@ -119,7 +106,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
@@ -203,14 +189,12 @@ jobs:
 
           echo "TMPDIR=$temp_root" >> "$GITHUB_ENV"
 
-      - name: Select Needlefish release
+      - name: Select self-managed Needlefish
         if: steps.refs.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
-          EXPECTED_NEEDLEFISH_SHA: ${{ inputs.needlefish_release_sha || github.event.inputs.needlefish_release_sha }}
-          NEEDLEFISH_REPO: ${{ inputs.needlefish_repo || github.event.inputs.needlefish_repo || 'frankekn/needlefish' }}
         run: |
           set -euo pipefail
 
@@ -228,41 +212,37 @@ jobs:
             exit 1
           }
 
-          if [ -z "$EXPECTED_NEEDLEFISH_SHA" ]; then
-            EXPECTED_NEEDLEFISH_SHA="$(gh api "repos/$NEEDLEFISH_REPO/commits/main" --jq .sha)"
-          fi
-
-          if [[ ! "$EXPECTED_NEEDLEFISH_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            report_release_failure \
-              "Invalid Needlefish release SHA" \
-              "Expected a full lowercase 40-character Needlefish commit SHA, received '$EXPECTED_NEEDLEFISH_SHA'."
-          fi
-
-          release="$HOME/.local/share/needlefish/releases/$EXPECTED_NEEDLEFISH_SHA"
+          # Resolve once: an install switch must not change this job's binary.
+          root="$HOME/.local/share/needlefish-self"
+          release="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$root/current")" || {
+            report_release_failure "Needlefish self install missing" "Install the self-managed Needlefish bundle on this runner before retrying."
+          }
+          case "$release" in
+            "$root/releases/"*) ;;
+            *) report_release_failure "Invalid Needlefish self install" "The self-managed current link must select a release under $root/releases." ;;
+          esac
           metadata="$release/release.json"
           binary="$release/bin/needlefish"
-          actual_sha=""
-          if [ -f "$metadata" ]; then
-            actual_sha="$(node -e 'const fs = require("node:fs"); const json = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (typeof json.sha === "string") process.stdout.write(json.sha);' "$metadata" 2>/dev/null || true)"
+          if ! node - "$metadata" "$release" <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const crypto = require("node:crypto");
+          const [metadataPath, release] = process.argv.slice(2);
+          const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+          const sha256 = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          if (metadata.self_version !== path.basename(release) ||
+              !/^[0-9a-f]{40}$/.test(metadata.base_sha) ||
+              !/^[0-9a-f]{64}$/.test(metadata.patch_sha256) ||
+              metadata.patch_sha256 !== sha256(path.join(release, "self-managed.patch")) ||
+              metadata.dependency_lock_sha256 !== sha256(path.join(release, "pnpm-lock.yaml"))) {
+            process.exit(1);
+          }
+          NODE
+          then
+            report_release_failure "Invalid Needlefish self install metadata" "Self-managed release metadata or patch/lockfile digest does not match $release."
           fi
-
-          if [ "$actual_sha" != "$EXPECTED_NEEDLEFISH_SHA" ]; then
-            if [ -z "$actual_sha" ]; then actual_sha="missing"; fi
-            report_release_failure \
-              "Needlefish release mismatch" \
-              "Expected Needlefish release $EXPECTED_NEEDLEFISH_SHA, found $actual_sha in $metadata."
-          fi
-
-          if [ ! -x "$binary" ]; then
-            report_release_failure \
-              "Needlefish release is incomplete" \
-              "Needlefish release $EXPECTED_NEEDLEFISH_SHA is missing executable $binary."
-          fi
-
-          if ! "$binary" --version; then
-            report_release_failure \
-              "Needlefish release is not runnable" \
-              "Needlefish release $EXPECTED_NEEDLEFISH_SHA failed its version check at $binary."
+          if [ ! -x "$binary" ] || ! "$binary" --version; then
+            report_release_failure "Needlefish self install is not runnable" "The installed executable is unavailable at $binary."
           fi
 
           printf 'NEEDLEFISH_BIN=%s\n' "$binary" >> "$GITHUB_ENV"
@@ -304,7 +284,7 @@ jobs:
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: |
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
-            echo "Selected Needlefish release is unavailable. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
+            echo "Selected self-managed Needlefish is unavailable. Reinstall the local bundle on this runner." >&2
             exit 1
           fi
           if [[ ! "$PR_NUM" =~ ^[1-9][0-9]*$ ]]; then
@@ -346,7 +326,7 @@ jobs:
           if [ -z "$CODEX_REASONING_EFFORT" ]; then
             case "$NEEDLEFISH_MODEL_INPUT" in
               gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
-              gpt-5.6-terra) export CODEX_REASONING_EFFORT="high" ;;
+              gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
             esac
           fi
           if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then

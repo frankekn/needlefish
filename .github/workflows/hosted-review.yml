@@ -1,29 +1,27 @@
-# Dogfood the composite action on a GitHub-hosted runner.
-# Manual trigger only — pull_request reviews stay on the self-hosted runner
-# (review.yml); this exists to live-test the `uses: frankekn/needlefish@v0`
-# path without double-reviewing every PR. The first-party v0 tag is
-# deliberately floating; do not SHA-pin it.
+# Manual self-managed review entry. No upstream action deployment.
 name: hosted-review
+run-name: "hosted-review PR #${{ inputs.pr_number || inputs.pr }}"
 on:
   workflow_dispatch:
     inputs:
       pr:
         description: PR number to review
-        required: true
+        required: false
+      pr_number:
+        description: PR number supplied by reconciliation
+        required: false
 permissions:
   contents: read
   pull-requests: write
   checks: write
+  actions: write
 jobs:
   review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: frankekn/needlefish@v0
-        with:
-          pr_number: ${{ inputs.pr }}
-        env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+    uses: ./.github/workflows/review.yml
+    with:
+      pr_number: ${{ inputs.pr_number || inputs.pr }}
+      runner: codex
+      model: gpt-5.6-terra
+      codex_reasoning_effort: xhigh
+      runs_on: Linux
+    secrets: inherit

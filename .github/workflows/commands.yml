@@ -104,7 +104,7 @@ jobs:
   explain:
     needs: parse
     if: needs.parse.outputs.command == 'explain'
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - name: Checkout PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,9 +118,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           FINDING: ${{ needs.parse.outputs.finding }}
+          CODEX_REASONING_EFFORT: xhigh
+          CODEX_SERVICE_TIER: fast
         run: |
-          if [ ! -x "$HOME/.local/bin/needlefish" ]; then
-            echo "Missing $HOME/.local/bin/needlefish. Run scripts/deploy-ubuntu.sh on the self-hosted runner." >&2
-            exit 1
+          set -euo pipefail
+          root="$HOME/.local/share/needlefish-self"
+          release="$(readlink -e "$root/current")"
+          case "$release" in
+            "$root/releases/"*) ;;
+            *) echo "No valid self-managed installation under $root/releases" >&2; exit 1 ;;
+          esac
+          if ! node - "$release/release.json" "$release" <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const crypto = require("node:crypto");
+          const [metadataPath, release] = process.argv.slice(2);
+          const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+          const sha256 = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+          if (metadata.self_version !== path.basename(release) ||
+              !/^[0-9a-f]{40}$/.test(metadata.base_sha) ||
+              !/^[0-9a-f]{64}$/.test(metadata.patch_sha256) ||
+              metadata.patch_sha256 !== sha256(path.join(release, "self-managed.patch")) ||
+              metadata.dependency_lock_sha256 !== sha256(path.join(release, "pnpm-lock.yaml"))) {
+            process.exit(1);
+          }
+          NODE
+          then
+            echo "Invalid self-managed release metadata or digest: $release" >&2; exit 1
           fi
-          "$HOME/.local/bin/needlefish" explain "${{ github.event.issue.number }}" --finding "$FINDING"
+          "$release/bin/needlefish" explain "${{ github.event.issue.number }}" --finding "$FINDING" --runner codex --model gpt-5.6-terra

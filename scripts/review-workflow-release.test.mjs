@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -34,186 +35,81 @@ function workflowScript(stepName) {
 		.join("\n");
 }
 
-const selectScript = workflowScript("Select Needlefish release");
+const selectScript = workflowScript("Select self-managed Needlefish");
 const reviewScript = workflowScript("Needlefish review");
-const pinnedSha = "a".repeat(40);
-const currentSha = "b".repeat(40);
+const digest = value => createHash("sha256").update(value).digest("hex");
 
-function installRelease(
-	home,
-	sha,
-	{
-		metadataSha = sha,
-		withBinary = true,
-		repoUrl = "https://github.com/frankekn/needlefish.git",
-	} = {},
-) {
-	const release = join(home, ".local", "share", "needlefish", "releases", sha);
-	const bin = join(release, "bin");
-	mkdirSync(bin, { recursive: true });
-	writeFileSync(
-		join(release, "release.json"),
-		`${JSON.stringify({
-			sha: metadataSha,
-			version: "0.4.1",
-			repoUrl,
-			deployedAt: "2026-08-10T00:00:00Z",
-			node: process.version,
-		}, null, 2)}\n`,
-	);
-	if (withBinary) {
-		writeFileSync(join(bin, "needlefish"), "#!/bin/sh\nprintf 'needlefish 0.4.1\\n'\n");
-		chmodSync(join(bin, "needlefish"), 0o755);
-	}
-	return release;
+function runSelection(t, options = {}) {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-self-selection-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const home = join(root, "home with spaces");
+  const installs = join(home, ".local/share/needlefish-self");
+  const version = "0.4.3-self.test";
+  const release = options.outside ? join(root, "outside", version) : join(installs, "releases", version);
+  const fakeBin = join(root, "fake bin");
+  const githubEnv = join(root, "env");
+  const ghLog = join(root, "gh.log");
+  mkdirSync(installs, { recursive: true });
+  mkdirSync(fakeBin);
+  writeFileSync(githubEnv, "");
+  writeFileSync(ghLog, "");
+  if (!options.missing) {
+    mkdirSync(join(release, "bin"), { recursive: true });
+    writeFileSync(join(release, "self-managed.patch"), "local tier patch");
+    writeFileSync(join(release, "pnpm-lock.yaml"), "frozen lockfile");
+    const metadata = {
+      self_version: options.wrongVersion ? "wrong" : version,
+      base_sha: "a".repeat(40),
+      patch_sha256: digest("local tier patch"),
+      dependency_lock_sha256: digest("frozen lockfile"),
+    };
+    writeFileSync(join(release, "release.json"), JSON.stringify(metadata));
+    if (options.corruptPatch) writeFileSync(join(release, "self-managed.patch"), "changed");
+    if (options.corruptLock) writeFileSync(join(release, "pnpm-lock.yaml"), "changed");
+    if (!options.noBinary) {
+      writeFileSync(join(release, "bin/needlefish"), options.brokenBinary ? "#!/bin/sh\nexit 1\n" : "#!/bin/sh\necho needlefish-self\n");
+      chmodSync(join(release, "bin/needlefish"), 0o755);
+    }
+    symlinkSync(release, join(installs, "current"));
+  }
+  writeFileSync(join(fakeBin, "gh"), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$GH_LOG"\n');
+  chmodSync(join(fakeBin, "gh"), 0o755);
+  const result = spawnSync("bash", ["-c", selectScript], {
+    encoding: "utf8", timeout: 5000,
+    env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH}`, GITHUB_ENV: githubEnv, GH_LOG: ghLog,
+      REPO: "owner/repo", PR_HEAD_SHA: "b".repeat(40), EXPECTED_NEEDLEFISH_SHA: "must-not-be-used" },
+  });
+  return { ...result, root, release, installs, githubEnv: readFileSync(githubEnv, "utf8"), ghLog: readFileSync(ghLog, "utf8") };
 }
 
-function runSelection({
-	expectedSha = pinnedSha,
-	releases = [{ sha: pinnedSha }],
-	current = currentSha,
-	mainSha = pinnedSha,
-	needlefishRepo = "frankekn/needlefish",
-	repo = "frankekn/example",
-} = {}) {
-	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-release-"));
-	const home = join(root, "home with spaces");
-	const fakeBin = join(root, "fake bin");
-	const githubEnv = join(root, "github-env");
-	const ghLog = join(root, "gh.log");
-	mkdirSync(home);
-	mkdirSync(fakeBin);
+test("selection uses operator-installed release without querying upstream or deploying", t => {
+  const result = runSelection(t);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.release}/bin/needlefish\n`);
+  assert.equal(result.ghLog, "");
+  assert.doesNotMatch(selectScript, /commits\/main|git fetch|deploy-ubuntu|EXPECTED_NEEDLEFISH_SHA/);
+});
 
-	for (const release of releases) installRelease(home, release.sha, release);
-	if (current) {
-		const currentRelease = join(
-			home,
-			".local",
-			"share",
-			"needlefish",
-			"releases",
-			current,
-		);
-		if (!existsSync(currentRelease)) installRelease(home, current);
-		symlinkSync(
-			currentRelease,
-			join(home, ".local", "share", "needlefish", "current"),
-		);
-	}
-
-	writeFileSync(
-		join(fakeBin, "gh"),
-		`#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$*" >> "$GH_LOG"
-if [ "\${1:-}" = api ] && [[ "\${2:-}" == repos/*/commits/main ]]; then
-  printf '%s\\n' "$GH_MAIN_SHA"
-fi
-`,
-	);
-	chmodSync(join(fakeBin, "gh"), 0o755);
-
-	const result = spawnSync("bash", ["-c", selectScript], {
-		encoding: "utf8",
-		env: {
-			...process.env,
-			EXPECTED_NEEDLEFISH_SHA: expectedSha,
-			GH_LOG: ghLog,
-			GH_TOKEN: "test-token",
-			GITHUB_ENV: githubEnv,
-			GH_MAIN_SHA: mainSha,
-			HOME: home,
-			NEEDLEFISH_REPO: needlefishRepo,
-			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-			PR_HEAD_SHA: "c".repeat(40),
-			REPO: repo,
-		},
-	});
-	const output = {
-		...result,
-		expectedBinary: join(
-			home,
-			".local",
-			"share",
-			"needlefish",
-			"releases",
-			expectedSha || mainSha,
-			"bin",
-			"needlefish",
-		),
-		ghLog: existsSync(ghLog) ? readFileSync(ghLog, "utf8") : "",
-		githubEnv: existsSync(githubEnv) ? readFileSync(githubEnv, "utf8") : "",
-	};
-	rmSync(root, { recursive: true, force: true });
-	return output;
+for (const failure of ["missing", "outside", "wrongVersion", "corruptPatch", "corruptLock", "noBinary", "brokenBinary"]) {
+  test(`selection fails closed and reports the exact head when ${failure}`, t => {
+    const result = runSelection(t, { [failure]: true });
+    assert.notEqual(result.status, 0);
+    assert.equal(result.githubEnv, "");
+    assert.match(result.ghLog, /repos\/owner\/repo\/check-runs/);
+    assert.ok(result.ghLog.includes(`head_sha=${"b".repeat(40)}`));
+    assert.match(result.ghLog, /name=Needlefish/);
+    assert.match(result.ghLog, /conclusion=failure/);
+  });
 }
 
-test("selection executes the caller-pinned release even when current is newer", () => {
-	const result = runSelection();
-
-	assert.equal(result.status, 0, result.stderr);
-	assert.equal(result.stdout, "needlefish 0.4.1\n");
-	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-});
-
-test("selection resolves an omitted pin from the requested repository main SHA", () => {
-	const result = runSelection({ expectedSha: "" });
-
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.ghLog, /api repos\/frankekn\/needlefish\/commits\/main --jq \.sha/);
-	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-});
-
-test("selection resolves an omitted pin from the requested repository", () => {
-	const result = runSelection({
-		expectedSha: "",
-		needlefishRepo: "example/fork",
-		releases: [
-			{ sha: pinnedSha, repoUrl: "https://github.com/example/fork.git" },
-		],
-	});
-
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.ghLog, /api repos\/example\/fork\/commits\/main --jq \.sha/);
-	assert.equal(result.githubEnv, `NEEDLEFISH_BIN=${result.expectedBinary}\n`);
-});
-
-test("selection fails closed and posts a check when the pinned release is absent", () => {
-	const result = runSelection({ releases: [], current: currentSha });
-
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, new RegExp(`found missing.*releases/${pinnedSha}/release\\.json`));
-	assert.match(result.ghLog, /api -X POST repos\/frankekn\/example\/check-runs/);
-	assert.equal(result.githubEnv, "");
-});
-
-test("selection rejects release metadata that does not match its immutable directory", () => {
-	const result = runSelection({
-		releases: [{ sha: pinnedSha, metadataSha: currentSha }],
-	});
-
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, new RegExp(`expected Needlefish release ${pinnedSha}`, "i"));
-	assert.match(result.stderr, new RegExp(`found ${currentSha}`));
-	assert.equal(result.githubEnv, "");
-});
-
-test("selection rejects invalid SHAs before constructing a release path", () => {
-	const result = runSelection({ expectedSha: "../../current", releases: [] });
-
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /full lowercase 40-character Needlefish commit SHA/);
-	assert.equal(result.githubEnv, "");
-});
-
-test("selection rejects an installed release without an executable", () => {
-	const result = runSelection({
-		releases: [{ sha: pinnedSha, withBinary: false }],
-	});
-
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /missing executable/);
-	assert.equal(result.githubEnv, "");
+test("selection freezes the binary even if current changes afterward", t => {
+  const result = runSelection(t);
+  assert.equal(result.status, 0, result.stderr);
+  rmSync(join(result.installs, "current"));
+  symlinkSync("/unavailable/new-install", join(result.installs, "current"));
+  const binary = result.githubEnv.trim().slice("NEEDLEFISH_BIN=".length);
+  const run = spawnSync(binary, ["--version"], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test("review invokes only the selected immutable release binary", () => {

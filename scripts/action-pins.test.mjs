@@ -67,7 +67,15 @@ test("third-party actions are SHA-pinned with a version comment", () => {
   let thirdParty = 0;
   let firstParty = 0;
   for (const file of workflowFiles()) {
-    for (const use of usesLines(readFileSync(file, "utf8"))) {
+    const workflow = readFileSync(file, "utf8");
+    for (const use of usesLines(workflow)) {
+      assert.doesNotMatch(use.action, /^frankekn\/needlefish(?:@|\/)/);
+      if (use.action.startsWith("./")) {
+        // Relative reusable workflows are pinned to the caller's own commit.
+        assert.ok(!use.action.includes("@"));
+        firstParty += 1;
+        continue;
+      }
       const { exempt } = assertPinned(file, use);
       if (exempt) {
         firstParty += 1;
@@ -77,7 +85,7 @@ test("third-party actions are SHA-pinned with a version comment", () => {
     }
   }
   assert.ok(thirdParty > 0, "expected at least one third-party action pin");
-  assert.ok(firstParty > 0, "expected the hosted live-test first-party floating ref");
+  assert.ok(firstParty > 0, "expected the manual same-commit workflow caller");
 });
 
 test("floating first-party tag is exempt in hosted-review.yml", () => {

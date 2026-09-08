@@ -56,7 +56,9 @@ import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument } from "yam
 // concurrently-open PR that legitimately adds a workflow checkout passes its own CI,
 // merges cleanly (different files), and lands a main that fails an equality this
 // branch could not have known to bump.
-const MINIMUM_CHECKOUT_COUNT = 6;
+// Self-managed install verification and the manual local-workflow caller no
+// longer check out source; the remaining four checkouts still need this guard.
+const MINIMUM_CHECKOUT_COUNT = 4;
 
 const PERSISTED_CREDENTIAL_ALLOWLIST = [
 	{
@@ -693,7 +695,7 @@ test("a uses: value that is not a documented reference form fails the scan", () 
 
 		assert.throws(
 			() => scanRepository(root),
-			/review\.yml:22: uses: \$\/tools\/prepare/,
+			new RegExp(`review\\.yml:${4 + MINIMUM_CHECKOUT_COUNT * 3}: uses: \\$\\/tools\\/prepare`),
 			"an unclassifiable reference must fail the scan, not be skipped",
 		);
 	});

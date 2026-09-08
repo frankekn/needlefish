@@ -334,129 +334,55 @@ after you retarget those two jobs.
 
 ### Self-hosted runner
 
-Target repos consume needlefish by **calling the reusable workflow** in this
-repo. Add a thin caller in the target repo (e.g.
-`.github/workflows/needlefish.yml`):
+This installation uses an operator-managed Needlefish bundle. Review workflows
+never fetch upstream source, resolve an upstream `main` SHA, or deploy a release.
+Each consumer vendors a `workflow_call`-only copy of the reviewed workflow at
+`.github/workflows/needlefish-review-local.yml`; its existing caller owns PR and
+manual triggers, so one event cannot start two reviews.
 
 ```yaml
-name: needlefish
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      pr_number: { description: PR number to review (manual trigger), required: true }
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-  actions: write
 jobs:
   review:
-    uses: frankekn/needlefish/.github/workflows/review.yml@main
+    uses: ./.github/workflows/needlefish-review-local.yml
     with:
-      pr_number: ${{ github.event.inputs.pr_number || github.event.pull_request.number }}
-      # Optional:
-      # runner: codex
-      # model: gpt-5.6-terra
-      # codex_reasoning_effort: high
-      # timeout_ms: "600000"
-      # idle_timeout_ms: "600000" # opencode only
+      pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      runner: codex
+      model: gpt-5.6-terra
+      codex_reasoning_effort: xhigh
     secrets: inherit
 ```
 
-The reconciliation active-run guard and pre-check-run retry cap require the
-caller's run name to end with the PR number. Add this at the caller
-workflow's top level:
+The caller must retain `workflow_dispatch.inputs.pr_number`, `actions: write`,
+and a run name ending in ` PR #<number>` for bounded reconciliation. Reconcile
+runs on GitHub-hosted Ubuntu independently of the review runner.
 
-```yaml
-run-name: "needlefish PR #${{ github.event.pull_request.number || inputs.pr_number }}"
-```
+Provision the tested self-managed bundle as the runner service account under
+`~/.local/share/needlefish-self/releases/<self_version>`. Keep `release.json`,
+`self-managed.patch`, and the frozen `pnpm-lock.yaml` with the bundle; point the
+operator-owned `needlefish-self/current` link at that version. Each review resolves
+that link once, validates its metadata and patch/lockfile digests, and runs only
+the selected immutable binary. A missing or invalid installation fails closed.
+The manual `needlefish-deploy` workflow only checks the installed version; source
+pushes and upstream releases cannot replace it.
 
-Closed or forked PRs are skipped at every stage: the reusable workflow skips
-them before the self-hosted job starts, manual and reusable dispatch resolve
-PR metadata first and skip before checkout or model invocation, and before
-posting any result the CLI re-reads the PR and skips output if it closed or
-the head SHA moved.
+Keep Codex CLI `0.153.4` available as the same service account. The review lane is
+`gpt-5.6-terra / xhigh / fast`. The bundle includes the proxy tier forwarding fix:
+fast is passed to Codex even with a custom provider. Provider acceptance and the
+service tier actually delivered still require provider evidence.
 
-**Grok 4.5:** replace the `runner` and `model` overrides with `runner: grok`
-and `model: grok-4.5`. The self-hosted workflow requires the authenticated
-`grok` CLI on the runner's `PATH`; it does not install or log in to that CLI
-for you. For a one-off Grok review without editing a caller workflow:
 
 ```bash
-PR_NUMBER=123 # replace with the PR number
-gh workflow run review.yml -R frankekn/needlefish --ref main \
-  -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
+npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
+export CODEX_BIN="$HOME/.local/bin/codex"
+test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
 ```
 
-**Reproducible reviews:** pin the reusable workflow and
-`needlefish_release_sha` to the same full commit SHA:
-
-```yaml
-jobs:
-  review:
-    uses: frankekn/needlefish/.github/workflows/review.yml@<full-commit-sha>
-    with:
-      needlefish_release_sha: <full-commit-sha>
-```
-
-The workflow then executes that immutable release from
-`~/.local/share/needlefish/releases/<sha>` even when a newer deployment has
-moved the shared `current` symlink. Without an explicit release pin, it
-resolves `needlefish_repo`'s current `main` SHA. The workflow never
-reinstalls the tool during a PR job — the selected release must already have
-been deployed on the runner.
-
-#### Runner setup (one-time)
-
-1. Register a **self-hosted runner** on the target repo (free, unlimited
-   minutes). Keep it on a machine you control (EC2/pod/Mac).
-2. Deploy needlefish once on that runner. Future pushes to `main` run
-   `needlefish-deploy` and update the runner automatically:
-   ```bash
-   ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
-   ```
-   The current production fleet uses one shared x64 installation plus one
-   shared ARM installation used by two runner services. Deploy the same
-   release SHA to both installations and verify their installed metadata
-   before trusting the fleet.
-3. Ensure the runner has `gh` and the selected model CLI on `PATH`. The Codex
-   fleet contract is `@openai/codex@0.153.4`; install and verify that exact
-   version as the runner service account:
-   ```bash
-   npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
-   CODEX_BIN="$HOME/.local/bin/codex"
-   test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
-   ```
-4. Supply Codex's proxy route to the reusable workflow with
-   `codex_proxy_base_url`, `codex_proxy_required: true`, and the
-   `codex_proxy_api_key` workflow secret. `pull_request` events carry no
-   workflow inputs, so for this repo's own reviews set the repository
-   variable `CODEX_PROXY_BASE_URL` alongside the secret; the workflow falls
-   back to it when the input is absent. Needlefish registers the
-   `cliproxyapi` custom provider on the command line while the credential
-   remains only in the child environment; required mode rejects incomplete
-   configuration instead of falling back to OAuth. Proxy invocations omit the
-   direct-subscription `service_tier` override. For Grok, complete the
-   provider's CLI login or key setup as appropriate and verify that `grok`
-   runs as the runner service account.
-5. If needlefish is **private**, the caller repo must be allowed to call this
-   reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is
-   enough.
-6. **Runner global-instructions caveat:** model CLIs may auto-load global
-   instructions from the runner's home directory. Needlefish instructs the
-   model to ignore anything outside the target repo's `AGENTS.md` as policy,
-   but if you want zero leakage, keep the runner home free of unrelated
-   instruction files.
-
-All production model runners execute without their own process-level
-permission restrictions. Use them only on a self-hosted runner you control.
-
-> Self-hosted runners execute PR code on your machine. Fine for solo use on
-> your own repos; if you ever open PRs to outside contributors, isolate the
-> runner (ephemeral container) so contributor code can't touch your
-> persistent host.
+Preserve each caller's existing authentication route. Proxy callers pass
+`codex_proxy_base_url`, `codex_proxy_required: true`, and `codex_proxy_api_key`;
+this repository's direct trigger may use the `CODEX_PROXY_BASE_URL` repository
+variable. Required proxy mode fails on missing credentials rather than falling
+back to OAuth. Credentials remain in the child environment. Fork/closed/stale-PR
+checks, checkout credential isolation, and hosted finalization remain enforced.
 
 ## Runners
 
