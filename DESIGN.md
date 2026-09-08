@@ -176,13 +176,13 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 
 ### Evidence Disclosure
 
-- **Style:** Native `details` and `summary` expose exact model, harness, route, run, hashes, and raw report links without runtime JavaScript.
+- **Style:** Native `details` and `summary` in each model cell toggle a full-width evidence slip (a companion table row shown via `:has(details[open])`) that exposes exact model, harness, route, run, hashes, and raw report links without runtime JavaScript.
 - **State:** Open summaries turn evidence blue. Content uses a restrained 180ms reveal; reduced-motion preferences remove the animation.
 
 ### Status Marker
 
 - **Shape:** A compact outlined pill.
-- **Color:** Production uses restrained green, candidate uses a warm exception tone, and disqualification remains explicit in the label.
+- **Color:** Deployed uses restrained green, candidate uses a warm brown, and disqualified uses exception orange; the label always spells the status out.
 - **Typography:** Bold, compact sans text; status is never communicated by color alone.
 
 ### Blocked Route List
