@@ -437,9 +437,10 @@ been deployed on the runner.
    back to it when the input is absent. Needlefish registers the
    `cliproxyapi` custom provider on the command line while the credential
    remains only in the child environment; required mode rejects incomplete
-   configuration instead of falling back to OAuth. Proxy invocations omit the
-   direct-subscription `service_tier` override. For Grok, complete the
-   provider's CLI login or key setup as appropriate and verify that `grok`
+   configuration instead of falling back to OAuth. Explicit `CODEX_SERVICE_TIER`
+   (`fast` or `priority`) also reaches proxy invocations; the provider determines
+   the tier actually served. For Grok, complete the provider's CLI login or key
+   setup as appropriate and verify that `grok`
    runs as the runner service account.
 5. If needlefish is **private**, the caller repo must be allowed to call this
    reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is
@@ -469,8 +470,18 @@ runner. Common options:
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `high` for `gpt-5.6-terra`) |
-| timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| per-attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| shared review deadline | `NEEDLEFISH_REVIEW_TIMEOUT_MS` | unset |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
+
+`NEEDLEFISH_REVIEW_TIMEOUT_MS` sets one monotonic deadline for the model pipeline.
+Every map/review, deep, critic, JSON repair and process retry shares it; each
+runner attempt is capped by the smaller of its per-attempt timeout and remaining
+time. Retry backoff must fit before another attempt can start. Expiry fails
+closed and never converts incomplete coverage into a pass. Leave this below the
+outer job/shell timeout to allow process teardown and report delivery; those
+operations are not replaced by this model-execution deadline. Unset preserves
+the existing per-attempt behavior.
 
 The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
 a provider stream stops producing output, Needlefish terminates that attempt

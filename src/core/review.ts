@@ -66,6 +66,7 @@ interface ReviewRun {
 	// Present only when the caller registered a trace observer.
 	readonly traceHealth?: TraceDeliveryHealth;
 	readonly startedAt: number;
+	readonly reviewDeadlineMs?: number;
 }
 
 interface ReviewPass {
@@ -237,6 +238,7 @@ function codexOptions(
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		...run.runnerOptions,
+		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
 	};
 }
 
@@ -996,6 +998,10 @@ export async function review(
 	onTrace?: ReviewTraceObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
+	const reviewTimeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
+	const reviewDeadlineMs = reviewTimeout
+		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
+		: undefined;
 
 	if (isDocsOnlyFastPath(bundle)) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
@@ -1029,6 +1035,7 @@ export async function review(
 				}
 			: {}),
 		startedAt,
+		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
 	};
 	try {
 		const result = await (bundle.deep || isLarge(bundle)

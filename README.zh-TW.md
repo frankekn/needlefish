@@ -419,9 +419,10 @@ workflow 會直接執行
    `CODEX_PROXY_BASE_URL` 與該 secret；input 缺席時 workflow 會退回使用
    這個變數。Needlefish 會在命令列註冊 `cliproxyapi` custom provider，
    而 credential 只存在子程序環境；required 模式會拒絕不完整的設定，而
-   不是退回 OAuth。Proxy invocation 會省略 direct-subscription 的
-   `service_tier` override。Grok 則依 provider 完成 CLI 登入或 key 設
-   定，並確認 `grok` 能以 runner service account 執行。
+   不是退回 OAuth。明確設定的 `CODEX_SERVICE_TIER`（`fast` 或 `priority`）
+   也會傳入 proxy invocation；實際服務層級由 provider 決定。Grok 則依
+   provider 完成 CLI 登入或 key 設定，並確認 `grok` 能以 runner service
+   account 執行。
 5. 若 needlefish 是 **private**，caller repo 必須被允許呼叫此 reusable
    workflow；否則（public）預設的 `GITHUB_TOKEN` 就足夠。
 6. **Runner global-instructions 注意事項：** 模型 CLI 可能自動載入
