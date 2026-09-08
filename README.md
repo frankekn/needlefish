@@ -103,11 +103,8 @@ defects without blocking clean changes? The tables below are generated from
 the same guarded report JSON as the benchmark page (`eval/gen-readme.ts`);
 the curated chronology and confirmation re-runs live in
 [eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md).
-The
-[benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html)
-generates its leaderboard from the same guarded reports and is never
-hand-edited. (The page is not deployed yet; the link intentionally opens its
-source until a custom domain or GitHub Pages deployment is authorized.)
+The [benchmark page](https://frankekn.github.io/needlefish/) generates
+its leaderboard from the same guarded reports and is never hand-edited.
 
 **Reading the columns:** **Balanced** is the primary score — the arithmetic
 mean of anchored recall and usable specificity. **Tier-1** is recall on

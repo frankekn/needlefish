@@ -101,9 +101,8 @@ effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR �
 benchmark 頁面相同的受防護 report JSON 產生；策展過的 chronology 與
 confirmation 重跑記錄在
 [eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)。
-[Benchmark 頁面原始碼](https://github.com/frankekn/needlefish/blob/main/docs/index.html)
-由同樣的受防護 report 產生 leaderboard，絕不手動編輯。（頁面尚未部署；
-在 custom domain 或 GitHub Pages 部署獲得授權前，連結刻意開啟原始碼。）
+[Benchmark 頁面](https://frankekn.github.io/needlefish/)
+由同樣的受防護 report 產生 leaderboard，絕不手動編輯。
 
 **欄位說明：** **Balanced** 是主要分數——anchored recall 與 usable
 specificity 的算術平均。**Tier-1** 是 must-find 缺陷的 recall，也是硬性
