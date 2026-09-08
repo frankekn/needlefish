@@ -182,7 +182,7 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 ### Status Marker
 
 - **Shape:** A compact outlined pill.
-- **Color:** Deployed uses restrained green, candidate uses a warm brown, and disqualified uses exception orange; the label always spells the status out.
+- **Color:** Deployed uses restrained green, candidate uses a warm brown, and below-gate uses exception orange; the label always spells the status out.
 - **Typography:** Bold, compact sans text; status is never communicated by color alone.
 
 ### Blocked Route List

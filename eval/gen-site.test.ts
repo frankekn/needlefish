@@ -114,7 +114,7 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /Skip to leaderboard/);
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
   assert.match(html, /Scroll horizontally to see every column/);
-  assert.match(html, /Disqualified: Tier-1 miss/);
+  assert.match(html, /Below gate: Tier-1 miss/);
   const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, new RegExp(`Release ${releaseVersion.replaceAll(".", "\\.")} is blocked`));
   assert.match(html, /Tier-2/);
@@ -564,7 +564,7 @@ test("renderSite disqualifies positive-fixture noise above the production envelo
     };
   });
   const html = renderSite(manifest, changed, canonical);
-  assert.match(html, /Disqualified: positive noise/);
+  assert.match(html, /Below gate: positive noise/);
   assert.match(html, /fails a current qualification gate/);
 });
 

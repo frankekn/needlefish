@@ -94,9 +94,9 @@
       "name": "Status Marker",
       "kind": "chip",
       "refersTo": "status",
-      "description": "Outlined status markers whose text always carries the state: deployed green, candidate brown, disqualified orange.",
-      "html": "<span class=\"ds-status ds-deployed\">Deployed</span> <span class=\"ds-status ds-candidate\">Candidate</span> <span class=\"ds-status ds-disqualified\">Disqualified</span>",
-      "css": ".ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;font:800 .74rem/1.2 'Avenir Next','Segoe UI',sans-serif}.ds-deployed{color:#0c684f}.ds-candidate{color:#8b3e24}.ds-disqualified{color:var(--orange,#c44724)}"
+      "description": "Outlined status markers whose text always carries the state: deployed green, candidate brown, below-gate orange.",
+      "html": "<span class=\"ds-status ds-deployed\">Deployed</span> <span class=\"ds-status ds-candidate\">Candidate</span> <span class=\"ds-status ds-gate\">Below gate</span>",
+      "css": ".ds-status{display:inline-block;padding:4px 9px;border:1px solid currentColor;border-radius:999px;font:800 .74rem/1.2 'Avenir Next','Segoe UI',sans-serif}.ds-deployed{color:#0c684f}.ds-candidate{color:#8b3e24}.ds-gate{color:var(--orange,#c44724)}"
     },
     {
       "name": "Leaderboard",
