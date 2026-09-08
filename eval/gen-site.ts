@@ -26,8 +26,8 @@ const EVAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.dirname(EVAL_DIR);
 const MANIFEST_PATH = path.join(EVAL_DIR, "leaderboard.json");
 const OUTPUT_PATH = path.join(REPO_ROOT, "docs", "index.html");
-const REPO_URL = "https://github.com/frankekn/needlefish";
-const MAX_MEAN_NOISE_PER_POSITIVE = 0.12;
+export const REPO_URL = "https://github.com/frankekn/needlefish";
+export const MAX_MEAN_NOISE_PER_POSITIVE = 0.12;
 
 export interface LaneConfig {
   readonly report: string;
@@ -74,7 +74,7 @@ export interface FixtureClassifications {
   readonly fastPathFixtureIds?: readonly string[];
 }
 
-type PublishedReport = Report & {
+export type PublishedReport = Report & {
   readonly fixtureKinds?: Readonly<Record<string, FixtureKind>>;
   readonly provider?: string;
   readonly route?: string;
@@ -87,7 +87,7 @@ type PublishedReport = Report & {
 
 type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 
-function operationalFailures(report: PublishedReport): string[] {
+export function operationalFailures(report: PublishedReport): string[] {
   return report.results.flatMap((result) => {
     const failure = (result as PublishedDraw).operationalFailure;
     if (failure === undefined) return [];
@@ -405,7 +405,7 @@ export function usableSpecificity(report: PublishedReport): number {
   return reviewRates(report).specificity;
 }
 
-function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
+export function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
   if (!report.fixtureTiers) throw new Error("fixture tiers are required");
   let total = 0;
   let hits = 0;
@@ -421,7 +421,7 @@ function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
   return hits / total;
 }
 
-function displayedMetrics(report: PublishedReport): {
+export function displayedMetrics(report: PublishedReport): {
   readonly recall: number;
   readonly falsePositiveRate: number;
   readonly invalidJsonRate: number;
@@ -507,7 +507,7 @@ function scoreStandardError(report: PublishedReport): number {
   );
 }
 
-function scoreConfidenceInterval(report: PublishedReport): readonly [number, number] {
+export function scoreConfidenceInterval(report: PublishedReport): readonly [number, number] {
   const score = balancedReviewAccuracy(report);
   const margin = 1.96 * scoreStandardError(report);
   return [Math.max(0, score - margin), Math.min(1, score + margin)];
@@ -549,7 +549,7 @@ export function statisticalRanks(lanes: readonly Lane[]): number[] {
   });
 }
 
-function compareLanes(a: Lane, b: Lane): number {
+export function compareLanes(a: Lane, b: Lane): number {
   const aMetrics = displayedMetrics(a.report);
   const bMetrics = displayedMetrics(b.report);
   return (
@@ -678,7 +678,7 @@ export function validateManifest(value: unknown): LeaderboardManifest {
   };
 }
 
-function readManifest(): LeaderboardManifest {
+export function readManifest(): LeaderboardManifest {
   const parsed: unknown = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   return validateManifest(parsed);
 }
@@ -701,7 +701,7 @@ function readPackageVersion(): string {
   return requiredString(record(parsed, "package.json"), "version", "package.json");
 }
 
-function readLane(config: LaneConfig): Lane {
+export function readLane(config: LaneConfig): Lane {
   const reportPath = path.join(EVAL_DIR, config.report);
   return {
     config,
@@ -913,7 +913,7 @@ function validateLane(lane: Lane): void {
   }
 }
 
-function validateComparability(
+export function validateComparability(
   lanes: readonly Lane[],
   baselinePath: string,
   canonical: FixtureClassifications,
@@ -1056,7 +1056,7 @@ function excludedRows(excluded: readonly ExcludedConfig[]): string {
     .join("");
 }
 
-function qualifies(report: PublishedReport): boolean {
+export function qualifies(report: PublishedReport): boolean {
   return (
     tierRecall(report, 1) === 1 &&
     displayedMetrics(report).meanNoisePerPositive <= MAX_MEAN_NOISE_PER_POSITIVE

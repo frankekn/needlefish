@@ -2,12 +2,10 @@
   <img src="assets/banner.png" alt="Needlefish" width="100%">
 </p>
 
-# needlefish
-
-[繁體中文](README.zh-TW.md)
-
-> Strict, local PR review that acts like a senior engineer — it
-> flags only real defects and stays silent on everything else.
+<p align="center">
+  <strong>Strict, local PR review that acts like a senior engineer.</strong><br>
+  It flags only real defects and stays silent on everything else.
+</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/needlefish"><img src="https://img.shields.io/npm/v/needlefish" alt="npm version"></a>
@@ -15,59 +13,56 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
 </p>
 
-[Benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) · [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md) · [GitHub Action](#github-action-quick-start)
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#benchmarks">Benchmarks</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#github-action">GitHub Action</a> ·
+  <a href="#runners">Runners</a> ·
+  <a href="https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md">Methodology</a> ·
+  <a href="README.zh-TW.md">繁體中文</a>
+</p>
 
-Needlefish reviews your diff before merge and reports only real defects — bugs,
-regressions, security, data loss, migration/upgrade risk, missing validation,
-duplicate behavior — never style.
+---
 
-**Why it's different:**
+Needlefish reviews your diff before merge and reports only real defects —
+bugs, regressions, security, data loss, migration/upgrade risk, missing
+validation, duplicate behavior — never style.
 
 - **Prefer-zero findings.** A strict senior reviewer's bar: if it isn't worth
   blocking merge, it's dropped. No style nits, no noise.
-- **Deterministic verdicts.** The `pass` / `needs_human` / `changes_requested`
-  verdict is derived from the surviving findings by fixed rules, never
-  freehanded by the model.
-- **Isolated review targets.** Reviews run against a throwaway clean clone and
-  are checked for tampering after every model call.
-- **Guarded evals.** Every prompt/pipeline change is measured against an
+- **Deterministic verdicts.** The `pass` / `needs_human` /
+  `changes_requested` verdict comes from fixed rules over the surviving
+  findings, never from model prose.
+- **Isolated review targets.** Reviews run in a throwaway clean clone,
+  checked for tampering after every model call.
+- **Guarded evals.** Every prompt or pipeline change is measured on an
   87-scenario harness with active anti-cheat guards before it ships (see
   [Benchmarks](#benchmarks)).
 
-Small PRs use a review pass plus an adversarial critic; large PRs use map/deep
-passes before the same critic. Codex is the default runner; Claude Code,
-opencode, OpenAI-compatible HTTP, Grok, pi, and ACP agents are also supported.
+Small PRs get a review pass plus an adversarial critic; large PRs add map and
+deep passes before the same critic. Codex is the default runner — Claude
+Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP agents are
+supported too.
 
-## Contents
+<p align="center">
+  <img src="assets/demo.png" alt="A real needlefish inline review comment: a P0 authorization bug caught on the diff" width="880">
+</p>
 
-- [Install](#install)
-- [GitHub Action quick start](#github-action-quick-start)
-- [Benchmarks](#benchmarks)
-- [Development install](#development-install)
-- [Local use](#local-use-read-only-no-github-writes)
-- [Machine interface](#machine-interface)
-- [Base detection](#base-detection)
-- [GitHub Action mode (self-hosted runner)](#github-action-mode-self-hosted-runner)
-- [GitHub Action (hosted, any repo)](#github-action-hosted-any-repo)
-- [Model runner invocation](#model-runner-invocation)
-- [Verdict derivation](#verdict-derivation-deterministic)
-- [Status](#status)
+<p align="center">
+  <sub>A real finding from the deployed lane (GPT-5.6 Terra, high effort) on a planted eval fixture — <a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>.</sub>
+</p>
 
-## Install
+## Quick start
 
-From inside any git repo you want reviewed:
+**Locally** — from inside any git repo you want reviewed. Requires Node 20+
+and one authed runner CLI (`codex`, `claude`, or `opencode`) on `PATH`:
 
 ```bash
 npx needlefish
 ```
 
-Requires Node 20+ and at least one authed runner CLI on `PATH`. Needlefish
-auto-detects `codex`, then `claude`, then `opencode`. Pass `--runner` or set
-`NEEDLEFISH_RUNNER` when you want a specific runner.
-
-## GitHub Action quick start
-
-Add `.github/workflows/needlefish.yml` to your repo:
+**On every PR** — add `.github/workflows/needlefish.yml` to the target repo:
 
 ```yaml
 name: needlefish
@@ -80,163 +75,157 @@ permissions:
   checks: write
 jobs:
   review:
+    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # full history: needlefish needs the merge base
       - uses: frankekn/needlefish@v0
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
 ```
 
-Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in codex CLI's
+Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in Codex CLI's
 `~/.codex/auth.json`) or `CODEX_API_KEY` — and open a PR. Findings arrive as
-inline review comments anchored to the diff; pushes update the same review
-in place (fresh / still-open / resolved) instead of stacking new ones.
+inline review comments anchored to the diff; pushes update the same review in
+place (fresh / still-open / resolved) instead of stacking new ones.
 
 Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `high` effort
 by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
-unchanged heads skip the model entirely. Maintainers with write access to
-this repository can comment `@needlefish recheck` or
-`@needlefish explain <finding>` on the PR.
+unchanged heads skip the model entirely.
 
 ## Benchmarks
 
-The prepared [benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html) answers one question: which model,
-agent harness, provider route, and effort catches real PR defects without
-blocking clean changes? Its leaderboard is generated from guarded report JSON;
-scores are never copied by hand.
+Which model, agent harness, provider route, and effort catches real PR
+defects without blocking clean changes? The tables below are generated from
+the same guarded report JSON as the benchmark page (`eval/gen-readme.ts`);
+the curated chronology and confirmation re-runs live in
+[eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md).
+The
+[benchmark page source](https://github.com/frankekn/needlefish/blob/main/docs/index.html)
+generates its leaderboard from the same guarded reports and is never
+hand-edited. (The page is not deployed yet; the link intentionally opens its
+source until a custom domain or GitHub Pages deployment is authorized.)
 
-The primary score is Balanced Review Accuracy: the arithmetic mean of anchored
-recall and usable specificity. Tier-1 recall remains a hard qualification gate.
-
-The current gate has 87 review scenarios and runs every published lane three
-times with sealed holdouts and anti-cheat tracing enabled. A row is ranked only
-when its prompt, fixture-set, and scorer hashes and anti-cheat version match the
-production baseline. Provider failures and unavailable subscription models are shown as
+**Reading the columns:** **Balanced** is the primary score — the arithmetic
+mean of anchored recall and usable specificity. **Tier-1** is recall on
+must-find defects and a hard qualification gate. **FP** is clean PRs blocked.
+**Noise/review** is extra findings per positive review (gate at 0.12). Rows
+compare only when prompt, fixture-set, and scorer hashes and the anti-cheat
+version all match; provider failures and unavailable subscription models are
 operational outcomes, not zero model scores.
 
-The page is not deployed yet; this link intentionally opens its source until a
-custom domain or GitHub Pages deployment is authorized.
+<!-- benchmark:begin -->
+<!-- generated by eval/gen-readme.ts from eval/leaderboard.json and eval/results/*.json — do not hand-edit -->
 
-**Measured on the 2026-09-06 rerank**, all seven published lanes at 87 × 3,
-scorer `8bbc6152d8b45a43`. This table is a hand-copied excerpt of the
-generated ranked table in `eval/RESULTS.md`, which is the source of truth;
-the benchmark page itself is never hand-edited. Bold marks the deployed lane
-and the best value in each column.
+**Updated 2026-09-07** — measured 2026-09-06; all 7 published lanes at 87 scenarios × 3 draws, sealed holdouts included, Class R gate, anti-cheat v2; commit `a5a0c68`, prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`; every report has `cheatDetectedCount: 0`.
 
-| Rank | Lane | Balanced | Tier-1 | FP | Noise/review | Mean |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | Grok 4.6 xhigh (Grok CLI) | **95.5%** | 100% | **1.4%** | **0.011** | 230s |
-| 2 | **GPT-5.6 Terra high (Codex CLI), deployed** | 90.0% | 100% | 9.7% | 0.077 | **63s** |
-| 2 | GPT-5.6 Sol medium (Codex CLI) | 88.4% | 100% | 13.9% | 0.077 | 75s |
+**Ranked lanes.** **Deployed lane: GPT-5.6 Terra (`gpt-5.6-terra` at `high` effort)** (selected 2026-09-07) — what the hosted action and reusable workflow run by default. Bold marks the deployed lane and the best value in each column.
 
-GLM-5.3-Flash, DeepSeek V4 Flash Vision Exp, Terra xhigh, and Luna max score
-in the same band but miss at least one Tier-1 draw in their full report, so
-they are shown without a rank. Terra xhigh also exceeds the 0.12 positive-noise
-gate. Grok 4.6 leads but is 3.7× slower per review and needs the Grok CLI
-authenticated on the runner; it remains a candidate.
+| Rank | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |
+| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | [Grok 4.6](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-grok-grok46-xhigh-x3.json) | Grok CLI 1.0.13 | xhigh | **95.48%** | 92.2%–98.8% | 100% | **1.39%** | **0.011** | 230s |
+| 2 | **[GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json) (deployed)** | Codex CLI 0.153.4 | high | 89.95% | 83.8%–96.1% | 100% | 9.72% | 0.077 | **63s** |
+| 2 | [GPT-5.6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.153.4 | medium | 88.41% | 81.1%–95.7% | 100% | 13.89% | 0.077 | 75s |
 
-The deployed Codex `gpt-5.6-terra` at `high` effort passes the current Tier-1
-and positive-noise qualification gates. The full ranked table with confidence
-intervals lives under "Current decision" in the
-[chronological record](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md);
-every row links its [raw report](https://github.com/frankekn/needlefish/tree/main/eval/results).
+**Unranked lanes**, same run — a lane whose full report misses any Tier-1 draw or exceeds 0.12 positive noise receives no rank; a later x3 confirmation is recorded but does not restore the rank.
 
-## Development install
+| Lane | Balanced | Gate missed in the full report |
+| --- | ---: | --- |
+| [GLM-5.3-Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-pi-zai-glm53-flash-max-x3.json) max | 94.81% | Tier-1 95.24%: `real-pr1-self-review-tool-checkout` 2/3 |
+| [DeepSeek V4 Flash Vision Exp](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-pi-cliproxy-deepseek-v4-flash-vision-exp-max-x3.json) max | 91.66% | Tier-1 95.24%: `real-pr1-codex-no-sandbox-flag` 2/3 |
+| [GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-xhigh-x3.json) xhigh | 90.39% | Tier-1 90.48%: `real-pr1-self-review-tool-checkout` 2/3, `t1-inverted-guard` 2/3; noise 0.1202 > 0.12 |
+| [GPT-5.6 Luna](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-luna-max-x3.json) max | 88.43% | Tier-1 76.19%: `t1-inverted-guard` 0/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3; noise 0.1311 > 0.12 |
+<!-- benchmark:end -->
 
-Requires:
+Reading: Grok 4.6 leads on accuracy and noise but is 3.7× slower per review
+and needs the Grok CLI authenticated on the runner, so it stays a candidate.
+Terra high and Sol are statistically unresolved against each other; Terra
+high is faster and cleaner on clean fixtures.
 
-- Node 20+
-- Corepack (recommended) or the pinned pnpm from `packageManager`
-- One supported model CLI authed locally: Codex, Claude Code, or opencode
-- GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action mode
+**Deployed-lane change, Terra xhigh → Terra high** — same model,
+subscription, harness, and run. Bold marks the better value in each row.
 
-```bash
-git clone https://github.com/frankekn/needlefish
-cd needlefish
-PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-corepack enable
-corepack prepare "$PNPM_VERSION" --activate
-pnpm install --frozen-lockfile
-```
+| | xhigh (before) | high (now) | Δ |
+| --- | ---: | ---: | ---: |
+| Balanced | **90.39%** | 89.95% | −0.4 pt |
+| Tier-1 recall | 90.48% | **100%** | +9.5 pt |
+| Anchored recall | 86.34% | **89.62%** | +3.3 pt |
+| Tier-3 recall | 72.22% | **77.78%** | +5.6 pt |
+| Usable specificity | **94.44%** | 90.28% | −4.2 pt |
+| False positives (of 72 clean draws) | **4.17% (3)** | 9.72% (7) | +4 draws |
+| Positive noise / review | 0.1202 | **0.0765** | −0.0437 |
+| Invalid output | 0.38% | **0%** | −1 draw |
+| Mean review time | 80s | **63s** | −21% |
 
-If Corepack is unavailable, install the package manager pinned in
-`package.json`:
+Reading: the switch buys Tier-1 completeness, recall, and speed at the cost
+of four more blocked clean draws. Sol medium was the alternative at rank 2;
+it has higher recall but nearly double the false-positive rate of Terra high.
 
-```bash
-PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
-```
+The full methodology, per-fixture matrices, and chronological experiment
+record live in
+[eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
+and
+[RESULTS_HISTORY.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md);
+raw reports under
+[eval/results/](https://github.com/frankekn/needlefish/tree/main/eval/results).
 
-### Make the development shim resolve on PATH (optional)
+## Usage
 
-The repo keeps a `bin/needlefish` development shim. After clone, symlink it
-onto a directory that's on your PATH so you can invoke `needlefish` from any
-cwd/shell:
+Local mode is read-only: Markdown to stdout, no GitHub writes.
 
-```bash
-ln -sf "$PWD/bin/needlefish" ~/.local/bin/needlefish   # or any PATH dir
-needlefish --version
-```
-
-The shim resolves symlinks and runs the repo-local `tsx` against `src/cli.ts`,
-so it survives the repo being linked from elsewhere and works in non-interactive
-shells (unlike a shell alias). Without this step, invoke via the full path below.
-
-## Local use (read-only, no GitHub writes)
-
-Run from inside any repo you want reviewed, on a branch with changes:
+**Committed work** — run from inside the target repo, or point `--repo` at it
+from anywhere. The default range is merge-base…`HEAD` (see
+[base detection](#base-detection)):
 
 ```bash
-# One-line package install/run:
-cd /path/to/some-repo
-npx needlefish
-
-# If the development shim is linked (above), from inside the target repo:
-needlefish
-
-# Otherwise, full path (cwd is the target):
-/path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts
-
-# Uncommitted code (no branch/PR needed): if the working tree is dirty —
-# or the repo has no commits yet — `needlefish` reviews your uncommitted
-# changes, untracked files included. Not a git repo yet? Run `git init` first.
-needlefish --repo /path/to/some-repo --uncommitted  # force working-tree review
-needlefish --repo /path/to/some-repo --branch       # force merge-base..HEAD review
-
-# Local diff review of committed work. Point at the target with --repo from anywhere:
+needlefish --repo /path/to/some-repo
 needlefish --repo /path/to/some-repo --focus security
 needlefish --repo /path/to/some-repo --deep
-needlefish --repo /path/to/some-repo --pr 123  # attaches PR metadata to the local diff
 needlefish --repo /path/to/some-repo --base develop
+needlefish --repo /path/to/some-repo --branch  # force merge-base..HEAD review
+```
 
-# PR ref review from any branch:
-needlefish pr 123 --repo /path/to/some-repo
+**Uncommitted work** — if the working tree is dirty, or the repo has no
+commits yet, `needlefish` reviews your uncommitted changes, untracked files
+included. Not a git repo yet? Run `git init` first.
 
-# Runner selection:
+```bash
+needlefish --repo /path/to/some-repo --uncommitted  # force working-tree review
+```
+
+**Pull requests:**
+
+```bash
+needlefish --repo /path/to/some-repo --pr 123  # attach PR metadata to the local diff
+needlefish pr 123 --repo /path/to/some-repo    # review the PR ref itself
+```
+
+**Runner and model selection:**
+
+```bash
 needlefish --repo /path/to/some-repo --runner claude
 needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
 ```
 
-Output: Markdown to stdout, JSON saved to `~/.cache/needlefish/<repo>/last-review.json`.
-Pass `--json` to print the same `ReviewResult` JSON to stdout instead:
+Output is Markdown on stdout, with the same review cached as JSON at
+`~/.cache/needlefish/<repo>/last-review.json`. Pass `--json` to print the
+`ReviewResult` JSON to stdout instead:
 
 ```bash
 needlefish --repo . --json | jq .verdict
 ```
 
-## Machine interface
+### Machine interface
 
 `needlefish --repo <path> --json` and `needlefish pr <number> --json` print a
-versioned `ReviewResult` JSON object to stdout. The local cache stores the same
-serialized object at `~/.cache/needlefish/<repo>/last-review.json`.
-
-Within a `schemaVersion`, fields are only added, never changed or removed.
-Breaking shape changes require a new `schemaVersion` and changelog entry.
+versioned `ReviewResult` JSON object to stdout — the same object the local
+cache stores. Within a `schemaVersion`, fields are only added, never changed
+or removed; breaking shape changes require a new `schemaVersion` and a
+changelog entry.
 
 | Field | Shape |
 | --- | --- |
@@ -251,15 +240,28 @@ Breaking shape changes require a new `schemaVersion` and changelog entry.
 | `stats` | Optional per-runner-call timing and attempt stats. |
 | `totalDurationMs` | Optional total review duration in milliseconds. |
 
-## Base detection
+### Base detection
 
 `--base` → `origin/HEAD` → `main`. Pass `--base <ref>` to override.
 
-## GitHub Action mode (self-hosted runner)
+## Verdicts
 
-`needlefish --github --pr N` collects the PR via `gh api`, runs the same core,
-and posts a non-sticky `COMMENT` review with the full rendered review body plus
-the authoritative `Needlefish` check-run. Verdict → surface mapping:
+The verdict is derived deterministically — model prose never decides
+pass/fail:
+
+- any P0 / P1 / P2 finding → `changes_requested`
+- otherwise a blocking residual risk → `needs_human`
+- otherwise → `pass`
+
+P3-only findings are reported but do not block (the check stays green).
+
+## GitHub Action
+
+Two ways to run on every PR: the **hosted composite action** (zero setup,
+cold-starts each run) or the **self-hosted reusable workflow** (low latency,
+on a machine you control). Both post the same result: a non-sticky `COMMENT`
+review with the full rendered review body, plus the authoritative
+`Needlefish` check-run as the merge gate.
 
 | verdict              | review event        | check     |
 | -------------------- | ------------------- | --------- |
@@ -268,25 +270,76 @@ the authoritative `Needlefish` check-run. Verdict → surface mapping:
 | needs_human          | COMMENT             | neutral   |
 | run failed           | (none)              | failure   |
 
-All verdict reviews are `COMMENT`, not approval or blocking-review events. The
-`GITHUB_TOKEN` bot is not permitted to formally approve PRs, and sticky blocking
-reviews can outlive a fixed head. The check-run is the merge gate: a failed
-review never passes a PR because the check goes `failure`.
+All verdict reviews are `COMMENT`, never approval or blocking-review events:
+the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking
+review can outlive a fixed head. The check-run is the merge gate — a failed
+review never passes a PR because the check goes `failure`. When a finding
+includes a validated exact replacement, its inline comment carries a native
+GitHub suggestion block; failed validation falls back to a plain comment.
 
-When a finding includes a validated exact replacement, its inline comment adds
-a native GitHub suggestion block; failed validation falls back to the normal
-comment without a suggestion.
+### Hosted (any repo)
 
-The reusable workflow skips closed or forked `pull_request` events before the
-self-hosted job starts. Manual and reusable dispatch resolve PR metadata first,
-then skip closed or forked PRs before checkout or model invocation. Before
-posting any result, the CLI re-reads the PR and skips output if the PR closed or
-the head SHA moved.
+The quick-start workflow above is the whole setup — this repo doubles as a
+composite action on GitHub-hosted `ubuntu-latest`.
 
-### Runner setup (one-time)
+**Runner auth** — repo secrets, passed via `env` on the action step:
+
+| runner   | secret(s) |
+| -------- | --------- |
+| codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
+| claude   | `ANTHROPIC_API_KEY` |
+| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
+| pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
+
+The hosted install step only accepts `codex`, `claude`, `opencode`, or `pi`.
+`grok` and `acp` are CLI runners and `openai` is HTTP — the hosted action
+installs none of them, and passing `runner: grok` (or `openai` / `acp`) fails
+that install step; use the self-hosted workflow below for Grok 4.5. Claude's
+auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and opencode's
+`OPENAI_API_KEY` are allowlisted through to the runner subprocess; other
+providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
+[subprocess environment](#subprocess-environment)).
+
+**Inputs** (all optional): `pr_number` (defaults to the event PR), `runner`
+(default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
+`runner_version`, `repo_path` (defaults to the workspace checkout),
+`github_token` (defaults to the workflow token).
+
+**Runner versions:** when `runner_version` is omitted, the action installs
+the per-runner pin from `action.yml` (currently Codex `0.153.4`, Claude
+`2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). A single default cannot be
+correct for four packages, so the pin is chosen from the selected `runner`;
+pass an explicit version — or `latest` — only when you intentionally want
+something else.
+
+**Cost and behavior:**
+
+- Small PRs: 2 model calls (review + critic) at the workflow default,
+  `gpt-5.6-terra` at `high` effort. Large PRs: 1 map call + N deep calls
+  (concurrency 3 by default) + 1 critic.
+- Docs-only PRs and same-head re-runs cost 0 model calls (force a re-review
+  with `--recheck`).
+- The hosted path cold-starts on every run (pnpm install + runner CLI
+  install, roughly a minute). The self-hosted path below stays the
+  low-latency option.
+- Fork PRs don't receive secrets, so the `if:` gate in the quick start skips
+  them. Avoid `pull_request_target` — it would hand secrets to workflows
+  triggered by fork code.
+
+**Comment commands:** the composite action does not add PR comment commands
+to the consumer repo. This repository's `.github/workflows/commands.yml`
+listens for maintainer `@needlefish recheck` and
+`@needlefish explain <finding>` comments (OWNER / MEMBER / COLLABORATOR
+only): recheck dispatches this repo's `review.yml`, and explain runs
+`needlefish explain` on a self-hosted runner that already has
+`~/.local/bin/needlefish`. Copying that file into another repo only works
+after you retarget those two jobs.
+
+### Self-hosted runner
 
 Target repos consume needlefish by **calling the reusable workflow** in this
-repo. Add a thin caller in the target repo (e.g. `.github/workflows/needlefish.yml`):
+repo. Add a thin caller in the target repo (e.g.
+`.github/workflows/needlefish.yml`):
 
 ```yaml
 name: needlefish
@@ -315,19 +368,24 @@ jobs:
     secrets: inherit
 ```
 
-The reconciliation active-run guard and pre-check-run retry cap require the caller's
-run name to end with the PR number. Add this at the caller workflow's top level:
+The reconciliation active-run guard and pre-check-run retry cap require the
+caller's run name to end with the PR number. Add this at the caller
+workflow's top level:
 
 ```yaml
 run-name: "needlefish PR #${{ github.event.pull_request.number || inputs.pr_number }}"
 ```
 
-To use Grok 4.5, replace the `runner` and `model` overrides with
-`runner: grok` and `model: grok-4.5`. The self-hosted workflow requires the
-authenticated `grok` CLI on the runner's `PATH`; it does not install or log in
-to that CLI for you.
+Closed or forked PRs are skipped at every stage: the reusable workflow skips
+them before the self-hosted job starts, manual and reusable dispatch resolve
+PR metadata first and skip before checkout or model invocation, and before
+posting any result the CLI re-reads the PR and skips output if it closed or
+the head SHA moved.
 
-For a one-off Grok review without editing a caller workflow:
+**Grok 4.5:** replace the `runner` and `model` overrides with `runner: grok`
+and `model: grok-4.5`. The self-hosted workflow requires the authenticated
+`grok` CLI on the runner's `PATH`; it does not install or log in to that CLI
+for you. For a one-off Grok review without editing a caller workflow:
 
 ```bash
 PR_NUMBER=123 # replace with the PR number
@@ -335,16 +393,8 @@ gh workflow run review.yml -R frankekn/needlefish --ref main \
   -f pr_number="$PR_NUMBER" -f runner=grok -f model=grok-4.5
 ```
 
-All production model runners execute without their own process-level permission
-restrictions. Use them only on a self-hosted runner you control.
-
-For reproducible reviews, pin the reusable workflow and
-`needlefish_release_sha` to the same full commit SHA. The workflow executes that
-immutable release from `~/.local/share/needlefish/releases/<sha>` even when a
-newer deployment has moved the shared `current` symlink. Without an explicit
-release pin, the workflow resolves `needlefish_repo`'s current `main` SHA.
-The workflow never reinstalls the tool during a PR job; the selected release must
-already have been deployed on the runner.
+**Reproducible reviews:** pin the reusable workflow and
+`needlefish_release_sha` to the same full commit SHA:
 
 ```yaml
 jobs:
@@ -354,17 +404,26 @@ jobs:
       needlefish_release_sha: <full-commit-sha>
 ```
 
-1. Register a **self-hosted runner** on the target repo (free, unlimited minutes).
-   Keep it on a machine you control (EC2/pod/Mac).
+The workflow then executes that immutable release from
+`~/.local/share/needlefish/releases/<sha>` even when a newer deployment has
+moved the shared `current` symlink. Without an explicit release pin, it
+resolves `needlefish_repo`'s current `main` SHA. The workflow never
+reinstalls the tool during a PR job — the selected release must already have
+been deployed on the runner.
+
+#### Runner setup (one-time)
+
+1. Register a **self-hosted runner** on the target repo (free, unlimited
+   minutes). Keep it on a machine you control (EC2/pod/Mac).
 2. Deploy needlefish once on that runner. Future pushes to `main` run
    `needlefish-deploy` and update the runner automatically:
    ```bash
    ssh termtek@ubuntu 'sh -s' < scripts/deploy-ubuntu.sh
    ```
    The current production fleet uses one shared x64 installation plus one
-   shared ARM installation used by two runner services. Deploy the same release
-   SHA to both installations and verify their installed metadata before trusting
-   the fleet.
+   shared ARM installation used by two runner services. Deploy the same
+   release SHA to both installations and verify their installed metadata
+   before trusting the fleet.
 3. Ensure the runner has `gh` and the selected model CLI on `PATH`. The Codex
    fleet contract is `@openai/codex@0.153.4`; install and verify that exact
    version as the runner service account:
@@ -376,118 +435,37 @@ jobs:
 4. Supply Codex's proxy route to the reusable workflow with
    `codex_proxy_base_url`, `codex_proxy_required: true`, and the
    `codex_proxy_api_key` workflow secret. `pull_request` events carry no
-   workflow inputs, so for this repo's own reviews set the repository variable
-   `CODEX_PROXY_BASE_URL` alongside the secret; the workflow falls back to it
-   when the input is absent. Needlefish
-   registers the `cliproxyapi` custom provider on the command line while the
-   credential remains only in the child environment; required mode rejects
-   incomplete configuration instead of falling back to OAuth. Proxy invocations
-   omit the direct-subscription `service_tier` override. For Grok,
-   complete the provider's CLI login or key setup as appropriate and verify
-   that `grok` runs as the runner service account.
+   workflow inputs, so for this repo's own reviews set the repository
+   variable `CODEX_PROXY_BASE_URL` alongside the secret; the workflow falls
+   back to it when the input is absent. Needlefish registers the
+   `cliproxyapi` custom provider on the command line while the credential
+   remains only in the child environment; required mode rejects incomplete
+   configuration instead of falling back to OAuth. Proxy invocations omit the
+   direct-subscription `service_tier` override. For Grok, complete the
+   provider's CLI login or key setup as appropriate and verify that `grok`
+   runs as the runner service account.
 5. If needlefish is **private**, the caller repo must be allowed to call this
-   reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is enough.
+   reusable workflow; otherwise (public) the default `GITHUB_TOKEN` is
+   enough.
 6. **Runner global-instructions caveat:** model CLIs may auto-load global
-   instructions from the runner's home directory. needlefish instructs the model
-   to ignore anything outside the target repo's `AGENTS.md` as policy, but if
-   you want zero leakage, keep the runner home free of unrelated instruction
-   files.
+   instructions from the runner's home directory. Needlefish instructs the
+   model to ignore anything outside the target repo's `AGENTS.md` as policy,
+   but if you want zero leakage, keep the runner home free of unrelated
+   instruction files.
 
-> Self-hosted runners execute PR code on your machine. Fine for solo use on your
-> own repos; if you ever open PRs to outside contributors, isolate the runner
-> (ephemeral container) so contributor code can't touch your persistent host.
+All production model runners execute without their own process-level
+permission restrictions. Use them only on a self-hosted runner you control.
 
-## GitHub Action (hosted, any repo)
+> Self-hosted runners execute PR code on your machine. Fine for solo use on
+> your own repos; if you ever open PRs to outside contributors, isolate the
+> runner (ephemeral container) so contributor code can't touch your
+> persistent host.
 
-No self-hosted runner required: this repo doubles as a composite action that
-runs on GitHub-hosted `ubuntu-latest`. Add a workflow to the target repo. The
-hosted action's install step only accepts `codex`, `claude`, `opencode`, or
-`pi`. Use the self-hosted workflow above for Grok 4.5; the hosted action does
-not install the Grok CLI, and passing `runner: grok` (or `openai` / `acp`)
-fails that install step.
+## Runners
 
-```yaml
-name: needlefish
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-jobs:
-  review:
-    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history: needlefish needs the merge base
-      - uses: frankekn/needlefish@v0
-        env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
-```
-
-Runner authentication for the runners the hosted action can install
-(repo secrets, passed via `env` on the action step):
-
-| runner   | secret(s)                                                |
-| -------- | -------------------------------------------------------- |
-| codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
-| claude   | `ANTHROPIC_API_KEY`                                       |
-| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
-| pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
-
-The claude auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and
-opencode's `OPENAI_API_KEY` are allowlisted through to the runner subprocess;
-other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
-"Runner subprocess environment").
-
-`grok` is a self-hosted-lane runner (authenticated `grok` CLI on `PATH`).
-`acp` (`NEEDLEFISH_ACP_BIN`) is also a CLI runner. `openai` is HTTP, not a
-CLI (`OPENAI_API_KEY` plus `--model` / `OPENAI_MODEL`). The hosted action
-installs none of these.
-
-Inputs (all optional): `pr_number` (defaults to the event PR), `runner`
-(default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
-`runner_version`, `repo_path` (defaults to the workspace checkout),
-`github_token` (defaults to the workflow token).
-
-`runner_version` overrides the npm version of the selected runner CLI. When
-omitted, the action installs the per-runner pin from `action.yml` (currently
-Codex `0.153.4`, Claude `2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). Pass an
-explicit version — or `latest` — only when you intentionally want something
-other than the pin. A single default cannot be correct for four packages, so
-the pin is chosen from the selected `runner`.
-
-Cost and behavior notes:
-
-- Small PRs use 2 model calls per PR (review + critic) at the workflow default,
-  `gpt-5.6-terra` at `high` effort. Large PRs use 1 map call + N deep calls
-  (concurrency 3 by default) + 1 critic. Docs-only PRs use 0 model calls.
-  Same-head re-runs use 0 model calls unless forced with `--recheck`.
-- Fork PRs don't receive secrets by default. The `if:` gate above skips them.
-  `pull_request_target` would hand secrets to workflows triggered by fork
-  code — avoid it unless you fully understand the exposure.
-- The hosted path cold-starts on every run (pnpm install + runner CLI
-  install, roughly a minute). The self-hosted path above stays the
-  low-latency option.
-
-The composite action does not add PR comment commands to the consumer repo.
-This repository's `.github/workflows/commands.yml` listens for maintainer
-`@needlefish recheck` and `@needlefish explain <finding>` comments
-(OWNER / MEMBER / COLLABORATOR only). Recheck dispatches this repo's
-`review.yml`; explain runs `needlefish explain` on a self-hosted runner that
-already has `~/.local/bin/needlefish`. Copying that file into another repo
-only works after you retarget those two jobs.
-
-## Model runner invocation
-
-`src/shared/codex.ts` invokes the selected runner. `--runner` /
-`NEEDLEFISH_RUNNER` accepts `codex`, `claude`, `opencode`, `openai`, `grok`,
-`pi`, or `acp`. Use `--runner`, `--model`, and `--timeout-ms`, or the matching
-env vars:
+`--runner` / `NEEDLEFISH_RUNNER` accepts `codex`, `claude`, `opencode`,
+`openai`, `grok`, `pi`, or `acp`; `src/shared/codex.ts` invokes the selected
+runner. Common options:
 
 | option | env | default |
 | --- | --- | --- |
@@ -497,9 +475,15 @@ env vars:
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 
-The opencode idle deadline resets whenever the CLI emits stdout or stderr. If a
-provider stream stops producing output, Needlefish terminates that attempt and
-uses the normal runner retry instead of waiting for an extended per-call timeout.
+The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
+a provider stream stops producing output, Needlefish terminates that attempt
+and uses the normal runner retry instead of waiting for an extended per-call
+timeout.
+
+When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
+`claude`, or `opencode` can be found, Needlefish exits with install commands
+for those three CLIs instead of a stack trace. Auto-detect does not look for
+`grok`, `pi`, `openai`, or `acp`.
 
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
@@ -516,66 +500,95 @@ parentheses are the executable names used when the `*_BIN` var is unset:
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
-When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
-`claude`, or `opencode` can be found, Needlefish exits with install commands
-for those three CLIs instead of a stack trace. Auto-detect does not look for
-`grok`, `pi`, `openai`, or `acp`.
+### How each runner is launched
 
-Codex runs with `--ignore-user-config --ignore-rules
---dangerously-bypass-approvals-and-sandbox` so its inspection commands are not
-blocked by execpolicy rules, approval prompts, or the host sandbox. Needlefish
-still runs it inside a throwaway clean clone, strips GitHub tokens, fixes the
-expected `HEAD`, and rejects any worktree mutation. `medium` is the default; set
-`CODEX_REASONING_EFFORT=high` to restore the old default, or `xhigh` for the
-highest-effort mode. Claude Code runs with
-`--dangerously-skip-permissions`, `--safe-mode`, and `--no-session-persistence`.
-Grok runs with `--always-approve --permission-mode bypassPermissions --no-plan
---sandbox off`. opencode runs with `--auto` in headless mode and an inline
-`permission: "allow"` override for its global and build-agent permissions. pi
-runs with `--no-session --mode text --provider openai-codex --thinking <level>`
-and its default full toolset. ACP runs a
-JSON-RPC 2.0 Agent Client Protocol process over stdio from `NEEDLEFISH_ACP_BIN`;
-Needlefish sends `session/cancel` on timeout, then applies the same process-group
-kill path as the CLI runners. Closed PRs are skipped before diffing or model
-invocation. All CLI runners execute inside a throwaway clean clone at the review
-head commit; needlefish checks that clone with
-`git status --porcelain --untracked-files=all --ignored=matching` and verifies
-`HEAD` did not move after each successful model call. The clone carries no
-remote: its `origin` (which would point at the original repository on the same
-filesystem) is removed before the runner starts, so an ordinary `git push` from
-inside the sandbox cannot create, force-update, or delete branches in the
-original. This closes the ready-made push route only; it is not an OS-level
-boundary, and a runner that learns the original path can still write there
-directly.
+- **Codex:** `--ignore-user-config --ignore-rules
+  --dangerously-bypass-approvals-and-sandbox`, so its inspection commands are
+  not blocked by execpolicy rules, approval prompts, or the host sandbox.
+  Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
+  restore the old default, or `xhigh` for the highest-effort mode.
+- **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
+  `--no-session-persistence`.
+- **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
+  --sandbox off`.
+- **opencode:** `--auto` in headless mode, with an inline `permission:
+  "allow"` override for its global and build-agent permissions.
+- **pi:** `--no-session --mode text --provider openai-codex --thinking
+  <level>` and its default full toolset.
+- **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
+  `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
+  applies the same process-group kill path as the CLI runners.
 
-### Runner subprocess environment
+Every CLI runner executes inside a **throwaway clean clone** at the review
+head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After
+each successful model call, Needlefish re-checks the clone with `git status
+--porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
+not move, and rejects any worktree mutation. The clone carries no remote: its
+`origin` (which would point at the original repository on the same
+filesystem) is removed before the runner starts, so an ordinary `git push`
+from inside the sandbox cannot create, force-update, or delete branches in
+the original. This closes the ready-made push route only; it is not an
+OS-level boundary, and a runner that learns the original path can still write
+there directly. Closed PRs are skipped before diffing or model invocation.
 
-Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `pi`, `acp`) are spawned with an
-allowlisted environment, not the full parent `process.env` — only
+### Subprocess environment
+
+Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `pi`, `acp`) are spawned
+with an allowlisted environment, not the full parent `process.env` — only
 locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
 variables are passed through. To pass an additional variable to the runner
 subprocess, set `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2` (comma-separated
-names).
-On GitHub Actions, the non-secret `RUNNER_TRACKING_ID` job marker is retained so
-the self-hosted runner can terminate detached model processes when a job is
-cancelled.
+names). On GitHub Actions, the non-secret `RUNNER_TRACKING_ID` job marker is
+retained so the self-hosted runner can terminate detached model processes
+when a job is cancelled.
 
-ACP env authentication additionally requires an explicit credential declaration:
-set `NEEDLEFISH_ACP_AUTH_ENV_VARS` to the credential names and include those same
-names in `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`, for example
+ACP env authentication additionally requires an explicit credential
+declaration: set `NEEDLEFISH_ACP_AUTH_ENV_VARS` to the credential names and
+include those same names in `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` — for example
 `NEEDLEFISH_ACP_AUTH_ENV_VARS=MY_AGENT_TOKEN` with
 `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=MY_AGENT_TOKEN`. Arbitrary passthrough
 configuration does not prove authentication. Alternatively, set
-`NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential files;
-Needlefish copies only those files into the disposable runner HOME.
+`NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential
+files; Needlefish copies only those files into the disposable runner HOME.
 
-## Verdict derivation (deterministic)
+## Development
 
-- any P0 / P1 / P2 finding → `changes_requested`
-- otherwise a blocking residual risk → `needs_human`
-- otherwise → `pass`
+Requires Node 20+, Corepack (recommended) or the pinned pnpm from
+`packageManager`, one supported model CLI authed locally (Codex, Claude Code,
+or opencode), and the GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action
+mode.
 
-P3-only findings are reported but do not block (check stays green).
+```bash
+git clone https://github.com/frankekn/needlefish
+cd needlefish
+PNPM_VERSION=$(node -p "require('./package.json').packageManager")
+corepack enable
+corepack prepare "$PNPM_VERSION" --activate
+pnpm install --frozen-lockfile
+```
+
+If Corepack is unavailable, install the pinned package manager directly:
+
+```bash
+PNPM_VERSION=$(node -p "require('./package.json').packageManager")
+npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
+```
+
+**Dev shim on PATH (optional):** the repo keeps a `bin/needlefish`
+development shim. Symlink it onto a PATH directory so you can invoke
+`needlefish` from any cwd:
+
+```bash
+ln -sf "$PWD/bin/needlefish" ~/.local/bin/needlefish   # or any PATH dir
+needlefish --version
+```
+
+The shim resolves symlinks and runs the repo-local `tsx` against
+`src/cli.ts`, so it survives the repo being linked from elsewhere and works
+in non-interactive shells (unlike a shell alias). Without this step, invoke
+via the full path:
+`/path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts`
+(cwd is the target).
 
 ## Status
 
