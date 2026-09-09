@@ -12,7 +12,7 @@
       "status": "planned"
     },
     {
-      "name": "DeepSeek V4.1 Flash",
+      "name": "deepseek-v4.1-flash-expires-on-0910",
       "runner": "pi",
       "model": "deepseek-v4.1-flash-expires-on-0910",
       "effort": "max",
