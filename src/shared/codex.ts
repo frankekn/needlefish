@@ -486,7 +486,15 @@ export function prepareEphemeralHome(
 			);
 		}
 		const src = xdgSource ?? path.join(realHome, rel);
-		if (!existsSync(src)) {
+		// OpenCode accepts JSONC as its native config filename. Older staging
+		// rules used the JSON spelling; support an existing JSONC install while
+		// keeping the isolated destination deterministic.
+		const sourceCandidates =
+			runner === "opencode" && rel === ".config/opencode/opencode.json"
+				? [src, path.join(path.dirname(src), "opencode.jsonc")]
+				: [src];
+		const existingSrc = sourceCandidates.find((candidate) => existsSync(candidate));
+		if (existingSrc === undefined) {
 			if (!isRequired) continue;
 			throw new Error(
 				`NEEDLEFISH_EPHEMERAL_HOME=1 but required auth source is missing: ${src} (runner ${runner}). Refusing to fall back to the real HOME.`,
@@ -517,7 +525,7 @@ export function prepareEphemeralHome(
 				mode: 0o600,
 			});
 		} else {
-			copyFileSync(src, dest);
+			copyFileSync(existingSrc, dest);
 		}
 	}
 	return home;
