@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-07",
+  "updated": "2026-09-10",
   "baseline": "results/2026-09-06-codex-gpt56-terra-xhigh-x3.json",
   "lanes": [
     {
@@ -55,6 +55,38 @@
       "name": "DeepSeek V4 Flash Vision Exp",
       "runner": "pi",
       "model": "cliproxy-deepseek/deepseek-v4-flash-vision-exp",
+      "effort": "max",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-09-09-pi-deepseek-v41-flash-high-x3.json",
+      "name": "DeepSeek V4.1 Flash",
+      "runner": "pi",
+      "model": "deepseek-v4.1-flash-expires-on-0910",
+      "effort": "high",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-09-09-pi-glm53-flash-max-x3.json",
+      "name": "GLM-5.3-Flash",
+      "runner": "pi",
+      "model": "glm-5.3-flash",
+      "effort": "max",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-09-09-pi-gpt56-terra-xhigh-x3.json",
+      "name": "GPT-5.6 Terra",
+      "runner": "pi",
+      "model": "gpt-5.6-terra",
+      "effort": "xhigh",
+      "status": "Candidate"
+    },
+    {
+      "report": "results/2026-09-09-pi-qwen38-flash-max-x3.json",
+      "name": "Qwen 3.8 Flash",
+      "runner": "pi",
+      "model": "qwen3.8-flash",
       "effort": "max",
       "status": "Candidate"
     }
