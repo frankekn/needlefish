@@ -186,6 +186,7 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 - **Form:** Horizontal bars on an honest 0–100 scale with 95% confidence whiskers, hairline row rules, and decile gridlines; each lane ends in a monospace `score ± half-width` value.
 - **Grouping:** Qualified lanes come first under an uppercase group label, a dashed divider separates them from below-gate lanes, whose hollow muted-outline bars keep scores visible without a rank.
 - **Color:** Evidence-blue bars mark qualified lanes, exception orange marks the top rank, and a small green dot marks the deployed lane; whiskers are ink on qualified rows and muted below the gate.
+- **Gate reasons:** A below-gate lane carries the failed gate (for example `Tier-1 95.2%` or `noise 0.120`) in exception orange beside its effort label, so the hollow bar explains itself.
 - **Responsive:** The figure hides below 760px, where the leaderboard table remains the canonical evidence.
 
 ### Status Marker

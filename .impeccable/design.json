@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-09T02:45:17Z",
+  "generatedAt": "2026-09-09T03:00:36Z",
   "title": "Design System: Needlefish Benchmark",
   "extensions": {
     "colorMeta": {
@@ -186,7 +186,7 @@
     },
     {
       "name": "Score Chart",
-      "body": "Horizontal bars on an honest 0-100 scale with 95% confidence whiskers, hairline row rules, decile gridlines, and a monospace score +/- half-width value per lane. Qualified lanes group first: evidence-blue bars, exception orange for the top rank, a small green dot for the deployed lane. Below-gate lanes sit under a dashed divider as hollow muted-outline bars. In-SVG labels use a fixed 10-13px pixel micro scale, not the document rem ramp. The figure hides below 760px; the table stays canonical.",
+      "body": "Horizontal bars on an honest 0-100 scale with 95% confidence whiskers, hairline row rules, decile gridlines, and a monospace score +/- half-width value per lane. Qualified lanes group first: evidence-blue bars, exception orange for the top rank, a small green dot for the deployed lane. Below-gate lanes sit under a dashed divider as hollow muted-outline bars, each carrying the failed gate (for example Tier-1 95.2% or noise 0.120) in exception orange beside its effort label. In-SVG labels use a fixed 10-13px pixel micro scale, not the document rem ramp. The figure hides below 760px; the table stays canonical.",
       "section": "components"
     },
     {
