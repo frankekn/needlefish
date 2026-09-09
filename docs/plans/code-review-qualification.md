@@ -26,6 +26,20 @@ locally on 2026-09-09. Inference and container connectivity have not been tested
 Pier is the DeepSWE benchmark harness; this setup does not replace Needlefish's
 existing Pi review runner or change historical reports.
 
+DeepSeek's official [Thinking Mode documentation](https://api-docs.deepseek.com/guides/thinking_mode)
+defines these controls for the OpenAI-compatible API:
+
+- Thinking toggle: `thinking.type = enabled` or `disabled`.
+- Effort: `low`, `high`, or `max`; `xhigh` maps to actual `high`.
+- Thinking mode is enabled by default at `high` effort.
+- Thinking mode does not support `temperature`, `top_p`, `presence_penalty`, or `frequency_penalty`.
+
+The local Pi registry now includes the exact model
+`deepseek-v4.1-flash-expires-on-0910` with DeepSeek reasoning compatibility and
+text input. The planned lane uses `--thinking max`, which requests the highest
+documented effort. `off` is retained as a diagnostic mode only and is not
+comparable with the planned reasoning lane.
+
 ## Planned lane matrix
 
 - GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
