@@ -39,6 +39,28 @@ export interface QualificationResult {
   readonly meanNoisePerPositive: number;
 }
 
+export interface FixturePlanCheck {
+  readonly ready: boolean;
+  readonly errors: readonly string[];
+  readonly tierOneCount: number;
+  readonly familyCounts: Readonly<Record<string, number>>;
+}
+
+export function checkPhaseTwoFixturePlan(
+  specs: readonly Pick<FixtureSpec, "id" | "kind" | "tier" | "defectClass">[],
+): FixturePlanCheck {
+  const tierOne = specs.filter((spec) => spec.kind === "positive" && spec.tier === 1);
+  const familyCounts: Record<string, number> = {};
+  for (const spec of tierOne) familyCounts[spec.defectClass] = (familyCounts[spec.defectClass] ?? 0) + 1;
+  const errors: string[] = [];
+  if (tierOne.length < 15) errors.push(`need at least 15 Tier-1 fixtures (found ${tierOne.length})`);
+  if (Object.keys(familyCounts).length < 5) errors.push(`need at least 5 Tier-1 defect families (found ${Object.keys(familyCounts).length})`);
+  for (const [family, count] of Object.entries(familyCounts)) {
+    if (count < 2) errors.push(`Tier-1 family ${family} needs at least 2 fixtures (found ${count})`);
+  }
+  return { ready: errors.length === 0, errors, tierOneCount: tierOne.length, familyCounts };
+}
+
 export function evaluateCodeReviewQualification(
   results: readonly DrawResult[],
   specs: readonly Pick<FixtureSpec, "id" | "kind" | "tier" | "defectClass">[],

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { DrawResult } from "./types";
-import { evaluateCodeReviewQualification } from "./qualification";
+import { checkPhaseTwoFixturePlan, evaluateCodeReviewQualification } from "./qualification";
 
 function draw(fixtureId: string, recall: boolean, lineAnchorValid = true): DrawResult {
   return {
@@ -57,4 +57,17 @@ test("qualification reports family and localization metrics without running mode
   assert.equal(result.recallByFamily["data-loss"], 5 / 6);
   assert.equal(result.localizationByFamily["data-loss"], 5 / 6);
   assert.equal(result.tierOne.hits, 11);
+});
+
+test("phase-two fixture readiness fails closed before the corpus is large enough", () => {
+  const specs = Array.from({ length: 7 }, (_, index) => ({
+    id: `t1-${index}`,
+    kind: "positive" as const,
+    tier: 1 as const,
+    defectClass: `family-${index}`,
+  }));
+  const check = checkPhaseTwoFixturePlan(specs);
+  assert.equal(check.ready, false);
+  assert.match(check.errors[0] ?? "", /at least 15/);
+  assert.equal(check.tierOneCount, 7);
 });
