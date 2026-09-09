@@ -2,6 +2,17 @@
 
 This plan defines the work that must be complete before the next model eval campaign. It does not authorize or trigger model runs.
 
+## Official DeepSWE harness
+
+DeepSWE v1.1's official harness is Pier. The environment is pinned to the latest published release at the time of this campaign:
+
+```bash
+uv tool install --upgrade datacurve-pier==0.3.1
+pier --version  # 0.3.1
+```
+
+This installs the harness only; it does not start a benchmark run. Record the resulting Pier version in every campaign report.
+
 ## Planned lane matrix
 
 - GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
