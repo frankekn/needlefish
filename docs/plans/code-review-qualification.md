@@ -2,6 +2,14 @@
 
 This plan defines the work that must be complete before the next model eval campaign. It does not authorize or trigger model runs.
 
+## Planned lane matrix
+
+- GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
+- DeepSeek V4.1 Flash: Pi, `max`, model `deepseek-v4.1-flash-expires-on-0910`, through the managed CLIProxyAPI route.
+- GLM-5.3-Flash: currently blocked because the Z.AI provider quota is exhausted. Do not run a partial or reduced campaign for this lane; revisit it only after quota availability is confirmed.
+
+The machine-readable source for this matrix is `eval/campaigns/code-review-v1.json`. Historical leaderboard entries remain unchanged until a complete, comparable report exists.
+
 ## Protocol
 
 - Version the policy as `code-review-v1`.
