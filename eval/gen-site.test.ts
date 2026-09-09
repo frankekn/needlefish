@@ -14,6 +14,7 @@ import {
   type Lane,
   type LaneConfig,
   type LeaderboardManifest,
+  tierOneInterimGate,
   usableSpecificity,
 } from "./gen-site";
 
@@ -493,6 +494,32 @@ test("renderSite derives Tier-1 qualification from draw results", () => {
     () => renderSite(manifest, changed, canonical),
     /Tier-1 recall does not match draw results/,
   );
+});
+
+test("tierOneInterimGate allows one intermittent miss but rejects persistent misses", () => {
+  const { report: base } = setup().lanes[0];
+  const tierOneIds = Object.keys(base.fixtureTiers ?? {}).filter(
+    (id) => base.fixtureTiers?.[id] === 1,
+  );
+  assert.equal(tierOneIds.length, 7);
+  const firstTierOneSuccess = base.results.findIndex(
+    (candidate) => candidate.fixtureId === tierOneIds[0],
+  );
+  assert.ok(firstTierOneSuccess >= 0);
+  const oneMiss = base.results.map((result, index) =>
+    report.fixtureTiers?.[result.fixtureId] === 1
+      ? { ...result, score: { ...result.score, recall: index !== firstTierOneSuccess } }
+      : result,
+  );
+  assert.equal(tierOneInterimGate({ ...base, results: oneMiss }).passed, true);
+  const persistent = base.results.map((result) =>
+    report.fixtureTiers?.[result.fixtureId] === 1 && result.fixtureId === tierOneIds[0]
+      ? { ...result, score: { ...result.score, recall: false } }
+      : report.fixtureTiers?.[result.fixtureId] === 1
+        ? { ...result, score: { ...result.score, recall: true } }
+        : result,
+  );
+  assert.equal(tierOneInterimGate({ ...base, results: persistent }).passed, false);
 });
 
 test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {

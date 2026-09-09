@@ -436,6 +436,35 @@ export function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
   return hits / total;
 }
 
+export interface TierOneInterimGate {
+  readonly hits: number;
+  readonly total: number;
+  readonly passed: boolean;
+  readonly perFixture: Readonly<Record<string, { readonly hits: number; readonly total: number }>>;
+}
+
+export function tierOneInterimGate(report: PublishedReport): TierOneInterimGate {
+  if (!report.fixtureTiers) throw new Error("fixture tiers are required");
+  const byFixture = new Map<string, { hits: number; total: number }>();
+  for (const result of report.results) {
+    if (report.fixtureTiers[result.fixtureId] !== 1) continue;
+    const bucket = byFixture.get(result.fixtureId) ?? { hits: 0, total: 0 };
+    bucket.total += 1;
+    if (result.score.recall) bucket.hits += 1;
+    byFixture.set(result.fixtureId, bucket);
+  }
+  const perFixture = Object.fromEntries(
+    [...byFixture.entries()].sort(([a], [b]) => a.localeCompare(b)),
+  );
+  const total = [...byFixture.values()].reduce((sum, value) => sum + value.total, 0);
+  const hits = [...byFixture.values()].reduce((sum, value) => sum + value.hits, 0);
+  const passed =
+    total === 21 &&
+    hits >= 20 &&
+    [...byFixture.values()].every((value) => value.total === 3 && value.hits >= 2);
+  return { hits, total, passed, perFixture };
+}
+
 export function displayedMetrics(report: PublishedReport): {
   readonly recall: number;
   readonly falsePositiveRate: number;
@@ -1155,8 +1184,9 @@ function excludedRows(excluded: readonly ExcludedConfig[]): string {
 }
 
 export function qualifies(report: PublishedReport): boolean {
+  const tierOne = tierOneInterimGate(report);
   return (
-    tierRecall(report, 1) === 1 &&
+    tierOne.passed &&
     displayedMetrics(report).meanNoisePerPositive <= MAX_MEAN_NOISE_PER_POSITIVE
   );
 }
