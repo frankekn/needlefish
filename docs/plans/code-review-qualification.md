@@ -13,6 +13,19 @@ pier --version  # 0.3.1
 
 This installs the harness only; it does not start a benchmark run. Record the resulting Pier version in every campaign report.
 
+Local authentication is configured through `~/.local/bin/pier-deepseek`.
+It reads the existing `cliproxy-deepseek` provider and client credential from
+the local Pi configuration, then passes them to Pier in process environment
+variables. No credential is stored in this repository. The launcher pins
+`openai/deepseek-v4.1-flash-expires-on-0910` for the proxy's OpenAI-compatible
+transport; the underlying model ID remains `deepseek-v4.1-flash-expires-on-0910`.
+
+`pier-deepseek --check` verifies authentication and exact model availability
+using only the model catalog. This check and `pier-deepseek --version` passed
+locally on 2026-09-09. Inference and container connectivity have not been tested.
+Pier is the DeepSWE benchmark harness; this setup does not replace Needlefish's
+existing Pi review runner or change historical reports.
+
 ## Planned lane matrix
 
 - GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
