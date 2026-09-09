@@ -214,8 +214,8 @@ export function renderBenchmarkBlock(
   ].join("\n");
 
   const unrankedIntro = zh
-    ? `**未排名 lane**，同批量測——完整報告只要漏掉任何一次 Tier-1 draw，或 positive noise 超過 ${MAX_MEAN_NOISE_PER_POSITIVE}，即不給名次；事後 x3 確認僅作記錄，不恢復名次。`
-    : `**Unranked lanes**, same run — a lane whose full report misses any Tier-1 draw or exceeds ${MAX_MEAN_NOISE_PER_POSITIVE} positive noise receives no rank; a later x3 confirmation is recorded but does not restore the rank.`;
+    ? `**未排名 lane**，同批量測——目前 interim gate 要求 Tier-1 共 21 draws 至少成功 20 次、每個 fixture 至少 2/3，且 positive noise 不超過 ${MAX_MEAN_NOISE_PER_POSITIVE}；事後 x3 確認僅作記錄，不恢復名次。`
+    : `**Unranked lanes**, same run — the interim gate requires at least 20/21 Tier-1 successes, at least 2/3 on every fixture, and positive noise no higher than ${MAX_MEAN_NOISE_PER_POSITIVE}; a later x3 confirmation is recorded but does not restore the rank.`;
 
   const sections = [GENERATED_NOTE, provenance, rankedIntro, rankedTable, unrankedIntro];
   if (disqualified.length > 0) {

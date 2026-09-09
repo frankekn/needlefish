@@ -129,7 +129,7 @@ operational outcomes, not zero model scores.
 | 3 | **[GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json) (deployed)** | Codex CLI 0.153.4 | high | 89.95% | 83.8%–96.1% | 100% | 9.72% | 0.077 | **63s** |
 | 3 | [GPT-5.6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.153.4 | medium | 88.41% | 81.1%–95.7% | 100% | 13.89% | 0.077 | 75s |
 
-**Unranked lanes**, same run — a lane whose full report misses any Tier-1 draw or exceeds 0.12 positive noise receives no rank; a later x3 confirmation is recorded but does not restore the rank.
+**Unranked lanes**, same run — the interim gate requires at least 20/21 Tier-1 successes, at least 2/3 on every fixture, and positive noise no higher than 0.12; a later x3 confirmation is recorded but does not restore the rank.
 
 | Lane | Balanced | Gate missed in the full report |
 | --- | ---: | --- |

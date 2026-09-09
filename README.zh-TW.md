@@ -126,7 +126,7 @@ hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failur
 | 3 | **[GPT-5.6 Terra](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json)（目前部署）** | Codex CLI 0.153.4 | high | 89.95% | 83.8%–96.1% | 100% | 9.72% | 0.077 | **63s** |
 | 3 | [GPT-5.6 Sol](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-sol-medium-x3.json) | Codex CLI 0.153.4 | medium | 88.41% | 81.1%–95.7% | 100% | 13.89% | 0.077 | 75s |
 
-**未排名 lane**，同批量測——完整報告只要漏掉任何一次 Tier-1 draw，或 positive noise 超過 0.12，即不給名次；事後 x3 確認僅作記錄，不恢復名次。
+**未排名 lane**，同批量測——目前 interim gate 要求 Tier-1 共 21 draws 至少成功 20 次、每個 fixture 至少 2/3，且 positive noise 不超過 0.12；事後 x3 確認僅作記錄，不恢復名次。
 
 | Lane | Balanced | 完整報告未過的門檻 |
 | --- | ---: | --- |
