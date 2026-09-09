@@ -15,6 +15,7 @@ import {
 import {
   ANTICHEAT_VERSION,
   type DrawResult,
+  type Aggregates,
   type Expected,
   type FixtureKind,
   type FixtureSpec,
@@ -68,6 +69,7 @@ export interface FixtureClassifications {
   readonly fixtureIds: readonly string[];
   readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
   readonly fixtureTiers: Readonly<Record<string, number>>;
+  readonly fixtureDefectClasses?: Readonly<Record<string, string>>;
   readonly fixtureSetHash: string;
   readonly promptHash: string;
   readonly expectedByFixture?: Readonly<Record<string, Expected>>;
@@ -86,6 +88,14 @@ export type PublishedReport = Report & {
 };
 
 type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
+type ReviewFamilyAggregates = Aggregates & {
+  readonly recallByDefectClass?: Readonly<Record<string, number>>;
+  readonly lineAnchorValidRateByDefectClass?: Readonly<Record<string, number>>;
+};
+
+function reviewFamilyAggregates(report: PublishedReport): ReviewFamilyAggregates {
+  return report.aggregates as ReviewFamilyAggregates;
+}
 
 export function operationalFailures(report: PublishedReport): string[] {
   return report.results.flatMap((result) => {
@@ -108,6 +118,11 @@ export function fixtureClassifications(
       specs
         .filter((spec) => spec.kind === "positive")
         .map((spec) => [spec.id, spec.tier ?? 2]),
+    ),
+    fixtureDefectClasses: Object.fromEntries(
+      specs
+        .filter((spec) => spec.kind === "positive")
+        .map((spec) => [spec.id, spec.defectClass]),
     ),
     fixtureSetHash: computeFixtureSetHash(specs),
     promptHash: computePromptHash(),
@@ -884,6 +899,17 @@ function validateLane(lane: Lane): void {
       fail(`Tier-${tier} recall does not match draw results`);
     }
   }
+  for (const [name, values] of [
+    ["defect-class recall", reviewFamilyAggregates(report).recallByDefectClass],
+    ["defect-class localization", reviewFamilyAggregates(report).lineAnchorValidRateByDefectClass],
+  ] as const) {
+    if (values === undefined) continue;
+    for (const [family, value] of Object.entries(values)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1) {
+        fail(`${name} for ${family} must be a finite rate from 0 to 1`);
+      }
+    }
+  }
   if (
     typeof report.aggregates.meanNoisePerPositive !== "number" ||
     !Number.isFinite(report.aggregates.meanNoisePerPositive) ||
@@ -1098,6 +1124,12 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
         ["Invalid", percent(metrics.invalidJsonRate)],
         ["Verdict match", percent(metrics.verdictMatchRate)],
         ["Mean time", `${Math.round(metrics.meanDurationMs / 1000)}s`],
+        ...Object.entries(reviewFamilyAggregates(report).recallByDefectClass ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([family, value]) => [`Recall · ${family}`, percent(value as number)] as const),
+        ...Object.entries(reviewFamilyAggregates(report).lineAnchorValidRateByDefectClass ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([family, value]) => [`定位 · ${family}`, percent(value as number)] as const),
       ]
         .map(([label, value]) => `<span><b>${label}</b> <code>${escapeHtml(value)}</code></span>`)
         .join("");

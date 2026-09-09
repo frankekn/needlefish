@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, validateProviderRouteAttestation, writeReport } from "./run";
+import { aggregateDefectClassMetrics, aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, validateProviderRouteAttestation, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
@@ -77,6 +77,25 @@ test("aggregateMustFindHitRates averages partial hits by fixture and excludes ze
 
   assert.deepEqual(result.mustFindHitRateByFixture, { multi: 2 / 3, varying: (1 / 2 + 1 / 4) / 2 });
   assert.equal(result.mustFindHitRate, ((2 / 3) + ((1 / 2 + 1 / 4) / 2)) / 2);
+});
+
+test("aggregateDefectClassMetrics reports recall and localization by review family", () => {
+  const specs = [
+    { id: "auth-a", kind: "positive" as const, defectClass: "authorization" },
+    { id: "auth-b", kind: "positive" as const, defectClass: "authorization" },
+    { id: "data-a", kind: "positive" as const, defectClass: "data-loss" },
+    { id: "clean", kind: "negative" as const, defectClass: "style" },
+  ];
+  const results = [
+    { fixtureId: "auth-a", score: { recall: true, lineAnchorValid: true } },
+    { fixtureId: "auth-b", score: { recall: false, lineAnchorValid: true } },
+    { fixtureId: "data-a", score: { recall: true, lineAnchorValid: false } },
+    { fixtureId: "clean", score: { recall: true, lineAnchorValid: true } },
+  ];
+  assert.deepEqual(aggregateDefectClassMetrics(results, specs), {
+    recallByDefectClass: { authorization: 0.5, "data-loss": 1 },
+    lineAnchorValidRateByDefectClass: { authorization: 1, "data-loss": 0 },
+  });
 });
 
 test("loadFixture materializes a git repo and builds a bundle with the defect diff", () => {

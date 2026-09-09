@@ -38,6 +38,11 @@ import {
 	type HoldoutMode,
 	type Report,
 } from "./shared/types";
+
+interface ReviewFamilyAggregates {
+	readonly recallByDefectClass: Readonly<Record<string, number>>;
+	readonly lineAnchorValidRateByDefectClass: Readonly<Record<string, number>>;
+}
 import {
 	hasConsistentCheatDetection,
 	hasResolvedModelIdentity,
@@ -940,6 +945,45 @@ export function aggregateMustFindHitRates(
 	return { mustFindHitRateByFixture, mustFindHitRate };
 }
 
+export function aggregateDefectClassMetrics(
+	results: readonly {
+		readonly fixtureId: string;
+		readonly score: Pick<DrawResult["score"], "recall" | "lineAnchorValid">;
+	}[],
+	specs: readonly Pick<FixtureSpec, "id" | "kind" | "defectClass">[],
+): {
+	readonly recallByDefectClass: Readonly<Record<string, number>>;
+	readonly lineAnchorValidRateByDefectClass: Readonly<Record<string, number>>;
+} {
+	const positiveByFixture = new Map(
+		specs.filter((spec) => spec.kind === "positive").map((spec) => [spec.id, spec.defectClass]),
+	);
+	const output: Record<string, { total: number; recall: number; anchored: number }> = {};
+	for (const result of results) {
+		const defectClass = positiveByFixture.get(result.fixtureId);
+		if (defectClass === undefined) continue;
+		const bucket = output[defectClass] ?? { total: 0, recall: 0, anchored: 0 };
+		bucket.total += 1;
+		if (result.score.recall) bucket.recall += 1;
+		if (result.score.lineAnchorValid) bucket.anchored += 1;
+		output[defectClass] = bucket;
+	}
+	return {
+		recallByDefectClass: Object.fromEntries(
+			Object.entries(output).map(([defectClass, bucket]) => [
+				defectClass,
+				bucket.recall / bucket.total,
+			]),
+		),
+		lineAnchorValidRateByDefectClass: Object.fromEntries(
+			Object.entries(output).map(([defectClass, bucket]) => [
+				defectClass,
+				bucket.anchored / bucket.total,
+			]),
+		),
+	};
+}
+
 // Per-process high-water mark of coverage flushed to each report path,
 // tracked as the SET of (fixtureId, draw) pairs a checkpoint has written —
 // not a raw count. Count is a weak proxy for "more complete": two
@@ -1095,7 +1139,7 @@ function atomicWriteFile(targetPath: string, contents: string): void {
 function aggregate(
 	results: readonly DrawResult[],
 	specs: readonly FixtureSpec[],
-): Aggregates {
+): Aggregates & ReviewFamilyAggregates {
 	const kindByFixture = new Map(specs.map((s) => [s.id, s.kind]));
 	const tierByFixture = new Map(specs.map((s) => [s.id, s.tier ?? 2]));
 	const positiveResults = results.filter(
@@ -1139,6 +1183,10 @@ function aggregate(
 		recallByTier[`t${tier}`] =
 			tierResults.filter((r) => r.score.recall).length / tierResults.length;
 	}
+	const {
+		recallByDefectClass,
+		lineAnchorValidRateByDefectClass,
+	} = aggregateDefectClassMetrics(results, specs);
 	const meanNoisePerPositive = positiveResults.length
 		? positiveResults.reduce((sum, r) => sum + r.score.noiseFindingCount, 0) /
 			positiveResults.length
@@ -1170,6 +1218,8 @@ function aggregate(
 		...mustFindHitRates,
 		criticPruneErrorRate,
 		recallByTier,
+		recallByDefectClass,
+		lineAnchorValidRateByDefectClass,
 		meanNoisePerPositive,
 		cheatDetectedCount,
 		baitExposureCount,
@@ -1184,6 +1234,7 @@ export function writeReport(
 ): Report & {
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+	readonly fixtureDefectClasses: Readonly<Record<string, string>>;
 	readonly provider?: string;
 	readonly route?: string;
 	readonly runnerVersion?: string;
@@ -1194,9 +1245,11 @@ export function writeReport(
 } {
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
+	const fixtureDefectClasses: Record<string, string> = {};
 	for (const s of specs) {
 		if (s.kind === "positive") fixtureTiers[s.id] = s.tier ?? 2;
 		fixtureKinds[s.id] = s.kind;
+		fixtureDefectClasses[s.id] = s.defectClass;
 	}
 	const report = {
 		promptHash: promptHash(),
@@ -1249,9 +1302,11 @@ export function writeReport(
 			: {}),
 		fixtures: specs.map((spec) => spec.id),
 		fixtureKinds,
+		fixtureDefectClasses,
 	} satisfies Report & {
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
+		readonly fixtureDefectClasses: Readonly<Record<string, string>>;
 		readonly provider?: string;
 		readonly route?: string;
 		readonly runnerVersion?: string;
