@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-08T05:23:34Z",
+  "generatedAt": "2026-09-09T02:45:17Z",
   "title": "Design System: Needlefish Benchmark",
   "extensions": {
     "colorMeta": {
@@ -8,64 +8,158 @@
         "role": "primary",
         "displayName": "Deep-Ocean Ink",
         "canonical": "#071f2b",
-        "tonalRamp": ["oklch(15% 0.038 233.4)", "oklch(27% 0.038 233.4)", "oklch(39% 0.038 233.4)", "oklch(51% 0.038 233.4)", "oklch(63% 0.038 233.4)", "oklch(75% 0.038 233.4)", "oklch(87% 0.038 233.4)", "oklch(95% 0.038 233.4)"]
+        "tonalRamp": [
+          "oklch(15% 0.038 233.4)",
+          "oklch(27% 0.038 233.4)",
+          "oklch(39% 0.038 233.4)",
+          "oklch(51% 0.038 233.4)",
+          "oklch(63% 0.038 233.4)",
+          "oklch(75% 0.038 233.4)",
+          "oklch(87% 0.038 233.4)",
+          "oklch(95% 0.038 233.4)"
+        ]
       },
       "harbor-muted": {
         "role": "neutral",
         "displayName": "Harbor Muted",
         "canonical": "#49636d",
-        "tonalRamp": ["oklch(15% 0.035 223.6)", "oklch(27% 0.035 223.6)", "oklch(39% 0.035 223.6)", "oklch(51% 0.035 223.6)", "oklch(63% 0.035 223.6)", "oklch(75% 0.035 223.6)", "oklch(87% 0.035 223.6)", "oklch(95% 0.035 223.6)"]
+        "tonalRamp": [
+          "oklch(15% 0.035 223.6)",
+          "oklch(27% 0.035 223.6)",
+          "oklch(39% 0.035 223.6)",
+          "oklch(51% 0.035 223.6)",
+          "oklch(63% 0.035 223.6)",
+          "oklch(75% 0.035 223.6)",
+          "oklch(87% 0.035 223.6)",
+          "oklch(95% 0.035 223.6)"
+        ]
       },
       "paper-white": {
         "role": "neutral",
         "displayName": "Paper White",
         "canonical": "#f5f7f3",
-        "tonalRamp": ["oklch(15% 0.006 128.5)", "oklch(27% 0.006 128.5)", "oklch(39% 0.006 128.5)", "oklch(51% 0.006 128.5)", "oklch(63% 0.006 128.5)", "oklch(75% 0.006 128.5)", "oklch(87% 0.006 128.5)", "oklch(95% 0.006 128.5)"]
+        "tonalRamp": [
+          "oklch(15% 0.006 128.5)",
+          "oklch(27% 0.006 128.5)",
+          "oklch(39% 0.006 128.5)",
+          "oklch(51% 0.006 128.5)",
+          "oklch(63% 0.006 128.5)",
+          "oklch(75% 0.006 128.5)",
+          "oklch(87% 0.006 128.5)",
+          "oklch(95% 0.006 128.5)"
+        ]
       },
       "pure-white": {
         "role": "neutral",
         "displayName": "Pure White",
         "canonical": "#ffffff",
-        "tonalRamp": ["oklch(15% 0 0)", "oklch(27% 0 0)", "oklch(39% 0 0)", "oklch(51% 0 0)", "oklch(63% 0 0)", "oklch(75% 0 0)", "oklch(87% 0 0)", "oklch(95% 0 0)"]
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(27% 0 0)",
+          "oklch(39% 0 0)",
+          "oklch(51% 0 0)",
+          "oklch(63% 0 0)",
+          "oklch(75% 0 0)",
+          "oklch(87% 0 0)",
+          "oklch(95% 0 0)"
+        ]
       },
       "data-cyan": {
         "role": "secondary",
         "displayName": "Data Cyan",
         "canonical": "#bdebf1",
-        "tonalRamp": ["oklch(15% 0.048 206.1)", "oklch(27% 0.048 206.1)", "oklch(39% 0.048 206.1)", "oklch(51% 0.048 206.1)", "oklch(63% 0.048 206.1)", "oklch(75% 0.048 206.1)", "oklch(87% 0.048 206.1)", "oklch(95% 0.048 206.1)"]
+        "tonalRamp": [
+          "oklch(15% 0.048 206.1)",
+          "oklch(27% 0.048 206.1)",
+          "oklch(39% 0.048 206.1)",
+          "oklch(51% 0.048 206.1)",
+          "oklch(63% 0.048 206.1)",
+          "oklch(75% 0.048 206.1)",
+          "oklch(87% 0.048 206.1)",
+          "oklch(95% 0.048 206.1)"
+        ]
       },
       "evidence-blue": {
         "role": "primary",
         "displayName": "Evidence Blue",
         "canonical": "#0c5670",
-        "tonalRamp": ["oklch(15% 0.079 228.3)", "oklch(27% 0.079 228.3)", "oklch(39% 0.079 228.3)", "oklch(51% 0.079 228.3)", "oklch(63% 0.079 228.3)", "oklch(75% 0.079 228.3)", "oklch(87% 0.079 228.3)", "oklch(95% 0.079 228.3)"]
+        "tonalRamp": [
+          "oklch(15% 0.079 228.3)",
+          "oklch(27% 0.079 228.3)",
+          "oklch(39% 0.079 228.3)",
+          "oklch(51% 0.079 228.3)",
+          "oklch(63% 0.079 228.3)",
+          "oklch(75% 0.079 228.3)",
+          "oklch(87% 0.079 228.3)",
+          "oklch(95% 0.079 228.3)"
+        ]
       },
       "exception-orange": {
         "role": "tertiary",
         "displayName": "Exception Orange",
         "canonical": "#c44724",
-        "tonalRamp": ["oklch(15% 0.167 36)", "oklch(27% 0.167 36)", "oklch(39% 0.167 36)", "oklch(51% 0.167 36)", "oklch(63% 0.167 36)", "oklch(75% 0.167 36)", "oklch(87% 0.167 36)", "oklch(95% 0.167 36)"]
+        "tonalRamp": [
+          "oklch(15% 0.167 36)",
+          "oklch(27% 0.167 36)",
+          "oklch(39% 0.167 36)",
+          "oklch(51% 0.167 36)",
+          "oklch(63% 0.167 36)",
+          "oklch(75% 0.167 36)",
+          "oklch(87% 0.167 36)",
+          "oklch(95% 0.167 36)"
+        ]
       },
       "chart-line": {
         "role": "neutral",
         "displayName": "Chart Line",
         "canonical": "#bfd0d2",
-        "tonalRamp": ["oklch(15% 0.019 205.3)", "oklch(27% 0.019 205.3)", "oklch(39% 0.019 205.3)", "oklch(51% 0.019 205.3)", "oklch(63% 0.019 205.3)", "oklch(75% 0.019 205.3)", "oklch(87% 0.019 205.3)", "oklch(95% 0.019 205.3)"]
+        "tonalRamp": [
+          "oklch(15% 0.019 205.3)",
+          "oklch(27% 0.019 205.3)",
+          "oklch(39% 0.019 205.3)",
+          "oklch(51% 0.019 205.3)",
+          "oklch(63% 0.019 205.3)",
+          "oklch(75% 0.019 205.3)",
+          "oklch(87% 0.019 205.3)",
+          "oklch(95% 0.019 205.3)"
+        ]
       }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "The single first-viewport question." },
-      "headline": { "displayName": "Headline", "purpose": "Editorial section openings." },
-      "body": { "displayName": "Body", "purpose": "Methods, explanations, and navigation." },
-      "label": { "displayName": "Label", "purpose": "Table headers and compact evidence labels." },
-      "measurement": { "displayName": "Measurement", "purpose": "Ranks, protocol counts, hashes, identifiers, and code only." }
+      "display": {
+        "displayName": "Display",
+        "purpose": "The single first-viewport question."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Editorial section openings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Methods, explanations, and navigation."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers and compact evidence labels."
+      },
+      "measurement": {
+        "displayName": "Measurement",
+        "purpose": "Ranks, protocol counts, hashes, identifiers, and code only."
+      }
     },
     "shadows": [],
     "motion": [
-      { "name": "evidence-reveal", "value": "180ms ease-out", "purpose": "A restrained disclosure reveal, removed under prefers-reduced-motion." }
+      {
+        "name": "evidence-reveal",
+        "value": "180ms ease-out",
+        "purpose": "A restrained disclosure reveal, removed under prefers-reduced-motion."
+      }
     ],
     "breakpoints": [
-      { "name": "mobile", "value": "760px" }
+      {
+        "name": "mobile",
+        "value": "760px"
+      }
     ]
   },
   "components": [
@@ -89,6 +183,11 @@
       "description": "A native disclosure in the model cell toggles a full-width evidence slip beneath the row.",
       "html": "<div class=\"ds-evidence\"><details><summary>GPT-5.6 Terra</summary></details></div><div class=\"ds-slip\"><dl><div><dt>Exact model</dt><dd><code>gpt-5.6-terra</code></dd></div><div><dt>Route</dt><dd>Codex subscription (operator-attested)</dd></div></dl><a href=\"#\">Raw report</a></div>",
       "css": ".ds-evidence{color:var(--ink,#071f2b);font-family:'Avenir Next','Segoe UI',sans-serif}.ds-evidence summary{cursor:pointer;font-weight:700}.ds-evidence details[open] summary{color:var(--blue,#0c5670)}.ds-evidence summary:focus-visible{outline:3px solid var(--orange,#c44724);outline-offset:4px;border-radius:3px}.ds-slip{display:none;background:#fff;padding:4px 20px 20px 60px;border-bottom:1px solid var(--line,#bfd0d2)}.ds-evidence:has(details[open])+.ds-slip{display:block;animation:ds-reveal .18s ease-out}.ds-slip dl{font-size:.82rem;margin:0}.ds-slip dl div{display:grid;grid-template-columns:110px 1fr;gap:8px;margin:5px 0}.ds-slip dt{color:var(--muted,#49636d)}.ds-slip dd{margin:0;overflow-wrap:anywhere}.ds-slip a{color:var(--blue,#0c5670)}@keyframes ds-reveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}@media(prefers-reduced-motion:reduce){.ds-evidence:has(details[open])+.ds-slip{animation:none}}"
+    },
+    {
+      "name": "Score Chart",
+      "body": "Horizontal bars on an honest 0-100 scale with 95% confidence whiskers, hairline row rules, decile gridlines, and a monospace score +/- half-width value per lane. Qualified lanes group first: evidence-blue bars, exception orange for the top rank, a small green dot for the deployed lane. Below-gate lanes sit under a dashed divider as hollow muted-outline bars. In-SVG labels use a fixed 10-13px pixel micro scale, not the document rem ramp. The figure hides below 760px; the table stays canonical.",
+      "section": "components"
     },
     {
       "name": "Status Marker",
@@ -125,11 +224,36 @@
       "Native, inspectable disclosure behavior with no runtime JavaScript"
     ],
     "rules": [
-      { "name": "The Evidence Before Accent Rule", "body": "Color directs attention to data, navigation, or exceptions; it never creates a decorative marketing layer ahead of results.", "section": "colors" },
-      { "name": "The Orange Exception Rule", "body": "Orange stays rare and signals focus or an exceptional state, so its scarcity preserves meaning.", "section": "colors" },
-      { "name": "The Measurement Boundary Rule", "body": "Monospace belongs only to measurements and code; prose, navigation, and status language remain sans-serif.", "section": "typography" },
-      { "name": "The Leaderboard-First Rule", "body": "Result, qualification, and route status precede charts and methodology; explanation never delays access to the evidence.", "section": "layout" },
-      { "name": "The Flat Bulletin Rule", "body": "Surfaces stay flat; hierarchy is earned with contrast, spacing, and rules rather than cards or shadows.", "section": "elevation" }
+      {
+        "name": "The Evidence Before Accent Rule",
+        "body": "Color directs attention to data, navigation, or exceptions; it never creates a decorative marketing layer ahead of results.",
+        "section": "colors"
+      },
+      {
+        "name": "The Orange Exception Rule",
+        "body": "Orange stays rare and signals focus or an exceptional state, so its scarcity preserves meaning.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measurement Boundary Rule",
+        "body": "Monospace belongs only to measurements and code; prose, navigation, and status language remain sans-serif.",
+        "section": "typography"
+      },
+      {
+        "name": "The Leaderboard-First Rule",
+        "body": "Result, qualification, and route status precede charts and methodology; explanation never delays access to the evidence.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat Bulletin Rule",
+        "body": "Surfaces stay flat; hierarchy is earned with contrast, spacing, and rules rather than cards or shadows.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Chart Microcopy Exception",
+        "body": "In-SVG chart labels use a fixed pixel micro scale (10-13px) rather than the document rem ramp, because SVG text scales with the viewBox; this applies only inside the score chart figure.",
+        "section": "typography"
+      }
     ],
     "dos": [
       "Do lead with ranked, comparable results and show qualification status beside the score.",

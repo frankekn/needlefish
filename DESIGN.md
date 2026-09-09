@@ -98,7 +98,7 @@ The palette feels like ink, instrument paper, and marked exceptions rather than 
 
 ### Tertiary
 
-- **Exception Orange:** Focus, the lead chart point, and rare exception emphasis.
+- **Exception Orange:** Focus, the lead chart bar, and rare exception emphasis.
 
 ### Neutral
 
@@ -134,6 +134,8 @@ The palette feels like ink, instrument paper, and marked exceptions rather than 
 ### Named Rules
 
 **The Measurement Boundary Rule.** Monospace belongs only to measurements and code; prose, navigation, and status language remain sans-serif.
+
+**The Chart Microcopy Exception.** In-SVG chart labels use a fixed pixel micro scale (10–13px) rather than the document rem ramp, because SVG text scales with the viewBox; this applies only inside the score chart figure.
 
 ## Layout
 
@@ -178,6 +180,13 @@ The form language is mostly square and typeset: sections, tables, plots, and rou
 
 - **Style:** Native `details` and `summary` in each model cell toggle a full-width evidence slip (a companion table row shown via `:has(details[open])`) that exposes exact model, harness, route, run, hashes, and raw report links without runtime JavaScript.
 - **State:** Open summaries turn evidence blue. Content uses a restrained 180ms reveal; reduced-motion preferences remove the animation.
+
+### Score Chart
+
+- **Form:** Horizontal bars on an honest 0–100 scale with 95% confidence whiskers, hairline row rules, and decile gridlines; each lane ends in a monospace `score ± half-width` value.
+- **Grouping:** Qualified lanes come first under an uppercase group label, a dashed divider separates them from below-gate lanes, whose hollow muted-outline bars keep scores visible without a rank.
+- **Color:** Evidence-blue bars mark qualified lanes, exception orange marks the top rank, and a small green dot marks the deployed lane; whiskers are ink on qualified rows and muted below the gate.
+- **Responsive:** The figure hides below 760px, where the leaderboard table remains the canonical evidence.
 
 ### Status Marker
 
