@@ -15,7 +15,7 @@
       "name": "deepseek-v4.1-flash-expires-on-0910",
       "runner": "pi",
       "model": "deepseek-v4.1-flash-expires-on-0910",
-      "effort": "max",
+      "effort": "high",
       "provider": "DeepSeek via CLIProxyAPI",
       "route": "DeepSeek API through private managed proxy",
       "status": "planned"

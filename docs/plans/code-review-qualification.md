@@ -36,14 +36,16 @@ defines these controls for the OpenAI-compatible API:
 
 The local Pi registry now includes the exact model
 `deepseek-v4.1-flash-expires-on-0910` with DeepSeek reasoning compatibility and
-text input. The planned lane uses `--thinking max`, which requests the highest
-documented effort. `off` is retained as a diagnostic mode only and is not
-comparable with the planned reasoning lane.
+text input. The planned lane uses `--thinking high`. `off` is retained as a
+diagnostic mode only and is not comparable with the planned reasoning lane.
+The official API documentation does not define a separate “creative” mode; if
+DSH exposes that as a harness preset, it must be recorded as a separate lane
+and mapped to the underlying `thinking` and effort parameters before comparison.
 
 ## Planned lane matrix
 
 - GPT-5.6 Terra: Codex, `xhigh`, OpenAI Codex subscription.
-- `deepseek-v4.1-flash-expires-on-0910`: Pi, `max`, through the managed CLIProxyAPI route.
+- `deepseek-v4.1-flash-expires-on-0910`: Pi, `high`, through the managed CLIProxyAPI route.
 - GLM-5.3-Flash: currently blocked because the Z.AI provider quota is exhausted. Do not run a partial or reduced campaign for this lane; revisit it only after quota availability is confirmed.
 
 The machine-readable source for this matrix is `eval/campaigns/code-review-v1.json`. Historical leaderboard entries remain unchanged until a complete, comparable report exists.
