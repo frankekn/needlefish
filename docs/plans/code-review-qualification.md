@@ -2,29 +2,32 @@
 
 This plan defines the work that must be complete before the next model eval campaign. It does not authorize or trigger model runs.
 
-## Official DeepSWE harness
+## DSH harness mode
 
-DeepSWE v1.1's official harness is Pier. The environment is pinned to the latest published release at the time of this campaign:
+Needlefish is a code-review product, not the DeepSWE benchmark. Its official
+DeepSeek Harness (DSH) integration uses the `headless` profile for one review
+request at a time. DSH's `acp` profile is reserved for a long-lived editor or
+automation client connection and is not the qualification execution mode.
+
+The current official DSH package is `@deepseek-ai/dsh`; npm reports
+`0.1.2-rc.1` as `latest` and `0.1.5-alpha.1` as `alpha`. Pin the selected
+release before the campaign:
 
 ```bash
-uv tool install --upgrade datacurve-pier==0.3.1
-pier --version  # 0.3.1
+npm exec --yes @deepseek-ai/dsh@0.1.2-rc.1 -- --help
 ```
 
-This installs the harness only; it does not start a benchmark run. Record the resulting Pier version in every campaign report.
+This checks the launcher only; it does not start a review. Record the DSH
+package version and selected profile in every campaign report.
 
-Local authentication is configured through `~/.local/bin/pier-deepseek`.
-It reads the existing `cliproxy-deepseek` provider and client credential from
-the local Pi configuration, then passes them to Pier in process environment
-variables. No credential is stored in this repository. The launcher pins
-`openai/deepseek-v4.1-flash-expires-on-0910` for the proxy's OpenAI-compatible
-transport; the underlying model ID remains `deepseek-v4.1-flash-expires-on-0910`.
+Local authentication should use DSH's `$DSH_HOME/.credentials.yaml` provider
+entry, pointed at the existing CLIProxyAPI endpoint. No credential is stored
+in this repository. The exact model is
+`deepseek-v4.1-flash-expires-on-0910`.
 
-`pier-deepseek --check` verifies authentication and exact model availability
-using only the model catalog. This check and `pier-deepseek --version` passed
-locally on 2026-09-09. Inference and container connectivity have not been tested.
-Pier is the DeepSWE benchmark harness; this setup does not replace Needlefish's
-existing Pi review runner or change historical reports.
+The review campaign uses `dsh --profile headless` with the model's `high`
+reasoning effort. `acp` remains a future integration surface because it
+requires a persistent JSON-RPC session adapter and lifecycle handling.
 
 DeepSeek's official [Thinking Mode documentation](https://api-docs.deepseek.com/guides/thinking_mode)
 defines these controls for the OpenAI-compatible API:
