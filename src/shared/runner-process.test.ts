@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { readRunnerDurationMs, spawnRunnerProcess } from "./runner-process";
+import { readRunnerDurationMs, runManagedRunnerProcess, spawnRunnerProcess } from "./runner-process";
 
 test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", async () => {
   const result = await spawnRunnerProcess({
@@ -221,3 +221,38 @@ function killProcessIfRunning(pid: number): void {
     if (!isMissingProcess(error)) throw error;
   }
 }
+
+test("runManagedRunnerProcess delivers stderr before exit so a consumer can acknowledge readiness", async () => {
+  let observed = "";
+  let acknowledged = false;
+  const result = await runManagedRunnerProcess({
+    command: process.execPath,
+    args: ["-e", `
+      process.stdin.setEncoding("utf8");
+      let input = "";
+      process.stdin.on("data", chunk => { input += chunk; });
+      process.stdin.on("end", () => {
+        if (input !== "ack\\n") process.exitCode = 2;
+        else process.stdout.write("done\\n");
+      });
+      process.stderr.write("ready\\n");
+    `],
+    repoPath: process.cwd(),
+    timeoutMs: 3000,
+    env: process.env,
+    onStderr: (chunk, controller) => {
+      observed += chunk;
+      if (!acknowledged && observed.includes("ready\n")) {
+        acknowledged = true;
+        controller.writeStdin("ack\n");
+        controller.endStdin();
+      }
+    },
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(result.signal, null);
+  assert.equal(observed, "ready\n");
+  assert.equal(result.stderr, observed);
+  assert.equal(result.stdout, "done\n");
+});
