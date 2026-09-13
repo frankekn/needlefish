@@ -22,6 +22,13 @@
   in the diff, rendered as a "Human callouts (non-blocking)" bullet section
   in every `renderMarkdown` surface. Computed at result assembly only; model
   input and verdict derivation are unchanged (#125).
+- CLI: add `render` and `verdict` cached-result diagnostics — re-render a
+  `last-review.json` through the same `renderMarkdown` used for stdout, PR
+  bodies, and check summaries, and recompute its verdict through
+  `deriveVerdict` (prints stored vs derived, exits 1 on drift). Cached files
+  parse through the new `parseReviewResult` boundary in `src/shared/`, which
+  reuses `normalizeFinding` and validates optional `ReviewResult` fields by
+  type when present.
 - GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
   full fixture set through the runner host's direct Codex subscription, which
   is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.

@@ -242,6 +242,18 @@ verbatim:
 ```bash
 needlefish --repo /path/to/some-repo --dry-run --print-bundle
 ```
+A cached result can be re-rendered or re-checked without re-running the
+review — both commands are read-only:
+
+```bash
+needlefish render ~/.cache/needlefish/<repo>/last-review.json
+needlefish verdict ~/.cache/needlefish/<repo>/last-review.json
+```
+
+`render` runs the file through the same `renderMarkdown` used for stdout, PR
+review bodies, and check summaries. `verdict` recomputes the verdict from the
+cached findings through `deriveVerdict`, prints the stored and derived
+verdicts, and exits 1 when they differ (e.g. an edited cache).
 
 ### Machine interface
 

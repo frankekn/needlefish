@@ -178,3 +178,25 @@ test("parseArgs rejects --dry-run in github and explain modes", () => {
     /--dry-run is only valid in local and pr modes/,
   );
 });
+
+test("parseArgs parses render and verdict cached-result commands", () => {
+  assert.deepEqual(parseArgs(["render", "/tmp/last-review.json"]), {
+    kind: "render",
+    file: "/tmp/last-review.json",
+  });
+  assert.deepEqual(parseArgs(["verdict", "r.json"]), {
+    kind: "verdict",
+    file: "r.json",
+  });
+  assert.deepEqual(parseArgs(["render", "--help"]), { kind: "help" });
+});
+
+test("parseArgs rejects render/verdict without exactly one file", () => {
+  assert.throws(() => parseArgs(["render"]), /render requires a path/);
+  assert.throws(() => parseArgs(["verdict"]), /verdict requires a path/);
+  assert.throws(() => parseArgs(["render", "--json"]), /render requires a path/);
+  assert.throws(
+    () => parseArgs(["verdict", "a.json", "--repo", "."]),
+    /verdict takes exactly one file argument/,
+  );
+});
