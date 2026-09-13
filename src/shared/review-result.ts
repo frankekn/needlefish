@@ -1,10 +1,12 @@
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
+	type CalloutSurface,
 	type Category,
 	type Finding,
 	type ResidualRisk,
 	type ReviewResult,
+	type ScopeCallout,
 	type Severity,
 	type Verdict,
 } from "./schema.js";
@@ -232,6 +234,49 @@ function booleanField(value: unknown): boolean {
 	return value;
 }
 
+// prNumber is copied from normalizePrMeta / the GitHub PR payload, both of
+// which only admit positive integers, so that is the persisted domain.
+function positiveIntegerField(value: unknown): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error("not a positive integer");
+	}
+	return value;
+}
+
+const CALLOUT_SURFACES: ReadonlySet<string> = new Set<CalloutSurface>([
+	"dependency",
+	"schema",
+	"workflow",
+	"config",
+	"public-api",
+]);
+
+function isCalloutSurface(value: unknown): value is CalloutSurface {
+	return typeof value === "string" && CALLOUT_SURFACES.has(value);
+}
+
+// scopeCallouts() never emits a surface with no files, so an empty files
+// list is outside the persisted domain and is rejected like any other
+// malformed entry.
+function scopeCalloutListField(value: unknown): ScopeCallout[] {
+	if (!Array.isArray(value)) throw new Error("not an array");
+	return value.map((entry, index): ScopeCallout => {
+		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
+		if (!isCalloutSurface(entry.surface)) {
+			throw new Error(`entry ${index}: surface invalid ${String(entry.surface)}`);
+		}
+		const files = entry.files;
+		if (
+			!Array.isArray(files) ||
+			files.length === 0 ||
+			!files.every((file): file is string => typeof file === "string" && file !== "")
+		) {
+			throw new Error(`entry ${index}: files not a non-empty array of non-empty strings`);
+		}
+		return { surface: entry.surface, files };
+	});
+}
+
 function stringListField(value: unknown): string[] {
 	if (!Array.isArray(value)) throw new Error("not an array");
 	if (!value.every((item): item is string => typeof item === "string")) {
@@ -300,6 +345,9 @@ const OPTIONAL_FIELD_PARSERS: {
 	readonly [K in OptionalFieldKey]-?: (value: unknown) => ReviewResult[K];
 } = {
 	reviewTarget: stringField,
+	prNumber: positiveIntegerField,
+	prBaseSha: stringField,
+	scopeCallouts: scopeCalloutListField,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

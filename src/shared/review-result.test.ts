@@ -254,3 +254,36 @@ test("parseReviewResult rejects mistyped optional fields", () => {
 		assert.throws(() => parseReviewResult(serialized({ [field]: value })), pattern);
 	}
 });
+
+test("parseReviewResult preserves prNumber, prBaseSha, and scopeCallouts exactly", () => {
+	const scopeCallouts = [
+		{ surface: "dependency", files: ["package.json", "pnpm-lock.yaml"] },
+		{ surface: "workflow", files: [".github/workflows/ci.yml"] },
+	];
+	const result = parseReviewResult(
+		serialized({ prNumber: 41, prBaseSha: "c".repeat(40), scopeCallouts }),
+	);
+	assert.equal(result.prNumber, 41);
+	assert.equal(result.prBaseSha, "c".repeat(40));
+	assert.deepEqual(result.scopeCallouts, scopeCallouts);
+	assert.deepEqual(
+		JSON.parse(serializeReviewResult(result)),
+		serialized({ prNumber: 41, prBaseSha: "c".repeat(40), scopeCallouts }),
+	);
+});
+
+test("parseReviewResult rejects mistyped PR scope and callout fields", () => {
+	for (const [field, value, pattern] of [
+		["prNumber", 0, /prNumber/],
+		["prNumber", 1.5, /prNumber/],
+		["prNumber", "41", /prNumber/],
+		["prBaseSha", 123, /prBaseSha/],
+		["scopeCallouts", "dependency", /scopeCallouts/],
+		["scopeCallouts", [{ surface: "docs", files: ["README.md"] }], /surface invalid/],
+		["scopeCallouts", [{ surface: "dependency", files: [] }], /files/],
+		["scopeCallouts", [{ surface: "dependency", files: ["package.json", 7] }], /files/],
+		["scopeCallouts", [{ surface: "dependency" }], /files/],
+	] as const) {
+		assert.throws(() => parseReviewResult(serialized({ [field]: value })), pattern);
+	}
+});
