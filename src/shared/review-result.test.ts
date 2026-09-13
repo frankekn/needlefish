@@ -116,27 +116,85 @@ test("parseReviewResult rejects missing or mistyped required fields", () => {
 	assert.throws(() => parseReviewResult(serialized({ headSha: 1 })), /headSha/);
 });
 
-test("parseReviewResult validates findings through normalizeFinding", () => {
-	assert.throws(
-		() =>
-			parseReviewResult(
-				serialized({
-					findings: [
-						{
-							severity: "P9",
-							title: "x",
-							category: "bug",
-							file: "a.ts",
-							lineStart: 1,
-							confidence: 1,
-							whyItBreaks: "w",
-							suggestedFix: "f",
-						},
-					],
-				}),
-			),
-		/malformed finding: invalid severity/,
+test("parseReviewResult validates findings strictly, with no coercion", () => {
+	const valid = {
+		severity: "P2",
+		title: "x",
+		category: "bug",
+		file: "a.ts",
+		lineStart: 1,
+		lineEnd: 2,
+		confidence: 0.9,
+		whyItBreaks: "w",
+		suggestedFix: "f",
+		validation: "",
+	};
+	for (const [override, pattern] of [
+		// missing lineEnd — normalizeFinding would default it to lineStart
+		[{ lineEnd: undefined }, /lineEnd/],
+		// lowercase severity — normalizeFinding would uppercase it
+		[{ severity: "p2" }, /severity invalid/],
+		[{ severity: "P9" }, /severity invalid/],
+		[{ category: "Bug" }, /category invalid/],
+		// string confidence — normalizeFinding would coerce via Number()
+		[{ confidence: "0.9" }, /confidence invalid/],
+		[{ confidence: 1.5 }, /confidence invalid/],
+		[{ confidence: -0.1 }, /confidence invalid/],
+		// non-P3 below the persisted 0.7 gate — verdict-bearing
+		[{ confidence: 0.5 }, /confidence below 0\.7/],
+		[{ lineStart: 0 }, /lineStart/],
+		[{ lineStart: 1.5 }, /lineStart/],
+		[{ lineEnd: 1, lineStart: 5 }, /lineEnd before lineStart/],
+		[{ file: "" }, /file is empty/],
+		[{ title: 3 }, /title/],
+		[{ validation: undefined }, /validation/],
+		[{ consumerFile: "" }, /consumerFile/],
+		[{ consumerLine: 1.5 }, /consumerLine/],
+		// replacement must be rejected, not silently dropped
+		[{ replacement: "x" }, /replacement not an object/],
+		[{ replacement: { lines: ["a\nb"] } }, /replacement\.lines/],
+		[{ replacement: { lines: [] } }, /replacement\.lines/],
+		[{ replacement: { lines: [3] } }, /replacement\.lines/],
+	] as const) {
+		const finding = { ...valid };
+		for (const [key, value] of Object.entries(override)) {
+			if (value === undefined) delete (finding as Record<string, unknown>)[key];
+			else (finding as Record<string, unknown>)[key] = value;
+		}
+		assert.throws(
+			() => parseReviewResult(serialized({ findings: [finding] })),
+			pattern,
+			`expected rejection for ${JSON.stringify(override)}`,
+		);
+	}
+});
+
+test("parseReviewResult preserves optional finding fields exactly", () => {
+	const result = parseReviewResult(
+		serialized({
+			findings: [
+				{
+					severity: "P1",
+					title: "breaks callers",
+					category: "contract",
+					file: "src/api.ts",
+					lineStart: 10,
+					lineEnd: 14,
+					confidence: 0.95,
+					whyItBreaks: "signature changed",
+					suggestedFix: "keep the old parameter",
+					validation: "callers in app.ts",
+					consumerFile: "src/app.ts",
+					consumerLine: 33,
+					replacement: { lines: ["export fn(a, b) {", "  return a;"] },
+				},
+			],
+		}),
 	);
+	const finding = result.findings[0];
+	assert.equal(finding.consumerFile, "src/app.ts");
+	assert.equal(finding.consumerLine, 33);
+	assert.deepEqual(finding.replacement, { lines: ["export fn(a, b) {", "  return a;"] });
 });
 
 test("parseReviewResult rejects mistyped optional fields", () => {

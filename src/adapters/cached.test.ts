@@ -90,9 +90,11 @@ test("verdict prints stored and derived verdicts", (t) => {
           category: "bug",
           file: "src/app.ts",
           lineStart: 1,
+          lineEnd: 1,
           confidence: 0.9,
           whyItBreaks: "w",
           suggestedFix: "f",
+          validation: "",
         },
       ],
     })

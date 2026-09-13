@@ -1,17 +1,20 @@
-import { normalizeFinding } from "./normalize.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
+	type Category,
+	type Finding,
 	type ResidualRisk,
 	type ReviewResult,
+	type Severity,
 	type Verdict,
 } from "./schema.js";
 
 // Boundary parser for a serialized ReviewResult (e.g. last-review.json or
 // --json output). Unlike normalize.ts — which coerces untrusted model output —
 // this artifact was written by serializeReviewResult, so fields are validated
-// strictly by type; unknown keys are ignored because additive fields are
-// allowed within a schemaVersion.
+// strictly by type and findings keep their persisted shape byte-for-byte;
+// unknown keys are ignored because additive fields are allowed within a
+// schemaVersion.
 
 type JsonRecord = Record<string, unknown>;
 
@@ -65,6 +68,127 @@ function requireResidualRisk(raw: unknown): ResidualRisk {
 		throw new Error(`${LABEL}: residualRisks entry blocks missing or not a boolean`);
 	}
 	return { text, blocks };
+}
+
+function requireSeverity(raw: unknown): Severity {
+	if (raw === "P0" || raw === "P1" || raw === "P2" || raw === "P3") return raw;
+	throw new Error(`severity invalid ${String(raw)}`);
+}
+
+function requireCategory(raw: unknown): Category {
+	if (
+		raw === "bug" ||
+		raw === "contract" ||
+		raw === "duplicate" ||
+		raw === "runtime" ||
+		raw === "security" ||
+		raw === "validation"
+	) {
+		return raw;
+	}
+	throw new Error(`category invalid ${String(raw)}`);
+}
+
+function fieldString(record: JsonRecord, field: string): string {
+	const value = record[field];
+	if (typeof value !== "string") {
+		throw new Error(`${field} missing or not a string`);
+	}
+	return value;
+}
+
+function fieldNonEmpty(record: JsonRecord, field: string): string {
+	const value = fieldString(record, field);
+	if (!value) throw new Error(`${field} is empty`);
+	return value;
+}
+
+function fieldPositiveInt(record: JsonRecord, field: string): number {
+	const value = record[field];
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`${field} missing or not a positive integer`);
+	}
+	return value;
+}
+
+function requireReplacement(raw: unknown): Finding["replacement"] {
+	if (!isRecord(raw)) throw new Error("replacement not an object");
+	const lines = raw.lines;
+	if (
+		!Array.isArray(lines) ||
+		lines.length === 0 ||
+		!lines.every(
+			(line): line is string =>
+				typeof line === "string" &&
+				!line.includes("\n") &&
+				!line.includes("\r"),
+		)
+	) {
+		throw new Error("replacement.lines missing, empty, or not newline-free strings");
+	}
+	return { lines };
+}
+
+function requireFinding(raw: unknown): Finding {
+	if (!isRecord(raw)) throw new Error("not an object");
+	const severity = requireSeverity(raw.severity);
+	const category = requireCategory(raw.category);
+	const file = fieldNonEmpty(raw, "file");
+	const title = fieldNonEmpty(raw, "title");
+	const whyItBreaks = fieldNonEmpty(raw, "whyItBreaks");
+	const suggestedFix = fieldNonEmpty(raw, "suggestedFix");
+	// Persisted findings always carry validation as a string; empty is legal.
+	const validation = fieldString(raw, "validation");
+	const lineStart = fieldPositiveInt(raw, "lineStart");
+	const lineEnd = fieldPositiveInt(raw, "lineEnd");
+	if (lineEnd < lineStart) {
+		throw new Error("lineEnd before lineStart");
+	}
+	const confidence = raw.confidence;
+	if (
+		typeof confidence !== "number" ||
+		!Number.isFinite(confidence) ||
+		confidence < 0 ||
+		confidence > 1
+	) {
+		throw new Error(`confidence invalid ${String(raw.confidence)}`);
+	}
+	// Verdict-bearing invariant: normalizeFinding only ever persists blocking
+	// findings at confidence >= 0.7, so a weaker one cannot have come from a
+	// real review.
+	if (severity !== "P3" && confidence < 0.7) {
+		throw new Error("confidence below 0.7 on a blocking severity");
+	}
+	const consumerFile = raw.consumerFile;
+	if (consumerFile !== undefined && (typeof consumerFile !== "string" || !consumerFile)) {
+		throw new Error("consumerFile not a non-empty string");
+	}
+	const consumerLine = raw.consumerLine;
+	if (
+		consumerLine !== undefined &&
+		(typeof consumerLine !== "number" ||
+			!Number.isInteger(consumerLine) ||
+			consumerLine <= 0)
+	) {
+		throw new Error("consumerLine not a positive integer");
+	}
+	const replacement =
+		raw.replacement === undefined ? undefined : requireReplacement(raw.replacement);
+	return {
+		severity,
+		title,
+		category,
+		file,
+		lineStart,
+		lineEnd,
+		confidence,
+		whyItBreaks,
+		suggestedFix,
+		validation,
+		...(consumerFile !== undefined ? { consumerFile } : {}),
+		...(consumerLine !== undefined ? { consumerLine } : {}),
+		...(replacement !== undefined ? { replacement } : {}),
+	};
 }
 
 // --- Optional fields -----------------------------------------------------
@@ -154,9 +278,16 @@ function runStatField(value: unknown): RunStat[] {
 	});
 }
 
-function findingListField(value: unknown) {
+function findingListField(value: unknown): Finding[] {
 	if (!Array.isArray(value)) throw new Error("not an array");
-	return value.map(normalizeFinding);
+	return value.map((entry, index) => {
+		try {
+			return requireFinding(entry);
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(`entry ${index}: ${detail}`, { cause: err });
+		}
+	});
 }
 
 const OPTIONAL_FIELD_PARSERS: {
@@ -172,6 +303,19 @@ const OPTIONAL_FIELD_PARSERS: {
 	traceDeliveryFailed: booleanField,
 };
 
+function parseField<T>(
+	field: string,
+	value: unknown,
+	parse: (value: unknown) => T,
+): T {
+	try {
+		return parse(value);
+	} catch (err) {
+		const detail = err instanceof Error ? err.message : String(err);
+		throw new Error(`${LABEL}: ${field}: ${detail}`, { cause: err });
+	}
+}
+
 export function parseReviewResult(raw: unknown): ReviewResult {
 	const record = requireRecord(raw);
 	if (record.schemaVersion !== REVIEW_RESULT_SCHEMA_VERSION) {
@@ -184,18 +328,21 @@ export function parseReviewResult(raw: unknown): ReviewResult {
 	for (const key of Object.keys(OPTIONAL_FIELD_PARSERS) as OptionalFieldKey[]) {
 		const value = record[key];
 		if (value === undefined) continue;
-		try {
-			writable[key] = OPTIONAL_FIELD_PARSERS[key](value);
-		} catch (err) {
-			const detail = err instanceof Error ? err.message : String(err);
-			throw new Error(`${LABEL}: ${key}: ${detail}`, { cause: err });
-		}
+		writable[key] = parseField<ReviewResult[OptionalFieldKey]>(
+			key,
+			value,
+			OPTIONAL_FIELD_PARSERS[key],
+		);
 	}
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict: requireVerdict(record.verdict),
 		summary: requireString(record, "summary"),
-		findings: requireArray(record, "findings").map(normalizeFinding),
+		findings: parseField<readonly Finding[]>(
+			"findings",
+			record.findings,
+			findingListField,
+		),
 		checked: requireStringList(record, "checked"),
 		residualRisks: requireArray(record, "residualRisks").map(requireResidualRisk),
 		baseSha: requireString(record, "baseSha"),
