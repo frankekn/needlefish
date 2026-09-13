@@ -1055,7 +1055,30 @@ export async function runGithub(
 		const msg = err instanceof Error ? err.message : String(err);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
 		// check on a stale head would hang forever otherwise.
-		if (postReviewSkipReason(repo, prNumber, headSha) === null) {
+		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		if (skipReason !== null) {
+			// The review errored AND the head moved or the PR closed: close our
+			// own check as superseded so it cannot hang, but post nothing to
+			// the timeline — no verdict, no error comment — for a stale head.
+			emitSkip(skipReason, prNumber, headSha);
+			try {
+				postCheck(
+					repo,
+					headSha,
+					null,
+					"neutral",
+					"Needlefish: superseded",
+					`The review errored and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
+					pendingCheckId,
+				);
+			} catch (checkErr) {
+				const cm =
+					checkErr instanceof Error ? checkErr.message : String(checkErr);
+				process.stderr.write(
+					`needlefish: could not post superseded check: ${cm}\n`,
+				);
+			}
+		} else {
 			// Check run and error comment are independent fail-soft attempts: a
 			// failure of either GitHub endpoint must not suppress the other, nor
 			// the stderr line and exit code below.
