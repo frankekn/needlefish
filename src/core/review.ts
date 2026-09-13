@@ -22,6 +22,7 @@ import {
 	type Severity,
 } from "../shared/schema.js";
 import { normalizeMap, normalizeReview } from "../shared/normalize.js";
+import { scopeCallouts } from "./callouts.js";
 import { deriveVerdict } from "./verdict.js";
 import { loadPrompt } from "./prompts.js";
 import {
@@ -699,6 +700,8 @@ function toReviewResult(
 ): ReviewResult {
 	const { bundle } = run;
 	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
+	// Output-side diagnostics: derived at result assembly, never model input.
+	const callouts = scopeCallouts(bundle.changedFiles);
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
@@ -709,6 +712,7 @@ function toReviewResult(
 		baseSha: bundle.baseSha,
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
 		...(coverage ? { coverage } : {}),
@@ -1021,6 +1025,9 @@ export async function review(
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
+		// Docs-only input produces no callouts today, but compute it the same
+		// way so the rule stays uniform if classification changes.
+		const callouts = scopeCallouts(bundle.changedFiles);
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
@@ -1031,6 +1038,7 @@ export async function review(
 			baseSha: bundle.baseSha,
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}

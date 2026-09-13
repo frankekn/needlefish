@@ -336,3 +336,60 @@ test("renderMarkdown re-review headline keeps the reason when all blockers are s
 		/^CHANGES REQUESTED ⚠️ — 1 blocking: auth bypass persists \(src\/auth\.ts:42\)/,
 	);
 });
+
+test("renderMarkdown renders non-blocking scope callouts after the review target", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		reviewTarget: "Review target: local base..head",
+		scopeCallouts: [
+			{ surface: "dependency", files: ["pnpm-lock.yaml", "package.json"] },
+			{ surface: "workflow", files: [".github/workflows/ci.yml"] },
+		],
+	});
+
+	assert.ok(markdown.includes("**Human callouts (non-blocking):**"));
+	assert.ok(markdown.includes("- dependency: pnpm-lock.yaml, package.json"));
+	assert.ok(markdown.includes("- workflow: .github/workflows/ci.yml"));
+
+	const targetIdx = markdown.indexOf("Review target:");
+	const calloutIdx = markdown.indexOf("**Human callouts");
+	const findingsIdx = markdown.indexOf("## Findings");
+	assert.ok(targetIdx !== -1, "fixture must render a review target");
+	assert.ok(
+		calloutIdx > targetIdx && findingsIdx > calloutIdx,
+		"callouts must render between the review target and Findings",
+	);
+});
+
+test("renderMarkdown omits the callouts section when none are present", () => {
+	assert.ok(!renderMarkdown(baseResult([], "pass")).includes("Human callouts"));
+	assert.ok(
+		!renderMarkdown({
+			...baseResult([], "pass"),
+			scopeCallouts: [],
+		}).includes("Human callouts"),
+		"an empty callouts array must render no section",
+	);
+});
+
+test("renderMarkdown collapses embedded newlines in callout paths", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		scopeCallouts: [
+			{ surface: "dependency", files: ["pnpm-lock.yaml", "new\nline.ts"] },
+		],
+	});
+
+	const section = markdown.slice(
+		markdown.indexOf("**Human callouts"),
+		markdown.indexOf("## Findings"),
+	);
+	const bullets = section.split("\n").filter((line) => line.startsWith("- "));
+	assert.equal(
+		bullets.length,
+		1,
+		"a newline in a path must not split the callout bullet",
+	);
+	assert.ok(bullets[0].includes("dependency: pnpm-lock.yaml, new line.ts"));
+	assert.ok(!markdown.includes("new\nline"));
+});

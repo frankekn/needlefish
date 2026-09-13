@@ -80,6 +80,21 @@ export interface ResidualRisk {
 	readonly blocks: boolean;
 }
 
+// The pi-review human-callout classes that are decidable from file paths
+// alone. Auth/destructive semantics are not path-decidable — surfacing them
+// would be a Class R model-contract change, so they stay out.
+export type CalloutSurface =
+	| "dependency"
+	| "schema"
+	| "workflow"
+	| "config"
+	| "public-api";
+
+export interface ScopeCallout {
+	readonly surface: CalloutSurface;
+	readonly files: readonly string[];
+}
+
 export interface RawReview {
 	readonly summary: string;
 	readonly findings: readonly Finding[];
@@ -101,6 +116,9 @@ export interface ReviewResult {
 	readonly prNumber?: number;
 	// The PR base branch tip — distinct from baseSha, which is the merge base.
 	readonly prBaseSha?: string;
+	// Non-blocking, path-derived file-surface callouts. Output-only: computed
+	// from changedFiles at result assembly, never part of the model bundle.
+	readonly scopeCallouts?: readonly ScopeCallout[];
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;
 	// Preformatted one-line coverage summary rendered visibly below the counts

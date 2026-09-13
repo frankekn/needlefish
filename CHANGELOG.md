@@ -17,6 +17,11 @@
   `needlefish-skip {"reason":"closed_pr"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
   line to stdout, and the superseded check-run summary carries the matching
   `reason=` token. Existing prose notices are unchanged (#125).
+- Review: `ReviewResult` gains optional `scopeCallouts` — non-blocking
+  callouts naming dependency/schema/workflow/config/public-api files present
+  in the diff, rendered as a "Human callouts (non-blocking)" bullet section
+  in every `renderMarkdown` surface. Computed at result assembly only; model
+  input and verdict derivation are unchanged (#125).
 - GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
   full fixture set through the runner host's direct Codex subscription, which
   is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.

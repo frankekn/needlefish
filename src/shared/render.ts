@@ -118,6 +118,16 @@ export function renderMarkdown(
 		lines.push(...result.reviewTarget.split("\n"));
 	}
 
+	if (result.scopeCallouts?.length) {
+		lines.push("");
+		lines.push("**Human callouts (non-blocking):**");
+		for (const callout of result.scopeCallouts) {
+			lines.push(
+				`- ${oneLine(callout.surface)}: ${callout.files.map((file) => oneLine(file)).join(", ")}`,
+			);
+		}
+	}
+
 	const inlinedSet = opts?.inlinedFindings;
 
 	lines.push("");

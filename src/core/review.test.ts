@@ -2442,3 +2442,81 @@ test("docs-only fast path returns pass even when NEEDLEFISH_LARGE_* env is inval
 	assert.equal(result.verdict, "pass");
 	assert.match(result.summary, /Docs-only/);
 });
+
+test("review attaches scope callouts without touching verdict or prompt", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const promptLog = path.join(tmp, "prompts.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/package.json b/package.json\n+deps\n",
+		patchStat: " package.json | 1 +",
+		changedFiles: [
+			{ path: "package.json", surface: "dependency" },
+			{ path: "src/app.ts", surface: "source" },
+			{ path: ".github/workflows/ci.yml", surface: "workflow" },
+		],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	const result = await review(bundle);
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.scopeCallouts, [
+		{ surface: "dependency", files: ["package.json"] },
+		{ surface: "workflow", files: [".github/workflows/ci.yml"] },
+	]);
+
+	// Callouts are output-only: the runner's stdin must not carry them.
+	// Positive control: the prompt did reach the stub (headSha is in it).
+	const prompts = readFileSync(promptLog, "utf8");
+	assert.ok(prompts.includes(bundle.headSha));
+	assert.ok(
+		!prompts.includes("scopeCallouts"),
+		"model prompt must not contain scope callouts",
+	);
+	assert.ok(
+		!prompts.includes("callout"),
+		"model prompt must not mention callouts",
+	);
+});
