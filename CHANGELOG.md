@@ -13,6 +13,10 @@
   carries `prNumber` plus `prBaseSha` — the PR base tip, kept separate from
   `baseSha`, which remains the merge base. `needlefish pr` results carry the
   same fields (#125).
+- GitHub: skipped reviews now print a machine-readable
+  `needlefish-skip {"reason":"closed_pr"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
+  line to stdout, and the superseded check-run summary carries the matching
+  `reason=` token. Existing prose notices are unchanged (#125).
 - GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
   full fixture set through the runner host's direct Codex subscription, which
   is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.

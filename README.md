@@ -303,6 +303,11 @@ review never passes a PR because the check goes `failure`. When a finding
 includes a validated exact replacement, its inline comment carries a native
 GitHub suggestion block; failed validation falls back to a plain comment.
 
+Skipped reviews — a closed PR, a head that moved mid-review, or an
+already-reviewed head — still print a machine-readable
+`needlefish-skip {"reason":"closed_pr"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
+line to stdout for automation, alongside the existing prose notice.
+
 ### Hosted (any repo)
 
 The quick-start workflow above is the whole setup — this repo doubles as a
