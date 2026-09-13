@@ -23,6 +23,63 @@ function ghJson(args: readonly string[], input?: string): unknown {
 	}
 }
 
+// Posting calls only: a transient GitHub 5xx must not turn a completed
+// review into a red "review failed" check. Reads and dedupe probes
+// (findPreviousReview, postReviewSkipReason, authenticatedLogin, the entry
+// PR fetch) stay on ghJson — single attempt — since retrying them buys
+// nothing and slows the stale-head gate. Never wrap the model runner.
+// Retry is limited to idempotent writes (-X PUT / -X PATCH): a 502 can arrive
+// after GitHub already stored a POST body, and retrying a POST would then
+// double-post the review, comment, or label.
+const GH_POST_ATTEMPTS = 3;
+const GH_POST_RETRY_BASE_MS = 250;
+
+function ghPostRetryBaseMs(): number {
+	const raw = process.env.NEEDLEFISH_GH_POST_RETRY_MS;
+	if (raw === undefined || raw === "") return GH_POST_RETRY_BASE_MS;
+	const parsed = Number(raw);
+	if (!Number.isInteger(parsed) || parsed < 0) {
+		throw new Error(
+			"NEEDLEFISH_GH_POST_RETRY_MS requires a non-negative integer",
+		);
+	}
+	return parsed;
+}
+
+function isTransientGh5xx(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		(/HTTP 5\d{2}\b/.test(error.message) ||
+			/server error/i.test(error.message))
+	);
+}
+
+// gh args carry the verb as "-X <METHOD>"; only PUT/PATCH are safe to repeat.
+function isIdempotentWrite(args: readonly string[]): boolean {
+	const i = args.indexOf("-X");
+	const method = i >= 0 ? args[i + 1] : "";
+	return method === "PUT" || method === "PATCH";
+}
+
+function ghPost(args: readonly string[], input?: string): unknown {
+	if (!isIdempotentWrite(args)) return ghJson(args, input);
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return ghJson(args, input);
+		} catch (err) {
+			if (attempt >= GH_POST_ATTEMPTS || !isTransientGh5xx(err)) throw err;
+			const delay = ghPostRetryBaseMs() * attempt;
+			const detail = err instanceof Error ? err.message : String(err);
+			process.stderr.write(
+				`needlefish: GitHub write failed transiently (attempt ${attempt}/${GH_POST_ATTEMPTS}); retrying in ${delay}ms: ${detail}\n`,
+			);
+			if (delay > 0) {
+				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+			}
+		}
+	}
+}
+
 function stringField(raw: JsonRecord, field: string): string {
 	const value = raw[field];
 	return typeof value === "string" ? value : "";
@@ -65,7 +122,7 @@ export function applyVerdictLabel(
 	repo: string,
 	prNumber: number,
 	verdict: Verdict,
-	ghFn: GhFn = (args, input) => ghJson(args, input),
+	ghFn: GhFn = (args, input) => ghPost(args, input),
 ): Promise<void> {
 	const currentLabel = VERDICT_LABELS[verdict];
 	try {
@@ -431,7 +488,7 @@ function postReview(
 		comments,
 	});
 
-	ghJson(
+	ghPost(
 		[
 			"api",
 			"-X",
@@ -450,7 +507,7 @@ function updateReviewBody(
 	reviewId: number,
 	body: string,
 ): void {
-	ghJson(
+	ghPost(
 		[
 			"api",
 			"-X",
@@ -511,7 +568,7 @@ function findPreviousReview(
 // back to creating their own, preserving the old behavior.
 function createPendingCheck(repo: string, headSha: string): number | null {
 	try {
-		const created = ghJson(
+		const created = ghPost(
 			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
 			JSON.stringify({
 				name: "Needlefish",
@@ -553,13 +610,13 @@ function postCheck(
 		output: { title, summary },
 	});
 	if (typeof checkId === "number") {
-		ghJson(
+		ghPost(
 			["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
 			output,
 		);
 		return;
 	}
-	ghJson(
+	ghPost(
 		["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
 		JSON.stringify({
 			name: "Needlefish",
@@ -624,7 +681,7 @@ function checkRunTitle(result: ReviewResult): string {
 }
 
 function postIssueComment(repo: string, prNumber: number, body: string): void {
-	ghJson(
+	ghPost(
 		[
 			"api",
 			"-X",

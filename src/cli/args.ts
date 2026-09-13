@@ -87,6 +87,7 @@ Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
+  NEEDLEFISH_GH_POST_RETRY_MS  base delay between idempotent GitHub write retries on a 5xx (default: 250)
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)
