@@ -28,6 +28,9 @@ function ghJson(args: readonly string[], input?: string): unknown {
 // (findPreviousReview, postReviewSkipReason, authenticatedLogin, the entry
 // PR fetch) stay on ghJson — single attempt — since retrying them buys
 // nothing and slows the stale-head gate. Never wrap the model runner.
+// Retry is limited to idempotent writes (-X PUT / -X PATCH): a 502 can arrive
+// after GitHub already stored a POST body, and retrying a POST would then
+// double-post the review, comment, or label.
 const GH_POST_ATTEMPTS = 3;
 const GH_POST_RETRY_BASE_MS = 250;
 
@@ -51,7 +54,15 @@ function isTransientGh5xx(error: unknown): boolean {
 	);
 }
 
+// gh args carry the verb as "-X <METHOD>"; only PUT/PATCH are safe to repeat.
+function isIdempotentWrite(args: readonly string[]): boolean {
+	const i = args.indexOf("-X");
+	const method = i >= 0 ? args[i + 1] : "";
+	return method === "PUT" || method === "PATCH";
+}
+
 function ghPost(args: readonly string[], input?: string): unknown {
+	if (!isIdempotentWrite(args)) return ghJson(args, input);
 	for (let attempt = 1; ; attempt++) {
 		try {
 			return ghJson(args, input);
@@ -63,7 +74,7 @@ function ghPost(args: readonly string[], input?: string): unknown {
 				`needlefish: GitHub write failed transiently (attempt ${attempt}/${GH_POST_ATTEMPTS}); retrying in ${delay}ms: ${detail}\n`,
 			);
 			if (delay > 0) {
-				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, delay);
+				Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
 			}
 		}
 	}

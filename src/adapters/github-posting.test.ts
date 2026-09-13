@@ -78,6 +78,8 @@ type FixtureOptions = {
 	// Fail the first N POSTs to the reviews endpoint with a 502, then succeed.
 	// Every attempt is still appended to postLog before the injected failure.
 	readonly flakyReviewPosts?: number;
+	// Fail the first N PUTs to a review id with a 502, then succeed.
+	readonly flakyReviewPuts?: number;
 	// Fail every POST to the reviews endpoint with a 404 (non-retryable).
 	readonly reviewPost404?: boolean;
 };
@@ -171,6 +173,8 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const promptLog = path.join(tmp, "prompts.log");
 	const flakyPath = path.join(tmp, "flaky-review-posts");
 	writeFileSync(flakyPath, String(opts.flakyReviewPosts ?? 0));
+	const flakyPutPath = path.join(tmp, "flaky-review-puts");
+	writeFileSync(flakyPutPath, String(opts.flakyReviewPuts ?? 0));
 	const previous = {
 		path: process.env.PATH,
 		repository: process.env.GITHUB_REPOSITORY,
@@ -274,6 +278,13 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  }",
 			`  if (apiPath === reviewsEndpoint && method === 'POST' && ${JSON.stringify(opts.reviewPost404 === true)} === true) {`,
 			"    process.stderr.write('gh: Not Found (HTTP 404)');",
+			"    process.exit(1);",
+			"  }",
+			`  const flakyPutPath = ${JSON.stringify(flakyPutPath)};`,
+			"  const flakyPutLeft = Number(fs.readFileSync(flakyPutPath, 'utf8'));",
+			"  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT' && flakyPutLeft > 0) {",
+			"    fs.writeFileSync(flakyPutPath, String(flakyPutLeft - 1));",
+			"    process.stderr.write('gh: Server Error (HTTP 502)');",
 			"    process.exit(1);",
 			"  }",
 			"  if (apiPath === reviewsEndpoint && method === 'POST') {",
@@ -2268,7 +2279,7 @@ test("review error on a closed PR closes the pending check as superseded", (t) =
 	);
 });
 
-// --- transient 5xx on posting calls: bounded retry, never on 4xx ---
+// --- transient 5xx on idempotent writes: bounded retry, never on 4xx/POST ---
 
 function reviewPostAttempts(posts: readonly Post[], prNumber: number): number {
 	return posts.filter(
@@ -2278,25 +2289,56 @@ function reviewPostAttempts(posts: readonly Post[], prNumber: number): number {
 	).length;
 }
 
-test("a transient 502 on the review POST is retried once and the review lands", async (t) => {
+function reviewPutAttempts(posts: readonly Post[], prNumber: number): number {
+	const base = `repos/frankekn/needlefish/pulls/${prNumber}/reviews/`;
+	return posts.filter(
+		(p) =>
+			p.args.includes("PUT") && p.args.some((a) => a.startsWith(base)),
+	).length;
+}
+
+// A state-bearing review on an older head: dedupe does not trigger, but this
+// round still PUTs the new body onto the existing review id — the re-review
+// path that exercises updateReviewBody in a single runGithub call.
+function seedStaleHeadReview(fixture: { reviewsState: string }): void {
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: stateReviewBody("c".repeat(40)),
+			user: { login: "github-actions[bot]", type: "Bot" },
+		},
+	]);
+}
+
+test("a transient 502 on the review PUT is retried once and the update lands", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 80,
 		rawReview: defaultRawReview(),
-		flakyReviewPosts: 1,
+		flakyReviewPuts: 1,
 	});
+	seedStaleHeadReview(fixture);
 
 	await runGithub(fixture.repo, 80, { timeoutMs: 1000 });
 
 	const posts = readPosts(fixture.postLog);
 	assert.equal(
-		reviewPostAttempts(posts, 80),
+		reviewPutAttempts(posts, 80),
 		2,
-		"exactly two review-POST attempts: one 502, one success",
+		"exactly two review-PUT attempts: one 502, one success",
 	);
-	const reviews = parseJson(readFileSync(fixture.reviewsState, "utf8"));
-	assert.ok(
-		Array.isArray(reviews) && reviews.length === 1,
-		"the review is posted exactly once despite the retried attempt",
+	assert.equal(
+		reviewPostAttempts(posts, 80),
+		0,
+		"re-review updates the existing review; no new POST",
+	);
+	const reviews = parseJson(readFileSync(fixture.reviewsState, "utf8")) as {
+		body?: unknown;
+	}[];
+	assert.equal(reviews.length, 1);
+	assert.match(
+		String(reviews[0].body ?? ""),
+		/needlefish-state:/,
+		"the retried PUT must write the new round's body",
 	);
 	const checkOps = posts.filter((p) =>
 		p.args.some((a) => a.includes("check-runs")),
@@ -2308,6 +2350,35 @@ test("a transient 502 on the review POST is retried once and the review lands", 
 		"failure",
 		"a blocking verdict still maps to a red check after the retry",
 	);
+});
+
+test("a 502 on the review POST is not retried — POSTs are not idempotent", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 83,
+		rawReview: defaultRawReview(),
+		flakyReviewPosts: 1,
+	});
+
+	await runGithub(fixture.repo, 83, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	assert.equal(
+		reviewPostAttempts(posts, 83),
+		1,
+		"a POST must keep single-attempt semantics even on a 5xx",
+	);
+	const checkOps = posts.filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	const completed = checkOps[checkOps.length - 1];
+	const payload = parseJson(completed.payload) as {
+		conclusion?: unknown;
+		output?: { title?: unknown };
+	};
+	assert.equal(payload.conclusion, "failure");
+	assert.match(String(payload.output?.title ?? ""), /review failed/);
+	assert.equal(process.exitCode, 1);
+	process.exitCode = undefined;
 });
 
 test("a 404 on the review POST is never retried and fails closed", async (t) => {
@@ -2339,18 +2410,19 @@ test("a 404 on the review POST is never retried and fails closed", async (t) => 
 	process.exitCode = undefined;
 });
 
-test("three consecutive 502s exhaust the retry budget and still fail closed", async (t) => {
+test("three consecutive 502s on the review PUT exhaust the budget and fail closed", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 82,
 		rawReview: defaultRawReview(),
-		flakyReviewPosts: 5,
+		flakyReviewPuts: 5,
 	});
+	seedStaleHeadReview(fixture);
 
 	await runGithub(fixture.repo, 82, { timeoutMs: 1000 });
 
 	const posts = readPosts(fixture.postLog);
 	assert.equal(
-		reviewPostAttempts(posts, 82),
+		reviewPutAttempts(posts, 82),
 		3,
 		"the retry budget is exactly three attempts",
 	);
@@ -2372,4 +2444,31 @@ test("three consecutive 502s exhaust the retry budget and still fail closed", as
 	assert.ok(errorComment, "the error path still posts the infra comment");
 	assert.equal(process.exitCode, 1);
 	process.exitCode = undefined;
+});
+
+test("the retry backoff actually sleeps NEEDLEFISH_GH_POST_RETRY_MS", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 84,
+		rawReview: defaultRawReview(),
+		flakyReviewPuts: 1,
+	});
+	seedStaleHeadReview(fixture);
+	// setupFixture pins the delay to 0; this test needs a real sleep to
+	// catch a backoff that returns immediately (fixture teardown restores).
+	process.env.NEEDLEFISH_GH_POST_RETRY_MS = "50";
+
+	const started = Date.now();
+	await runGithub(fixture.repo, 84, { timeoutMs: 1000 });
+	const elapsed = Date.now() - started;
+
+	const posts = readPosts(fixture.postLog);
+	assert.equal(
+		reviewPutAttempts(posts, 84),
+		2,
+		"positive control: the retry must actually have happened",
+	);
+	assert.ok(
+		elapsed >= 45,
+		`expected >= ~50ms of retry backoff, got ${elapsed}ms — the sleep is not firing`,
+	);
 });
