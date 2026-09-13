@@ -498,9 +498,11 @@ alias）。不做此步驟時，請用完整路徑呼叫：
 
 ## 狀態
 
-v0.4.3。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
+v0.4.4。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
 fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
-dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）。
+dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）、本地
+`--dry-run` bundle 預覽、機器可讀的 skip reason、非阻塞 scope callouts，以及
+cached-result `render`／`verdict` 診斷。
 `--fix` 依設計維持未實作。維護者 `@needlefish recheck`／`@needlefish
 explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
 布的 composite action 不會安裝該 workflow。
