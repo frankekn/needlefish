@@ -998,9 +998,16 @@ export function reviewPlan(bundle: Bundle): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
 } {
+	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	// Keep review()'s original evaluation order: the docs-only short-circuit
+	// returns before isLarge is ever reached. isLarge parses the
+	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
+	// docs-only review that would have fast-pathed — and a dry-run must not
+	// report a large path that never runs (docs-only + --deep still takes the
+	// fast path).
 	return {
-		docsOnlyFastPath: isDocsOnlyFastPath(bundle),
-		largePath: bundle.deep || isLarge(bundle),
+		docsOnlyFastPath,
+		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
 

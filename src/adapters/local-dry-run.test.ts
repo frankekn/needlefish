@@ -211,3 +211,23 @@ test("--print-bundle without --dry-run exits nonzero before touching the repo", 
   assert.match(result.stderr, /--print-bundle requires --dry-run/);
   assert.equal(existsSync(fixture.marker), false);
 });
+
+test("docs-only --deep --dry-run reports the fast path, not the large path", (t) => {
+  const fixture = setupDryRunFixture(t, [
+    { path: "docs/guide.md", content: "guide\n" },
+  ]);
+
+  const result = runCli(fixture, [
+    "--repo", fixture.repo, "--deep", "--dry-run", "--json",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(fixture.marker), false, "runner must not be invoked");
+  const summary = parseJsonObject(result.stdout);
+  assert.equal(summary.docsOnlyFastPath, true);
+  assert.equal(
+    summary.largePath,
+    false,
+    "--deep on a docs-only diff still takes the fast path in review(); the dry-run plan must match",
+  );
+});
