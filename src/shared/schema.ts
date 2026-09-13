@@ -97,6 +97,10 @@ export interface ReviewResult {
 	readonly baseSha: string;
 	readonly headSha: string;
 	readonly reviewTarget?: string;
+	// Present when the review ran in PR context (GitHub or --pr mode).
+	readonly prNumber?: number;
+	// The PR base branch tip — distinct from baseSha, which is the merge base.
+	readonly prBaseSha?: string;
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;
 	// Preformatted one-line coverage summary rendered visibly below the counts

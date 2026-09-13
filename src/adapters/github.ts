@@ -906,7 +906,15 @@ export async function runGithub(
 	const pendingCheckId = createPendingCheck(repo, headSha);
 
 	try {
-		const result = await review(bundle, opts);
+		// Scope and base-tip fields are attached after review(): anything on
+		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
+		// data lives only on the result and the prompt stays byte-identical.
+		const result: ReviewResult = {
+			...(await review(bundle, opts)),
+			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
+			prNumber,
+			prBaseSha: baseSha,
+		};
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		if (!isCurrentOpenHead(repo, prNumber, headSha)) {
 			// Head moved while reviewing: close our own check so it cannot hang

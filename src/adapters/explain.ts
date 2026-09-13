@@ -15,7 +15,7 @@ export async function runGithubExplain(
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
   const repoPath = path.resolve(cwd);
-  const bundle = prDiffBundle(repoPath, prNumber, opts);
+  const { bundle } = prDiffBundle(repoPath, prNumber, opts);
   const explanation = await explainFinding(bundle, findingKey, opts);
   const body = `## 🔍 Needlefish explain\n\n${explanation}\n\n<sub>Explanation only — the review verdict is unchanged.</sub>`;
   ghText(

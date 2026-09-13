@@ -38,7 +38,9 @@ type Fixture = {
 	readonly reviewsState: string;
 	readonly issueCommentsState: string;
 	readonly runnerLog: string;
+	readonly promptLog: string;
 	readonly headSha: string;
+	readonly baseTipSha: string;
 };
 
 type FixtureOptions = {
@@ -62,6 +64,9 @@ type FixtureOptions = {
 	readonly authorLogin?: string;
 	// Simulate `gh api user` failing. authenticatedLogin() fail-softs to "".
 	readonly failUserApi?: boolean;
+	// Commit to main after the feature branch is created, so the PR base tip
+	// (base.sha / PR_BASE_SHA) differs from the merge base the diff uses.
+	readonly advanceBaseTip?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -150,6 +155,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const issueCommentsState = path.join(tmp, "issue-comments-state.json");
 	const checksStatePath = path.join(tmp, "checks-state.json");
 	const runnerLog = path.join(tmp, "runner.log");
+	const promptLog = path.join(tmp, "prompts.log");
 	const previous = {
 		path: process.env.PATH,
 		repository: process.env.GITHUB_REPOSITORY,
@@ -191,6 +197,16 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		writeFileSync(path.join(repo, "README.md"), "newer feature\n");
 		commitAll(repo, "newer feature");
 		latestHeadSha = headSha(repo);
+	}
+	// When the base branch advances after the feature branches off, the PR
+	// base tip and the merge base are different commits.
+	let baseTipSha = baseSha;
+	if (opts.advanceBaseTip === true) {
+		gitText(["checkout", "main"], repo);
+		writeFileSync(path.join(repo, "MAIN.md"), "main moved\n");
+		commitAll(repo, "main advanced");
+		baseTipSha = headSha(repo);
+		gitText(["checkout", "feature"], repo);
 	}
 
 	mkdirSync(fakeBin);
@@ -273,7 +289,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    comments_url: 'https://example.invalid/comments',",
 			"    review_comments_url: 'https://example.invalid/reviews',",
 			"    head: { sha: headSha },",
-			`    base: { sha: ${JSON.stringify(baseSha)} }`,
+			`    base: { sha: ${JSON.stringify(baseTipSha)} }`,
 			"  }));",
 			"  process.exit(0);",
 			"}",
@@ -317,14 +333,20 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
-			`fs.appendFileSync(${JSON.stringify(runnerLog)}, 'run\\n');`,
-			`process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			`  fs.appendFileSync(${JSON.stringify(runnerLog)}, 'run\\n');`,
+			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
+			`  process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			"});",
 		].join("\n"),
 	);
 	chmodSync(claude, 0o755);
 	process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
 	process.env.GITHUB_REPOSITORY = "frankekn/needlefish";
-	process.env.PR_BASE_SHA = baseSha;
+	process.env.PR_BASE_SHA = baseTipSha;
 	process.env.PR_HEAD_SHA = targetHeadSha;
 	process.env.NEEDLEFISH_RUNNER = "claude";
 	process.env.CLAUDE_BIN = claude;
@@ -336,7 +358,9 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		reviewsState,
 		issueCommentsState,
 		runnerLog,
+		promptLog,
 		headSha: targetHeadSha,
+		baseTipSha,
 	};
 }
 
@@ -1876,4 +1900,55 @@ test("review error updates the pending check to failure by id", async (t) => {
 	};
 	assert.equal(payload.conclusion, "failure");
 	assert.match(String(payload.output?.title ?? ""), /review failed/);
+});
+
+test("runGithub states the reviewed range and keeps the PR base tip", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 41,
+		advanceBaseTip: true,
+		rawReview: defaultRawReview(),
+	});
+
+	await runGithub(fixture.repo, 41, { timeoutMs: 1000 });
+
+	const mergeBase = gitText(
+		["merge-base", fixture.baseTipSha, fixture.headSha],
+		fixture.repo,
+	);
+	const scopeLine = `Review target: PR #41 ${mergeBase}..${fixture.headSha}`;
+
+	const reviewPost = postedReview(readPosts(fixture.postLog), 41);
+	assert.ok(reviewPost);
+	const reviewPayload = parseReviewPayload(reviewPost.payload);
+	assert.ok(
+		reviewPayload.body.includes(scopeLine),
+		"review body must state the reviewed range",
+	);
+
+	const checkOps = readPosts(fixture.postLog).filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	const completed = checkOps[checkOps.length - 1];
+	const completedPayload = parseJson(completed.payload) as {
+		output?: { summary?: unknown };
+	};
+	assert.ok(
+		String(completedPayload.output?.summary ?? "").includes(scopeLine),
+		"check-run summary must state the reviewed range",
+	);
+
+	// The scope line and the PR base tip are attached to the result after
+	// review() — the prompt the runner received must not contain either,
+	// keeping model input byte-identical. The base tip and the merge base are
+	// different commits in this fixture, so baseTipSha is a discriminating probe.
+	assert.notEqual(fixture.baseTipSha, mergeBase);
+	const prompts = readFileSync(fixture.promptLog, "utf8");
+	assert.ok(
+		!prompts.includes("Review target"),
+		"model prompt must not contain the review-target line",
+	);
+	assert.ok(
+		!prompts.includes(fixture.baseTipSha),
+		"model prompt must not contain the PR base tip SHA",
+	);
 });

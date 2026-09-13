@@ -8,6 +8,11 @@
   answers `review()` would apply — without invoking a model runner or writing
   `last-review.json`. `--dry-run --print-bundle` prints the full bundle JSON
   (whole diff plus `AGENTS.md` policy text) (#125).
+- GitHub: the review body and check-run summary now state the reviewed range
+  (`Review target: PR #<n> <merge-base>..<head>`), and `ReviewResult` JSON
+  carries `prNumber` plus `prBaseSha` — the PR base tip, kept separate from
+  `baseSha`, which remains the merge base. `needlefish pr` results carry the
+  same fields (#125).
 - GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
   full fixture set through the runner host's direct Codex subscription, which
   is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.
