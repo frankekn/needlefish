@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- GitHub: complete the pending `Needlefish` check when `review()` errors on a
+  stale head or a closed PR — the check is now PATCHed to `neutral`
+  ("Needlefish: superseded" with the `reason=` token) and the skip line is
+  emitted, instead of hanging `in_progress` forever. Timeline comments stay
+  suppressed for the stale head; the stderr line and exit code 1 are
+  unchanged. (#131)
+
 - Local: `needlefish --dry-run` (and `needlefish pr <n> --dry-run`) collects
   the review bundle and prints a redacted summary — mode, base/head SHAs,
   changed files with surfaces, patch size, and the docs-only/large-path

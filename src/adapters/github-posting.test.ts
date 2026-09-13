@@ -2151,3 +2151,96 @@ test("runGithub renders non-blocking scope callouts in review body and check sum
 		"model prompt must not mention callouts",
 	);
 });
+
+// --- #131: the pending check must reach a terminal state even when review()
+// errors and the head has moved or the PR closed ---
+
+test("review error on a stale head closes the pending check as superseded", (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 71,
+		rawReview: "definitely not json",
+		staleHeadAfterReview: true,
+	});
+
+	const spawned = spawnGithubCli(fixture, 71);
+	assert.equal(spawned.status, 1, spawned.stdout);
+	assert.match(spawned.stderr, /needlefish review failed/);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"stale_head","prNumber":71,"headSha":"${fixture.headSha}"}`,
+		),
+		"the error path on a stale head must emit the machine-readable skip line",
+	);
+
+	const posts = readPosts(fixture.postLog);
+	const checkOps = posts.filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.equal(checkOps.length, 2, "pending check must be completed, not left in_progress");
+	const completed = checkOps[checkOps.length - 1];
+	assert.equal(completed.args[1], "-X");
+	assert.equal(completed.args[2], "PATCH");
+	const payload = parseJson(completed.payload) as {
+		status?: unknown;
+		conclusion?: unknown;
+		output?: { title?: unknown; summary?: unknown };
+	};
+	assert.equal(payload.status, "completed");
+	assert.equal(payload.conclusion, "neutral");
+	assert.match(String(payload.output?.title ?? ""), /superseded/);
+	assert.match(
+		String(payload.output?.summary ?? ""),
+		/reason=stale_head/,
+		"the superseded summary must carry the skip reason token",
+	);
+	assert.ok(
+		!posts.some(
+			(p) =>
+				p.args.some((a) => a.includes("pulls/71/reviews")) ||
+				p.args.some((a) => a === "repos/frankekn/needlefish/issues/71/comments"),
+		),
+		"no review, comment, or error comment may be posted for a stale head",
+	);
+});
+
+test("review error on a closed PR closes the pending check as superseded", (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 72,
+		rawReview: "definitely not json",
+		closePrAfterReview: true,
+	});
+
+	const spawned = spawnGithubCli(fixture, 72);
+	assert.equal(spawned.status, 1, spawned.stdout);
+	assert.match(spawned.stderr, /needlefish review failed/);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"closed_pr","prNumber":72,"headSha":"${fixture.headSha}"}`,
+		),
+		"the error path on a closed PR must emit the machine-readable skip line",
+	);
+
+	const posts = readPosts(fixture.postLog);
+	const checkOps = posts.filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.equal(checkOps.length, 2, "pending check must be completed, not left in_progress");
+	const completed = checkOps[checkOps.length - 1];
+	const payload = parseJson(completed.payload) as {
+		status?: unknown;
+		conclusion?: unknown;
+		output?: { title?: unknown; summary?: unknown };
+	};
+	assert.equal(payload.status, "completed");
+	assert.equal(payload.conclusion, "neutral");
+	assert.match(String(payload.output?.title ?? ""), /superseded/);
+	assert.match(String(payload.output?.summary ?? ""), /reason=closed_pr/);
+	assert.ok(
+		!posts.some(
+			(p) =>
+				p.args.some((a) => a.includes("pulls/72/reviews")) ||
+				p.args.some((a) => a === "repos/frankekn/needlefish/issues/72/comments"),
+		),
+		"no review, comment, or error comment may be posted for a closed PR",
+	);
+});
