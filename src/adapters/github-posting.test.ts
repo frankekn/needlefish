@@ -1944,6 +1944,10 @@ test("runGithub states the reviewed range and keeps the PR base tip", async (t) 
 	assert.notEqual(fixture.baseTipSha, mergeBase);
 	const prompts = readFileSync(fixture.promptLog, "utf8");
 	assert.ok(
+		prompts.includes(fixture.headSha),
+		"positive control: the prompt must contain the reviewed head SHA",
+	);
+	assert.ok(
 		!prompts.includes("Review target"),
 		"model prompt must not contain the review-target line",
 	);

@@ -256,7 +256,7 @@ changelog entry.
 | `schemaVersion` | Literal `1`. |
 | `verdict` | `pass`, `needs_human`, or `changes_requested`. |
 | `reviewTarget` | Optional review target string. |
-| `prNumber` | Optional PR number, present when the review carried PR metadata. |
+| `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
