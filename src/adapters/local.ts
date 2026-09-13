@@ -299,7 +299,7 @@ export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
-  const bundle = prDiffBundle(path.resolve(cwd), prNumber, opts);
+  const { bundle } = prDiffBundle(path.resolve(cwd), prNumber, opts);
   return { mode: "pr", bundle, ...reviewPlan(bundle) };
 }
 
