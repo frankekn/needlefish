@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 — 2026-09-13
 
 - GitHub: complete the pending `Needlefish` check when `review()` errors on a
   stale head or a closed PR — the check is now PATCHed to `neutral`

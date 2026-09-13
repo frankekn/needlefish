@@ -563,10 +563,12 @@ via the full path:
 
 ## Status
 
-v0.4.3. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.4. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
-sysctl). `--fix` stays unimplemented by design. Maintainer `@needlefish
+sysctl), local `--dry-run` bundle preview, machine-readable skip reasons,
+non-blocking scope callouts, and cached-result `render` / `verdict`
+diagnostics. `--fix` stays unimplemented by design. Maintainer `@needlefish
 recheck` / `@needlefish explain` comments exist in this repository's
 `.github/workflows/commands.yml`; the published composite action does not
 install that workflow.
