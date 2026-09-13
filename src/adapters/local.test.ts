@@ -4,8 +4,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runLocal } from "./local";
-import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures";
+import { runLocal, runLocalPr } from "./local";
+import { serializeReviewResult } from "../shared/schema";
+import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 
 function isJsonObject(value: unknown): value is { readonly [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -161,4 +162,90 @@ test("local --json writes pure ReviewResult JSON matching the cache", (t) => {
   assert.equal(cache, result.stdout);
   const cacheJson = parseJsonObject(cache);
   assert.equal(cacheJson.schemaVersion, 1);
+});
+
+test("local --pr records the PR base tip as prBaseSha, distinct from the merge base", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-pr-test-"));
+  const repo = initRepo(tmp);
+  const fakeBin = path.join(tmp, "bin");
+  const cacheDir = path.join(tmp, "cache");
+  const previous = {
+    path: process.env.PATH,
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+  };
+  t.after(() => {
+    if (previous.path === undefined) delete process.env.PATH;
+    else process.env.PATH = previous.path;
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  commitAll(repo, "feature");
+  const head = headSha(repo);
+  // Advance main past the merge base so the PR base tip and merge base differ.
+  gitText(["checkout", "main"], repo);
+  writeFileSync(path.join(repo, "MAIN.md"), "main moved\n");
+  commitAll(repo, "main advanced");
+  const baseTip = headSha(repo);
+  gitText(["checkout", "feature"], repo);
+
+  mkdirSync(fakeBin);
+  writeFileSync(
+    path.join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'pr' && process.argv[3] === 'view') {",
+      "  process.stdout.write(JSON.stringify({",
+      "    number: 7, title: 'PR', body: null, comments: [], reviews: [],",
+      "    statusCheckRollup: [],",
+      `    baseRefOid: ${JSON.stringify(baseTip)},`,
+      `    headRefOid: ${JSON.stringify(head)},`,
+      "    baseRefName: 'main', headRefName: 'feature',",
+      "  }));",
+      "  process.exit(0);",
+      "}",
+      "process.stderr.write('unexpected gh call');",
+      "process.exit(1);",
+    ].join("\n")
+  );
+  writeFileSync(
+    path.join(fakeBin, "claude"),
+    [
+      "#!/usr/bin/env node",
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(path.join(fakeBin, "gh"), 0o755);
+  chmodSync(path.join(fakeBin, "claude"), 0o755);
+  process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
+  process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
+  process.env.NEEDLEFISH_RUNNER = "claude";
+
+  const result = await runLocalPr(repo, 7, { cacheDir });
+
+  const mergeBase = gitText(["merge-base", baseTip, head], repo);
+  assert.equal(result.prNumber, 7);
+  assert.equal(result.prBaseSha, baseTip);
+  assert.equal(result.baseSha, mergeBase);
+  assert.notEqual(result.prBaseSha, result.baseSha);
+  assert.equal(
+    result.reviewTarget,
+    `Review target: PR #7 ${mergeBase}..${head}`
+  );
+  assert.equal(result.verdict, "pass");
+
+  const serialized = parseJsonObject(serializeReviewResult(result));
+  assert.equal(serialized.prNumber, 7);
+  assert.equal(serialized.prBaseSha, baseTip);
+  assert.equal(serialized.baseSha, mergeBase);
 });

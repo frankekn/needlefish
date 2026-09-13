@@ -15,6 +15,7 @@ import {
   NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
+  type PrRefInfo,
 } from "../shared/repo.js";
 import { normalizePrMeta } from "../shared/normalize.js";
 import {
@@ -212,11 +213,15 @@ export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   return { bundle, mode };
 }
 
-export function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
+export function prDiffBundle(
+  cwd: string,
+  prNumber: number,
+  opts: LocalOptions
+): { bundle: Bundle; pr: PrRefInfo } {
   const pr = fetchPrRefInfo(cwd, prNumber);
   ensurePrCommits(cwd, pr);
   const diff = prDiffFromShas(cwd, pr.baseSha, pr.headSha);
-  return makeBundle({
+  const bundle = makeBundle({
     repoPath: cwd,
     baseSha: diff.baseSha,
     headSha: diff.headSha,
@@ -229,6 +234,7 @@ export function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions):
     focus: opts.focus ?? null,
     agentsMd: readAgentsAt(cwd, pr.headSha),
   });
+  return { bundle, pr };
 }
 
 export interface LocalOptions extends RunnerOptions {
@@ -256,7 +262,15 @@ export async function runLocalPr(
   opts: LocalOptions
 ): Promise<ReviewResult> {
   const repoPath = path.resolve(cwd);
-  const result = await review(prDiffBundle(repoPath, prNumber, opts), opts);
+  const { bundle, pr } = prDiffBundle(repoPath, prNumber, opts);
+  // prNumber/prBaseSha are attached after review(): anything on the bundle
+  // reaches the model via {{BUNDLE}}, so these live only on the result.
+  // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
+  const result: ReviewResult = {
+    ...(await review(bundle, opts)),
+    prNumber: pr.prMeta.number,
+    prBaseSha: pr.baseSha,
+  };
   writeCache(repoPath, opts, result);
   return result;
 }
@@ -285,7 +299,7 @@ export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
-  const bundle = prDiffBundle(path.resolve(cwd), prNumber, opts);
+  const { bundle } = prDiffBundle(path.resolve(cwd), prNumber, opts);
   return { mode: "pr", bundle, ...reviewPlan(bundle) };
 }
 
