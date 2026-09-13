@@ -65,16 +65,16 @@ Shared options:
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
   --json               print ReviewResult JSON to stdout (local/pr only)
+  --dry-run            collect the review bundle and print a summary; no model
+                       calls and no cache write (local and pr only)
+  --print-bundle       with --dry-run, print the full bundle JSON — includes
+                       the whole diff and the repo AGENTS.md policy text
 
 Local diff options:
   --pr <number>        attach PR metadata to the local diff review
   --base <ref>         override base ref
   --uncommitted        review staged, unstaged, and untracked working-tree changes
   --branch             review merge-base..HEAD even when the worktree is dirty
-  --dry-run            collect the review bundle and print a summary; no model
-                       calls and no cache write (local and pr only)
-  --print-bundle       with --dry-run, print the full bundle JSON — includes
-                       the whole diff and the repo AGENTS.md policy text
 
 Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)

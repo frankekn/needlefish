@@ -231,6 +231,10 @@ needlefish --repo /path/to/some-repo --dry-run --json   # machine-readable summa
 needlefish pr 123 --repo /path/to/some-repo --dry-run
 ```
 
+`needlefish pr <n> --dry-run` may still `git fetch` the PR refs into the
+repository — the same fetch a real `pr` review performs; the guarantee is no
+model call and no cache write.
+
 `--print-bundle` (only valid with `--dry-run`) prints the full bundle JSON —
 this includes the whole diff and the repository's `AGENTS.md` policy text
 verbatim:
