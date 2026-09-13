@@ -258,6 +258,7 @@ changelog entry.
 | `reviewTarget` | Optional review target string. |
 | `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
+| `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
 | `findings[].consumerLine` | Optional downstream line affected by the finding. |

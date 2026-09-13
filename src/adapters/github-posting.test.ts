@@ -72,6 +72,9 @@ type FixtureOptions = {
 	// Commit to main after the feature branch is created, so the PR base tip
 	// (base.sha / PR_BASE_SHA) differs from the merge base the diff uses.
 	readonly advanceBaseTip?: boolean;
+	// Add a package.json change to the feature commit so the diff carries a
+	// dependency-surface file.
+	readonly dependencyFile?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -195,6 +198,9 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
 	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
+	if (opts.dependencyFile === true) {
+		writeFileSync(path.join(repo, "package.json"), '{"name":"fixture"}\n');
+	}
 	commitAll(repo, "feature");
 	const targetHeadSha = headSha(repo);
 	let latestHeadSha = targetHeadSha;
@@ -2093,5 +2099,55 @@ test("runGithub reports closed_pr when the PR closes during review", async (t) =
 				),
 		),
 		"closed PR must not post reviews or comments",
+	);
+});
+
+test("runGithub renders non-blocking scope callouts in review body and check summary", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 44,
+		dependencyFile: true,
+		rawReview: JSON.stringify({
+			summary: "ok",
+			findings: [],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 44, { timeoutMs: 1000 });
+
+	const section =
+		"**Human callouts (non-blocking):**\n- dependency: package.json";
+	const reviewPost = postedReview(readPosts(fixture.postLog), 44);
+	assert.ok(reviewPost);
+	const reviewPayload = parseReviewPayload(reviewPost.payload);
+	assert.ok(
+		reviewPayload.body.includes(section),
+		"review body must carry the callouts section",
+	);
+
+	const checkOps = readPosts(fixture.postLog).filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	const completed = checkOps[checkOps.length - 1];
+	const completedPayload = parseJson(completed.payload) as {
+		output?: { summary?: unknown };
+	};
+	assert.ok(
+		String(completedPayload.output?.summary ?? "").includes(section),
+		"check-run summary must carry the callouts section",
+	);
+
+	// Callouts are output-only: the runner's stdin must not carry them.
+	// Positive control: the reviewed head SHA is in the prompt.
+	const prompts = readFileSync(fixture.promptLog, "utf8");
+	assert.ok(prompts.includes(fixture.headSha));
+	assert.ok(
+		!prompts.includes("scopeCallouts"),
+		"model prompt must not contain scope callouts",
+	);
+	assert.ok(
+		!prompts.includes("callout"),
+		"model prompt must not mention callouts",
 	);
 });
