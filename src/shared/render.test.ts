@@ -371,3 +371,25 @@ test("renderMarkdown omits the callouts section when none are present", () => {
 		"an empty callouts array must render no section",
 	);
 });
+
+test("renderMarkdown collapses embedded newlines in callout paths", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		scopeCallouts: [
+			{ surface: "dependency", files: ["pnpm-lock.yaml", "new\nline.ts"] },
+		],
+	});
+
+	const section = markdown.slice(
+		markdown.indexOf("**Human callouts"),
+		markdown.indexOf("## Findings"),
+	);
+	const bullets = section.split("\n").filter((line) => line.startsWith("- "));
+	assert.equal(
+		bullets.length,
+		1,
+		"a newline in a path must not split the callout bullet",
+	);
+	assert.ok(bullets[0].includes("dependency: pnpm-lock.yaml, new line.ts"));
+	assert.ok(!markdown.includes("new\nline"));
+});

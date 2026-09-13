@@ -122,7 +122,9 @@ export function renderMarkdown(
 		lines.push("");
 		lines.push("**Human callouts (non-blocking):**");
 		for (const callout of result.scopeCallouts) {
-			lines.push(`- ${callout.surface}: ${callout.files.join(", ")}`);
+			lines.push(
+				`- ${oneLine(callout.surface)}: ${callout.files.map((file) => oneLine(file)).join(", ")}`,
+			);
 		}
 	}
 
