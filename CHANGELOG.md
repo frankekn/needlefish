@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.5 — 2026-09-13
 
 - Runner: `NEEDLEFISH_REVIEW_TIMEOUT_MS` sets one monotonic deadline shared by
   every map/review, deep, critic, JSON-repair and process retry; each runner
