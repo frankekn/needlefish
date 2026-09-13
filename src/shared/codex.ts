@@ -532,6 +532,8 @@ export function prepareEphemeralHome(
 }
 
 export interface CodexOptions extends RunnerOptions {
+	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
+	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
 	readonly targetHeadSha: string;
 	readonly targetPatch?: string;
@@ -598,6 +600,12 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 	return { baseUrl, apiKey };
 }
 
+function remainingReviewMs(deadline: number | undefined): number {
+	const remaining = deadline === undefined ? Infinity : Math.floor(deadline - performance.now());
+	if (remaining <= 0) throw new RunnerOperationalError("Needlefish review deadline exceeded");
+	return remaining;
+}
+
 export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
@@ -629,6 +637,7 @@ export async function runCodex(
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		attempts = attempt;
 		try {
+			remainingReviewMs(opts.reviewDeadlineMs);
 			const out = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
 			emitStat(true);
 			return out;
@@ -653,7 +662,11 @@ export async function runCodex(
 				let backoff: number;
 				try {
 					backoff = retryMsFor(runner);
+					if (backoff >= remainingReviewMs(opts.reviewDeadlineMs)) {
+						throw new RunnerOperationalError("Needlefish review deadline leaves no time for runner retry", { cause: err });
+					}
 				} catch (error) {
+					emitStat(false);
 					throw asRunnerOperationalError(error);
 				}
 				await new Promise<void>((resolve) => setTimeout(resolve, backoff));
@@ -679,7 +692,7 @@ async function runCodexOnce(
 		throw asRunnerOperationalError(error);
 	}
 	if (runner === "openai") {
-		return runOpenAIDirect(prompt, model, timeoutMs, (raw) =>
+		return runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
 			opts.onRaw?.(raw, runnerAttempt),
 		);
 	}
@@ -716,7 +729,7 @@ async function runCodexOnce(
 						repoPath: sandbox.repoPath,
 						model,
 						reasoningEffort: opts.reasoningEffort,
-						timeoutMs,
+						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
 						codexProxy,
@@ -987,9 +1000,7 @@ async function runCodexCli(
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
 	const reasoningEffort = resolveCodexReasoningEffort();
-	const serviceTier = invocation.codexProxy
-		? undefined
-		: resolveCodexServiceTier();
+	const serviceTier = resolveCodexServiceTier();
 	const args = [
 		"exec",
 		"--color",

@@ -110,40 +110,38 @@ function runStubbedCodex(repo: string): Promise<string> {
   });
 }
 
-test("runCodex omits service_tier when CODEX_SERVICE_TIER is unset", async (t) => {
-  const { repo, argsPath } = setupCodexStub(t);
+for (const proxy of [false, true]) {
+  for (const tier of [undefined, "fast", "priority", "bogus"]) {
+    test(`runCodex validates service tier ${tier ?? "unset"} with proxy=${proxy}`, async (t) => {
+      const { repo, argsPath } = setupCodexStub(t);
+      if (proxy) {
+        process.env.CODEX_PROXY_BASE_URL = "http://127.0.0.1:8317/v1";
+        process.env.CODEX_PROXY_API_KEY = "proxy-secret-test-key";
+        process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = "1";
+      }
+      if (tier !== undefined) process.env.CODEX_SERVICE_TIER = tier;
+      process.env.NEEDLEFISH_NO_RETRY = "1";
 
-  await runStubbedCodex(repo);
+      if (tier === "bogus") {
+        await assert.rejects(runStubbedCodex(repo), {
+          message: "CODEX_SERVICE_TIER must be one of: fast, priority",
+        });
+        assert.equal(existsSync(argsPath), false);
+        return;
+      }
 
-  const args = readStringArray(argsPath);
-  assert.equal(
-    args.some((arg) => arg.includes("service_tier")),
-    false
-  );
-});
-
-test("runCodex passes CODEX_SERVICE_TIER to codex as a -c override", async (t) => {
-  const { repo, argsPath } = setupCodexStub(t);
-  process.env.CODEX_SERVICE_TIER = "fast";
-
-  await runStubbedCodex(repo);
-
-  const args = readStringArray(argsPath);
-  const index = args.indexOf('service_tier="fast"');
-  assert.notEqual(index, -1);
-  assert.equal(args[index - 1], "-c");
-});
-
-test("runCodex rejects an invalid CODEX_SERVICE_TIER", async (t) => {
-  const { repo } = setupCodexStub(t);
-  process.env.CODEX_SERVICE_TIER = "bogus";
-  // Retry would run the same doomed invocation twice with a 5s backoff.
-  process.env.NEEDLEFISH_NO_RETRY = "1";
-
-  await assert.rejects(runStubbedCodex(repo), {
-    message: "CODEX_SERVICE_TIER must be one of: fast, priority",
-  });
-});
+      await runStubbedCodex(repo);
+      const args = readStringArray(argsPath);
+      assert.deepEqual(
+        args.filter((arg) => arg.startsWith("service_tier=")),
+        tier === undefined ? [] : [`service_tier="${tier}"`],
+      );
+      if (tier !== undefined) {
+        assert.equal(args[args.indexOf(`service_tier="${tier}"`) - 1], "-c");
+      }
+    });
+  }
+}
 
 test("runCodex configures the fail-closed CLIProxyAPI provider without putting its key in argv", async (t) => {
   const { repo, argsPath, envPath } = setupCodexStub(t);
@@ -169,7 +167,7 @@ test("runCodex configures the fail-closed CLIProxyAPI provider without putting i
     assert.equal(args[index - 1], "-c");
   }
   assert.equal(JSON.stringify(args).includes("proxy-secret-test-key"), false);
-  assert.equal(args.some((arg) => arg.includes("service_tier")), false);
+  assert.equal(args.includes('service_tier="fast"'), true);
   assert.deepEqual(JSON.parse(readFileSync(envPath, "utf8")), {
     key: "proxy-secret-test-key",
     baseUrl: null,
