@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { normalizeFinding } from "./normalize";
 import { parseReviewResult } from "./review-result";
 import { serializeReviewResult, type ReviewResult } from "./schema";
 
@@ -142,14 +143,16 @@ test("parseReviewResult validates findings strictly, with no coercion", () => {
 		[{ confidence: -0.1 }, /confidence invalid/],
 		// non-P3 below the persisted 0.7 gate — verdict-bearing
 		[{ confidence: 0.5 }, /confidence below 0\.7/],
+		[{ lineStart: "3" }, /lineStart/],
 		[{ lineStart: 0 }, /lineStart/],
-		[{ lineStart: 1.5 }, /lineStart/],
+		[{ lineStart: -1 }, /lineStart/],
 		[{ lineEnd: 1, lineStart: 5 }, /lineEnd before lineStart/],
 		[{ file: "" }, /file is empty/],
 		[{ title: 3 }, /title/],
 		[{ validation: undefined }, /validation/],
 		[{ consumerFile: "" }, /consumerFile/],
-		[{ consumerLine: 1.5 }, /consumerLine/],
+		[{ consumerLine: 0 }, /consumerLine/],
+		[{ consumerLine: "x" }, /consumerLine/],
 		// replacement must be rejected, not silently dropped
 		[{ replacement: "x" }, /replacement not an object/],
 		[{ replacement: { lines: ["a\nb"] } }, /replacement\.lines/],
@@ -167,6 +170,45 @@ test("parseReviewResult validates findings strictly, with no coercion", () => {
 			`expected rejection for ${JSON.stringify(override)}`,
 		);
 	}
+});
+
+test("parseReviewResult admits exactly what normalizeFinding persists", () => {
+	// normalizeFinding's admission domain is the parser's acceptance domain:
+	// fractional lineStart/lineEnd pass through, and consumerLine keeps any
+	// non-zero finite number (fractional or negative).
+	const persisted = normalizeFinding({
+		severity: "P2",
+		title: "x",
+		category: "bug",
+		file: "a.ts",
+		lineStart: 1.5,
+		lineEnd: 2.5,
+		confidence: 0.9,
+		whyItBreaks: "w",
+		suggestedFix: "f",
+		validation: "v",
+		consumerLine: "3.5",
+	});
+	const negative = normalizeFinding({
+		severity: "P3",
+		title: "y",
+		category: "bug",
+		file: "b.ts",
+		lineStart: 4,
+		confidence: 0.5,
+		whyItBreaks: "w",
+		suggestedFix: "f",
+		consumerLine: -2,
+	});
+
+	const result = parseReviewResult(
+		serialized({ findings: [persisted, negative] }),
+	);
+
+	assert.equal(result.findings[0].lineStart, 1.5);
+	assert.equal(result.findings[0].lineEnd, 2.5);
+	assert.equal(result.findings[0].consumerLine, 3.5);
+	assert.equal(result.findings[1].consumerLine, -2);
 });
 
 test("parseReviewResult preserves optional finding fields exactly", () => {

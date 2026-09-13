@@ -103,10 +103,13 @@ function fieldNonEmpty(record: JsonRecord, field: string): string {
 	return value;
 }
 
-function fieldPositiveInt(record: JsonRecord, field: string): number {
+// Line numbers admit the domain normalizeFinding persists — finite numbers
+// greater than zero, including fractions — so parse can never reject what
+// serialize wrote.
+function fieldPositiveNumber(record: JsonRecord, field: string): number {
 	const value = record[field];
-	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-		throw new Error(`${field} missing or not a positive integer`);
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+		throw new Error(`${field} missing or not a positive number`);
 	}
 	return value;
 }
@@ -139,8 +142,8 @@ function requireFinding(raw: unknown): Finding {
 	const suggestedFix = fieldNonEmpty(raw, "suggestedFix");
 	// Persisted findings always carry validation as a string; empty is legal.
 	const validation = fieldString(raw, "validation");
-	const lineStart = fieldPositiveInt(raw, "lineStart");
-	const lineEnd = fieldPositiveInt(raw, "lineEnd");
+	const lineStart = fieldPositiveNumber(raw, "lineStart");
+	const lineEnd = fieldPositiveNumber(raw, "lineEnd");
 	if (lineEnd < lineStart) {
 		throw new Error("lineEnd before lineStart");
 	}
@@ -163,14 +166,17 @@ function requireFinding(raw: unknown): Finding {
 	if (consumerFile !== undefined && (typeof consumerFile !== "string" || !consumerFile)) {
 		throw new Error("consumerFile not a non-empty string");
 	}
+	// consumerLine persists as Number(x) || undefined in normalizeFinding, so
+	// the written domain is any non-zero finite number — fractional and
+	// negative values are admitted to match.
 	const consumerLine = raw.consumerLine;
 	if (
 		consumerLine !== undefined &&
 		(typeof consumerLine !== "number" ||
-			!Number.isInteger(consumerLine) ||
-			consumerLine <= 0)
+			!Number.isFinite(consumerLine) ||
+			consumerLine === 0)
 	) {
-		throw new Error("consumerLine not a positive integer");
+		throw new Error("consumerLine not a non-zero finite number");
 	}
 	const replacement =
 		raw.replacement === undefined ? undefined : requireReplacement(raw.replacement);
