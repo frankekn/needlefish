@@ -8,6 +8,12 @@
   emitted, instead of hanging `in_progress` forever. Timeline comments stay
   suppressed for the stale head; the stderr line and exit code 1 are
   unchanged. (#131)
+- GitHub: retry posting calls (review POST/PUT, check-run POST/PATCH, issue
+  comment POST, verdict labels) up to 3 attempts with short backoff when the
+  gh error reports a 5xx, so a transient GitHub error can no longer turn a
+  completed review into a red "review failed" check. 4xx errors, read/dedupe
+  paths, and the model runner are never retried. Tunable via
+  `NEEDLEFISH_GH_POST_RETRY_MS`.
 
 - Local: `needlefish --dry-run` (and `needlefish pr <n> --dry-run`) collects
   the review bundle and prints a redacted summary — mode, base/head SHAs,

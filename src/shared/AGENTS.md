@@ -15,6 +15,8 @@
 | Markdown output | `render.ts` | Used by stdout, PR review body, and check summary. |
 | Runner regressions | `codex.test.ts`, `codex-runners.test.ts`, `runner-process.test.ts` | First stop for timeout/sandbox/process changes. |
 
+Adding an optional `ReviewResult` field requires a parser row in `src/shared/review-result.ts` — the exhaustive optional-field table fails typecheck otherwise — and the parser admits exactly what `serializeReviewResult` can write.
+
 ## CONVENTIONS
 
 - Treat subprocess output and model/GitHub JSON as untrusted.
