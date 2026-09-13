@@ -137,3 +137,44 @@ test("parseArgs rejects explain without --finding", () => {
 test("parseArgs rejects --finding outside explain", () => {
   assert.throws(() => parseArgs(["--finding", "x"]), /only valid with the explain command/);
 });
+
+test("parseArgs accepts --dry-run and --print-bundle for local and pr modes", () => {
+  const localCommand = parseArgs(["--dry-run"]);
+  assert.equal(localCommand.kind, "local");
+  if (localCommand.kind === "local") {
+    assert.equal(localCommand.dryRun, true);
+    assert.equal(localCommand.printBundle, false);
+    assert.equal(localCommand.json, false);
+  }
+
+  const prCommand = parseArgs(["pr", "24", "--dry-run", "--print-bundle", "--json"]);
+  assert.equal(prCommand.kind, "pr");
+  if (prCommand.kind === "pr") {
+    assert.equal(prCommand.dryRun, true);
+    assert.equal(prCommand.printBundle, true);
+    assert.equal(prCommand.json, true);
+  }
+
+  const normal = parseArgs(["--repo", "/tmp/repo"]);
+  if (normal.kind === "local") {
+    assert.equal(normal.dryRun, false);
+    assert.equal(normal.printBundle, false);
+  }
+});
+
+test("parseArgs rejects --print-bundle without --dry-run", () => {
+  assert.throws(() => parseArgs(["--print-bundle"]), /--print-bundle requires --dry-run/);
+  assert.throws(() => parseArgs(["pr", "24", "--print-bundle"]), /--print-bundle requires --dry-run/);
+  assert.throws(() => parseArgs(["--github", "--pr", "1", "--print-bundle"]), /--print-bundle requires --dry-run/);
+});
+
+test("parseArgs rejects --dry-run in github and explain modes", () => {
+  assert.throws(
+    () => parseArgs(["--github", "--pr", "1", "--dry-run"]),
+    /--dry-run is not supported with --github/,
+  );
+  assert.throws(
+    () => parseArgs(["explain", "8", "--finding", "x", "--dry-run"]),
+    /--dry-run is only valid in local and pr modes/,
+  );
+});

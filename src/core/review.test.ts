@@ -2400,3 +2400,45 @@ test("review traces one parse-failed raw event for an empty successful runner at
 		"failed raw outputs must never contain an empty string",
 	);
 });
+
+test("docs-only fast path returns pass even when NEEDLEFISH_LARGE_* env is invalid", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		largeChars: process.env.NEEDLEFISH_LARGE_PATCH_CHARS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.largeChars === undefined)
+			delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
+		else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previous.largeChars;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "not-a-number";
+	delete process.env.NEEDLEFISH_NO_FAST_PATH;
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/docs/guide.md b/docs/guide.md\n+docs\n",
+		patchStat: " docs/guide.md | 1 +",
+		changedFiles: [
+			{ path: "docs/guide.md", surface: classifySurface("docs/guide.md") },
+		],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	// review() used to short-circuit on docs-only before ever evaluating
+	// isLarge(), so an invalid NEEDLEFISH_LARGE_* value must not turn this
+	// previously-passing input into a throw.
+	const result = await review(bundle);
+	assert.equal(result.verdict, "pass");
+	assert.match(result.summary, /Docs-only/);
+});

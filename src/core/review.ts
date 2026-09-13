@@ -990,14 +990,36 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	);
 }
 
+// The two dispatch questions review() asks of a bundle, answered in one place
+// so --dry-run can report what a real run would do without duplicating
+// thresholds. review() itself consumes this; the private helpers stay the
+// only threshold owners.
+export function reviewPlan(bundle: Bundle): {
+	readonly docsOnlyFastPath: boolean;
+	readonly largePath: boolean;
+} {
+	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	// Keep review()'s original evaluation order: the docs-only short-circuit
+	// returns before isLarge is ever reached. isLarge parses the
+	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
+	// docs-only review that would have fast-pathed — and a dry-run must not
+	// report a large path that never runs (docs-only + --deep still takes the
+	// fast path).
+	return {
+		docsOnlyFastPath,
+		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+	};
+}
+
 export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
 	onTrace?: ReviewTraceObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
+	const plan = reviewPlan(bundle);
 
-	if (isDocsOnlyFastPath(bundle)) {
+	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -1031,7 +1053,7 @@ export async function review(
 		startedAt,
 	};
 	try {
-		const result = await (bundle.deep || isLarge(bundle)
+		const result = await (plan.largePath
 			? reviewLarge(run)
 			: reviewSmall(run));
 		await drainTraceDeliveries(traceHealth);

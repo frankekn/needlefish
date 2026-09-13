@@ -5,7 +5,9 @@ import { normalizePrMeta } from "./normalize.js";
 import { runText, type RunOptions } from "./process.js";
 import type { Bundle, ChangedFile, PrMeta, UntrackedSkippedFile } from "./schema.js";
 
-const NO_AGENTS =
+// Exported so --dry-run can report whether a real AGENTS.md was collected
+// versus this fallback sentinel.
+export const NO_AGENTS =
   "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
 
 export function git(

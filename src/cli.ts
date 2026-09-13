@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 import { runGithubExplain } from "./adapters/explain.js";
 import { runGithub } from "./adapters/github.js";
-import { runLocal, runLocalPr, printLocal } from "./adapters/local.js";
+import {
+  runLocal,
+  runLocalPr,
+  printLocal,
+  localDryRun,
+  localPrDryRun,
+  printDryRun,
+} from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
@@ -26,7 +33,11 @@ async function main() {
       return;
   }
 
-  await initializeTempLifecycle();
+  // --dry-run only collects and prints the bundle: no runners spawn, so the
+  // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
+  const dryRun =
+    (command.kind === "local" || command.kind === "pr") && command.dryRun;
+  if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {
     case "github": {
@@ -47,6 +58,18 @@ async function main() {
       if (command.fix) {
         process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
         process.exitCode = 2;
+        return;
+      }
+      if (command.dryRun) {
+        const cwd = command.repo ?? process.cwd();
+        const report =
+          command.kind === "pr"
+            ? localPrDryRun(cwd, command.pr, command.opts)
+            : localDryRun(cwd, command.opts);
+        printDryRun(report, {
+          json: command.json,
+          printBundle: command.printBundle,
+        });
         return;
       }
       if (command.recheck) {

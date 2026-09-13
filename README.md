@@ -220,6 +220,29 @@ Output is Markdown on stdout, with the same review cached as JSON at
 needlefish --repo . --json | jq .verdict
 ```
 
+**Dry run** — collect the review bundle and print a redacted summary of what
+would be sent to the model (mode, SHAs, changed files with surfaces, patch
+size, fast-path and large-path answers). No runner is invoked and nothing is
+cached:
+
+```bash
+needlefish --repo /path/to/some-repo --dry-run
+needlefish --repo /path/to/some-repo --dry-run --json   # machine-readable summary
+needlefish pr 123 --repo /path/to/some-repo --dry-run
+```
+
+`needlefish pr <n> --dry-run` may still `git fetch` the PR refs into the
+repository — the same fetch a real `pr` review performs; the guarantee is no
+model call and no cache write.
+
+`--print-bundle` (only valid with `--dry-run`) prints the full bundle JSON —
+this includes the whole diff and the repository's `AGENTS.md` policy text
+verbatim:
+
+```bash
+needlefish --repo /path/to/some-repo --dry-run --print-bundle
+```
+
 ### Machine interface
 
 `needlefish --repo <path> --json` and `needlefish pr <number> --json` print a
