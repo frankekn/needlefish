@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
 import { runGithubExplain } from "./adapters/explain.js";
 import { runGithub } from "./adapters/github.js";
 import {
@@ -30,6 +31,14 @@ async function main() {
       return;
     case "help":
       process.stdout.write(USAGE);
+      return;
+    // Cached-result commands are read-only file diagnostics: no temp
+    // lifecycle, no runner, no cache writes.
+    case "render":
+      runCachedRender(command.file);
+      return;
+    case "verdict":
+      runCachedVerdict(command.file);
       return;
   }
 

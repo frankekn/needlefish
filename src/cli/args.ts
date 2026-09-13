@@ -11,6 +11,10 @@ export type CliCommand =
       readonly kind: "help" | "version";
     }
   | {
+      readonly kind: "render" | "verdict";
+      readonly file: string;
+    }
+  | {
       readonly kind: "local";
       readonly repo?: string;
       readonly opts: LocalOptions;
@@ -55,6 +59,9 @@ Usage:
   needlefish --github --pr <number>    GitHub Action mode (post review + check)
   needlefish explain <number> --finding <text>
                                        explain one finding on a PR (Action mode)
+  needlefish render <file>             re-render a cached last-review.json
+  needlefish verdict <file>            recompute a cached result's verdict
+                                       (exits 1 when stored and derived differ)
 
 Shared options:
   --repo <path>        target repository
@@ -133,6 +140,20 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  const cachedCommand =
+    argv[0] === "render" || argv[0] === "verdict" ? argv[0] : undefined;
+  if (cachedCommand) {
+    if (argv[1] === "-h" || argv[1] === "--help") return { kind: "help" };
+    if (argv[1] === "-v" || argv[1] === "--version") return { kind: "version" };
+    const file = argv[1];
+    if (!file || file.startsWith("-")) {
+      throw new Error(`${cachedCommand} requires a path to a cached review JSON file`);
+    }
+    if (argv.length > 2) {
+      throw new Error(`${cachedCommand} takes exactly one file argument`);
+    }
+    return { kind: cachedCommand, file };
+  }
   const explainCommand = argv[0] === "explain";
   const prCommand = argv[0] === "pr" || explainCommand;
   if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
