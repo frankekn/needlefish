@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -48,6 +49,10 @@ type FixtureOptions = {
 	readonly rawReview: string;
 	readonly readmeContent?: string;
 	readonly staleHeadAfterReview?: boolean;
+	// Report the PR state as 'closed' from the first pull fetch (entry skip).
+	readonly closedPr?: boolean;
+	// PR is open on the first pull fetch and closed by the post-review re-read.
+	readonly closePrAfterReview?: boolean;
 	readonly paginatePreviousReviewOnSecondPage?: boolean;
 	// Each review becomes its own slurp page, last page newest. Used to prove
 	// an untrusted marker on a later page cannot hide an earlier trusted one.
@@ -211,6 +216,14 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 
 	mkdirSync(fakeBin);
 	const countPath = path.join(tmp, "pull-count");
+	// Stub PR state: closed outright, or open on the first pull fetch and
+	// closed on the post-review re-read (count tracks pulls/N calls).
+	const prStateExpr =
+		opts.closedPr === true
+			? "'closed'"
+			: opts.closePrAfterReview === true
+				? "(count === 0 ? 'open' : 'closed')"
+				: "'open'";
 	writeFileSync(
 		gh,
 		[
@@ -284,8 +297,9 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  const count = fs.existsSync(countPath) ? Number(fs.readFileSync(countPath, 'utf8')) : 0;",
 			"  fs.writeFileSync(countPath, String(count + 1));",
 			`  const headSha = count === 0 ? ${JSON.stringify(targetHeadSha)} : ${JSON.stringify(latestHeadSha)};`,
+			`  const prState = ${prStateExpr};`,
 			"  process.stdout.write(JSON.stringify({",
-			"    state: 'open', title: 'PR', body: '',",
+			"    state: prState, title: 'PR', body: '',",
 			"    comments_url: 'https://example.invalid/comments',",
 			"    review_comments_url: 'https://example.invalid/reviews',",
 			"    head: { sha: headSha },",
@@ -369,6 +383,29 @@ function runnerInvocationCount(fixture: Fixture): number {
 	return readFileSync(fixture.runnerLog, "utf8")
 		.split("\n")
 		.filter(Boolean).length;
+}
+
+// The needlefish-skip line is a stdout contract: assert it on the real CLI
+// as a subprocess (the fixture's PATH/env point the child at the gh and
+// runner stubs, whose logs are plain files shared across processes).
+function spawnGithubCli(
+	fixture: Fixture,
+	prNumber: number,
+): { status: number | null; stdout: string; stderr: string } {
+	return spawnSync(
+		process.execPath,
+		[
+			"--import",
+			"tsx",
+			path.join(process.cwd(), "src/cli.ts"),
+			"--github",
+			"--pr",
+			String(prNumber),
+			"--repo",
+			fixture.repo,
+		],
+		{ encoding: "utf8", env: process.env },
+	);
 }
 
 function stateReviewBody(headSha: string): string {
@@ -618,7 +655,14 @@ test("runGithub skips posting when the PR head changes after review", async (t) 
 		}),
 	});
 
-	await runGithub(fixture.repo, 10, { timeoutMs: 1000 });
+	const spawned = spawnGithubCli(fixture, 10);
+	assert.equal(spawned.status, 0, spawned.stderr);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"stale_head","prNumber":10,"headSha":"${fixture.headSha}"}`,
+		),
+		"stale-head skip must emit the machine-readable line",
+	);
 
 	// The pending check is still created for the (then-current) head and must
 	// be closed as superseded; no review/comment may reach the timeline.
@@ -635,10 +679,15 @@ test("runGithub skips posting when the PR head changes after review", async (t) 
 	assert.equal(completed.args[2], "PATCH");
 	const completedPayload = parseJson(completed.payload) as {
 		conclusion?: unknown;
-		output?: { title?: unknown };
+		output?: { title?: unknown; summary?: unknown };
 	};
 	assert.equal(completedPayload.conclusion, "neutral");
 	assert.match(String(completedPayload.output?.title ?? ""), /superseded/);
+	assert.match(
+		String(completedPayload.output?.summary ?? ""),
+		/reason=stale_head/,
+		"superseded check summary must carry the skip reason",
+	);
 	assert.ok(
 		!readPosts(fixture.postLog).some(
 			(p) =>
@@ -1076,14 +1125,27 @@ test("runGithub skips re-review when previous review has same head (no recheck)"
 	await runGithub(fixture.repo, 30, { timeoutMs: 1000 });
 	const round1Count = readPosts(fixture.postLog).length;
 	assert.ok(round1Count > 0, "round 1 should post");
+	const round1Runs = runnerInvocationCount(fixture);
 
-	await runGithub(fixture.repo, 30, { timeoutMs: 1000 });
+	const round2 = spawnGithubCli(fixture, 30);
+	assert.equal(round2.status, 0, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
 	assert.deepEqual(
 		round2Posts,
 		[],
 		"no posts when same head already reviewed without --recheck",
+	);
+	assert.ok(
+		round2.stdout.includes(
+			`needlefish-skip {"reason":"same_head","prNumber":30,"headSha":"${fixture.headSha}"}`,
+		),
+		"same-head skip must emit the machine-readable line",
+	);
+	assert.equal(
+		runnerInvocationCount(fixture),
+		round1Runs,
+		"same-head skip must not invoke the runner again",
 	);
 });
 
@@ -1954,5 +2016,82 @@ test("runGithub states the reviewed range and keeps the PR base tip", async (t) 
 	assert.ok(
 		!prompts.includes(fixture.baseTipSha),
 		"model prompt must not contain the PR base tip SHA",
+	);
+});
+
+test("runGithub skips a closed PR before review and reports closed_pr", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 32,
+		closedPr: true,
+		rawReview: defaultRawReview(),
+	});
+
+	const spawned = spawnGithubCli(fixture, 32);
+	assert.equal(spawned.status, 0, spawned.stderr);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"closed_pr","prNumber":32,"headSha":"${fixture.headSha}"}`,
+		),
+		"closed-PR skip must emit the machine-readable line",
+	);
+	assert.deepEqual(
+		readPosts(fixture.postLog),
+		[],
+		"closed PR must produce no review, comment, or check posts",
+	);
+	assert.equal(
+		runnerInvocationCount(fixture),
+		0,
+		"closed PR must not invoke the runner",
+	);
+});
+
+test("runGithub reports closed_pr when the PR closes during review", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 33,
+		closePrAfterReview: true,
+		rawReview: JSON.stringify({
+			summary: "ok",
+			findings: [],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	const spawned = spawnGithubCli(fixture, 33);
+	assert.equal(spawned.status, 0, spawned.stderr);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"closed_pr","prNumber":33,"headSha":"${fixture.headSha}"}`,
+		),
+		"mid-review close must emit the machine-readable line",
+	);
+
+	// The pending check is closed as superseded with the reason appended; no
+	// review or comment may reach the timeline.
+	const checkOps = readPosts(fixture.postLog).filter((p) =>
+		p.args.some((a) => a.includes("check-runs")),
+	);
+	assert.equal(checkOps.length, 2, "pending check must be closed as superseded");
+	const completed = checkOps[checkOps.length - 1];
+	const completedPayload = parseJson(completed.payload) as {
+		conclusion?: unknown;
+		output?: { summary?: unknown };
+	};
+	assert.equal(completedPayload.conclusion, "neutral");
+	assert.match(
+		String(completedPayload.output?.summary ?? ""),
+		/reason=closed_pr/,
+		"superseded check summary must carry the skip reason",
+	);
+	assert.ok(
+		!readPosts(fixture.postLog).some(
+			(p) =>
+				p.args.some((a) => a.includes("pulls/33/reviews")) ||
+				p.args.some(
+					(a) => a === "repos/frankekn/needlefish/issues/33/comments",
+				),
+		),
+		"closed PR must not post reviews or comments",
 	);
 });

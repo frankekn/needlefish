@@ -805,11 +805,21 @@ function minimizePreviousRoundComments(
 	}
 }
 
-function isCurrentOpenHead(
+// The machine-readable reason a GitHub review was skipped, mirrored on
+// stdout as `needlefish-skip {json}` alongside the existing prose lines.
+export type SkipReason = "closed_pr" | "stale_head" | "same_head";
+
+function emitSkip(reason: SkipReason, prNumber: number, headSha: string): void {
+	process.stdout.write(
+		`needlefish-skip ${JSON.stringify({ reason, prNumber, headSha })}\n`,
+	);
+}
+
+function postReviewSkipReason(
 	repo: string,
 	prNumber: number,
 	headSha: string,
-): boolean {
+): SkipReason | null {
 	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
 	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
 	const state = stringField(pr, "state");
@@ -817,16 +827,16 @@ function isCurrentOpenHead(
 		process.stdout.write(
 			`Needlefish skipped posting for PR #${prNumber} because state is ${state || "unknown"}.\n`,
 		);
-		return false;
+		return "closed_pr";
 	}
 	const currentHeadSha = nestedString(pr, "head", "sha");
 	if (currentHeadSha !== headSha) {
 		process.stdout.write(
 			`Needlefish skipped stale result for PR #${prNumber}: ${headSha} is no longer current.\n`,
 		);
-		return false;
+		return "stale_head";
 	}
-	return true;
+	return null;
 }
 
 export async function runGithub(
@@ -846,6 +856,13 @@ export async function runGithub(
 		process.stdout.write(
 			`Needlefish skipped PR #${prNumber} because state is ${state || "unknown"}.\n`,
 		);
+		// No git fallback here: a closed PR may not even have a local checkout,
+		// and the skip line reports the PR's own head (env or API).
+		emitSkip(
+			"closed_pr",
+			prNumber,
+			process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || "",
+		);
 		return;
 	}
 	const headSha =
@@ -861,6 +878,7 @@ export async function runGithub(
 		process.stderr.write(
 			`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
 		);
+		emitSkip("same_head", prNumber, headSha);
 		return;
 	}
 
@@ -916,17 +934,19 @@ export async function runGithub(
 			prBaseSha: baseSha,
 		};
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
-		if (!isCurrentOpenHead(repo, prNumber, headSha)) {
-			// Head moved while reviewing: close our own check so it cannot hang
-			// as in_progress forever. Timeline comments stay suppressed for the
-			// stale head exactly as before.
+		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		if (skipReason) {
+			// Head moved or PR closed while reviewing: close our own check so it
+			// cannot hang as in_progress forever. Timeline comments stay
+			// suppressed for the stale head exactly as before.
+			emitSkip(skipReason, prNumber, headSha);
 			postCheck(
 				repo,
 				headSha,
 				result,
 				"neutral",
 				"Needlefish: superseded",
-				"A newer head was pushed while this review ran; its result is not posted.",
+				`A newer head was pushed while this review ran; its result is not posted. reason=${skipReason}`,
 				pendingCheckId,
 			);
 			return;
@@ -1035,7 +1055,7 @@ export async function runGithub(
 		const msg = err instanceof Error ? err.message : String(err);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
 		// check on a stale head would hang forever otherwise.
-		if (isCurrentOpenHead(repo, prNumber, headSha)) {
+		if (postReviewSkipReason(repo, prNumber, headSha) === null) {
 			// Check run and error comment are independent fail-soft attempts: a
 			// failure of either GitHub endpoint must not suppress the other, nor
 			// the stderr line and exit code below.
