@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Local: `needlefish --dry-run` (and `needlefish pr <n> --dry-run`) collects
+  the review bundle and prints a redacted summary — mode, base/head SHAs,
+  changed files with surfaces, patch size, and the docs-only/large-path
+  answers `review()` would apply — without invoking a model runner or writing
+  `last-review.json`. `--dry-run --print-bundle` prints the full bundle JSON
+  (whole diff plus `AGENTS.md` policy text) (#125).
 - GitHub: retire the scheduled `needlefish-weekly-eval` workflow. It ran the
   full fixture set through the runner host's direct Codex subscription, which
   is exhausted until 2026-10-05, and had failed on 2026-08-30 and 2026-09-06.

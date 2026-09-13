@@ -17,6 +17,8 @@ export type CliCommand =
       readonly fix: boolean;
       readonly recheck: boolean;
       readonly json: boolean;
+      readonly dryRun: boolean;
+      readonly printBundle: boolean;
     }
   | {
       readonly kind: "github";
@@ -34,6 +36,8 @@ export type CliCommand =
       readonly fix: boolean;
       readonly recheck: boolean;
       readonly json: boolean;
+      readonly dryRun: boolean;
+      readonly printBundle: boolean;
     }
   | {
       readonly kind: "explain";
@@ -67,6 +71,10 @@ Local diff options:
   --base <ref>         override base ref
   --uncommitted        review staged, unstaged, and untracked working-tree changes
   --branch             review merge-base..HEAD even when the worktree is dirty
+  --dry-run            collect the review bundle and print a summary; no model
+                       calls and no cache write (local and pr only)
+  --print-bundle       with --dry-run, print the full bundle JSON — includes
+                       the whole diff and the repo AGENTS.md policy text
 
 Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
@@ -139,6 +147,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   let fix = false;
   let recheck = false;
   let json = false;
+  let dryRun = false;
+  let printBundle = false;
   let sawUncommitted = false;
   let sawBranch = false;
 
@@ -174,6 +184,14 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     if (arg === "--json") {
       json = true;
+      continue;
+    }
+    if (arg === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (arg === "--print-bundle") {
+      printBundle = true;
       continue;
     }
     if (arg === "--pr") {
@@ -257,10 +275,15 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error("--uncommitted cannot be combined with --branch");
   }
 
+  if (printBundle && !dryRun) {
+    throw new Error("--print-bundle requires --dry-run");
+  }
+
   if (github) {
     if (prCommand) throw new Error("pr command cannot be combined with --github");
     if (!pr) throw new Error("--github requires --pr <number>");
     if (json) throw new Error("--json is not supported with --github");
+    if (dryRun) throw new Error("--dry-run is not supported with --github");
     if (opts.base) throw new Error("--base is only valid in local mode");
     if (opts.localMode) throw new Error("--uncommitted and --branch are only valid in local mode");
     if (opts.focus) throw new Error("--focus is only valid in local mode");
@@ -270,6 +293,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
 
   if (explainCommand) {
     if (json) throw new Error("--json is only valid in local and pr modes");
+    if (dryRun) throw new Error("--dry-run is only valid in local and pr modes");
     if (!finding) throw new Error("explain requires --finding <text>");
     return { kind: "explain", pr: prCommandNumber!, finding, repo, opts: runnerOptionsFrom(opts) };
   }
@@ -279,8 +303,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     if (pr) throw new Error("pr command cannot be combined with --pr");
     if (opts.base) throw new Error("--base is not valid with pr command");
     if (opts.localMode) throw new Error("--uncommitted and --branch are not valid with pr command");
-    return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck, json };
+    return { kind: "pr", pr: prCommandNumber!, repo, opts, fix, recheck, json, dryRun, printBundle };
   }
 
-  return { kind: "local", repo, opts, fix, recheck, json };
+  return { kind: "local", repo, opts, fix, recheck, json, dryRun, printBundle };
 }

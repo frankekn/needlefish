@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { review } from "../core/review.js";
+import { review, reviewPlan } from "../core/review.js";
 import { renderMarkdown } from "../shared/render.js";
 import {
   changedFiles,
@@ -12,11 +12,18 @@ import {
   git,
   gitPathList,
   makeBundle,
+  NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
 } from "../shared/repo.js";
 import { normalizePrMeta } from "../shared/normalize.js";
-import { serializeReviewResult, type Bundle, type ReviewResult } from "../shared/schema.js";
+import {
+  serializeReviewResult,
+  type Bundle,
+  type ChangedFile,
+  type ReviewResult,
+  type UntrackedSkippedFile,
+} from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 import {
   buildUntrackedPatch,
@@ -189,12 +196,20 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   });
 }
 
-function diffBundle(cwd: string, opts: LocalOptions): Bundle {
+export type LocalDiffMode = "uncommitted" | "branch";
+
+export interface LocalBundle {
+  readonly bundle: Bundle;
+  readonly mode: LocalDiffMode;
+}
+
+export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   ensureGitRepo(cwd);
   const headExists = hasHeadCommit(cwd);
   const dirty = git(["status", "--porcelain"], cwd).trim() !== "";
-  const mode = opts.localMode ?? (!headExists || dirty ? "uncommitted" : "branch");
-  return mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
+  const mode: LocalDiffMode = opts.localMode ?? (!headExists || dirty ? "uncommitted" : "branch");
+  const bundle = mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
+  return { bundle, mode };
 }
 
 export function prDiffBundle(cwd: string, prNumber: number, opts: LocalOptions): Bundle {
@@ -230,7 +245,7 @@ export async function runLocal(
   opts: LocalOptions
 ): Promise<ReviewResult> {
   const repoPath = path.resolve(cwd);
-  const result = await review(diffBundle(repoPath, opts), opts);
+  const result = await review(diffBundle(repoPath, opts).bundle, opts);
   writeCache(repoPath, opts, result);
   return result;
 }
@@ -248,4 +263,119 @@ export async function runLocalPr(
 
 export function printLocal(result: ReviewResult): void {
   process.stdout.write(renderMarkdown(result) + "\n");
+}
+
+// --- --dry-run: collect the bundle, report what a real run would do ---
+
+export type DryRunMode = LocalDiffMode | "pr";
+
+export interface DryRunReport {
+  readonly mode: DryRunMode;
+  readonly bundle: Bundle;
+  readonly docsOnlyFastPath: boolean;
+  readonly largePath: boolean;
+}
+
+// Bundle collection only — no review(), no writeCache. Callers decide how to
+// render; --print-bundle emits the bundle itself, which is the whole diff and
+// the repo AGENTS.md policy text verbatim.
+export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
+  const { bundle, mode } = diffBundle(path.resolve(cwd), opts);
+  return { mode, bundle, ...reviewPlan(bundle) };
+}
+
+export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
+  const bundle = prDiffBundle(path.resolve(cwd), prNumber, opts);
+  return { mode: "pr", bundle, ...reviewPlan(bundle) };
+}
+
+interface DryRunSummary {
+  readonly mode: DryRunMode;
+  readonly baseSha: string;
+  readonly headSha: string;
+  readonly reviewTarget?: string;
+  readonly changedFiles: readonly ChangedFile[];
+  readonly patchBytes: number;
+  readonly patchStat: string;
+  readonly prMeta: { readonly present: boolean; readonly number?: number };
+  readonly agentsMd: { readonly present: boolean; readonly bytes: number };
+  readonly untrackedSkipped: readonly UntrackedSkippedFile[];
+  readonly docsOnlyFastPath: boolean;
+  readonly largePath: boolean;
+}
+
+// The redacted summary: everything needed to answer "was the evidence in the
+// bundle?" except the patch and policy text themselves (those are behind
+// --print-bundle).
+function dryRunSummary(report: DryRunReport): DryRunSummary {
+  const { bundle } = report;
+  return {
+    mode: report.mode,
+    baseSha: bundle.baseSha,
+    headSha: bundle.headSha,
+    ...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+    changedFiles: bundle.changedFiles,
+    patchBytes: Buffer.byteLength(bundle.patch),
+    patchStat: bundle.patchStat,
+    prMeta: bundle.prMeta
+      ? { present: true, number: bundle.prMeta.number }
+      : { present: false },
+    agentsMd: {
+      present: bundle.agentsMd !== NO_AGENTS,
+      bytes: Buffer.byteLength(bundle.agentsMd),
+    },
+    untrackedSkipped: bundle.untrackedSkipped ?? [],
+    docsOnlyFastPath: report.docsOnlyFastPath,
+    largePath: report.largePath,
+  };
+}
+
+export function printDryRun(
+  report: DryRunReport,
+  opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
+): void {
+  if (opts.printBundle) {
+    process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
+    return;
+  }
+  const summary = dryRunSummary(report);
+  if (opts.json) {
+    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+    return;
+  }
+  const lines: string[] = [
+    `mode: ${summary.mode}`,
+    `baseSha: ${summary.baseSha}`,
+    `headSha: ${summary.headSha}`,
+  ];
+  if (summary.reviewTarget) {
+    const [first, ...rest] = summary.reviewTarget.split("\n");
+    lines.push(`reviewTarget: ${first}`);
+    for (const line of rest) lines.push(`  ${line}`);
+  }
+  lines.push(`changedFiles: ${summary.changedFiles.length}`);
+  for (const file of summary.changedFiles) {
+    lines.push(`  ${file.path} (${file.surface})`);
+  }
+  lines.push(`patchBytes: ${summary.patchBytes}`);
+  const statLines = summary.patchStat.split("\n").filter((line) => line.trim());
+  if (statLines.length > 0) {
+    lines.push("patchStat:");
+    for (const line of statLines) lines.push(`  ${line}`);
+  } else {
+    lines.push("patchStat: (empty)");
+  }
+  lines.push(
+    `prMeta: ${summary.prMeta.present ? `present (#${summary.prMeta.number})` : "absent"}`
+  );
+  lines.push(
+    `agentsMd: ${summary.agentsMd.present ? `present (${summary.agentsMd.bytes} bytes)` : "absent"}`
+  );
+  lines.push(`untrackedSkipped: ${summary.untrackedSkipped.length}`);
+  for (const skipped of summary.untrackedSkipped) {
+    lines.push(`  ${skipped.path} (${skipped.reason}, ${skipped.bytes} bytes)`);
+  }
+  lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
+  lines.push(`largePath: ${summary.largePath}`);
+  process.stdout.write(`${lines.join("\n")}\n`);
 }
