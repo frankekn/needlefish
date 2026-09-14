@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.6 — 2026-09-14
 
 - Runner: restore the optional `onStderr` callback on `runManagedRunnerProcess`.
   It shipped publicly through v0.4.1 and was removed in v0.4.3 as unused runner

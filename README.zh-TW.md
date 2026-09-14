@@ -498,7 +498,7 @@ alias）。不做此步驟時，請用完整路徑呼叫：
 
 ## 狀態
 
-v0.4.5。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
+v0.4.6。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
 fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
 dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）、本地
 `--dry-run` bundle 預覽、機器可讀的 skip reason、非阻塞 scope callouts，以及
