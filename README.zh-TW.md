@@ -116,7 +116,7 @@ hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failur
 
 **更新於 2026-09-10**——量測於 2026-09-06；全部 11 條公開 lane 各跑 87 個情境 × 3 次，包含 sealed holdout，Class R gate，anti-cheat v2；commit `a5a0c68`，prompt `e62d0889fc704541`，fixture set `e9923bbc7753a04a`，scorer `8bbc6152d8b45a43`；每份 report 皆為 `cheatDetectedCount: 0`。
 
-**排名 lane。** **目前部署 lane：DeepSeek V4.1 Flash（`deepseek-v4.1-flash-expires-on-0910` @ `high`）**（2026-09-10 選定）——hosted action 與 reusable workflow 的預設。粗體標示目前部署的 lane 與每欄最佳值。
+**排名 lane。** **目前部署 lane：DeepSeek V4.1 Flash（`deepseek-v4.1-flash-expires-on-0910` @ `high`）**（2026-09-10 選定）——本次發布選定並記錄於 leaderboard 的 lane；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示目前部署的 lane 與每欄最佳值。
 
 | 名次 | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | 平均 |
 | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |

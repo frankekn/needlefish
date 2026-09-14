@@ -147,8 +147,8 @@ export function renderBenchmarkBlock(
 
   const rankedIntro = deployment
     ? zh
-      ? `**排名 lane。** **目前部署 lane：${deployment.config.name}（\`${deployment.report.model}\` @ \`${deployment.report.effort}\`）**（${manifest.updated} 選定）——hosted action 與 reusable workflow 的預設。粗體標示目前部署的 lane 與每欄最佳值。`
-      : `**Ranked lanes.** **Deployed lane: ${deployment.config.name} (\`${deployment.report.model}\` at \`${deployment.report.effort}\` effort)** (selected ${manifest.updated}) — what the hosted action and reusable workflow run by default. Bold marks the deployed lane and the best value in each column.`
+      ? `**排名 lane。** **目前部署 lane：${deployment.config.name}（\`${deployment.report.model}\` @ \`${deployment.report.effort}\`）**（${manifest.updated} 選定）——本次發布選定並記錄於 leaderboard 的 lane；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示目前部署的 lane 與每欄最佳值。`
+      : `**Ranked lanes.** **Deployed lane: ${deployment.config.name} (\`${deployment.report.model}\` at \`${deployment.report.effort}\` effort)** (selected ${manifest.updated}) — the lane selected and recorded in the leaderboard for this release; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.`
     : zh
       ? "**排名 lane。** 粗體標示每欄最佳值。"
       : "**Ranked lanes.** Bold marks the best value in each column.";
