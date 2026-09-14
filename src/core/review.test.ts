@@ -2401,23 +2401,28 @@ test("review traces one parse-failed raw event for an empty successful runner at
 	);
 });
 
-test("docs-only fast path returns pass even when NEEDLEFISH_LARGE_* env is invalid", async (t) => {
+test("docs-only fast path returns pass even when timeout/size env is invalid", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const previous = {
 		largeChars: process.env.NEEDLEFISH_LARGE_PATCH_CHARS,
+		reviewTimeout: process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS,
 		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
 	};
 	t.after(() => {
 		if (previous.largeChars === undefined)
 			delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
 		else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previous.largeChars;
+		if (previous.reviewTimeout === undefined)
+			delete process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
+		else process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = previous.reviewTimeout;
 		if (previous.noFastPath === undefined)
 			delete process.env.NEEDLEFISH_NO_FAST_PATH;
 		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
 		rmSync(tmp, { recursive: true, force: true });
 	});
 	process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "not-a-number";
+	process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "not-a-number";
 	delete process.env.NEEDLEFISH_NO_FAST_PATH;
 
 	const bundle: Bundle = {
@@ -2435,9 +2440,11 @@ test("docs-only fast path returns pass even when NEEDLEFISH_LARGE_* env is inval
 		focus: null,
 	};
 
-	// review() used to short-circuit on docs-only before ever evaluating
-	// isLarge(), so an invalid NEEDLEFISH_LARGE_* value must not turn this
-	// previously-passing input into a throw.
+	// The docs-only short-circuit runs no model pipeline, so neither the size
+	// thresholds (isLarge, NEEDLEFISH_LARGE_*) nor the shared model deadline
+	// (NEEDLEFISH_REVIEW_TIMEOUT_MS) may be parsed ahead of it: an invalid
+	// value for either must not turn this previously-passing input into a
+	// throw. Both envs are set to garbage here to pin that ordering.
 	const result = await review(bundle);
 	assert.equal(result.verdict, "pass");
 	assert.match(result.summary, /Docs-only/);
