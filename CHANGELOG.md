@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Runner: restore the optional `onStderr` callback on `runManagedRunnerProcess`.
+  It shipped publicly through v0.4.1 and was removed in v0.4.3 as unused runner
+  state, which is a breaking change for consumers deep-importing
+  `needlefish/dist/shared/runner-process.js` (the package ships `dist` and
+  declares no `exports` gate). Restored before the removal reached npm (#122).
+- Core: parse `NEEDLEFISH_REVIEW_TIMEOUT_MS` only past the docs-only fast path,
+  so an invalid value no longer throws on a docs-only change that would
+  otherwise pass. The docs-only test now pins both that env and
+  `NEEDLEFISH_LARGE_*` (#138).
+- Docs: the benchmark's `Deployed` marker no longer claims to be what the hosted
+  action and reusable workflow run by default — both default to `gpt-5.6-terra`,
+  and a self-managed runner bundle can pin a different lane again (#139).
+
 ## 0.4.5 — 2026-09-13
 
 - Runner: `NEEDLEFISH_REVIEW_TIMEOUT_MS` sets one monotonic deadline shared by
