@@ -14,9 +14,8 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner override (codex, claude, opencode, grok, pi, acp). Leave empty: the runner host's self-managed bundle decides the lane."
         required: false
-        default: codex
       model:
         description: Optional model id for the selected runner
         required: false
@@ -48,10 +47,9 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner override (codex, claude, opencode, grok, pi, acp). Leave empty: the runner host's self-managed bundle decides the lane."
         type: string
         required: false
-        default: codex
       model:
         description: Optional model id for the selected runner
         type: string
@@ -99,6 +97,9 @@ concurrency:
 jobs:
   review:
     runs-on: ${{ inputs.runs_on || github.event.inputs.runs_on || 'self-hosted' }}
+    # Hard ceiling above the 60-minute process watchdog below, so a wedged review
+    # cannot hold a self-hosted runner slot indefinitely.
+    timeout-minutes: 75
     if: inputs.pr_number != '' || github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Resolve PR refs
@@ -261,14 +262,20 @@ jobs:
         working-directory: target
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
-          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
+          # Empty by default: lane selection belongs to the runner host's self-managed
+          # bundle (its loader pins runner, model, and effort). A non-empty override
+          # is for manual dispatches and evals only.
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
-          CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          # *_INPUT: an empty caller input must not overwrite an effort the runner
+          # host pins in its service environment or bundle loader.
+          CODEX_REASONING_EFFORT_INPUT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
           # The base URL is not secret; a repo variable lets pull_request events
           # (which carry no workflow inputs) use the same proxy route that a
           # dispatch with codex_proxy_base_url uses. Inputs win when supplied.
@@ -291,6 +298,23 @@ jobs:
             echo "PR number must be a positive integer, received '$PR_NUM'." >&2
             exit 1
           fi
+          if [ -n "${CODEX_REASONING_EFFORT_INPUT:-}" ]; then export CODEX_REASONING_EFFORT="$CODEX_REASONING_EFFORT_INPUT"; fi
+          # Proxy inputs are translated whenever the pair is supplied, independent
+          # of which runner the caller or the host bundle selects. A half pair is
+          # an error only when the caller explicitly asked for codex; any other
+          # runner ignores the codex-only inputs.
+          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
+            export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"
+            export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"
+            if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
+          elif [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && { [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; }; then
+            if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
+              echo "Codex proxy base URL and API key must be supplied together." >&2
+              exit 1
+            fi
+          elif [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then
+            export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"
+          fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
             if [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
               export CODEX_BIN="$HOME/.local/bin/codex"
@@ -305,15 +329,6 @@ jobs:
               exit 1
             fi
             export CODEX_BIN="$codex_bin"
-            if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
-              if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
-                echo "Codex proxy base URL and API key must be supplied together." >&2
-                exit 1
-              fi
-              export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"
-              export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"
-            fi
-            if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
           fi
           args=(--github --pr "$PR_NUM")
           if [ -z "$NEEDLEFISH_MODEL_INPUT" ]; then
@@ -326,7 +341,7 @@ jobs:
           if [ -z "$CODEX_REASONING_EFFORT" ]; then
             case "$NEEDLEFISH_MODEL_INPUT" in
               gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
-              gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
+              gpt-5.6-terra) export CODEX_REASONING_EFFORT="high" ;;
             esac
           fi
           if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
@@ -340,7 +355,26 @@ jobs:
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
-          "$NEEDLEFISH_BIN" "${args[@]}"
+          # Review deadline (needlefish stops starting model calls past it) and a
+          # process watchdog above it. A watchdog kill leaves the in-progress
+          # check without a verdict, so it is closed as a failure here rather
+          # than left pending for the reconcile job to re-dispatch.
+          export NEEDLEFISH_REVIEW_TIMEOUT_MS="${NEEDLEFISH_REVIEW_TIMEOUT_MS:-3300000}"
+          set +e
+          timeout --signal=TERM --kill-after=60s 3600s "$NEEDLEFISH_BIN" "${args[@]}"
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            check_id=$(gh api "repos/$REPO/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&filter=latest" --jq '.check_runs[] | select(.status != "completed") | .id' | head -n 1 || true)
+            if [ -n "$check_id" ]; then
+              gh api -X PATCH "repos/$REPO/check-runs/$check_id" \
+                -f status=completed \
+                -f conclusion=failure \
+                -f 'output[title]=Needlefish: review failed' \
+                -f 'output[summary]=Needlefish exceeded the process watchdog after its review deadline.' >/dev/null
+            fi
+          fi
+          exit "$status"
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Crashed runs would

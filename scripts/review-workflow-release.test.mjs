@@ -125,7 +125,7 @@ test("review forwards the optional opencode idle timeout without exporting an em
 	);
 });
 
-test("review gives the Terra xhigh lane a production timeout", () => {
+test("review keeps the production timeout and fast tier for an explicit Terra xhigh lane", () => {
 	assert.match(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"/);
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
 });
@@ -137,7 +137,9 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL \}\}/);
 	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
-	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
+	// The pair is exported whenever both are supplied, for any runner; a half
+	// pair is rejected only when the caller explicitly selected codex.
+	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] && \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /if \[ -z "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -z "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /export CODEX_PROXY_BASE_URL="\$CODEX_PROXY_BASE_URL_INPUT"/);
 	assert.match(reviewScript, /export CODEX_PROXY_API_KEY="\$CODEX_PROXY_API_KEY_INPUT"/);
