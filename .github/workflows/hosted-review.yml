@@ -20,8 +20,6 @@ jobs:
     uses: ./.github/workflows/review.yml
     with:
       pr_number: ${{ inputs.pr_number || inputs.pr }}
-      runner: codex
-      model: gpt-5.6-terra
-      codex_reasoning_effort: xhigh
+      # No runner/model here: the runner host's self-managed bundle pins the lane.
       runs_on: Linux
     secrets: inherit

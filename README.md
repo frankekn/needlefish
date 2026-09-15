@@ -394,9 +394,8 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
-      runner: codex
-      model: gpt-5.6-terra
-      codex_reasoning_effort: xhigh
+      # No runner/model/effort here. The runner host's self-managed bundle pins
+      # the lane; changing the model is a runner-side change, never a caller edit.
     secrets: inherit
 ```
 
@@ -413,10 +412,14 @@ the selected immutable binary. A missing or invalid installation fails closed.
 The manual `needlefish-deploy` workflow only checks the installed version; source
 pushes and upstream releases cannot replace it.
 
-Keep Codex CLI `0.153.4` available as the same service account. The review lane is
-`gpt-5.6-terra / xhigh / fast`. The bundle includes the proxy tier forwarding fix:
-fast is passed to Codex even with a custom provider. Provider acceptance and the
-service tier actually delivered still require provider evidence.
+The bundle's loader pins the review lane (runner, model, effort, credentials)
+for every job on that host, so callers pass no `runner`/`model` inputs and a
+model change touches only the runner. Explicit `runner`/`model` inputs remain
+for manual dispatches and evals; with `runner: codex` the workflow still
+requires Codex CLI `0.153.4` and defaults `gpt-5.6-terra` to `high`, and an
+explicit `codex_reasoning_effort: xhigh` restores the 20-minute per-call timeout
+and the `fast` service tier. Provider acceptance and the service tier actually
+delivered still require provider evidence.
 
 
 ```bash

@@ -14,9 +14,8 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner override (codex, claude, opencode, grok, pi, acp). Leave empty: the runner host's self-managed bundle decides the lane."
         required: false
-        default: codex
       model:
         description: Optional model id for the selected runner
         required: false
@@ -48,10 +47,9 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner override (codex, claude, opencode, grok, pi, acp). Leave empty: the runner host's self-managed bundle decides the lane."
         type: string
         required: false
-        default: codex
       model:
         description: Optional model id for the selected runner
         type: string
@@ -264,7 +262,10 @@ jobs:
           PR_BASE_SHA: ${{ steps.refs.outputs.base }}
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
-          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
+          # Empty by default: lane selection belongs to the runner host's self-managed
+          # bundle (its loader pins runner, model, and effort). A non-empty override
+          # is for manual dispatches and evals only.
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner }}
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
@@ -326,7 +327,7 @@ jobs:
           if [ -z "$CODEX_REASONING_EFFORT" ]; then
             case "$NEEDLEFISH_MODEL_INPUT" in
               gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
-              gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
+              gpt-5.6-terra) export CODEX_REASONING_EFFORT="high" ;;
             esac
           fi
           if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
