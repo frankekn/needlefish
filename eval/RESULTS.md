@@ -8,7 +8,8 @@ paths.
 ## Current decision
 
 **Deployed lane: Codex `gpt-5.6-terra` at `high` effort** (selected
-2026-09-07). Grok 4.6 ranks first alone; Terra high and GPT-5.6 Sol share
+2026-09-07; superseded on the runners on 2026-09-15 by the DeepSeek Harness
+lane qualified in §27, which cannot yet be published in the ranked table). Grok 4.6 ranks first alone; Terra high and GPT-5.6 Sol share
 rank 2. Four lanes score in the same band but miss a hard gate and receive
 no rank (table below).
 
@@ -1380,3 +1381,72 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. DeepSeek Harness (acp) lane on the direct DeepSeek API — Class R 2026-09-15
+
+Trigger: the review runners were re-pinned on 2026-09-15 to needlefish's `acp`
+runner driving the DeepSeek Harness (`dsh` 0.1.5-rc.1, acp profile) against the
+direct DeepSeek API (`deepseek-flash`, reasoning high, no proxy), replacing the
+Pi/Grok and Codex lanes. No report existed for that harness; the leaderboard's
+DeepSeek entry (§26) was a Pi run of a promotional model id that the API no
+longer lists. This section qualifies the deployed lane under the standing
+criteria (full fixture set, holdouts included, x3, Class R, anti-cheat v2:
+Tier-1 per the flicker rule, recall >= 0.84, FP <= 0.13, noise <= 0.12, zero
+cheat).
+
+Invocation (commit `d333e4e`, prompt `e62d0889fc704541`, fixture set
+`e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`):
+
+```text
+node --import tsx eval/run.ts --runner acp --model deepseek-flash --effort high \
+  --provider DeepSeek --route "DeepSeek API direct via DeepSeek Harness acp profile" \
+  --runner-version "dsh 0.1.5-rc.1" --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 \
+  --env NEEDLEFISH_ACP_BIN=<wrapper: exec dsh --profile acp, DSH_PERMISSION_MODE=danger-full-access> \
+  --env NEEDLEFISH_ACP_AUTH_ENV_VARS=DEEPSEEK_API_KEY --env NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_API_KEY \
+  --draws 3 --concurrency 3 --holdout include --gate-class R
+```
+
+`--model`/`--effort` are labels for the `acp` runner; the model and effort are
+pinned in the DSH home (`cordis.patch.yml`: `acp` and `agent-default-model` →
+`deepseek-official/deepseek-flash`, telemetry off). needlefish's ACP client
+denies every agent→client permission request, so DSH runs with approval
+"never"; the throwaway clone is the isolation boundary.
+
+Results ([full report](results/2026-09-15-acp-dsh-deepseek-flash-high-x3.json),
+261/261 draws, 81 minutes, mean 58 s per review):
+
+| Metric | Value | Gate |
+| --- | ---: | --- |
+| Anchored recall | 0.9454 | >= 0.84 |
+| False positives (of 72 clean draws) | 0.0000 (0) | <= 0.13 |
+| Positive noise / review | 0.0328 | <= 0.12 |
+| Tier-1 recall | 0.9524 (20/21): `real-pr1-self-review-tool-checkout` 2/3 | flicker rule |
+| Tier-2 / Tier-3 recall | 0.9815 / 0.8704 | diagnostic |
+| Verdict match / line-anchor validity | 0.9885 / 0.9502 | diagnostic |
+| Cheat detected / bait exposure | 0 / 159 (raw-transcript only) | 0 |
+
+x3 confirmation on the missed fixture
+([report](results/2026-09-15-acp-dsh-deepseek-flash-high-tier1-confirm-x3.json)):
+`real-pr1-self-review-tool-checkout` 3/3. This is the same fixture Terra xhigh
+and GLM-5.3-Flash flickered on in §26. Under the interim gate published with
+the README block (at least 20/21 Tier-1 successes and at least 2/3 on every
+fixture) the lane qualifies outright; under the stricter "no Tier-1 miss in the
+full report" wording above it is confirmed but unranked.
+
+**Result: PASS.** Recall is above every ranked lane except Grok 4.6, false
+positives are zero, noise is the second lowest recorded, and the lane is
+roughly 4x faster than Grok 4.6 and on par with the Codex lanes.
+
+Two provenance notes. (1) A first full run finished earlier the same day with
+recall 0.9563, FP 0.0139, noise 0.0383, Tier-1 1.0; its report file was
+overwritten by a `--dry-run` invoked with the same `--report` path before it
+was copied here, so only the run log (261/261 ok) survives and it is not
+counted. (2) `privateEnvironment` is `true` for this report: the `acp`
+runner's credential declaration (`NEEDLEFISH_ACP_AUTH_ENV_VARS`, the key
+variable) and its launcher path are credential-class entries that the
+attestation renders as `<required>`, and `gen-readme`/`gen-site` refuse such
+lanes ("public lanes require a public runner-environment attestation"). The
+lane therefore does not appear in `leaderboard.json`, the README block, or the
+site until the eval tooling learns a public identity for acp launchers
+(launcher digest plus an auth-source marker, as Pi has with `PI_AUTH_SOURCE`
+and `PI_MODELS_JSON`). That tooling change is a separate PR.
