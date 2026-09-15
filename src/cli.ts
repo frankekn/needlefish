@@ -12,6 +12,7 @@ import {
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
+import { reviewStatus } from "./shared/review-status.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
 import { readFileSync } from "node:fs";
 
@@ -94,6 +95,7 @@ async function main() {
       } else {
         printLocal(result);
       }
+      process.exitCode = reviewStatus(result.verdict).exitCode;
       return;
     }
   }
