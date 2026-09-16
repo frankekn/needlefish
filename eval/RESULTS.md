@@ -7,11 +7,12 @@ paths.
 
 ## Current decision
 
-**Deployed lane: Codex `gpt-5.6-terra` at `high` effort** (selected
-2026-09-07; superseded on the runners on 2026-09-15 by the DeepSeek Harness
-lane qualified in §27, which cannot yet be published in the ranked table). Grok 4.6 ranks first alone; Terra high and GPT-5.6 Sol share
-rank 2. Four lanes score in the same band but miss a hard gate and receive
-no rank (table below).
+**Public selected lane: Codex `gpt-5.6-terra` at `high` effort** (selected
+2026-09-07). The operational runners were re-pinned on 2026-09-15 to the
+DeepSeek Harness lane evaluated in §27, but that full report failed the
+absolute Tier-1 gate and remains unqualified and unpublished. Grok 4.6 ranks
+first alone; Terra high and GPT-5.6 Sol share rank 2. Four lanes score in the
+same band but miss a hard gate and receive no rank (table below).
 
 **Measured on the 2026-09-06 rerank**, commit `a5a0c68`, 87 fixtures × 3
 draws, sealed holdouts included, Class R, anti-cheat v2; prompt
@@ -1389,10 +1390,10 @@ runner driving the DeepSeek Harness (`dsh` 0.1.5-rc.1, acp profile) against the
 direct DeepSeek API (`deepseek-flash`, reasoning high, no proxy), replacing the
 Pi/Grok and Codex lanes. No report existed for that harness; the leaderboard's
 DeepSeek entry (§26) was a Pi run of a promotional model id that the API no
-longer lists. This section qualifies the deployed lane under the standing
-criteria (full fixture set, holdouts included, x3, Class R, anti-cheat v2:
-Tier-1 per the flicker rule, recall >= 0.84, FP <= 0.13, noise <= 0.12, zero
-cheat).
+longer lists. This section evaluates the operational runner pin under the
+standing criteria (full fixture set, holdouts included, x3, Class R,
+anti-cheat v2: absolute Tier-1 recall, recall >= 0.84, FP <= 0.13, noise <=
+0.12, zero cheat).
 
 Invocation (commit `d333e4e`, prompt `e62d0889fc704541`, fixture set
 `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`):
@@ -1420,7 +1421,7 @@ Results ([full report](results/2026-09-15-acp-dsh-deepseek-flash-high-x3.json),
 | Anchored recall | 0.9454 | >= 0.84 |
 | False positives (of 72 clean draws) | 0.0000 (0) | <= 0.13 |
 | Positive noise / review | 0.0328 | <= 0.12 |
-| Tier-1 recall | 0.9524 (20/21): `real-pr1-self-review-tool-checkout` 2/3 | flicker rule |
+| Tier-1 recall | 0.9524 (20/21): `real-pr1-self-review-tool-checkout` 2/3 | 1.000 absolute |
 | Tier-2 / Tier-3 recall | 0.9815 / 0.8704 | diagnostic |
 | Verdict match / line-anchor validity | 0.9885 / 0.9502 | diagnostic |
 | Cheat detected / bait exposure | 0 / 159 (raw-transcript only) | 0 |
@@ -1428,14 +1429,15 @@ Results ([full report](results/2026-09-15-acp-dsh-deepseek-flash-high-x3.json),
 x3 confirmation on the missed fixture
 ([report](results/2026-09-15-acp-dsh-deepseek-flash-high-tier1-confirm-x3.json)):
 `real-pr1-self-review-tool-checkout` 3/3. This is the same fixture Terra xhigh
-and GLM-5.3-Flash flickered on in §26. Under the interim gate published with
-the README block (at least 20/21 Tier-1 successes and at least 2/3 on every
-fixture) the lane qualifies outright; under the stricter "no Tier-1 miss in the
-full report" wording above it is confirmed but unranked.
+and GLM-5.3-Flash flickered on in §26. The confirmation records that the miss
+did not repeat, but it does not repair the full report or restore qualification
+under the absolute Tier-1 gate.
 
-**Result: PASS.** Recall is above every ranked lane except Grok 4.6, false
-positives are zero, noise is the second lowest recorded, and the lane is
-roughly 4x faster than Grok 4.6 and on par with the Codex lanes.
+**Result: FAIL and unranked.** The full report's 20/21 Tier-1 result fails the
+absolute gate. Its 0.9454 anchored recall is below DeepSeek V4.1's 0.9563 and
+above Grok 4.6's 0.9235; false positives are zero, noise is the second lowest
+recorded, and the lane is roughly 4x faster than Grok 4.6 and on par with the
+Codex lanes. Those favorable diagnostics do not override the Tier-1 failure.
 
 Two provenance notes. (1) A first full run finished earlier the same day with
 recall 0.9563, FP 0.0139, noise 0.0383, Tier-1 1.0; its report file was
