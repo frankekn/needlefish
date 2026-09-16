@@ -2,8 +2,10 @@ import {
 	runCodex,
 	extractJson,
 	isRunnerSafetyError,
+	RunnerOperationalError,
 	type CodexOptions,
 } from "../shared/codex.js";
+import { preflightReview, type ReviewPreflight } from "../shared/runner-capabilities.js";
 import {
 	parsePositiveInteger,
 	type RunnerOptions,
@@ -59,7 +61,7 @@ interface ReviewRun {
 	// sequences. Mutable accumulator, same pattern as stats.
 	readonly failedRawOutputs: string[];
 	// Raw text of every SUCCESSFUL attempt (trace-gated collection): some pass
-	// outputs are consumed but not retained in the final result (map hotspot
+	// outputs are consumed but never retained in the final result (map hotspot
 	// why/edges, critic-pruned residual text) — the canary scan needs the full
 	// transcript, not just what survived into ReviewResult.
 	readonly rawOutputs: string[];
@@ -996,13 +998,12 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	);
 }
 
-// The two dispatch questions review() asks of a bundle, answered in one place
-// so --dry-run can report what a real run would do without duplicating
-// thresholds. review() itself consumes this; the private helpers stay the
-// only threshold owners.
-export function reviewPlan(bundle: Bundle): {
+// Dispatch and capability decisions share one owner for real reviews and
+// --dry-run. Preflight metadata stays outside the model bundle.
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
+	readonly runnerPreflight: ReviewPreflight;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
 	// Keep review()'s original evaluation order: the docs-only short-circuit
@@ -1014,6 +1015,7 @@ export function reviewPlan(bundle: Bundle): {
 	return {
 		docsOnlyFastPath,
 		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		runnerPreflight: preflightReview(docsOnlyFastPath, runnerOptions),
 	};
 }
 
@@ -1023,7 +1025,7 @@ export async function review(
 	onTrace?: ReviewTraceObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
-	const plan = reviewPlan(bundle);
+	const plan = reviewPlan(bundle, runnerOptions);
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
@@ -1045,6 +1047,13 @@ export async function review(
 		};
 	}
 
+	const preflight = plan.runnerPreflight;
+	if (preflight.status !== "ready") {
+		throw new RunnerOperationalError(
+			preflight.status === "unsupported" ? preflight.message : "Repository-read preflight required.",
+		);
+	}
+
 	// Read only past the docs-only short-circuit, for the same reason
 	// reviewPlan() defers isLarge(): the fast path runs no model pipeline and
 	// never consumes reviewDeadlineMs, so an invalid NEEDLEFISH_REVIEW_TIMEOUT_MS
@@ -1059,7 +1068,8 @@ export async function review(
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
-		runnerOptions,
+		// Resolve once: every pass uses the runner whose capability was checked.
+		runnerOptions: { ...runnerOptions, runner: preflight.runner },
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],
