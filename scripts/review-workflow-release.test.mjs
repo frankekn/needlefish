@@ -295,8 +295,11 @@ for (const { name, inputs, expected } of proxyCases) {
   });
 }
 
+const credentialUrl = new URL(callerUrl);
+credentialUrl.username = "user";
+credentialUrl.password = "fixture-url-secret";
 for (const pair of [
-  { CODEX_PROXY_BASE_URL_INPUT: "https://user:fixture-url-secret@caller.invalid/v1" },
+  { CODEX_PROXY_BASE_URL_INPUT: credentialUrl.href },
   { CODEX_PROXY_API_KEY_INPUT: "fixture-caller-key" },
 ]) {
   test(`explicit Codex rejects ${Object.keys(pair)[0]} alone without logging credentials`, t => {
