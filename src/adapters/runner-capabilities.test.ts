@@ -165,7 +165,7 @@ for (const mode of ["local", "pr"] as const) {
 for (const runner of ["openai", "acp"] as const) {
 	test(`GitHub ${runner} completes its pending check as failure, not a passing review`, (t) => {
 		const f = fixture(t);
-		const result = f.cli(["--github", "--pr", "7", "--runner", runner]);
+		const result = f.cli(["github", "--pr", "7", "--runner", runner]);
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /Unsupported runner capability/);
 		const posts = records(f.posts);
@@ -183,7 +183,7 @@ for (const runner of ["openai", "acp"] as const) {
 for (const mode of ["local", "pr", "github"] as const) {
 	test(`${mode} docs-only policy skip still needs no repository-capable runner`, (t) => {
 		const f = fixture(t, true);
-		const args = mode === "local" ? ["--json"] : mode === "pr" ? ["pr", "7", "--json"] : ["--github", "--pr", "7"];
+		const args = mode === "local" ? ["--json"] : mode === "pr" ? ["pr", "7", "--json"] : ["github", "--pr", "7"];
 		const result = f.cli(args);
 		assert.equal(result.status, 0, result.stderr);
 		assert.match(result.stdout, /model review skipped/);
