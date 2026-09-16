@@ -370,7 +370,7 @@ jobs:
               gh api -X PATCH "repos/$REPO/check-runs/$check_id" \
                 -f status=completed \
                 -f conclusion=failure \
-                -f 'output[title]=Needlefish: review failed' \
+                -f 'output[title]=Needlefish: watchdog timeout' \
                 -f 'output[summary]=Needlefish exceeded the process watchdog after its review deadline.' >/dev/null
             fi
           fi

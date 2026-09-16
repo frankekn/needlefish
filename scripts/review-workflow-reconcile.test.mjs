@@ -144,6 +144,7 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 }
 
 const INFRA = checkRun("Needlefish: review failed");
+const WATCHDOG = checkRun("Needlefish: watchdog timeout");
 
 test("workflow shape: run-name carries the PR number and check-runs are read with filter=all", () => {
 	assert.match(
@@ -184,6 +185,12 @@ test("reconcile treats a non-infra failure as a terminal verdict", () => {
 	const r = runReconcile({
 		checkRunsAll: [checkRun("Needlefish: changes_requested — Fix the thing", "failure")],
 	});
+	assert.equal(r.dispatched, 0);
+	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+});
+
+test("reconcile does not re-dispatch a watchdog timeout", () => {
+	const r = runReconcile({ checkRunsAll: [WATCHDOG] });
 	assert.equal(r.dispatched, 0);
 	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
 });
