@@ -41,10 +41,9 @@ validation, duplicate behavior — never style.
   [Benchmarks](#benchmarks)).
 
 Small PRs get a review pass plus an adversarial critic; large PRs add map and
-deep passes before the same critic. Codex is the default runner; Claude Code,
-opencode, Grok, and pi are supported too. Direct OpenAI-compatible HTTP is
-prompt-only and cannot run this repository-reading review pipeline. ACP agents
-require an explicit operator declaration for a tested launcher.
+deep passes before the same critic. Codex is the default runner — Claude
+Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP agents are
+supported too.
 
 <p align="center">
   <img src="assets/demo.png" alt="A real needlefish inline review comment: a P0 authorization bug caught on the diff" width="880">
@@ -439,13 +438,6 @@ checks, checkout credential isolation, and hosted finalization remain enforced.
 `openai`, `grok`, `pi`, or `acp`; `src/shared/codex.ts` invokes the selected
 runner. Common options:
 
-The review pipeline requires repository access from every model pass. The
-direct-HTTP `openai` transport is therefore rejected before any model request,
-and an `acp` launcher is rejected unless an operator has declared that exact
-tested executable repository-capable. See
-[Runner capability preflight](docs/runner-capabilities.md) for the compatibility
-change, dry-run diagnostics, and ACP declaration procedure.
-
 | option | env | default |
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
@@ -486,8 +478,8 @@ parentheses are the executable names used when the `*_BIN` var is unset:
 | `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |
 | `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`), `PI_AUTH_MODE` (`oauth` or `proxy`; defaults to OAuth for `openai-codex`, proxy for an explicit provider) |
-| `acp` | `NEEDLEFISH_ACP_BIN` (required) | review requires the tested launcher's `NEEDLEFISH_ACP_REPOSITORY_READ_SHA256` declaration |
-| `openai` | none (HTTP, not a CLI) | prompt-only transport; rejected by the review preflight before HTTP. Low-level configuration remains `OPENAI_API_KEY`, `--model` / `OPENAI_MODEL`, and `OPENAI_BASE_URL` |
+| `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
+| `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
 ### How each runner is launched
 
@@ -506,9 +498,7 @@ parentheses are the executable names used when the `*_BIN` var is unset:
   <level>` and its default full toolset.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
-  applies the same process-group kill path as the CLI runners. Review
-  eligibility additionally requires the operator declaration documented in
-  [Runner capability preflight](docs/runner-capabilities.md).
+  applies the same process-group kill path as the CLI runners.
 
 Every CLI runner executes inside a **throwaway clean clone** at the review
 head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After
