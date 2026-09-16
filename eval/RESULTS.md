@@ -10,9 +10,12 @@ paths.
 **Public selected lane: Codex `gpt-5.6-terra` at `high` effort** (selected
 2026-09-07). The operational runners were re-pinned on 2026-09-15 to the
 DeepSeek Harness lane evaluated in §27, but that full report failed the
-absolute Tier-1 gate and remains unqualified and unpublished. Grok 4.6 ranks
-first alone; Terra high and GPT-5.6 Sol share rank 2. Four lanes score in the
-same band but miss a hard gate and receive no rank (table below).
+absolute Tier-1 gate and remains unqualified and unpublished. This is an
+invalid operational state pending rollback to the last qualified Terra high
+lane; this evidence-only change does not perform or verify that production
+rollback. Grok 4.6 ranks first alone; Terra high and GPT-5.6 Sol share rank 2.
+Four lanes score in the same band but miss a hard gate and receive no rank
+(table below).
 
 **Measured on the 2026-09-06 rerank**, commit `a5a0c68`, 87 fixtures × 3
 draws, sealed holdouts included, Class R, anti-cheat v2; prompt
@@ -1438,6 +1441,9 @@ absolute gate. Its 0.9454 anchored recall is below DeepSeek V4.1's 0.9563 and
 above Grok 4.6's 0.9235; false positives are zero, noise is the second lowest
 recorded, and the lane is roughly 4x faster than Grok 4.6 and on par with the
 Codex lanes. Those favorable diagnostics do not override the Tier-1 failure.
+Per the eval policy, the operational fleet must be rolled back to the last
+qualified Terra high lane before further production reviews; this report does
+not claim that rollback has occurred.
 
 Two provenance notes. (1) A first full run finished earlier the same day with
 recall 0.9563, FP 0.0139, noise 0.0383, Tier-1 1.0; its report file was
