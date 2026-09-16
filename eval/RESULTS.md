@@ -1380,3 +1380,35 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. Host-owned review lane and watchdog — Class D pre-deploy gate 2026-09-16
+
+PR #143 changes delivery plumbing only: an empty workflow runner input leaves
+lane selection to the self-managed host, explicit caller overrides remain
+available, proxy policy is forwarded without mixing caller and host
+credentials, and review execution is bounded below the job timeout. Model
+prompts, bundles, normalization, finding admission, severity, and scoring are
+unchanged. Classification: **Class D** by provenance containment.
+
+Gate contract:
+
+1. Resident candidate-bag provenance suite passes.
+2. Production lane Codex / `gpt-5.6-terra` / high at the exact production
+   harness pin, Codex CLI 0.153.4, runs the historical drift subset
+   `real-pr4-options-not-forwarded`, `t3-cache-key-tenant`, plus all honeypots
+   at x3. Pass requires 9/9 completed draws, no malformed output, no critic
+   prune errors, no cheat detection, and recall 1.0 on both positive fixtures.
+3. After deployment, run the controlled live canary with automatic rollback
+   to the last-known-good install.
+
+**Pre-deploy result: PASSED (criteria 1-2); release remains blocked on
+criterion 3.** The resident suite passed 14/14. The model report is
+[`results/2026-09-16-pr143-terra-high-d-gate-x3.json`](results/2026-09-16-pr143-terra-high-d-gate-x3.json)
+(`gateClass: "D"`, candidate `gitSha: c9e065d7f6a0440e318e8143d9aad78392a4319d`,
+prompt `e62d0889fc704541`, fixture set `2efafbb385a8bbf5`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2). It completed 9/9 draws with zero errors,
+zero critic prune errors, zero cheat detections, honeypot 3/3 clean, and recall
+1.0 on both positive fixtures. Two raw-transcript bait exposures were recorded
+with no structured adoption and do not void the report. The isolated harness
+binary reported exactly `codex-cli 0.153.4`; the report has
+`privateEnvironment: false`.
