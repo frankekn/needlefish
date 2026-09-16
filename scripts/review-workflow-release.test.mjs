@@ -137,9 +137,9 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL \}\}/);
 	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
-	// The pair is exported whenever both are supplied, for any runner; a half
-	// pair is rejected only when the caller explicitly selected codex.
-	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] && \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
+	// Either caller value replaces the whole pair, for any runner. Explicit
+	// Codex rejects a half pair here; delegated Codex rejects it in the core.
+	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /if \[ -z "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -z "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /export CODEX_PROXY_BASE_URL="\$CODEX_PROXY_BASE_URL_INPUT"/);
 	assert.match(reviewScript, /export CODEX_PROXY_API_KEY="\$CODEX_PROXY_API_KEY_INPUT"/);
@@ -223,4 +223,120 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref "\$default_branch" -f pr_number="\$PR_NUM"/,
 	);
 	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
+});
+
+// Exercise the real workflow shell. The installed-binary stub records only
+// fixture routing values, never ambient credentials or a credential value.
+function runProxyInputs(t, inputs = {}) {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-proxy-inputs-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const binary = join(root, "needlefish");
+  const captured = join(root, "captured.json");
+  const codex = join(root, "codex");
+  writeFileSync(codex, "#!/bin/sh\nprintf 'codex-cli 0.153.4\\n'\n");
+  chmodSync(codex, 0o755);
+  writeFileSync(binary, `#!/usr/bin/env node
+const fs = require('node:fs');
+const env = process.env;
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(captured)}, JSON.stringify({
+  args,
+  runner: args.includes('--runner') ? args[args.indexOf('--runner') + 1] : env.NEEDLEFISH_RUNNER,
+  required: env.NEEDLEFISH_CODEX_PROXY_REQUIRED || '',
+  url: env.CODEX_PROXY_BASE_URL || '',
+  keySource: env.CODEX_PROXY_API_KEY === 'fixture-caller-key' ? 'caller' : env.CODEX_PROXY_API_KEY === 'fixture-host-key' ? 'host' : 'none'
+}));
+`);
+  chmodSync(binary, 0o755);
+  const result = spawnSync("bash", ["-e", "-c", reviewScript], {
+    encoding: "utf8", timeout: 5000,
+    env: {
+      PATH: process.env.PATH, HOME: root, CODEX_BIN: codex,
+      NEEDLEFISH_BIN: binary, PR_NUM: "98", NEEDLEFISH_RUNNER: "codex",
+      NEEDLEFISH_RUNNER_INPUT: "", NEEDLEFISH_MODEL_INPUT: "",
+      NEEDLEFISH_TIMEOUT_MS_INPUT: "", OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
+      CODEX_REASONING_EFFORT: "", CODEX_REASONING_EFFORT_INPUT: "",
+      CODEX_PROXY_BASE_URL_INPUT: "", CODEX_PROXY_API_KEY_INPUT: "",
+      NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "", NEEDLEFISH_RECHECK_INPUT: "",
+      ...inputs,
+    },
+  });
+  assert.equal(result.error, undefined);
+  return { ...result, captured: existsSync(captured) ? JSON.parse(readFileSync(captured, "utf8")) : null };
+}
+
+const callerUrl = "https://caller.invalid/v1";
+const hostUrl = "https://host.invalid/v1";
+const hostProxy = { CODEX_PROXY_BASE_URL: hostUrl, CODEX_PROXY_API_KEY: "fixture-host-key", NEEDLEFISH_CODEX_PROXY_REQUIRED: "1" };
+const proxyCases = [
+  { name: "delegated required with no pair", inputs: { NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" }, expected: ["codex", "1", "", "none"] },
+  { name: "delegated URL only cannot use the host key", inputs: { ...hostProxy, CODEX_PROXY_BASE_URL_INPUT: callerUrl }, expected: ["codex", "1", callerUrl, "none"] },
+  { name: "delegated key only cannot use the host URL", inputs: { ...hostProxy, CODEX_PROXY_API_KEY_INPUT: "fixture-caller-key" }, expected: ["codex", "1", "", "caller"] },
+  { name: "optional delegated URL only still reaches validation", inputs: { CODEX_PROXY_BASE_URL_INPUT: callerUrl }, expected: ["codex", "", callerUrl, "none"] },
+  { name: "complete caller pair replaces host defaults", inputs: { ...hostProxy, CODEX_PROXY_BASE_URL_INPUT: callerUrl, CODEX_PROXY_API_KEY_INPUT: "fixture-caller-key" }, expected: ["codex", "1", callerUrl, "caller"] },
+  { name: "empty caller inputs retain host pair and policy", inputs: hostProxy, expected: ["codex", "1", hostUrl, "host"] },
+  { name: "caller required overrides optional host policy", inputs: { NEEDLEFISH_CODEX_PROXY_REQUIRED: "0", NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" }, expected: ["codex", "1", "", "none"] },
+  { name: "explicit Codex with no pair retains required", inputs: { NEEDLEFISH_RUNNER_INPUT: "codex", NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" }, expected: ["codex", "1", "", "none"] },
+  { name: "explicit Codex receives a complete caller pair", inputs: { NEEDLEFISH_RUNNER_INPUT: "codex", NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1", CODEX_PROXY_BASE_URL_INPUT: callerUrl, CODEX_PROXY_API_KEY_INPUT: "fixture-caller-key" }, expected: ["codex", "1", callerUrl, "caller"] },
+  { name: "delegated non-Codex is not blocked by required", inputs: { NEEDLEFISH_RUNNER: "claude", NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" }, expected: ["claude", "1", "", "none"] },
+  { name: "explicit non-Codex is not blocked by a half pair", inputs: { NEEDLEFISH_RUNNER_INPUT: "claude", CODEX_PROXY_BASE_URL_INPUT: callerUrl, NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" }, expected: ["claude", "1", callerUrl, "none"] },
+];
+
+for (const { name, inputs, expected } of proxyCases) {
+  test(`proxy forwarding: ${name}`, t => {
+    const result = runProxyInputs(t, inputs);
+    assert.equal(result.status, 0, result.stderr);
+    const captured = result.captured;
+    assert.ok(captured);
+    assert.deepEqual([captured.runner, captured.required, captured.url, captured.keySource], expected);
+    assert.equal(captured.args.includes("--runner"), Boolean(inputs.NEEDLEFISH_RUNNER_INPUT));
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+  });
+}
+
+for (const pair of [
+  { CODEX_PROXY_BASE_URL_INPUT: "https://user:fixture-url-secret@caller.invalid/v1" },
+  { CODEX_PROXY_API_KEY_INPUT: "fixture-caller-key" },
+]) {
+  test(`explicit Codex rejects ${Object.keys(pair)[0]} alone without logging credentials`, t => {
+    const result = runProxyInputs(t, { ...hostProxy, ...pair, NEEDLEFISH_RUNNER_INPUT: "codex", NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: "1" });
+    assert.equal(result.status, 1);
+    assert.equal(result.captured, null);
+    assert.match(result.stderr, /base URL and API key must be supplied together/);
+    assert.match(result.stderr, /Review has not started/);
+    assert.doesNotMatch(result.stdout + result.stderr, /fixture-(?:caller-key|host-key|url-secret)|caller\.invalid/);
+  });
+}
+
+// The workflow owns forwarding, not runner selection/validation. Replay the
+// captured configuration through the real runner boundary (no model process).
+// A zero deadline stops accepted configurations immediately after validation.
+test("core validation rejects incomplete forwarded Codex routes before any model call", async t => {
+  const { runCodex, RunnerOperationalError } = await import("../src/shared/codex.ts");
+  const names = ["CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY", "NEEDLEFISH_CODEX_PROXY_REQUIRED", "NEEDLEFISH_NO_RETRY"];
+  const previous = new Map(names.map(name => [name, process.env[name]]));
+  t.after(() => {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  process.env.NEEDLEFISH_NO_RETRY = "1";
+  for (const { name, inputs, expected } of proxyCases) {
+    const { captured, status } = runProxyInputs(t, inputs);
+    assert.equal(status, 0, name);
+    assert.ok(captured, name);
+    process.env.CODEX_PROXY_BASE_URL = captured.url;
+    process.env.CODEX_PROXY_API_KEY = captured.keySource === "none" ? "" : "fixture-key";
+    process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED = captured.required;
+    const incomplete = expected[0] === "codex" && (!expected[2] || expected[3] === "none");
+    await assert.rejects(runCodex("must not reach a model", {
+      runner: captured.runner, repoPath: "/must-not-be-opened", targetHeadSha: "a".repeat(40), reviewDeadlineMs: 0,
+    }), error => {
+      assert.ok(error instanceof RunnerOperationalError);
+      assert.match(error.message, incomplete ? /CODEX_PROXY_(?:BASE_URL|API_KEY) is required/ : /Needlefish review deadline exceeded/, name);
+      return true;
+    });
+  }
 });

@@ -299,21 +299,21 @@ jobs:
             exit 1
           fi
           if [ -n "${CODEX_REASONING_EFFORT_INPUT:-}" ]; then export CODEX_REASONING_EFFORT="$CODEX_REASONING_EFFORT_INPUT"; fi
-          # Proxy inputs are translated whenever the pair is supplied, independent
-          # of which runner the caller or the host bundle selects. A half pair is
-          # an error only when the caller explicitly asked for codex; any other
-          # runner ignores the codex-only inputs.
-          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
+          # Preserve caller policy even when the host selects the runner; an
+          # empty input must not clear a stricter host policy.
+          if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
+          # No caller pair: keep host defaults. Either caller value: replace BOTH
+          # (including an empty counterpart), never mix a caller URL with a host
+          # key. The resolved runner validates the pair; non-Codex ignores it.
+          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
             export CODEX_PROXY_BASE_URL="$CODEX_PROXY_BASE_URL_INPUT"
             export CODEX_PROXY_API_KEY="$CODEX_PROXY_API_KEY_INPUT"
-            if [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"; fi
-          elif [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && { [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; }; then
-            if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
-              echo "Codex proxy base URL and API key must be supplied together." >&2
-              exit 1
+            if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
+              if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then
+                echo "Codex proxy base URL and API key must be supplied together. Review has not started; complete the proxy settings and retry." >&2
+                exit 1
+              fi
             fi
-          elif [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -n "$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT" ]; then
-            export NEEDLEFISH_CODEX_PROXY_REQUIRED="$NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT"
           fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
             if [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
