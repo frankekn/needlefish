@@ -2,7 +2,6 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { review, reviewPlan } from "../core/review.js";
-import type { ReviewPreflight } from "../shared/runner-capabilities.js";
 import { renderMarkdown } from "../shared/render.js";
 import {
   changedFiles,
@@ -289,7 +288,6 @@ export interface DryRunReport {
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
-  readonly runnerPreflight: ReviewPreflight;
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
@@ -297,12 +295,12 @@ export interface DryRunReport {
 // the repo AGENTS.md policy text verbatim.
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(path.resolve(cwd), opts);
-  return { mode, bundle, ...reviewPlan(bundle, opts) };
+  return { mode, bundle, ...reviewPlan(bundle) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(path.resolve(cwd), prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle, opts) };
+  return { mode: "pr", bundle, ...reviewPlan(bundle) };
 }
 
 interface DryRunSummary {
@@ -318,7 +316,6 @@ interface DryRunSummary {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
-  readonly runnerPreflight: ReviewPreflight;
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -344,7 +341,6 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
-    runnerPreflight: report.runnerPreflight,
   };
 }
 
@@ -352,13 +348,6 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
-  const preflight = report.runnerPreflight;
-  if (preflight.status === "unsupported") {
-    process.stderr.write(`needlefish: ${preflight.message}\n`);
-    process.exitCode = 1;
-  }
-  // Keep --print-bundle exactly the model bundle, even when unsupported;
-  // the diagnostic and nonzero exit above must not contaminate that JSON.
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
     return;
@@ -402,12 +391,5 @@ export function printDryRun(
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
-  lines.push(`runnerPreflight: ${preflight.status}`);
-  if (preflight.status !== "not_required") {
-    lines.push(`runner: ${preflight.runner ?? "(unavailable)"}`);
-    lines.push(`requiredCapability: ${preflight.requiredCapability}`);
-    lines.push(`capability: ${preflight.capability}`);
-    if (preflight.status === "ready") lines.push(`capabilitySource: ${preflight.capabilitySource}`);
-  }
   process.stdout.write(`${lines.join("\n")}\n`);
 }
