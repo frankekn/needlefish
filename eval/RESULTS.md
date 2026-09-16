@@ -1441,9 +1441,10 @@ under the absolute Tier-1 gate.
 
 **Result: FAIL and unranked.** The full report's 20/21 Tier-1 result fails the
 absolute gate. Its 0.9454 anchored recall is below DeepSeek V4.1's 0.9563 and
-above Grok 4.6's 0.9235; false positives are zero, noise is the second lowest
-recorded, and the lane is roughly 4x faster than Grok 4.6 and on par with the
-Codex lanes. Those favorable diagnostics do not override the Tier-1 failure.
+above Grok 4.6's 0.9235; false positives are zero, and its 0.0328 noise is
+higher than Grok 4.6 and both 0.0219 GLM/DeepSeek V4 Vision lanes but lower
+than the Codex lanes. It is roughly 4x faster than Grok 4.6 and on par with
+the Codex lanes. Those favorable diagnostics do not override the Tier-1 failure.
 Per the eval policy, an available qualified lane must be selected and the
 operational fleet rolled back before further production reviews. The expired
 DeepSeek V4.1 promotional lane is not an operational option, and this report
