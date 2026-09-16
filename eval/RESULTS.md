@@ -1417,7 +1417,11 @@ node --import tsx eval/run.ts --runner acp --model deepseek-flash --effort high 
 pinned in the DSH home (`cordis.patch.yml`: `acp` and `agent-default-model` →
 `deepseek-official/deepseek-flash`, telemetry off). needlefish's ACP client
 denies every agent→client permission request, so DSH runs with approval
-"never"; the throwaway clone is the isolation boundary.
+"never"; the throwaway clone is the isolation boundary. Both report artifacts
+preserve the operator-attested exact normalized launcher and sanitized
+provider/model/effort/profile configuration in `acpConfiguration`, bound by
+SHA-256 digests. `/path/to/acp-wrapper` in `reproductionCommand` must implement
+that recorded launcher contract.
 
 Results ([full report](results/2026-09-15-acp-dsh-deepseek-flash-high-x3.json),
 261/261 draws, 81 minutes, mean 58 s per review):

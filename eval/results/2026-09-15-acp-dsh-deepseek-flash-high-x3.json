@@ -10,6 +10,18 @@
   "runnerEnvironment": "[[\"DEEPSEEK_API_KEY\",\"<required>\"],[\"NEEDLEFISH_ACP_AUTH_ENV_VARS\",\"<required>\"],[\"NEEDLEFISH_ACP_BIN\",\"<required>\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH\",\"DEEPSEEK_API_KEY\"],[\"PATH\",\"sha256:82481b8328dc7fb9\"]]",
   "privateEnvironment": true,
   "reproductionCommand": "node --import tsx eval/run.ts --runner acp --model deepseek-flash --effort high --provider DeepSeek --route 'DeepSeek API direct via DeepSeek Harness acp profile' --runner-version 'dsh 0.1.5-rc.1' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_ACP_BIN=/path/to/acp-wrapper --env NEEDLEFISH_ACP_AUTH_ENV_VARS=DEEPSEEK_API_KEY --env NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=DEEPSEEK_API_KEY --draws 3 --concurrency 3 --holdout include --gate-class R --report eval/reports/2026-09-15-acp-dsh-deepseek-flash-high-x3.json",
+  "acpConfiguration": {
+    "launcher": "DSH_PERMISSION_MODE=danger-full-access exec dsh --profile acp",
+    "launcherSha256": "6312d80ab39bb6041c5de73ecdc93e5c19f86489c8faa2652b9217b2be2389b5",
+    "sanitizedConfigCanonicalJson": "{\"profile\":\"acp\",\"provider\":\"deepseek-official\",\"agentDefaultModel\":\"deepseek-official/deepseek-flash\",\"reasoningEffort\":\"high\",\"telemetry\":false}",
+    "sanitizedConfigSha256": "b41f73b004b474bea628a1941a98c7d455231d1d3828f23266e30d81e58b9297",
+    "profile": "acp",
+    "provider": "deepseek-official",
+    "agentDefaultModel": "deepseek-official/deepseek-flash",
+    "reasoningEffort": "high",
+    "telemetry": false,
+    "attestation": "operator-attested exact normalized launcher and non-secret configuration used for this run"
+  },
   "draws": 3,
   "createdAt": "2026-09-15T07:33:57.154Z",
   "baseline": false,
