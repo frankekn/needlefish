@@ -248,20 +248,6 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 
 只有 P3 的 finding 仍會被報告，但不阻擋（check 維持綠燈）。
 
-**未完成不算通過。** `needs_human` 表示審查未完成或關鍵證據仍須人工
-確認，不等於已確認程式缺陷。請重試，或請開發者在合併前確認報告列出的
-剩餘項目；審查覆蓋範圍與阻擋風險仍會顯示。
-
-本機、`pr` 與 GitHub 實際審查只有 `pass` 回傳 **exit 0**；
-`changes_requested` 與 `needs_human` 回傳 **exit 1**。`--json` 也相同，
-先輸出結果再退出；執行失敗維持非零狀態，可能沒有結果 JSON。純文件依
-政策略過模型時會明說；診斷指令及過期／略過結果保留原本語意。
-
-**從 0.4.6 升級：** 本機退出碼與 GitHub `needs_human` check 改為更嚴格。
-以前的 check 不會自動改寫；請更新實際使用的工具後完整重審目前版本，
-相同 GitHub head 使用 `--recheck`。腳本需保留 Needlefish 的退出碼，
-不能只看後續格式化工具的結果。詳見[中英升級說明](docs/review-status-upgrade.md)。
-
 ## GitHub Action
 
 在每個 PR 上執行有兩種方式：**hosted composite action**（零設定，每次
@@ -273,7 +259,7 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | failure   |
+| needs_human          | COMMENT             | neutral   |
 | run failed           | （無）                | failure   |
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
@@ -282,10 +268,6 @@ review 可能比已修復的 head 活得更久。check-run 才是 merge gate—�
 review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶有驗證
 過的精確 replacement 時，其 inline comment 會附上原生 GitHub suggestion
 區塊；驗證失敗時退回一般 comment。
-
-要強制合併前通過審查，請在專案設定中把既有 `Needlefish` check 設為
-required；不用新增參數或第二個 check。Needlefish 不會自動修改分支保護。
-僅供參考的專案可不設為 required，而不是把未完成結果偽裝成通過。
 
 ### Hosted（任何 repo）
 

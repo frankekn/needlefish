@@ -1,7 +1,6 @@
 import path from "node:path";
 import { review } from "../core/review.js";
 import { renderMarkdown } from "../shared/render.js";
-import { reviewStatus } from "../shared/review-status.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { formatSuggestionComment } from "./github-suggestions.js";
@@ -94,6 +93,12 @@ function nestedString(
 	const value = raw[field];
 	return isRecord(value) ? stringField(value, nestedField) : "";
 }
+
+const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
+	pass: "success",
+	changes_requested: "failure",
+	needs_human: "neutral",
+};
 
 export const VERDICT_LABELS: Record<Verdict, string> = {
 	pass: "needlefish:pass",
@@ -664,9 +669,7 @@ function firstBlockingResidual(
 // title (changes_requested) or the first blocking residual (needs_human).
 // pass keeps the plain `Needlefish: pass` title.
 function checkRunTitle(result: ReviewResult): string {
-	const base = result.verdict === "needs_human"
-		? "Needlefish: needs_human (review incomplete; human confirmation required)"
-		: `Needlefish: ${result.verdict}`;
+	const base = `Needlefish: ${result.verdict}`;
 	if (result.verdict === "changes_requested") {
 		const top = topBlockingFinding(result.findings);
 		if (top) return truncateLine(`${base} — ${oneLine(top.title)}`, 120);
@@ -979,15 +982,15 @@ export async function runGithub(
 
 	try {
 		// Scope and base-tip fields are attached after review(): anything on
-		// the bundle reaches the model via {{BUNDLE}}, so these live only on the
-		// result and the prompt stays byte-identical.
+		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
+		// data lives only on the result and the prompt stays byte-identical.
 		const result: ReviewResult = {
 			...(await review(bundle, opts)),
 			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
 			prNumber,
 			prBaseSha: baseSha,
 		};
-		const { conclusion, exitCode } = reviewStatus(result.verdict);
+		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
 		if (skipReason) {
 			// Head moved or PR closed while reviewing: close our own check so it
@@ -1005,7 +1008,7 @@ export async function runGithub(
 			);
 			return;
 		}
-		if (exitCode !== 0) process.exitCode = exitCode;
+		if (result.verdict === "changes_requested") process.exitCode = 1;
 		// Run before posting this result so fresh round comments are not swept.
 		// This also clears stale infra-error comments when the first successful
 		// review has no previous state-bearing review.

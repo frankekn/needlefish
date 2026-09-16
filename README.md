@@ -55,7 +55,7 @@ supported too.
 
 ## Quick start
 
-**Locally** — from inside the target repo you want reviewed. Requires Node 20+
+**Locally** — from inside any git repo you want reviewed. Requires Node 20+
 and one authed runner CLI (`codex`, `claude`, or `opencode`) on `PATH`:
 
 ```bash
@@ -295,23 +295,6 @@ pass/fail:
 
 P3-only findings are reported but do not block (the check stays green).
 
-**Incomplete is not passed.** `needs_human` means the review is incomplete or
-material evidence still needs human confirmation, not a confirmed code defect.
-Retry the review or ask a developer to verify the unresolved items before
-merging. Coverage and blocking residuals remain visible in the report.
-
-Actual local, local-PR, and GitHub reviews exit **0 only for `pass`**, and
-**1 for `changes_requested` or `needs_human`**. This also applies to `--json`:
-the result is printed before exiting. Operational errors remain nonzero and
-may produce no result JSON. Docs-only policy skips remain explicit; diagnostic
-commands and superseded/skip handling retain their existing semantics.
-
-**Upgrading from 0.4.6:** local review exit codes and GitHub `needs_human`
-checks are now stricter. Existing checks are not rewritten; update the actual
-review executable/action and re-review the current head (`--recheck` for the
-same GitHub head). Preserve the review exit code in scripts rather than a
-formatter's exit code. See the [English / 繁體中文 upgrade guide](https://github.com/frankekn/needlefish/blob/main/docs/review-status-upgrade.md).
-
 ## GitHub Action
 
 Two ways to run on every PR: the **hosted composite action** (zero setup,
@@ -324,7 +307,7 @@ review with the full rendered review body, plus the authoritative
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | failure   |
+| needs_human          | COMMENT             | neutral   |
 | run failed           | (none)              | failure   |
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
@@ -333,10 +316,6 @@ review can outlive a fixed head. The check-run is the merge gate — a failed
 review never passes a PR because the check goes `failure`. When a finding
 includes a validated exact replacement, its inline comment carries a native
 GitHub suggestion block; failed validation falls back to a plain comment.
-
-To enforce the gate, mark the existing `Needlefish` check as required in your
-repository settings. No extra flag or second check is needed. Needlefish does
-not change branch protection; leave the check non-required for advisory use.
 
 Skipped reviews — a closed PR, a head that moved mid-review, or an
 already-reviewed head — still print a machine-readable
@@ -542,7 +521,7 @@ variables are passed through. To pass an additional variable to the runner
 subprocess, set `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2` (comma-separated
 names). On GitHub Actions, the non-secret `RUNNER_TRACKING_ID` job marker is
 retained so the self-hosted runner can terminate detached model processes
-when a workflow is cancelled.
+when a job is cancelled.
 
 ACP env authentication additionally requires an explicit credential
 declaration: set `NEEDLEFISH_ACP_AUTH_ENV_VARS` to the credential names and

@@ -80,12 +80,6 @@ export function renderMarkdown(
 	// its own line so the information is not lost.
 	if (headlineReplaced && summary) lines.push(summary);
 
-	if (result.verdict === "needs_human") {
-		lines.push("");
-		lines.push("**Review incomplete — human confirmation required.** This is not a pass or a confirmed code defect.");
-		lines.push("Retry the review (use --recheck for the same GitHub head), or ask a developer to verify the unresolved items below before merging.");
-	}
-
 	const nitCount = findings.length - blockingCount;
 	const findingCounts: string[] = [];
 	if (blockingCount > 0) findingCounts.push(`**${blockingCount} blocking**`);
@@ -140,9 +134,7 @@ export function renderMarkdown(
 	lines.push("## Findings");
 	lines.push("");
 	if (findings.length === 0) {
-		lines.push(result.verdict === "needs_human"
-			? "No confirmed actionable findings. The review is incomplete; this is not an approval."
-			: "No actionable findings. Prefer this over padding weak ones.");
+		lines.push("No actionable findings. Prefer this over padding weak ones.");
 	} else {
 		lines.push("| # | Severity | Finding | Location |");
 		lines.push("|---|----------|---------|----------|");
