@@ -112,3 +112,21 @@ for (const mode of ["relative", "missing", "directory", "bad_digest", "not_execu
 		assert.equal(result.capability, "unknown");
 	});
 }
+
+
+test("ACP declaration hashes the same trimmed command that runAcp executes", (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-acp-command-"));
+	t.after(() => rmSync(tmp, { recursive: true, force: true }));
+	const bin = path.join(tmp, "launcher");
+	writeFileSync(bin, "actual launcher");
+	writeFileSync(`${bin} `, "different launcher");
+	chmodSync(bin, 0o755);
+	chmodSync(`${bin} `, 0o755);
+	setEnv(t, {
+		NEEDLEFISH_ACP_BIN: `${bin} `,
+		NEEDLEFISH_ACP_REPOSITORY_READ_SHA256: createHash("sha256").update("different launcher").digest("hex"),
+	});
+	assert.equal(preflightReview(false, { runner: "acp" }).status, "unsupported");
+	process.env.NEEDLEFISH_ACP_REPOSITORY_READ_SHA256 = createHash("sha256").update("actual launcher").digest("hex");
+	assert.equal(preflightReview(false, { runner: "acp" }).status, "ready");
+});

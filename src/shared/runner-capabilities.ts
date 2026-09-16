@@ -40,7 +40,8 @@ export type ReviewPreflight =
 // negotiation or automated tool verification. A new/unmatched launcher stays
 // unknown. Never read this declaration from the target repo or model output.
 function hasAcpRepositoryDeclaration(): boolean {
-	const bin = process.env.NEEDLEFISH_ACP_BIN;
+	// Match runAcp() exactly: do not hash a different whitespace-suffixed file.
+	const bin = process.env.NEEDLEFISH_ACP_BIN?.trim();
 	const digest = process.env.NEEDLEFISH_ACP_REPOSITORY_READ_SHA256;
 	if (!bin || !path.isAbsolute(bin) || !digest || !/^[a-f\d]{64}$/i.test(digest)) {
 		return false;
