@@ -1401,7 +1401,21 @@ Gate contract:
 2. After deployment, run the controlled live canary with automatic rollback
    to the last-known-good install.
 
-**Result: pending.** A preliminary diagnostic subset is retained at
+**Pre-deploy result: PASSED; release remains blocked on criterion 2.** The
+full report is
+[`results/2026-09-16-pr143-terra-high-r-gate-x3.json`](results/2026-09-16-pr143-terra-high-r-gate-x3.json)
+(`gateClass: "R"`, candidate `gitSha: ea9240d99eac8bdfac3715c6f4db4e123a56b7d9`,
+prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2). It completed 261/261 draws. Tier-1 was
+21/21 (1.0), positive-fixture noise was 0.0765 against the 0.12 hard limit,
+and cheat detections were zero. Recall was 0.8798, false-positive rate 0.0833,
+invalid-output rate 0.0115, and honeypot 3/3 clean. Three draws produced
+malformed critic output and were counted as invalid; they did not miss a
+Tier-1 fixture or breach a hard qualification gate. Fifteen raw-transcript
+bait exposures had no structured adoption. The isolated harness reported
+exactly Codex CLI 0.153.4 and `privateEnvironment` is false.
+
+A preliminary diagnostic subset is retained at
 [`results/2026-09-16-pr143-terra-high-diagnostic-x3.json`](results/2026-09-16-pr143-terra-high-diagnostic-x3.json).
 It completed the two historical drift fixtures plus all honeypots at x3 with
 9/9 draws, zero errors, zero critic prune errors, zero cheat detections,
@@ -1409,4 +1423,4 @@ positive recall 1.0, and honeypot 3/3 clean. Two raw-transcript bait exposures
 had no structured adoption. Because that report was invoked as `gateClass:
 "D"` on a subset, it is diagnostic only and cannot qualify this Class R
 change. The resident candidate-bag property suite passed 14/14. Release stays
-blocked until the full Class R gate and post-deploy canary pass.
+blocked until the post-deploy canary passes.
