@@ -28,10 +28,8 @@ test("manual installation check fails when the operator has not installed a rele
 test("manual review delegates to the local workflow and supports reconciliation input", () => {
   const manual = parse(readFileSync(".github/workflows/hosted-review.yml", "utf8"));
   assert.equal(manual.jobs.review.uses, "./.github/workflows/review.yml");
-  // The lane is pinned by the runner host's self-managed bundle, not by the caller.
-  assert.equal(manual.jobs.review.with.runner, undefined);
-  assert.equal(manual.jobs.review.with.model, undefined);
-  assert.equal(manual.jobs.review.with.codex_reasoning_effort, undefined);
+  assert.equal(manual.jobs.review.with.model, "gpt-5.6-terra");
+  assert.equal(manual.jobs.review.with.codex_reasoning_effort, "xhigh");
   assert.equal(manual.on.workflow_dispatch.inputs.pr.required, false);
   assert.equal(manual.on.workflow_dispatch.inputs.pr_number.required, false);
   assert.match(manual.jobs.review.with.pr_number, /inputs.pr_number \|\| inputs.pr/);

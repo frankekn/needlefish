@@ -1,17 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- GitHub: the reusable `review.yml` no longer defaults the runner to `codex`.
-  With no `runner` input it passes no `--runner`/`--model`/effort and runs no
-  Codex checks, so the runner host's self-managed bundle (its loader) decides
-  the lane and a model change is a runner-side change, never a caller edit.
-  `hosted-review.yml` drops its lane inputs accordingly. An explicit
-  `runner: codex` still requires Codex CLI `0.153.4` and now defaults
-  `gpt-5.6-terra` to `high` (the lane qualified on 2026-09-07; it had still
-  been `xhigh`); an explicit `codex_reasoning_effort: xhigh` keeps its
-  20-minute per-call timeout and `fast` service tier.
-
 ## 0.4.6 — 2026-09-14
 
 - Runner: restore the optional `onStderr` callback on `runManagedRunnerProcess`.

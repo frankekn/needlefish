@@ -337,8 +337,9 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
-      # 這裡不指定 runner／model／effort：lane 由 runner 主機上的 self-managed
-      # bundle 釘定，換模型只動 runner，呼叫端永遠不用改。
+      runner: codex
+      model: gpt-5.6-terra
+      codex_reasoning_effort: xhigh
     secrets: inherit
 ```
 
@@ -354,12 +355,10 @@ metadata 與 patch／lockfile digest，並固定使用該不可變版本。安�
 即拒絕執行。手動 `needlefish-deploy` 只驗證已安裝版本；source push 與上游
 release 不會自動覆蓋自用版。
 
-Bundle 的 loader 為該主機上的每個 job 釘定 review lane（runner、model、
-effort、憑證），因此呼叫端不傳 `runner`／`model`，換模型只動 runner。明確的
-`runner`／`model` 輸入保留給手動 dispatch 與 eval；`runner: codex` 時仍要求
-Codex CLI `0.153.4`、`gpt-5.6-terra` 預設 `high`，明確傳入
-`codex_reasoning_effort: xhigh` 才會啟用 20 分鐘的單次呼叫 timeout 與 `fast`
-service tier。Provider 是否接受及實際提供哪種 tier，仍需 provider 回應佐證。
+相同 service account 必須能執行 Codex CLI `0.153.4`。Review lane 為
+`gpt-5.6-terra / xhigh / fast`；bundle 包含 proxy tier 傳遞修復，因此 custom
+provider 也會收到 fast 設定。Provider 是否接受及實際提供哪種 tier，仍需
+provider 回應佐證。
 
 
 ```bash
