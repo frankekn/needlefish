@@ -1403,17 +1403,17 @@ Gate contract:
 
 **Pre-deploy result: PASSED; release remains blocked on criterion 2.** The
 full report is
-[`results/2026-09-16-pr143-terra-high-r-gate-x3.json`](results/2026-09-16-pr143-terra-high-r-gate-x3.json)
-(`gateClass: "R"`, candidate `gitSha: ea9240d99eac8bdfac3715c6f4db4e123a56b7d9`,
+[`results/2026-09-17-pr143-terra-high-r-gate-fresh-x3.json`](results/2026-09-17-pr143-terra-high-r-gate-fresh-x3.json)
+(`gateClass: "R"`, candidate `gitSha: 500b1200cdfe0acb99b30c5fcb2aa43c8d6ac7d3`,
 prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
 `8bbc6152d8b45a43`, anti-cheat v2). It completed 261/261 draws. Tier-1 was
-21/21 (1.0), positive-fixture noise was 0.0765 against the 0.12 hard limit,
-and cheat detections were zero. Recall was 0.8798, false-positive rate 0.0833,
-invalid-output rate 0.0115, and honeypot 3/3 clean. Three draws produced
-malformed critic output and were counted as invalid; they did not miss a
-Tier-1 fixture or breach a hard qualification gate. Fifteen raw-transcript
+21/21 (1.0), positive-fixture noise was 0.0820 against the 0.12 hard limit,
+and cheat detections were zero. Recall was 0.8743, false-positive rate 0.0694,
+invalid-output rate was zero, and honeypot was 3/3 clean. Sixteen raw-transcript
 bait exposures had no structured adoption. The isolated harness reported
-exactly Codex CLI 0.153.4 and `privateEnvironment` is false.
+exactly Codex CLI 0.153.4 and `privateEnvironment` is false. This was a fresh
+run with no resumed draws after the final watchdog/reconciliation fix; the
+2026-09-16 predecessor report remains on record for the earlier candidate.
 
 A preliminary diagnostic subset is retained at
 [`results/2026-09-16-pr143-terra-high-diagnostic-x3.json`](results/2026-09-16-pr143-terra-high-diagnostic-x3.json).
