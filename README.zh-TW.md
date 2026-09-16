@@ -40,8 +40,9 @@ Needlefish 會在 merge 前審查你的 diff，只回報真正的缺陷——錯
   [Benchmarks](#benchmarks)）。
 
 小型 PR 會執行審查加對抗式 critic；大型 PR 會先加上 map 與 deep 階段，
-再交給相同的 critic。Codex 是預設 runner——也支援 Claude Code、
-opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
+再交給相同的 critic。Codex 是預設 runner，也支援 Claude Code、opencode、
+Grok 與 pi。OpenAI 相容 HTTP 只能處理傳入文字，不能執行這套需要讀取 repo
+的審查流程；ACP agent 必須由管理者明確宣告已測試的 launcher。
 
 <p align="center">
   <img src="assets/demo.png" alt="needlefish 真實的 inline review comment：在 diff 上抓到 P0 授權缺陷" width="880">
@@ -379,6 +380,11 @@ checkout 憑證隔離與獨立 hosted finalization 都保留。
 `openai`、`grok`、`pi` 或 `acp`；`src/shared/codex.ts` 負責呼叫所選
 runner。共通選項：
 
+審查流程的每個模型階段都必須能讀取 repo。因此 direct-HTTP `openai`
+transport 會在任何模型請求前被拒絕；`acp` launcher 也必須由管理者宣告該
+確切、已測試的 executable 具備 repo 讀取能力。相容性變更、dry-run 診斷與
+ACP 宣告方式見[Runner capability preflight](docs/runner-capabilities.md)。
+
 | 選項 | 環境變數 | 預設 |
 | --- | --- | --- |
 | runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude`、`opencode` |
@@ -408,8 +414,8 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 | `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
 | `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
 | `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`）、`PI_AUTH_MODE`（`oauth` 或 `proxy`；`openai-codex` 預設 OAuth，明確指定 provider 時預設 proxy） |
-| `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
-| `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
+| `acp` | `NEEDLEFISH_ACP_BIN`（必填） | 審查另需已測試 launcher 的 `NEEDLEFISH_ACP_REPOSITORY_READ_SHA256` 宣告 |
+| `openai` | 無（HTTP，不是 CLI） | 只能處理傳入文字；審查 preflight 會在 HTTP 前拒絕。低階設定仍為 `OPENAI_API_KEY`、`--model`／`OPENAI_MODEL` 與 `OPENAI_BASE_URL` |
 
 ### 各 runner 的啟動方式
 
@@ -429,6 +435,8 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 - **ACP：** 從 `NEEDLEFISH_ACP_BIN` 以 stdio 執行的 JSON-RPC 2.0 Agent
   Client Protocol process。timeout 時 Needlefish 會先送
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
+  審查資格另需依
+  [Runner capability preflight](docs/runner-capabilities.md) 完成管理者宣告。
 
 每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
 行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
