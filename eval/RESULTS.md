@@ -10,13 +10,15 @@ paths.
 **Public selected lane: DeepSeek V4.1 Flash
 (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** (selected
 2026-09-10; recorded in `leaderboard.json` and the generated README benchmark).
+This is a historical public selection, not a viable rollback target: the
+promotional model ID is no longer listed by the API.
 The operational runners were re-pinned on 2026-09-15 to the DeepSeek Harness
 lane evaluated in §27, but that full report failed the absolute Tier-1 gate
 and remains unqualified and unpublished. This is an invalid operational state
-pending rollback to the last qualified DeepSeek V4.1 lane; this evidence-only
-change does not perform or verify that production rollback. The table below is
-the preserved 2026-09-06 rerank; the generated benchmark is authoritative for
-the current public selection.
+pending selection of an available qualified lane (or requalification of a new
+lane) and production rollback; this evidence-only change does not perform or
+verify those operations. The table below is the preserved 2026-09-06 rerank;
+the generated benchmark is authoritative for the recorded public selection.
 
 **Measured on the 2026-09-06 rerank**, commit `a5a0c68`, 87 fixtures × 3
 draws, sealed holdouts included, Class R, anti-cheat v2; prompt
@@ -1442,9 +1444,10 @@ absolute gate. Its 0.9454 anchored recall is below DeepSeek V4.1's 0.9563 and
 above Grok 4.6's 0.9235; false positives are zero, noise is the second lowest
 recorded, and the lane is roughly 4x faster than Grok 4.6 and on par with the
 Codex lanes. Those favorable diagnostics do not override the Tier-1 failure.
-Per the eval policy, the operational fleet must be rolled back to the last
-qualified DeepSeek V4.1 lane before further production reviews; this report
-does not claim that rollback has occurred.
+Per the eval policy, an available qualified lane must be selected and the
+operational fleet rolled back before further production reviews. The expired
+DeepSeek V4.1 promotional lane is not an operational option, and this report
+does not claim that a replacement was selected or that rollback occurred.
 
 Two provenance notes. (1) A first full run finished earlier the same day with
 recall 0.9563, FP 0.0139, noise 0.0383, Tier-1 1.0; its report file was
