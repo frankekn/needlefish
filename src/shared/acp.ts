@@ -4,6 +4,8 @@ import {
   type RunnerProcessResult,
 } from "./runner-process.js";
 
+import type { AcpLaunchSpec } from "./runner.js";
+
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;
 type AcpRequestMethod = "initialize" | "session/new" | "session/prompt";
@@ -39,8 +41,12 @@ interface AcpClientState {
   completed: boolean;
 }
 
-export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
-  const command = process.env.NEEDLEFISH_ACP_BIN?.trim();
+export async function runAcp(
+  invocation: AcpRunnerInvocation,
+  launch?: AcpLaunchSpec,
+): Promise<AcpRunnerResult> {
+  // Legacy callers keep their environment-based command and empty argv.
+  const command = launch?.command ?? process.env.NEEDLEFISH_ACP_BIN?.trim();
   if (!command) throw new Error("NEEDLEFISH_ACP_BIN is required for the acp runner");
 
   const state: AcpClientState = {
@@ -53,7 +59,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
   };
   const res = await runManagedRunnerProcess({
     command,
-    args: [],
+    args: launch?.args ?? [],
     repoPath: invocation.repoPath,
     timeoutMs: invocation.timeoutMs,
     env: invocation.env,

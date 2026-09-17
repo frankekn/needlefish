@@ -11,6 +11,7 @@ import {
   printDryRun,
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
+import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
 import { readFileSync } from "node:fs";
@@ -42,6 +43,8 @@ async function main() {
       return;
   }
 
+  const opts = resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
+
   // --dry-run only collects and prints the bundle: no runners spawn, so the
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
@@ -55,11 +58,11 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      await runGithub(command.repo ?? process.cwd(), command.pr, command.opts, command.recheck);
+      await runGithub(command.repo ?? process.cwd(), command.pr, opts, command.recheck);
       return;
     }
     case "explain": {
-      await runGithubExplain(command.repo ?? process.cwd(), command.pr, command.finding, command.opts);
+      await runGithubExplain(command.repo ?? process.cwd(), command.pr, command.finding, opts);
       return;
     }
     case "local":
@@ -73,8 +76,8 @@ async function main() {
         const cwd = command.repo ?? process.cwd();
         const report =
           command.kind === "pr"
-            ? localPrDryRun(cwd, command.pr, command.opts)
-            : localDryRun(cwd, command.opts);
+            ? localPrDryRun(cwd, command.pr, opts)
+            : localDryRun(cwd, opts);
         printDryRun(report, {
           json: command.json,
           printBundle: command.printBundle,
@@ -88,7 +91,7 @@ async function main() {
       }
       const cwd = command.repo ?? process.cwd();
       const result =
-        command.kind === "pr" ? await runLocalPr(cwd, command.pr, command.opts) : await runLocal(cwd, command.opts);
+        command.kind === "pr" ? await runLocalPr(cwd, command.pr, opts) : await runLocal(cwd, opts);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {
