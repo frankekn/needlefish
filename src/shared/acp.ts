@@ -8,6 +8,7 @@ import type { RunUsage } from "./runner.js";
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;
 type AcpRequestMethod = "initialize" | "session/new" | "session/prompt";
+const ACP_USAGE_GRACE_MS = 100;
 
 export interface AcpRunnerInvocation {
   readonly prompt: string;
@@ -40,6 +41,7 @@ interface AcpClientState {
   readonly text: string[];
   completed: boolean;
   usage?: RunUsage;
+  completionTimer?: ReturnType<typeof setTimeout>;
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
@@ -64,6 +66,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     onStdout: (chunk, controller) => handleStdout(chunk, controller, state, invocation),
     onTimeout: (controller) => sendCancel(controller, state),
   });
+  if (state.completionTimer) clearTimeout(state.completionTimer);
 
   const out = state.text.join("");
   if (state.completed && res.error === undefined) {
@@ -217,7 +220,7 @@ function handleResponseMessage(
     case "session/prompt":
       state.completed = true;
       controller.endStdin();
-      controller.stop();
+      state.completionTimer = setTimeout(() => controller.stop(), ACP_USAGE_GRACE_MS);
       return;
   }
 }
