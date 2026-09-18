@@ -403,6 +403,9 @@ jobs:
 The caller must retain `workflow_dispatch.inputs.pr_number`, `actions: write`,
 and a run name ending in ` PR #<number>` for bounded reconciliation. Reconcile
 runs on GitHub-hosted Ubuntu independently of the review runner.
+Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
+label when direct PR triggers should use a dedicated fleet; otherwise the
+workflow keeps the `self-hosted` default. Explicit `runs_on` inputs still win.
 
 Provision the tested self-managed bundle as the runner service account under
 `~/.local/share/needlefish-self/releases/<self_version>`. Keep `release.json`,
@@ -413,16 +416,16 @@ the selected immutable binary. A missing or invalid installation fails closed.
 The manual `needlefish-deploy` workflow only checks the installed version; source
 pushes and upstream releases cannot replace it.
 
-Keep Codex CLI `0.153.4` available as the same service account. The review lane is
+Keep the current Codex CLI available as the same service account. The review lane is
 `gpt-5.6-terra / xhigh / fast`. The bundle includes the proxy tier forwarding fix:
 fast is passed to Codex even with a custom provider. Provider acceptance and the
 service tier actually delivered still require provider evidence.
 
 
 ```bash
-npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
+npm install --global --prefix "$HOME/.local" @openai/codex@latest
 export CODEX_BIN="$HOME/.local/bin/codex"
-test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
+"$CODEX_BIN" --version
 ```
 
 Preserve each caller's existing authentication route. Proxy callers pass
