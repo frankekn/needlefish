@@ -2,6 +2,15 @@ export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "
 
 export type RunnerName = (typeof RUNNERS)[number];
 
+export interface RunUsage {
+  readonly contextUsed: number;
+  readonly contextSize: number;
+  readonly cost?: {
+    readonly amount: number;
+    readonly currency: string;
+  };
+}
+
 export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
@@ -16,6 +25,7 @@ export interface RunStat {
   readonly durationMs: number;
   readonly attempts: number;
   readonly ok: boolean;
+  readonly usage?: RunUsage;
 }
 
 export function isRunnerName(value: string): value is RunnerName {

@@ -227,6 +227,11 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 				durationMs: 212000,
 				attempts: 2,
 				ok: true,
+				usage: {
+					contextUsed: 53_000,
+					contextSize: 200_000,
+					cost: { amount: 0.045, currency: "USD" },
+				},
 			},
 			{
 				label: "critic",
@@ -257,7 +262,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	assert.match(markdown, /<summary>Checked \(1\)<\/summary>/);
 	assert.match(
 		markdown,
-		/<sub>2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
+		/<sub>2 calls · review 3m 32s · context 53000\/200000 \(27%\) · cost 0\.045 USD → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
 	);
 	assert.match(markdown, /<!-- state -->\n$/);
 });

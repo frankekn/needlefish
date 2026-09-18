@@ -6,8 +6,9 @@ import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { runCodex } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import type { RunStat } from "./runner";
 
-type AcpStubMode = "clean" | "error" | "malformed" | "hang";
+type AcpStubMode = "clean" | "error" | "invalid-usage" | "malformed" | "hang";
 
 interface AcpFixture {
   readonly tmp: string;
@@ -19,11 +20,12 @@ interface AcpFixture {
 
 test("runCodex acp clean stub returns agent text", async (t) => {
   const fixture = acpFixture(t, "clean");
+  const stats: RunStat[] = [];
   process.env.GH_TOKEN = "secret-gh";
   process.env.GITHUB_TOKEN = "secret-github";
   process.env.GITHUB_API_TOKEN = "secret-api";
 
-  const output = await runAcpPrompt(fixture, 1000);
+  const output = await runAcpPrompt(fixture, 1000, (stat) => stats.push(stat));
 
   assert.equal(output, '{"ok":true}');
   assert.deepEqual(readJsonRecord(fixture.envPath), {});
@@ -31,6 +33,11 @@ test("runCodex acp clean stub returns agent text", async (t) => {
   assert.match(transcript, /"method":"initialize"/);
   assert.match(transcript, /"method":"session\/new"/);
   assert.match(transcript, /"method":"session\/prompt"/);
+  assert.deepEqual(stats[0]?.usage, {
+    contextUsed: 53_000,
+    contextSize: 200_000,
+    cost: { amount: 0.045, currency: "USD" },
+  });
 });
 
 test("runCodex acp env credentials use and dispose the isolated HOME", async (t) => {
@@ -72,6 +79,16 @@ test("runCodex acp surfaces session prompt JSON-RPC errors", async (t) => {
   const fixture = acpFixture(t, "error");
 
   await assert.rejects(() => runAcpPrompt(fixture, 1000), /acp session\/prompt failed: prompt failed/);
+});
+
+test("runCodex acp ignores invalid usage telemetry", async (t) => {
+  const fixture = acpFixture(t, "invalid-usage");
+  const stats: RunStat[] = [];
+
+  const output = await runAcpPrompt(fixture, 1000, (stat) => stats.push(stat));
+
+  assert.equal(output, '{"ok":true}');
+  assert.equal(stats[0]?.usage, undefined);
 });
 
 test("runCodex acp rejects malformed stdout without hanging", async (t) => {
@@ -186,6 +203,7 @@ function writeAcpStub(options: {
       "  process.on('SIGTERM', () => {});",
       "  const send = (message) => process.stdout.write(`${JSON.stringify(message)}\\n`);",
       "  const update = (text) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
+      "  const usage = () => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'usage_update', used: 53000, size: 200000, cost: { amount: 0.045, currency: 'USD' } } } });",
       "  readline.createInterface({ input: process.stdin }).on('line', (line) => {",
       "    fs.appendFileSync(transcriptPath, line + '\\n');",
       "    const request = JSON.parse(line);",
@@ -194,8 +212,14 @@ function writeAcpStub(options: {
       "    } else if (request.method === 'session/new') {",
       "      send({ jsonrpc: '2.0', id: request.id, result: { sessionId: 'sess' } });",
       "    } else if (request.method === 'session/prompt' && mode === 'clean') {",
+      "      usage();",
       "      update('{\"ok\"');",
       "      update(':true}');",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
+      "      setTimeout(() => process.exit(0), 10);",
+      "    } else if (request.method === 'session/prompt' && mode === 'invalid-usage') {",
+      "      send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'usage_update', used: 200001, size: 200000 } } });",
+      "      update('{\"ok\":true}');",
       "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
       "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'error') {",
@@ -210,12 +234,17 @@ function writeAcpStub(options: {
   chmodSync(options.bin, 0o755);
 }
 
-async function runAcpPrompt(fixture: AcpFixture, timeoutMs: number): Promise<string> {
+async function runAcpPrompt(
+  fixture: AcpFixture,
+  timeoutMs: number,
+  onStat?: (stat: RunStat) => void,
+): Promise<string> {
   return await runCodex("prompt", {
     repoPath: fixture.repo,
     runner: "acp",
     targetHeadSha: headSha(fixture.repo),
     timeoutMs,
+    ...(onStat ? { onStat } : {}),
   });
 }
 

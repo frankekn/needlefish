@@ -5,6 +5,8 @@
 - GitHub: let self-hosted operators track the current Codex CLI instead of
   enforcing the historical `0.153.4` fleet pin. Hosted action installs remain
   pinned for reproducibility.
+- ACP: retain validated `usage_update` context and cost telemetry in review
+  stats and render it with each measured call.
 
 ## 0.4.6 — 2026-09-14
 

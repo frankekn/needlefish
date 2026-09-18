@@ -285,6 +285,30 @@ function stringListField(value: unknown): string[] {
 	return value;
 }
 
+function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
+	if (!isRecord(value)) throw new Error("entry.usage not an object");
+	if (typeof value.contextUsed !== "number" || !Number.isSafeInteger(value.contextUsed) || value.contextUsed < 0) {
+		throw new Error("entry.usage.contextUsed not a nonnegative safe integer");
+	}
+	if (typeof value.contextSize !== "number" || !Number.isSafeInteger(value.contextSize) || value.contextSize <= 0) {
+		throw new Error("entry.usage.contextSize not a positive safe integer");
+	}
+	if (value.contextUsed > value.contextSize) {
+		throw new Error("entry.usage.contextUsed exceeds contextSize");
+	}
+	const base = {
+		contextUsed: value.contextUsed,
+		contextSize: value.contextSize,
+	};
+	if (value.cost === undefined) return base;
+	if (!isRecord(value.cost) || typeof value.cost.amount !== "number" ||
+		!Number.isFinite(value.cost.amount) || value.cost.amount < 0 ||
+		typeof value.cost.currency !== "string" || !/^[A-Z]{3}$/.test(value.cost.currency)) {
+		throw new Error("entry.usage.cost invalid");
+	}
+	return { ...base, cost: { amount: value.cost.amount, currency: value.cost.currency } };
+}
+
 function runStatField(value: unknown): RunStat[] {
 	if (!Array.isArray(value)) throw new Error("not an array");
 	return value.map((entry): RunStat => {
@@ -310,22 +334,16 @@ function runStatField(value: unknown): RunStat[] {
 		if (entry.model !== undefined && typeof entry.model !== "string") {
 			throw new Error("entry.model not a string");
 		}
-		return entry.model === undefined
-			? {
-					label: entry.label,
-					runner: entry.runner,
-					durationMs: entry.durationMs,
-					attempts: entry.attempts,
-					ok: entry.ok,
-				}
-			: {
-					label: entry.label,
-					runner: entry.runner,
-					model: entry.model,
-					durationMs: entry.durationMs,
-					attempts: entry.attempts,
-					ok: entry.ok,
-				};
+		const stat: RunStat = {
+			label: entry.label,
+			runner: entry.runner,
+			...(entry.model === undefined ? {} : { model: entry.model }),
+			durationMs: entry.durationMs,
+			attempts: entry.attempts,
+			ok: entry.ok,
+			...(entry.usage === undefined ? {} : { usage: runUsageField(entry.usage) }),
+		};
+		return stat;
 	});
 }
 

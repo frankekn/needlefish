@@ -13,6 +13,7 @@ import {
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
+	type RunUsage,
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
@@ -560,6 +561,12 @@ type CodexReasoningEffort = "medium" | "high" | "xhigh";
 interface RunnerResult {
 	readonly res: RunnerProcessResult;
 	readonly out: string;
+	readonly usage?: RunUsage;
+}
+
+interface RunnerAttemptResult {
+	readonly out: string;
+	readonly usage?: RunUsage;
 }
 
 interface RunnerInvocation {
@@ -621,6 +628,7 @@ export async function runCodex(
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
+	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
 		const model = resolveModel(opts, runner);
@@ -631,6 +639,7 @@ export async function runCodex(
 			durationMs: Date.now() - startedAt,
 			attempts,
 			ok,
+			...(usage ? { usage } : {}),
 		});
 	};
 	let lastErr: unknown;
@@ -638,9 +647,10 @@ export async function runCodex(
 		attempts = attempt;
 		try {
 			remainingReviewMs(opts.reviewDeadlineMs);
-			const out = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			const result = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			usage = result.usage;
 			emitStat(true);
-			return out;
+			return result.out;
 		} catch (err) {
 			const raw =
 				err instanceof Error
@@ -658,6 +668,7 @@ export async function runCodex(
 				throw err;
 			}
 			lastErr = err;
+			usage = undefined;
 			if (attempt < maxAttempts) {
 				let backoff: number;
 				try {
@@ -683,7 +694,7 @@ async function runCodexOnce(
 	runner: RunnerName,
 	runnerAttempt: number,
 	codexProxy: CodexProxyConfig | undefined,
-): Promise<string> {
+): Promise<RunnerAttemptResult> {
 	const model = resolveModel(opts, runner);
 	let timeoutMs: number;
 	try {
@@ -692,9 +703,11 @@ async function runCodexOnce(
 		throw asRunnerOperationalError(error);
 	}
 	if (runner === "openai") {
-		return runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
-			opts.onRaw?.(raw, runnerAttempt),
-		);
+		return {
+			out: await runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
+				opts.onRaw?.(raw, runnerAttempt),
+			),
+		};
 	}
 	let tmp: string;
 	try {
@@ -813,7 +826,7 @@ async function runCodexOnce(
 				.filter(Boolean)
 				.join("\n");
 			opts.onRaw?.(raw, runnerAttempt);
-			return out;
+			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;

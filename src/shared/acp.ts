@@ -3,6 +3,7 @@ import {
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
 } from "./runner-process.js";
+import type { RunUsage } from "./runner.js";
 
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;
@@ -18,6 +19,7 @@ export interface AcpRunnerInvocation {
 export interface AcpRunnerResult {
   readonly res: RunnerProcessResult;
   readonly out: string;
+  readonly usage?: RunUsage;
 }
 
 class AcpProtocolError extends Error {
@@ -37,6 +39,7 @@ interface AcpClientState {
   buffer: string;
   readonly text: string[];
   completed: boolean;
+  usage?: RunUsage;
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
@@ -64,7 +67,11 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
 
   const out = state.text.join("");
   if (state.completed && res.error === undefined) {
-    return { res: { status: 0, signal: null, stdout: res.stdout, stderr: res.stderr }, out };
+    return {
+      res: { status: 0, signal: null, stdout: res.stdout, stderr: res.stderr },
+      out,
+      ...(state.usage ? { usage: state.usage } : {}),
+    };
   }
   if (res.error !== undefined) return { res, out };
   if (res.status !== 0) return { res, out };
@@ -219,6 +226,12 @@ function collectSessionUpdate(params: unknown, state: AcpClientState): void {
   if (!isRecord(params)) return;
   const update = isRecord(params.update) ? params.update : params;
   const updateKind = stringField(update, "sessionUpdate") ?? stringField(update, "kind");
+  if (updateKind === "usage_update") {
+    if (state.sessionId === null || params.sessionId !== state.sessionId) return;
+    const usage = usageFrom(update);
+    if (usage) state.usage = usage;
+    return;
+  }
   if (updateKind !== null && updateKind !== "agent_message_chunk") return;
   const content = update.content;
   if (isRecord(content)) {
@@ -228,6 +241,31 @@ function collectSessionUpdate(params: unknown, state: AcpClientState): void {
   }
   const text = stringField(update, "text");
   if (text !== null) state.text.push(text);
+}
+
+function usageFrom(update: JsonRecord): RunUsage | undefined {
+  const used = update.used;
+  const size = update.size;
+  if (!isNonnegativeSafeInteger(used) || !isPositiveSafeInteger(size) || used > size) return undefined;
+  const cost = update.cost;
+  if (!isRecord(cost)) return { contextUsed: used, contextSize: size };
+  if (typeof cost.amount !== "number" || !Number.isFinite(cost.amount) || cost.amount < 0 ||
+      typeof cost.currency !== "string" || !/^[A-Z]{3}$/.test(cost.currency)) {
+    return { contextUsed: used, contextSize: size };
+  }
+  return {
+    contextUsed: used,
+    contextSize: size,
+    cost: { amount: cost.amount, currency: cost.currency },
+  };
+}
+
+function isNonnegativeSafeInteger(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0;
+}
+
+function isPositiveSafeInteger(raw: unknown): raw is number {
+  return isNonnegativeSafeInteger(raw) && raw > 0;
 }
 
 function sessionIdFrom(raw: unknown): string {

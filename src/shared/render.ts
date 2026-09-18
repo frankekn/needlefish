@@ -1,4 +1,5 @@
 import type { Finding, ReviewResult, Severity, Verdict } from "./schema.js";
+import type { RunUsage } from "./runner.js";
 
 const SEV_ORDER: Record<Severity, number> = {
 	P0: 0,
@@ -220,7 +221,7 @@ export function renderMarkdown(
 		const calls = result.stats
 			.map(
 				(stat) =>
-					`${stat.label} ${formatDuration(stat.durationMs)}${stat.ok ? "" : " ✗"}`,
+					`${stat.label} ${formatDuration(stat.durationMs)}${stat.ok ? "" : " ✗"}${stat.usage ? ` · ${formatUsage(stat.usage)}` : ""}`,
 			)
 			.join(" → ");
 		const parts = [
@@ -239,6 +240,12 @@ export function renderMarkdown(
 	let output = `${lines.join("\n").trim()}\n`;
 	if (opts?.stateMarker) output += `\n${opts.stateMarker}\n`;
 	return output;
+}
+
+function formatUsage(usage: RunUsage): string {
+	const percent = Math.round((usage.contextUsed / usage.contextSize) * 100);
+	const cost = usage.cost ? ` · cost ${usage.cost.amount} ${usage.cost.currency}` : "";
+	return `context ${usage.contextUsed}/${usage.contextSize} (${percent}%)${cost}`;
 }
 
 function firstSentence(summary: string): string {
