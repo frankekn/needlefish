@@ -272,7 +272,7 @@ jobs:
           # (which carry no workflow inputs) use the same proxy route that a
           # dispatch with codex_proxy_base_url uses. Inputs win when supplied.
           CODEX_PROXY_BASE_URL_INPUT: ${{ inputs.codex_proxy_base_url || vars.CODEX_PROXY_BASE_URL }}
-          CODEX_PROXY_API_KEY_INPUT: ${{ secrets.codex_proxy_api_key }}
+          CODEX_PROXY_API_KEY_INPUT: ${{ (inputs.codex_proxy_base_url || vars.CODEX_PROXY_BASE_URL) && secrets.codex_proxy_api_key || '' }}
           NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: ${{ inputs.codex_proxy_required && '1' || '' }}
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
