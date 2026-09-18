@@ -130,6 +130,13 @@ test("review gives the Terra xhigh lane a production timeout", () => {
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
 });
 
+test("review lets the operator select a runner label without changing the workflow", () => {
+	assert.match(
+		workflow,
+		/runs-on: \$\{\{ inputs\.runs_on \|\| github\.event\.inputs\.runs_on \|\| vars\.NEEDLEFISH_RUNS_ON \|\| 'self-hosted' \}\}/,
+	);
+});
+
 test("review maps supplied Codex proxy values atomically without erasing runner defaults", (t) => {
 	assert.match(workflow, /codex_proxy_base_url:\n\s+description: Optional CLIProxyAPI base URL for Codex/);
 	assert.match(workflow, /codex_proxy_api_key:\n\s+description: CLIProxyAPI credential for Codex/);

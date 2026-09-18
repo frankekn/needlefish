@@ -346,6 +346,9 @@ jobs:
 Caller 保留 `workflow_dispatch.inputs.pr_number`、`actions: write`，以及以
 ` PR #<編號>` 結尾的 run-name，供有次數上限的 reconciliation 使用。Reconcile
 維持在 GitHub-hosted Ubuntu 執行，不依賴 review runner 是否正常。
+若 direct PR trigger 要使用專用 fleet，設定 repository variable
+`NEEDLEFISH_RUNS_ON` 為操作者持有的 runner label；未設定時維持 `self-hosted`。
+明確傳入的 `runs_on` 仍優先。
 
 以 runner 的 service account 安裝已驗證 bundle 至
 `~/.local/share/needlefish-self/releases/<self_version>`，保留 `release.json`、
@@ -355,16 +358,16 @@ metadata 與 patch／lockfile digest，並固定使用該不可變版本。安�
 即拒絕執行。手動 `needlefish-deploy` 只驗證已安裝版本；source push 與上游
 release 不會自動覆蓋自用版。
 
-相同 service account 必須能執行 Codex CLI `0.153.4`。Review lane 為
+相同 service account 必須能執行目前的 Codex CLI。Review lane 為
 `gpt-5.6-terra / xhigh / fast`；bundle 包含 proxy tier 傳遞修復，因此 custom
 provider 也會收到 fast 設定。Provider 是否接受及實際提供哪種 tier，仍需
 provider 回應佐證。
 
 
 ```bash
-npm install --global --prefix "$HOME/.local" @openai/codex@0.153.4
+npm install --global --prefix "$HOME/.local" @openai/codex@latest
 export CODEX_BIN="$HOME/.local/bin/codex"
-test "$("$CODEX_BIN" --version)" = "codex-cli 0.153.4"
+"$CODEX_BIN" --version
 ```
 
 各 caller 保留原認證路徑。Proxy caller 使用 `codex_proxy_base_url`、
