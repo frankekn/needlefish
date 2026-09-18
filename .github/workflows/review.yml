@@ -299,6 +299,7 @@ jobs:
               echo "Unable to run the selected Codex CLI." >&2
               exit 1
             }
+            # Self-hosted operators track Codex latest; log the selected release for diagnosis.
             echo "Selected Codex CLI: $codex_version"
             export CODEX_BIN="$codex_bin"
             if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- GitHub: let self-hosted operators track the current Codex CLI instead of
+  enforcing the historical `0.153.4` fleet pin. Hosted action installs remain
+  pinned for reproducibility.
+
 ## 0.4.6 — 2026-09-14
 
 - Runner: restore the optional `onStderr` callback on `runManagedRunnerProcess`.
