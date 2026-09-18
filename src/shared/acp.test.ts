@@ -34,9 +34,9 @@ test("runCodex acp clean stub returns agent text", async (t) => {
   assert.match(transcript, /"method":"session\/new"/);
   assert.match(transcript, /"method":"session\/prompt"/);
   assert.deepEqual(stats[0]?.usage, {
-    contextUsed: 53_000,
-    contextSize: 200_000,
-    cost: { amount: 0.045, currency: "USD" },
+    totalTokens: 845,
+    inputTokens: 816,
+    outputTokens: 29,
   });
 });
 
@@ -203,7 +203,6 @@ function writeAcpStub(options: {
       "  process.on('SIGTERM', () => {});",
       "  const send = (message) => process.stdout.write(`${JSON.stringify(message)}\\n`);",
       "  const update = (text) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
-      "  const usage = () => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'usage_update', used: 53000, size: 200000, cost: { amount: 0.045, currency: 'USD' } } } });",
       "  readline.createInterface({ input: process.stdin }).on('line', (line) => {",
       "    fs.appendFileSync(transcriptPath, line + '\\n');",
       "    const request = JSON.parse(line);",
@@ -214,13 +213,11 @@ function writeAcpStub(options: {
     "    } else if (request.method === 'session/prompt' && mode === 'clean') {",
       "      update('{\"ok\"');",
       "      update(':true}');",
-      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
-      "      setTimeout(() => usage(), 10);",
-      "      setTimeout(() => process.exit(0), 20);",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn', usage: { totalTokens: 845, inputTokens: 816, outputTokens: 29 } } });",
+      "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'invalid-usage') {",
-      "      send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'usage_update', used: 200001, size: 200000 } } });",
       "      update('{\"ok\":true}');",
-      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn', usage: { totalTokens: 1, inputTokens: 2, outputTokens: 3 } } });",
       "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'error') {",
       "      send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'prompt failed' } });",

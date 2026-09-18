@@ -432,7 +432,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 - **ACP：** 從 `NEEDLEFISH_ACP_BIN` 以 stdio 執行的 JSON-RPC 2.0 Agent
   Client Protocol process。timeout 時 Needlefish 會先送
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
-  agent 若送出 `usage_update`，review stats 會記錄其回報的 context 使用量與成本。
+  prompt response 若包含 token usage，review stats 會保留 input／output 總量。
 
 每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
 行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，

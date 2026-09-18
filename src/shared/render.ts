@@ -243,9 +243,7 @@ export function renderMarkdown(
 }
 
 function formatUsage(usage: RunUsage): string {
-	const percent = Math.round((usage.contextUsed / usage.contextSize) * 100);
-	const cost = usage.cost ? ` · cost ${usage.cost.amount} ${usage.cost.currency}` : "";
-	return `context ${usage.contextUsed}/${usage.contextSize} (${percent}%)${cost}`;
+	return `tokens ${usage.totalTokens} (${usage.inputTokens} in / ${usage.outputTokens} out)`;
 }
 
 function firstSentence(summary: string): string {

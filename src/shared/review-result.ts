@@ -287,26 +287,15 @@ function stringListField(value: unknown): string[] {
 
 function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
 	if (!isRecord(value)) throw new Error("entry.usage not an object");
-	if (typeof value.contextUsed !== "number" || !Number.isSafeInteger(value.contextUsed) || value.contextUsed < 0) {
-		throw new Error("entry.usage.contextUsed not a nonnegative safe integer");
+	const fields = [value.totalTokens, value.inputTokens, value.outputTokens];
+	if (!fields.every((field) => typeof field === "number" && Number.isSafeInteger(field) && field >= 0)) {
+		throw new Error("entry.usage token counts not nonnegative safe integers");
 	}
-	if (typeof value.contextSize !== "number" || !Number.isSafeInteger(value.contextSize) || value.contextSize <= 0) {
-		throw new Error("entry.usage.contextSize not a positive safe integer");
+	const [totalTokens, inputTokens, outputTokens] = fields as [number, number, number];
+	if (totalTokens < inputTokens + outputTokens) {
+		throw new Error("entry.usage totalTokens below input and output sum");
 	}
-	if (value.contextUsed > value.contextSize) {
-		throw new Error("entry.usage.contextUsed exceeds contextSize");
-	}
-	const base = {
-		contextUsed: value.contextUsed,
-		contextSize: value.contextSize,
-	};
-	if (value.cost === undefined) return base;
-	if (!isRecord(value.cost) || typeof value.cost.amount !== "number" ||
-		!Number.isFinite(value.cost.amount) || value.cost.amount < 0 ||
-		typeof value.cost.currency !== "string" || !/^[A-Z]{3}$/.test(value.cost.currency)) {
-		throw new Error("entry.usage.cost invalid");
-	}
-	return { ...base, cost: { amount: value.cost.amount, currency: value.cost.currency } };
+	return { totalTokens, inputTokens, outputTokens };
 }
 
 function runStatField(value: unknown): RunStat[] {

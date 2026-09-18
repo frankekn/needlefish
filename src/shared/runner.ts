@@ -3,12 +3,9 @@ export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "
 export type RunnerName = (typeof RUNNERS)[number];
 
 export interface RunUsage {
-  readonly contextUsed: number;
-  readonly contextSize: number;
-  readonly cost?: {
-    readonly amount: number;
-    readonly currency: string;
-  };
+  readonly totalTokens: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
 }
 
 export interface RunnerOptions {

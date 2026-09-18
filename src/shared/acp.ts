@@ -8,7 +8,6 @@ import type { RunUsage } from "./runner.js";
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;
 type AcpRequestMethod = "initialize" | "session/new" | "session/prompt";
-const ACP_USAGE_GRACE_MS = 100;
 
 export interface AcpRunnerInvocation {
   readonly prompt: string;
@@ -41,7 +40,6 @@ interface AcpClientState {
   readonly text: string[];
   completed: boolean;
   usage?: RunUsage;
-  completionTimer?: ReturnType<typeof setTimeout>;
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
@@ -66,7 +64,6 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     onStdout: (chunk, controller) => handleStdout(chunk, controller, state, invocation),
     onTimeout: (controller) => sendCancel(controller, state),
   });
-  if (state.completionTimer) clearTimeout(state.completionTimer);
 
   const out = state.text.join("");
   if (state.completed && res.error === undefined) {
@@ -217,11 +214,14 @@ function handleResponseMessage(
       sendRequest(controller, state, "session/prompt", sessionPromptParams(sessionId, invocation.prompt));
       return;
     }
-    case "session/prompt":
+    case "session/prompt": {
+      const usage = promptUsageFrom(result);
+      if (usage) state.usage = usage;
       state.completed = true;
       controller.endStdin();
-      state.completionTimer = setTimeout(() => controller.stop(), ACP_USAGE_GRACE_MS);
+      controller.stop();
       return;
+    }
   }
 }
 
@@ -229,12 +229,6 @@ function collectSessionUpdate(params: unknown, state: AcpClientState): void {
   if (!isRecord(params)) return;
   const update = isRecord(params.update) ? params.update : params;
   const updateKind = stringField(update, "sessionUpdate") ?? stringField(update, "kind");
-  if (updateKind === "usage_update") {
-    if (state.sessionId === null || params.sessionId !== state.sessionId) return;
-    const usage = usageFrom(update);
-    if (usage) state.usage = usage;
-    return;
-  }
   if (updateKind !== null && updateKind !== "agent_message_chunk") return;
   const content = update.content;
   if (isRecord(content)) {
@@ -246,29 +240,18 @@ function collectSessionUpdate(params: unknown, state: AcpClientState): void {
   if (text !== null) state.text.push(text);
 }
 
-function usageFrom(update: JsonRecord): RunUsage | undefined {
-  const used = update.used;
-  const size = update.size;
-  if (!isNonnegativeSafeInteger(used) || !isPositiveSafeInteger(size) || used > size) return undefined;
-  const cost = update.cost;
-  if (!isRecord(cost)) return { contextUsed: used, contextSize: size };
-  if (typeof cost.amount !== "number" || !Number.isFinite(cost.amount) || cost.amount < 0 ||
-      typeof cost.currency !== "string" || !/^[A-Z]{3}$/.test(cost.currency)) {
-    return { contextUsed: used, contextSize: size };
+function promptUsageFrom(raw: unknown): RunUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.usage)) return undefined;
+  const { totalTokens, inputTokens, outputTokens } = raw.usage;
+  if (!isNonnegativeSafeInteger(totalTokens) || !isNonnegativeSafeInteger(inputTokens) ||
+      !isNonnegativeSafeInteger(outputTokens) || totalTokens < inputTokens + outputTokens) {
+    return undefined;
   }
-  return {
-    contextUsed: used,
-    contextSize: size,
-    cost: { amount: cost.amount, currency: cost.currency },
-  };
+  return { totalTokens, inputTokens, outputTokens };
 }
 
 function isNonnegativeSafeInteger(raw: unknown): raw is number {
   return typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0;
-}
-
-function isPositiveSafeInteger(raw: unknown): raw is number {
-  return isNonnegativeSafeInteger(raw) && raw > 0;
 }
 
 function sessionIdFrom(raw: unknown): string {

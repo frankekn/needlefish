@@ -42,9 +42,9 @@ test("parseReviewResult accepts every optional field by type when present", () =
 					attempts: 2,
 					ok: true,
 					usage: {
-						contextUsed: 53_000,
-						contextSize: 200_000,
-						cost: { amount: 0.045, currency: "USD" },
+						totalTokens: 845,
+						inputTokens: 816,
+						outputTokens: 29,
 					},
 				},
 				{
@@ -80,9 +80,9 @@ test("parseReviewResult accepts every optional field by type when present", () =
 	assert.equal(result.stats?.length, 2);
 	assert.equal(result.stats?.[0].model, "claude-x");
 	assert.deepEqual(result.stats?.[0].usage, {
-		contextUsed: 53_000,
-		contextSize: 200_000,
-		cost: { amount: 0.045, currency: "USD" },
+		totalTokens: 845,
+		inputTokens: 816,
+		outputTokens: 29,
 	});
 	assert.equal(result.stats?.[1].model, undefined);
 	assert.equal(result.totalDurationMs, 1600);
@@ -255,7 +255,7 @@ test("parseReviewResult rejects mistyped optional fields", () => {
 		["stats", "x", /stats/],
 		["stats", [{ label: "l", runner: "not-a-runner", durationMs: 1, attempts: 1, ok: true }], /runner/],
 		["stats", [{ label: "l", runner: "codex", durationMs: 1, attempts: 0, ok: true }], /attempts/],
-		["stats", [{ label: "l", runner: "acp", durationMs: 1, attempts: 1, ok: true, usage: { contextUsed: 2, contextSize: 1 } }], /contextUsed/],
+		["stats", [{ label: "l", runner: "acp", durationMs: 1, attempts: 1, ok: true, usage: { totalTokens: 1, inputTokens: 2, outputTokens: 3 } }], /totalTokens/],
 		["totalDurationMs", "1600", /totalDurationMs/],
 		["coverage", null, /coverage/],
 		["failedRawOutputs", ["" , 1], /failedRawOutputs/],
