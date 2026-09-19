@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { runCodex } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
 import type { RunStat } from "./runner";
+import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
 type AcpStubMode = "clean" | "error" | "invalid-usage" | "malformed" | "hang";
 
@@ -245,17 +246,6 @@ async function runAcpPrompt(
   });
 }
 
-function captureEnv(keys: readonly string[]): Map<string, string | undefined> {
-  return new Map(keys.map((key) => [key, process.env[key]]));
-}
-
-function restoreEnv(previous: ReadonlyMap<string, string | undefined>): void {
-  for (const [key, value] of previous) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-}
-
 function readJsonRecord(file: string): Record<string, unknown> {
   const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (!isJsonRecord(raw)) throw new Error("expected JSON object");
@@ -276,17 +266,5 @@ async function waitForMissingProcessGroup(pgid: number, timeoutMs: number): Prom
       throw error;
     }
     await delay(25);
-  }
-}
-
-function isMissingProcess(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ESRCH";
-}
-
-function killProcessIfRunning(pid: number): void {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch (error) {
-    if (!isMissingProcess(error)) throw error;
   }
 }
