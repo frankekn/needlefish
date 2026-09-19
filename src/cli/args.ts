@@ -68,6 +68,7 @@ Shared options:
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
   --runner <name>      codex | claude | opencode | openai | grok | pi | acp
+  --connection <id>    select one user-configured connection (no automatic fallback)
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -93,7 +94,8 @@ Env:
   OPENCODE_BIN            opencode executable (default: opencode)
   OPENCODE_IDLE_TIMEOUT_MS opencode inactivity timeout (default: min of per-call timeout and 600000)
   PI_BIN                  pi executable (default: pi)
-  NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
+  NEEDLEFISH_ACP_BIN      ACP agent executable (required for legacy --runner acp)
+  NEEDLEFISH_CONNECTIONS_FILE  absolute user connections.json path (used only by --connection)
 `;
 
 type MutableLocalOptions = {
@@ -102,6 +104,7 @@ type MutableLocalOptions = {
   deep?: boolean;
   focus?: string;
   cacheDir?: string;
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -109,6 +112,7 @@ type MutableLocalOptions = {
 };
 
 type MutableRunnerOptions = {
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -134,6 +138,7 @@ function parsePr(value: string): number {
 
 function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
+  if (opts.connection !== undefined) runnerOpts.connection = opts.connection;
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
@@ -246,6 +251,13 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       i++;
       continue;
     }
+    if (arg === "--connection" || arg.startsWith("--connection=")) {
+      if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
+      opts.connection = arg === "--connection"
+        ? takeValue(argv, i++, "--connection")
+        : inlineValue(arg, "--connection");
+      continue;
+    }
     if (arg === "--runner") {
       opts.runner = parseRunnerName(takeValue(argv, i, "--runner"), "--runner");
       i++;
@@ -291,6 +303,10 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       continue;
     }
     throw new Error(`unknown option ${arg}`);
+  }
+
+  if (opts.connection !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
+    throw new Error("--connection cannot be combined with --runner or --model");
   }
 
   if (sawUncommitted && sawBranch) {

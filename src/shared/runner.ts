@@ -4,7 +4,15 @@ export type RunnerName = (typeof RUNNER_DEFINITIONS)[number]["name"];
 
 export const RUNNERS: readonly RunnerName[] = RUNNER_DEFINITIONS.map(({ name }) => name);
 
+export interface AcpLaunchSpec {
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
 export interface RunnerOptions {
+  // CLI selection is resolved once before entering the review pipeline.
+  readonly connection?: string;
+  readonly acpLaunch?: AcpLaunchSpec;
   readonly runner?: RunnerName;
   readonly model?: string;
   readonly timeoutMs?: number;
