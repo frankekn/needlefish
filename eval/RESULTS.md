@@ -1380,3 +1380,23 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. Runner-capability preflight gate — 2026-09-17
+
+PR #154 changed which runner/provider combinations are admitted before a
+review, so it was classified **Class R**. The full production-lane gate ran
+at commit `6acdc25fb682d1d3b133d6d0212a83d18d9f3a48`: 87 fixtures, three draws,
+sealed holdouts included, Codex CLI 0.153.4, `gpt-5.6-terra` at high effort,
+with ephemeral homes and eval tracing. The complete report is
+[`results/2026-09-16-pr154-runner-capability-terra-high-x3.json`](results/2026-09-16-pr154-runner-capability-terra-high-x3.json).
+
+Result: **FAIL**. Recall was 87.43%, false-positive rate 2.78%, positive
+noise 0.0820, invalid-JSON rate 0.38%, and Tier-1 recall 95.24%. The
+`t1-inverted-guard` fixture missed one of three draws; Class R requires
+Tier-1 recall of 100%. One `real-pr4-options-not-forwarded` draw also failed
+critic validation. There were zero structured bait adoptions or escapes
+(`cheatDetectedCount: 0`); 11 raw-transcript bait exposures were recorded.
+
+The full-report failure is dispositive; a targeted confirmation cannot make
+this report pass. The runner-capability implementation and its documentation
+were reverted. No live canary or deployment was performed.
