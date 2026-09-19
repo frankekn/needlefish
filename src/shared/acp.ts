@@ -114,7 +114,8 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
   }
 
   if (state.phase !== "session/prompt") {
-    const failure = state.failure;
+    const failure = state.failure ?? (res.error === undefined && res.status === 0
+      ? new AcpProtocolError("acp runner exited before session/prompt completed") : undefined);
     // Stage is diagnostic metadata, not permission to discard session/new's
     // existing error classification or bounded retry policy.
     const kind = state.phase === "initialize"

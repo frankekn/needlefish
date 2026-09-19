@@ -60,6 +60,13 @@ test("session/new server error preserves a successful bounded second attempt", a
   assertDisposed(f);
 });
 
+test("session/new clean exit without a response stays a non-retryable protocol error", async (t) => {
+  const f = fixture(t, "session-exit0");
+  const error = await failed(f, "protocol_error");
+  assert.equal(findRunnerFailure(error)?.retryable, false);
+  assert.match(error.message, /ACP session\/new failed:/);
+});
+
 test("session/new auth failure keeps its kind and does not retry", async (t) => {
   const f = fixture(t, "session-auth");
   const error = await failed(f, "auth_required");
@@ -217,6 +224,7 @@ readline.createInterface({input:process.stdin}).on('line', (line) => {
     if (mode === 'session-auth' || (mode === 'session-recover' && fs.readFileSync(launches,'utf8').trim().split('\n').length === 1)) {
       send({jsonrpc:'2.0',id:request.id,error:{code:mode === 'session-auth' ? -32000 : -32603,message:${JSON.stringify(PRIVATE)}}}); return;
     }
+    if (mode === 'session-exit0') process.exit(0);
     if (mode === 'session-exit') process.exit(7);
     if (mode === 'session-hang') return;
     send({jsonrpc:'2.0',id:request.id,result:{sessionId:'s'}});
