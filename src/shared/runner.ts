@@ -1,57 +1,13 @@
-export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "acp"] as const;
+import { RUNNER_DEFINITIONS as RUNNER_CATALOG, type RunnerDefinition } from "./runner-definition.js";
 
-export type RunnerName = (typeof RUNNERS)[number];
+export type RunnerName = (typeof RUNNER_CATALOG)[number]["name"];
 
-export interface RunnerDefinition {
-  readonly modelEnv?: string;
-  readonly envAllowlist: readonly string[];
-  readonly authFiles: readonly string[];
-  readonly envConfigFiles: readonly string[];
-}
+export const RUNNERS: readonly RunnerName[] = RUNNER_CATALOG.map(({ name }) => name);
 
-export const RUNNER_DEFINITIONS: Readonly<Record<RunnerName, RunnerDefinition>> = {
-  codex: {
-    modelEnv: "CODEX_MODEL",
-    envAllowlist: ["CODEX_BIN", "CODEX_MODEL", "CODEX_PROXY_API_KEY", "CODEX_REASONING_EFFORT", "CODEX_RETRY_MS", "CODEX_TIMEOUT_MS"],
-    authFiles: [".codex/auth.json", ".codex/config.toml"],
-    envConfigFiles: [],
-  },
-  claude: {
-    modelEnv: "CLAUDE_MODEL",
-    envAllowlist: ["CLAUDE_BIN", "CLAUDE_MODEL", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-    authFiles: [],
-    envConfigFiles: [],
-  },
-  opencode: {
-    modelEnv: "OPENCODE_MODEL",
-    envAllowlist: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
-    authFiles: [".config/opencode/opencode.json", ".local/share/opencode/auth.json"],
-    envConfigFiles: [".config/opencode/opencode.json"],
-  },
-  openai: {
-    modelEnv: "OPENAI_MODEL",
-    envAllowlist: [],
-    authFiles: [],
-    envConfigFiles: [],
-  },
-  grok: {
-    modelEnv: "GROK_MODEL",
-    envAllowlist: ["GROK_BIN", "GROK_MODEL"],
-    authFiles: [".grok/auth.json", ".grok/config.toml"],
-    envConfigFiles: [".grok/config.toml"],
-  },
-  pi: {
-    modelEnv: "PI_MODEL",
-    envAllowlist: ["PI_BIN", "PI_MODEL", "PI_PROVIDER", "PI_AUTH_MODE"],
-    authFiles: [".pi/agent/auth.json", ".pi/agent/models.json"],
-    envConfigFiles: [".pi/agent/models.json"],
-  },
-  acp: {
-    envAllowlist: ["NEEDLEFISH_ACP_BIN"],
-    authFiles: [],
-    envConfigFiles: [],
-  },
-};
+// The key union and every index entry come from the same static catalog.
+export const RUNNER_DEFINITIONS = Object.fromEntries<RunnerDefinition>(
+  RUNNER_CATALOG.map((definition) => [definition.name, definition]),
+) as Readonly<Record<RunnerName, RunnerDefinition>>;
 
 export interface RunnerOptions {
   readonly runner?: RunnerName;
@@ -69,10 +25,8 @@ export interface RunStat {
   readonly ok: boolean;
 }
 
-const RUNNER_NAMES = new Set<string>(RUNNERS);
-
 export function isRunnerName(value: string): value is RunnerName {
-  return RUNNER_NAMES.has(value);
+  return RUNNER_CATALOG.some(({ name }) => name === value);
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {
