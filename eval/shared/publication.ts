@@ -1,4 +1,4 @@
-import type { DrawResult, Report } from "./shared/types";
+import type { DrawResult, Expected, FixtureKind, Report } from "./types";
 
 export const REPO_URL = "https://github.com/frankekn/needlefish";
 export const MAX_MEAN_NOISE_PER_POSITIVE = 0.12;
