@@ -38,9 +38,8 @@ on:
         required: false
         default: false
       runs_on:
-        description: Runner label for the review job
+        description: Runner label for the review job (defaults to NEEDLEFISH_RUNS_ON or self-hosted)
         required: false
-        default: self-hosted
   workflow_call:
     inputs:
       pr_number:
@@ -98,7 +97,7 @@ concurrency:
 
 jobs:
   review:
-    runs-on: ${{ inputs.runs_on || github.event.inputs.runs_on || 'self-hosted' }}
+    runs-on: ${{ inputs.runs_on || github.event.inputs.runs_on || vars.NEEDLEFISH_RUNS_ON || 'self-hosted' }}
     if: inputs.pr_number != '' || github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Resolve PR refs
@@ -273,7 +272,7 @@ jobs:
           # (which carry no workflow inputs) use the same proxy route that a
           # dispatch with codex_proxy_base_url uses. Inputs win when supplied.
           CODEX_PROXY_BASE_URL_INPUT: ${{ inputs.codex_proxy_base_url || vars.CODEX_PROXY_BASE_URL }}
-          CODEX_PROXY_API_KEY_INPUT: ${{ secrets.codex_proxy_api_key }}
+          CODEX_PROXY_API_KEY_INPUT: ${{ (inputs.codex_proxy_base_url || vars.CODEX_PROXY_BASE_URL) && secrets.codex_proxy_api_key || '' }}
           NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: ${{ inputs.codex_proxy_required && '1' || '' }}
           # ubuntu-needlefish routes pi through the local CLIProxyAPI (ccp);
           # credentials live in the proxy, provider registered in ~/.pi/agent/models.json.
@@ -300,10 +299,8 @@ jobs:
               echo "Unable to run the selected Codex CLI." >&2
               exit 1
             }
-            if [ "$codex_version" != "codex-cli 0.153.4" ]; then
-              echo "Selected Codex CLI must be codex-cli 0.153.4; found '$codex_version'." >&2
-              exit 1
-            fi
+            # Self-hosted operators track Codex latest; log the selected release for diagnosis.
+            echo "Selected Codex CLI: $codex_version"
             export CODEX_BIN="$codex_bin"
             if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -n "$CODEX_PROXY_API_KEY_INPUT" ]; then
               if [ -z "$CODEX_PROXY_BASE_URL_INPUT" ] || [ -z "$CODEX_PROXY_API_KEY_INPUT" ]; then

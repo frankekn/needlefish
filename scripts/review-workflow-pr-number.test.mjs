@@ -39,7 +39,7 @@ const script = scriptLines
 	.map((line) => line.replace(/^          /, ""))
 	.join("\n");
 
-function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.153.4", configuredCodex = false } = {}) {
+function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
@@ -145,16 +145,16 @@ test("review preserves an explicitly configured CODEX_BIN", () => {
 	assert.equal(result.codexBin, result.expectedConfiguredCodex);
 });
 
-test("review rejects a stale user-local Codex CLI before invoking needlefish", () => {
+test("review accepts the installed Codex CLI version", () => {
 	const result = runReview("42", {
 		runner: "codex",
 		homeCodex: true,
-		homeCodexVersion: "0.152.1",
+		homeCodexVersion: "0.155.0",
 	});
 
-	assert.notEqual(result.status, 0);
-	assert.match(result.stderr, /must be codex-cli 0\.153\.4/);
-	assert.equal(result.argvLog, "");
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /Selected Codex CLI: codex-cli 0\.155\.0/);
+	assert.match(result.argvLog, /<--runner>\n<codex>\n/);
 });
 
 test("review rejects PR number 0 before invoking needlefish", () => {
