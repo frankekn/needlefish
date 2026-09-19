@@ -501,7 +501,8 @@ parentheses are the executable names used when the `*_BIN` var is unset:
   <level>` and its default full toolset.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
-  applies the same process-group kill path as the CLI runners.
+  applies the same process-group kill path as the CLI runners. When the prompt
+  response includes token usage, review stats retain its input/output totals.
 
 Every CLI runner executes inside a **throwaway clean clone** at the review
 head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After

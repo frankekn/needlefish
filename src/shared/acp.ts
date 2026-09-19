@@ -3,6 +3,7 @@ import {
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
 } from "./runner-process.js";
+import type { RunUsage } from "./runner.js";
 
 type JsonRecord = Record<string, unknown>;
 type JsonRpcId = number | string | null;
@@ -18,6 +19,7 @@ export interface AcpRunnerInvocation {
 export interface AcpRunnerResult {
   readonly res: RunnerProcessResult;
   readonly out: string;
+  readonly usage?: RunUsage;
 }
 
 class AcpProtocolError extends Error {
@@ -37,6 +39,7 @@ interface AcpClientState {
   buffer: string;
   readonly text: string[];
   completed: boolean;
+  usage?: RunUsage;
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
@@ -64,7 +67,11 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
 
   const out = state.text.join("");
   if (state.completed && res.error === undefined) {
-    return { res: { status: 0, signal: null, stdout: res.stdout, stderr: res.stderr }, out };
+    return {
+      res: { status: 0, signal: null, stdout: res.stdout, stderr: res.stderr },
+      out,
+      ...(state.usage ? { usage: state.usage } : {}),
+    };
   }
   if (res.error !== undefined) return { res, out };
   if (res.status !== 0) return { res, out };
@@ -207,11 +214,14 @@ function handleResponseMessage(
       sendRequest(controller, state, "session/prompt", sessionPromptParams(sessionId, invocation.prompt));
       return;
     }
-    case "session/prompt":
+    case "session/prompt": {
+      const usage = promptUsageFrom(result);
+      if (usage) state.usage = usage;
       state.completed = true;
       controller.endStdin();
       controller.stop();
       return;
+    }
   }
 }
 
@@ -228,6 +238,20 @@ function collectSessionUpdate(params: unknown, state: AcpClientState): void {
   }
   const text = stringField(update, "text");
   if (text !== null) state.text.push(text);
+}
+
+function promptUsageFrom(raw: unknown): RunUsage | undefined {
+  if (!isRecord(raw) || !isRecord(raw.usage)) return undefined;
+  const { totalTokens, inputTokens, outputTokens } = raw.usage;
+  if (!isNonnegativeSafeInteger(totalTokens) || !isNonnegativeSafeInteger(inputTokens) ||
+      !isNonnegativeSafeInteger(outputTokens) || totalTokens < inputTokens + outputTokens) {
+    return undefined;
+  }
+  return { totalTokens, inputTokens, outputTokens };
+}
+
+function isNonnegativeSafeInteger(raw: unknown): raw is number {
+  return typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0;
 }
 
 function sessionIdFrom(raw: unknown): string {

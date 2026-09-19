@@ -9,6 +9,12 @@ export const RUNNER_DEFINITIONS = Object.fromEntries<RunnerDefinition>(
   RUNNER_CATALOG.map((definition) => [definition.name, definition]),
 ) as Readonly<Record<RunnerName, RunnerDefinition>>;
 
+export interface RunUsage {
+  readonly totalTokens: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+}
+
 export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
@@ -23,6 +29,7 @@ export interface RunStat {
   readonly durationMs: number;
   readonly attempts: number;
   readonly ok: boolean;
+  readonly usage?: RunUsage;
 }
 
 export function isRunnerName(value: string): value is RunnerName {
