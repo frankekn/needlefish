@@ -13,14 +13,21 @@ runner attempt. A late response after cancellation cannot revive the run.
 `session/new` retains the existing remaining call budget, failure kind and
 retryability. A transient server error can recover on the existing second
 attempt; authentication/protocol failures stay non-retryable. Its diagnostics
-name that stage without turning every session error into a handshake failure. `session/prompt` retains the normal review timeout and bounded retry
-policy; this change does not impose a 30-second model-review limit.
+name that stage without turning every session error into a handshake failure.
+`session/prompt` retains the normal review timeout and bounded retry policy;
+this change does not impose a 30-second model-review limit.
 
-Public errors report stage, cause category, elapsed milliseconds, exit/signal
-and stream byte counts. They never publish raw stderr, even before the prompt:
-startup logs can contain credentials. Unknown causes remain unknown. Full raw
-streams still reach the existing failed-attempt/diagnostic callbacks; this does
-not add an automatically uploaded log or a durable credential-bearing artifact.
+Failures while waiting for `initialize` or `session/new` report the stage, a
+safe reason, elapsed milliseconds, exit/signal and stream byte counts. Pre-launch
+configuration errors instead identify the missing or invalid setting; no process
+has started to measure. After `session/prompt` is sent, timeout errors name that
+stage. Other review-stage errors retain the existing structured failure messages;
+this change does not add the startup diagnostic summary to them.
+
+Public errors never publish raw stderr, even before the prompt: startup logs
+can contain credentials. Unknown causes remain unknown. Full raw streams still
+reach the existing failed-attempt/diagnostic callbacks; this does not add an
+automatically uploaded log or a durable credential-bearing artifact.
 Run a trusted launcher's diagnostic command in its service account/environment
 to investigate startup configuration. Keep stderr separate from ACP stdout.
 
@@ -36,7 +43,9 @@ completion-check fix or a resolution of arbitrary agents' workspace imports.
 
 ## 中文
 
-AI 工具沒啟動成功時，現在會指出卡在握手、建立工作階段，或實際審查，
+握手或建立工作階段失敗時，公開診斷會提供階段、耗時、退出狀態與串流大小；
+啟動前的設定錯誤則指出缺少或無效的設定。實際審查逾時會標示 `session/prompt`，
+其他審查階段錯誤沿用既有結構化訊息，不承諾相同的啟動診斷摘要。
 不再讓握手空等兩次 10 分鐘。正常使用不需新增設定；預設握手期限為 30 秒。
 請先檢查工具安裝、登入與啟動設定，不要把這種失敗當成程式有 bug，或改用
 其他帳號掩蓋設定問題。原始錯誤串流不會直接貼入 PR，以免洩漏憑證。
