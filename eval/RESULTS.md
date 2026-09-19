@@ -128,6 +128,32 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-16 — Fail-closed review delivery status (#145) — failed and reverted
+
+Candidate `33f515dfa3f59f211d7d424693e248c7dea988fe` mapped both
+`changes_requested` and `needs_human` to a failed delivery status and also
+changed the rendered `needs_human` Markdown and check-run title. The initial
+Class D declaration was wrong: successful-path user-facing output was not
+byte-identical. The two Class D subset reports remain as diagnostics only and
+do not qualify the change:
+[`results/2026-09-16-pr153-review-status-d-gate-x3.json`](results/2026-09-16-pr153-review-status-d-gate-x3.json) and
+[`results/2026-09-16-pr153-review-status-d-gate-confirm-x3.json`](results/2026-09-16-pr153-review-status-d-gate-confirm-x3.json).
+
+The change was reclassified as Class R and run through the exact production
+lane: Codex CLI 0.153.4, `gpt-5.6-terra` high, all 87 fixtures at x3, sealed
+holdouts included, anti-cheat v2. **Result: FAILED.** Tier-1 recall was 20/21
+(95.24%): `t1-inverted-guard` missed one draw, which violates the absolute
+Tier-1 rule. One `neg-dep-patch` draw also produced malformed critic output.
+Overall recall was 87.98%, false-positive rate 5.56%, positive noise 0.0984,
+and structured cheat detections zero; 25 raw-transcript bait exposures had no
+structured adoption or escape. Report:
+[`results/2026-09-16-pr153-review-status-r-gate-x3.json`](results/2026-09-16-pr153-review-status-r-gate-x3.json).
+
+No confirmation can turn the failed full report into a pass. Per the gate
+contract, the branch reverts the product behavior and documentation instead of
+shipping it. No merge, deploy, live canary, test-repository branch-protection
+exercise, or nontechnical-user acceptance occurred.
+
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
