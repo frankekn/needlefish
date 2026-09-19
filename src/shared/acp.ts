@@ -42,11 +42,20 @@ interface AcpClientState {
   completed: boolean;
   cancelled: boolean;
   failure?: RunnerFailure;
+  phase: AcpRequestMethod;
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
   const command = process.env.NEEDLEFISH_ACP_BIN?.trim();
-  if (!command) throw new Error("NEEDLEFISH_ACP_BIN is required for the acp runner");
+  if (!command) throw new RunnerFailure("startup_failed",
+    "NEEDLEFISH_ACP_BIN is required for the acp runner; review not started. Configure the ACP launcher.");
+  const initializeTimeoutMs = initializeTimeout(invocation.timeoutMs);
+  const startedAt = performance.now();
+  let initializeTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearInitializeTimer = (): void => {
+    clearTimeout(initializeTimer);
+    initializeTimer = undefined;
+  };
 
   const state: AcpClientState = {
     nextId: 1,
@@ -56,20 +65,75 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     text: [],
     completed: false,
     cancelled: false,
+    phase: "initialize",
   };
-  const res = await runManagedRunnerProcess({
-    command,
-    args: [],
-    repoPath: invocation.repoPath,
-    timeoutMs: invocation.timeoutMs,
-    env: invocation.env,
-    onSpawn: (controller) => sendRequest(controller, state, "initialize", initializeParams()),
-    onStdout: (chunk, controller) => handleStdout(chunk, controller, state, invocation),
-    onTimeout: (controller) => sendCancel(controller, state),
-  });
+  let res: RunnerProcessResult;
+  try {
+    res = await runManagedRunnerProcess({
+      command,
+      args: [],
+      repoPath: invocation.repoPath,
+      timeoutMs: invocation.timeoutMs,
+      env: invocation.env,
+      onSpawn: (controller) => {
+        sendRequest(controller, state, "initialize", initializeParams());
+        initializeTimer = setTimeout(() => {
+          if (state.phase !== "initialize" || state.failure) return;
+          state.failure = new RunnerFailure("startup_timeout", "initialize timeout");
+          controller.stop();
+        }, initializeTimeoutMs);
+      },
+      onStdout: (chunk, controller) => {
+        try {
+          handleStdout(chunk, controller, state, invocation);
+        } catch (error) {
+          if (state.phase !== "session/prompt" && !state.failure) {
+            state.failure = state.phase === "initialize"
+              ? new RunnerFailure("startup_failed", startupCause(error))
+              : error instanceof RunnerFailure ? error
+              : new RunnerFailure("unknown", startupCause(error), true);
+          }
+          throw error;
+        } finally {
+          // Noise and partial JSON never extend or satisfy the handshake deadline.
+          if (state.phase !== "initialize" || state.failure) clearInitializeTimer();
+        }
+      },
+      onTimeout: (controller) => {
+        if (!state.failure) {
+          state.failure = state.phase === "session/prompt"
+            ? new RunnerFailure("unknown", "ACP session/prompt review timeout (ETIMEDOUT); review not completed; raw streams withheld", true)
+            : new RunnerFailure(state.phase === "initialize" ? "startup_timeout" : "unknown",
+                `${state.phase} timeout`, state.phase !== "initialize");
+        }
+        sendCancel(controller, state);
+      },
+    });
+  } finally {
+    clearInitializeTimer();
+  }
+
+  if (state.phase !== "session/prompt") {
+    const failure = state.failure ?? (res.error === undefined && res.status === 0
+      ? new AcpProtocolError("acp runner exited before session/prompt completed") : undefined);
+    // Stage is diagnostic metadata, not permission to discard session/new's
+    // existing error classification or bounded retry policy.
+    const kind = state.phase === "initialize"
+      ? failure?.kind === "startup_timeout" ? "startup_timeout" : "startup_failed"
+      : failure?.kind ?? "unknown";
+    const retryable = state.phase === "initialize" ? false : failure?.retryable ?? true;
+    const reason = failure?.message ?? (res.error ? startupCause(res.error) : "agent exited before startup completed");
+    const elapsed = Math.round(performance.now() - startedAt);
+    const streams = `stdout=${Buffer.byteLength(res.stdout)}B; stderr=${Buffer.byteLength(res.stderr)}B (raw text withheld)`;
+    return {
+      res: { ...res, error: new RunnerFailure(kind,
+        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable) },
+      out: state.text.join(""),
+    };
+  }
 
   const out = state.text.join("");
-  // A permission failure is sticky, even if the agent emits end_turn or
+  // A failure is sticky, even if the agent emits end_turn or
   // valid review JSON in the same chunk, during cancellation, or before exit.
   if (state.failure) return { res: { ...res, error: state.failure }, out };
   if (state.completed && res.error === undefined) {
@@ -84,6 +148,36 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     },
     out,
   };
+}
+
+// This is a protocol-startup budget, not a shorter model review timeout.
+function initializeTimeout(totalTimeoutMs: number): number {
+  const raw = process.env.NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS?.trim();
+  const configured = raw ? Number(raw) : 30_000;
+  if (!Number.isSafeInteger(configured) || configured <= 0 || configured > 2_147_483_647) {
+    throw new RunnerFailure("startup_failed",
+      "NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS must be an integer from 1 to 2147483647; review not started");
+  }
+  return Math.min(configured, totalTimeoutMs);
+}
+
+// Public diagnostics never interpolate agent text, stderr, command arguments,
+// or raw error messages. Before initialize, logs may still contain credentials.
+function startupCause(error: unknown): string {
+  // Protocol parser messages are adapter-authored and already omit raw input.
+  if (error instanceof AcpProtocolError) return error.message;
+  if (error instanceof RunnerFailure) {
+    if (error.kind === "auth_required") return "authentication required";
+    if (error.kind === "cancelled") return "agent cancelled startup";
+    if (error.kind === "protocol_error") return "invalid or incompatible ACP response";
+    return "agent reported a startup error";
+  }
+  const code: unknown = error instanceof Error
+    ? Object.getOwnPropertyDescriptor(error, "code")?.value : undefined;
+  if (typeof code === "string" && ["ENOENT", "EACCES", "ENOEXEC", "EPIPE", "ENOBUFS"].includes(code)) {
+    return `launcher/process error (${code})`;
+  }
+  return "launcher/process failure";
 }
 
 function initializeParams(): JsonRecord {
@@ -121,6 +215,7 @@ function sendRequest(
   const id = state.nextId;
   state.nextId += 1;
   state.pending.set(id, method);
+  state.phase = method;
   writeJson(controller, { jsonrpc: "2.0", id, method, params });
 }
 
@@ -232,6 +327,9 @@ function handleResponseMessage(
   const result = message.result;
   switch (method) {
     case "initialize":
+      if (message.jsonrpc !== "2.0" || !isRecord(result) || result.protocolVersion !== 1) {
+        throw new AcpProtocolError("ACP initialize requires a compatible protocolVersion 1 result");
+      }
       sendRequest(controller, state, "session/new", sessionNewParams(invocation));
       return;
     case "session/new": {
