@@ -1,8 +1,13 @@
-import { RUNNER_DEFINITIONS } from "./runner-definition.js";
+import { RUNNER_DEFINITIONS as RUNNER_CATALOG, type RunnerDefinition } from "./runner-definition.js";
 
-export type RunnerName = (typeof RUNNER_DEFINITIONS)[number]["name"];
+export type RunnerName = (typeof RUNNER_CATALOG)[number]["name"];
 
-export const RUNNERS: readonly RunnerName[] = RUNNER_DEFINITIONS.map(({ name }) => name);
+export const RUNNERS: readonly RunnerName[] = RUNNER_CATALOG.map(({ name }) => name);
+
+// The key union and every index entry come from the same static catalog.
+export const RUNNER_DEFINITIONS = Object.fromEntries<RunnerDefinition>(
+  RUNNER_CATALOG.map((definition) => [definition.name, definition]),
+) as Readonly<Record<RunnerName, RunnerDefinition>>;
 
 export interface RunnerOptions {
   readonly runner?: RunnerName;
@@ -21,7 +26,7 @@ export interface RunStat {
 }
 
 export function isRunnerName(value: string): value is RunnerName {
-  return RUNNER_DEFINITIONS.some(({ name }) => name === value);
+  return RUNNER_CATALOG.some(({ name }) => name === value);
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {
