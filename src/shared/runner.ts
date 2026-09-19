@@ -1,6 +1,8 @@
-export const RUNNERS = ["codex", "claude", "opencode", "openai", "grok", "pi", "acp"] as const;
+import { RUNNER_DEFINITIONS } from "./runner-definition.js";
 
-export type RunnerName = (typeof RUNNERS)[number];
+export type RunnerName = (typeof RUNNER_DEFINITIONS)[number]["name"];
+
+export const RUNNERS: readonly RunnerName[] = RUNNER_DEFINITIONS.map(({ name }) => name);
 
 export interface RunUsage {
   readonly totalTokens: number;
@@ -26,15 +28,7 @@ export interface RunStat {
 }
 
 export function isRunnerName(value: string): value is RunnerName {
-  return (
-    value === "codex" ||
-    value === "claude" ||
-    value === "opencode" ||
-    value === "openai" ||
-    value === "grok" ||
-    value === "pi" ||
-    value === "acp"
-  );
+  return RUNNER_DEFINITIONS.some(({ name }) => name === value);
 }
 
 export function parseRunnerName(value: string, label: string): RunnerName {
