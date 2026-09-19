@@ -17,9 +17,7 @@ import {
   type DrawResult,
   type Aggregates,
   type Expected,
-  type FixtureKind,
   type FixtureSpec,
-  type Report,
 } from "./shared/types";
 import { score } from "./shared/score";
 import {
@@ -29,7 +27,6 @@ import {
   compareLanes,
   displayedMetrics,
   operationalFailures,
-  qualifies,
   scoreConfidenceInterval,
   statisticalRanks,
   tierOneInterimGate,
@@ -37,6 +34,7 @@ import {
   usableSpecificity,
   type BlockedConfig,
   type ExcludedConfig,
+  type FixtureClassifications,
   type Lane,
   type LaneConfig,
   type LeaderboardManifest,
@@ -67,7 +65,6 @@ const EVAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.dirname(EVAL_DIR);
 const MANIFEST_PATH = path.join(EVAL_DIR, "leaderboard.json");
 const OUTPUT_PATH = path.join(REPO_ROOT, "docs", "index.html");
-type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 type ReviewFamilyAggregates = Aggregates & {
   readonly recallByDefectClass?: Readonly<Record<string, number>>;
   readonly lineAnchorValidRateByDefectClass?: Readonly<Record<string, number>>;
