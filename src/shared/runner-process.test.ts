@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { readRunnerDurationMs, runManagedRunnerProcess, spawnRunnerProcess } from "./runner-process";
+import { isMissingProcess, killProcessIfRunning } from "./runner-test-fixtures";
 
 test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", async () => {
   const result = await spawnRunnerProcess({
@@ -209,18 +210,6 @@ setInterval(() => {}, 1000);
     rmSync(tmp, { recursive: true, force: true });
   }
 });
-
-function isMissingProcess(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ESRCH";
-}
-
-function killProcessIfRunning(pid: number): void {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch (error) {
-    if (!isMissingProcess(error)) throw error;
-  }
-}
 
 test("runManagedRunnerProcess delivers stderr before exit so a consumer can acknowledge readiness", async () => {
   let observed = "";
