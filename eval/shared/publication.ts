@@ -193,7 +193,7 @@ export function displayedMetrics(report: PublishedReport): {
   };
 }
 
-function sameRecord(
+export function sameRecord(
   left: Readonly<Record<string, unknown>> | undefined,
   right: Readonly<Record<string, unknown>> | undefined,
 ): boolean {
