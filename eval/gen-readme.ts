@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadFixtures } from "./run";
+import { loadFixtures } from "./shared/fixture-catalog";
 import {
   fixtureClassifications,
   qualifies,

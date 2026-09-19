@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
+import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 import { isRunnerName } from "../src/shared/runner";
 import type { Finding, Verdict } from "../src/shared/schema";
 import { classifySurface, isDocsFastPathEligible } from "../src/shared/classify";
