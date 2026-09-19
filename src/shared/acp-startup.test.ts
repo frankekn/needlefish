@@ -37,11 +37,35 @@ for (const mode of ["exit0", "exit7", "auth", "malformed", "wrong-id", "wrong-ve
 for (const mode of ["session-exit", "session-hang"]) {
   test(`ACP ${mode} reports session/new, not initialize or review`, async (t) => {
     const f = fixture(t, mode, 1300);
-    const error = await failed(f, mode === "session-hang" ? "startup_timeout" : "startup_failed");
+    const error = await failed(f, "unknown", 2);
+    assert.equal(findRunnerFailure(error)?.retryable, true);
     assert.match(error.message, /ACP session\/new failed:/);
-    assert.deepEqual(f.requests().map((request) => request.method), ["initialize", "session/new"]);
+    assert.deepEqual(f.requests().map((request) => request.method), ["initialize", "session/new", "initialize", "session/new"]);
   });
 }
+
+test("session/new server error preserves a successful bounded second attempt", async (t) => {
+  const f = fixture(t, "session-recover");
+  const stats: RunStat[] = [];
+  const failedRaw: string[] = [];
+  const output = await runCodex("prompt", {
+    ...f.options, onStat: (stat) => stats.push(stat), onFailedRaw: (raw) => failedRaw.push(raw),
+  });
+  assert.equal(output, '{"ok":true}');
+  assert.equal(stats[0].attempts, 2);
+  assert.equal(stats[0].ok, true);
+  assert.equal(f.launches().length, 2);
+  assert.equal(failedRaw.length, 1);
+  assert.match(failedRaw[0], /startup-private-token-canary/);
+  assertDisposed(f);
+});
+
+test("session/new auth failure keeps its kind and does not retry", async (t) => {
+  const f = fixture(t, "session-auth");
+  const error = await failed(f, "auth_required");
+  assert.equal(findRunnerFailure(error)?.retryable, false);
+  assert.match(error.message, /ACP session\/new/);
+});
 
 test("valid initialize clears its timer; a longer review still succeeds", async (t) => {
   const f = fixture(t, "slow-review");
@@ -190,6 +214,9 @@ readline.createInterface({input:process.stdin}).on('line', (line) => {
     if (mode === 'malformed') { process.stdout.write(${JSON.stringify(PRIVATE)}+'\n'); return; }
     send({jsonrpc: mode === 'wrong-jsonrpc' ? '1.0' : '2.0',id:mode === 'wrong-id' ? 99 : request.id,result:mode === 'missing-version' ? {} : {protocolVersion:mode === 'wrong-version' ? 2 : 1}});
   } else if (request.method === 'session/new') {
+    if (mode === 'session-auth' || (mode === 'session-recover' && fs.readFileSync(launches,'utf8').trim().split('\n').length === 1)) {
+      send({jsonrpc:'2.0',id:request.id,error:{code:mode === 'session-auth' ? -32000 : -32603,message:${JSON.stringify(PRIVATE)}}}); return;
+    }
     if (mode === 'session-exit') process.exit(7);
     if (mode === 'session-hang') return;
     send({jsonrpc:'2.0',id:request.id,result:{sessionId:'s'}});

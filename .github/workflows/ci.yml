@@ -34,22 +34,4 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm check
           pnpm lint
-          set +e
-          pnpm test > "$RUNNER_TEMP/needlefish-tests.log" 2>&1
-          status=$?
-          set -e
-          python3 - "$RUNNER_TEMP/needlefish-tests.log" <<'PY'
-          import sys
-          lines = open(sys.argv[1], errors='replace').read().splitlines()
-          remaining = 0
-          for line in lines:
-              if line.lstrip().startswith('not ok '):
-                  remaining = 55
-              if remaining:
-                  print(line[:1000])
-                  remaining -= 1
-          print('\n--- suite summary ---')
-          for line in lines[-30:]:
-              print(line[:1000])
-          PY
-          exit "$status"
+          pnpm test

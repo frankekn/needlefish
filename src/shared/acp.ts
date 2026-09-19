@@ -88,7 +88,10 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
           handleStdout(chunk, controller, state, invocation);
         } catch (error) {
           if (state.phase !== "session/prompt" && !state.failure) {
-            state.failure = new RunnerFailure("startup_failed", startupCause(error));
+            state.failure = state.phase === "initialize"
+              ? new RunnerFailure("startup_failed", startupCause(error))
+              : error instanceof RunnerFailure ? error
+              : new RunnerFailure("unknown", startupCause(error), true);
           }
           throw error;
         } finally {
@@ -100,7 +103,8 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
         if (!state.failure) {
           state.failure = state.phase === "session/prompt"
             ? new RunnerFailure("unknown", "ACP session/prompt review timeout (ETIMEDOUT); review not completed; raw streams withheld", true)
-            : new RunnerFailure("startup_timeout", `${state.phase} timeout`);
+            : new RunnerFailure(state.phase === "initialize" ? "startup_timeout" : "unknown",
+                `${state.phase} timeout`, state.phase !== "initialize");
         }
         sendCancel(controller, state);
       },
@@ -111,13 +115,18 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
 
   if (state.phase !== "session/prompt") {
     const failure = state.failure;
-    const kind = failure?.kind === "startup_timeout" ? "startup_timeout" : "startup_failed";
+    // Stage is diagnostic metadata, not permission to discard session/new's
+    // existing error classification or bounded retry policy.
+    const kind = state.phase === "initialize"
+      ? failure?.kind === "startup_timeout" ? "startup_timeout" : "startup_failed"
+      : failure?.kind ?? "unknown";
+    const retryable = state.phase === "initialize" ? false : failure?.retryable ?? true;
     const reason = failure?.message ?? (res.error ? startupCause(res.error) : "agent exited before startup completed");
     const elapsed = Math.round(performance.now() - startedAt);
     const streams = `stdout=${Buffer.byteLength(res.stdout)}B; stderr=${Buffer.byteLength(res.stderr)}B (raw text withheld)`;
     return {
       res: { ...res, error: new RunnerFailure(kind,
-        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`) },
+        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable) },
       out: state.text.join(""),
     };
   }
@@ -154,6 +163,8 @@ function initializeTimeout(totalTimeoutMs: number): number {
 // Public diagnostics never interpolate agent text, stderr, command arguments,
 // or raw error messages. Before initialize, logs may still contain credentials.
 function startupCause(error: unknown): string {
+  // Protocol parser messages are adapter-authored and already omit raw input.
+  if (error instanceof AcpProtocolError) return error.message;
   if (error instanceof RunnerFailure) {
     if (error.kind === "auth_required") return "authentication required";
     if (error.kind === "cancelled") return "agent cancelled startup";

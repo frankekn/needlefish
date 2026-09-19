@@ -10,8 +10,10 @@ the handshake. Stderr, notifications and partial JSON do not reset its timer.
 A silent launcher, incompatible response or startup exit fails without a second
 runner attempt. A late response after cancellation cannot revive the run.
 
-`session/new` retains the existing remaining call budget, but failures name that
-stage. `session/prompt` retains the normal review timeout and bounded retry
+`session/new` retains the existing remaining call budget, failure kind and
+retryability. A transient server error can recover on the existing second
+attempt; authentication/protocol failures stay non-retryable. Its diagnostics
+name that stage without turning every session error into a handshake failure. `session/prompt` retains the normal review timeout and bounded retry
 policy; this change does not impose a 30-second model-review limit.
 
 Public errors report stage, cause category, elapsed milliseconds, exit/signal
