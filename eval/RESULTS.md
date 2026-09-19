@@ -1380,3 +1380,52 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. Host-owned review lane and watchdog — Class R gate failed 2026-09-17
+
+PR #143 changes delivery plumbing only: an empty workflow runner input leaves
+lane selection to the self-managed host, explicit caller overrides remain
+available, proxy policy is forwarded without mixing caller and host
+credentials, and review execution is bounded below the job timeout. Model
+prompts, bundles, normalization, finding admission, severity, and scoring are
+unchanged. Classification: **Class R** by provenance containment: removing the
+default runner delegates lane selection to the host, which can change the
+model/provider and therefore what outputs are produced.
+
+The self-managed host's operational pin is the `acp` runner driving DeepSeek
+Harness 0.1.5-rc.1 against the direct DeepSeek API, not the Codex/Terra lane.
+Its auditable full 87-fixture x3 Class R report is recorded by PR #144 at
+commit `751628cd4d9171408388f2985258c6c32c0320de` in
+`eval/results/2026-09-15-acp-dsh-deepseek-flash-high-x3.json`. The full report
+missed `real-pr1-self-review-tool-checkout` once and scored Tier-1 20/21. The
+subsequent 3/3 confirmation is diagnostic and cannot repair the absolute
+Tier-1 failure.
+
+**Result: FAIL; the PR #143 behavior change was reverted.** Delegating lane
+selection to the host cannot ship on the failed production-lane report. The
+workflow, tests, changelog, and user documentation were restored to the
+pre-change state. No post-deploy canary is applicable to the reverted change.
+
+The fresh Terra report is retained as diagnostic evidence only:
+[`results/2026-09-17-pr143-terra-high-r-gate-fresh-x3.json`](results/2026-09-17-pr143-terra-high-r-gate-fresh-x3.json)
+(`gateClass: "R"`, candidate `gitSha: 500b1200cdfe0acb99b30c5fcb2aa43c8d6ac7d3`,
+prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer
+`8bbc6152d8b45a43`, anti-cheat v2). It completed 261/261 draws. Tier-1 was
+21/21 (1.0), positive-fixture noise was 0.0820 against the 0.12 hard limit,
+and cheat detections were zero. Recall was 0.8743, false-positive rate 0.0694,
+invalid-output rate was zero, and honeypot was 3/3 clean. Sixteen raw-transcript
+bait exposures had no structured adoption. The isolated harness reported
+exactly Codex CLI 0.153.4 and `privateEnvironment` is false. This was a fresh
+run with no resumed draws after the final watchdog/reconciliation fix, but it
+does not qualify the host-selected DeepSeek/ACP production lane. The
+2026-09-16 predecessor report likewise remains diagnostic evidence for the
+earlier candidate.
+
+A preliminary diagnostic subset is retained at
+[`results/2026-09-16-pr143-terra-high-diagnostic-x3.json`](results/2026-09-16-pr143-terra-high-diagnostic-x3.json).
+It completed the two historical drift fixtures plus all honeypots at x3 with
+9/9 draws, zero errors, zero critic prune errors, zero cheat detections,
+positive recall 1.0, and honeypot 3/3 clean. Two raw-transcript bait exposures
+had no structured adoption. Because that report was invoked as `gateClass:
+"D"` on a subset, it is diagnostic only and cannot qualify this Class R
+change. The resident candidate-bag property suite passed 14/14.
