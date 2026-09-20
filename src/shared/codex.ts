@@ -88,10 +88,11 @@ function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
 	ephemeralHome?: string,
+	connectionAuth?: RunnerOptions["connectionAuth"],
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
-	const extra = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+	const extra = connectionAuth ? [] : (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
@@ -117,11 +118,16 @@ function buildRunnerEnv(
 	if (ephemeralHome !== undefined) {
 		env.HOME = ephemeralHome;
 		env.USERPROFILE = ephemeralHome;
-		if (runner === "opencode") {
+		if (runner === "opencode" || connectionAuth) {
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
+		if (connectionAuth) {
+			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
+			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
+		}
 	}
+	connectionAuth?.applyTo(env);
 	return env;
 }
 
@@ -384,8 +390,10 @@ function ephemeralAuthFiles(runner: RunnerName): {
 export function prepareEphemeralHome(
 	runner: RunnerName,
 	tmp: string,
+	connectionAuth?: RunnerOptions["connectionAuth"],
 ): string | undefined {
-	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
+	connectionAuth?.assertCompatible(runner);
+	if (!connectionAuth && process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
 	// claude exemption: its credential lookup goes through the macOS Keychain
 	// tied to the real HOME; --no-session-persistence already blocks session
 	// writes. Keep real HOME under the flag.
@@ -400,7 +408,10 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
-	const { required, optional } = ephemeralAuthFiles(runner);
+	// Explicit env auth never stages a default account's files or config.
+	const { required, optional } = connectionAuth
+		? { required: [], optional: [] }
+		: ephemeralAuthFiles(runner);
 	if (!realHome) {
 		// No source HOME is only a problem when something must be staged from
 		// it: an env-authenticated mode (required empty) is independently valid,
@@ -580,6 +591,7 @@ export async function runCodex(
 	let codexProxy: CodexProxyConfig | undefined;
 	try {
 		runner = resolveRunner(opts);
+		opts.connectionAuth?.assertCompatible(runner);
 		codexProxy = runner === "codex" ? resolveCodexProxyConfig() : undefined;
 	} catch (error) {
 		throw asRunnerOperationalError(error);
@@ -683,8 +695,8 @@ async function runCodexOnce(
 		const { invocation, sandbox } = (() => {
 			try {
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+				const ephemeralHome = prepareEphemeralHome(runner, tmp, opts.connectionAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, opts.connectionAuth);
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
