@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // GitHub Actions interpolates ${{ }} into the run script before bash parses it.
 // Double quotes do not stop command substitution: $(...) and backticks in a
@@ -25,19 +26,7 @@ const step = workflow.match(
 	/      - name: Needlefish review\n([\s\S]*?)(?=\n      - name:|$)/,
 );
 assert.ok(step, "Needlefish review step must exist");
-const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-assert.ok(runBlock, "Needlefish review must have a run block");
-// Model the literal-block scalar termination rule: the script ends at the
-// first line dedented below the block's 10-space indentation (e.g., a
-// top-level job appended after this one), not at end of file.
-const scriptLines = [];
-for (const line of runBlock[1].split("\n")) {
-	if (line.length > 0 && !line.startsWith("          ")) break;
-	scriptLines.push(line);
-}
-const script = scriptLines
-	.map((line) => line.replace(/^          /, ""))
-	.join("\n");
+const script = workflowRun(workflow, "review", "Needlefish review");
 
 function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));

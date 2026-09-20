@@ -227,6 +227,11 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 				durationMs: 212000,
 				attempts: 2,
 				ok: true,
+				usage: {
+					totalTokens: 845,
+					inputTokens: 816,
+					outputTokens: 29,
+				},
 			},
 			{
 				label: "critic",
@@ -257,7 +262,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	assert.match(markdown, /<summary>Checked \(1\)<\/summary>/);
 	assert.match(
 		markdown,
-		/<sub>2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
+		/<sub>2 calls · review 3m 32s · tokens 845 \(816 in \/ 29 out\) → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
 	);
 	assert.match(markdown, /<!-- state -->\n$/);
 });

@@ -140,6 +140,70 @@ test("ACP normal end_turn keeps the original successful text and callbacks", asy
   assert.deepEqual(failed, []);
   assert.equal(stats[0].ok, true);
   assert.equal(stats[0].attempts, 1);
+  assert.equal(stats[0].usage, undefined);
+  assertDisposed(fixture);
+});
+
+// Completion decides success; usage is optional telemetry, never permission
+// to accept an interrupted turn. Reuse the existing real-process fixture.
+const USAGE = { totalTokens: 30, inputTokens: 20, outputTokens: 10 };
+for (const [reason, kind] of [
+  ["cancelled", "cancelled"], ["refusal", "refused"],
+  ["max_tokens", "response_limit"], ["max_turn_requests", "response_limit"],
+] as const) {
+  test(`ACP ${reason} with valid usage still fails without retry`, async (t) => {
+    const fixture = failureFixture(t, { result: { stopReason: reason, usage: USAGE } });
+    await assertFailure(fixture, kind);
+    assert.equal(fixture.launches().length, 1);
+  });
+}
+for (const result of [{ usage: USAGE }, { stopReason: "unknown", usage: USAGE }]) {
+  test(`ACP usage cannot supply a missing or unknown stopReason: ${JSON.stringify(result)}`, async (t) => {
+    const fixture = failureFixture(t, { result });
+    await assertFailure(fixture, "protocol_error");
+    assert.equal(fixture.launches().length, 1);
+  });
+}
+for (const valid of [true, false]) {
+  test(`ACP end_turn preserves completion with valid usage=${valid}`, async (t) => {
+    const fixture = failureFixture(t, {
+      result: { stopReason: "end_turn", usage: valid ? USAGE : { ...USAGE, totalTokens: 1 } },
+    });
+    const stats: RunStat[] = [];
+    const out = await runCodex("prompt", { ...fixture.options, onStat: (stat) => stats.push(stat) });
+    assert.equal(out, '{"ok":true}');
+    assert.equal(stats.length, 1);
+    assert.equal(stats[0].ok, true);
+    assert.equal(stats[0].attempts, 1);
+    assert.deepEqual(stats[0].usage, valid ? USAGE : undefined);
+    assertDisposed(fixture);
+  });
+}
+test("ACP permission failure stays sticky when late end_turn carries usage", async (t) => {
+  const fixture = failureFixture(t, {
+    permission: true, lateSuccess: true, result: { stopReason: "end_turn", usage: USAGE },
+  });
+  await assertFailure(fixture, "permission_required");
+  assert.equal(fixture.launches().length, 1);
+});
+test("ACP recovered attempt retains its usage and the previous failure transcript", async (t) => {
+  const fixture = failureFixture(t, {
+    error: { code: -32603, message: PRIVATE_TEXT }, recover: true,
+    result: { stopReason: "end_turn", usage: USAGE },
+  });
+  const stats: RunStat[] = [];
+  const failed: string[] = [];
+  const out = await runCodex("prompt", {
+    ...fixture.options, onStat: (stat) => stats.push(stat), onFailedRaw: (raw) => failed.push(raw),
+  });
+  assert.equal(out, '{"ok":true}');
+  assert.equal(stats.length, 1);
+  assert.equal(stats[0].ok, true);
+  assert.equal(stats[0].attempts, 2);
+  assert.deepEqual(stats[0].usage, USAGE);
+  assert.equal(failed.length, 1);
+  assert.match(failed[0], /private-token-and-prompt-canary/);
+  assert.equal(fixture.launches().length, 2);
   assertDisposed(fixture);
 });
 
@@ -167,6 +231,7 @@ async function assertFailure(fixture: ReturnType<typeof failureFixture>, kind: R
   assert.equal(stats.length, 1);
   assert.equal(stats[0].attempts, attempts);
   assert.equal(stats[0].ok, false);
+  assert.equal(stats[0].usage, undefined, "failed calls do not publish successful usage telemetry");
   assertDisposed(fixture);
 }
 
@@ -233,12 +298,12 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     if (scenario.malformed) process.stdout.write('not-json ' + privateText + '\\n');
     else if (scenario.permission) {
       const pending = ['permission-a', 'permission-b'].map((id) => ({ jsonrpc: '2.0', id, method: 'session/request_permission', params: { sessionId: 'sess', toolCall: { toolCallId: id, title: privateText }, options: [{ optionId: 'allow', name: 'allow', kind: 'allow_once' }] } }));
-      const late = scenario.lateSuccess ? [update, { jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } }] : [];
+      const late = scenario.lateSuccess ? [update, { jsonrpc: '2.0', id: promptId, result: scenario.result ?? { stopReason: 'end_turn' } }] : [];
       process.stdout.write([...pending, ...late].map(JSON.stringify).join('\\n') + '\\n');
     } else {
       send(update);
       if (Object.hasOwn(scenario, 'error') && !(scenario.recover && attempt > 1)) send({ jsonrpc: '2.0', id: promptId, error: scenario.error });
-      else send({ jsonrpc: '2.0', id: promptId, result: scenario.recover ? { stopReason: 'end_turn' } : scenario.result });
+      else send({ jsonrpc: '2.0', id: promptId, result: scenario.recover ? (scenario.result ?? { stopReason: 'end_turn' }) : scenario.result });
       setTimeout(() => process.exit(0), 20);
     }
   }

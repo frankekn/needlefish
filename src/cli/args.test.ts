@@ -116,6 +116,25 @@ test("parseArgs accepts runner options", () => {
   }
 });
 
+test("parseArgs treats spaced and inline value options equivalently", () => {
+  const pairs = [
+    [["--pr", "24"], ["--pr=24"]],
+    [["--base", "main"], ["--base=main"]],
+    [["--repo", "/tmp/repo"], ["--repo=/tmp/repo"]],
+    [["--focus", "security"], ["--focus=security"]],
+    [["--runner", "acp"], ["--runner=acp"]],
+    [["--model", "opus"], ["--model=opus"]],
+    [["--timeout-ms", "1234"], ["--timeout-ms=1234"]],
+  ] as const;
+  for (const [spaced, inline] of pairs) {
+    assert.deepEqual(parseArgs(spaced), parseArgs(inline));
+  }
+  assert.deepEqual(
+    parseArgs(["explain", "8", "--finding", "rounded seconds"]),
+    parseArgs(["explain", "8", "--finding=rounded seconds"]),
+  );
+});
+
 test("parseArgs validates runner options", () => {
   assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, pi, acp/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);

@@ -1,22 +1,15 @@
 import { accessSync, constants } from "node:fs";
 import path from "node:path";
+import { RUNNER_DEFINITIONS } from "./runner-definition.js";
 import { parseRunnerName, type RunnerName, type RunnerOptions } from "./runner.js";
 
-const AUTO_DETECT_RUNNERS = ["codex", "claude", "opencode"] as const satisfies readonly RunnerName[];
+const AUTO_DETECT_RUNNERS = RUNNER_DEFINITIONS.filter((runner) => "autoDetect" in runner);
 type AutoDetectRunner = (typeof AUTO_DETECT_RUNNERS)[number];
-
-const AUTO_DETECT_BIN_ENV = {
-  codex: "CODEX_BIN",
-  claude: "CLAUDE_BIN",
-  opencode: "OPENCODE_BIN",
-} as const satisfies Record<AutoDetectRunner, string>;
 
 const NO_AUTO_DETECTED_RUNNER_MESSAGE = [
   "No supported model runner found on PATH.",
   "Install one:",
-  "  codex: npm install -g @openai/codex",
-  "  claude: npm install -g @anthropic-ai/claude-code",
-  "  opencode: npm install -g opencode-ai",
+  ...AUTO_DETECT_RUNNERS.map(({ name, autoDetect }) => `  ${name}: ${autoDetect.installCommand}`),
 ].join("\n");
 
 export function resolveRunner(opts: RunnerOptions): RunnerName {
@@ -28,15 +21,15 @@ export function resolveRunner(opts: RunnerOptions): RunnerName {
 
 function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
-    if (runnerExists(runner)) return runner;
+    if (runnerExists(runner)) return runner.name;
   }
   throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 
 function runnerExists(runner: AutoDetectRunner): boolean {
-  const override = process.env[AUTO_DETECT_BIN_ENV[runner]];
+  const override = process.env[runner.autoDetect.binEnv];
   if (override) return commandExists(override);
-  return commandExistsOnPath(runner);
+  return commandExistsOnPath(runner.name);
 }
 
 function commandExists(command: string): boolean {
