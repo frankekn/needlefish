@@ -26,13 +26,10 @@ function dependencyBoundary(files, forbiddenLayers = []) {
       "no-restricted-imports": ["error", { patterns }],
       // The import rule handles static imports/re-exports, including types.
       // Cover literal dynamic imports and inline import types with the same policy.
-      "no-restricted-syntax": ["error", ...patterns.flatMap(({ regex, message }) => {
-        const pattern = regex.replaceAll("/", "\\u002F");
-        return [
-          { selector: `ImportExpression[source.value=/${pattern}/]`, message },
-          { selector: `TSImportType > TSLiteralType > Literal[value=/${pattern}/]`, message },
-        ];
-      })],
+      "no-restricted-syntax": ["error", ...patterns.map(({ regex, message }) => ({
+        selector: `:matches(ImportExpression, TSImportType)[source.value=/${regex.replaceAll("/", "\\u002F")}/]`,
+        message,
+      }))],
     },
   };
 }
