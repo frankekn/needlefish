@@ -154,3 +154,87 @@ test("FIFO configuration cannot block the process", { skip: process.platform ===
   assert.equal(spawnSync("mkfifo", [f.file]).status, 0);
   assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /regular file/);
 });
+
+test("parsed connections are frozen copies without freezing caller-owned input", () => {
+  const input = structuredClone(config());
+  const before = structuredClone(input);
+  const parsed = parseConnections(input);
+  assert.deepEqual(input, before);
+  assert.deepEqual(parsed.map((entry) => entry.id), [cli.id, acp.id]);
+  assert.ok(Object.isFrozen(parsed));
+  assert.ok(parsed.every(Object.isFrozen));
+  assert.ok(Object.isFrozen(parsed[1].launch));
+  assert.ok(Object.isFrozen(parsed[1].launch?.args));
+  assert.equal(Object.isFrozen(input.connections), false);
+  const source = input.connections[1] as typeof acp;
+  assert.equal(Object.isFrozen(source.launch.args), false);
+  source.launch.args[0] = "changed";
+  source.launch.command = path.join(path.dirname(command), "other-agent");
+  input.connections.pop();
+  assert.equal(parsed.length, 2);
+  assert.deepEqual(parsed[1].launch, { command, args: ["acp", "--model", "custom-model"] });
+});
+
+test("ACP argv preserves empty strings and shell-looking text as literal arguments", () => {
+  const literals = ["", "two words", "$HOME", "~/agent", "$(echo not-expanded)", "; echo literal", "line\nbreak"];
+  const args = ["--model", "{model}", ...literals];
+  const parsed = parseConnections(config([{ ...acp, launch: { command, args } }]));
+  assert.deepEqual(parsed[0].launch, { command, args: ["--model", acp.model, ...literals] });
+  assert.deepEqual(args, ["--model", "{model}", ...literals]);
+});
+
+test("duplicate IDs are diagnosed before validating the duplicate adapter", () => {
+  assert.throws(() => parseConnections(config([cli, { ...cli, adapter: "unknown" }])), /duplicate connection id/);
+});
+
+test("selecting a valid entry does not silently ignore a malformed unselected entry", (t) => {
+  const f = fixture(t, config([cli, { ...acp, launch: { command, args: [5] } }]));
+  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /ACP args must be an array of strings/);
+});
+
+for (const size of [65535, 65536, 65537]) {
+  test(`connections file limit counts UTF-8 bytes at ${size} bytes`, (t) => {
+    const f = fixture(t);
+    const json = JSON.stringify(config());
+    assert.ok(Buffer.byteLength(json) > json.length, "fixture must include multibyte text");
+    const raw = json + " ".repeat(size - Buffer.byteLength(json));
+    assert.equal(Buffer.byteLength(raw), size);
+    writeFileSync(f.file, raw);
+    if (size > 65536) {
+      assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /64 KiB/);
+    } else {
+      assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, f.env).connection, cli.id);
+    }
+  });
+}
+
+test("repository config is rejected beneath a worktree-style .git file", (t) => {
+  const f = fixture(t);
+  rmSync(path.join(f.repo, ".git"), { recursive: true });
+  writeFileSync(path.join(f.repo, ".git"), "gitdir: ../worktree-metadata\n");
+  const inside = path.join(f.repo, "connections.json");
+  writeFileSync(inside, JSON.stringify(config()));
+  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, path.join(f.repo, "sub"), {
+    NEEDLEFISH_CONNECTIONS_FILE: inside,
+  }), /outside the reviewed repository/);
+});
+
+test("a sibling directory sharing the repository name prefix remains outside the target", (t) => {
+  const f = fixture(t);
+  const sibling = `${f.repo}-config`;
+  mkdirSync(sibling);
+  const file = path.join(sibling, "connections.json");
+  writeFileSync(file, JSON.stringify(config()));
+  assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, {
+    NEEDLEFISH_CONNECTIONS_FILE: file,
+  }).connection, cli.id);
+});
+
+test("a symlink between user-owned paths outside the repository remains supported", { skip: process.platform === "win32" }, (t) => {
+  const f = fixture(t);
+  const link = path.join(f.dir, "selected.json");
+  symlinkSync(f.file, link);
+  assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, {
+    NEEDLEFISH_CONNECTIONS_FILE: link,
+  }).connection, cli.id);
+});

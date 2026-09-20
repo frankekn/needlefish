@@ -98,7 +98,9 @@ live canary are required before merge/deployment; fake-agent CI is not a substit
 
 | Change | Owner and regression tests |
 | --- | --- |
-| Config shape, trust boundary, freezing | `src/shared/connections.ts`, `connections.test.ts` |
+| Config shape, IDs and adapter selection | `connections.ts`: `parseConnections`; `connections.test.ts` |
+| ACP launch shape and literal argv | Same file: private `parseAcpLaunch`; no filesystem or environment access |
+| File trust, byte limit and frozen selection | Same file: `readConnections` / `resolveConnectionOptions`; `connections.test.ts` |
 | CLI value syntax and conflicts | `src/cli/args.ts` uses `optionValue`; `connection-args.test.ts` |
 | Adapter identities/metadata | Existing `runner-definition.ts`; no connection-specific catalog |
 | ACP command/argv, startup/completion/usage | `acp.ts`; existing `acp*.test.ts` and named-launch integration below |
@@ -108,6 +110,10 @@ live canary are required before merge/deployment; fake-agent CI is not a substit
 node --test --test-concurrency=1 --import tsx src/cli/connection-args.test.ts src/shared/connections.test.ts src/shared/connections-integration.test.ts src/shared/acp*.test.ts
 pnpm check && pnpm lint && pnpm test
 ```
+
+Parser regressions pin validation order, caller-owned input preservation, literal
+argv, 65535/65536/65537-byte UTF-8 files, worktree-style `.git` files and external
+symlinks. The private launch parser does not own credentials or process execution.
 
 Keep one writer per shared-runtime branch. Record base/head, files, test evidence
 and remaining gates in the PR before handing off; recheck head before pushing.

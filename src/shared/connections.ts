@@ -51,25 +51,29 @@ export function parseConnections(raw: unknown): readonly Connection[] {
     const model = entry.model === undefined ? undefined : text(entry.model, "model");
     let launch: AcpLaunchSpec | undefined;
     if (adapter === "acp") {
-      const spec = record(entry.launch, "ACP launch");
-      onlyKeys(spec, ["command", "args"], "ACP launch");
-      const command = text(spec.command, "ACP command");
-      if (!path.isAbsolute(command)) throw new Error("ACP command must be an absolute executable path, not a shell command.");
-      if (!Array.isArray(spec.args) || !spec.args.every((arg) => typeof arg === "string" && !arg.includes("\0"))) {
-        throw new Error("ACP args must be an array of strings without NUL bytes.");
-      }
-      const args = spec.args as string[];
-      const slots = args.filter((arg) => arg === "{model}").length;
-      if (args.some((arg) => arg.includes("{model}") && arg !== "{model}") || slots !== (model === undefined ? 0 : 1)) {
-        throw new Error("ACP model selection requires exactly one whole {model} argument and a model; omit both to use the agent default.");
-      }
-      launch = Object.freeze({ command, args: Object.freeze(args.map((arg) => arg === "{model}" ? model! : arg)) });
+      launch = parseAcpLaunch(entry.launch, model);
     } else {
       if (entry.launch !== undefined) throw new Error("launch is only supported by the acp adapter.");
       if (model === undefined) throw new Error("Set a model for a named CLI connection; ambient model settings are not inherited.");
     }
     return Object.freeze({ id, adapter, ...(model === undefined ? {} : { model }), ...(launch ? { launch } : {}) });
   }));
+}
+
+function parseAcpLaunch(raw: unknown, model: string | undefined): AcpLaunchSpec {
+  const spec = record(raw, "ACP launch");
+  onlyKeys(spec, ["command", "args"], "ACP launch");
+  const command = text(spec.command, "ACP command");
+  if (!path.isAbsolute(command)) throw new Error("ACP command must be an absolute executable path, not a shell command.");
+  if (!Array.isArray(spec.args) || !spec.args.every((arg) => typeof arg === "string" && !arg.includes("\0"))) {
+    throw new Error("ACP args must be an array of strings without NUL bytes.");
+  }
+  const args = spec.args as string[];
+  const slots = args.filter((arg) => arg === "{model}").length;
+  if (args.some((arg) => arg.includes("{model}") && arg !== "{model}") || slots !== (model === undefined ? 0 : 1)) {
+    throw new Error("ACP model selection requires exactly one whole {model} argument and a model; omit both to use the agent default.");
+  }
+  return Object.freeze({ command, args: Object.freeze(args.map((arg) => arg === "{model}" ? model! : arg)) });
 }
 
 export function connectionsFile(env: NodeJS.ProcessEnv = process.env): string {
