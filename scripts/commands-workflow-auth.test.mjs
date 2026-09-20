@@ -12,21 +12,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 const workflow = readFileSync(".github/workflows/commands.yml", "utf8");
 
 function workflowScript(stepName) {
-	const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const step = workflow.match(
-		new RegExp(`      - name: ${escapedName}\\n([\\s\\S]*?)(?=\\n      - name:|$)`),
-	);
-	assert.ok(step, `${stepName} step must exist`);
-	const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-	assert.ok(runBlock, `${stepName} must have a run block`);
-	return runBlock[1]
-		.split("\n")
-		.map((line) => line.replace(/^          /, ""))
-		.join("\n");
+	return workflowRun(workflow, "parse", stepName);
 }
 
 const script = workflowScript("Check repository permission");

@@ -7,13 +7,15 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { runAcp } from "./acp.js";
-import { findRunnerFailure } from "./runner-failure.js";
 import { envFlagOn } from "./env.js";
+import { findRunnerFailure } from "./runner-failure.js";
 import {
+	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
+	type RunUsage,
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
@@ -81,35 +83,13 @@ const BASE_ENV_ALLOWLIST = [
 	"RUNNER_TRACKING_ID",
 ] as const;
 
-const RUNNER_ENV_ALLOWLIST: Record<RunnerName, readonly string[]> = {
-	codex: [
-		"CODEX_BIN",
-		"CODEX_MODEL",
-		"CODEX_PROXY_API_KEY",
-		"CODEX_REASONING_EFFORT",
-		"CODEX_RETRY_MS",
-		"CODEX_TIMEOUT_MS",
-	],
-	claude: [
-		"CLAUDE_BIN",
-		"CLAUDE_MODEL",
-		"ANTHROPIC_API_KEY",
-		"CLAUDE_CODE_OAUTH_TOKEN",
-	],
-	opencode: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],
-	grok: ["GROK_BIN", "GROK_MODEL"],
-	pi: ["PI_BIN", "PI_MODEL", "PI_PROVIDER", "PI_AUTH_MODE"],
-	openai: [],
-	acp: ["NEEDLEFISH_ACP_BIN"],
-};
-
 function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
 	ephemeralHome?: string,
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
-	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_ENV_ALLOWLIST[runner]];
+	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
 	const extra = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
@@ -162,33 +142,10 @@ function buildRunnerEnv(
 //               (account/credential store)
 // claude is exempt: its credentials live in the macOS Keychain tied to the
 // real HOME, so it keeps the real HOME under the flag (see runCodexOnce).
-const EPHEMERAL_HOME_AUTH_FILES: Record<RunnerName, readonly string[]> = {
-	codex: [".codex/auth.json", ".codex/config.toml"],
-	claude: [],
-	opencode: [
-		".config/opencode/opencode.json",
-		".local/share/opencode/auth.json",
-	],
-	grok: [".grok/auth.json", ".grok/config.toml"],
-	pi: [".pi/agent/auth.json", ".pi/agent/models.json"],
-	openai: [],
-	acp: [],
-};
-
 // Configuration that may still affect routing when authentication is supplied
 // through an environment variable. Credential stores stay out of this list:
 // env-authenticated invocations must not expose unrelated OAuth/account files
 // that happen to exist in the caller's HOME.
-const EPHEMERAL_HOME_ENV_CONFIG_FILES: Record<RunnerName, readonly string[]> = {
-	codex: [], // runCodexCli always passes --ignore-user-config
-	claude: [],
-	opencode: [".config/opencode/opencode.json"],
-	grok: [".grok/config.toml"],
-	pi: [".pi/agent/models.json"],
-	openai: [],
-	acp: [],
-};
-
 type RunnerEnvironment = Readonly<Record<string, string | undefined>>;
 
 function passthroughNames(env: RunnerEnvironment = process.env): readonly string[] {
@@ -324,14 +281,14 @@ function ephemeralAuthFiles(runner: RunnerName): {
 		if (hasCodexProxyEnvCredential()) {
 			return {
 				required: [],
-				optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.codex,
+				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
 			};
 		}
 		// CODEX_API_KEY through the passthrough authenticates without auth.json.
 		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
 			return {
 				required: [],
-				optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.codex,
+				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
 			};
 		}
 		// The invocation always passes --ignore-user-config, so the config
@@ -347,7 +304,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	) {
 		return {
 			required: [],
-			optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.grok,
+			optional: RUNNER_DEFINITIONS.grok.envConfigFiles,
 		};
 	}
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
@@ -356,7 +313,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
 		return {
 			required: [],
-			optional: EPHEMERAL_HOME_ENV_CONFIG_FILES.opencode,
+			optional: RUNNER_DEFINITIONS.opencode.envConfigFiles,
 		};
 	}
 	// acp launches an arbitrary external agent whose credential layout we
@@ -414,7 +371,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			};
 		}
 	}
-	return { required: EPHEMERAL_HOME_AUTH_FILES[runner], optional: [] };
+	return { required: RUNNER_DEFINITIONS[runner].authFiles, optional: [] };
 }
 
 // Prepare an ephemeral HOME for a runner invocation. Creates <tmp>/home
@@ -561,6 +518,12 @@ type CodexReasoningEffort = "medium" | "high" | "xhigh";
 interface RunnerResult {
 	readonly res: RunnerProcessResult;
 	readonly out: string;
+	readonly usage?: RunUsage;
+}
+
+interface RunnerAttemptResult {
+	readonly out: string;
+	readonly usage?: RunUsage;
 }
 
 interface RunnerInvocation {
@@ -622,6 +585,7 @@ export async function runCodex(
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
+	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
 		const model = resolveModel(opts, runner);
@@ -632,6 +596,7 @@ export async function runCodex(
 			durationMs: Date.now() - startedAt,
 			attempts,
 			ok,
+			...(usage ? { usage } : {}),
 		});
 	};
 	let lastErr: unknown;
@@ -639,9 +604,10 @@ export async function runCodex(
 		attempts = attempt;
 		try {
 			remainingReviewMs(opts.reviewDeadlineMs);
-			const out = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			const result = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			usage = result.usage;
 			emitStat(true);
-			return out;
+			return result.out;
 		} catch (err) {
 			const raw =
 				err instanceof Error
@@ -659,6 +625,7 @@ export async function runCodex(
 				throw err;
 			}
 			lastErr = err;
+			usage = undefined;
 			if (attempt < maxAttempts) {
 				let backoff: number;
 				try {
@@ -684,7 +651,7 @@ async function runCodexOnce(
 	runner: RunnerName,
 	runnerAttempt: number,
 	codexProxy: CodexProxyConfig | undefined,
-): Promise<string> {
+): Promise<RunnerAttemptResult> {
 	const model = resolveModel(opts, runner);
 	let timeoutMs: number;
 	try {
@@ -693,9 +660,11 @@ async function runCodexOnce(
 		throw asRunnerOperationalError(error);
 	}
 	if (runner === "openai") {
-		return runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
-			opts.onRaw?.(raw, runnerAttempt),
-		);
+		return {
+			out: await runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
+				opts.onRaw?.(raw, runnerAttempt),
+			),
+		};
 	}
 	let tmp: string;
 	try {
@@ -814,7 +783,7 @@ async function runCodexOnce(
 				.filter(Boolean)
 				.join("\n");
 			opts.onRaw?.(raw, runnerAttempt);
-			return out;
+			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
@@ -918,22 +887,8 @@ function resolveModel(
 ): string | undefined {
 	if (opts.model) return opts.model;
 	if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
-	switch (runner) {
-		case "codex":
-			return process.env.CODEX_MODEL;
-		case "claude":
-			return process.env.CLAUDE_MODEL;
-		case "opencode":
-			return process.env.OPENCODE_MODEL;
-		case "openai":
-			return process.env.OPENAI_MODEL;
-		case "grok":
-			return process.env.GROK_MODEL;
-		case "pi":
-			return process.env.PI_MODEL;
-		case "acp":
-			return undefined;
-	}
+	const modelEnv = RUNNER_DEFINITIONS[runner].modelEnv;
+	return modelEnv === undefined ? undefined : process.env[modelEnv];
 }
 
 function timeoutMsFor(runner: RunnerName): number {

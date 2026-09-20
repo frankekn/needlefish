@@ -37,6 +37,31 @@ per-connection credentials, whole-review outcomes (including deep-pass failure),
 fixed snapshots and route-wide deadlines remain separate follow-ups. This does
 not close #145, #146, #101 or #102.
 
+## Maintenance map
+
+| Change | Owner | Regression tests |
+| --- | --- | --- |
+| Runner names, model env keys, auth-file metadata | `src/shared/runner-definition.ts` | `runner-metadata.test.ts`, `runner-detection.test.ts` |
+| ACP messages, completion and optional usage | `src/shared/acp.ts` | `acp.test.ts`, `acp-failure.test.ts` |
+| Failure kind and cause traversal | `src/shared/runner-failure.ts` | `runner-failure.test.ts` |
+| Retry, raw callbacks, HOME and clone lifecycle | `src/shared/codex.ts` and existing process/sandbox owners | `codex*.test.ts`, `runner-process.test.ts`, `runner-sandbox.test.ts` |
+
+Keep completion validation before usage extraction. Invalid/missing usage does
+not fail a completed turn; valid usage never legitimizes a failed turn. Usage
+is not remaining quota or a billing total across failed attempts. Preserve raw
+failure callbacks before stopping retries. Do not introduce a second runner
+catalog, failure taxonomy or cleanup owner when integrating another branch.
+
+Focused credential-free check, from the repository root with pinned dependencies:
+
+```sh
+node --test --test-concurrency=1 --import tsx src/shared/acp.test.ts src/shared/acp-failure.test.ts src/shared/runner-failure.test.ts
+```
+
+Then run `pnpm check`, `pnpm lint`, and `pnpm test`. Record the exact head and
+base, changed files and evidence in the existing PR; one writer per branch.
+These engineering checks do not replace provider qualification or deployment.
+
 ## 中文摘要
 
 本批提供 ACP 結構化失敗與正確的停止處理，**尚未提供多帳號或自動備援**。
@@ -44,6 +69,8 @@ not close #145, #146, #101 or #102.
 用已輸出的 JSON 假裝成功。互動權限請求會取消並停止程序，不授權、不重試；
 晚到的成功訊息不能清除失敗。登入等已知錯誤依協定代碼分類，不從模型文字
 猜額度。公開錯誤遮蔽原始內容，原始 transcript 仍保留給既有診斷／canary callback。
+正常完成後才讀取可選用量；缺少或無效用量不改變完成結果，有用量也不能將
+失敗改成成功。用量不是剩餘額度，也不是含失敗嘗試的完整帳務數字。
 
 ## Protocol references
 

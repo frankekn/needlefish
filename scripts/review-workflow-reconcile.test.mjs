@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
 // own, so an unbounded branch here is an unbounded model-call loop. On
@@ -22,18 +23,11 @@ import test from "node:test";
 // script against a stub gh that serves canned responses per endpoint.
 
 const workflow = readFileSync(".github/workflows/review.yml", "utf8");
-const step = workflow.match(
-	/      - name: Re-dispatch when the latest head lacks a terminal result\n([\s\S]*?)(?=\n      - name:|$)/,
+const script = workflowRun(
+	workflow,
+	"reconcile",
+	"Re-dispatch when the latest head lacks a terminal result",
 );
-assert.ok(step, "reconcile step must exist");
-const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-assert.ok(runBlock, "reconcile step must have a run block");
-const scriptLines = [];
-for (const line of runBlock[1].split("\n")) {
-	if (line.length > 0 && !line.startsWith("          ")) break;
-	scriptLines.push(line);
-}
-const script = scriptLines.map((line) => line.replace(/^          /, "")).join("\n");
 
 const REPO = "acme/widgets";
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
