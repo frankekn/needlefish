@@ -1,16 +1,18 @@
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { AcpEnvironmentAuth, parseAuthEnvironment, type AuthEnvironmentReferences } from "./connection-auth.js";
 import { isRunnerName, type AcpLaunchSpec, type RunnerName, type RunnerOptions } from "./runner.js";
 
 // User/operator configuration, never model output or target-repo policy.
-// Credentials, per-account homes, presets and fallback are deliberately not
-// accepted yet: silently ignoring those fields would misrepresent isolation.
+// Only ACP environment credential references are supported here. OAuth homes,
+// presets and fallback remain separate increments.
 export interface Connection {
   readonly id: string;
   readonly adapter: RunnerName;
   readonly model?: string;
   readonly launch?: AcpLaunchSpec;
+  readonly auth?: { readonly env: AuthEnvironmentReferences };
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -22,7 +24,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 function onlyKeys(value: Record<string, unknown>, keys: readonly string[], label: string): void {
   if (Object.keys(value).some((key) => !keys.includes(key))) {
-    throw new Error(`Invalid connections configuration: unsupported field in ${label}. Account profiles and fallback are not supported in this version.`);
+    throw new Error(`Invalid connections configuration: unsupported field in ${label}. OAuth profiles and fallback are not supported in this version.`);
   }
 }
 
@@ -42,12 +44,19 @@ export function parseConnections(raw: unknown): readonly Connection[] {
   const ids = new Set<string>();
   return Object.freeze(config.connections.map((value): Connection => {
     const entry = record(value, "connection");
-    onlyKeys(entry, ["id", "adapter", "model", "launch"], "connection");
+    onlyKeys(entry, ["id", "adapter", "model", "launch", "auth"], "connection");
     const id = text(entry.id, "id");
     if (ids.has(id)) throw new Error("Invalid connections configuration: duplicate connection id.");
     ids.add(id);
     const adapter = text(entry.adapter, "adapter");
     if (!isRunnerName(adapter)) throw new Error("Unknown connection adapter. Use an existing CLI adapter or acp for a custom agent.");
+    let auth: Connection["auth"];
+    if (entry.auth !== undefined) {
+      if (adapter !== "acp") throw new Error("Connection auth is currently supported only by the acp adapter.");
+      const spec = record(entry.auth, "auth");
+      onlyKeys(spec, ["env"], "auth");
+      auth = Object.freeze({ env: parseAuthEnvironment(spec.env) });
+    }
     const model = entry.model === undefined ? undefined : text(entry.model, "model");
     let launch: AcpLaunchSpec | undefined;
     if (adapter === "acp") {
@@ -56,7 +65,7 @@ export function parseConnections(raw: unknown): readonly Connection[] {
       if (entry.launch !== undefined) throw new Error("launch is only supported by the acp adapter.");
       if (model === undefined) throw new Error("Set a model for a named CLI connection; ambient model settings are not inherited.");
     }
-    return Object.freeze({ id, adapter, ...(model === undefined ? {} : { model }), ...(launch ? { launch } : {}) });
+    return Object.freeze({ id, adapter, ...(model === undefined ? {} : { model }), ...(launch ? { launch } : {}), ...(auth ? { auth } : {}) });
   }));
 }
 
@@ -134,14 +143,17 @@ export function resolveConnectionOptions<T extends RunnerOptions>(
 ): T {
   if (opts.connection === undefined) return opts;
   text(opts.connection, "selected connection");
-  if (opts.runner !== undefined || opts.model !== undefined || opts.acpLaunch !== undefined) {
-    throw new Error("--connection cannot be combined with --runner, --model or a separate ACP launch.");
+  if (opts.runner !== undefined || opts.model !== undefined || opts.acpLaunch !== undefined || opts.connectionAuth !== undefined) {
+    throw new Error("--connection cannot be combined with --runner, --model or separate ACP launch/auth.");
   }
   const selected = readConnections(connectionsFile(env), repoPath).find((entry) => entry.id === opts.connection);
   if (!selected) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
+  const connectionAuth = selected.auth ? new AcpEnvironmentAuth(selected.auth.env, env) : undefined;
+  connectionAuth?.assertCompatible(selected.adapter, env);
   return Object.freeze({
     ...opts, runner: selected.adapter,
     ...(selected.model === undefined ? {} : { model: selected.model }),
     ...(selected.launch ? { acpLaunch: selected.launch } : {}),
+    ...(connectionAuth ? { connectionAuth } : {}),
   });
 }
