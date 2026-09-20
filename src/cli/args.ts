@@ -132,6 +132,22 @@ function inlineValue(arg: string, flag: string): string {
   return value;
 }
 
+
+function optionValue(
+  argv: readonly string[],
+  index: number,
+  flag: string,
+): { readonly value: string; readonly consumedNext: boolean } | undefined {
+  const arg = argv[index];
+  if (arg === flag) {
+    return { value: takeValue(argv, index, flag), consumedNext: true };
+  }
+  if (arg.startsWith(`${flag}=`)) {
+    return { value: inlineValue(arg, flag), consumedNext: false };
+  }
+  return undefined;
+}
+
 function parsePr(value: string): number {
   return parsePositiveInteger(value, "--pr");
 }
@@ -221,85 +237,60 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       printBundle = true;
       continue;
     }
-    if (arg === "--pr") {
-      pr = parsePr(takeValue(argv, i, "--pr"));
+    const prOption = optionValue(argv, i, "--pr");
+    if (prOption) {
+      pr = parsePr(prOption.value);
       opts.pr = pr;
-      i++;
+      if (prOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--base") {
-      opts.base = takeValue(argv, i, "--base");
-      i++;
+    const baseOption = optionValue(argv, i, "--base");
+    if (baseOption) {
+      opts.base = baseOption.value;
+      if (baseOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--finding") {
-      finding = takeValue(argv, i, "--finding");
-      i++;
+    const findingOption = optionValue(argv, i, "--finding");
+    if (findingOption) {
+      finding = findingOption.value;
+      if (findingOption.consumedNext) i++;
       continue;
     }
-    if (arg.startsWith("--finding=")) {
-      finding = inlineValue(arg, "--finding");
+    const repoOption = optionValue(argv, i, "--repo");
+    if (repoOption) {
+      repo = repoOption.value;
+      if (repoOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--repo") {
-      repo = takeValue(argv, i, "--repo");
-      i++;
+    const focusOption = optionValue(argv, i, "--focus");
+    if (focusOption) {
+      opts.focus = focusOption.value;
+      if (focusOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--focus") {
-      opts.focus = takeValue(argv, i, "--focus");
-      i++;
-      continue;
-    }
-    if (arg === "--connection" || arg.startsWith("--connection=")) {
+    const connectionOption = optionValue(argv, i, "--connection");
+    if (connectionOption) {
       if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
-      opts.connection = arg === "--connection"
-        ? takeValue(argv, i++, "--connection")
-        : inlineValue(arg, "--connection");
+      opts.connection = connectionOption.value;
+      if (connectionOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--runner") {
-      opts.runner = parseRunnerName(takeValue(argv, i, "--runner"), "--runner");
-      i++;
+    const runnerOption = optionValue(argv, i, "--runner");
+    if (runnerOption) {
+      opts.runner = parseRunnerName(runnerOption.value, "--runner");
+      if (runnerOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--model") {
-      opts.model = takeValue(argv, i, "--model");
-      i++;
+    const modelOption = optionValue(argv, i, "--model");
+    if (modelOption) {
+      opts.model = modelOption.value;
+      if (modelOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--timeout-ms") {
-      opts.timeoutMs = parsePositiveInteger(takeValue(argv, i, "--timeout-ms"), "--timeout-ms");
-      i++;
-      continue;
-    }
-    if (arg.startsWith("--pr=")) {
-      pr = parsePr(inlineValue(arg, "--pr"));
-      opts.pr = pr;
-      continue;
-    }
-    if (arg.startsWith("--base=")) {
-      opts.base = inlineValue(arg, "--base");
-      continue;
-    }
-    if (arg.startsWith("--repo=")) {
-      repo = inlineValue(arg, "--repo");
-      continue;
-    }
-    if (arg.startsWith("--focus=")) {
-      opts.focus = inlineValue(arg, "--focus");
-      continue;
-    }
-    if (arg.startsWith("--runner=")) {
-      opts.runner = parseRunnerName(inlineValue(arg, "--runner"), "--runner");
-      continue;
-    }
-    if (arg.startsWith("--model=")) {
-      opts.model = inlineValue(arg, "--model");
-      continue;
-    }
-    if (arg.startsWith("--timeout-ms=")) {
-      opts.timeoutMs = parsePositiveInteger(inlineValue(arg, "--timeout-ms"), "--timeout-ms");
+    const timeoutOption = optionValue(argv, i, "--timeout-ms");
+    if (timeoutOption) {
+      opts.timeoutMs = parsePositiveInteger(timeoutOption.value, "--timeout-ms");
+      if (timeoutOption.consumedNext) i++;
       continue;
     }
     throw new Error(`unknown option ${arg}`);

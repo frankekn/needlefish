@@ -14,25 +14,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 const workflow = readFileSync(".github/workflows/review.yml", "utf8");
 
 function workflowScript(stepName) {
-	const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const step = workflow.match(
-		new RegExp(`      - name: ${escapedName}\\n([\\s\\S]*?)(?=\\n      - name:|$)`),
-	);
-	assert.ok(step, `${stepName} step must exist`);
-	const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-	assert.ok(runBlock, `${stepName} must have a run block`);
-	const scriptLines = [];
-	for (const line of runBlock[1].split("\n")) {
-		if (line.length > 0 && !line.startsWith("          ")) break;
-		scriptLines.push(line);
-	}
-	return scriptLines
-		.map((line) => line.replace(/^          /, ""))
-		.join("\n");
+	return workflowRun(workflow, "review", stepName);
 }
 
 const selectScript = workflowScript("Select self-managed Needlefish");
@@ -130,12 +117,19 @@ test("review gives the Terra xhigh lane a production timeout", () => {
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
 });
 
+test("review lets the operator select a runner label without changing the workflow", () => {
+	assert.match(
+		workflow,
+		/runs-on: \$\{\{ inputs\.runs_on \|\| github\.event\.inputs\.runs_on \|\| vars\.NEEDLEFISH_RUNS_ON \|\| 'self-hosted' \}\}/,
+	);
+});
+
 test("review maps supplied Codex proxy values atomically without erasing runner defaults", (t) => {
 	assert.match(workflow, /codex_proxy_base_url:\n\s+description: Optional CLIProxyAPI base URL for Codex/);
 	assert.match(workflow, /codex_proxy_api_key:\n\s+description: CLIProxyAPI credential for Codex/);
 	assert.match(workflow, /codex_proxy_required:\n\s+description: Prohibit Codex OAuth fallback\n\s+type: boolean/);
 	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL \}\}/);
-	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
+	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ \(inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL\) && secrets\.codex_proxy_api_key \|\| '' \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
 	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /if \[ -z "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -z "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
