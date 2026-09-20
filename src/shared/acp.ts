@@ -3,7 +3,7 @@ import {
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
 } from "./runner-process.js";
-import type { RunUsage } from "./runner.js";
+import type { AcpLaunchSpec, RunUsage } from "./runner.js";
 
 import { RunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
 
@@ -48,8 +48,12 @@ interface AcpClientState {
   phase: AcpRequestMethod;
 }
 
-export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
-  const command = process.env.NEEDLEFISH_ACP_BIN?.trim();
+export async function runAcp(
+  invocation: AcpRunnerInvocation,
+  launch?: AcpLaunchSpec,
+): Promise<AcpRunnerResult> {
+  // Legacy callers keep their environment-based command and empty argv.
+  const command = launch?.command ?? process.env.NEEDLEFISH_ACP_BIN?.trim();
   if (!command) throw new RunnerFailure("startup_failed",
     "NEEDLEFISH_ACP_BIN is required for the acp runner; review not started. Configure the ACP launcher.");
   const initializeTimeoutMs = initializeTimeout(invocation.timeoutMs);
@@ -74,7 +78,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
   try {
     res = await runManagedRunnerProcess({
       command,
-      args: [],
+      args: launch?.args ?? [],
       repoPath: invocation.repoPath,
       timeoutMs: invocation.timeoutMs,
       env: invocation.env,
