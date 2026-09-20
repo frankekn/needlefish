@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { parse } from "yaml";
+import { readWorkflow } from "./workflow-test-helpers.mjs";
 
-const source = readFileSync(".github/workflows/deploy.yml", "utf8");
-const workflow = parse(source);
+const { source, workflow } = readWorkflow(".github/workflows/deploy.yml");
 
 test("upstream pushes and CI completions cannot deploy over an operator installation", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
@@ -26,7 +25,7 @@ test("manual installation check fails when the operator has not installed a rele
 });
 
 test("manual review delegates to the local workflow and supports reconciliation input", () => {
-  const manual = parse(readFileSync(".github/workflows/hosted-review.yml", "utf8"));
+  const { workflow: manual } = readWorkflow(".github/workflows/hosted-review.yml");
   assert.equal(manual.jobs.review.uses, "./.github/workflows/review.yml");
   assert.equal(manual.jobs.review.with.model, "gpt-5.6-terra");
   assert.equal(manual.jobs.review.with.codex_reasoning_effort, "xhigh");
