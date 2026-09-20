@@ -14,29 +14,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { readWorkflow, workflowStepScript } from "./workflow-test-helpers.mjs";
 
-const workflow = readFileSync(".github/workflows/review.yml", "utf8");
+const { source: workflow } = readWorkflow(".github/workflows/review.yml");
 
-function workflowScript(stepName) {
-	const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const step = workflow.match(
-		new RegExp(`      - name: ${escapedName}\\n([\\s\\S]*?)(?=\\n      - name:|$)`),
-	);
-	assert.ok(step, `${stepName} step must exist`);
-	const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-	assert.ok(runBlock, `${stepName} must have a run block`);
-	const scriptLines = [];
-	for (const line of runBlock[1].split("\n")) {
-		if (line.length > 0 && !line.startsWith("          ")) break;
-		scriptLines.push(line);
-	}
-	return scriptLines
-		.map((line) => line.replace(/^          /, ""))
-		.join("\n");
-}
-
-const selectScript = workflowScript("Select self-managed Needlefish");
-const reviewScript = workflowScript("Needlefish review");
+const selectScript = workflowStepScript(workflow, "Select self-managed Needlefish");
+const reviewScript = workflowStepScript(workflow, "Needlefish review");
 const digest = value => createHash("sha256").update(value).digest("hex");
 
 function runSelection(t, options = {}) {
