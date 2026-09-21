@@ -797,11 +797,13 @@ async function runCodexOnce(
 // stderr text never does (it may contain the review prompt).
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
+	// Order matters. Explicit, self-labelling signals are checked before the loose
+	// numeric heuristics: `\b40[13]\b` matches any 401/403/413 anywhere in stderr —
+	// session ids, token counts, latency figures — so a genuine 429 whose output
+	// happens to contain such a number would otherwise be misreported as an auth
+	// failure, and the review workflow does not advance the fallback chain on auth.
 	const authCode = stderr.match(/auth error code:\s*([a-z0-9_]+)/i);
 	if (authCode) return `auth error (${authCode[1]})`;
-	if (/\b40[13]\b|unauthorized|login required|not logged in/i.test(stderr)) {
-		return "auth rejected";
-	}
 	// "quota exhausted"/"insufficient_quota" are how OpenAI-compatible gateways and
 	// Bailian-style token plans phrase an exhausted allowance; "quota exceeded" alone
 	// missed them and the caller then saw no cause at all.
@@ -813,8 +815,13 @@ export function safeRunnerCause(stderr: string): string | undefined {
 		return "usage limit";
 	}
 	// 429 is the canonical rate-limit status and must classify even when the body
-	// uses a proxy-specific code such as CLIProxyAPI's model_cooldown.
+	// uses a proxy-specific code such as CLIProxyAPI's model_cooldown. Codex phrases
+	// an exhausted budget as "exceeded retry limit, last status: 429 Too Many Requests"
+	// (verified on codex-cli 0.153.4 and 0.155.1).
 	if (/rate limit|\b429\b|model_cooldown/i.test(stderr)) return "rate limited";
+	if (/unauthorized|login required|not logged in|\b40[13]\b/i.test(stderr)) {
+		return "auth rejected";
+	}
 	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
 		return "network error";
 	}

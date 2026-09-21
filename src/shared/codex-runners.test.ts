@@ -742,9 +742,31 @@ test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
 	assert.equal(safeRunnerCause("quota exceeded for this key"), "usage limit");
 	assert.equal(safeRunnerCause("rate limit reached"), "rate limited");
 
-	// 401/403 stay auth, and an unrelated failure stays unclassified so the chain
-	// does not advance on a genuine review defect.
+	// Real codex output for an exhausted budget, captured from codex-cli 0.153.4 and
+	// 0.155.1 against a rate-limited CLIProxyAPI route.
+	assert.equal(
+		safeRunnerCause(
+			"ERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// Ordering regression: `\b40[13]\b` matches incidental numbers (session ids,
+	// token counts, latency). A real 429 whose output also contains such a number
+	// must still classify as rate limited, because the review workflow refuses to
+	// advance the fallback chain on an auth classification.
+	assert.equal(
+		safeRunnerCause(
+			"tokens used: 401\nERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// 401/403 stay auth when no rate-limit signal is present, and an unrelated
+	// failure stays unclassified so the chain does not advance on a genuine
+	// review defect.
 	assert.equal(safeRunnerCause("403 forbidden"), "auth rejected");
+	assert.equal(safeRunnerCause("401 unauthorized"), "auth rejected");
 	assert.equal(safeRunnerCause("TypeError: x is not a function"), undefined);
 	assert.equal(safeRunnerCause(""), undefined);
 });
