@@ -267,6 +267,8 @@ jobs:
           # Self-hosted default lane comes from repo variables; qualified by eval/results/2026-09-20-codex-cpa-*-x1.json (#172):
           # deepseek-v4.1-flash via CLIProxyAPI recall 87% / FP 4% / noise 0.016, mean 51 s. Hosted runs still pass explicit inputs.
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model || vars.NEEDLEFISH_MODEL }}
+          # Comma-separated model ids on OTHER providers behind the proxy, tried in order on infra failures.
+          NEEDLEFISH_MODEL_FALLBACKS: ${{ vars.NEEDLEFISH_MODEL_FALLBACKS }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort || vars.NEEDLEFISH_CODEX_REASONING_EFFORT }}
@@ -340,7 +342,36 @@ jobs:
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
-          "$NEEDLEFISH_BIN" "${args[@]}"
+          # Provider fallback chain (self-hosted proxy lane only). Each model id lives on a different
+          # upstream provider behind CLIProxyAPI (Bailian -> Z.ai -> Devin), so switching the id switches
+          # the provider. Only infra-class failures (rate limit, upstream 5xx, timeout, proxy unreachable)
+          # advance the chain; a verdict of CHANGES REQUESTED is a result, not a failure.
+          chain=()
+          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
+            IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
+          fi
+          out=""
+          run_review() {
+            local model="$1"; local rc
+            local a=("${args[@]}")
+            if [ -n "$model" ]; then
+              a=("${a[@]/--model/--model-placeholder}")
+              for i in "${!a[@]}"; do if [ "${a[$i]}" = "--model-placeholder" ]; then a[$i]="--model"; a[$((i+1))]="$model"; fi; done
+            fi
+            set +e; out=$("$NEEDLEFISH_BIN" "${a[@]}" 2>&1); rc=$?; set -e
+            printf '%s\n' "$out"
+            return $rc
+          }
+          if run_review ""; then exit 0; else rc=$?; fi
+          for next in "${chain[@]}"; do
+            [ -n "$next" ] || continue
+            if ! tail -c 4000 <<<"$out" | grep -qiE '429|rate.?limit|quota|insufficient|5[0-9][0-9] |bad gateway|gateway time|timed? ?out|ECONNREFUSED|ENOTFOUND|unreachable|overloaded'; then
+              echo "needlefish: previous failure is not infra-class; not switching provider" >&2; exit $rc
+            fi
+            echo "::warning title=Needlefish provider fallback::switching lane to $next after infra failure on previous provider"
+            if run_review "$next"; then echo "lane=fallback:$next" >> "$GITHUB_STEP_SUMMARY"; exit 0; else rc=$?; fi
+          done
+          exit $rc
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Crashed runs would
