@@ -828,11 +828,53 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	return undefined;
 }
 
+// Allowlisted cause classification for output that cannot be parsed, mirroring
+// safeRunnerCause: only the canned tokens ever reach the PR-visible message, the
+// output text never does (it may echo the review prompt).
+//
+// The line drawn here is "did the provider deliver a complete response", not
+// "is the response usable". Nothing delivered ("empty output") or a stream that
+// stopped mid-structure ("truncated output") is a transport-class failure —
+// timeout, token ceiling consumed by reasoning, gateway returning an empty or
+// clipped body — and neither carries review content, so advancing the fallback
+// chain cannot mask a review defect. A response that arrived whole but ignores
+// the JSON contract (prose, wrong fence tag, ambiguous fences, syntactically
+// invalid JSON) stays unclassified on purpose: that is where a prompt, fixture
+// or model-capability defect hides, and retrying it on four providers burns four
+// model calls to reproduce the same defect.
+export function safeOutputCause(text: string): string | undefined {
+	if (!text.trim()) return "empty output";
+	// A response that IS an HTML/XML document never came from a model held to a
+	// JSON contract: it is a gateway or proxy error page that the runner passed
+	// through with a zero exit status.
+	if (/^\s*<(?:!doctype\s+html|html\b|\?xml\b)/i.test(text)) {
+		return "html error page";
+	}
+	// An odd number of fence delimiters means a fence was opened and never
+	// closed: the stream stopped inside it. A complete response — even one that
+	// fences the wrong language or answers in prose — balances them.
+	const delimiters = text.match(/```/g)?.length ?? 0;
+	if (delimiters % 2 === 1) return "truncated output";
+	return undefined;
+}
+
+// `text` is the material that was supposed to hold the JSON object: the whole
+// output when no fence was usable, the fence body when one was.
+function unparseableOutputError(text: string): Error {
+	const cause = safeOutputCause(text);
+	return new Error(
+		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}`,
+	);
+}
+
 function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
 	if (start === -1 || end === -1 || end <= start) {
-		throw new Error("no JSON object found in codex output");
+		// An empty fence body classifies as empty output: the fence markers are
+		// not review content. A body with text but no braces does not — the model
+		// answered, just not in JSON.
+		throw unparseableOutputError(raw);
 	}
 	try {
 		return JSON.parse(raw.slice(start, end + 1));
@@ -885,7 +927,9 @@ export function extractJson(text: string): unknown {
 	if (fences.length === 1) {
 		const fence = fences[0];
 		if (fence.tag === "") return parseJsonObject(fence.body);
-		throw new Error("no JSON object found in codex output");
+		// A closed fence with a non-json tag is a complete response that named the
+		// wrong language; only a dangling second fence would make this truncation.
+		throw unparseableOutputError(text);
 	}
 
 	if (documentError) {
@@ -893,7 +937,7 @@ export function extractJson(text: string): unknown {
 			cause: documentError,
 		});
 	}
-	throw new Error("no JSON object found in codex output");
+	throw unparseableOutputError(text);
 }
 
 function resolveModel(
@@ -1249,9 +1293,13 @@ async function runOpenAIDirect(
 		}
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
+			// HTTP 200 with a well-formed envelope and no content is an upstream
+			// delivery failure, not a model that answered badly — reasoning tokens
+			// eating the whole budget is the usual cause. No review content exists
+			// to be masked, so the workflow should advance the fallback chain.
 			throw withBody(
 				new RunnerOutputError(
-					`openai runner: empty content in response: ${text.slice(0, 500)}`,
+					`openai runner: empty content in response; likely cause: empty output; body: ${text.slice(0, 500)}`,
 				),
 			);
 		}
