@@ -264,6 +264,8 @@ jobs:
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
+          # Self-hosted default lane comes from repo variables; qualified by eval/results/2026-09-20-codex-cpa-*-x1.json (#172):
+          # deepseek-v4.1-flash via CLIProxyAPI recall 87% / FP 4% / noise 0.016, mean 51 s. Hosted runs still pass explicit inputs.
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model || vars.NEEDLEFISH_MODEL }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
