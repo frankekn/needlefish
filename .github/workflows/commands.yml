@@ -102,9 +102,10 @@ jobs:
           gh workflow run review.yml -R "${{ github.repository }}" -f pr_number="${{ github.event.issue.number }}"
 
   explain:
+    # Runs on the ephemeral x64-review pool (on the tailnet, reaches CLIProxyAPI); same lane as review.
     needs: parse
     if: needs.parse.outputs.command == 'explain'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: x64-review
     steps:
       - name: Checkout PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,8 +119,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           FINDING: ${{ needs.parse.outputs.finding }}
-          CODEX_REASONING_EFFORT: xhigh
-          CODEX_SERVICE_TIER: fast
+          CODEX_REASONING_EFFORT: high
+          CODEX_PROXY_BASE_URL: ${{ vars.CODEX_PROXY_BASE_URL }}
+          CODEX_PROXY_API_KEY: ${{ secrets.CODEX_PROXY_API_KEY }}
+          NEEDLEFISH_CODEX_PROXY_REQUIRED: "1"
         run: |
           set -euo pipefail
           root="$HOME/.local/share/needlefish-self"
@@ -146,4 +149,4 @@ jobs:
           then
             echo "Invalid self-managed release metadata or digest: $release" >&2; exit 1
           fi
-          "$release/bin/needlefish" explain "${{ github.event.issue.number }}" --finding "$FINDING" --runner codex --model gpt-5.6-terra
+          "$release/bin/needlefish" explain "${{ github.event.issue.number }}" --finding "$FINDING" --runner codex --model "${NEEDLEFISH_MODEL:-deepseek-v4.1-flash}"
