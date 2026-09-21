@@ -12,7 +12,7 @@ const workflow = parse(source);
 test("upstream pushes and CI completions cannot deploy over an operator installation", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
-  assert.deepEqual(workflow.jobs.deploy["runs-on"], ["self-hosted", "Linux", "X64"]);
+  assert.equal(workflow.jobs.deploy["runs-on"], "x64-review");
   assert.doesNotMatch(source, /deploy-ubuntu|git fetch|git clone|actions\/checkout|NEEDLEFISH_REF/);
 });
 
