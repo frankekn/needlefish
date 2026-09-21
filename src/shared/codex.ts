@@ -802,10 +802,19 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	if (/\b40[13]\b|unauthorized|login required|not logged in/i.test(stderr)) {
 		return "auth rejected";
 	}
-	if (/usage limit|quota exceeded|credit balance/i.test(stderr)) {
+	// "quota exhausted"/"insufficient_quota" are how OpenAI-compatible gateways and
+	// Bailian-style token plans phrase an exhausted allowance; "quota exceeded" alone
+	// missed them and the caller then saw no cause at all.
+	if (
+		/usage limit|quota exceeded|quota exhausted|insufficient_quota|credit balance/i.test(
+			stderr,
+		)
+	) {
 		return "usage limit";
 	}
-	if (/rate limit/i.test(stderr)) return "rate limited";
+	// 429 is the canonical rate-limit status and must classify even when the body
+	// uses a proxy-specific code such as CLIProxyAPI's model_cooldown.
+	if (/rate limit|\b429\b|model_cooldown/i.test(stderr)) return "rate limited";
 	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
 		return "network error";
 	}

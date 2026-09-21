@@ -10,7 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCodex, RunnerOperationalError } from "./codex";
+import { runCodex, RunnerOperationalError, safeRunnerCause } from "./codex";
 import {
 	commitAll,
 	gitText,
@@ -724,4 +724,27 @@ test("runCodex rejects an invalid pi thinking effort", async () => {
 		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
 		rmSync(tmp, { recursive: true, force: true });
 	}
+});
+
+test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
+	// Regression: a CLIProxyAPI 429 whose body carries model_cooldown plus an
+	// insufficient_quota upstream error previously classified as undefined, so the
+	// review workflow saw no infra token and refused to advance the fallback chain.
+	const cpaCooldown =
+		'429: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: Your token-plan 1-week quota has been exhausted. The quota will reset at 09-23 13:59:00 UTC."}';
+	assert.equal(safeRunnerCause(cpaCooldown), "usage limit");
+
+	// A bare 429 with no quota wording still classifies as rate limited.
+	assert.equal(safeRunnerCause("429 Too Many Requests"), "rate limited");
+	assert.equal(safeRunnerCause('{"code":"model_cooldown"}'), "rate limited");
+
+	// Phrasings that already worked must keep working.
+	assert.equal(safeRunnerCause("quota exceeded for this key"), "usage limit");
+	assert.equal(safeRunnerCause("rate limit reached"), "rate limited");
+
+	// 401/403 stay auth, and an unrelated failure stays unclassified so the chain
+	// does not advance on a genuine review defect.
+	assert.equal(safeRunnerCause("403 forbidden"), "auth rejected");
+	assert.equal(safeRunnerCause("TypeError: x is not a function"), undefined);
+	assert.equal(safeRunnerCause(""), undefined);
 });
