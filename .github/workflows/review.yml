@@ -351,14 +351,14 @@ jobs:
             IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
           fi
           out=""
+          base_args=("${args[@]}")
           run_review() {
             local model="$1"; local rc
-            local a=("${args[@]}")
+            args=("${base_args[@]}")
             if [ -n "$model" ]; then
-              a=("${a[@]/--model/--model-placeholder}")
-              for i in "${!a[@]}"; do if [ "${a[$i]}" = "--model-placeholder" ]; then a[$i]="--model"; a[$((i+1))]="$model"; fi; done
+              for i in "${!args[@]}"; do if [ "${args[$i]}" = "--model" ]; then args[$((i+1))]="$model"; fi; done
             fi
-            set +e; out=$("$NEEDLEFISH_BIN" "${a[@]}" 2>&1); rc=$?; set -e
+            set +e; out=$("$NEEDLEFISH_BIN" "${args[@]}" 2>&1); rc=$?; set -e
             printf '%s\n' "$out"
             return $rc
           }
