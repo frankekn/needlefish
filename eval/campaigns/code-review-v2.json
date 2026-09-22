@@ -1,0 +1,29 @@
+{
+  "policy": "code-review-v2",
+  "status": "planned",
+  "gateClass": "R",
+  "lanes": [
+    {
+      "name": "MiMo v2.6 Flash",
+      "runner": "opencode",
+      "model": "opencode/mimo-v2.6-flash-free",
+      "effort": null,
+      "provider": "Xiaomi",
+      "route": "opencode Zen direct (free tier)",
+      "runnerVersion": "opencode v2.0.12",
+      "status": "ready",
+      "notes": "No --effort: opencode v2.0.12 dropped --variant; runs at model default. Direct-connect smoke test passed 2026-09-21."
+    },
+    {
+      "name": "Grok 4.7",
+      "runner": "grok",
+      "model": "grok-4.7",
+      "effort": "high",
+      "provider": "xAI",
+      "route": "Grok CLI subscription (direct API)",
+      "runnerVersion": "grok 1.0.40",
+      "status": "queued",
+      "notes": "Authenticated via device-auth (frank.ekn@gmail.com) 2026-09-22; grok-4.7 direct smoke test passed with --reasoning-effort high."
+    }
+  ]
+}
