@@ -10,7 +10,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCodex, RunnerOperationalError } from "./codex";
+import {
+	extractJson,
+	runCodex,
+	RunnerOperationalError,
+	safeOutputCause,
+	safeRunnerCause,
+} from "./codex";
 import {
 	commitAll,
 	gitText,
@@ -724,4 +730,151 @@ test("runCodex rejects an invalid pi thinking effort", async () => {
 		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
 		rmSync(tmp, { recursive: true, force: true });
 	}
+});
+
+test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
+	// Regression: a CLIProxyAPI 429 whose body carries model_cooldown plus an
+	// insufficient_quota upstream error previously classified as undefined, so the
+	// review workflow saw no infra token and refused to advance the fallback chain.
+	const cpaCooldown =
+		'429: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: Your token-plan 1-week quota has been exhausted. The quota will reset at 09-23 13:59:00 UTC."}';
+	assert.equal(safeRunnerCause(cpaCooldown), "usage limit");
+
+	// A bare 429 with no quota wording still classifies as rate limited.
+	assert.equal(safeRunnerCause("429 Too Many Requests"), "rate limited");
+	assert.equal(safeRunnerCause('{"code":"model_cooldown"}'), "rate limited");
+
+	// Phrasings that already worked must keep working.
+	assert.equal(safeRunnerCause("quota exceeded for this key"), "usage limit");
+	assert.equal(safeRunnerCause("rate limit reached"), "rate limited");
+
+	// Real codex output for an exhausted budget, captured from codex-cli 0.153.4 and
+	// 0.155.1 against a rate-limited CLIProxyAPI route.
+	assert.equal(
+		safeRunnerCause(
+			"ERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// Ordering regression: `\b40[13]\b` matches incidental numbers (session ids,
+	// token counts, latency). A real 429 whose output also contains such a number
+	// must still classify as rate limited, because the review workflow refuses to
+	// advance the fallback chain on an auth classification.
+	assert.equal(
+		safeRunnerCause(
+			"tokens used: 401\nERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// 401/403 stay auth when no rate-limit signal is present, and an unrelated
+	// failure stays unclassified so the chain does not advance on a genuine
+	// review defect.
+	assert.equal(safeRunnerCause("403 forbidden"), "auth rejected");
+	assert.equal(safeRunnerCause("401 unauthorized"), "auth rejected");
+	assert.equal(safeRunnerCause("TypeError: x is not a function"), undefined);
+	assert.equal(safeRunnerCause(""), undefined);
+});
+
+
+test("safeOutputCause classifies only upstream-caused unparseable output", () => {
+	// Nothing was delivered. A runner can exit 0 and still leave no output: the
+	// out-file never gets written, reasoning consumes the whole token ceiling, or
+	// the gateway answers with an empty body. There is no review content in an
+	// empty response, so advancing the fallback chain cannot mask a review defect.
+	assert.equal(safeOutputCause(""), "empty output");
+	assert.equal(safeOutputCause("\n \t\n"), "empty output");
+
+	// The stream stopped inside a fence: the opening delimiter has no partner.
+	assert.equal(
+		safeOutputCause('```json\n{"summary":"partial'),
+		"truncated output",
+	);
+	assert.equal(
+		safeOutputCause('findings below\n```json\n{"a":1}\n```\n```js'),
+		"truncated output",
+	);
+
+	// A gateway error page passed through with a zero exit status is not a model
+	// response at all.
+	assert.equal(
+		safeOutputCause("<html><head><title>502 Bad Gateway</title></head></html>"),
+		"html error page",
+	);
+	assert.equal(
+		safeOutputCause('<?xml version="1.0"?><Error><Code>Throttled</Code></Error>'),
+		"html error page",
+	);
+
+	// Responses that arrived WHOLE and merely break the JSON contract stay
+	// unclassified: that is where a prompt, fixture or model-capability defect
+	// hides, and the workflow must not spend four providers reproducing it.
+	assert.equal(safeOutputCause("I cannot review this diff."), undefined);
+	assert.equal(safeOutputCause('```ts\n{"wrong":true}\n```'), undefined);
+	assert.equal(safeOutputCause("```\nnot json at all\n```"), undefined);
+	// Prose that merely mentions HTML does not qualify; only a document does.
+	assert.equal(
+		safeOutputCause("the handler returns <html> on error"),
+		undefined,
+	);
+});
+
+test("extractJson emits an infra token only for empty or truncated output", () => {
+	// Regression: every unparseable-output path threw the same tokenless message,
+	// so review.yml classified a provider that returned nothing as non-infra and
+	// failed the whole review instead of advancing the fallback chain.
+
+	// Empty runner output, and a fence whose body holds nothing to parse.
+	assert.throws(
+		() => extractJson(""),
+		/no JSON object found in codex output; likely cause: empty output/,
+	);
+	assert.throws(
+		() => extractJson("```json\n```"),
+		/no JSON object found in codex output; likely cause: empty output/,
+	);
+
+	// Truncated mid-fence output loses its closing delimiter, so no fence matches
+	// and the whole text is classified.
+	assert.throws(
+		() => extractJson('```json\n{"summary":"cut off'),
+		/no JSON object found in codex output; likely cause: truncated output/,
+	);
+
+	assert.throws(
+		() => extractJson("<!doctype html>\n<h1>504 Gateway Timeout</h1>"),
+		/no JSON object found in codex output; likely cause: html error page/,
+	);
+
+	// Complete-but-wrong output keeps the bare message: a wrong fence tag, a
+	// fenced non-JSON body, and plain prose are all model-side contract failures.
+	for (const whole of [
+		'```ts\n{"wrong":true}\n```',
+		"```json\nno object here\n```",
+		"I reviewed the diff but will not answer in JSON.",
+	]) {
+		let caught: unknown;
+		try {
+			extractJson(whole);
+			assert.fail("expected extractJson to throw");
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error);
+		assert.match((caught as Error).message, /no JSON object found/);
+		assert.doesNotMatch((caught as Error).message, /likely cause/);
+	}
+
+	// Syntactically invalid JSON stays on its own tokenless message: the response
+	// arrived whole, and "cut off" vs "malformed" there would rest on V8 wording.
+	let invalid: unknown;
+	try {
+		extractJson('```json\n{"a": 1,}\n```');
+		assert.fail("expected extractJson to throw");
+	} catch (err) {
+		invalid = err;
+	}
+	assert.match((invalid as Error).message, /invalid JSON in codex output/);
+	assert.doesNotMatch((invalid as Error).message, /likely cause/);
 });

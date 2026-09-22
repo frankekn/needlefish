@@ -351,8 +351,8 @@ providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 `github_token` (defaults to the workflow token).
 
 **Runner versions:** when `runner_version` is omitted, the action installs
-the per-runner pin from `action.yml` (currently Codex `0.153.4`, Claude
-`2.1.239`, OpenCode `1.18.21`, pi `0.70.6`). A single default cannot be
+the per-runner pin from `action.yml` (currently Codex `0.155.1`, Claude
+`2.1.278`, OpenCode `1.18.31`, pi `0.86.1`). A single default cannot be
 correct for four packages, so the pin is chosen from the selected `runner`;
 pass an explicit version — or `latest` — only when you intentionally want
 something else.

@@ -5,6 +5,21 @@
 - GitHub: let self-hosted operators track the current Codex CLI instead of
   enforcing the historical `0.153.4` fleet pin. Hosted action installs remain
   pinned for reproducibility.
+- GitHub: bump the hosted runner pins to current — Codex `0.155.1`, Claude
+  `2.1.278`, OpenCode `1.18.31` — and move the pi pin to
+  `@earendil-works/pi-coding-agent@0.86.1`. The previous `@mariozechner/pi`
+  package installs its bin as `pi-pods`, so the action's `pi` invocation could
+  never resolve; the successor package from the same author ships a `pi` bin.
+  Verified on 0.86.1 that the runner's contract still holds: `pi -p
+  --no-session --mode text --provider <name> --model <id> --thinking <level>`
+  with the prompt on stdin.
+- Runner: classify proxied quota and rate-limit failures (`429`,
+  `model_cooldown`, `insufficient_quota`) as infra causes so a fallback chain
+  can act on them, and check those explicit signals before the loose `40x`
+  heuristic. Unparseable output advances the chain only when the upstream never
+  delivered a complete response (empty, truncated, or an HTML error page); a
+  response that arrived whole but broke the JSON contract does not, because
+  switching provider would only reproduce it.
 - ACP: retain validated prompt token usage in review stats and render it with
   each measured call.
 

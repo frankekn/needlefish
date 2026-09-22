@@ -134,10 +134,12 @@ test("hosted action pins a version per runner and lets runner_version override",
     "every hosted runner must have its own pin",
   );
   assert.equal(pins.codex.pkg, "@openai/codex");
-  assert.equal(pins.codex.pinned, "0.153.4");
+  assert.equal(pins.codex.pinned, "0.155.1");
   assert.equal(pins.claude.pkg, "@anthropic-ai/claude-code");
   assert.equal(pins.opencode.pkg, "opencode-ai");
-  assert.equal(pins.pi.pkg, "@mariozechner/pi");
+  // @mariozechner/pi installs its bin as `pi-pods`, so the action's `pi` invocation could
+  // never resolve. The successor package from the same author is what ships a `pi` bin.
+  assert.equal(pins.pi.pkg, "@earendil-works/pi-coding-agent");
   for (const [runner, { pinned }] of Object.entries(pins)) {
     assert.notEqual(pinned, "latest", `${runner} must not pin latest`);
     assert.match(pinned, PINNED_RUNNER, `${runner} pin must be x.y.z: ${pinned}`);

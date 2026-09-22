@@ -797,26 +797,84 @@ async function runCodexOnce(
 // stderr text never does (it may contain the review prompt).
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
+	// Order matters. Explicit, self-labelling signals are checked before the loose
+	// numeric heuristics: `\b40[13]\b` matches any 401/403/413 anywhere in stderr —
+	// session ids, token counts, latency figures — so a genuine 429 whose output
+	// happens to contain such a number would otherwise be misreported as an auth
+	// failure, and the review workflow does not advance the fallback chain on auth.
 	const authCode = stderr.match(/auth error code:\s*([a-z0-9_]+)/i);
 	if (authCode) return `auth error (${authCode[1]})`;
-	if (/\b40[13]\b|unauthorized|login required|not logged in/i.test(stderr)) {
-		return "auth rejected";
-	}
-	if (/usage limit|quota exceeded|credit balance/i.test(stderr)) {
+	// "quota exhausted"/"insufficient_quota" are how OpenAI-compatible gateways and
+	// Bailian-style token plans phrase an exhausted allowance; "quota exceeded" alone
+	// missed them and the caller then saw no cause at all.
+	if (
+		/usage limit|quota exceeded|quota exhausted|insufficient_quota|credit balance/i.test(
+			stderr,
+		)
+	) {
 		return "usage limit";
 	}
-	if (/rate limit/i.test(stderr)) return "rate limited";
+	// 429 is the canonical rate-limit status and must classify even when the body
+	// uses a proxy-specific code such as CLIProxyAPI's model_cooldown. Codex phrases
+	// an exhausted budget as "exceeded retry limit, last status: 429 Too Many Requests"
+	// (verified on codex-cli 0.153.4 and 0.155.1).
+	if (/rate limit|\b429\b|model_cooldown/i.test(stderr)) return "rate limited";
+	if (/unauthorized|login required|not logged in|\b40[13]\b/i.test(stderr)) {
+		return "auth rejected";
+	}
 	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
 		return "network error";
 	}
 	return undefined;
 }
 
+// Allowlisted cause classification for output that cannot be parsed, mirroring
+// safeRunnerCause: only the canned tokens ever reach the PR-visible message, the
+// output text never does (it may echo the review prompt).
+//
+// The line drawn here is "did the provider deliver a complete response", not
+// "is the response usable". Nothing delivered ("empty output") or a stream that
+// stopped mid-structure ("truncated output") is a transport-class failure —
+// timeout, token ceiling consumed by reasoning, gateway returning an empty or
+// clipped body — and neither carries review content, so advancing the fallback
+// chain cannot mask a review defect. A response that arrived whole but ignores
+// the JSON contract (prose, wrong fence tag, ambiguous fences, syntactically
+// invalid JSON) stays unclassified on purpose: that is where a prompt, fixture
+// or model-capability defect hides, and retrying it on four providers burns four
+// model calls to reproduce the same defect.
+export function safeOutputCause(text: string): string | undefined {
+	if (!text.trim()) return "empty output";
+	// A response that IS an HTML/XML document never came from a model held to a
+	// JSON contract: it is a gateway or proxy error page that the runner passed
+	// through with a zero exit status.
+	if (/^\s*<(?:!doctype\s+html|html\b|\?xml\b)/i.test(text)) {
+		return "html error page";
+	}
+	// An odd number of fence delimiters means a fence was opened and never
+	// closed: the stream stopped inside it. A complete response — even one that
+	// fences the wrong language or answers in prose — balances them.
+	const delimiters = text.match(/```/g)?.length ?? 0;
+	if (delimiters % 2 === 1) return "truncated output";
+	return undefined;
+}
+
+// `text` is the material that was supposed to hold the JSON object: the whole
+// output when no fence was usable, the fence body when one was.
+function unparseableOutputError(text: string): Error {
+	const cause = safeOutputCause(text);
+	return new Error(
+		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}`,
+	);
+}
+
 function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
 	if (start === -1 || end === -1 || end <= start) {
-		throw new Error("no JSON object found in codex output");
+		// An empty fence body classifies as empty output: the fence markers are
+		// not review content. A body with text but no braces does not — the model
+		// answered, just not in JSON.
+		throw unparseableOutputError(raw);
 	}
 	try {
 		return JSON.parse(raw.slice(start, end + 1));
@@ -869,7 +927,9 @@ export function extractJson(text: string): unknown {
 	if (fences.length === 1) {
 		const fence = fences[0];
 		if (fence.tag === "") return parseJsonObject(fence.body);
-		throw new Error("no JSON object found in codex output");
+		// A closed fence with a non-json tag is a complete response that named the
+		// wrong language; only a dangling second fence would make this truncation.
+		throw unparseableOutputError(text);
 	}
 
 	if (documentError) {
@@ -877,7 +937,7 @@ export function extractJson(text: string): unknown {
 			cause: documentError,
 		});
 	}
-	throw new Error("no JSON object found in codex output");
+	throw unparseableOutputError(text);
 }
 
 function resolveModel(
@@ -1233,9 +1293,13 @@ async function runOpenAIDirect(
 		}
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
+			// HTTP 200 with a well-formed envelope and no content is an upstream
+			// delivery failure, not a model that answered badly — reasoning tokens
+			// eating the whole budget is the usual cause. No review content exists
+			// to be masked, so the workflow should advance the fallback chain.
 			throw withBody(
 				new RunnerOutputError(
-					`openai runner: empty content in response: ${text.slice(0, 500)}`,
+					`openai runner: empty content in response; likely cause: empty output; body: ${text.slice(0, 500)}`,
 				),
 			);
 		}

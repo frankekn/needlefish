@@ -365,7 +365,13 @@ jobs:
           if run_review ""; then exit 0; else rc=$?; fi
           for next in "${chain[@]}"; do
             [ -n "$next" ] || continue
-            if ! tail -c 4000 <<<"$out" | grep -qiE '429|rate.?limit|quota|insufficient|5[0-9][0-9] |bad gateway|gateway time|timed? ?out|ECONNREFUSED|ENOTFOUND|unreachable|overloaded'; then
+            # needlefish withholds raw stderr (it may contain the review prompt) and instead
+            # emits an allowlisted token via safeRunnerCause/safeOutputCause, e.g.
+            # "likely cause: usage limit" or "likely cause: empty output". Match that
+            # controlled vocabulary first; the raw-text patterns stay as a fallback for
+            # runners that do surface upstream text. Output that arrived whole but broke the
+            # JSON contract carries no token on purpose and must not advance the chain.
+            if ! tail -c 4000 <<<"$out" | grep -qiE 'likely cause: (usage limit|rate limited|network error|empty output|truncated output|html error page)|429|rate.?limit|quota|insufficient|5[0-9][0-9] |bad gateway|gateway time|timed? ?out|ECONNREFUSED|ENOTFOUND|unreachable|overloaded'; then
               echo "needlefish: previous failure is not infra-class; not switching provider" >&2; exit $rc
             fi
             echo "::warning title=Needlefish provider fallback::switching lane to $next after infra failure on previous provider"

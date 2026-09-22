@@ -55,10 +55,12 @@ runs:
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex) pkg="@openai/codex"; pinned="0.153.4" ;;
-          claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.239" ;;
-          opencode) pkg="opencode-ai"; pinned="1.18.21" ;;
-          pi) pkg="@mariozechner/pi"; pinned="0.70.6" ;;
+          codex) pkg="@openai/codex"; pinned="0.155.1" ;;
+          claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.278" ;;
+          opencode) pkg="opencode-ai"; pinned="1.18.31" ;;
+          # @mariozechner/pi ships its bin as `pi-pods`, not `pi`; the successor package
+          # from the same author installs a `pi` bin, which this action expects.
+          pi) pkg="@earendil-works/pi-coding-agent"; pinned="0.86.1" ;;
           *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
         ver="${NF_RUNNER_VERSION:-$pinned}"

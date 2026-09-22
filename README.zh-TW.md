@@ -298,8 +298,8 @@ subprocess 的 allowlist 內；其他 provider 的 key 需要
 `github_token`（預設為 workflow token）。
 
 **Runner 版本：** 未設定 `runner_version` 時，action 會安裝 `action.yml`
-裡的 per-runner pin（目前 Codex `0.153.4`、Claude `2.1.239`、OpenCode
-`1.18.21`、pi `0.70.6`）。單一預設值不可能同時適用四個套件，所以 pin
+裡的 per-runner pin（目前 Codex `0.155.1`、Claude `2.1.278`、OpenCode
+`1.18.31`、pi `0.86.1`）。單一預設值不可能同時適用四個套件，所以 pin
 依所選 `runner` 決定；只有刻意要用其他版本時，才傳入明確版本——或
 `latest`。
 
