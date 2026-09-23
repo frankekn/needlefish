@@ -1380,3 +1380,43 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. Grok 4.7 high and MiMo v2.6 Flash evaluation — 2026-09-22 to 2026-09-23
+
+Trigger: campaign `code-review-v2` evaluated Grok 4.7 at `high` reasoning
+effort (grok CLI 1.0.40 direct API via authenticated account) and MiMo v2.6
+Flash (OpenCode v2.0.12 direct Zen free tier). Both lanes ran on the standard
+hashes: 87 fixtures, 3 draws, holdouts included, Class R gate,
+`NEEDLEFISH_EPHEMERAL_HOME=1`, `NEEDLEFISH_EVAL_TRACE=1`.
+
+Runner fix: evaluating MiMo exposed that OpenCode v2.0.12 removed the v1
+flags (`--pure`, `--dir`, `--variant`) and its background service mode hangs
+under an isolated ephemeral HOME. Needlefish now passes `--standalone`,
+maps reasoning effort into the model string as `provider/model#variant`,
+and declares Zen models in `OPENCODE_CONFIG_CONTENT` so isolated invocations
+resolve without a local models.dev database cache. Hosted `action.yml` bumped
+to `@opencode/cli@2.0.12`.
+
+Results (full reports in `results/2026-09-22-*-x3.json`):
+
+| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Timeouts / Nulls | Bait exposure |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| Grok 4.7 high | 0.9235 | 0.0139 | 0.0383 | 1.000 | none | 2 timeouts (`real-pr1-neutral-conclusion` 2/3) | 0 |
+| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 2/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3 | 53 timeouts | 81 |
+
+Both reports have `cheatDetectedCount: 0`.
+
+Evaluation outcomes:
+
+- **Grok 4.7 high** passes all qualification gates with 100% Tier-1 recall
+  (21/21), 92.35% overall recall, 1.39% false positive rate (1/72 clean
+  draws), and 0.0383 noise per positive (well within the 0.12 threshold).
+  Across defect tiers: Tier-1 100% (21/21), Tier-2 95.4% (103/108), Tier-3
+  83.3% (45/54). It outperforms deployed Terra high across recall (92.3% vs
+  89.6%), Tier-3 (83.3% vs 77.8%), and specificity / noise (1.4% vs 9.7% FP,
+  0.038 vs 0.076 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws hit the
+  default 10-minute CLI timeout; under the publication gate's zero-operational-failure
+  rule, it remains an unranked candidate until an extended-timeout re-evaluation.
+- **MiMo v2.6 Flash** is disqualified under the Tier-1 gate (61.9% recall
+  with 8 missed Tier-1 draws across 3 fixtures) and triggered 81 raw-transcript
+  bait exposures.
