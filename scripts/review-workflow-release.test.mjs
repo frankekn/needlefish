@@ -125,6 +125,8 @@ case "$SCENARIO" in
   prose) echo 'quoted timeout'; echo 'provider said 429' >&2; exit 1 ;;
   quota) echo 'needlefish review failed: codex runner exited 1; likely cause: usage limit; stderr withheld because it may contain the review prompt' >&2; exit 1 ;;
   timeout) echo 'needlefish review failed: spawn codex ETIMEDOUT' >&2; exit 1 ;;
+  http429) echo 'needlefish review failed: openai runner HTTP 429: upstream rejected request' >&2; exit 1 ;;
+  http503) echo 'needlefish review failed: openai runner HTTP 503: upstream unavailable' >&2; exit 1 ;;
 esac
 `);
 	chmodSync(binary, 0o755);
@@ -133,6 +135,8 @@ esac
 		["prose", 1, "primary\n"],
 		["quota", 0, "primary\nfallback\n"],
 		["timeout", 0, "primary\nfallback\n"],
+		["http429", 0, "primary\nfallback\n"],
+		["http503", 0, "primary\nfallback\n"],
 	]) {
 		writeFileSync(calls, "");
 		writeFileSync(summary, "");
