@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
-import { displayedMetrics, tierRecall } from "./shared/publication";
+import { displayedMetrics, operationalFailures, tierRecall } from "./shared/publication";
 import {
   balancedReviewAccuracy,
   renderSite,
@@ -337,6 +337,45 @@ test("renderSite excludes operational failures from model scoring", () => {
   );
   assert.doesNotMatch(leaderboard, /Candidate A/);
   assert.match(html, /Not ranked[\s\S]*Candidate A[\s\S]*1 provider or infrastructure draw failure/);
+});
+
+test("renderSite scores a runner deadline timeout as a failed review, not an operational failure", () => {
+  const { manifest, lanes } = setup();
+  const timedOut = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result, drawIndex) =>
+              drawIndex === 0
+                ? { ...result, operationalFailure: "spawn grok ETIMEDOUT" }
+                : drawIndex === 1
+                  ? { ...result, operationalFailure: "spawn opencode EIDLETIMEDOUT" }
+                  : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  assert.deepEqual(operationalFailures(timedOut[1].report), ["spawn opencode EIDLETIMEDOUT"]);
+  const deadlineOnly = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result, drawIndex) =>
+              drawIndex === 0 ? { ...result, operationalFailure: "spawn grok ETIMEDOUT" } : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  const html = renderSite(manifest, deadlineOnly, canonical);
+  const leaderboard = html.slice(html.indexOf("Current leaderboard"), html.indexOf("Not run"));
+  assert.match(leaderboard, /Candidate A/);
+  assert.doesNotMatch(html, /Not ranked[\s\S]*Candidate A[\s\S]*provider or infrastructure draw failure/);
 });
 
 test("renderSite rejects a lane with a different fixture set", () => {

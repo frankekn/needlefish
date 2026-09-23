@@ -62,6 +62,13 @@ export type PublishedReport = Report & {
 
 type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 
+// RunnerTimeoutError (src/shared/runner-process.ts) message: the runner used its whole
+// per-call deadline. In production that is a review the author never receives, so it
+// is scored as a failed review of the model, not as an infrastructure failure. The
+// draw is already scored as a miss with invalid output; only its publication status
+// changes. Idle timeouts, spawn errors, crashes, and rate limits stay operational.
+const RUNNER_DEADLINE_TIMEOUT = /^spawn \S+ ETIMEDOUT$/;
+
 export function operationalFailures(report: PublishedReport): string[] {
   return report.results.flatMap((result) => {
     const failure = (result as PublishedDraw).operationalFailure;
@@ -69,6 +76,7 @@ export function operationalFailures(report: PublishedReport): string[] {
     if (typeof failure !== "string" || failure.trim().length === 0) {
       throw new Error("operational failure must be a non-empty string");
     }
+    if (RUNNER_DEADLINE_TIMEOUT.test(failure)) return [];
     return [failure];
   });
 }

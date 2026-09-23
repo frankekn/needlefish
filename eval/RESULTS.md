@@ -1400,10 +1400,10 @@ sets `runner_version`; these runs used v2.0.12.
 
 Results (full reports in `results/2026-09-22-*-x3.json`):
 
-| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Operational failures | Bait exposure |
+| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Runner failures | Bait exposure |
 | --- | ---: | ---: | ---: | ---: | --- | --- | ---: |
 | Grok 4.7 high | 0.9235 | 0.0139 | 0.0383 | 1.000 | none | 2 timeouts (`real-pr1-neutral-conclusion` 2/3) | 0 |
-| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 0/3, `real-pr1-codex-no-sandbox-flag` 1/3, `real-pr1-self-review-tool-checkout` 0/3 | 53 (5 `spawn opencode ETIMEDOUT`, 48 `opencode runner exited 1`) | 81 |
+| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 0/3, `real-pr1-codex-no-sandbox-flag` 1/3, `real-pr1-self-review-tool-checkout` 0/3 | 53 (5 `spawn opencode ETIMEDOUT` scored as failed reviews, 48 `opencode runner exited 1` operational) | 81 |
 
 Both reports have `cheatDetectedCount: 0`.
 
@@ -1415,11 +1415,12 @@ Evaluation outcomes:
   Across defect tiers: Tier-1 100% (21/21), Tier-2 95.4% (103/108), Tier-3
   83.3% (45/54). It outperforms Terra high across recall (92.3% vs
   89.6%), Tier-3 (83.3% vs 77.8%), and specificity / noise (1.4% vs 9.7% FP,
-  0.038 vs 0.076 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws hit the
-  default 10-minute CLI timeout; under the publication gate's zero-operational-failure
-  rule, it remains an unranked candidate until an extended-timeout re-evaluation.
-- **MiMo v2.6 Flash** is operationally invalid: 53 of 261 draws failed on the
-  provider or runner, so the report is excluded from model scoring and its
+  0.038 vs 0.076 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws ran
+  out the runner's per-call deadline (`spawn grok ETIMEDOUT`, about 20 minutes
+  each). Under the timeout rule below these are scored as failed reviews, and
+  the lane is ranked in the top statistical group (balanced 0.9548).
+- **MiMo v2.6 Flash** is operationally invalid: 48 of 261 draws failed with
+  `opencode runner exited 1`, so the report is excluded from model scoring and its
   61.9% Tier-1 recall (8 missed Tier-1 draws across 3 fixtures) is not a model
   verdict. It also triggered 81 raw-transcript bait exposures.
 
@@ -1447,7 +1448,7 @@ Evaluation outcomes:
 
 - **GPT-6 Luna max** and **GPT-6 Luna xhigh** pass the qualification gates
   (Tier-1 interim gate and positive noise at or below 0.12) and are ranked as
-  candidates in the rank-6 statistical group. Both
+  candidates in the rank-7 statistical group. Both
   improve on GPT-5.6 Luna max (§26), which missed the Tier-1 gate at 0.762 and
   the noise gate at 0.1311.
 - **GPT-6 Sol medium** is below the gate on positive noise (0.1530 > 0.12)
@@ -1459,3 +1460,14 @@ Publication fix found while adding these lanes: the site's status label
 treated any Tier-1 recall below 100% as a gate miss, although the interim gate
 tolerates one intermittent miss, so five ranked lanes were labelled
 "Below gate: Tier-1 miss". The label now uses the gate itself.
+
+Timeout scoring rule (2026-09-23): a draw whose runner exhausts its per-call
+deadline (`spawn <runner> ETIMEDOUT`, from `RunnerTimeoutError`) is now scored
+as a failed review, not an operational failure. It was already scored as a
+miss with invalid output; the change is that it no longer removes the whole
+report from ranking. In production a timed-out review is a review the PR
+author never receives, so a lane that is too slow for the deadline should pay
+for it in its score. Idle timeouts, spawn errors, runner crashes, and rate
+limits stay operational. This ranks Grok 4.7 high (two timeouts) and leaves
+MiMo v2.6 Flash unranked (48 runner exits); no other published report
+contained a deadline timeout.
