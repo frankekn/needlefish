@@ -699,6 +699,60 @@ test("runCodex maps opencode effort into the model variant segment", async (t) =
 		agent: { build: { permission: "allow" } },
 		providers: { opencode: { models: { "mimo-v2.6-flash-free": {} } } },
 	});
+
+	const outputDefault = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free",
+		reasoningEffort: "default",
+	});
+	const argsDefault = readStringArray(argsPath);
+	assert.equal(outputDefault, '{"ok":true}');
+	assert.equal(
+		argsDefault[argsDefault.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free",
+	);
+});
+
+test("runCodex rejects opencode effort without a specified model", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+		model: process.env.OPENCODE_MODEL,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		if (previous.model === undefined) delete process.env.OPENCODE_MODEL;
+		else process.env.OPENCODE_MODEL = previous.model;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	delete process.env.OPENCODE_MODEL;
+	process.env.OPENCODE_BIN = "/bin/true";
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				targetHeadSha: headSha(repo),
+				timeoutMs: 1000,
+				reasoningEffort: "max",
+			}),
+		(err) => {
+			assert.ok(err instanceof RunnerOperationalError);
+			assert.match(
+				err.message,
+				/opencode reasoning effort requires a model to be specified/,
+			);
+			return true;
+		},
+	);
 });
 
 test("runCodex invokes pi with default provider/model/thinking flags and the prompt on stdin", async () => {

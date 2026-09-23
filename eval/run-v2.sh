@@ -19,7 +19,7 @@ run_lane() {
 }
 
 run_lane opencode-mimo-v26-flash \
-  --runner opencode --model opencode/mimo-v2.6-flash-free \
+  --runner opencode --model opencode/mimo-v2.6-flash-free --effort default \
   --provider Xiaomi --route "opencode Zen direct (free tier)" --runner-version "opencode v2.0.12"
 
 run_lane grok-47-high \

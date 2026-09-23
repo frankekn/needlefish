@@ -3,16 +3,20 @@
 ## Unreleased
 
 - GitHub: let self-hosted operators track the current Codex CLI instead of
-  enforcing the historical `0.153.4` fleet pin. Hosted action installs remain
-  pinned for reproducibility.
-- GitHub: bump the hosted runner pins to current — Codex `0.155.1`, Claude
-  `2.1.278`, OpenCode `1.18.31` — and move the pi pin to
-  `@earendil-works/pi-coding-agent@0.86.1`. The previous `@mariozechner/pi`
-  package installs its bin as `pi-pods`, so the action's `pi` invocation could
-  never resolve; the successor package from the same author ships a `pi` bin.
-  Verified on 0.86.1 that the runner's contract still holds: `pi -p
-  --no-session --mode text --provider <name> --model <id> --thinking <level>`
-  with the prompt on stdin.
+  enforcing the historical `0.153.4` fleet pin.
+- GitHub: the hosted action now installs the latest release of the selected
+  runner CLI (Codex, Claude, OpenCode, pi) instead of a per-runner pin; set
+  `runner_version` to pin one. OpenCode moves to the v2 package
+  `@opencode/cli`, and pi moves to `@earendil-works/pi-coding-agent`. The
+  previous `@mariozechner/pi` package installs its bin as `pi-pods`, so the
+  action's `pi` invocation could never resolve; the successor package from the
+  same author ships a `pi` bin. Verified on 0.86.1 that the runner's contract
+  still holds: `pi -p --no-session --mode text --provider <name> --model <id>
+  --thinking <level>` with the prompt on stdin.
+- Runner: support the opencode v2 CLI contract (`--standalone`, variant in the
+  model string as `provider/model#variant`); reject an opencode effort with no
+  model instead of silently dropping it, and accept `default` as an attestable
+  model-default effort.
 - Runner: classify proxied quota and rate-limit failures (`429`,
   `model_cooldown`, `insufficient_quota`) as infra causes so a fallback chain
   can act on them, and check those explicit signals before the loose `40x`

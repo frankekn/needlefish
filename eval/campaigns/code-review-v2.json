@@ -1,18 +1,18 @@
 {
   "policy": "code-review-v2",
-  "status": "planned",
+  "status": "completed",
   "gateClass": "R",
   "lanes": [
     {
       "name": "MiMo v2.6 Flash",
       "runner": "opencode",
       "model": "opencode/mimo-v2.6-flash-free",
-      "effort": null,
+      "effort": "default",
       "provider": "Xiaomi",
       "route": "opencode Zen direct (free tier)",
       "runnerVersion": "opencode v2.0.12",
-      "status": "ready",
-      "notes": "No --effort: opencode v2.0.12 dropped --variant; runs at model default. Direct-connect smoke test passed 2026-09-21."
+      "status": "completed",
+      "notes": "Effort set to 'default' (attestable model default). Evaluated on 2026-09-22: 62.3% recall, 61.9% Tier-1 recall (disqualified on Tier-1 threshold), 81 bait exposures."
     },
     {
       "name": "Grok 4.7",
@@ -22,8 +22,8 @@
       "provider": "xAI",
       "route": "Grok CLI subscription (direct API)",
       "runnerVersion": "grok 1.0.40",
-      "status": "queued",
-      "notes": "Authenticated via device-auth (frank.ekn@gmail.com) 2026-09-22; grok-4.7 direct smoke test passed with --reasoning-effort high."
+      "status": "completed",
+      "notes": "Authenticated via device-auth (frank.ekn@gmail.com). Evaluated on 2026-09-22: 92.3% recall, 100% Tier-1 (21/21), 1.4% FP rate, 0.038 noise. Passes all qualification gates; candidate lane."
     }
   ]
 }

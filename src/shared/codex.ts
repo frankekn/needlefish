@@ -1138,13 +1138,17 @@ async function runOpenCode(
 		"--auto",
 	];
 	args.push("--file", promptPath);
-	if (invocation.model)
-		args.push(
-			"--model",
-			invocation.reasoningEffort
-				? `${invocation.model}#${invocation.reasoningEffort}`
-				: invocation.model,
+	if (invocation.model) {
+		const effort =
+			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
+				? `#${invocation.reasoningEffort}`
+				: "";
+		args.push("--model", `${invocation.model}${effort}`);
+	} else if (invocation.reasoningEffort) {
+		throw new RunnerOperationalError(
+			"opencode reasoning effort requires a model to be specified",
 		);
+	}
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({
