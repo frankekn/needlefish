@@ -12,7 +12,7 @@
       "route": "opencode Zen direct (free tier)",
       "runnerVersion": "opencode v2.0.12",
       "status": "completed",
-      "notes": "Effort set to 'default' (attestable model default). Evaluated on 2026-09-22: 62.3% recall, 61.9% Tier-1 recall (disqualified on Tier-1 threshold), 81 bait exposures."
+      "notes": "Effort set to 'default' (attestable model default). Evaluated on 2026-09-22: 62.3% recall, 61.9% Tier-1 recall, 81 bait exposures. The report carries 53 provider or infrastructure draw failures, so it is operationally invalid and not ranked; the scores are not a model verdict."
     },
     {
       "name": "Grok 4.7",
@@ -23,7 +23,7 @@
       "route": "Grok CLI subscription (direct API)",
       "runnerVersion": "grok 1.0.40",
       "status": "completed",
-      "notes": "Authenticated via device-auth (frank.ekn@gmail.com). Evaluated on 2026-09-22: 92.3% recall, 100% Tier-1 (21/21), 1.4% FP rate, 0.038 noise. Passes all qualification gates; candidate lane."
+      "notes": "Authenticated via device-auth (frank.ekn@gmail.com). Evaluated on 2026-09-22: 92.3% recall, 100% Tier-1 (21/21), 1.4% FP rate, 0.038 noise. Scores clear the qualification gates, but the report carries two `spawn grok ETIMEDOUT` operational failures, so it is not ranked until a clean rerun."
     }
   ]
 }
