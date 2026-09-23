@@ -108,8 +108,11 @@ test("provider fallback ignores verdict prose and follows only infra errors", t 
 	const root = mkdtempSync(join(tmpdir(), "needlefish-fallback-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const binary = join(root, "needlefish");
+	const codex = join(root, "codex");
 	const calls = join(root, "calls");
 	const summary = join(root, "summary");
+	writeFileSync(codex, "#!/bin/sh\nprintf 'codex-cli test\\n'\n");
+	chmodSync(codex, 0o755);
 	writeFileSync(binary, `#!/bin/sh
 model=""
 while [ "$#" -gt 0 ]; do
@@ -138,6 +141,7 @@ esac
 			env: {
 				...process.env,
 				NEEDLEFISH_BIN: binary,
+				CODEX_BIN: codex,
 				NEEDLEFISH_RUNNER_INPUT: "codex",
 				NEEDLEFISH_MODEL_INPUT: "primary",
 				NEEDLEFISH_MODEL_FALLBACKS: "fallback",
