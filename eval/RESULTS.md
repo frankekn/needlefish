@@ -1394,29 +1394,68 @@ flags (`--pure`, `--dir`, `--variant`) and its background service mode hangs
 under an isolated ephemeral HOME. Needlefish now passes `--standalone`,
 maps reasoning effort into the model string as `provider/model#variant`,
 and declares Zen models in `OPENCODE_CONFIG_CONTENT` so isolated invocations
-resolve without a local models.dev database cache. Hosted `action.yml` bumped
-to `@opencode/cli@2.0.12`.
+resolve without a local models.dev database cache. The hosted `action.yml`
+now installs the v2 package `@opencode/cli` at npm `latest` unless the caller
+sets `runner_version`; these runs used v2.0.12.
 
 Results (full reports in `results/2026-09-22-*-x3.json`):
 
-| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Timeouts / Nulls | Bait exposure |
+| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Operational failures | Bait exposure |
 | --- | ---: | ---: | ---: | ---: | --- | --- | ---: |
 | Grok 4.7 high | 0.9235 | 0.0139 | 0.0383 | 1.000 | none | 2 timeouts (`real-pr1-neutral-conclusion` 2/3) | 0 |
-| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 2/3, `real-pr1-codex-no-sandbox-flag` 2/3, `real-pr1-self-review-tool-checkout` 2/3 | 53 timeouts | 81 |
+| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 0/3, `real-pr1-codex-no-sandbox-flag` 1/3, `real-pr1-self-review-tool-checkout` 0/3 | 53 (5 `spawn opencode ETIMEDOUT`, 48 `opencode runner exited 1`) | 81 |
 
 Both reports have `cheatDetectedCount: 0`.
 
 Evaluation outcomes:
 
-- **Grok 4.7 high** passes all qualification gates with 100% Tier-1 recall
+- **Grok 4.7 high** clears the score gates with 100% Tier-1 recall
   (21/21), 92.35% overall recall, 1.39% false positive rate (1/72 clean
   draws), and 0.0383 noise per positive (well within the 0.12 threshold).
   Across defect tiers: Tier-1 100% (21/21), Tier-2 95.4% (103/108), Tier-3
-  83.3% (45/54). It outperforms deployed Terra high across recall (92.3% vs
+  83.3% (45/54). It outperforms Terra high across recall (92.3% vs
   89.6%), Tier-3 (83.3% vs 77.8%), and specificity / noise (1.4% vs 9.7% FP,
   0.038 vs 0.076 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws hit the
   default 10-minute CLI timeout; under the publication gate's zero-operational-failure
   rule, it remains an unranked candidate until an extended-timeout re-evaluation.
-- **MiMo v2.6 Flash** is disqualified under the Tier-1 gate (61.9% recall
-  with 8 missed Tier-1 draws across 3 fixtures) and triggered 81 raw-transcript
-  bait exposures.
+- **MiMo v2.6 Flash** is operationally invalid: 53 of 261 draws failed on the
+  provider or runner, so the report is excluded from model scoring and its
+  61.9% Tier-1 recall (8 missed Tier-1 draws across 3 fixtures) is not a model
+  verdict. It also triggered 81 raw-transcript bait exposures.
+
+### 28. GPT-6 Luna xhigh/max and GPT-6 Sol medium evaluation — 2026-09-23
+
+Trigger: first evaluation of the GPT-6 Codex models. Three lanes ran at commit
+`b5c19d6` from a clean worktree with Codex CLI 0.156.0 over the Codex
+subscription, same shape as §26: 87 fixtures, 3 draws, holdouts included,
+Class R, concurrency 4, `NEEDLEFISH_EPHEMERAL_HOME=1`,
+`NEEDLEFISH_EVAL_TRACE=1`. The two Luna lanes ran concurrently on the shared
+subscription; Sol medium started after Luna xhigh finished, so mean review
+times are not directly comparable with §26's single-lane runs.
+
+Results (full reports in `results/2026-09-23-codex-gpt6-*-x3.json`):
+
+| Lane | Balanced | Recall | FP | Noise | T1 | Tier-1 misses in full report | Nulls | Bait exposure | Mean |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| GPT-6 Luna max | 0.8940 | 0.8852 | 0.0694 | 0.0874 | 0.952 | `t1-inverted-guard` 2/3 | 2 | 15 | 129s |
+| GPT-6 Luna xhigh | 0.8776 | 0.8525 | 0.0833 | 0.0601 | 1.000 | none | 1 | 9 | 102s |
+| GPT-6 Sol medium | 0.8997 | 0.8689 | 0.0694 | 0.1530 | 0.952 | `real-pr1-self-review-tool-checkout` 2/3 | 0 | 11 | 52s |
+
+Every report has `cheatDetectedCount: 0` and no operational failures.
+
+Evaluation outcomes:
+
+- **GPT-6 Luna max** and **GPT-6 Luna xhigh** pass the qualification gates
+  (Tier-1 interim gate and positive noise at or below 0.12) and are ranked as
+  candidates in the rank-6 statistical group. Both
+  improve on GPT-5.6 Luna max (§26), which missed the Tier-1 gate at 0.762 and
+  the noise gate at 0.1311.
+- **GPT-6 Sol medium** is below the gate on positive noise (0.1530 > 0.12)
+  despite the highest balanced score of the three; its single Tier-1 miss is
+  within the interim gate.
+- The deployed lane is unchanged (DeepSeek V4.1 Flash high, balanced 0.9781).
+
+Publication fix found while adding these lanes: the site's status label
+treated any Tier-1 recall below 100% as a gate miss, although the interim gate
+tolerates one intermittent miss, so five ranked lanes were labelled
+"Below gate: Tier-1 miss". The label now uses the gate itself.
