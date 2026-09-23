@@ -867,7 +867,9 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
       const t1 = tierRecall(report, 1);
       const t2 = tierRecall(report, 2);
       const t3 = tierRecall(report, 3);
-      const tierOneMiss = t1 !== undefined && t1 < 1;
+      // The Tier-1 gate tolerates one intermittent miss (see tierOneInterimGate), so a
+      // ranked lane can show Tier-1 below 100% without having missed the gate.
+      const tierOneMiss = !tierOneInterimGate(report).passed;
       const noiseMiss = metrics.meanNoisePerPositive > MAX_MEAN_NOISE_PER_POSITIVE;
       const rank = ranked ? String(ranks[index]) : "—";
       const status = tierOneMiss

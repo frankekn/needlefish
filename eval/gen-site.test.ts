@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
+import { displayedMetrics, tierRecall } from "./shared/publication";
 import {
   balancedReviewAccuracy,
   renderSite,
@@ -520,6 +521,45 @@ test("tierOneInterimGate allows one intermittent miss but rejects persistent mis
         : result,
   );
   assert.equal(tierOneInterimGate({ ...base, results: persistent }).passed, false);
+});
+
+test("renderSite labels a lane with one intermittent Tier-1 miss by its status, not as below gate", () => {
+  const { manifest, lanes } = setup();
+  const tierOneIds = Object.keys(report.fixtureTiers ?? {}).filter(
+    (id) => report.fixtureTiers?.[id] === 1,
+  );
+  const missed = report.results.find((result) => result.fixtureId === tierOneIds[0]);
+  assert.ok(missed);
+  const changed = lanes.map((lane, index) => {
+    if (index !== 1) return lane;
+    const results = lane.report.results.map((result) =>
+      report.fixtureTiers?.[result.fixtureId] === 1
+        ? { ...result, score: { ...result.score, recall: result !== missed } }
+        : result,
+    );
+    const next = { ...lane.report, results };
+    return {
+      ...lane,
+      report: {
+        ...next,
+        aggregates: {
+          ...next.aggregates,
+          recall: displayedMetrics(next).recall,
+          recallByTier: { ...next.aggregates.recallByTier, t1: tierRecall(next, 1) },
+        },
+      },
+    };
+  });
+  const lane = changed[1].report;
+  assert.ok(tierRecall(lane, 1) < 1);
+  assert.equal(tierOneInterimGate(lane).passed, true);
+  const html = renderSite(manifest, changed, canonical);
+  const row = html
+    .split("<tr")
+    .find((candidate) => candidate.includes("Candidate A"));
+  assert.ok(row);
+  assert.doesNotMatch(row, /Below gate/);
+  assert.match(row, /Candidate/);
 });
 
 test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {
