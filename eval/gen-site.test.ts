@@ -359,6 +359,13 @@ test("renderSite scores a runner deadline timeout as a failed review, not an ope
       : lane,
   );
   assert.deepEqual(operationalFailures(timedOut[1].report), ["spawn opencode EIDLETIMEDOUT"]);
+  const spacedPath = {
+    ...timedOut[1].report,
+    results: timedOut[1].report.results.map((result, drawIndex) =>
+      drawIndex === 1 ? { ...result, operationalFailure: "spawn /opt/Needlefish Tools/codex ETIMEDOUT" } : result,
+    ),
+  };
+  assert.deepEqual(operationalFailures(spacedPath), []);
   const deadlineOnly = lanes.map((lane, index) =>
     index === 1
       ? {
@@ -598,7 +605,7 @@ test("renderSite labels a lane with one intermittent Tier-1 miss by its status, 
     .find((candidate) => candidate.includes("Candidate A"));
   assert.ok(row);
   assert.doesNotMatch(row, /Below gate/);
-  assert.match(row, /Candidate/);
+  assert.match(row, /status-candidate/);
 });
 
 test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {

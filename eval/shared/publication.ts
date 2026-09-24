@@ -67,7 +67,9 @@ type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 // is scored as a failed review of the model, not as an infrastructure failure. The
 // draw is already scored as a miss with invalid output; only its publication status
 // changes. Idle timeouts, spawn errors, crashes, and rate limits stay operational.
-const RUNNER_DEADLINE_TIMEOUT = /^spawn \S+ ETIMEDOUT$/;
+// The command is interpolated verbatim and may contain spaces; the space before
+// ETIMEDOUT keeps EIDLETIMEDOUT out.
+const RUNNER_DEADLINE_TIMEOUT = /^spawn .+ ETIMEDOUT$/;
 
 export function operationalFailures(report: PublishedReport): string[] {
   return report.results.flatMap((result) => {

@@ -1139,11 +1139,16 @@ async function runOpenCode(
 	];
 	args.push("--file", promptPath);
 	if (invocation.model) {
+		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
+		// variant already in the model id rather than appending a second one.
 		const effort =
 			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
-				? `#${invocation.reasoningEffort}`
-				: "";
-		args.push("--model", `${invocation.model}${effort}`);
+				? invocation.reasoningEffort
+				: null;
+		args.push(
+			"--model",
+			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
+		);
 	} else if (invocation.reasoningEffort) {
 		throw new RunnerOperationalError(
 			"opencode reasoning effort requires a model to be specified",

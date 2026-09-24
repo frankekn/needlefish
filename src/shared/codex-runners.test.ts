@@ -713,6 +713,32 @@ test("runCodex maps opencode effort into the model variant segment", async (t) =
 		argsDefault[argsDefault.indexOf("--model") + 1],
 		"opencode/mimo-v2.6-flash-free",
 	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "max",
+	});
+	const argsReplaced = readStringArray(argsPath);
+	assert.equal(
+		argsReplaced[argsReplaced.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#max",
+	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "default",
+	});
+	const argsKept = readStringArray(argsPath);
+	assert.equal(
+		argsKept[argsKept.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#high",
+	);
 });
 
 test("runCodex rejects opencode effort without a specified model", async (t) => {

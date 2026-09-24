@@ -837,7 +837,7 @@ function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane
       const noise = displayedMetrics(report).meanNoisePerPositive;
       const reasons: string[] = [];
       if (gate) {
-        if (t1 !== undefined && t1 < 1) reasons.push(`Tier-1 ${percent(t1)}`);
+        if (!tierOneInterimGate(report).passed) reasons.push(`Tier-1 ${percent(t1)}`);
         if (noise > MAX_MEAN_NOISE_PER_POSITIVE) reasons.push(`noise ${noise.toFixed(3)}`);
       }
       const gateWhy = reasons.length

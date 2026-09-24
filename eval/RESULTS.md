@@ -1415,9 +1415,10 @@ Evaluation outcomes:
   Across defect tiers: Tier-1 100% (21/21), Tier-2 95.4% (103/108), Tier-3
   83.3% (45/54). It outperforms Terra high across recall (92.3% vs
   89.6%), Tier-3 (83.3% vs 77.8%), and specificity / noise (1.4% vs 9.7% FP,
-  0.038 vs 0.076 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws ran
-  out the runner's per-call deadline (`spawn grok ETIMEDOUT`, about 20 minutes
-  each). Under the timeout rule below these are scored as failed reviews, and
+  0.038 vs 0.0765 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws ran
+  out the runner's per-call deadline (`spawn grok ETIMEDOUT`; about 20 minutes
+  per draw, consistent with two 10-minute attempts because the runner retries
+  once). Under the timeout rule below these are scored as failed reviews, and
   the lane is ranked in the top statistical group (balanced 0.9548).
 - **MiMo v2.6 Flash** is operationally invalid: 48 of 261 draws failed with
   `opencode runner exited 1`, so the report is excluded from model scoring and its

@@ -19,6 +19,7 @@ import {
   operationalFailures,
   scoreConfidenceInterval,
   statisticalRanks,
+  tierOneInterimGate,
   tierRecall,
   type FixtureClassifications,
   type Lane,
@@ -46,7 +47,8 @@ function trim4(value: number): string {
 export function gateMissedSummary(report: PublishedReport): string {
   const parts: string[] = [];
   const tierOne = tierRecall(report, 1);
-  if (tierOne < 1) {
+  // Name Tier-1 only when the interim gate failed; one intermittent miss is inside it.
+  if (!tierOneInterimGate(report).passed) {
     const missed = Object.entries(report.fixtureTiers ?? {})
       .filter(([, tier]) => tier === 1)
       .map(([id]) => {

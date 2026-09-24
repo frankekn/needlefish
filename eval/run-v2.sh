@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # code-review-v2 campaign: 2 lanes x 3 draws, full fixture set, holdouts included (Class R default).
-# Sequential, incremental per-fixture writes, continues on failure.
+# Sequential, incremental per-fixture writes, continues on failure; exits 1 if any lane failed.
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p eval/results
 STAMP=$(date +%F)
 LOG="eval/results/run-v2-$STAMP.log"
 : > "$LOG"
+FAILED=0
 
 run_lane() {
   local name="$1"; shift
@@ -15,6 +16,7 @@ run_lane() {
   else
     local rc=$?
     echo "=== $(date -u +%FT%TZ) FAILED $name (exit $rc) ===" | tee -a "$LOG"
+    FAILED=1
   fi
 }
 
@@ -27,3 +29,4 @@ run_lane grok-47-high \
   --provider xAI --route "Grok CLI subscription (direct API)" --runner-version "grok 1.0.40"
 
 echo "=== $(date -u +%FT%TZ) ALL DONE ===" | tee -a "$LOG"
+exit "$FAILED"
