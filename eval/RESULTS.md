@@ -193,8 +193,26 @@ draw's apparent recall regression was not used as the gate verdict.
 
 Reports: `eval/evidence/2026-09-26-confidence/confidence-{control,candidate}-{full,confirm,extra}.json`.
 Local gates: 1,107 tests pass, typecheck/lint/package-install smoke pass, and
-independent P0–P2 commit review clean. Offline Class R gate passes. Live canary
-and any promotion outcome are recorded separately; not yet claimed successful.
+independent P0–P2 commit review clean. Offline Class R gate passes.
+
+Final follow-through: `a131be2` moves the truncation notice before retained
+Markdown after a P2 review found that a suffix could be hidden in an unclosed
+construct. `3817064` fixes a reproduced test-observation race, not runtime
+termination: the same total two-second deadline remains. Final repository
+gates pass 1,108 tests, typecheck/lint/package smoke, and P0–P2 reviews. Neither
+change alters the Class R model path or invalidates its retained draws.
+
+Self.6 live run `36258643489`, check `108450740558`, passed on exact target head:
+54/54 files, six hotspots, eight calls, 26m38s, no actionable findings or reported
+output retries. The actual lane remained Codex → CLIProxyAPI → DeepSeek V4.1
+Flash/high. AMI 1.0.20 (`ami-0e40720e51ec5004a`) remains promoted. This is a
+target-workflow gate, not a rerank of the frozen benchmark above. Bounded
+receipt: `eval/evidence/2026-09-26-confidence/live-canary.json`.
+
+Limitations: the original rejected JSON was not retained; the new 60,084-byte
+summary did not exercise live truncation. Oversized UTF-8/Markdown behavior has
+repository and exact-bundle regressions, not live oversized-publication proof.
+Saiens merge/deploy was not performed; writer-fencing/rollback gates remain.
 
 ### 2026-09-26 — GitHub check summary overflow (live gate failed; rolled back)
 

@@ -31,3 +31,29 @@
 - Initial full-set control and candidate each completed all 88 draws with zero invalid-output rate, zero cheats, and Tier-1 recall 1. Control recall 56/61, candidate 53/61; noise per positive 2/61 versus 0. These are single-draw observations, not a regression verdict.
 - x3 confirmation finished for nine recall/verdict/noise-divergent fixtures and seven additional finding-count-divergent fixtures, on both versions. Candidate recall is 38/48 vs control 34/48, with no per-fixture decrease; extra findings 1 vs 4. The frontend fixture's one extra finding switched sides between initial/confirmation, totaling 1/4 in both versions. Invalid-output and cheat counts are zero throughout. Offline gate passes; no prompt wording changed after full-set evaluation began.
 - All 272 draws are preserved in `eval/evidence/2026-09-26-confidence/`. The candidate's initial weaker recall is retained, not hidden. Live canary remains a separate gate.
+
+## Independent trail audit and adjudication
+
+Claude Fable 5 reviewed the decision trail, gate plan, confirmation table, and
+code-review result. It did not receive the entire session transcript or initial
+per-fixture reports; its coverage is limited to those supplied artifacts.
+
+- Live result is pending. Accepted; promotion cannot be called successful before the exact-head check and coverage are read back.
+- Noise criterion needs explicit adjudication. The repository defines `meanNoisePerPositive` as the precision signal. On the same 48 confirmation draws this is 4/48 control versus 1/48 candidate. The one frontend extra finding also appeared in control's initial draw; both total 1/4. We interpret “no confirmed noise regression” as no sustained regression, not “every random draw has zero extras.” No draw is excluded, no threshold changed, and this judgment is explicit rather than hidden behind the aggregate. This does not claim significance from three draws.
+- Second shipped commit review was not supplied. Accepted; run an explicit P0–P2 review of `0894cc0` before allowing promotion. The previous summary-fix review was only P0-wide. `45e7252` already has a P0–P2 clean review.
+- Original production output remains unavailable. Accepted limitation. The same error also covers missing/null confidence becoming zero in the normalizer; we cannot assert which raw value the model emitted. The mismatch between required and supplied contracts is verified, not a uniquely proven reconstruction of that discarded output.
+- SIGINT flake and historical README-test scope are disclosed above. Live evaluator/publisher validation was not changed. Complete initial reports and all confirmation reports are now archived for independent recomputation of the divergence set.
+- Model identity is verified at the requested CLI/API model-ID boundary, not by introspection into the remote provider's implementation. No V4 Flash fallback was configured for these evals.
+
+The live promotion script now requires an `offline-gate-approved` artifact before
+it can switch AMIs, so missing adjudication/review cannot race with AMI readiness.
+
+## Follow-through
+
+- The wider P0–P2 review of `0894cc0` found exactly one finding and no other P0–P2 defects: a suffix link can be swallowed by an unclosed Markdown construct at truncation. `a131be2` prepends the notice. HTML-comment and code-fence regressions failed 2/2 before the fix and pass afterward, including supplementary-Unicode round-trip. P0–P2 fix review is clean. Self.5 was withheld before promotion; self.6 contains the repair.
+- The signal flake recurred. In a separate worktree, the unchanged whole-file test reproduced the same race on iteration 3 (SIGTERM). Linux exits the owner after sending SIGKILL without waiting for the detached process to be reaped. `3817064` corrects the verifier with polling inside the original total two-second deadline. Runtime code is unchanged. Ten consecutive whole-file runs and an independent P0–P2 review passed; final full suite is 1,108/1,108, plus typecheck/lint/package smoke.
+- This test-only fix is not a model/prompt change. The link repair is posting-only. The Class R model-path inputs and validator are unchanged from the archived 272 draws, so those results remain the applicable model gate.
+- The final release's real AMI smoke passed: all three shared contracts rendered, the link is prepended, hashes verified, and Codex 0.155.1/Node 24.21.0/Needlefish 0.4.6 ran. Live run `36258643489` and check `108450740558` passed on exact head `6aa8550d0b1875acd8ae66b85753be16292905e4`: 54/54 files, six hotspots, eight calls, 26m38s, no actionable findings and no reported output retries. Self.6 remains promoted.
+- The 60,084-byte live summary did not reach the truncation branch. Oversized UTF-8/Markdown regressions and exact-bundle tests pass, but there is no live oversized-publication claim. The original failed raw JSON remains unavailable.
+- The old failed PR workflow `36223355738` was rerun after the real full canary. Attempt 2 succeeded through authenticated `same_head` dedupe; it is not another model draw or replacement for the real canary. PR-body contract run `36260777714` passed; all current-head checks pass and unresolved threads are zero. Saiens merge/deploy and writer-fencing/rollback decisions remain outside this execution.
+- Final Claude Fable 5 decision-trail audit closes all three earlier blockers with no remaining blocker. Its documentation nit—explicitly naming `0894cc0` as the reviewed summary commit—is resolved above. Receipt: `eval/evidence/2026-09-26-confidence/trail-audit.md`.
