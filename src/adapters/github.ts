@@ -610,7 +610,7 @@ function postCheck(
 		const reviewUrl = result?.prNumber
 			? `https://github.com/${repo}/pull/${result.prNumber}`
 			: `https://github.com/${repo}/commit/${headSha}`;
-		const notice = `\n\nCheck summary shortened to fit GitHub's limit. [Full review](${reviewUrl}).`;
+		const notice = `Check summary shortened to fit GitHub's limit. [Full review](${reviewUrl}).\n\n`;
 		const budget = 65_535 - Buffer.byteLength(notice, "utf8");
 		let bytes = 0;
 		let prefix = "";
@@ -619,7 +619,7 @@ function postCheck(
 			if (bytes > budget) break;
 			prefix += character;
 		}
-		summary = prefix + notice;
+		summary = notice + prefix;
 	}
 	const output = JSON.stringify({
 		status: "completed",
