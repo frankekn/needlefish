@@ -468,6 +468,30 @@ function defaultRawReview(): string {
 	});
 }
 
+test("oversized UTF-8 check summaries retain the full review and link to it", async (t) => {
+	const evidence = "核對付款證據".repeat(5000);
+	const fixture = setupFixture(t, {
+		prNumber: 44,
+		rawReview: JSON.stringify({
+			summary: "review", findings: [], checked: [evidence], residual_risks: [],
+		}),
+	});
+	await runGithub(fixture.repo, 44, { timeoutMs: 1000 });
+	const posts = readPosts(fixture.postLog);
+	const reviewPost = postedReview(posts, 44);
+	assert.ok(reviewPost);
+	assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence));
+	const checks = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
+	const payload = JSON.parse(checks.at(-1)!.payload) as {
+		conclusion: string; output: { summary: string };
+	};
+	assert.equal(payload.conclusion, "success");
+	assert.ok(Buffer.byteLength(payload.output.summary, "utf8") <= 65_535);
+	assert.ok(payload.output.summary.includes("https://github.com/frankekn/needlefish/pull/44"));
+	assert.ok(payload.output.summary.includes("Full review"));
+	assert.ok(!payload.output.summary.includes("\uFFFD"));
+});
+
 function postedReview(posts: readonly Post[], prNumber: number): Post | undefined {
 	return posts.find(
 		(p) =>

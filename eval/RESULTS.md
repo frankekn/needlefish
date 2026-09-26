@@ -159,6 +159,24 @@ The resident suite ran 1,105/1,106; the one failure was the
 passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
 Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
 
+### 2026-09-26 — GitHub check summary overflow (not promoted)
+
+`gateClass: D`. Posting-only candidate bounds check summaries by UTF-8 bytes
+and links oversized summaries to the already-posted full review. Model inputs,
+candidate artifacts, full review bodies, and verdicts remain unchanged. Summaries
+within the limit remain byte-identical.
+
+The incident's posted review yielded a 68,219-byte summary. The new oversized
+multibyte regression failed before the fix and passed afterward. All 1,104
+resident tests passed, including provenance properties; typecheck, lint, and
+local autoreview passed. No live validation success is claimed: the available
+GitHub identity cannot update the Actions-owned check (HTTP 403, App required).
+
+The historical drift/honeypot x3 gate and rollback-equipped live canary have not
+run. This candidate is not a completed Class D gate and has not been installed
+on shared runners. Promotion requires those gates and explicit deployment
+authorization. The failed remote check is unchanged.
+
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex

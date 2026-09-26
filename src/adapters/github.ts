@@ -598,12 +598,29 @@ function createPendingCheck(repo: string, headSha: string): number | null {
 function postCheck(
 	repo: string,
 	headSha: string,
-	_result: ReviewResult | null,
+	result: ReviewResult | null,
 	conclusion: "success" | "failure" | "neutral",
 	title: string,
 	summary: string,
 	checkId?: number | null,
 ) {
+	// Checks cap Markdown by UTF-8 bytes, unlike review bodies. The full
+	// review has already been posted; keep its verdict and evidence there.
+	if (Buffer.byteLength(summary, "utf8") > 65_535) {
+		const reviewUrl = result?.prNumber
+			? `https://github.com/${repo}/pull/${result.prNumber}`
+			: `https://github.com/${repo}/commit/${headSha}`;
+		const notice = `\n\nCheck summary shortened to fit GitHub's limit. [Full review](${reviewUrl}).`;
+		const budget = 65_535 - Buffer.byteLength(notice, "utf8");
+		let bytes = 0;
+		let prefix = "";
+		for (const character of summary) {
+			bytes += Buffer.byteLength(character, "utf8");
+			if (bytes > budget) break;
+			prefix += character;
+		}
+		summary = prefix + notice;
+	}
 	const output = JSON.stringify({
 		status: "completed",
 		conclusion,
