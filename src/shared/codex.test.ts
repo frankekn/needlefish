@@ -421,6 +421,61 @@ test("runCodex kills a runner that ignores SIGTERM on timeout", async (t) => {
   assert.equal(await processExited(childPid, 5000), true);
 });
 
+test("runCodex does not retry on runner timeout", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const state = path.join(tmp, "state");
+  const previous = {
+    bin: process.env.CODEX_BIN,
+    retry: process.env.CODEX_RETRY_MS,
+    noRetry: process.env.NEEDLEFISH_NO_RETRY,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+    else process.env.CODEX_RETRY_MS = previous.retry;
+    if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+    else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `const state = ${JSON.stringify(state)};`,
+      "const n = fs.existsSync(state) ? Number(fs.readFileSync(state, 'utf8')) + 1 : 1;",
+      "fs.writeFileSync(state, String(n));",
+      "// 模仿上游掛住：吃 stdin 但永遠不回應，讓 timeout 殺掉。",
+      "// SIGTERM 也吃掉：真正的卡住程序不會理會 graceful 信號。",
+      "process.stdin.resume();",
+      "process.stdin.on('data', () => {});",
+      "process.on('SIGTERM', () => {});",
+      "setInterval(() => {}, 1000);",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  delete process.env.NEEDLEFISH_NO_RETRY;
+
+  const startedAt = Date.now();
+  await assert.rejects(
+    () =>
+      runCodex("prompt", {
+        repoPath: repo,
+        runner: "codex",
+        targetHeadSha: headSha(repo),
+        timeoutMs: 1500,
+      }),
+    /ETIMEDOUT/
+  );
+  assert.equal(Number(readFileSync(state, "utf8")), 1);
+  // timeout 1500ms + SIGTERM grace + SIGKILL give-up；放寬到 8s 避免 CI 抖動誤判。
+  assert.ok(Date.now() - startedAt < 8000);
+});
+
 test("runCodex passes allowlisted env vars to the runner subprocess", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
