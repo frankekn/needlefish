@@ -20,7 +20,20 @@ import {
 const manifest = readManifest();
 validateExcludedReportFiles(manifest);
 const lanes = manifest.lanes.map(readLane);
-const canonical = fixtureClassifications(await loadFixtures(null));
+// These READMEs publish a dated benchmark, not the next release's gate.
+// New sealed fixtures must not make the historical snapshot untestable.
+// validateComparability still validates every published lane against exactly
+// this fixture set; the live eval/publisher keeps its full-catalog check.
+const publishedBaseline = lanes.find(({ config }) => config.report === manifest.baseline);
+assert.ok(publishedBaseline, "published baseline is configured");
+const publishedIds = new Set(publishedBaseline.report.fixtures);
+const canonical = {
+  ...fixtureClassifications(
+    (await loadFixtures(null)).filter((spec) => publishedIds.has(spec.id)),
+  ),
+  // Historical results describe their published prompt, not the candidate.
+  promptHash: publishedBaseline.report.promptHash,
+};
 
 for (const [file, locale] of [
   ["README.md", "en"],

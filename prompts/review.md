@@ -57,10 +57,7 @@ For every cleared Trigger D, include:
 
 If a trigger fires but cannot be cleared, do not invent a finding. Add one `residual_risks[]` entry with `blocks:true` and name the missing evidence.
 
-Confidence is evidence confidence, not gut feel:
-- 0.90-1.00: changed line and failing consumer/path verified directly.
-- 0.70-0.89: changed line verified and failure path strongly established.
-- Below 0.70: do not emit P0/P1/P2; use P3 or residual risk.
+{{FINDING_CONTRACT}}
 
 # Process — inspect in order, cross-check across lenses
 1. Surface map: read changedFiles with surface labels. Flag anything small with large blast radius (public-api, cli, config default, schema/migration, workflow, dependency/lockfile).
@@ -94,7 +91,7 @@ Return ONLY a single ```json block, nothing else, in exactly this shape:
       "file": "repo-relative path",
       "lineStart": 1,
       "lineEnd": 1,
-      "confidence": 0.0,
+      "confidence": 0.9,
       "whyItBreaks": "concrete reason current behavior breaks",
       "suggestedFix": "minimal fix",
       "validation": "command or step to prove the fix",
