@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
+import { displayedMetrics, operationalFailures, tierRecall } from "./shared/publication";
 import {
   balancedReviewAccuracy,
   renderSite,
@@ -338,6 +339,52 @@ test("renderSite excludes operational failures from model scoring", () => {
   assert.match(html, /Not ranked[\s\S]*Candidate A[\s\S]*1 provider or infrastructure draw failure/);
 });
 
+test("renderSite scores a runner deadline timeout as a failed review, not an operational failure", () => {
+  const { manifest, lanes } = setup();
+  const timedOut = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result, drawIndex) =>
+              drawIndex === 0
+                ? { ...result, operationalFailure: "spawn grok ETIMEDOUT" }
+                : drawIndex === 1
+                  ? { ...result, operationalFailure: "spawn opencode EIDLETIMEDOUT" }
+                  : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  assert.deepEqual(operationalFailures(timedOut[1].report), ["spawn opencode EIDLETIMEDOUT"]);
+  const spacedPath = {
+    ...timedOut[1].report,
+    results: timedOut[1].report.results.map((result, drawIndex) =>
+      drawIndex === 1 ? { ...result, operationalFailure: "spawn /opt/Needlefish Tools/codex ETIMEDOUT" } : result,
+    ),
+  };
+  assert.deepEqual(operationalFailures(spacedPath), []);
+  const deadlineOnly = lanes.map((lane, index) =>
+    index === 1
+      ? {
+          ...lane,
+          report: {
+            ...lane.report,
+            results: lane.report.results.map((result, drawIndex) =>
+              drawIndex === 0 ? { ...result, operationalFailure: "spawn grok ETIMEDOUT" } : result,
+            ),
+          },
+        }
+      : lane,
+  );
+  const html = renderSite(manifest, deadlineOnly, canonical);
+  const leaderboard = html.slice(html.indexOf("Current leaderboard"), html.indexOf("Not run"));
+  assert.match(leaderboard, /Candidate A/);
+  assert.doesNotMatch(html, /Not ranked[\s\S]*Candidate A[\s\S]*provider or infrastructure draw failure/);
+});
+
 test("renderSite rejects a lane with a different fixture set", () => {
   const { manifest, lanes } = setup();
   const mismatched = lanes.map((lane, index) =>
@@ -520,6 +567,45 @@ test("tierOneInterimGate allows one intermittent miss but rejects persistent mis
         : result,
   );
   assert.equal(tierOneInterimGate({ ...base, results: persistent }).passed, false);
+});
+
+test("renderSite labels a lane with one intermittent Tier-1 miss by its status, not as below gate", () => {
+  const { manifest, lanes } = setup();
+  const tierOneIds = Object.keys(report.fixtureTiers ?? {}).filter(
+    (id) => report.fixtureTiers?.[id] === 1,
+  );
+  const missed = report.results.find((result) => result.fixtureId === tierOneIds[0]);
+  assert.ok(missed);
+  const changed = lanes.map((lane, index) => {
+    if (index !== 1) return lane;
+    const results = lane.report.results.map((result) =>
+      report.fixtureTiers?.[result.fixtureId] === 1
+        ? { ...result, score: { ...result.score, recall: result !== missed } }
+        : result,
+    );
+    const next = { ...lane.report, results };
+    return {
+      ...lane,
+      report: {
+        ...next,
+        aggregates: {
+          ...next.aggregates,
+          recall: displayedMetrics(next).recall,
+          recallByTier: { ...next.aggregates.recallByTier, t1: tierRecall(next, 1) },
+        },
+      },
+    };
+  });
+  const lane = changed[1].report;
+  assert.ok(tierRecall(lane, 1) < 1);
+  assert.equal(tierOneInterimGate(lane).passed, true);
+  const html = renderSite(manifest, changed, canonical);
+  const row = html
+    .split("<tr")
+    .find((candidate) => candidate.includes("Candidate A"));
+  assert.ok(row);
+  assert.doesNotMatch(row, /Below gate/);
+  assert.match(row, /status-candidate/);
 });
 
 test("renderSite derives Tier-2 and Tier-3 recall from draw results", () => {

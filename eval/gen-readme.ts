@@ -19,6 +19,7 @@ import {
   operationalFailures,
   scoreConfidenceInterval,
   statisticalRanks,
+  tierOneInterimGate,
   tierRecall,
   type FixtureClassifications,
   type Lane,
@@ -46,7 +47,8 @@ function trim4(value: number): string {
 export function gateMissedSummary(report: PublishedReport): string {
   const parts: string[] = [];
   const tierOne = tierRecall(report, 1);
-  if (tierOne < 1) {
+  // Name Tier-1 only when the interim gate failed; one intermittent miss is inside it.
+  if (!tierOneInterimGate(report).passed) {
     const missed = Object.entries(report.fixtureTiers ?? {})
       .filter(([, tier]) => tier === 1)
       .map(([id]) => {
@@ -132,7 +134,13 @@ export function renderBenchmarkBlock(
   if (fixtureCount === undefined || !baseline.report.gitSha) {
     throw new Error("baseline report must list its fixtures and git SHA");
   }
-  const measured = baseline.report.createdAt.slice(0, 10);
+  // Lanes are measured on different days and commits; the shared prompt, fixture set,
+  // and scorer hashes are what make them comparable, so the date is a span and the
+  // commit is labelled as the baseline's.
+  const measuredDates = configured.map(({ report }) => report.createdAt.slice(0, 10)).sort();
+  const first = measuredDates[0];
+  const last = measuredDates[measuredDates.length - 1];
+  const measured = first === last ? first : zh ? `${first} 至 ${last}` : `${first} to ${last}`;
   const gitSha7 = baseline.report.gitSha.slice(0, 7);
   const holdoutText =
     baseline.report.holdout === "include"
@@ -144,8 +152,8 @@ export function renderBenchmarkBlock(
         : `holdouts ${baseline.report.holdout}`;
 
   const provenance = zh
-    ? `**更新於 ${manifest.updated}**——量測於 ${measured}；全部 ${configured.length} 條公開 lane 各跑 ${fixtureCount} 個情境 × ${baseline.report.draws} 次，${holdoutText}，Class ${baseline.report.gateClass} gate，anti-cheat v${baseline.report.anticheatVersion}；commit \`${gitSha7}\`，prompt \`${baseline.report.promptHash}\`，fixture set \`${baseline.report.fixtureSetHash}\`，scorer \`${baseline.report.scorerHash}\`；每份 report 皆為 \`cheatDetectedCount: 0\`。`
-    : `**Updated ${manifest.updated}** — measured ${measured}; all ${configured.length} published lanes at ${fixtureCount} scenarios × ${baseline.report.draws} draws, ${holdoutText}, Class ${baseline.report.gateClass} gate, anti-cheat v${baseline.report.anticheatVersion}; commit \`${gitSha7}\`, prompt \`${baseline.report.promptHash}\`, fixture set \`${baseline.report.fixtureSetHash}\`, scorer \`${baseline.report.scorerHash}\`; every report has \`cheatDetectedCount: 0\`.`;
+    ? `**更新於 ${manifest.updated}**——量測於 ${measured}；全部 ${configured.length} 條公開 lane 各跑 ${fixtureCount} 個情境 × ${baseline.report.draws} 次，${holdoutText}，Class ${baseline.report.gateClass} gate，anti-cheat v${baseline.report.anticheatVersion}；baseline commit \`${gitSha7}\`，prompt \`${baseline.report.promptHash}\`，fixture set \`${baseline.report.fixtureSetHash}\`，scorer \`${baseline.report.scorerHash}\`；每份 report 皆為 \`cheatDetectedCount: 0\`。`
+    : `**Updated ${manifest.updated}** — measured ${measured}; all ${configured.length} published lanes at ${fixtureCount} scenarios × ${baseline.report.draws} draws, ${holdoutText}, Class ${baseline.report.gateClass} gate, anti-cheat v${baseline.report.anticheatVersion}; baseline commit \`${gitSha7}\`, prompt \`${baseline.report.promptHash}\`, fixture set \`${baseline.report.fixtureSetHash}\`, scorer \`${baseline.report.scorerHash}\`; every report has \`cheatDetectedCount: 0\`.`;
 
   const rankedIntro = deployment
     ? zh

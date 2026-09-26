@@ -1,0 +1,29 @@
+{
+  "policy": "code-review-v2",
+  "status": "completed",
+  "gateClass": "R",
+  "lanes": [
+    {
+      "name": "MiMo v2.6 Flash",
+      "runner": "opencode",
+      "model": "opencode/mimo-v2.6-flash-free",
+      "effort": "default",
+      "provider": "Xiaomi",
+      "route": "opencode Zen direct (free tier)",
+      "runnerVersion": "opencode v2.0.12",
+      "status": "completed",
+      "notes": "Effort set to 'default' (attestable model default). Evaluated on 2026-09-22: 62.3% recall, 61.9% Tier-1 recall, 81 bait exposures. The report carries 48 'opencode runner exited 1' operational failures (its 5 deadline timeouts are scored as failed reviews), so it is operationally invalid and not ranked; the scores are not a model verdict."
+    },
+    {
+      "name": "Grok 4.7",
+      "runner": "grok",
+      "model": "grok-4.7",
+      "effort": "high",
+      "provider": "xAI",
+      "route": "Grok CLI subscription (direct API)",
+      "runnerVersion": "grok 1.0.40",
+      "status": "completed",
+      "notes": "Authenticated via device-auth (frank.ekn@gmail.com). Evaluated on 2026-09-22: 92.3% recall, 100% Tier-1 (21/21), 1.4% FP rate, 0.038 noise. Two draws ran out the per-call deadline (spawn grok ETIMEDOUT); under the 2026-09-23 timeout rule they are scored as failed reviews, and the lane is ranked in the top statistical group."
+    }
+  ]
+}

@@ -21,8 +21,8 @@ inputs:
     required: false
   runner_version:
     description: >-
-      npm version of the selected runner CLI. Omit to install the per-runner
-      pin in the install step; set to override (including an intentional latest).
+      npm version of the selected runner CLI. Omit to install the latest
+      release; set to pin a specific version.
     required: false
   repo_path:
     description: Path to the target repo checkout to review
@@ -55,15 +55,15 @@ runs:
         NF_RUNNER_VERSION: ${{ inputs.runner_version }}
       run: |
         case "$NF_RUNNER" in
-          codex) pkg="@openai/codex"; pinned="0.155.1" ;;
-          claude) pkg="@anthropic-ai/claude-code"; pinned="2.1.278" ;;
-          opencode) pkg="opencode-ai"; pinned="1.18.31" ;;
+          codex) pkg="@openai/codex" ;;
+          claude) pkg="@anthropic-ai/claude-code" ;;
+          opencode) pkg="@opencode/cli" ;;
           # @mariozechner/pi ships its bin as `pi-pods`, not `pi`; the successor package
           # from the same author installs a `pi` bin, which this action expects.
-          pi) pkg="@earendil-works/pi-coding-agent"; pinned="0.86.1" ;;
+          pi) pkg="@earendil-works/pi-coding-agent" ;;
           *) echo "unknown runner: $NF_RUNNER" >&2; exit 1 ;;
         esac
-        ver="${NF_RUNNER_VERSION:-$pinned}"
+        ver="${NF_RUNNER_VERSION:-latest}"
         npm install -g "${pkg}@${ver}"
     - name: Authenticate model runner
       shell: bash

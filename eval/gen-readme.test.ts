@@ -69,9 +69,29 @@ function syntheticReport(
 ): PublishedReport {
   return {
     results,
-    fixtureKinds: { "t1-a": "positive", "p-b": "positive", "neg-a": "negative" },
-    fixtureTiers: { "t1-a": 1, "p-b": 2 },
+    fixtureKinds: {
+      "t1-a": "positive",
+      ...Object.fromEntries(tierOneIds.map((id) => [id, "positive"])),
+      "p-b": "positive",
+      "neg-a": "negative",
+    },
+    fixtureTiers: {
+      "t1-a": 1,
+      ...Object.fromEntries(tierOneIds.map((id) => [id, 1])),
+      "p-b": 2,
+    },
   } as unknown as PublishedReport;
+}
+
+// The Tier-1 interim gate needs the full 7 fixtures x 3 draws; `missFirst` drops one
+// draw, which the gate tolerates.
+const tierOneIds = Array.from({ length: 7 }, (_, index) => `t1-${index}`);
+function fullTierOne(missFirst = false) {
+  return tierOneIds.flatMap((id, index) => [
+    draw(id, { recall: true }),
+    draw(id, { recall: true }),
+    draw(id, { recall: !(missFirst && index === 0) }),
+  ]);
 }
 
 const cleanNegative = draw("neg-a");
@@ -91,14 +111,8 @@ test("gateMissedSummary reports a tier-1 miss only", () => {
 });
 
 test("gateMissedSummary reports noise only", () => {
-  const report = syntheticReport([
-    draw("t1-a", { recall: true }),
-    draw("t1-a", { recall: true }),
-    draw("t1-a", { recall: true }),
-    ...noisyPositiveDraws,
-    cleanNegative,
-  ]);
-  assert.equal(gateMissedSummary(report), "noise 0.131 > 0.12");
+  const report = syntheticReport([...fullTierOne(), ...noisyPositiveDraws, cleanNegative]);
+  assert.equal(gateMissedSummary(report), "noise 0.1287 > 0.12");
 });
 
 test("gateMissedSummary joins tier-1 and noise misses", () => {
@@ -115,13 +129,13 @@ test("gateMissedSummary joins tier-1 and noise misses", () => {
   );
 });
 
+test("gateMissedSummary names only the noise gate when a Tier-1 miss is inside the interim gate", () => {
+  const report = syntheticReport([...fullTierOne(true), ...noisyPositiveDraws, cleanNegative]);
+  assert.equal(gateMissedSummary(report), "noise 0.1287 > 0.12");
+});
+
 test("gateMissedSummary throws when no gate was missed", () => {
-  const report = syntheticReport([
-    draw("t1-a", { recall: true }),
-    draw("t1-a", { recall: true }),
-    draw("t1-a", { recall: true }),
-    cleanNegative,
-  ]);
+  const report = syntheticReport([...fullTierOne(true), cleanNegative]);
   assert.throws(() => gateMissedSummary(report), /disqualified/);
 });
 

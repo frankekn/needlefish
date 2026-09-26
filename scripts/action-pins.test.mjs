@@ -13,7 +13,6 @@ const VERSION_COMMENT = /^v\d+\.\d+\.\d+$/;
 // tag in hosted-review.yml must come with a matching bump here in the same PR.
 const FIRST_PARTY_FLOATING = /^frankekn\/needlefish@v0$/;
 const FIRST_PARTY_FLOATING_EXEMPT_FILE = join(".github/workflows", "hosted-review.yml");
-const PINNED_RUNNER = /^(\d+)\.(\d+)\.(\d+)$/;
 
 function workflowFiles() {
   return [
@@ -112,38 +111,31 @@ test("a different floating major tag in hosted-review.yml is not silently exempt
   );
 });
 
-test("hosted action pins a version per runner and lets runner_version override", () => {
+test("hosted action installs the latest runner CLI unless runner_version pins one", () => {
   const action = readFileSync("action.yml", "utf8");
-  assert.doesNotMatch(action, /^\s+default:\s*latest\s*$/m);
   assert.match(
     action,
-    /ver="\$\{NF_RUNNER_VERSION:-\$pinned\}"/,
-    "install step must prefer runner_version when set",
+    /ver="\$\{NF_RUNNER_VERSION:-latest\}"/,
+    "install step must default to latest and prefer runner_version when set",
   );
   assert.match(action, /npm install -g "\$\{pkg\}@\$\{ver\}"/);
 
-  const pins = {};
-  for (const match of action.matchAll(
-    /^\s+(codex|claude|opencode|pi)\) pkg="([^"]+)"; pinned="([^"]+)" ;;$/gm,
-  )) {
-    pins[match[1]] = { pkg: match[2], pinned: match[3] };
+  const pkgs = {};
+  for (const match of action.matchAll(/^\s+(codex|claude|opencode|pi)\) pkg="([^"]+)" ;;$/gm)) {
+    pkgs[match[1]] = match[2];
   }
   assert.deepEqual(
-    Object.keys(pins).sort(),
-    ["claude", "codex", "opencode", "pi"],
-    "every hosted runner must have its own pin",
+    pkgs,
+    {
+      codex: "@openai/codex",
+      claude: "@anthropic-ai/claude-code",
+      opencode: "@opencode/cli",
+      // @mariozechner/pi installs its bin as `pi-pods`, so the action's `pi` invocation could
+      // never resolve. The successor package from the same author is what ships a `pi` bin.
+      pi: "@earendil-works/pi-coding-agent",
+    },
+    "every hosted runner must map to its CLI package",
   );
-  assert.equal(pins.codex.pkg, "@openai/codex");
-  assert.equal(pins.codex.pinned, "0.155.1");
-  assert.equal(pins.claude.pkg, "@anthropic-ai/claude-code");
-  assert.equal(pins.opencode.pkg, "opencode-ai");
-  // @mariozechner/pi installs its bin as `pi-pods`, so the action's `pi` invocation could
-  // never resolve. The successor package from the same author is what ships a `pi` bin.
-  assert.equal(pins.pi.pkg, "@earendil-works/pi-coding-agent");
-  for (const [runner, { pinned }] of Object.entries(pins)) {
-    assert.notEqual(pinned, "latest", `${runner} must not pin latest`);
-    assert.match(pinned, PINNED_RUNNER, `${runner} pin must be x.y.z: ${pinned}`);
-  }
 });
 
 test("self-hosted fleet docs install the current Codex version", () => {

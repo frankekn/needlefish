@@ -1110,25 +1110,50 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 async function runOpenCode(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
-	const unrestrictedConfig = JSON.stringify({
+	// opencode v2 CLI contract: --pure/--dir/--variant were removed; the
+	// process cwd already selects the repo, and variants live in the model
+	// string as provider/model#variant. --standalone gives each invocation a
+	// private server: the default background-service mode hangs under the
+	// eval's isolated HOME.
+	const config: Record<string, unknown> = {
 		permission: "allow",
 		agent: { build: { permission: "allow" } },
-	});
+	};
+	// Zen models resolve against the models.dev catalog cached in the
+	// per-user db; an isolated HOME has no cache, so declare the model
+	// explicitly to keep provider resolution self-contained.
+	const zenModel = invocation.model?.startsWith("opencode/")
+		? invocation.model.slice("opencode/".length).split("#")[0]
+		: null;
+	if (zenModel)
+		config.providers = { opencode: { models: { [zenModel]: {} } } };
+	const unrestrictedConfig = JSON.stringify(config);
 	const promptPath = path.join(invocation.tmp, "prompt.md");
 	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
 	const args = [
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
-		invocation.repoPath,
 	];
 	args.push("--file", promptPath);
-	if (invocation.model) args.push("--model", invocation.model);
-	if (invocation.reasoningEffort)
-		args.push("--variant", invocation.reasoningEffort);
+	if (invocation.model) {
+		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
+		// variant already in the model id rather than appending a second one.
+		const effort =
+			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
+				? invocation.reasoningEffort
+				: null;
+		args.push(
+			"--model",
+			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
+		);
+	} else if (invocation.reasoningEffort) {
+		throw new RunnerOperationalError(
+			"opencode reasoning effort requires a model to be specified",
+		);
+	}
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({

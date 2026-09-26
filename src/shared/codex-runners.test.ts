@@ -153,12 +153,11 @@ test("runCodex extracts opencode json text output", async (t) => {
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
+		"--file",
 	]);
-	assert.notEqual(args[6], repo);
-	assert.equal(args[7], "--file");
+	assert.equal(args.includes(repo), false);
 	assert.equal(
 		args.at(-1),
 		"Use the attached prompt file as your complete instruction.",
@@ -639,12 +638,147 @@ test("runCodex invokes opencode without an opt-in gate", async (t) => {
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
+		"--file",
 	]);
+	assert.equal(args.includes(repo), false);
 	assert.equal(readFileSync(inputPath, "utf8"), "prompt");
 	assert.equal(readFileSync(stdinPath, "utf8"), "");
+});
+
+test("runCodex maps opencode effort into the model variant segment", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "opencode-bin.js");
+	const argsPath = path.join(tmp, "args.json");
+	const configPath = path.join(tmp, "config.txt");
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const args = process.argv.slice(2);",
+			`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
+			`fs.writeFileSync(${JSON.stringify(configPath)}, process.env.OPENCODE_CONFIG_CONTENT || '');`,
+			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.OPENCODE_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free",
+		reasoningEffort: "max",
+	});
+	const args = readStringArray(argsPath);
+
+	assert.equal(output, '{"ok":true}');
+	assert.equal(args.includes("--variant"), false);
+	assert.equal(
+		args[args.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#max",
+	);
+	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+		permission: "allow",
+		agent: { build: { permission: "allow" } },
+		providers: { opencode: { models: { "mimo-v2.6-flash-free": {} } } },
+	});
+
+	const outputDefault = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free",
+		reasoningEffort: "default",
+	});
+	const argsDefault = readStringArray(argsPath);
+	assert.equal(outputDefault, '{"ok":true}');
+	assert.equal(
+		argsDefault[argsDefault.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free",
+	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "max",
+	});
+	const argsReplaced = readStringArray(argsPath);
+	assert.equal(
+		argsReplaced[argsReplaced.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#max",
+	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "default",
+	});
+	const argsKept = readStringArray(argsPath);
+	assert.equal(
+		argsKept[argsKept.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#high",
+	);
+});
+
+test("runCodex rejects opencode effort without a specified model", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+		model: process.env.OPENCODE_MODEL,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		if (previous.model === undefined) delete process.env.OPENCODE_MODEL;
+		else process.env.OPENCODE_MODEL = previous.model;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	delete process.env.OPENCODE_MODEL;
+	process.env.OPENCODE_BIN = "/bin/true";
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				targetHeadSha: headSha(repo),
+				timeoutMs: 1000,
+				reasoningEffort: "max",
+			}),
+		(err) => {
+			assert.ok(err instanceof RunnerOperationalError);
+			assert.match(
+				err.message,
+				/opencode reasoning effort requires a model to be specified/,
+			);
+			return true;
+		},
+	);
 });
 
 test("runCodex invokes pi with default provider/model/thinking flags and the prompt on stdin", async () => {
