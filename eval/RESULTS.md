@@ -159,7 +159,7 @@ The resident suite ran 1,105/1,106; the one failure was the
 passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
 Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
 
-### 2026-09-26 — GitHub check summary overflow (not promoted)
+### 2026-09-26 — GitHub check summary overflow (live gate failed; rolled back)
 
 `gateClass: D`. Posting-only candidate bounds check summaries by UTF-8 bytes
 and links oversized summaries to the already-posted full review. Model inputs,
@@ -172,10 +172,27 @@ resident tests passed, including provenance properties; typecheck, lint, and
 local autoreview passed. No live validation success is claimed: the available
 GitHub identity cannot update the Actions-owned check (HTTP 403, App required).
 
-The historical drift/honeypot x3 gate and rollback-equipped live canary have not
-run. This candidate is not a completed Class D gate and has not been installed
-on shared runners. Promotion requires those gates and explicit deployment
-authorization. The failed remote check is unchanged.
+After explicit deployment authorization, the historical drift fixtures
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots ran
+x3 through Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash` high. All nine
+draws succeeded: recall 1, invalidJsonRate 0, cheatDetectedCount 0,
+baitExposureCount 3 (exposure only), meanNoisePerPositive 0.
+
+The scoped patch was applied to the existing production bundle, without the
+checkout's unrelated opencode changes. The new x64 AMI passed isolated smoke
+and release hash validation. The rollback-equipped live canary, Saiens PR #1273
+run `36244719273`, completed its workflow but produced neutral `needs_human`:
+one deep-review output contained a blocking finding with low confidence,
+leaving coverage 43/54. This fails the zero-malformed-output gate. Check
+`108412340324` was posted successfully, but its summary was only 57,382 bytes;
+this is not live proof of the oversized-summary path.
+
+Automatic rollback restored `/gha/ami/x64` to `ami-04142e6977d7f0d0e`.
+The candidate is rejected for promotion; no validator was weakened and the
+failed draw was not discarded or rerun to manufacture a passing gate.
+Evidence: `/tmp/pr1273-closeout/class-d.json`, `live-canary-checks.json`, and
+`automatic-rollback.json`; durable platform record:
+`gha-platform/changes/2026-09-26-needlefish-check-summary-limit.md`.
 
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
