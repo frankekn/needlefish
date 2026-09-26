@@ -8,6 +8,7 @@ import {
 import path from "node:path";
 import { runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
+import { findRunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
@@ -619,7 +620,7 @@ export async function runCodex(
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
 			}
-			if (!(err instanceof Error) || isRunnerSafetyError(err)) {
+			if (!(err instanceof Error) || isRunnerSafetyError(err) || findRunnerFailure(err)?.retryable === false) {
 				emitStat(false);
 				throw err;
 			}

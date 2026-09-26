@@ -79,7 +79,7 @@ test("runCodex acp env credentials use and dispose the isolated HOME", async (t)
 test("runCodex acp surfaces session prompt JSON-RPC errors", async (t) => {
   const fixture = acpFixture(t, "error");
 
-  await assert.rejects(() => runAcpPrompt(fixture, 1000), /acp session\/prompt failed: prompt failed/);
+  await assert.rejects(() => runAcpPrompt(fixture, 1000), /acp session\/prompt failed: authentication required/);
 });
 
 test("runCodex acp ignores invalid usage telemetry", async (t) => {
