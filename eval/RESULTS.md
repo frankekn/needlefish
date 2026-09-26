@@ -159,6 +159,43 @@ The resident suite ran 1,105/1,106; the one failure was the
 passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
 Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
 
+### 2026-09-26 — Shared finding confidence contract (Class R)
+
+The deep and critic prompts omitted the normalizer's P0/P1/P2 confidence floor
+of 0.7; the deep JSON example used 0.0. Small review alone documented the floor.
+Candidate `45e7252` shares one admission contract across all three stages,
+includes it in packaging and prompt hashing, and keeps the validator and retry
+counts unchanged. The failed production finding itself was not retained by the
+ephemeral runner or proxy; this is a verified contract mismatch, not a claim
+to have recovered its exact text.
+
+Predeclared `gateClass: R`; Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash`, high, all 88 fixtures including a new sealed
+holdout. Control and candidate fixture hash `b1e75143e8e71a27`, anticheat v2.
+Control prompt `e62d0889fc704541`; candidate `d95aa170f3a37cf3`. These are
+explicit before/after observations, not same-prompt leaderboard comparisons.
+
+| Phase | Control | Candidate |
+| --- | --- | --- |
+| Full set, one draw: positive recall | 56/61 | 53/61 |
+| Full set: Tier-1 recall | 1 | 1 |
+| Full set: extra findings on positives | 2 | 0 |
+| 16 divergent fixtures ×3: recall | 34/48 | 38/48 |
+| Confirmation: must-find hits | 41 | 47 |
+| Confirmation: extra findings | 4 | 1 |
+| Invalid-output / cheat counts, all phases | 0 / 0 | 0 / 0 |
+
+No fixture had lower candidate recall in x3 confirmation. The frontend fixture
+had one extra finding only in control's first draw and only in candidate's
+confirmation: both total 1/4, so the evidence does not confirm a sustained
+precision regression. All 272 draws are retained, including misses. The first
+draw's apparent recall regression was not used as the gate verdict.
+
+Reports: `eval/evidence/2026-09-26-confidence/confidence-{control,candidate}-{full,confirm,extra}.json`.
+Local gates: 1,107 tests pass, typecheck/lint/package-install smoke pass, and
+independent P0–P2 commit review clean. Offline Class R gate passes. Live canary
+and any promotion outcome are recorded separately; not yet claimed successful.
+
 ### 2026-09-26 — GitHub check summary overflow (live gate failed; rolled back)
 
 `gateClass: D`. Posting-only candidate bounds check summaries by UTF-8 bytes
