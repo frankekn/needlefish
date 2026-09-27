@@ -401,3 +401,75 @@ test("an unreadable PR fails action.yml instead of skipping green", () => {
 	assert.notEqual(failed.outputs.skip, "true");
 	assert.deepEqual(failed.posts, []);
 });
+
+function runBinaryStep(script, binaryName, env) {
+	const root = mkdtempSync(join(tmpdir(), "needlefish-author-override-"));
+	const fakeBin = join(root, "fake-bin");
+	const seen = join(root, "seen");
+	mkdirSync(fakeBin);
+	writeFileSync(
+		join(fakeBin, binaryName),
+		`#!/usr/bin/env bash\nprintf '<%s>' "\${NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR-unset}" > "$SEEN"\n`,
+	);
+	chmodSync(join(fakeBin, binaryName), 0o755);
+	const result = spawnSync("bash", ["-c", script], {
+		cwd: root,
+		encoding: "utf8",
+		env: {
+			...process.env,
+			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+			NEEDLEFISH_BIN: join(fakeBin, binaryName),
+			SEEN: seen,
+			...env,
+		},
+	});
+	const value = existsSync(seen) ? readFileSync(seen, "utf8") : null;
+	rmSync(root, { recursive: true, force: true });
+	return { ...result, value };
+}
+
+test("review.yml hands allow_untrusted_author to the binary's own gate and nothing else sets it", () => {
+	const steps = parse(workflow).jobs.review.steps;
+	const review = steps.find((step) => step.name === "Needlefish review");
+	assert.equal(
+		review.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR,
+		"${{ inputs.allow_untrusted_author && '1' || '' }}",
+	);
+	assert.doesNotMatch(review.run, /\$\{\{/);
+	for (const step of steps) {
+		if (step === review) continue;
+		assert.equal(step.env?.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR, undefined, step.name);
+	}
+	const script = workflowRun(workflow, "review", "Needlefish review");
+	for (const value of ["1", ""]) {
+		const r = runBinaryStep(script, "needlefish", {
+			PR_NUM: "42",
+			NEEDLEFISH_RUNNER_INPUT: "claude",
+			NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: value,
+		});
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.value, `<${value}>`);
+	}
+});
+
+test("action.yml hands allow_untrusted_author to the review step only when it is 'true'", () => {
+	const review = actionSteps.find((step) => step.name === "Needlefish review");
+	assert.equal(
+		review.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR,
+		"${{ inputs.allow_untrusted_author == 'true' && '1' || '' }}",
+	);
+	assert.doesNotMatch(review.run, /\$\{\{/);
+	for (const step of actionSteps) {
+		if (step === review) continue;
+		assert.equal(step.env?.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR, undefined, step.name ?? step.uses);
+	}
+	for (const value of ["1", ""]) {
+		const r = runBinaryStep(review.run, "pnpm", {
+			PR_INPUT: "42",
+			TARGET_REPO_PATH: "/tmp/target",
+			NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: value,
+		});
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.value, `<${value}>`);
+	}
+});

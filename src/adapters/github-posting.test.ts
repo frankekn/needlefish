@@ -85,6 +85,9 @@ type FixtureOptions = {
 	readonly flakyReviewPuts?: number;
 	// Fail every POST to the reviews endpoint with a 404 (non-retryable).
 	readonly reviewPost404?: boolean;
+	// PR author fields on the pull response; null omits the field.
+	readonly authorAssociation?: string | null;
+	readonly authorType?: string | null;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -187,6 +190,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		claude: process.env.CLAUDE_BIN,
 		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
 		retryMs: process.env.NEEDLEFISH_GH_POST_RETRY_MS,
+		allowUntrusted: process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR,
 		exitCode: process.exitCode,
 	};
 	t.after(() => {
@@ -208,6 +212,9 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		if (previous.retryMs === undefined)
 			delete process.env.NEEDLEFISH_GH_POST_RETRY_MS;
 		else process.env.NEEDLEFISH_GH_POST_RETRY_MS = previous.retryMs;
+		if (previous.allowUntrusted === undefined)
+			delete process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR;
+		else process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR = previous.allowUntrusted;
 		process.exitCode = previous.exitCode;
 		rmSync(tmp, { recursive: true, force: true });
 	});
@@ -239,6 +246,12 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	}
 
 	mkdirSync(fakeBin);
+	const authorFields: Record<string, unknown> = {};
+	const association =
+		opts.authorAssociation === undefined ? "MEMBER" : opts.authorAssociation;
+	const authorType = opts.authorType === undefined ? "User" : opts.authorType;
+	if (association !== null) authorFields.author_association = association;
+	if (authorType !== null) authorFields.user = { login: "author", type: authorType };
 	const countPath = path.join(tmp, "pull-count");
 	// Stub PR state: closed outright, or open on the first pull fetch and
 	// closed on the post-review re-read (count tracks pulls/N calls).
@@ -346,6 +359,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    state: prState, title: 'PR', body: '',",
 			"    comments_url: 'https://example.invalid/comments',",
 			"    review_comments_url: 'https://example.invalid/reviews',",
+			`    ...${JSON.stringify(authorFields)},`,
 			"    head: { sha: headSha },",
 			`    base: { sha: ${JSON.stringify(baseTipSha)} }`,
 			"  }));",
@@ -411,6 +425,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
 	// Zero retry delay keeps the 5xx-retry tests instant.
 	process.env.NEEDLEFISH_GH_POST_RETRY_MS = "0";
+	delete process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR;
 	return {
 		postLog,
 		repo,
@@ -2899,3 +2914,123 @@ test("a review error echoing a credential-shaped string is redacted on stderr an
 	assert.ok(!spawned.stderr.includes(token));
 	assert.ok(spawned.stderr.includes("[redacted]"), spawned.stderr);
 });
+
+function untrustedFixture(
+	t: TestContext,
+	prNumber: number,
+	authorAssociation: string | null,
+	authorType: string | null = "User",
+): Fixture {
+	return setupFixture(t, {
+		prNumber,
+		rawReview: JSON.stringify({
+			summary: "ok",
+			findings: [],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+		authorAssociation,
+		authorType,
+	});
+}
+
+function assertUntrustedSkip(
+	fixture: Fixture,
+	prNumber: number,
+	association: string,
+	type: string,
+): void {
+	const spawned = spawnGithubCli(fixture, prNumber);
+	assert.equal(spawned.status, 0, spawned.stderr);
+	assert.ok(
+		spawned.stdout.includes(
+			`needlefish-skip {"reason":"untrusted_author","prNumber":${prNumber},"headSha":"${fixture.headSha}"}`,
+		),
+		spawned.stdout,
+	);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.length, 1, JSON.stringify(posts));
+	assert.deepEqual(posts[0]!.args, [
+		"api",
+		"-X",
+		"POST",
+		"repos/frankekn/needlefish/check-runs",
+		"--input",
+		"-",
+	]);
+	const check = parseJson(posts[0]!.payload) as {
+		name: string;
+		head_sha: string;
+		status: string;
+		conclusion: string;
+		output: { title: string; summary: string };
+	};
+	assert.equal(check.name, "Needlefish");
+	assert.equal(check.head_sha, fixture.headSha);
+	assert.equal(check.status, "completed");
+	assert.equal(check.conclusion, "neutral");
+	assert.equal(check.output.title, "Needlefish: skipped (author not trusted)");
+	assert.ok(
+		check.output.summary.includes(`association ${association}, type ${type}`),
+		check.output.summary,
+	);
+	assert.ok(
+		check.output.summary.includes("NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1"),
+		check.output.summary,
+	);
+	assert.equal(runnerInvocationCount(fixture), 0);
+}
+
+for (const association of ["CONTRIBUTOR", "NONE"]) {
+	test(`runGithub skips a ${association} author with one neutral check before any review work`, (t) => {
+		assertUntrustedSkip(untrustedFixture(t, 90, association), 90, association, "User");
+	});
+}
+
+test("runGithub skips a Bot author even with MEMBER association", (t) => {
+	assertUntrustedSkip(untrustedFixture(t, 91, "MEMBER", "Bot"), 91, "MEMBER", "Bot");
+});
+
+for (const association of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+	test(`runGithub reviews a ${association} author where NONE is skipped`, async (t) => {
+		const trusted = untrustedFixture(t, 92, association);
+		await runGithub(trusted.repo, 92, { timeoutMs: 1000 });
+		assert.ok(runnerInvocationCount(trusted) > 0);
+		assert.ok(postedReview(readPosts(trusted.postLog), 92));
+
+		const untrusted = untrustedFixture(t, 93, "NONE");
+		await runGithub(untrusted.repo, 93, { timeoutMs: 1000 });
+		assert.equal(runnerInvocationCount(untrusted), 0);
+		assert.equal(postedReview(readPosts(untrusted.postLog), 93), undefined);
+	});
+}
+
+test("only NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1 lets an untrusted author through", async (t) => {
+	for (const value of ["0", "true"]) {
+		const fixture = untrustedFixture(t, 94, "FIRST_TIME_CONTRIBUTOR");
+		process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR = value;
+		await runGithub(fixture.repo, 94, { timeoutMs: 1000 });
+		assert.equal(runnerInvocationCount(fixture), 0, value);
+		assert.equal(postedReview(readPosts(fixture.postLog), 94), undefined, value);
+	}
+	const allowed = untrustedFixture(t, 95, "FIRST_TIME_CONTRIBUTOR", "Bot");
+	process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR = "1";
+	await runGithub(allowed.repo, 95, { timeoutMs: 1000 });
+	assert.ok(runnerInvocationCount(allowed) > 0);
+	assert.ok(postedReview(readPosts(allowed.postLog), 95));
+});
+
+for (const [label, association, type] of [
+	["author_association", null, "User"],
+	["user.type", "MEMBER", null],
+] as const) {
+	test(`runGithub fails without a neutral check when ${label} is missing`, async (t) => {
+		const fixture = untrustedFixture(t, 96, association, type);
+		await assert.rejects(
+			runGithub(fixture.repo, 96, { timeoutMs: 1000 }),
+			/cannot classify the PR author/,
+		);
+		assert.deepEqual(readPosts(fixture.postLog), []);
+		assert.equal(runnerInvocationCount(fixture), 0);
+	});
+}

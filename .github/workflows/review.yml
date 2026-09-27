@@ -328,6 +328,7 @@ jobs:
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
             echo "Selected self-managed Needlefish is unavailable. Reinstall the local bundle on this runner." >&2

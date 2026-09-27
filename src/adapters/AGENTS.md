@@ -16,6 +16,7 @@
 ## CONVENTIONS
 
 - Normalize repo paths before passing them to core review.
+- GitHub mode skips PRs whose author is not OWNER/MEMBER/COLLABORATOR, or is a bot, with one neutral `Needlefish` check before any review work; only `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1` overrides, and unreadable author metadata fails the run.
 - Re-read PR state before posting. Closed PRs and stale heads must produce no review/check output beyond the skip notice.
 - Local mode may cache under `~/.cache/needlefish`; GitHub mode posts to GitHub.
 - GitHub `changes_requested` sets process exit code 1 and failed check-run, but posts review event `COMMENT`.

@@ -323,7 +323,9 @@ CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cl
   workflow。
 - 只審查作者為 OWNER／MEMBER／COLLABORATOR 且不是 bot 的 PR；其他 PR
   改為收到 neutral 的 `Needlefish` check。維護者讀過 PR 後，可用
-  `allow_untrusted_author: true` 審查。
+  `allow_untrusted_author: true` 審查。GitHub mode 本身就會執行這道 gate，
+  直接呼叫 `needlefish --github` 的自訂 workflow 也一樣；要放行時設
+  `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`。
 
 **留言指令：** composite action 不會把 PR 留言指令加入 consumer repo。
 本 repo 的 `.github/workflows/commands.yml` 會監聽維護者（僅
@@ -387,6 +389,8 @@ checkout 憑證隔離與獨立 hosted finalization 都保留。
 這些 runner 上的 model CLI 不受限制，因此非信任或 bot 作者的 PR 會以
 neutral check 跳過；讀過 PR 後，以 `allow_untrusted_author: true` 手動
 dispatch `review.yml` 即可審查。Reconciliation 永遠不會設定這個 input。
+已安裝的 binary 在 GitHub mode 也執行同一道 gate，放行用
+`NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`。
 
 ## Runners
 
