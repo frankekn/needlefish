@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.8 — 2026-09-28
+
+- GitHub: review only PRs whose author is an OWNER, MEMBER, or COLLABORATOR
+  that is not a bot. Other PRs get one neutral `Needlefish: skipped (author
+  not trusted)` check and no model run. GitHub mode enforces this itself, so
+  it applies to consumer workflows that call the installed binary;
+  `review.yml` and `action.yml` also gate before checkout. A maintainer
+  overrides with `allow_untrusted_author: true` (workflows) or
+  `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`. An unreadable author fails the run
+  instead of skipping.
+- GitHub: every outbound text (reviews, comments, check runs, labels, the
+  explain comment, stdout, and error messages) is screened. A verbatim
+  credential value from the run's environment withholds the post and fails
+  the check; credential-shaped strings are replaced with `[redacted]`.
+  Clean output is byte-identical.
+- GitHub: a re-review no longer reports a dropped finding as resolved when
+  its code did not change. Dropped findings are classified against the diff
+  from the previous reviewed head: `✅ resolved` (its lines changed),
+  `🔁 not reproduced (code unchanged)`, or `❔ undetermined` (previous head
+  unavailable).
+- Eval: two 27-file fixtures exercise the large-PR path (map, deep, tail
+  coverage, critic); the full-set fixture hash is now `061a10be844a98ae`.
+
 ## 0.4.7 — 2026-09-27
 
 - GitHub: bound the check-run summary by UTF-8 bytes, the unit GitHub enforces
