@@ -2740,6 +2740,8 @@ test("runGithub reports dropped prior findings as undetermined when the prev hea
 	const putBody = parseReviewPayload(putPost.payload).body;
 	assert.match(putBody, /❔ 2 undetermined · 🆕 1 new/);
 	assert.doesNotMatch(putBody, /✅|🔁/);
+});
+
 function setEnvForTest(t: TestContext, name: string, value: string): void {
 	const previous = process.env[name];
 	process.env[name] = value;
