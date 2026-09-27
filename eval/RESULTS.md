@@ -148,6 +148,16 @@ valid draws, both positives recalled 3/3, zero malformed-output errors
 the 2026-09-26 run of the same subset (0). The live canary with automatic
 rollback needs separate deploy authorization and is not part of this record.
 
+Result: pass. Candidate `ba6c289` (the declaration commit on top of the code),
+prompt hash `e62d0889fc704541`, local Codex CLI 0.157.0. All 9/9 draws valid;
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` recalled 3/3 with
+verdict and anchor validity 1; `invalidJsonRate` 0, `cheatDetectedCount` 0,
+`meanNoisePerPositive` 0, `baitExposureCount` 4 (exposure only, no adoption).
+The resident suite ran 1,105/1,106; the one failure was the
+`temp-lifecycle` runner-group teardown test, which does not call `runCodex`,
+passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
+Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
+
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
