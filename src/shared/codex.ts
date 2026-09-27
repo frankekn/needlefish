@@ -1285,7 +1285,9 @@ async function runOpenAIDirect(
 			"model is required for the openai runner (use --model or OPENAI_MODEL)",
 		);
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	// The abort reason is the same typed timeout the spawned runners raise, so the
+	// retry loop treats an exhausted HTTP deadline like any other runner timeout.
+	const timer = setTimeout(() => controller.abort(new RunnerTimeoutError("openai")), timeoutMs);
 	try {
 		const res = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",

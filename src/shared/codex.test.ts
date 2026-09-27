@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { extractJson, runCodex, RunnerOperationalError } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import { RunnerTimeoutError } from "./runner-process";
 
 test("extractJson parses fenced JSON output", () => {
   const text = "preface\n```json\n{\"ok\":true}\n```\ntrailer";
@@ -678,6 +680,59 @@ function processExists(pid: number): boolean {
     throw error;
 	}
 }
+
+test("openai runner does not retry a request that exhausts its deadline", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		base: process.env.OPENAI_BASE_URL,
+		key: process.env.OPENAI_API_KEY,
+		retry: process.env.CODEX_RETRY_MS,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	let requests = 0;
+	const server = createServer(() => {
+		requests++;
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	if (address === null || typeof address === "string")
+		throw new Error("test server did not bind a port");
+	t.after(() => {
+		server.closeAllConnections();
+		server.close();
+		for (const [key, value] of [
+			["OPENAI_BASE_URL", previous.base],
+			["OPENAI_API_KEY", previous.key],
+			["CODEX_RETRY_MS", previous.retry],
+			["NEEDLEFISH_NO_RETRY", previous.noRetry],
+		] as const) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+	process.env.OPENAI_API_KEY = "test-key";
+	process.env.CODEX_RETRY_MS = "1";
+	delete process.env.NEEDLEFISH_NO_RETRY;
+
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				runner: "openai",
+				model: "test-model",
+				targetHeadSha: headSha(repo),
+				timeoutMs: 300,
+			}),
+		(err: unknown) =>
+			err instanceof RunnerOperationalError &&
+			err.cause instanceof RunnerTimeoutError &&
+			/ETIMEDOUT/.test(err.message),
+	);
+	assert.equal(requests, 1);
+});
 
 test("openai non-2xx attempt emits failure callbacks only", async (t) => {
 	const { createServer } = await import("node:http");
