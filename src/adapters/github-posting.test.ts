@@ -28,6 +28,7 @@ import {
 	runGithub,
 } from "./github";
 import type { Finding } from "../shared/schema";
+import { WITHHELD_MESSAGE } from "../shared/outbound-screen";
 
 type Post = {
 	readonly args: readonly string[];
@@ -2739,4 +2740,135 @@ test("runGithub reports dropped prior findings as undetermined when the prev hea
 	const putBody = parseReviewPayload(putPost.payload).body;
 	assert.match(putBody, /❔ 2 undetermined · 🆕 1 new/);
 	assert.doesNotMatch(putBody, /✅|🔁/);
+function setEnvForTest(t: TestContext, name: string, value: string): void {
+	const previous = process.env[name];
+	process.env[name] = value;
+	t.after(() => {
+		if (previous === undefined) delete process.env[name];
+		else process.env[name] = previous;
+	});
+}
+
+function lastCheckCompletion(posts: readonly Post[]): {
+	readonly conclusion?: unknown;
+	readonly output?: { readonly title?: unknown; readonly summary?: unknown };
+} {
+	const checkOps = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
+	const last = checkOps.at(-1);
+	assert.ok(last, "a check-run operation must be logged");
+	assert.equal(last.args[2], "PATCH", "the pending check must be completed by id");
+	return parseJson(last.payload) as {
+		conclusion?: unknown;
+		output?: { title?: unknown; summary?: unknown };
+	};
+}
+
+test("a finding carrying a runner credential value is withheld from GitHub and stdout", (t) => {
+	const credential = "abc123def456ghi789jkl0mno";
+	const fixture = setupFixture(t, {
+		prNumber: 191,
+		rawReview: JSON.stringify({
+			summary: "review",
+			findings: [
+				mkFinding({ whyItBreaks: `the config echoes ${credential} into logs` }),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+	setEnvForTest(t, "FAKE_API_KEY", credential);
+
+	const spawned = spawnGithubCli(fixture, 191);
+
+	assert.equal(spawned.status, 1, spawned.stderr);
+	const posts = readPosts(fixture.postLog);
+	assert.ok(posts.length > 0);
+	for (const post of posts) {
+		assert.ok(!post.payload.includes(credential), `payload leaked the value: ${post.args.join(" ")}`);
+	}
+	assert.equal(postedReview(posts, 191), undefined, "the review POST must not reach gh");
+	const completion = lastCheckCompletion(posts);
+	assert.equal(completion.conclusion, "failure");
+	assert.match(String(completion.output?.title ?? ""), /review failed/);
+	assert.ok(String(completion.output?.summary ?? "").includes(WITHHELD_MESSAGE));
+	const errorComment = posts.find((p) =>
+		p.args.includes("repos/frankekn/needlefish/issues/191/comments"),
+	);
+	assert.ok(errorComment, "the infra-failure comment must still post");
+	assert.ok(errorComment.payload.includes(WITHHELD_MESSAGE));
+	assert.ok(!spawned.stdout.includes(credential));
+	assert.ok(!spawned.stderr.includes(credential));
+});
+
+test("a credential-shaped string in a finding is redacted and the verdict check still posts", (t) => {
+	const token = `ghp_${"Q7w8".repeat(9)}`;
+	const fixture = setupFixture(t, {
+		prNumber: 192,
+		rawReview: JSON.stringify({
+			summary: "review",
+			findings: [
+				mkFinding({
+					severity: "P3",
+					title: `fixture hardcodes ${token}`,
+					whyItBreaks: `the token ${token} is committed`,
+				}),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	const spawned = spawnGithubCli(fixture, 192);
+
+	assert.equal(spawned.status, 0, spawned.stderr);
+	const posts = readPosts(fixture.postLog);
+	for (const post of posts) {
+		assert.ok(
+			!post.payload.toLowerCase().includes(token.toLowerCase()),
+			`payload leaked the token: ${post.args.join(" ")}`,
+		);
+	}
+	const reviewPost = postedReview(posts, 192);
+	assert.ok(reviewPost, "the review must still post");
+	const review = parseReviewPayload(reviewPost.payload);
+	assert.ok(review.body.includes("fixture hardcodes [redacted]"));
+	assert.ok(
+		review.comments.some((c) => String(c.body).includes("the token [redacted] is committed")),
+	);
+	const completion = lastCheckCompletion(posts);
+	assert.equal(completion.conclusion, "success");
+	assert.equal(completion.output?.title, "Needlefish: pass");
+	assert.ok(!spawned.stdout.includes(token));
+	assert.ok(spawned.stdout.includes("fixture hardcodes [redacted]"));
+});
+
+test("a review error echoing a runner credential value still completes the pending check", (t) => {
+	const credential = "abc123def456ghi789jkl0mno";
+	const fixture = setupFixture(t, {
+		prNumber: 193,
+		rawReview: JSON.stringify({
+			summary: "review",
+			findings: [{ ...mkFinding(), severity: credential }],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+	setEnvForTest(t, "FAKE_API_KEY", credential);
+
+	const spawned = spawnGithubCli(fixture, 193);
+
+	assert.equal(spawned.status, 1, spawned.stderr);
+	const posts = readPosts(fixture.postLog);
+	for (const post of posts) {
+		assert.ok(!post.payload.includes(credential), `payload leaked the value: ${post.args.join(" ")}`);
+	}
+	const completion = lastCheckCompletion(posts);
+	assert.equal(completion.conclusion, "failure");
+	assert.ok(String(completion.output?.summary ?? "").includes(WITHHELD_MESSAGE));
+	const errorComment = posts.find((p) =>
+		p.args.includes("repos/frankekn/needlefish/issues/193/comments"),
+	);
+	assert.ok(errorComment, "the infra-failure comment must still post");
+	assert.ok(!spawned.stdout.includes(credential));
+	assert.ok(!spawned.stderr.includes(credential));
 });
