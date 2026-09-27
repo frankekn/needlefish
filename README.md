@@ -596,7 +596,7 @@ via the full path:
 
 ## Status
 
-v0.4.7. Read-only. Shipped: inline review comments, sticky re-review
+v0.4.8. Read-only. Shipped: inline review comments, sticky re-review
 (fresh/open/resolved across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl), local `--dry-run` bundle preview, machine-readable skip reasons,
