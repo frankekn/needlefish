@@ -37,6 +37,11 @@ on:
         type: boolean
         required: false
         default: false
+      allow_untrusted_author:
+        description: Review a PR whose author is not OWNER, MEMBER, or COLLABORATOR, or is a bot (read the PR first)
+        type: boolean
+        required: false
+        default: false
       runs_on:
         description: Runner label for the review job (defaults to NEEDLEFISH_RUNS_ON or self-hosted)
         required: false
@@ -76,6 +81,11 @@ on:
         type: boolean
         required: false
         default: false
+      allow_untrusted_author:
+        description: Review a PR whose author is not OWNER, MEMBER, or COLLABORATOR, or is a bot (read the PR first)
+        type: boolean
+        required: false
+        default: false
       runs_on:
         description: Runner label for the review job
         type: string
@@ -110,6 +120,9 @@ jobs:
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
           EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           EVENT_ACTION: ${{ github.event.action }}
+          EVENT_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ -n "$EVENT_HEAD" ]; then
             head="$EVENT_HEAD"
@@ -117,12 +130,24 @@ jobs:
             head_repo="$EVENT_HEAD_REPO"
             state="OPEN"
             if [ "$EVENT_ACTION" = "closed" ]; then state="CLOSED"; fi
+            author_association="$EVENT_AUTHOR_ASSOCIATION"
+            author_type="$EVENT_AUTHOR_TYPE"
           else
             mapfile -t pr_fields < <(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid,headRefOid,headRepository,state -q '.headRefOid, .baseRefOid, (.headRepository.nameWithOwner // ""), .state')
             head="${pr_fields[0]}"
             base="${pr_fields[1]}"
             head_repo="${pr_fields[2]}"
             state="${pr_fields[3]}"
+            mapfile -t author_fields < <(gh api "repos/$REPO/pulls/$PR_NUM" --jq '.author_association, .user.type')
+            author_association="${author_fields[0]:-}"
+            author_type="${author_fields[1]:-}"
+          fi
+
+          trusted_author=false
+          if [ "$author_type" != "Bot" ]; then
+            case "$author_association" in
+              OWNER|MEMBER|COLLABORATOR) trusted_author=true ;;
+            esac
           fi
 
           skip=false
@@ -136,6 +161,16 @@ jobs:
           elif [ "$head_repo" != "$REPO" ]; then
             skip=true
             skip_reason="PR head repository $head_repo differs from $REPO"
+          elif [ "$trusted_author" != true ] && [ -z "$ALLOW_UNTRUSTED_AUTHOR" ]; then
+            skip=true
+            skip_reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="neutral" \
+              -f "output[title]=Needlefish: skipped (author not trusted)" \
+              -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi
 
           {
