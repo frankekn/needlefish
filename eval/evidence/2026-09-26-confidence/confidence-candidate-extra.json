@@ -1,0 +1,2341 @@
+{
+  "promptHash": "d95aa170f3a37cf3",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 2 --holdout include --gate-class R --fixtures '^(docker-infra-supply-chain|t1-inverted-guard|t3-cache-key-tenant|ts-data-duplicate|real-pr1-finding-field-coercion|real-pr1-manual-dispatch-wrong-ref|real-pr1-neutral-conclusion)$' --report '<redacted>'",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:f829d57c95890a91\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 2 --holdout include --gate-class R --fixtures '^(docker-infra-supply-chain|t1-inverted-guard|t3-cache-key-tenant|ts-data-duplicate|real-pr1-finding-field-coercion|real-pr1-manual-dispatch-wrong-ref|real-pr1-neutral-conclusion)$' --report eval/reports/confidence-candidate-extra.json",
+  "draws": 3,
+  "createdAt": "2026-09-26T16:23:06.302Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 0,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 47161,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "Dockerfile",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Do not pipe unverified remote script into shell at build time",
+          "whyItBreaks": "The new layer runs `curl -sL https://example.com/install.sh | sh` with no version pin, checksum, or signature verification. Whatever the origin (or a MITM/compromised host/typosquat) serves is executed as root inside the build, and it is non-reproducible: the same Dockerfile can build different images on different days or networks. This is arbitrary remote code execution injected into the supply chain of the produced image."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "Dockerfile",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "curl|sh swallows download failure, build succeeds silently",
+          "whyItBreaks": "`curl -sL` suppresses the progress/error output and does not use `-f`, and the pipeline exit status is that of `sh`. If the download fails (DNS/HTTP 4xx-5xx/network error), `sh` receives empty input, exits 0, and the RUN layer reports success. The install is silently skipped while the image is still produced, so a later `CMD [\"/app\"]` can fail on missing dependencies with no signal pointing back to this step."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 1,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 44561,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "Dockerfile",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Do not pipe unverified remote script into sh at build time",
+          "whyItBreaks": "`curl -sL https://example.com/install.sh | sh` downloads executable code from a third-party URL and runs it as root during image build with no integrity check (no pinned commit/version, no SHA-256, no signature). Whatever the endpoint serves at build time — including a compromised or DNS/TLS-hijacked response — becomes part of the image, giving an attacker a persistent supply-chain foothold in every container built from this Dockerfile. `example.com` is also an unpinned placeholder host, so the artifact and its contents are neither reproducible nor auditable."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "Dockerfile",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "curl -s without -f/pipefail hides download failure, build proceeds",
+          "whyItBreaks": "`curl -s` suppresses error output and, without `-f`, curl exits 0 on HTTP 4xx/5xx; the pipeline's exit status is `sh`'s status, and `sh` reading an empty/partial script exits 0. So if the download 404s, times out, or is truncated, the `RUN` still succeeds and the layer builds with none of the intended tooling installed — the failure is silently converted into a successful-looking image that crashes only later at runtime."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "docker-infra-supply-chain",
+      "draw": 2,
+      "score": {
+        "fixtureId": "docker-infra-supply-chain",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 49255,
+      "calls": 2,
+      "retries": 1,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "Dockerfile",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Do not curl|sh unpinned remote script in image build",
+          "whyItBreaks": "line 3 executes attacker-controllable remote content as root inside the image build with no version pin, no checksum, and no signature: `curl -sL https://example.com/install.sh | sh`. Anyone who controls that host (or MITMs the TLS-terminating endpoint/DNS) runs arbitrary code in the produced image, and the build is non-reproducible because the fetched content can change between builds. Additionally `curl -s` suppresses progress/error output and the shell pipeline exit status is that of `sh`, not `curl`; if the download fails, `sh` receives empty input and exits 0, so `RUN` reports success and the image ships without the intended install — the failure is indistinguishable from success."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "curl|sh|supply|chain|unverified|checksum|pipe|integrity",
+          "file": "Dockerfile",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 37441,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Fix inverted admin guard in purgeProject (auth bypass)",
+          "whyItBreaks": "The guard was inverted from `user.isAdmin && project.archived` to `if (user.isAdmin) return \"forbidden\"`. Tracing the new flow: a non-admin user skips line 12, and if the project is archived line 13 (`!project.archived`) is false, so execution reaches `db.delete(project.id)` on line 14 — a non-admin authorization bypass that destroys data. Inversely, an admin always hits line 12 and is returned \"forbidden\", so the legitimate admin purge path is now over-blocked. Both effects stem from the missing `!` on line 12."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 30315,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Inverted admin check lets non-admins purge projects",
+          "whyItBreaks": "Base required `user.isAdmin && project.archived` to reach `db.delete`. The rewrite early-returns \"forbidden\" when `user.isAdmin` is true, so the delete branch (lines 14-15) is only reached when the caller is a NON-admin and the project is archived. Effect: any non-admin can permanently delete any archived project (authorization bypass / data loss), while legitimate admins can no longer purge anything (regression of the purge workflow)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 35129,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Inverted isAdmin check allows non-admins to purge and blocks admins",
+          "whyItBreaks": "Original code deleted only when `user.isAdmin && project.archived`. The rewrite uses `if (user.isAdmin) return \"forbidden\";`, which is inverted: an admin now always gets \"forbidden\" and `db.delete` is never reached for them, while a non-admin whose project is archived passes both guards and reaches `db.delete(project.id)` at line 14, returning \"purged\". This is an authorization bypass permitting non-admin users to delete archived projects (data loss) and a regression that blocks the legitimate admin purge path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "admins_rejected",
+              "meaning": "The refactored guard incorrectly returns forbidden for administrators.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "user\\.isAdmin",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badmins?\\b",
+                    "\\b(?:forbidden|rejected|blocked)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\badministrators?\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "admin(?:istrator)?\\s+(?:check|guard)",
+                    "\\binvert(?:ed|s|ing)\\b",
+                    "\\b(?:forbidden|rejected|blocked|denied)\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)",
+                    "return\\s+[\"']forbidden[\"']"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "isAdmin\\s*(?:[:=]+|is)\\s*true",
+                    "\\b(?:forbidden|reject(?:s|ed|ing)?|blocked|denied|early return|returns? early)\\b"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "non_admins_can_purge",
+              "meaning": "Non-administrators can reach the destructive project purge/delete path.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "non[- ]?admins?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "without\\s+admin",
+                    "db\\.delete"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "unauthori[sz]ed\\s+users?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "not\\s+(?:an?\\s+)?admin(?:istrator)?",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "users?\\s+(?:without|lacking)\\s+admin(?:istrator)?\\s+(?:rights|permissions|privileges|access)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "if\\s*\\(\\s*user\\.isAdmin\\s*\\)\\s*return\\s+[\"']forbidden[\"']",
+                    "db\\.delete\\s*\\("
+                  ]
+                },
+                {
+                  "allOf": [
+                    "user\\.isAdmin\\s*(?:===?\\s*false|is\\s+false)",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:any|a|every)\\s+non[- ]?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "\\b(?:without being|regardless of)\\s+(?:an?\\s+)?admin",
+                    "\\b(?:purge|delete)(?:s|d|ing)?\\b"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:non[- ]?admin|isAdmin\\s*[:=]+\\s*false|isAdmin\\s+is\\s+false|not\\s+(?:an?\\s+)?admin)",
+                    "\\b(?:falls? through|fall through|reach(?:es|ed)?|proceeds? to|runs?)\\b",
+                    "db\\.delete"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 52029,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/settings.ts",
+          "lineStart": 12,
+          "lineEnd": 13,
+          "title": "Cache key drops tenantId, leaking one tenant's setting to all tenants",
+          "whyItBreaks": "settingsFor now derives the cache key from name only (`settings:${name}`) and ignores the tenantId argument entirely. The value is fetched with `store.fetch(tenantId, name)` but stored under a tenant-agnostic key. The first tenant to populate `settings:<name>` wins; every later call with the same name but a different tenantId hits the cache and returns the first tenant's value. This is both a wrong-value regression on every read and a cross-tenant data-isolation violation (a tenant can observe another tenant's setting value)."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Exported invalidate() drops tenantId, silently invalidating wrong key",
+          "whyItBreaks": "invalidate was an exported public function with signature `(tenantId, name)`. It now takes only `(name)`. Any existing/external caller still passing two arguments has its first argument (the tenantId) silently bound to `name`; the new body then deletes `settings:<tenantId>`, which is never the key it intended, so the stale entry is not evicted and the caller gets no error. The arity change is a breaking API change shipped without a deprecation path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 34032,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Dropping tenantId from cache key leaks settings across tenants",
+          "whyItBreaks": "Before this change the key was `${tenantId}:${name}`, so a per-tenant lookup could only hit that tenant's cached value. Now cacheKey() returns `settings:${name}` (src/settings.ts:8), discarding tenantId. settingsFor() computes the key without tenantId (src/settings.ts:12) and returns any existing hit before ever calling store.fetch(tenantId, name) (src/settings.ts:13-15). Consequence: tenant A fetches setting \"timeout\" -> cached under \"settings:timeout\"; tenant B then calls settingsFor('B','timeout',store), gets A's value as a cache hit, and store.fetch('B','timeout') is never invoked. Wrong value is returned to the wrong tenant, with cross-tenant data exposure and no way for the caller to detect it."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Exported invalidate() signature change breaks tenant-scoped invalidation",
+          "whyItBreaks": "The public contract changed from invalidate(tenantId, name) to invalidate(name). Even after the key is fixed, this signature makes single-tenant invalidation impossible: invalidate('A','timeout') no longer compiles, and invalidate('timeout') can only address a tenant-agnostic key. External callers that today invalidate one tenant's entry are forced to either drop the tenant argument or fail to compile, so the exported API can no longer express tenant-scoped invalidation."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 29396,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Restore tenant scoping in settings cache key",
+          "whyItBreaks": "BEFORE: key was `${tenantId}:${name}` (base 02dd8ac src/settings.ts:12), so each tenant's value was cached under its own key. AFTER: cacheKey(name) returns `settings:${name}` (src/settings.ts:7-9) and settingsFor uses it at src/settings.ts:12, discarding tenantId. store.fetch(tenantId, name) is explicitly per-tenant (src/settings.ts:2,15), but the cache is now global per name. First fetch for tenant A populates `settings:<name>`; a later settingsFor call for tenant B with the same name hits that entry (src/settings.ts:13-14) and returns tenant A's setting without ever calling the store. This is cross-tenant disclosure of another tenant's setting value on a live exported path, not merely a stale cache. The invalidate signature change (src/settings.ts:20-21) compounds it: invalidate('tenantA','name') deletes `settings:tenantA`, not the intended entry, so the tenant-scoped invalidation contract is silently broken."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 0,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 111833,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/retry.ts",
+          "lineStart": 4,
+          "lineEnd": 4,
+          "title": "Renaming timeoutMs to timeout silently disables the retry deadline",
+          "whyItBreaks": "The exported Config field `timeoutMs` was renamed to `timeout` with no migration. A caller still passing `{ timeoutMs }` now leaves `config.timeout` undefined, so `deadline = Date.now() + undefined` = NaN (line 8). Every `Date.now() > deadline` test (line 10) is false against NaN, so the deadline guard never trips and `retry` keeps looping to `maxAttempts` — the timeout cap is silently removed for old callers, and untyped/JS callers get no error."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/retry.ts",
+          "lineStart": 22,
+          "lineEnd": 22,
+          "title": "retryBackground keys off redundant retries field, silently no-ops",
+          "whyItBreaks": "retryBackground is a near-copy of retry but bounds its loop with the new `config.retries` (line 22) while `retry` uses `config.maxAttempts` (line 9); Config now carries both fields for the same concept. A Config built for `retry` (maxAttempts set, `retries` absent or 0) makes `i < config.retries` false on the first test, so retryBackground performs zero attempts, never invokes `fn`, and returns silently — the background work never runs and no error surfaces."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/retry.ts",
+          "lineStart": 27,
+          "lineEnd": 28,
+          "title": "retryBackground swallows all failures and returns void",
+          "whyItBreaks": "The new public `retryBackground` discards every failure with a bare `catch { continue; }` and returns void. When the loop is exhausted (retries used up or deadline hit) the function returns undefined with no throw and no log, so a caller cannot distinguish 'fn succeeded exactly once' from 'fn never ran / every attempt failed' and may treat a failed background operation as completed."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 1,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 94853,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/retry.ts",
+          "lineStart": 20,
+          "lineEnd": 31,
+          "title": "retryBackground swallows all failures; callers cannot detect exhaustion",
+          "whyItBreaks": "retryBackground is newly exported and returns void. Every thrown error is caught at line 27 and discarded with `continue`, and when the loop finishes (all attempts exhausted) the function falls through line 30/31 and returns normally. A caller therefore cannot distinguish 'succeeded on attempt N' from 'failed every attempt' — both look like a silent success, so an eventual caller will persist/report the fallback as if the work succeeded. This is the exported-contract defect even with no in-repo callers. Compounding it, `Config` now requires `retries` but the loop reads `config.retries` (line 22); a caller passing a config in the old shape (or omitting `retries`) yields `retries === undefined`, `i < undefined` is false, the body never runs, and fn is never invoked while the function still returns as success."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/retry.ts",
+          "lineStart": 3,
+          "lineEnd": 4,
+          "title": "Public Config rename timeoutMs->timeout breaks callers and disables deadline",
+          "whyItBreaks": "The exported `Config` interface removed `timeoutMs` and added unit-ambiguous `timeout`. Existing TypeScript consumers still passing `{ timeoutMs }` now fail to compile, and untyped/JS consumers passing `timeoutMs` get `config.timeout === undefined`. Substituting that value: `deadline = Date.now() + undefined` (line 8 / line 21) is `NaN`, and the guard `Date.now() > deadline` (line 10 / line 23) is `Date.now() > NaN`, which is always false — so the timeout branch is never taken and the time budget is silently removed while retries still run. The old name documented milliseconds; the new name drops that unit contract."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "ts-data-duplicate",
+      "draw": 2,
+      "score": {
+        "fixtureId": "ts-data-duplicate",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 87594,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/retry.ts",
+          "lineStart": 22,
+          "lineEnd": 22,
+          "title": "retryBackground treats `retries` as total attempts, under-counting by one",
+          "whyItBreaks": "`Config` now carries two distinct counters: `maxAttempts` (used by `retry`, src/retry.ts:9) and `retries` (used only by `retryBackground`). A field named `retries` means additional attempts after the first, so a bounded total should be `retries + 1`. Bounding the loop with `i < config.retries` performs only `retries` attempts total: `retries: 0` (meaning \"try once, do not retry\") causes `fn` to never be invoked at all, and `retries: N` executes N times instead of N+1, silently skipping an attempt the caller requested."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "duplicate|retries|maxAttempts|reimplement|diverg|two.*config|repeat|same.*concept",
+          "file": "src/retry.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-finding-field-coercion",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-finding-field-coercion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 65423,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/schema.ts",
+          "lineStart": 95,
+          "lineEnd": 110,
+          "title": "Reject malformed findings instead of fabricating P1 defaults",
+          "whyItBreaks": "The diff deletes every validation/throw in normalizeFinding and substitutes defaults: invalid/missing severity becomes a fabricated `P1` (line 98), invalid category becomes `bug` (100-102), missing file becomes `\"\"` (103), and invalid/missing lineStart/lineEnd become `0` (104-105). normalizeReview (line 131) then maps findings unconditionally, so a malformed model finding is no longer rejected (strict path) or dropped (previous strict=false path) — it is published as a real, high-severity P1 finding with no file and line 0, indistinguishable from a genuine P1 at the caller (src/shared/schema.ts:131). The prior code either threw or filtered these out; the failure signal is now discarded and replaced with an authoritative-looking value, so downstream verdict/comment logic can act on a fabricated finding (e.g. a fake P1 flipping a verdict, or a comment anchored to line 0 / empty path)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-finding-field-coercion",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-finding-field-coercion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 89858,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "validation",
+          "file": "src/shared/schema.ts",
+          "lineStart": 95,
+          "lineEnd": 110,
+          "title": "normalizeFinding swallows malformed-input errors into fabricated P1 findings",
+          "whyItBreaks": "Previously normalizeFinding threw on any malformed finding (missing/empty file, title, whyItBreaks, suggestedFix, invalid severity/category, non-positive lineStart/lineEnd). The new body discards every one of those checks and substitutes defaults: severity falls back to \"P1\", title to \"Untitled finding\", file to \"\", lineStart/lineEnd to 0, whyItBreaks/suggestedFix to \"\". A caller can no longer distinguish a genuine P1 finding from garbage/LLM output that failed validation — every malformed finding now surfaces as a real, high-severity finding with an empty file and line 0. Because normalizeFinding is exported, this altered contract forces every consumer to conflate failure with a real value, and downstream severity-driven verdict logic will report a fabricated P1 (false changes_requested) rather than rejecting or dropping the malformed input. Compounding this, normalizeReview (line 131) dropped the strict/non-strict branch: the old strict=false path caught the throw and filtered malformed findings out, but the new unconditional `raw.findings.map(normalizeFinding)` keeps them as fabricated findings, and the `strict` parameter was removed from the public signature, breaking callers that relied on the drop-invalid behavior."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-finding-field-coercion",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-finding-field-coercion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 83801,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/schema.ts",
+          "lineStart": 98,
+          "lineEnd": 105,
+          "title": "normalizeFinding swallows malformed-finding errors into fake defaults",
+          "whyItBreaks": "The diff deleted every validation in normalizeFinding (severity/category/file/title/whyItBreaks/suggestedFix/lineStart/lineEnd) and, in normalizeReview, deleted the `strict` branch. Malformed input is now coerced into a Finding whose fields are indistinguishable from real data: invalid severity becomes \"P1\" (src/shared/schema.ts:98), invalid category becomes \"bug\" (:100-102), missing file becomes \"\" (:103), and missing/unparseable lineStart becomes 0 or NaN (:104). Base behavior was: normalizeReview(raw) defaulted strict=true and threw on a malformed finding so the caller could reject/retry, while strict=false DROPPED invalid findings (base src/shared/schema.ts:155-165). Now both signals are lost — a failed model response is reported as a genuine P1 bug finding anchored at an empty file / line 0, which the pipeline will treat as real (e.g. post a comment at an invalid location) rather than as a parse failure."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "\\(no file\\)|line\\s?0\\b|coerc.{0,24}(field|default|finding|malformed)|unanchor|empty.{0,12}file|missing.{0,16}(field|file|title)|fabricat|fake.{0,16}(finding|P1)|placeholder|Untitled|default.{0,20}(P1|blocking)|validate.{0,20}(strict|required)|(throw|reject).{0,24}malformed",
+          "file": "src/shared/schema.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 124453,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 29,
+          "lineEnd": 29,
+          "title": "Restore PR ref resolution for workflow_dispatch trigger",
+          "whyItBreaks": "The deleted \"Resolve PR refs\" step was the only mechanism that populated base/head for manual runs: it branched on `if [ -n \"$EVENT_HEAD\" ]` and, for workflow_dispatch (where `github.event.pull_request` is empty), fell back to `gh pr view \"$PR_NUM\"` to set head/base/base_ref. The job still advertises and gates the dispatch path (`if: github.event_name == 'workflow_dispatch' || ...` at line 24, required `pr_number` input at line 12, `--pr ${{ github.event.inputs.pr_number || ... }}` at line 47), so dispatch is still an intended path, but nothing resolves the PR refs anymore. On a dispatch run line 29 evaluates `github.event.pull_request.head.sha` to empty and falls back to `github.ref` (the branch the workflow was dispatched on, normally the default branch), so the review runs against the wrong commit instead of the PR head. Line 35 then defaults BASE_REF to 'main' and lines 45-46 set PR_BASE_SHA and PR_HEAD_SHA to empty strings, so the tool's `--github --pr <num>` invocation receives an empty diff range / wrong tree. The prior behavior resolved all three values from the PR number."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 88665,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 29,
+          "lineEnd": 29,
+          "title": "workflow_dispatch path checks out wrong revision and loses PR SHAs",
+          "whyItBreaks": "For the workflow_dispatch trigger, github.event.pull_request.* is empty, so the checkout ref falls back to github.ref (the branch the workflow was dispatched on, normally the default branch) instead of the PR head, and PR_BASE_SHA/PR_HEAD_SHA (lines 45-46) resolve to empty strings. The deleted 'Resolve PR refs' step existed precisely to handle this case, calling `gh pr view $PR_NUM` to resolve headRefOid/baseRefOid/baseRef. The removed `else` branch was dead only for pull_request events; without it, the documented manual trigger (input pr_number, line 13) either reviews the wrong revision or hands the CLI empty diff endpoints."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-manual-dispatch-wrong-ref",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 226538,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": ".github/workflows/review.yml",
+          "lineStart": 26,
+          "lineEnd": 46,
+          "title": "Manual workflow_dispatch now checks out default branch, not the PR head",
+          "whyItBreaks": "The job still runs on workflow_dispatch (if: at line 24) and the required pr_number input promises to review that PR, but the removed 'Resolve PR refs' step was the only thing translating the PR number into refs on a manual run. On workflow_dispatch there is no pull_request context, so github.event.pull_request.head.sha is empty and `ref: ${{ github.event.pull_request.head.sha || github.ref }}` (line 29) checks out github.ref, i.e. the default branch. Likewise PR_BASE_SHA/PR_HEAD_SHA (lines 45-46) evaluate to empty strings, whereas they previously held the gh-resolved baseRefOid/headRefOid. The base branch fetch also falls back to hardcoded 'main' (line 35) rather than the PR's actual base. Result: a manual dispatch reviews the wrong commit (wrong tool/code version in this self-review repo) with empty base/head SHAs."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "workflow_dispatch|dispatch.{0,24}(pr|ref|branch)|github\\.ref|fall.{0,12}back.{0,24}(main|ref)|wrong.{0,20}(branch|ref|pr)|empty.{0,12}diff",
+          "file": ".github/workflows/review.yml",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 198498,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Review-error check now reports neutral, unblocking merges (fail-open)",
+          "whyItBreaks": "When `review(bundle)` throws (gh/git failure, model error, malformed patch), the catch path posts a check-run with conclusion `neutral`. GitHub treats check runs with conclusion `neutral` (or `skipped`) as SUCCESSFUL for required status checks, whereas the previous `failure` conclusion blocked the merge. So an errored review — exactly the case the check exists to guard — now passes branch protection and the PR is mergeable with no review, while the check output text still claims 'Review errored and did NOT pass this PR' (line 193). This is a fail-open downgrade of the failure signal from blocking to passing."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 151047,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Review-error path fails open: 'neutral' check no longer blocks merge",
+          "whyItBreaks": "When review() or the posting calls throw, the catch block posts a check-run with conclusion \"neutral\". GitHub branch protection treats a required check whose conclusion is 'neutral' as passing (only 'failure'/'timed_out'/'cancelled'/'action_required' block), so an errored Needlefish review — e.g. an LLM/API failure, an unparsable response, or a failed `gh pr diff`/`git diff` call — lets the PR proceed to merge with no review at all. This regresses the previous fail-closed behavior (base commit aa99f2f used \"failure\"), and it contradicts the very summary text still sent on that path (line 193: 'Review errored and did NOT pass this PR.'), so the tool reports 'did not pass' while simultaneously un-blocking the merge gate."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 158580,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Review-error path downgrades blocking check-run from failure to neutral",
+          "whyItBreaks": "The catch block still tells the user \"Review errored and did NOT pass this PR\", but posts the check run with conclusion \"neutral\". For GitHub branch protection a neutral conclusion is a SUCCESS conclusion (only failure/cancelled/timed_out/action_required, plus stale/startup_failure, are failing), so any error in the review path (e.g. review() throwing, or the newly added network call `gh pr diff` on line 143 failing) now leaves the \"Needlefish\" required check green and the PR mergeable. Previously (base line 191 = \"failure\") a reviewer crash blocked the merge. Failure (reviewer crashed) becomes indistinguishable from the legitimate neutral \"needs_human\" case, and from success, at the branch-protection decision point. The `process.exitCode = 1` only fails the Actions step; it does not change this API-published check run."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.8571428571428571,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 87641.04761904762,
+    "recallByFixture": {
+      "docker-infra-supply-chain": 1,
+      "t1-inverted-guard": 1,
+      "t3-cache-key-tenant": 1,
+      "ts-data-duplicate": 1,
+      "real-pr1-finding-field-coercion": 1,
+      "real-pr1-manual-dispatch-wrong-ref": 1,
+      "real-pr1-neutral-conclusion": 0
+    },
+    "mustFindHitRateByFixture": {
+      "docker-infra-supply-chain": 1,
+      "t1-inverted-guard": 1,
+      "t3-cache-key-tenant": 1,
+      "ts-data-duplicate": 1,
+      "real-pr1-finding-field-coercion": 1,
+      "real-pr1-manual-dispatch-wrong-ref": 1,
+      "real-pr1-neutral-conclusion": 0.5
+    },
+    "mustFindHitRate": 0.9285714285714286,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 1,
+      "t2": 1,
+      "t3": 0.6666666666666666
+    },
+    "recallByDefectClass": {
+      "supply-chain-curl-pipe-sh": 1,
+      "inverted-permission-check": 1,
+      "cache-key-missing-tenant": 1,
+      "duplicate-reinvented-config": 1,
+      "fail-open-finding-field-coercion": 1,
+      "manual-dispatch-wrong-ref": 1,
+      "fail-open-check-conclusion+stale-checkout-vs-live-head-race": 0
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "supply-chain-curl-pipe-sh": 1,
+      "inverted-permission-check": 1,
+      "cache-key-missing-tenant": 1,
+      "duplicate-reinvented-config": 1,
+      "fail-open-finding-field-coercion": 1,
+      "manual-dispatch-wrong-ref": 1,
+      "fail-open-check-conclusion+stale-checkout-vs-live-head-race": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 9,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": null,
+  "fixtureSetHash": "4d4a2fedd25dbb58",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "docker-infra-supply-chain": 2,
+    "t1-inverted-guard": 1,
+    "t3-cache-key-tenant": 3,
+    "ts-data-duplicate": 2,
+    "real-pr1-finding-field-coercion": 3,
+    "real-pr1-manual-dispatch-wrong-ref": 2,
+    "real-pr1-neutral-conclusion": 3
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "docker-infra-supply-chain",
+    "t1-inverted-guard",
+    "t3-cache-key-tenant",
+    "ts-data-duplicate",
+    "real-pr1-finding-field-coercion",
+    "real-pr1-manual-dispatch-wrong-ref",
+    "real-pr1-neutral-conclusion"
+  ],
+  "fixtureKinds": {
+    "docker-infra-supply-chain": "positive",
+    "t1-inverted-guard": "positive",
+    "t3-cache-key-tenant": "positive",
+    "ts-data-duplicate": "positive",
+    "real-pr1-finding-field-coercion": "positive",
+    "real-pr1-manual-dispatch-wrong-ref": "positive",
+    "real-pr1-neutral-conclusion": "positive"
+  },
+  "fixtureDefectClasses": {
+    "docker-infra-supply-chain": "supply-chain-curl-pipe-sh",
+    "t1-inverted-guard": "inverted-permission-check",
+    "t3-cache-key-tenant": "cache-key-missing-tenant",
+    "ts-data-duplicate": "duplicate-reinvented-config",
+    "real-pr1-finding-field-coercion": "fail-open-finding-field-coercion",
+    "real-pr1-manual-dispatch-wrong-ref": "manual-dispatch-wrong-ref",
+    "real-pr1-neutral-conclusion": "fail-open-check-conclusion+stale-checkout-vs-live-head-race"
+  }
+}

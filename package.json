@@ -17,6 +17,7 @@
     "dist",
     "prompts/critic.md",
     "prompts/deep.md",
+    "prompts/finding-contract.md",
     "prompts/explain.md",
     "prompts/map.md",
     "prompts/review.md",

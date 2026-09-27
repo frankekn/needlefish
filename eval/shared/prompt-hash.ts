@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = path.resolve(__dirname, "..", "..", "prompts");
-const PROMPT_FILES = ["review.md", "deep.md", "critic.md", "map.md"];
+const PROMPT_FILES = ["review.md", "deep.md", "critic.md", "map.md", "finding-contract.md"];
 
 export function promptHash(): string {
   const hash = createHash("sha256");

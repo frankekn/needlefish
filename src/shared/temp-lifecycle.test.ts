@@ -408,10 +408,21 @@ try {
 
     assert.equal(status, expectedStatus);
     assert.equal(exitSignal, null);
-    assert.ok(Date.now() - started < 2000, "termination must stay bounded");
     assert.equal(readFileSync(termMarker, "utf8"), "true");
     assert.equal(existsSync(directory), true, "signal handling must leave deletion to the reaper");
+    // Linux exits the owner immediately after SIGKILL; delivery/reaping of
+    // its detached runner is asynchronous. Keep the same total 2s bound.
+    while (Date.now() - started < 2000) {
+      try {
+        process.kill(-runnerPid, 0);
+      } catch (error) {
+        if (isMissingProcess(error)) break;
+        throw error;
+      }
+      await delay(10);
+    }
     assert.throws(() => process.kill(-runnerPid, 0), isMissingProcess);
+    assert.ok(Date.now() - started < 2000, "termination must stay bounded");
 
     await reapUntilGone(root, directory);
     assert.equal(existsSync(directory), false);

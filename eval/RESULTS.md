@@ -159,6 +159,96 @@ The resident suite ran 1,105/1,106; the one failure was the
 passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
 Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
 
+### 2026-09-26 — Shared finding confidence contract (Class R)
+
+The deep and critic prompts omitted the normalizer's P0/P1/P2 confidence floor
+of 0.7; the deep JSON example used 0.0. Small review alone documented the floor.
+Candidate `45e7252` shares one admission contract across all three stages,
+includes it in packaging and prompt hashing, and keeps the validator and retry
+counts unchanged. The failed production finding itself was not retained by the
+ephemeral runner or proxy; this is a verified contract mismatch, not a claim
+to have recovered its exact text.
+
+Predeclared `gateClass: R`; Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash`, high, all 88 fixtures including a new sealed
+holdout. Control and candidate fixture hash `b1e75143e8e71a27`, anticheat v2.
+Control prompt `e62d0889fc704541`; candidate `d95aa170f3a37cf3`. These are
+explicit before/after observations, not same-prompt leaderboard comparisons.
+
+| Phase | Control | Candidate |
+| --- | --- | --- |
+| Full set, one draw: positive recall | 56/61 | 53/61 |
+| Full set: Tier-1 recall | 1 | 1 |
+| Full set: extra findings on positives | 2 | 0 |
+| 16 divergent fixtures ×3: recall | 34/48 | 38/48 |
+| Confirmation: must-find hits | 41 | 47 |
+| Confirmation: extra findings | 4 | 1 |
+| Invalid-output / cheat counts, all phases | 0 / 0 | 0 / 0 |
+
+No fixture had lower candidate recall in x3 confirmation. The frontend fixture
+had one extra finding only in control's first draw and only in candidate's
+confirmation: both total 1/4, so the evidence does not confirm a sustained
+precision regression. All 272 draws are retained, including misses. The first
+draw's apparent recall regression was not used as the gate verdict.
+
+Reports: `eval/evidence/2026-09-26-confidence/confidence-{control,candidate}-{full,confirm,extra}.json`.
+Local gates: 1,107 tests pass, typecheck/lint/package-install smoke pass, and
+independent P0–P2 commit review clean. Offline Class R gate passes.
+
+Final follow-through: `a131be2` moves the truncation notice before retained
+Markdown after a P2 review found that a suffix could be hidden in an unclosed
+construct. `3817064` fixes a reproduced test-observation race, not runtime
+termination: the same total two-second deadline remains. Final repository
+gates pass 1,108 tests, typecheck/lint/package smoke, and P0–P2 reviews. Neither
+change alters the Class R model path or invalidates its retained draws.
+
+Self.6 live run `36258643489`, check `108450740558`, passed on exact target head:
+54/54 files, six hotspots, eight calls, 26m38s, no actionable findings or reported
+output retries. The actual lane remained Codex → CLIProxyAPI → DeepSeek V4.1
+Flash/high. AMI 1.0.20 (`ami-0e40720e51ec5004a`) remains promoted. This is a
+target-workflow gate, not a rerank of the frozen benchmark above. Bounded
+receipt: `eval/evidence/2026-09-26-confidence/live-canary.json`.
+
+Limitations: the original rejected JSON was not retained; the new 60,084-byte
+summary did not exercise live truncation. Oversized UTF-8/Markdown behavior has
+repository and exact-bundle regressions, not live oversized-publication proof.
+Saiens merge/deploy was not performed; writer-fencing/rollback gates remain.
+
+### 2026-09-26 — GitHub check summary overflow (live gate failed; rolled back)
+
+`gateClass: D`. Posting-only candidate bounds check summaries by UTF-8 bytes
+and links oversized summaries to the already-posted full review. Model inputs,
+candidate artifacts, full review bodies, and verdicts remain unchanged. Summaries
+within the limit remain byte-identical.
+
+The incident's posted review yielded a 68,219-byte summary. The new oversized
+multibyte regression failed before the fix and passed afterward. All 1,104
+resident tests passed, including provenance properties; typecheck, lint, and
+local autoreview passed. No live validation success is claimed: the available
+GitHub identity cannot update the Actions-owned check (HTTP 403, App required).
+
+After explicit deployment authorization, the historical drift fixtures
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots ran
+x3 through Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash` high. All nine
+draws succeeded: recall 1, invalidJsonRate 0, cheatDetectedCount 0,
+baitExposureCount 3 (exposure only), meanNoisePerPositive 0.
+
+The scoped patch was applied to the existing production bundle, without the
+checkout's unrelated opencode changes. The new x64 AMI passed isolated smoke
+and release hash validation. The rollback-equipped live canary, Saiens PR #1273
+run `36244719273`, completed its workflow but produced neutral `needs_human`:
+one deep-review output contained a blocking finding with low confidence,
+leaving coverage 43/54. This fails the zero-malformed-output gate. Check
+`108412340324` was posted successfully, but its summary was only 57,382 bytes;
+this is not live proof of the oversized-summary path.
+
+Automatic rollback restored `/gha/ami/x64` to `ami-04142e6977d7f0d0e`.
+The candidate is rejected for promotion; no validator was weakened and the
+failed draw was not discarded or rerun to manufacture a passing gate.
+Evidence: `/tmp/pr1273-closeout/class-d.json`, `live-canary-checks.json`, and
+`automatic-rollback.json`; durable platform record:
+`gha-platform/changes/2026-09-26-needlefish-check-summary-limit.md`.
+
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
