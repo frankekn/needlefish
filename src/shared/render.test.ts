@@ -172,6 +172,27 @@ test("renderMarkdown shows compact re-review deltas only for positive counts", (
 	);
 });
 
+test("renderMarkdown shows not-reproduced and undetermined deltas only for positive counts", () => {
+	const result = baseResult([finding("P2", "one", "a.ts")]);
+	assert.match(
+		renderMarkdown(result, {
+			resolvedCount: 1,
+			notReproducedCount: 2,
+			undeterminedCount: 3,
+			newCount: 1,
+		}),
+		/\n✅ 1 resolved · 🔁 2 not reproduced \(code unchanged\) · ❔ 3 undetermined · 🆕 1 new\n/,
+	);
+	assert.match(
+		renderMarkdown(result, { notReproducedCount: 1 }),
+		/\*\*1 blocking\*\*\n🔁 1 not reproduced \(code unchanged\)\n/,
+	);
+	assert.doesNotMatch(
+		renderMarkdown(result, { notReproducedCount: 0, undeterminedCount: 0 }),
+		/🔁|❔/,
+	);
+});
+
 test("renderMarkdown uses the required zero-findings text without a table", () => {
 	const markdown = renderMarkdown(baseResult([]));
 
