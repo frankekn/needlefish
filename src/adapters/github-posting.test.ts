@@ -1046,50 +1046,12 @@ test("matchFindings reports prev keys with no match as unmatched", () => {
 	assert.equal(result.unmatched.length, 1);
 });
 
-test("matchFindings pass 2 matches a reworded title when one candidate remains", () => {
-	const prev: FindingKey[] = [
-		{ file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
-	];
-	const curr: Finding[] = [
-		mkFinding({ file: "a.ts", lineStart: 14, category: "bug", title: "missing null check" }),
-		mkFinding({ file: "a.ts", lineStart: 14, category: "security", title: "other" }),
-		mkFinding({ file: "b.ts", lineStart: 10, category: "bug", title: "elsewhere" }),
-	];
-	const result = matchFindings(prev, curr);
-	assert.deepEqual(result.open, [curr[0]]);
-	assert.deepEqual(result.fresh, [curr[1], curr[2]]);
-	assert.deepEqual(result.unmatched, []);
-});
-
-test("matchFindings pass 2 leaves a key unmatched when two candidates qualify", () => {
-	const prev: FindingKey[] = [
-		{ file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
-	];
-	const curr: Finding[] = [
-		mkFinding({ file: "a.ts", lineStart: 8, category: "bug", title: "first rewording" }),
-		mkFinding({ file: "a.ts", lineStart: 12, category: "bug", title: "second rewording" }),
-	];
-	const result = matchFindings(prev, curr);
-	assert.deepEqual(result.open, []);
-	assert.equal(result.fresh.length, 2);
-	assert.deepEqual(result.unmatched, prev);
-});
-
-test("matchFindings exact pass claims its finding before pass 2 runs", () => {
-	// Pass 2 alone (in stored order) would give "reworded" the finding at 11
-	// and leave "exact" ambiguous; the exact pass must win first.
-	const prev: FindingKey[] = [
-		{ file: "a.ts", lineStart: 10, category: "bug", title: "reworded" },
-		{ file: "a.ts", lineStart: 10, category: "bug", title: "exact" },
-	];
-	const curr: Finding[] = [
-		mkFinding({ file: "a.ts", lineStart: 11, category: "bug", title: "exact" }),
-		mkFinding({ file: "a.ts", lineStart: 30, category: "bug", title: "far away" }),
-	];
-	const result = matchFindings(prev, curr);
-	assert.deepEqual(result.open, [curr[0]]);
-	assert.deepEqual(result.fresh, [curr[1]]);
-	assert.deepEqual(result.unmatched, [prev[0]]);
+test("matchFindings keeps a reworded finding at a dropped key's spot fresh", () => {
+	const prev = [{ file: "a.ts", lineStart: 10, category: "bug", title: "old wording" }];
+	const r = matchFindings(prev, [mkFinding({ file: "a.ts", lineStart: 12, category: "bug", title: "new wording" })]);
+	assert.equal(r.fresh.length, 1);
+	assert.equal(r.open.length, 0);
+	assert.deepEqual(r.unmatched, prev);
 });
 
 test("oldSideTouches reads old-side ranges for modified, inserted, and deleted hunks", () => {
@@ -1295,7 +1257,7 @@ test("runGithub reports a finding dropped on an unchanged head as not reproduced
 			summary: "one fixed and one new",
 			findings: [
 				mkFinding({ title: "persisting", lineStart: 1 }),
-				mkFinding({ title: "new issue", lineStart: 1, category: "security" }),
+				mkFinding({ title: "new issue", lineStart: 1 }),
 			],
 			checked: ["checked"],
 			residual_risks: [],
@@ -1970,7 +1932,7 @@ test("runGithub posts a re-review round comment with counts on the second round"
 			summary: "one fixed and one new",
 			findings: [
 				mkFinding({ title: "persisting", lineStart: 1 }),
-				mkFinding({ title: "new issue", lineStart: 1, category: "security" }),
+				mkFinding({ title: "new issue", lineStart: 1 }),
 			],
 			checked: ["checked"],
 			residual_risks: [],

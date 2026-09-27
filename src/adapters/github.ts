@@ -3,6 +3,7 @@ import { review } from "../core/review.js";
 import { renderMarkdown } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
+import { runText } from "../shared/process.js";
 import { formatSuggestionComment } from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
@@ -384,14 +385,12 @@ function nearSameSpot(c: Finding, prev: FindingKey): boolean {
 	);
 }
 
-// Pass 2 ignores the title because models reword titles between rounds; it
-// only claims a match when the spot is unambiguous.
 export function matchFindings(
 	prevKeys: readonly FindingKey[],
 	curr: readonly Finding[],
 ): MatchResult {
 	const matched = new Set<number>();
-	const exactMisses: FindingKey[] = [];
+	const unmatched: FindingKey[] = [];
 	for (const prev of prevKeys) {
 		const hit = curr.findIndex(
 			(c, i) =>
@@ -400,14 +399,6 @@ export function matchFindings(
 				normalizeTitle(c.title) === prev.title,
 		);
 		if (hit >= 0) matched.add(hit);
-		else exactMisses.push(prev);
-	}
-	const unmatched: FindingKey[] = [];
-	for (const prev of exactMisses) {
-		const candidates = curr.flatMap((c, i) =>
-			!matched.has(i) && nearSameSpot(c, prev) ? [i] : [],
-		);
-		if (candidates.length === 1) matched.add(candidates[0]);
 		else unmatched.push(prev);
 	}
 	const fresh: Finding[] = [];
@@ -502,7 +493,10 @@ function touchesSincePrevHead(
 		try {
 			git(["cat-file", "-e", `${prevHead}^{commit}`], repoPath);
 		} catch {
-			git(["fetch", "--no-tags", "origin", prevHead], repoPath);
+			runText("git", ["fetch", "--no-tags", "origin", prevHead], {
+				cwd: repoPath,
+				timeoutMs: 120000,
+			});
 		}
 		return oldSideTouches(
 			git(
