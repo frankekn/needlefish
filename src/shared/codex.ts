@@ -18,6 +18,7 @@ import {
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
+	RunnerTimeoutError,
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
@@ -620,6 +621,13 @@ export async function runCodex(
 				opts.onFailedRaw?.(raw, attempt);
 			}
 			if (!(err instanceof Error) || isRunnerSafetyError(err)) {
+				emitStat(false);
+				throw err;
+			}
+			// A run that exhausted its whole per-call deadline is not retried: the second
+			// attempt waits out the same stuck upstream and doubles the pass to ~20 min.
+			// An idle stall (RunnerIdleTimeoutError) stays retryable; README documents it.
+			if (err.cause instanceof RunnerTimeoutError) {
 				emitStat(false);
 				throw err;
 			}
@@ -1277,7 +1285,9 @@ async function runOpenAIDirect(
 			"model is required for the openai runner (use --model or OPENAI_MODEL)",
 		);
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	// The abort reason is the same typed timeout the spawned runners raise, so the
+	// retry loop treats an exhausted HTTP deadline like any other runner timeout.
+	const timer = setTimeout(() => controller.abort(new RunnerTimeoutError("openai")), timeoutMs);
 	try {
 		const res = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",

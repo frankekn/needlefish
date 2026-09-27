@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Runners: an attempt that exhausts its per-attempt timeout is no longer
+  retried, so a stuck upstream costs one timeout instead of two (about 20
+  minutes per deep pass at the default). An opencode idle stall is still
+  retried. The openai HTTP runner now aborts with the same typed timeout, so
+  its deadline is covered too and its error reads `spawn openai ETIMEDOUT`
+  instead of `This operation was aborted`.
 - GitHub: let self-hosted operators track the current Codex CLI instead of
   enforcing the historical `0.153.4` fleet pin.
 - GitHub: the hosted action now installs the latest release of the selected

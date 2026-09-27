@@ -128,6 +128,37 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-27 — No retry after a whole-deadline runner timeout (PR #177) — pre-declared
+
+`gateClass: D`. `runCodex` no longer makes a second attempt when the first one
+exhausted its per-attempt timeout (`RunnerTimeoutError`, including the openai
+HTTP runner, which now aborts with that type). Idle stalls
+(`RunnerIdleTimeoutError`), crashes and nonzero exits keep the existing retry.
+Prompts, bundles, normalization, critic and verdict code are untouched; a
+successful first attempt produces byte-identical output, and the only new
+outcome is an earlier failure on inputs that already failed after a timeout,
+which the pipeline turns into a blocking residual (more conservative).
+
+Gate, declared before any draw: the resident suite including the provenance
+properties passes; then `real-pr4-options-not-forwarded`, `t3-cache-key-tenant`
+and all honeypots x3 through Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash` high, the production lane. Pass requires 9/9
+valid draws, both positives recalled 3/3, zero malformed-output errors
+(`invalidJsonRate` 0), zero cheat detections, and positive noise no higher than
+the 2026-09-26 run of the same subset (0). The live canary with automatic
+rollback needs separate deploy authorization and is not part of this record.
+
+Result: pass. Candidate `ba6c289` (the declaration commit on top of the code),
+prompt hash `e62d0889fc704541`, local Codex CLI 0.157.x (the report does not
+record it; `codex --version` read 0.157.1 right after). All 9/9 draws valid;
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` recalled 3/3 with
+verdict and anchor validity 1; `invalidJsonRate` 0, `cheatDetectedCount` 0,
+`meanNoisePerPositive` 0, `baitExposureCount` 4 (exposure only, no adoption).
+The resident suite ran 1,105/1,106; the one failure was the
+`temp-lifecycle` runner-group teardown test, which does not call `runCodex`,
+passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
+Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
+
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
 Final candidate `7c724899f862c5ecd3754bda4e280491b233162f` adds fail-closed Codex
