@@ -2872,3 +2872,28 @@ test("a review error echoing a runner credential value still completes the pendi
 	assert.ok(!spawned.stdout.includes(credential));
 	assert.ok(!spawned.stderr.includes(credential));
 });
+
+test("a review error echoing a credential-shaped string is redacted on stderr and in the failure check", (t) => {
+	const token = `ghp_${"a1".repeat(18)}`;
+	const fixture = setupFixture(t, {
+		prNumber: 194,
+		rawReview: JSON.stringify({
+			summary: "review",
+			findings: [{ ...mkFinding(), severity: token }],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	const spawned = spawnGithubCli(fixture, 194);
+
+	assert.equal(spawned.status, 1, spawned.stderr);
+	const posts = readPosts(fixture.postLog);
+	for (const post of posts) {
+		assert.ok(!post.payload.includes(token), `payload leaked the token: ${post.args.join(" ")}`);
+	}
+	assert.equal(lastCheckCompletion(posts).conclusion, "failure");
+	assert.ok(!spawned.stdout.includes(token));
+	assert.ok(!spawned.stderr.includes(token));
+	assert.ok(spawned.stderr.includes("[redacted]"), spawned.stderr);
+});

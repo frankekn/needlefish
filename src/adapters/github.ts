@@ -1281,10 +1281,11 @@ export async function runGithub(
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which
 		// would leave the pending check in_progress.
+		const screenedMsg = screenText(rawMsg, credentialValuesFromEnv(process.env));
 		const msg =
-			screenText(rawMsg, credentialValuesFromEnv(process.env)).kind === "withheld"
+			screenedMsg.kind === "withheld"
 				? WITHHELD_MESSAGE
-				: rawMsg;
+				: outboundText(rawMsg, screenedMsg);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
 		// check on a stale head would hang forever otherwise.
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
