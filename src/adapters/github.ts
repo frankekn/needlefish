@@ -4,6 +4,13 @@ import { renderMarkdown } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText } from "../shared/process.js";
+import {
+	credentialValuesFromEnv,
+	screenPayload,
+	screenText,
+	WITHHELD_MESSAGE,
+	type Screened,
+} from "../shared/outbound-screen.js";
 import { formatSuggestionComment } from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
@@ -62,7 +69,35 @@ function isIdempotentWrite(args: readonly string[]): boolean {
 	return method === "PUT" || method === "PATCH";
 }
 
-function ghPost(args: readonly string[], input?: string): unknown {
+function outboundText(text: string, screened: Screened): string {
+	switch (screened.kind) {
+		case "clean":
+			return text;
+		case "redacted":
+			return screened.text;
+		case "withheld":
+			throw new Error(WITHHELD_MESSAGE);
+	}
+}
+
+// Actions logs are readable by anyone who can read the repository.
+function stdoutSummary(summary: string): string {
+	const screened = screenText(summary, credentialValuesFromEnv(process.env));
+	return screened.kind === "withheld"
+		? `${WITHHELD_MESSAGE}\n`
+		: outboundText(summary, screened);
+}
+
+// Every GitHub write passes here, so screening here covers every payload a
+// PR reader can see.
+function ghPost(args: readonly string[], rawInput?: string): unknown {
+	const input =
+		rawInput === undefined
+			? undefined
+			: outboundText(
+					rawInput,
+					screenPayload(rawInput, credentialValuesFromEnv(process.env)),
+				);
 	if (!isIdempotentWrite(args)) return ghJson(args, input);
 	for (let attempt = 1; ; attempt++) {
 		try {
@@ -1213,7 +1248,7 @@ export async function runGithub(
 				summary,
 				pendingCheckId,
 			);
-			process.stdout.write(summary);
+			process.stdout.write(stdoutSummary(summary));
 		} else {
 			const { comments, inlined } = buildInlineComments(result, patch, {
 				repoPath,
@@ -1239,10 +1274,18 @@ export async function runGithub(
 				summary,
 				pendingCheckId,
 			);
-			process.stdout.write(summary);
+			process.stdout.write(stdoutSummary(summary));
 		}
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
+		const rawMsg = err instanceof Error ? err.message : String(err);
+		// A thrown message can carry runner or model text. Replacing a withheld
+		// one keeps the failure check below from being withheld too, which
+		// would leave the pending check in_progress.
+		const screenedMsg = screenText(rawMsg, credentialValuesFromEnv(process.env));
+		const msg =
+			screenedMsg.kind === "withheld"
+				? WITHHELD_MESSAGE
+				: outboundText(rawMsg, screenedMsg);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
 		// check on a stale head would hang forever otherwise.
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
