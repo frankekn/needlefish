@@ -4,6 +4,7 @@ import { renderMarkdown } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText } from "../shared/process.js";
+import { envFlagOn } from "../shared/env.js";
 import {
 	credentialValuesFromEnv,
 	screenPayload,
@@ -1024,12 +1025,48 @@ function minimizePreviousRoundComments(
 
 // The machine-readable reason a GitHub review was skipped, mirrored on
 // stdout as `needlefish-skip {json}` alongside the existing prose lines.
-export type SkipReason = "closed_pr" | "stale_head" | "same_head";
+export type SkipReason =
+	| "closed_pr"
+	| "stale_head"
+	| "same_head"
+	| "untrusted_author";
 
 function emitSkip(reason: SkipReason, prNumber: number, headSha: string): void {
 	process.stdout.write(
 		`needlefish-skip ${JSON.stringify({ reason, prNumber, headSha })}\n`,
 	);
+}
+
+type PrAuthor = { readonly association: string; readonly type: string };
+
+const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set([
+	"OWNER",
+	"MEMBER",
+	"COLLABORATOR",
+]);
+
+// Model CLIs run unrestricted on trusted runners, so the PR author (whose
+// title and body reach the model) must be trusted. An unreadable author
+// throws instead of skipping: the neutral skip check is terminal for
+// reconciliation, so a misclassified transient read would never be retried.
+function prAuthor(pr: JsonRecord): PrAuthor {
+	const association = pr.author_association;
+	const type = isRecord(pr.user) ? pr.user.type : undefined;
+	if (
+		typeof association !== "string" ||
+		!association ||
+		typeof type !== "string" ||
+		!type
+	) {
+		throw new Error(
+			"GitHub PR response has no author_association or user.type; cannot classify the PR author",
+		);
+	}
+	return { association, type };
+}
+
+function isTrustedAuthor(author: PrAuthor): boolean {
+	return TRUSTED_ASSOCIATIONS.has(author.association) && author.type !== "Bot";
 }
 
 function postReviewSkipReason(
@@ -1080,6 +1117,26 @@ export async function runGithub(
 			prNumber,
 			process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha") || "",
 		);
+		return;
+	}
+	const author = prAuthor(pr);
+	if (
+		!isTrustedAuthor(author) &&
+		!envFlagOn("NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR")
+	) {
+		const prHead = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha");
+		if (!prHead) throw new Error("Could not resolve PR head SHA");
+		const reason = `PR author (association ${author.association}, type ${author.type}) is not trusted`;
+		process.stdout.write(`Needlefish skipped PR #${prNumber}: ${reason}.\n`);
+		postCheck(
+			repo,
+			prHead,
+			null,
+			"neutral",
+			"Needlefish: skipped (author not trusted)",
+			`Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. ${reason}. A maintainer who has read this PR can review it by re-running with NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1 (the review workflow's allow_untrusted_author: true input sets it).`,
+		);
+		emitSkip("untrusted_author", prNumber, prHead);
 		return;
 	}
 	const headSha =

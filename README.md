@@ -325,9 +325,9 @@ review never passes a PR because the check goes `failure`. When a finding
 includes a validated exact replacement, its inline comment carries a native
 GitHub suggestion block; failed validation falls back to a plain comment.
 
-Skipped reviews — a closed PR, a head that moved mid-review, or an
-already-reviewed head — still print a machine-readable
-`needlefish-skip {"reason":"closed_pr"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
+Skipped reviews — a closed PR, an untrusted author, a head that moved
+mid-review, or an already-reviewed head — still print a machine-readable
+`needlefish-skip {"reason":"closed_pr"|"untrusted_author"|"stale_head"|"same_head","prNumber":<n>,"headSha":"<sha>"}`
 line to stdout for automation, alongside the existing prose notice.
 
 ### Hosted (any repo)
@@ -380,7 +380,9 @@ the latest release of the selected runner's CLI (`@openai/codex`,
 - Only PRs whose author is an OWNER, MEMBER, or COLLABORATOR and not a bot
   are reviewed. Others get a neutral `Needlefish` check instead; after
   reading the PR, a maintainer can review it with
-  `allow_untrusted_author: true`.
+  `allow_untrusted_author: true`. GitHub mode itself enforces this gate, so a
+  custom workflow that calls `needlefish --github` directly gets it too; set
+  `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1` there to override.
 
 **Comment commands:** the composite action does not add PR comment commands
 to the consumer repo. This repository's `.github/workflows/commands.yml`
@@ -448,7 +450,8 @@ checks, checkout credential isolation, and hosted finalization remain enforced.
 Model CLIs run unrestricted on these runners, so PRs from untrusted or bot
 authors are skipped with a neutral check; dispatch `review.yml` manually with
 `allow_untrusted_author: true` to review one after reading it. Reconciliation
-never sets that input.
+never sets that input. The installed binary enforces the same gate in GitHub
+mode; `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1` is its override.
 
 ## Runners
 

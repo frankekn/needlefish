@@ -88,6 +88,7 @@ Env:
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
   NEEDLEFISH_GH_POST_RETRY_MS  base delay between idempotent GitHub write retries on a 5xx (default: 250)
+  NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR  1 = --github reviews PRs whose author is not OWNER/MEMBER/COLLABORATOR, or is a bot
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)

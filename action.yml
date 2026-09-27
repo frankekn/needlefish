@@ -162,6 +162,7 @@ runs:
         RUNNER_INPUT: ${{ inputs.runner }}
         MODEL_INPUT: ${{ inputs.model }}
         TIMEOUT_INPUT: ${{ inputs.timeout_ms }}
+        NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author == 'true' && '1' || '' }}
       run: |
         pr="${PR_INPUT:-$EVENT_PR}"
         if [ -z "$pr" ]; then
