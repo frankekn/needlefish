@@ -67,10 +67,18 @@ runs:
           author_association="$EVENT_AUTHOR_ASSOCIATION"
           author_type="$EVENT_AUTHOR_TYPE"
         else
-          mapfile -t pr_fields < <(gh api "repos/$REPO/pulls/$pr" --jq '.head.sha, .author_association, .user.type')
+          if ! pr_meta="$(gh api "repos/$REPO/pulls/$pr" --jq '(.head.sha // ""), (.author_association // ""), (.user.type // "")')"; then
+            echo "::error::could not read PR #$pr metadata" >&2
+            exit 1
+          fi
+          mapfile -t pr_fields <<< "$pr_meta"
           head="${pr_fields[0]:-}"
           author_association="${pr_fields[1]:-}"
           author_type="${pr_fields[2]:-}"
+          if [ -z "$head" ] || [ -z "$author_association" ]; then
+            echo "::error::PR #$pr returned no head or author association" >&2
+            exit 1
+          fi
         fi
         trusted_author=false
         if [ "$author_type" != "Bot" ]; then

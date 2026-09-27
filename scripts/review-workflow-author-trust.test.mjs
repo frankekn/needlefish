@@ -86,7 +86,9 @@ done
 case "$path" in
   repos/*/check-runs) exit 0 ;;
   *"/check-runs?"*) jq -r "$jq_filter" "$STUB_ROOT/check-runs.json" ;;
-  *"/pulls/"*) jq -r "$jq_filter" "$STUB_ROOT/pull.json" ;;
+  *"/pulls/"*)
+    if [ -n "\${STUB_PULLS_FAIL:-}" ]; then echo "HTTP 502" >&2; exit 1; fi
+    jq -r "$jq_filter" "$STUB_ROOT/pull.json" ;;
   *) echo "unexpected api path $path" >&2; exit 2 ;;
 esac
 `,
@@ -238,14 +240,6 @@ test("api path: a Bot author is untrusted even with MEMBER association", () => {
 	);
 });
 
-test("api path: missing author metadata fails closed as untrusted", () => {
-	const r = runStep(resolveScript, apiEnv(), {
-		pr: { ...pull(), author_association: null, user: null },
-	});
-	assert.equal(r.outputs.skip, "true");
-	assert.equal(r.posts.length, 1, r.log);
-});
-
 test("allow_untrusted_author, false by default on both triggers, is the only way an untrusted author proceeds", () => {
 	const on = parse(workflow).on;
 	for (const trigger of ["workflow_dispatch", "workflow_call"]) {
@@ -389,4 +383,21 @@ test("action: api path classifies the same way and the override proceeds", () =>
 	const allowed = runStep(trustStep.run, actionEnv({ association: "NONE", allow: "true" }));
 	assert.equal(allowed.outputs.skip, undefined);
 	assert.deepEqual(allowed.posts, []);
+});
+
+test("an unreadable author fails the review step instead of skipping as untrusted", () => {
+	const failed = runStep(resolveScript, { ...apiEnv(), STUB_PULLS_FAIL: "1" });
+	assert.notEqual(failed.status, 0);
+	assert.notEqual(failed.outputs.skip, "true");
+	assert.deepEqual(failed.posts, []);
+	const blank = runStep(resolveScript, apiEnv(), { pr: { ...pull(), author_association: null, user: null } });
+	assert.notEqual(blank.status, 0);
+	assert.deepEqual(blank.posts, []);
+});
+
+test("an unreadable PR fails action.yml instead of skipping green", () => {
+	const failed = runStep(trustStep.run, { ...actionEnv({ eventHead: "" }), STUB_PULLS_FAIL: "1" });
+	assert.notEqual(failed.status, 0);
+	assert.notEqual(failed.outputs.skip, "true");
+	assert.deepEqual(failed.posts, []);
 });

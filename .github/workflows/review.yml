@@ -138,9 +138,17 @@ jobs:
             base="${pr_fields[1]}"
             head_repo="${pr_fields[2]}"
             state="${pr_fields[3]}"
-            mapfile -t author_fields < <(gh api "repos/$REPO/pulls/$PR_NUM" --jq '.author_association, .user.type')
+            if ! author_meta="$(gh api "repos/$REPO/pulls/$PR_NUM" --jq '(.author_association // ""), (.user.type // "")')"; then
+              echo "::error::could not read the author of PR #$PR_NUM"
+              exit 1
+            fi
+            mapfile -t author_fields <<< "$author_meta"
             author_association="${author_fields[0]:-}"
             author_type="${author_fields[1]:-}"
+            if [ -z "$author_association" ]; then
+              echo "::error::PR #$PR_NUM returned no author association"
+              exit 1
+            fi
           fi
 
           trusted_author=false
