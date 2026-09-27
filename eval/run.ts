@@ -1,4 +1,5 @@
 import {
+	existsSync,
 	readFileSync,
 	readlinkSync,
 	writeFileSync,
@@ -688,7 +689,11 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			: args.runner === "grok"
 				? [["GROK_CONFIG_TOML", home ? path.join(home, ".grok", "config.toml") : null]]
 				: args.runner === "opencode"
-					? [["OPENCODE_CONFIG_JSON", home ? path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode", "opencode.json") : null]]
+					? [["OPENCODE_CONFIG_JSON", home ? (() => {
+							const base = path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode");
+							const json = path.join(base, "opencode.json");
+							return existsSync(json) ? json : path.join(base, "opencode.jsonc");
+						})() : null]]
 					: [];
 	const identities = files.map(([key, file]): [string, string] => {
 		if (file === null) return [key, "missing"];

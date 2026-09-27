@@ -12,7 +12,7 @@ const EXPECTED_INSTALL_MESSAGE = [
   "Install one:",
   "  codex: npm install -g @openai/codex",
   "  claude: npm install -g @anthropic-ai/claude-code",
-  "  opencode: npm install -g opencode-ai",
+  "  opencode: npm install -g @opencode/cli",
 ].join("\n");
 const ENV_KEYS = ["PATH", "NEEDLEFISH_RUNNER", "CODEX_BIN", "CLAUDE_BIN", "OPENCODE_BIN"] as const;
 

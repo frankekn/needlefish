@@ -40,7 +40,7 @@ export const RUNNER_DEFINITIONS = [
     name: "opencode",
     autoDetect: {
       binEnv: "OPENCODE_BIN",
-      installCommand: "npm install -g opencode-ai",
+      installCommand: "npm install -g @opencode/cli",
     },
     modelEnv: "OPENCODE_MODEL",
     envAllowlist: ["OPENCODE_BIN", "OPENCODE_MODEL", "OPENAI_API_KEY"],

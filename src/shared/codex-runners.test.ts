@@ -10,7 +10,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runCodex, RunnerOperationalError } from "./codex";
+import {
+	extractJson,
+	runCodex,
+	RunnerOperationalError,
+	safeOutputCause,
+	safeRunnerCause,
+} from "./codex";
 import {
 	commitAll,
 	gitText,
@@ -147,12 +153,11 @@ test("runCodex extracts opencode json text output", async (t) => {
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
+		"--file",
 	]);
-	assert.notEqual(args[6], repo);
-	assert.equal(args[7], "--file");
+	assert.equal(args.includes(repo), false);
 	assert.equal(
 		args.at(-1),
 		"Use the attached prompt file as your complete instruction.",
@@ -633,12 +638,147 @@ test("runCodex invokes opencode without an opt-in gate", async (t) => {
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
+		"--file",
 	]);
+	assert.equal(args.includes(repo), false);
 	assert.equal(readFileSync(inputPath, "utf8"), "prompt");
 	assert.equal(readFileSync(stdinPath, "utf8"), "");
+});
+
+test("runCodex maps opencode effort into the model variant segment", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "opencode-bin.js");
+	const argsPath = path.join(tmp, "args.json");
+	const configPath = path.join(tmp, "config.txt");
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const args = process.argv.slice(2);",
+			`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
+			`fs.writeFileSync(${JSON.stringify(configPath)}, process.env.OPENCODE_CONFIG_CONTENT || '');`,
+			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.OPENCODE_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	const output = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free",
+		reasoningEffort: "max",
+	});
+	const args = readStringArray(argsPath);
+
+	assert.equal(output, '{"ok":true}');
+	assert.equal(args.includes("--variant"), false);
+	assert.equal(
+		args[args.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#max",
+	);
+	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
+		permission: "allow",
+		agent: { build: { permission: "allow" } },
+		providers: { opencode: { models: { "mimo-v2.6-flash-free": {} } } },
+	});
+
+	const outputDefault = await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free",
+		reasoningEffort: "default",
+	});
+	const argsDefault = readStringArray(argsPath);
+	assert.equal(outputDefault, '{"ok":true}');
+	assert.equal(
+		argsDefault[argsDefault.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free",
+	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "max",
+	});
+	const argsReplaced = readStringArray(argsPath);
+	assert.equal(
+		argsReplaced[argsReplaced.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#max",
+	);
+
+	await runCodex("prompt", {
+		repoPath: repo,
+		targetHeadSha: headSha(repo),
+		timeoutMs: 1000,
+		model: "opencode/mimo-v2.6-flash-free#high",
+		reasoningEffort: "default",
+	});
+	const argsKept = readStringArray(argsPath);
+	assert.equal(
+		argsKept[argsKept.indexOf("--model") + 1],
+		"opencode/mimo-v2.6-flash-free#high",
+	);
+});
+
+test("runCodex rejects opencode effort without a specified model", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+		model: process.env.OPENCODE_MODEL,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		if (previous.model === undefined) delete process.env.OPENCODE_MODEL;
+		else process.env.OPENCODE_MODEL = previous.model;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	delete process.env.OPENCODE_MODEL;
+	process.env.OPENCODE_BIN = "/bin/true";
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	await assert.rejects(
+		() =>
+			runCodex("prompt", {
+				repoPath: repo,
+				targetHeadSha: headSha(repo),
+				timeoutMs: 1000,
+				reasoningEffort: "max",
+			}),
+		(err) => {
+			assert.ok(err instanceof RunnerOperationalError);
+			assert.match(
+				err.message,
+				/opencode reasoning effort requires a model to be specified/,
+			);
+			return true;
+		},
+	);
 });
 
 test("runCodex invokes pi with default provider/model/thinking flags and the prompt on stdin", async () => {
@@ -724,4 +864,151 @@ test("runCodex rejects an invalid pi thinking effort", async () => {
 		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
 		rmSync(tmp, { recursive: true, force: true });
 	}
+});
+
+test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
+	// Regression: a CLIProxyAPI 429 whose body carries model_cooldown plus an
+	// insufficient_quota upstream error previously classified as undefined, so the
+	// review workflow saw no infra token and refused to advance the fallback chain.
+	const cpaCooldown =
+		'429: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: Your token-plan 1-week quota has been exhausted. The quota will reset at 09-23 13:59:00 UTC."}';
+	assert.equal(safeRunnerCause(cpaCooldown), "usage limit");
+
+	// A bare 429 with no quota wording still classifies as rate limited.
+	assert.equal(safeRunnerCause("429 Too Many Requests"), "rate limited");
+	assert.equal(safeRunnerCause('{"code":"model_cooldown"}'), "rate limited");
+
+	// Phrasings that already worked must keep working.
+	assert.equal(safeRunnerCause("quota exceeded for this key"), "usage limit");
+	assert.equal(safeRunnerCause("rate limit reached"), "rate limited");
+
+	// Real codex output for an exhausted budget, captured from codex-cli 0.153.4 and
+	// 0.155.1 against a rate-limited CLIProxyAPI route.
+	assert.equal(
+		safeRunnerCause(
+			"ERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// Ordering regression: `\b40[13]\b` matches incidental numbers (session ids,
+	// token counts, latency). A real 429 whose output also contains such a number
+	// must still classify as rate limited, because the review workflow refuses to
+	// advance the fallback chain on an auth classification.
+	assert.equal(
+		safeRunnerCause(
+			"tokens used: 401\nERROR: exceeded retry limit, last status: 429 Too Many Requests",
+		),
+		"rate limited",
+	);
+
+	// 401/403 stay auth when no rate-limit signal is present, and an unrelated
+	// failure stays unclassified so the chain does not advance on a genuine
+	// review defect.
+	assert.equal(safeRunnerCause("403 forbidden"), "auth rejected");
+	assert.equal(safeRunnerCause("401 unauthorized"), "auth rejected");
+	assert.equal(safeRunnerCause("TypeError: x is not a function"), undefined);
+	assert.equal(safeRunnerCause(""), undefined);
+});
+
+
+test("safeOutputCause classifies only upstream-caused unparseable output", () => {
+	// Nothing was delivered. A runner can exit 0 and still leave no output: the
+	// out-file never gets written, reasoning consumes the whole token ceiling, or
+	// the gateway answers with an empty body. There is no review content in an
+	// empty response, so advancing the fallback chain cannot mask a review defect.
+	assert.equal(safeOutputCause(""), "empty output");
+	assert.equal(safeOutputCause("\n \t\n"), "empty output");
+
+	// The stream stopped inside a fence: the opening delimiter has no partner.
+	assert.equal(
+		safeOutputCause('```json\n{"summary":"partial'),
+		"truncated output",
+	);
+	assert.equal(
+		safeOutputCause('findings below\n```json\n{"a":1}\n```\n```js'),
+		"truncated output",
+	);
+
+	// A gateway error page passed through with a zero exit status is not a model
+	// response at all.
+	assert.equal(
+		safeOutputCause("<html><head><title>502 Bad Gateway</title></head></html>"),
+		"html error page",
+	);
+	assert.equal(
+		safeOutputCause('<?xml version="1.0"?><Error><Code>Throttled</Code></Error>'),
+		"html error page",
+	);
+
+	// Responses that arrived WHOLE and merely break the JSON contract stay
+	// unclassified: that is where a prompt, fixture or model-capability defect
+	// hides, and the workflow must not spend four providers reproducing it.
+	assert.equal(safeOutputCause("I cannot review this diff."), undefined);
+	assert.equal(safeOutputCause('```ts\n{"wrong":true}\n```'), undefined);
+	assert.equal(safeOutputCause("```\nnot json at all\n```"), undefined);
+	// Prose that merely mentions HTML does not qualify; only a document does.
+	assert.equal(
+		safeOutputCause("the handler returns <html> on error"),
+		undefined,
+	);
+});
+
+test("extractJson emits an infra token only for empty or truncated output", () => {
+	// Regression: every unparseable-output path threw the same tokenless message,
+	// so review.yml classified a provider that returned nothing as non-infra and
+	// failed the whole review instead of advancing the fallback chain.
+
+	// Empty runner output, and a fence whose body holds nothing to parse.
+	assert.throws(
+		() => extractJson(""),
+		/no JSON object found in codex output; likely cause: empty output/,
+	);
+	assert.throws(
+		() => extractJson("```json\n```"),
+		/no JSON object found in codex output; likely cause: empty output/,
+	);
+
+	// Truncated mid-fence output loses its closing delimiter, so no fence matches
+	// and the whole text is classified.
+	assert.throws(
+		() => extractJson('```json\n{"summary":"cut off'),
+		/no JSON object found in codex output; likely cause: truncated output/,
+	);
+
+	assert.throws(
+		() => extractJson("<!doctype html>\n<h1>504 Gateway Timeout</h1>"),
+		/no JSON object found in codex output; likely cause: html error page/,
+	);
+
+	// Complete-but-wrong output keeps the bare message: a wrong fence tag, a
+	// fenced non-JSON body, and plain prose are all model-side contract failures.
+	for (const whole of [
+		'```ts\n{"wrong":true}\n```',
+		"```json\nno object here\n```",
+		"I reviewed the diff but will not answer in JSON.",
+	]) {
+		let caught: unknown;
+		try {
+			extractJson(whole);
+			assert.fail("expected extractJson to throw");
+		} catch (err) {
+			caught = err;
+		}
+		assert.ok(caught instanceof Error);
+		assert.match((caught as Error).message, /no JSON object found/);
+		assert.doesNotMatch((caught as Error).message, /likely cause/);
+	}
+
+	// Syntactically invalid JSON stays on its own tokenless message: the response
+	// arrived whole, and "cut off" vs "malformed" there would rest on V8 wording.
+	let invalid: unknown;
+	try {
+		extractJson('```json\n{"a": 1,}\n```');
+		assert.fail("expected extractJson to throw");
+	} catch (err) {
+		invalid = err;
+	}
+	assert.match((invalid as Error).message, /invalid JSON in codex output/);
+	assert.doesNotMatch((invalid as Error).message, /likely cause/);
 });
