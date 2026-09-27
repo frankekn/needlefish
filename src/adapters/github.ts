@@ -3,6 +3,7 @@ import { review } from "../core/review.js";
 import { renderMarkdown } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
+import { runText } from "../shared/process.js";
 import { formatSuggestionComment } from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
@@ -243,10 +244,10 @@ function pathFromDiffHeaderRest(rest: string): string | null {
 	return tab === -1 ? rest : rest.slice(0, tab);
 }
 
-function headPathFromPlusPlusPlus(line: string): string | null {
+function pathFromFileHeader(line: string, side: "a/" | "b/"): string | null {
 	const decoded = pathFromDiffHeaderRest(line.slice(4));
 	if (decoded === null || decoded === "/dev/null") return null;
-	if (!decoded.startsWith("b/")) return null;
+	if (!decoded.startsWith(side)) return null;
 	const file = decoded.slice(2);
 	return file === "" ? null : file;
 }
@@ -264,7 +265,7 @@ export function headLinesInPatch(
 	let file: string | null = null;
 	for (const raw of patch.split("\n")) {
 		if (raw.startsWith("+++ ")) {
-			file = headPathFromPlusPlusPlus(raw);
+			file = pathFromFileHeader(raw, "b/");
 			if (file && !ranges.has(file)) ranges.set(file, []);
 			continue;
 		}
@@ -371,40 +372,142 @@ export function parseState(body: string): RoundState | null {
 export interface MatchResult {
 	readonly fresh: readonly Finding[];
 	readonly open: readonly Finding[];
-	readonly resolvedCount: number;
+	readonly unmatched: readonly FindingKey[];
 }
 
+const LINE_DRIFT = 10;
+
+function nearSameSpot(c: Finding, prev: FindingKey): boolean {
+	return (
+		c.file === prev.file &&
+		c.category === prev.category &&
+		Math.abs(c.lineStart - prev.lineStart) <= LINE_DRIFT
+	);
+}
 
 export function matchFindings(
 	prevKeys: readonly FindingKey[],
 	curr: readonly Finding[],
 ): MatchResult {
 	const matched = new Set<number>();
-	let resolvedCount = 0;
+	const unmatched: FindingKey[] = [];
 	for (const prev of prevKeys) {
-		let hit = -1;
-		for (let i = 0; i < curr.length; i++) {
-			if (matched.has(i)) continue;
-			const c = curr[i];
-			if (
-				c.file === prev.file &&
-				c.category === prev.category &&
-				normalizeTitle(c.title) === prev.title &&
-				Math.abs(c.lineStart - prev.lineStart) <= 10
-			) {
-				hit = i;
-				break;
-			}
-		}
+		const hit = curr.findIndex(
+			(c, i) =>
+				!matched.has(i) &&
+				nearSameSpot(c, prev) &&
+				normalizeTitle(c.title) === prev.title,
+		);
 		if (hit >= 0) matched.add(hit);
-		else resolvedCount++;
+		else unmatched.push(prev);
 	}
 	const fresh: Finding[] = [];
 	const open: Finding[] = [];
 	curr.forEach((f, i) => {
 		(matched.has(i) ? open : fresh).push(f);
 	});
-	return { fresh, open, resolvedCount };
+	return { fresh, open, unmatched };
+}
+
+export type PriorFate = "resolved" | "not_reproduced" | "undetermined";
+
+export type PriorFateCounts = Readonly<Record<PriorFate, number>>;
+
+const WHOLE_FILE: [number, number] = [1, Number.POSITIVE_INFINITY];
+
+// Old-side (previous head) line ranges per path from `git diff -U0`. A
+// zero-length hunk `-a,0` sits between old lines a and a+1, so it touches
+// both. A deleted path is touched everywhere; with --no-renames a rename
+// arrives as a deletion of the old path. File headers are read only between
+// `diff --git` and the first hunk, so a removed line starting "-- " is not
+// mistaken for a `---` header.
+export function oldSideTouches(
+	diff: string,
+): Map<string, Array<[number, number]>> {
+	const touches = new Map<string, Array<[number, number]>>();
+	let file: string | null = null;
+	let inHeader = false;
+	for (const raw of diff.split("\n")) {
+		if (raw.startsWith("diff --git ")) {
+			inHeader = true;
+			file = null;
+			continue;
+		}
+		if (inHeader && raw.startsWith("--- ")) {
+			file = pathFromFileHeader(raw, "a/");
+			if (file && !touches.has(file)) touches.set(file, []);
+			continue;
+		}
+		if (inHeader && raw.startsWith("+++ ")) {
+			if (file && pathFromDiffHeaderRest(raw.slice(4)) === "/dev/null") {
+				touches.get(file)!.push(WHOLE_FILE);
+			}
+			continue;
+		}
+		if (raw.startsWith("@@")) {
+			inHeader = false;
+			const h = /^@@ -(\d+)(?:,(\d+))? \+/.exec(raw);
+			if (file && h) {
+				const a = Number(h[1]);
+				const b = h[2] === undefined ? 1 : Number(h[2]);
+				touches.get(file)!.push(b === 0 ? [a, a + 1] : [a, a + b - 1]);
+			}
+		}
+	}
+	return touches;
+}
+
+export function classifyUnmatched(
+	unmatched: readonly FindingKey[],
+	touches: ReadonlyMap<string, ReadonlyArray<readonly [number, number]>> | null,
+): PriorFateCounts {
+	const counts: Record<PriorFate, number> = {
+		resolved: 0,
+		not_reproduced: 0,
+		undetermined: 0,
+	};
+	for (const key of unmatched) {
+		if (touches === null) {
+			counts.undetermined++;
+			continue;
+		}
+		const lo = key.lineStart - LINE_DRIFT;
+		const hi = key.lineStart + LINE_DRIFT;
+		const changed = (touches.get(key.file) ?? []).some(
+			([start, end]) => start <= hi && end >= lo,
+		);
+		counts[changed ? "resolved" : "not_reproduced"]++;
+	}
+	return counts;
+}
+
+// null means the previous head is not available locally, even after one
+// fetch; every unmatched key is then undetermined rather than guessed.
+function touchesSincePrevHead(
+	repoPath: string,
+	prevHead: string,
+	headSha: string,
+): Map<string, Array<[number, number]>> | null {
+	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(prevHead)) return null;
+	try {
+		try {
+			git(["cat-file", "-e", `${prevHead}^{commit}`], repoPath);
+		} catch {
+			runText("git", ["fetch", "--no-tags", "origin", prevHead], {
+				cwd: repoPath,
+				timeoutMs: 120000,
+			});
+		}
+		return oldSideTouches(
+			git(
+				["diff", "--no-color", "--no-renames", "-U0", prevHead, headSha],
+				repoPath,
+				{ preserveOutput: true },
+			),
+		);
+	} catch {
+		return null;
+	}
 }
 
 type InlineComment = {
@@ -735,13 +838,18 @@ function postErrorComment(repo: string, prNumber: number, msg: string): void {
 function buildRoundCommentBody(
 	result: ReviewResult,
 	headSha: string,
-	resolvedCount: number,
+	fates: PriorFateCounts,
 	open: readonly Finding[],
 	newCount: number,
 ): string {
 	const lines: string[] = [];
+	const counts = [`✅ ${fates.resolved} resolved`];
+	if (fates.not_reproduced > 0)
+		counts.push(`🔁 ${fates.not_reproduced} not reproduced (code unchanged)`);
+	if (fates.undetermined > 0) counts.push(`❔ ${fates.undetermined} undetermined`);
+	counts.push(`❌ ${open.length} still open`, `🆕 ${newCount} new`);
 	lines.push(
-		`**Needlefish re-review** @ ${headSha.slice(0, 7)} — ✅ ${resolvedCount} resolved · ❌ ${open.length} still open · 🆕 ${newCount} new → ${VERDICT_HEADLINE_WORD[result.verdict]}`,
+		`**Needlefish re-review** @ ${headSha.slice(0, 7)} — ${counts.join(" · ")} → ${VERDICT_HEADLINE_WORD[result.verdict]}`,
 	);
 	if (open.length > 0) {
 		const top = sortBySeverity(open)[0];
@@ -1039,9 +1147,15 @@ export async function runGithub(
 		}
 
 		if (prev) {
-			const { fresh, open, resolvedCount } = matchFindings(
+			const { fresh, open, unmatched } = matchFindings(
 				prev.state.findings,
 				result.findings,
+			);
+			const fates = classifyUnmatched(
+				unmatched,
+				unmatched.length > 0
+					? touchesSincePrevHead(repoPath, prev.state.headSha, headSha)
+					: null,
 			);
 			const freshResult: ReviewResult = { ...result, findings: fresh };
 			const { comments: freshComments, inlined: freshInlined } =
@@ -1052,7 +1166,9 @@ export async function runGithub(
 			const renderOpts = {
 				inlinedFindings: freshInlined,
 				openFindings: open,
-				resolvedCount,
+				resolvedCount: fates.resolved,
+				notReproducedCount: fates.not_reproduced,
+				undeterminedCount: fates.undetermined,
 				// New = not matched to a previous-round key.
 				newCount: fresh.length,
 				repoSlug: repo,
@@ -1072,7 +1188,7 @@ export async function runGithub(
 					buildRoundCommentBody(
 						result,
 						headSha,
-						resolvedCount,
+						fates,
 						open,
 						renderOpts.newCount,
 					),

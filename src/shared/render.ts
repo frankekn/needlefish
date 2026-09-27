@@ -27,6 +27,8 @@ export function renderMarkdown(
 		inlinedFindings?: ReadonlySet<Finding>;
 		openFindings?: readonly Finding[];
 		resolvedCount?: number;
+		notReproducedCount?: number;
+		undeterminedCount?: number;
 		newCount?: number;
 		repoSlug?: string;
 		stateMarker?: string;
@@ -92,6 +94,12 @@ export function renderMarkdown(
 	const delta: string[] = [];
 	if (opts?.resolvedCount && opts.resolvedCount > 0) {
 		delta.push(`✅ ${opts.resolvedCount} resolved`);
+	}
+	if (opts?.notReproducedCount && opts.notReproducedCount > 0) {
+		delta.push(`🔁 ${opts.notReproducedCount} not reproduced (code unchanged)`);
+	}
+	if (opts?.undeterminedCount && opts.undeterminedCount > 0) {
+		delta.push(`❔ ${opts.undeterminedCount} undetermined`);
 	}
 	if (opts?.newCount && opts.newCount > 0) {
 		delta.push(`🆕 ${opts.newCount} new`);

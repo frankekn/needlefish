@@ -22,6 +22,8 @@ import {
 	renderState,
 	parseState,
 	matchFindings,
+	oldSideTouches,
+	classifyUnmatched,
 	type FindingKey,
 	runGithub,
 } from "./github";
@@ -936,7 +938,7 @@ test("matchFindings classifies identical findings as open", () => {
 	const result = matchFindings(prev, curr);
 	assert.equal(result.open.length, 1);
 	assert.equal(result.fresh.length, 0);
-	assert.equal(result.resolvedCount, 0);
+	assert.equal(result.unmatched.length, 0);
 });
 
 test("matchFindings tolerates line drift within 10 lines", () => {
@@ -954,10 +956,10 @@ test("matchFindings tolerates line drift within 10 lines", () => {
 	const result = matchFindings(prev, curr);
 	assert.equal(result.open.length, 1);
 	assert.equal(result.fresh.length, 0);
-	assert.equal(result.resolvedCount, 0);
+	assert.equal(result.unmatched.length, 0);
 });
 
-test("matchFindings treats line drift beyond 10 as fresh and resolved", () => {
+test("matchFindings treats line drift beyond 10 as fresh and unmatched", () => {
 	const prev: FindingKey[] = [
 		{ file: "a.ts", lineStart: 10, category: "bug", title: "null deref" },
 	];
@@ -972,7 +974,7 @@ test("matchFindings treats line drift beyond 10 as fresh and resolved", () => {
 	const result = matchFindings(prev, curr);
 	assert.equal(result.open.length, 0);
 	assert.equal(result.fresh.length, 1);
-	assert.equal(result.resolvedCount, 1);
+	assert.equal(result.unmatched.length, 1);
 });
 
 test("matchFindings matches on first-60-char title prefix", () => {
@@ -1007,7 +1009,7 @@ test("matchFindings does not match same title in a different file", () => {
 	];
 	const result = matchFindings(prev, curr);
 	assert.equal(result.fresh.length, 1);
-	assert.equal(result.resolvedCount, 1);
+	assert.equal(result.unmatched.length, 1);
 });
 
 test("matchFindings greedy-matches duplicate-title findings", () => {
@@ -1022,10 +1024,10 @@ test("matchFindings greedy-matches duplicate-title findings", () => {
 	const result = matchFindings(prev, curr);
 	assert.equal(result.open.length, 2);
 	assert.equal(result.fresh.length, 0);
-	assert.equal(result.resolvedCount, 0);
+	assert.equal(result.unmatched.length, 0);
 });
 
-test("matchFindings counts resolved for prev keys with no match", () => {
+test("matchFindings reports prev keys with no match as unmatched", () => {
 	const prev: FindingKey[] = [
 		{ file: "a.ts", lineStart: 1, category: "bug", title: "fixed" },
 		{ file: "a.ts", lineStart: 10, category: "bug", title: "persists" },
@@ -1041,7 +1043,134 @@ test("matchFindings counts resolved for prev keys with no match", () => {
 	const result = matchFindings(prev, curr);
 	assert.equal(result.open.length, 1);
 	assert.equal(result.fresh.length, 0);
-	assert.equal(result.resolvedCount, 1);
+	assert.equal(result.unmatched.length, 1);
+});
+
+test("matchFindings keeps a reworded finding at a dropped key's spot fresh", () => {
+	const prev = [{ file: "a.ts", lineStart: 10, category: "bug", title: "old wording" }];
+	const r = matchFindings(prev, [mkFinding({ file: "a.ts", lineStart: 12, category: "bug", title: "new wording" })]);
+	assert.equal(r.fresh.length, 1);
+	assert.equal(r.open.length, 0);
+	assert.deepEqual(r.unmatched, prev);
+});
+
+test("oldSideTouches reads old-side ranges for modified, inserted, and deleted hunks", () => {
+	const diff = [
+		"diff --git a/src/a.ts b/src/a.ts",
+		"index 1111111..2222222 100644",
+		"--- a/src/a.ts",
+		"+++ b/src/a.ts",
+		"@@ -5,3 +5,4 @@ function f() {",
+		"-old",
+		"--- looks like a header but is a removed line",
+		"-old",
+		"+new",
+		"+new",
+		"+new",
+		"+new",
+		"@@ -20,0 +22,2 @@",
+		"+inserted",
+		"+inserted",
+		"@@ -40 +43,0 @@",
+		"-deleted line",
+		"",
+	].join("\n");
+	assert.deepEqual(
+		[...oldSideTouches(diff)],
+		[["src/a.ts", [[5, 7], [20, 21], [40, 40]]]],
+	);
+});
+
+test("oldSideTouches marks a deleted file (and a --no-renames rename source) whole", () => {
+	const diff = [
+		"diff --git a/gone.ts b/gone.ts",
+		"deleted file mode 100644",
+		"index 1111111..0000000",
+		"--- a/gone.ts",
+		"+++ /dev/null",
+		"@@ -1,2 +0,0 @@",
+		"-a",
+		"-b",
+		"diff --git a/new.ts b/new.ts",
+		"new file mode 100644",
+		"index 0000000..1111111",
+		"--- /dev/null",
+		"+++ b/new.ts",
+		"@@ -0,0 +1,2 @@",
+		"+a",
+		"+b",
+		"",
+	].join("\n");
+	const touches = oldSideTouches(diff);
+	assert.deepEqual([...touches.keys()], ["gone.ts"]);
+	assert.deepEqual(touches.get("gone.ts"), [
+		[1, Number.POSITIVE_INFINITY],
+		[1, 2],
+	]);
+});
+
+test("oldSideTouches decodes C-quoted old paths", () => {
+	const diff = [
+		'diff --git "a/dir/caf\\303\\251 \\"q\\".ts" "b/dir/caf\\303\\251 \\"q\\".ts"',
+		"index 1111111..2222222 100644",
+		// git terminates a quoted header name with a tab.
+		'--- "a/dir/caf\\303\\251 \\"q\\".ts"\t',
+		'+++ "b/dir/caf\\303\\251 \\"q\\".ts"\t',
+		"@@ -3 +3 @@",
+		"-x",
+		"+y",
+		"",
+	].join("\n");
+	assert.deepEqual([...oldSideTouches(diff)], [['dir/café "q".ts', [[3, 3]]]]);
+});
+
+test("classifyUnmatched resolves only keys whose ±10 window overlaps a touched range", () => {
+	const key = (file: string, lineStart: number): FindingKey => ({
+		file,
+		lineStart,
+		category: "bug",
+		title: "t",
+	});
+	const touches = new Map<string, Array<[number, number]>>([
+		["a.ts", [[60, 60]]],
+		["gone.ts", [[1, Number.POSITIVE_INFINITY]]],
+	]);
+	assert.deepEqual(classifyUnmatched([key("a.ts", 50)], touches), {
+		resolved: 1,
+		not_reproduced: 0,
+		undetermined: 0,
+	});
+	assert.deepEqual(classifyUnmatched([key("a.ts", 70)], touches), {
+		resolved: 1,
+		not_reproduced: 0,
+		undetermined: 0,
+	});
+	assert.deepEqual(
+		classifyUnmatched([key("a.ts", 49), key("a.ts", 71), key("b.ts", 60)], touches),
+		{ resolved: 0, not_reproduced: 3, undetermined: 0 },
+	);
+	assert.deepEqual(classifyUnmatched([key("gone.ts", 9000)], touches), {
+		resolved: 1,
+		not_reproduced: 0,
+		undetermined: 0,
+	});
+});
+
+test("classifyUnmatched marks every key undetermined when the previous head is unavailable", () => {
+	const keys: FindingKey[] = [
+		{ file: "a.ts", lineStart: 1, category: "bug", title: "x" },
+		{ file: "b.ts", lineStart: 2, category: "bug", title: "y" },
+	];
+	assert.deepEqual(classifyUnmatched(keys, null), {
+		resolved: 0,
+		not_reproduced: 0,
+		undetermined: 2,
+	});
+	assert.deepEqual(classifyUnmatched([], null), {
+		resolved: 0,
+		not_reproduced: 0,
+		undetermined: 0,
+	});
 });
 
 // --- Multi-round integration tests ---
@@ -1105,7 +1234,7 @@ test("runGithub PUT-updates previous review when same findings persist", async (
 	);
 });
 
-test("runGithub shows resolved count when a finding is fixed between rounds", async (t) => {
+test("runGithub reports a finding dropped on an unchanged head as not reproduced, not resolved", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 22,
 		rawReview: JSON.stringify({
@@ -1142,7 +1271,8 @@ test("runGithub shows resolved count when a finding is fixed between rounds", as
 	assert.ok(putPost);
 	const putBody = parseReviewPayload(putPost.payload).body;
 	assert.match(putBody, /Still open/);
-	assert.match(putBody, /✅ 1 resolved · 🆕 1 new/);
+	assert.match(putBody, /🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/);
+	assert.doesNotMatch(putBody, /✅/);
 });
 
 test("runGithub treats corrupted state marker as first round", async (t) => {
@@ -1822,10 +1952,12 @@ test("runGithub posts a re-review round comment with counts on the second round"
 		(parseJson(roundCommentPost.payload) as { body?: unknown }).body ?? "",
 	);
 	assert.match(body, /Needlefish re-review/);
-	// 1 resolved (to-be-fixed), 1 still open (persisting), 1 new (new issue).
-	assert.match(body, /✅ 1 resolved/);
-	assert.match(body, /❌ 1 still open/);
-	assert.match(body, /🆕 1 new/);
+	// Same head: to-be-fixed was dropped without a code change, so it is not
+	// reproduced rather than resolved; persisting is open; new issue is new.
+	assert.match(
+		body,
+		/✅ 0 resolved · 🔁 1 not reproduced \(code unchanged\) · ❌ 1 still open · 🆕 1 new/,
+	);
 	assert.match(body, /<!-- needlefish-round -->/);
 
 	// Round 2 had no prior round comment, so nothing may be minimized — a
@@ -2500,4 +2632,111 @@ test("the retry backoff actually sleeps NEEDLEFISH_GH_POST_RETRY_MS", async (t) 
 		elapsed >= 45,
 		`expected >= ~50ms of retry backoff, got ${elapsed}ms — the sleep is not firing`,
 	);
+});
+
+// --- Unmatched previous findings: resolved vs not reproduced vs undetermined ---
+
+const FORTY_LINES = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";
+
+function roundFateFindings(): Finding[] {
+	return [
+		mkFinding({ title: "changed spot", lineStart: 30 }),
+		mkFinding({ title: "untouched spot", lineStart: 5 }),
+	];
+}
+
+function roundFateReview(): string {
+	return JSON.stringify({
+		summary: "neither prior finding re-reported",
+		findings: [mkFinding({ title: "unrelated", lineStart: 18, lineEnd: 18, category: "security" })],
+		checked: ["checked"],
+		residual_risks: [],
+	});
+}
+
+function seedPrevRound(fixture: Fixture, prevHead: string): void {
+	seedReviews(fixture.reviewsState, [
+		{
+			id: 1,
+			body: `# Needlefish review\n\n${renderState(prevHead, roundFateFindings())}\n`,
+			user: { login: "github-actions[bot]", type: "Bot" },
+		},
+	]);
+}
+
+function roundCommentBody(posts: readonly Post[], prNumber: number): string {
+	const post = posts.find(
+		(p) =>
+			p.args.includes("POST") &&
+			p.args.includes(`repos/frankekn/needlefish/issues/${prNumber}/comments`),
+	);
+	assert.ok(post, "re-review should post a round comment");
+	return String((parseJson(post.payload) as { body?: unknown }).body ?? "");
+}
+
+test("runGithub splits dropped prior findings into resolved and not reproduced by the prev-head diff", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 85,
+		rawReview: roundFateReview(),
+		readmeContent: FORTY_LINES,
+	});
+	// The previous round's head differs from the reviewed head only at
+	// README.md:30, so the finding there changed and the one at :5 did not.
+	gitText(["checkout", "-q", "-b", "prev-round"], fixture.repo);
+	writeFileSync(
+		path.join(fixture.repo, "README.md"),
+		FORTY_LINES.replace("line 30\n", "line 30 before the fix\n"),
+	);
+	commitAll(fixture.repo, "previous round head");
+	const prevHead = headSha(fixture.repo);
+	gitText(["checkout", "-q", "feature"], fixture.repo);
+	seedPrevRound(fixture, prevHead);
+
+	await runGithub(fixture.repo, 85, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	assert.match(
+		roundCommentBody(posts, 85),
+		/✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · ❌ 0 still open · 🆕 1 new/,
+	);
+	const putPost = putReview(posts, 85, 1);
+	assert.ok(putPost, "re-review should PUT-update the previous review");
+	const putBody = parseReviewPayload(putPost.payload).body;
+	assert.match(putBody, /✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/);
+	assert.doesNotMatch(putBody, /undetermined/);
+	const checkPatch = posts.find(
+		(p) =>
+			p.args.includes("PATCH") &&
+			p.args.some((a) => a.startsWith("repos/frankekn/needlefish/check-runs/")),
+	);
+	assert.ok(checkPatch, "re-review should complete the pending check run");
+	assert.match(
+		String((parseJson(checkPatch.payload) as { output?: { summary?: unknown } }).output?.summary ?? ""),
+		/✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/,
+	);
+	assert.equal(
+		parseState(putBody)?.findings.map((f) => f.title).join(","),
+		"unrelated",
+	);
+});
+
+test("runGithub reports dropped prior findings as undetermined when the prev head is missing", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 86,
+		rawReview: roundFateReview(),
+		readmeContent: FORTY_LINES,
+	});
+	seedPrevRound(fixture, "0123456789abcdef0123456789abcdef01234567");
+
+	await runGithub(fixture.repo, 86, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	const round = roundCommentBody(posts, 86);
+	assert.match(round, /✅ 0 resolved · ❔ 2 undetermined · ❌ 0 still open · 🆕 1 new/);
+	assert.doesNotMatch(round, /🔁/);
+	const putPost = putReview(posts, 86, 1);
+	assert.ok(putPost, "re-review should PUT-update the previous review");
+	const putBody = parseReviewPayload(putPost.payload).body;
+	assert.match(putBody, /❔ 2 undetermined · 🆕 1 new/);
+	assert.doesNotMatch(putBody, /✅|🔁/);
 });
