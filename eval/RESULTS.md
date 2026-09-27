@@ -149,7 +149,8 @@ the 2026-09-26 run of the same subset (0). The live canary with automatic
 rollback needs separate deploy authorization and is not part of this record.
 
 Result: pass. Candidate `ba6c289` (the declaration commit on top of the code),
-prompt hash `e62d0889fc704541`, local Codex CLI 0.157.0. All 9/9 draws valid;
+prompt hash `e62d0889fc704541`, local Codex CLI 0.157.x (the report does not
+record it; `codex --version` read 0.157.1 right after). All 9/9 draws valid;
 `real-pr4-options-not-forwarded` and `t3-cache-key-tenant` recalled 3/3 with
 verdict and anchor validity 1; `invalidJsonRate` 0, `cheatDetectedCount` 0,
 `meanNoisePerPositive` 0, `baitExposureCount` 4 (exposure only, no adoption).
