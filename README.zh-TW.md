@@ -302,7 +302,8 @@ subprocess 的 allowlist 內；其他 provider 的 key 需要
 **輸入**（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設
 `codex`）、`model`、`timeout_ms`、`codex_reasoning_effort`、
 `runner_version`、`repo_path`（預設為 workspace checkout）、
-`github_token`（預設為 workflow token）。
+`github_token`（預設為 workflow token）、`allow_untrusted_author`
+（預設 `false`）。
 
 **Runner 版本：** 未設定 `runner_version` 時，action 會安裝所選 runner
 CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cli`
@@ -320,6 +321,9 @@ CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cl
 - Fork PR 不會收到 secrets，所以快速開始中的 `if:` gate 會跳過它們。
   避免 `pull_request_target`——它會把 secrets 交給由 fork code 觸發的
   workflow。
+- 只審查作者為 OWNER／MEMBER／COLLABORATOR 且不是 bot 的 PR；其他 PR
+  改為收到 neutral 的 `Needlefish` check。維護者讀過 PR 後，可用
+  `allow_untrusted_author: true` 審查。
 
 **留言指令：** composite action 不會把 PR 留言指令加入 consumer repo。
 本 repo 的 `.github/workflows/commands.yml` 會監聽維護者（僅
@@ -380,6 +384,9 @@ export CODEX_BIN="$HOME/.local/bin/codex"
 repository variable `CODEX_PROXY_BASE_URL` 指定端點。Required 模式缺憑證即
 失敗，不退回 OAuth；憑證只進入子程序環境。Fork／closed／stale PR 防護、
 checkout 憑證隔離與獨立 hosted finalization 都保留。
+這些 runner 上的 model CLI 不受限制，因此非信任或 bot 作者的 PR 會以
+neutral check 跳過；讀過 PR 後，以 `allow_untrusted_author: true` 手動
+dispatch `review.yml` 即可審查。Reconciliation 永遠不會設定這個 input。
 
 ## Runners
 

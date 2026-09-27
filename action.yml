@@ -32,16 +32,80 @@ inputs:
     description: Token for gh reads and posting the review and check-run
     required: false
     default: ${{ github.token }}
+  allow_untrusted_author:
+    description: >-
+      Set to true to review a PR whose author is not OWNER, MEMBER, or
+      COLLABORATOR, or is a bot. Read the PR first.
+    required: false
+    default: "false"
 branding:
   icon: eye
   color: blue
 runs:
   using: composite
   steps:
+    - name: Check PR author trust
+      id: trust
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        PR_INPUT: ${{ inputs.pr_number }}
+        EVENT_PR: ${{ github.event.pull_request.number }}
+        EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        EVENT_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author }}
+      run: |
+        pr="${PR_INPUT:-$EVENT_PR}"
+        if [ -z "$pr" ]; then
+          echo "No PR number: pass pr_number or trigger on pull_request events." >&2
+          exit 1
+        fi
+        if [ -n "$EVENT_HEAD" ] && [ "$pr" = "$EVENT_PR" ]; then
+          head="$EVENT_HEAD"
+          author_association="$EVENT_AUTHOR_ASSOCIATION"
+          author_type="$EVENT_AUTHOR_TYPE"
+        else
+          if ! pr_meta="$(gh api "repos/$REPO/pulls/$pr" --jq '(.head.sha // ""), (.author_association // ""), (.user.type // "")')"; then
+            echo "::error::could not read PR #$pr metadata" >&2
+            exit 1
+          fi
+          mapfile -t pr_fields <<< "$pr_meta"
+          head="${pr_fields[0]:-}"
+          author_association="${pr_fields[1]:-}"
+          author_type="${pr_fields[2]:-}"
+          if [ -z "$head" ] || [ -z "$author_association" ]; then
+            echo "::error::PR #$pr returned no head or author association" >&2
+            exit 1
+          fi
+        fi
+        trusted_author=false
+        if [ "$author_type" != "Bot" ]; then
+          case "$author_association" in
+            OWNER|MEMBER|COLLABORATOR) trusted_author=true ;;
+          esac
+        fi
+        if [ "$trusted_author" != true ] && [ "$ALLOW_UNTRUSTED_AUTHOR" != "true" ]; then
+          reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
+          echo "$reason"
+          if [ -n "$head" ]; then
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="neutral" \
+              -f "output[title]=Needlefish: skipped (author not trusted)" \
+              -f "output[summary]=Needlefish reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $reason. A maintainer who has read this PR can review it by running the workflow manually with allow_untrusted_author: true." >/dev/null
+          fi
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        fi
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      if: steps.trust.outputs.skip != 'true'
       with:
         node-version: 20
     - name: Install needlefish dependencies
+      if: steps.trust.outputs.skip != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
@@ -49,6 +113,7 @@ runs:
         corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
         pnpm install --frozen-lockfile
     - name: Install model runner CLI
+      if: steps.trust.outputs.skip != 'true'
       shell: bash
       env:
         NF_RUNNER: ${{ inputs.runner }}
@@ -66,6 +131,7 @@ runs:
         ver="${NF_RUNNER_VERSION:-latest}"
         npm install -g "${pkg}@${ver}"
     - name: Authenticate model runner
+      if: steps.trust.outputs.skip != 'true'
       shell: bash
       env:
         NF_RUNNER: ${{ inputs.runner }}
@@ -84,6 +150,7 @@ runs:
           chmod 600 "$HOME/.pi/agent/auth.json"
         fi
     - name: Needlefish review
+      if: steps.trust.outputs.skip != 'true'
       shell: bash
       working-directory: ${{ github.action_path }}
       env:

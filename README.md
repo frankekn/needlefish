@@ -356,7 +356,8 @@ providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 **Inputs** (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
 `runner_version`, `repo_path` (defaults to the workspace checkout),
-`github_token` (defaults to the workflow token).
+`github_token` (defaults to the workflow token), `allow_untrusted_author`
+(default `false`).
 
 **Runner versions:** when `runner_version` is omitted, the action installs
 the latest release of the selected runner's CLI (`@openai/codex`,
@@ -376,6 +377,10 @@ the latest release of the selected runner's CLI (`@openai/codex`,
 - Fork PRs don't receive secrets, so the `if:` gate in the quick start skips
   them. Avoid `pull_request_target` — it would hand secrets to workflows
   triggered by fork code.
+- Only PRs whose author is an OWNER, MEMBER, or COLLABORATOR and not a bot
+  are reviewed. Others get a neutral `Needlefish` check instead; after
+  reading the PR, a maintainer can review it with
+  `allow_untrusted_author: true`.
 
 **Comment commands:** the composite action does not add PR comment commands
 to the consumer repo. This repository's `.github/workflows/commands.yml`
@@ -440,6 +445,10 @@ this repository's direct trigger may use the `CODEX_PROXY_BASE_URL` repository
 variable. Required proxy mode fails on missing credentials rather than falling
 back to OAuth. Credentials remain in the child environment. Fork/closed/stale-PR
 checks, checkout credential isolation, and hosted finalization remain enforced.
+Model CLIs run unrestricted on these runners, so PRs from untrusted or bot
+authors are skipped with a neutral check; dispatch `review.yml` manually with
+`allow_untrusted_author: true` to review one after reading it. Reconciliation
+never sets that input.
 
 ## Runners
 

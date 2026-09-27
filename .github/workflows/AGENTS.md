@@ -20,6 +20,7 @@
 - Use `permissions: contents: read`, `pull-requests: write`, `checks: write` for review posting.
 - Use concurrency keyed by repo and PR number to cancel stale runs.
 - Skip closed PR events and forked PR heads.
+- Review only authors with `author_association` OWNER/MEMBER/COLLABORATOR who are not bots; others get a neutral `Needlefish` check unless a manual run sets `allow_untrusted_author: true`, which automatic dispatches never set.
 
 ## ANTI-PATTERNS
 
