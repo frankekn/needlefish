@@ -1,7 +1,23 @@
 # Changelog
 
-## Unreleased
+## 0.4.7 — 2026-09-27
 
+- GitHub: bound the check-run summary by UTF-8 bytes, the unit GitHub enforces
+  (65,535), instead of posting the whole review there. An oversized summary is
+  truncated on a code-point boundary with the full-review link first, so a
+  finished review with a long Chinese summary no longer fails with HTTP 422
+  and is no longer reported as "FAILED TO RUN". Summaries that fit are
+  unchanged.
+- Prompts: review, deep and critic share one finding admission contract
+  (`prompts/finding-contract.md`): P0/P1/P2 findings require confidence
+  >= 0.70, matching what the normalizer already enforced. Deep passes no
+  longer lose coverage to blocking findings the normalizer rejected as
+  malformed.
+- Workflow: the provider fallback chain advances only when needlefish's own
+  terminal `needlefish review failed:` stderr line names an infra cause (an
+  allowlisted `likely cause:` token, HTTP 429/5xx, or a timeout or connection
+  error), so a completed review that merely discusses rate limits or quotas no
+  longer switches provider.
 - Runners: an attempt that exhausts its per-attempt timeout is no longer
   retried, so a stuck upstream costs one timeout instead of two (about 20
   minutes per deep pass at the default). An opencode idle stall is still
