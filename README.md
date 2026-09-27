@@ -468,7 +468,8 @@ the existing per-attempt behavior.
 The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
 a provider stream stops producing output, Needlefish terminates that attempt
 and uses the normal runner retry instead of waiting for an extended per-call
-timeout.
+timeout. An attempt that runs out its whole per-attempt timeout is not retried:
+a second attempt would wait out the same stuck upstream and double the pass.
 
 When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 `claude`, or `opencode` can be found, Needlefish exits with install commands

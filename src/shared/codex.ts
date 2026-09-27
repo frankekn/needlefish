@@ -18,6 +18,7 @@ import {
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
+	RunnerTimeoutError,
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
@@ -623,11 +624,10 @@ export async function runCodex(
 				emitStat(false);
 				throw err;
 			}
-			// RunnerTimeoutError / RunnerIdleTimeoutError 重試只會再燒一次完整 timeout：
-			// 上游卡住不是暫時性故障，重跑不會更快，但會把單一 deep pass 卡死兩倍時間。
-			// spawnRunnerProcess 把 timeout 包成 RunnerOperationalError（code 在 message 裡，
-			// "spawn codex ETIMEDOUT"），不在 code 欄位。
-			if (err instanceof Error && /ETIMEDOUT|EIDLETIMEDOUT/.test(err.message)) {
+			// A run that exhausted its whole per-call deadline is not retried: the second
+			// attempt waits out the same stuck upstream and doubles the pass to ~20 min.
+			// An idle stall (RunnerIdleTimeoutError) stays retryable; README documents it.
+			if (err.cause instanceof RunnerTimeoutError) {
 				emitStat(false);
 				throw err;
 			}
@@ -747,8 +747,6 @@ async function runCodexOnce(
 			return err;
 		};
 		if (result.res.error) {
-			// RunnerTimeoutError/RunnerIdleTimeoutError 保留原 code 在 message 裡
-			// （"spawn codex ETIMEDOUT"），讓上層 catch 能用 message 判斷不重試。
 			throw withRunnerOutput(
 				new RunnerOperationalError(result.res.error.message, {
 					cause: result.res.error,

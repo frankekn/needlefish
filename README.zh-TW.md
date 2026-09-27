@@ -397,7 +397,8 @@ runner。共通選項：
 
 opencode 的 idle deadline 在 CLI 每次產生 stdout 或 stderr 時重設。若
 provider stream 停止產生輸出，Needlefish 會終止該 attempt 並使用既有的
-runner retry，而不是苦等被拉長的 per-call timeout。
+runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt timeout
+用完的 attempt 不會重試：第二次只會再等同一個卡住的上游，把單次 pass 拉長一倍。
 
 當 `--runner` 與 `NEEDLEFISH_RUNNER` 都未設定，且找不到 `codex`、
 `claude` 或 `opencode` 時，Needlefish 會輸出這三個 CLI 的安裝指令後結
