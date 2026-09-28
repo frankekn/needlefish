@@ -77,8 +77,10 @@ jobs:
             echo "::error::package.json version $version does not match $RELEASE_TAG"
             exit 1
           fi
-          npm_major="$(npm --version | cut -d. -f1)"
-          if [ "$npm_major" -lt 11 ]; then
+          if ! node -e 'const [a, b] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && b >= 5) ? 0 : 1)' "$(npm --version)"; then
+            npm install -g npm@^11.5.1
+          fi
+          if ! node -e 'const [a, b] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && b >= 5) ? 0 : 1)' "$(npm --version)"; then
             echo "::error::npm $(npm --version) cannot use trusted publishing; need npm 11.5+"
             exit 1
           fi

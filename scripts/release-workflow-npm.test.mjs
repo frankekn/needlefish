@@ -32,6 +32,20 @@ test("npm job refuses a tag/version mismatch and skips a version already publish
 	for (const step of gated) assert.equal(step.if, "steps.version.outputs.publish == 'true'");
 });
 
+test("npm job requires npm 11.5+, upgrading once before failing", () => {
+	const check = npmJob.steps.find((step) => step.name === "Check version").run;
+	const gate = check.match(/node -e '([^']+)' "\$\(npm --version\)"/);
+	assert.ok(gate, "version gate present");
+	const passes = (version) =>
+		new Function("process", gate[1])({ argv: ["node", version], exit: (code) => { throw code; } });
+	const exitCode = (version) => { try { passes(version); } catch (code) { return code; } return undefined; };
+	assert.equal(exitCode("11.4.2"), 1);
+	assert.equal(exitCode("10.9.0"), 1);
+	assert.equal(exitCode("11.5.1"), 0);
+	assert.equal(exitCode("12.0.0"), 0);
+	assert.match(check, /npm install -g npm@\^11\.5\.1/);
+});
+
 test("npm job smoke-tests the packed tarball before publishing", () => {
 	const names = npmJob.steps.map((step) => step.name ?? step.uses);
 	assert.ok(names.indexOf("Install and smoke the packed tarball") < names.indexOf("Publish"));
