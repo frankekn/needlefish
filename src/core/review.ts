@@ -499,7 +499,7 @@ function canonicalFindingKey(finding: Finding): string {
 		String(finding.confidence),
 		finding.title,
 		finding.whyItBreaks,
-	].join(" ");
+	].join("\u0000");
 }
 
 // The eligibility relation — file + category + ±2 lineStart — and nothing

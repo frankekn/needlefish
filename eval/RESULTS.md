@@ -128,6 +128,31 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-28 — Large-PR path measurement and the 90-fixture baseline
+
+No fixture exercised the large path (map → deep hotspots → tail coverage →
+critic) before #185: every draw in recent full-set reports made two calls. The
+measurements below are observations, not a gate. All use Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash`, high, prompt `d95aa170f3a37cf3`.
+
+| Run | Result |
+| --- | --- |
+| Full set (88) x1, large path forced with `NEEDLEFISH_LARGE_PATCH_CHARS=1`, against the 2026-09-26 small-path x1 | recall 0.902 vs 0.869; FP 0.040 vs 0; mean 64 s vs 36 s |
+| The 7 fixtures that differed, x3 in both modes | recall 11/15 in both, FP 0, noise 0; the single-draw differences were flicker |
+| `large-tail-boundary-bug` and `large-clean-sweep` x3 (natural large path, 27 files) | bug found 3/3 at `date-range.ts:22`, noise 0; clean twin pass 3/3; 5–8 calls, 132–235 s |
+
+Reading: on this lane the large path loses no recall and costs about 1.8x the
+time. Splitting the tail-coverage pass is not justified by this data. Reports do
+not record hotspot assignment, so whether the planted bug was found inside the
+tail pass is unknown.
+
+**Baseline for the new fixture set** (`061a10be844a98ae`, 90 fixtures, main at
+`ff625cc`, x1): recall 0.903, tier-1 1.0, tier-2 0.919, tier-3 0.833, FP 0,
+noise 0, invalid 0, cheat 0, mean 43 s. Full-set comparisons against
+`b1e75143e8e71a27` reports are no longer valid.
+
+Reports: `eval/evidence/2026-09-28-large-path/`.
+
 ### 2026-09-27 — No retry after a whole-deadline runner timeout (PR #177) — pre-declared
 
 `gateClass: D`. `runCodex` no longer makes a second attempt when the first one

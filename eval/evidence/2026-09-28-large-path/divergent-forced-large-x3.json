@@ -1,0 +1,1621 @@
+{
+  "promptHash": "d95aa170f3a37cf3",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_LARGE_PATCH_CHARS=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(go-backend-slop-swallow|py-backend-spec-drift|sql-safe-index|yml-docs-only|real-pr1-lenient-candidate-parse|real-pr10|real-pr4-options-not-forwarded)$' --report '<redacted>'",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"NEEDLEFISH_LARGE_PATCH_CHARS\",\"1\"],[\"PATH\",\"sha256:38f94486daf1578b\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_LARGE_PATCH_CHARS=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(go-backend-slop-swallow|py-backend-spec-drift|sql-safe-index|yml-docs-only|real-pr1-lenient-candidate-parse|real-pr10|real-pr4-options-not-forwarded)$' --report eval/reports/div-large-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-27T13:27:10.084Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 46295,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/store.go",
+          "lineStart": 16,
+          "lineEnd": 16,
+          "title": "Exported LoadOrDefault discards ErrMissing, conflating failure with empty value",
+          "whyItBreaks": "Load's contract is (string, error) with a distinct ErrMissing signal for absent keys (src/store.go:7-13). LoadOrDefault at src/store.go:16 does `v, _ := Load(key, m)` and returns only the string, discarding the error. The function is exported, so its signature `func LoadOrDefault(key string, m map[string]string) string` is the public contract: every eventual caller is FORCED to receive \"\" for both a present-but-empty value and a missing key, and cannot distinguish the two. Per the swallow rule, an exported swallow site is a present P2 defect even with no in-repo callers (rg confirms zero callers today; the repo contains only src/store.go). If a caller persists, bills, or reports this value as real, a missing key is indistinguishable from a legitimate empty string."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 43238,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/store.go",
+          "lineStart": 15,
+          "lineEnd": 17,
+          "title": "Exported LoadOrDefault conflates missing key with empty value",
+          "whyItBreaks": "LoadOrDefault discards the error returned by Load at src/store.go:16 and returns the same zero value \"\" for two distinct states: a key that is absent (Load returns \"\", ErrMissing at src/store.go:10) and a key that is present with an empty stored value (Load returns \"\", nil at src/store.go:12). The signature `func LoadOrDefault(...) string` (src/store.go:15) gives callers no channel to tell failure from a real value, so every eventual caller that persists, renders, or defaults off this result acts on a fallback as if it were real data. Because the symbol is exported and there is no error/log side-channel, this conflation is forced on all callers — the defect is the API contract itself, not just a missing consumer."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "go-backend-slop-swallow",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-backend-slop-swallow",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": true,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 44171,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "swallow|silent|mask|, _|_ :=|ignor.{0,16}err|err.{0,24}(ignor|discard|dropp)|discard.{0,16}err",
+          "file": "src/store.go",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 0,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": true,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 60562,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 1,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": true,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 42729,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "py-backend-spec-drift",
+      "draw": 2,
+      "score": {
+        "fixtureId": "py-backend-spec-drift",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 85826,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/validators.py",
+          "lineStart": 1,
+          "lineEnd": 1,
+          "title": "parse_positive_int promises positivity but accepts negatives/zero",
+          "whyItBreaks": "The rename changes the public symbol's contract: 'parse_positive_int' promises a validated positive integer, but the body at src/validators.py:2 is only `return int(value)`, which accepts '-5' -> -5 and '0' -> 0 (and raises on non-numerics). No positivity check exists anywhere. charge() at src/validators.py:6 consumes the result and multiplies by 100 at src/validators.py:7 (`return n * 100`), so a caller trusting the name to guarantee a positive amount gets a negative charge (-5 -> -500) or a zero charge instead of a rejection. Because the carrier is a public module-level function (no leading underscore) and the promised behavior (validation) directly affects the value callers receive, the promise itself is the contract; no in-repo relying caller is required."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "positiv|unvalidated|not.{0,24}valid|no.{0,12}validat|never.{0,12}valid|mislead|spec.?drift|name.{0,24}(promis|suggest|impl)",
+          "file": "src/validators.py",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 46262,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 34125,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 35838,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 0,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 29542,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 1,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 31088,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "yml-docs-only",
+      "draw": 2,
+      "score": {
+        "fixtureId": "yml-docs-only",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 37694,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "real-pr1-lenient-candidate-parse",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-lenient-candidate-parse",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": true,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 176792,
+      "calls": 3,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-lenient-candidate-parse",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-lenient-candidate-parse",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 155788,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "validation",
+          "file": "src/core/review.ts",
+          "lineStart": 29,
+          "lineEnd": 29,
+          "title": "Candidate pass parses leniently, silently dropping real findings",
+          "whyItBreaks": "normalizeReview(raw, strict = true) (src/shared/normalize.ts:181; normalizeFinding throws on any missing/invalid required field) uses the strict flag only to swallow per-finding errors: `strict ? raw.findings.map(normalizeFinding) : raw.findings.map(f => { try { return normalizeFinding(f); } catch { return null; } }).filter(f => f !== null)`. Passing false on line 29 means a real candidate finding with one malformed required field (bad severity, missing file/whyItBreaks, non-positive lineStart, ...) is dropped to null and filtered out instead of throwing. The guard on line 30 only checks `candidate.summary` and `candidate.checked.length` — it never inspects `candidate.findings` — so an output with a valid summary/checked list but only malformed findings passes the guard. The surviving candidate.findings (now missing the real finding) is the sole payload substituted into the critic prompt as {{FINDINGS}} (line 35), and the final findings/verdict are taken exclusively from the critic's `pruned` (lines 43, 48), so the dropped finding is never seen. Because deriveVerdict returns 'pass' when no P0/P1/P2 finding survives (src/core/verdict.ts), a PR that should be changes_requested is reported as pass. The sibling critic call on line 38 keeps the strict default, so the two passes normalize inconsistently."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-lenient-candidate-parse",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-lenient-candidate-parse",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 197461,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 29,
+          "lineEnd": 29,
+          "title": "Loose candidate parse silently drops real findings before the critic",
+          "whyItBreaks": "`normalizeReview`'s contract is `normalizeReview(raw, strict = true)`; in strict (default) mode it maps every finding through `normalizeFinding`, which throws on any malformed required field, aborting the run. Passing `false` selects the loose branch, which wraps `normalizeFinding` in a try/catch, converts malformed findings to `null`, and `.filter()`s them out. The changed call is the candidate (first Codex) pass, whose result is serialized into the critic prompt at line 35 (`JSON.stringify(candidate, null, 2)`) and whose surviving findings are the only thing the critic can ever prune into the final `findings` (line 48). The guard at line 30 only checks `!candidate.summary || candidate.checked.length === 0`, and `summary`/`checked` are unaffected by the `strict` flag, so a candidate whose real P1/P2 finding has one malformed field (e.g. missing `suggestedFix`/`whyItBreaks` or an out-of-range `lineStart`) is silently reduced to fewer/zero findings, the guard passes, and the critic never receives the finding — it is lost from the final ReviewResult instead of surfacing as a malformed-output error. Consumer of the dropped value is the very guard at src/core/review.ts:30, which should have rejected a review whose findings vanished but instead admits it."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "strict\\s*[:=]\\s*false|lenient|silently.{0,20}(filter|drop)|malformed.{0,20}finding|candidate.{0,20}(pass|parse)",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 85203,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Duration parser rejects 0, silently ignoring zero-delay kill config",
+          "whyItBreaks": "The changed guard `parsed > 0` rejects the legitimately valid value 0 (inputs \"0\", \" 0 \", \"-0\", \"0e0\" all parse to 0) and returns fallbackMs instead. That result feeds RUNNER_TIMEOUT_GRACE_MS (line 3) and RUNNER_SIGKILL_GIVE_UP_MS (line 7), which are consumed by setTimeout at src/shared/runner-process.ts:124 (SIGTERM->SIGKILL grace) and src/shared/runner-process.ts:123 (give-up wait). `setTimeout(fn, 0)` is a valid next-tick delay, so NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS=0 previously produced an immediate SIGKILL and now silently waits 5000 ms; NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS=0 previously gave up immediately and now waits 2000 ms. The predicate rejects a value that legitimately governs both actions on its own, and it does so silently (no warning/error), so the operator's intent is lost."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 78769,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Rejecting env value 0 silently overrides explicit kill-timing config",
+          "whyItBreaks": "Before the change readRunnerDurationMs('0', fallback) returned 0 (it accepted parsed >= 0); now it returns fallbackMs because of `parsed > 0`. `0` is a legitimately-approvable duration for both call-sites: at src/shared/runner-process.ts:123, RUNNER_SIGKILL_GIVE_UP_MS=0 previously fired the give-up timer immediately (stop waiting for the escaped-descendant pipe and resolve), and at src/shared/runner-process.ts:124, RUNNER_TIMEOUT_GRACE_MS=0 previously fired SIGKILL immediately after SIGTERM. With this change, NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS=0 is silently replaced by the 2000 ms default (consumer line 123) and NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS=0 by the 5000 ms default (consumer line 124), adding up to 2 s of tail latency plus a 5 s delay before SIGKILL. The gate now rejects a value it legitimately governs rather than validating an invalid one, and no error/warning is surfaced, so operators cannot distinguish their setting being ignored from it being honored."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 132287,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Rejecting env value \"0\" silently overrides zero-latency kill escalation",
+          "whyItBreaks": "The changed predicate `Number.isFinite(parsed) && parsed > 0` @src/shared/runner-process.ts:135 now treats a deliberately configured 0 as invalid and returns the fallback. `readRunnerDurationMs(\"0\", 5000)` at line 3 (NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS) now yields 5000 and `readRunnerDurationMs(\"0\", 2000)` at line 7 (NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS) yields 2000. Previously `parsed >= 0` accepted 0. Substituting \"0\": old code returned 0, so the SIGTERM->SIGKILL grace and SIGKILL->finish give-up timers at line 124 (`}, RUNNER_TIMEOUT_GRACE_MS)`) and line 123 (`}, RUNNER_SIGKILL_GIVE_UP_MS)`) fired on the next tick; now they wait 5000ms/2000ms respectively. A 0ms duration is a legitimate value for both knobs (\"immediate SIGKILL after SIGTERM\", \"finish immediately after SIGKILL\"), so the gate rejects a legitimately-approvable configuration and silently lengthens the escalation with no log or warning. Call-site enumeration: the predicate feeds only lines 3 and 7; both are legitimately governed by a duration check that should accept 0. The consumer at line 123/124 is where the fallback replaces the operator's 0."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 124606,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Deep prompt no longer substitutes {{FOCUS}}; literal token and lost focus",
+          "whyItBreaks": "The base revision built the deep prompt as `loadPrompt(\"deep.md\").replace(\"{{AGENTS}}\",...).replace(\"{{HOTSPOT}}\",...).replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\").replace(\"{{BASE}}\",...).replace(\"{{HEAD}}\",...)`; the `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` call was deleted here. deep.md is a template that carries the `{{FOCUS}}` placeholder (the substitution existed precisely because the token is in that file), so the prompt string now handed to runCodex at src/core/review.ts:124 still contains the literal text `{{FOCUS}}` and never contains the user's focus. Every deep hotspot pass is affected: the model receives a dangling placeholder plus no focus guidance, so a focused review request is silently unprioritized. review.ts:117 is the consumer-build site and review.ts:124 is where the unsubstituted prompt is consumed."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "map pass loses focus/deep keys in large-PR path only",
+          "whyItBreaks": "mapBundle previously carried `focus: bundle.focus` and `deep: bundle.deep`; those keys were removed, so `JSON.stringify(mapBundle)` at src/core/review.ts:90 now serializes the bundle without focus/deep and runCodex at src/core/review.ts:91 maps hotspots with no knowledge of the user's focus or deep-mode hint. This is a behavioral regression and an inconsistency: reviewSmall() still passes the entire `bundle` (src/core/review.ts:54), so focus/deep are delivered for small PRs but silently dropped for large PRs, meaning focus-prioritized surface ranking and deep-mode intent are lost exactly on the PRs that need them most. review.ts:83-89 is the producer; review.ts:90-91 is the consuming serialization/invocation."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 102475,
+      "calls": 3,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Large-PR review drops focus directive from map and deep prompts",
+          "whyItBreaks": "The base code built deepPrompt with `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")`, so prompts/deep.md contains a `{{FOCUS}}` placeholder (otherwise that replace would be dead code). Removing the replace (HEAD lines 117-121) leaves the literal `{{FOCUS}}` token in the prompt string that is handed to runCodex at src/core/review.ts:124, and `bundle.focus` is no longer applied anywhere on the large path. The first hunk deleting `focus: bundle.focus` from mapBundle (HEAD lines 83-89) drops the same value from the map pass. Net effect: for any PR taking the isLarge branch (patch > 30000 chars or > 10 files, line 31), a caller-supplied focus is silently ignored, whereas reviewSmall still forwards it via `JSON.stringify(bundle, ...)` at line 54. Callers cannot distinguish 'focus not applied' from 'focus applied', and the review model receives a raw template token."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 2,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 225490,
+      "calls": 4,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 119,
+          "lineEnd": 120,
+          "title": "Removed {{FOCUS}} substitution ships literal placeholder to deep pass",
+          "whyItBreaks": "The deleted line (BASE:122) `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` was the only substitution of the deep template's focus placeholder. prompts/deep.md:98 still contains `Focus: {{FOCUS}} (if not \"(none)\", prioritize findings in that area)`, so for every hotspot of a large PR the model now receives the literal string `{{FOCUS}}` and the user-supplied focus is never applied to the deep review. This is a silent behavior regression for all large-PR reviews, not just when focus is null."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 88,
+          "lineEnd": 89,
+          "title": "mapBundle no longer carries focus, disabling focus-based surface ranking",
+          "whyItBreaks": "mapBundle dropped `focus: bundle.focus` (BASE:89). prompts/map.md:37 instructs the map pass: \"If a `focus` field is set (not null), rank matching surfaces higher, but do not omit other changed files.\" With the key absent from JSON.stringify(mapBundle, null, 2), that condition can never be true, so when reviewLarge selects the top-6 hotspots the focus-targeted surface is no longer prioritized. The focus feature is therefore silently inert for large PRs even when bundle.focus is set."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.7333333333333333,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.8095238095238095,
+    "lineAnchorValidRate": 0.8095238095238095,
+    "meanDurationMs": 86487.66666666667,
+    "recallByFixture": {
+      "go-backend-slop-swallow": 0.6666666666666666,
+      "py-backend-spec-drift": 0.3333333333333333,
+      "sql-safe-index": 1,
+      "yml-docs-only": 1,
+      "real-pr1-lenient-candidate-parse": 0.6666666666666666,
+      "real-pr10": 1,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRateByFixture": {
+      "go-backend-slop-swallow": 0.6666666666666666,
+      "py-backend-spec-drift": 0.3333333333333333,
+      "real-pr1-lenient-candidate-parse": 0.6666666666666666,
+      "real-pr10": 1,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRate": 0.7333333333333333,
+    "criticPruneErrorRate": 0.26666666666666666,
+    "recallByTier": {
+      "t2": 0.75,
+      "t3": 0.6666666666666666
+    },
+    "recallByDefectClass": {
+      "ai-slop-error-swallow": 0.6666666666666666,
+      "spec-impl-drift-name-trust": 0.3333333333333333,
+      "lenient-candidate-parse-drops-real-finding": 0.6666666666666666,
+      "boundary-flip-rejects-zero-override": 1,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "ai-slop-error-swallow": 0.6666666666666666,
+      "spec-impl-drift-name-trust": 0.3333333333333333,
+      "lenient-candidate-parse-drops-real-finding": 0.6666666666666666,
+      "boundary-flip-rejects-zero-override": 1,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 16,
+    "criticPrunedRecallCount": 4
+  },
+  "gitSha": "da7dde507575a6256f26c8a8bbfdeebafdc38bec",
+  "fixtureSetHash": "fefaaaeb316d8f09",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "go-backend-slop-swallow": 2,
+    "py-backend-spec-drift": 2,
+    "real-pr1-lenient-candidate-parse": 3,
+    "real-pr10": 2,
+    "real-pr4-options-not-forwarded": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "go-backend-slop-swallow",
+    "py-backend-spec-drift",
+    "sql-safe-index",
+    "yml-docs-only",
+    "real-pr1-lenient-candidate-parse",
+    "real-pr10",
+    "real-pr4-options-not-forwarded"
+  ],
+  "fixtureKinds": {
+    "go-backend-slop-swallow": "positive",
+    "py-backend-spec-drift": "positive",
+    "sql-safe-index": "negative",
+    "yml-docs-only": "negative",
+    "real-pr1-lenient-candidate-parse": "positive",
+    "real-pr10": "positive",
+    "real-pr4-options-not-forwarded": "positive"
+  },
+  "fixtureDefectClasses": {
+    "go-backend-slop-swallow": "ai-slop-error-swallow",
+    "py-backend-spec-drift": "spec-impl-drift-name-trust",
+    "sql-safe-index": "safe-additive-index",
+    "yml-docs-only": "cosmetic-workflow-rename",
+    "real-pr1-lenient-candidate-parse": "lenient-candidate-parse-drops-real-finding",
+    "real-pr10": "boundary-flip-rejects-zero-override",
+    "real-pr4-options-not-forwarded": "review-options-not-forwarded-large-mode"
+  }
+}

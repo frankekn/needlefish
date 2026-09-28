@@ -1,0 +1,906 @@
+{
+  "promptHash": "d95aa170f3a37cf3",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 2 --holdout include --gate-class R --fixtures '^large-' --report '<redacted>'",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:38f94486daf1578b\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 2 --holdout include --gate-class R --fixtures '^large-' --report eval/reports/large-fixtures-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-27T13:01:02.622Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "large-clean-sweep",
+      "draw": 0,
+      "score": {
+        "fixtureId": "large-clean-sweep",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 2,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 170613,
+      "calls": 7,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "large-clean-sweep",
+      "draw": 1,
+      "score": {
+        "fixtureId": "large-clean-sweep",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 2,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 206932,
+      "calls": 6,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "large-clean-sweep",
+      "draw": 2,
+      "score": {
+        "fixtureId": "large-clean-sweep",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 5,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 5,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 2,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 1,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 3,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 197302,
+      "calls": 7,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "large-tail-boundary-bug",
+      "draw": 0,
+      "score": {
+        "fixtureId": "large-tail-boundary-bug",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 2,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 1,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 4,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 235376,
+      "calls": 7,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/lib/date-range.ts",
+          "lineStart": 22,
+          "lineEnd": 22,
+          "title": "monthRange end excludes the entire last day of the month",
+          "whyItBreaks": "The end boundary changed from Date.UTC(year, month, 1) (exclusive start of next month) to Date.UTC(year, month, 0), which in JS date arithmetic is midnight UTC of the LAST day of the month (e.g. monthRange(2024,1).end === 2024-01-31T00:00:00.000Z). contains() at src/lib/date-range.ts:32 is half-open (`t < range.end`), so every invoice timestamp on the last day (00:00:00.001 through 23:59:59.999) now fails the filter at src/reports/monthly.ts:17 (`inv.status !== \"void\" && inv.issuedAt !== null && contains(range, inv.issuedAt)`). Since issueInvoice stamps `issuedAt: new Date()` with a full timestamp (src/invoices/issue.ts:24), a real last-day issuance (e.g. 2024-01-31T12:00:00Z >= end) is silently excluded, shrinking invoiceCount/totalCents by ~1/28–1/31 of the month's revenue. That wrong total then flows to monthlyCsv (src/reports/export.ts:5)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "large-tail-boundary-bug",
+      "draw": 1,
+      "score": {
+        "fixtureId": "large-tail-boundary-bug",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 3,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 3,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 1,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 2,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "deep",
+              "passIndex": 4,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 196392,
+      "calls": 8,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/lib/date-range.ts",
+          "lineStart": 22,
+          "lineEnd": 22,
+          "title": "monthRange end shrinks window, dropping last calendar day of every month",
+          "whyItBreaks": "The end boundary changed from Date.UTC(year, month, 1) (start of next month, exclusive) to Date.UTC(year, month, 0) (last day of month at 00:00 UTC). contains() at src/lib/date-range.ts:32 is unchanged and half-open (t >= start && t < end), so end is now exclusive of the ENTIRE final day. Substitution, monthRange(2024, 1): old end = 2024-02-01T00:00Z, new end = 2024-01-31T00:00Z. An invoice with issuedAt = 2024-01-31T12:00Z yields t < end === false and is dropped by the filter at src/reports/monthly.ts:17, undercounting invoiceCount/totalCents; those values flow through monthlyRevenue into the CSV row at src/reports/export.ts:5,9,10. Every month loses its last-day (after 00:00) invoices."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "large-tail-boundary-bug",
+      "draw": 2,
+      "score": {
+        "fixtureId": "large-tail-boundary-bug",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "map",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 132223,
+      "calls": 5,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/lib/date-range.ts",
+          "lineStart": 22,
+          "lineEnd": 22,
+          "title": "monthRange end excludes last day of month from revenue totals",
+          "whyItBreaks": "monthRange(year, month) now returns end = new Date(Date.UTC(year, month, 0)), which is the LAST day of the requested month at 00:00:00.000Z (e.g. monthRange(2024, 3).end = 2024-03-31T00:00:00Z). contains() at src/lib/date-range.ts:32 is an exclusive upper bound (t < range.end.getTime()), so any invoice with issuedAt on the final calendar day at or after 00:00 is rejected. The consumer at src/reports/monthly.ts:17 filters invoices with `contains(range, inv.issuedAt)`, so all last-day invoices are dropped from invoiceCount and totalCents; those understated values flow through src/reports/export.ts:5 into the serialized CSV row (export.ts:9-10). Previously end was Date.UTC(year, month, 1) = next-month first day, so the whole month was counted. This is a silent regression on a money-reporting path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "file": "src/lib/date-range.ts",
+          "lineRange": [
+            20,
+            23
+          ],
+          "facts": [
+            {
+              "id": "month_end_moved_back",
+              "meaning": "monthRange's end is now day 0 of the following month (the requested month's last day at midnight) instead of the first day of the next month.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "Date\\.UTC\\(\\s*year\\s*,\\s*month\\s*,\\s*0\\s*\\)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "day\\s*(?:0|zero)",
+                    "month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:first|1st|start)\\s+(?:day\\s+)?of\\s+(?:the\\s+)?next\\s+month"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "off.?by.?one",
+                    "(?:month|day|end)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "last\\s+day",
+                    "(?:midnight|00:00|start of|beginning of)"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "last_day_excluded",
+              "meaning": "Records on the last day of a month fall outside the half-open range and are omitted from monthly totals.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+day",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip|not\\s+(?:counted|included))"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:last|final)\\s+24\\s*hours",
+                    "(?:exclud|drop|miss|omit|lost|lose|skip)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "(?:end|close)\\s+of\\s+(?:the\\s+|each\\s+|every\\s+)?month",
+                    "(?:exclud|drop|miss|omit|undercount|under-report)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 189806.33333333334,
+    "recallByFixture": {
+      "large-clean-sweep": 1,
+      "large-tail-boundary-bug": 1
+    },
+    "mustFindHitRateByFixture": {
+      "large-tail-boundary-bug": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1
+    },
+    "recallByDefectClass": {
+      "large-diff-tail-boundary": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "large-diff-tail-boundary": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 6,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "da7dde507575a6256f26c8a8bbfdeebafdc38bec",
+  "fixtureSetHash": "ab546d08817e6971",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "large-tail-boundary-bug": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "large-clean-sweep",
+    "large-tail-boundary-bug"
+  ],
+  "fixtureKinds": {
+    "large-clean-sweep": "negative",
+    "large-tail-boundary-bug": "positive"
+  },
+  "fixtureDefectClasses": {
+    "large-clean-sweep": "large-mechanical-sweep",
+    "large-tail-boundary-bug": "large-diff-tail-boundary"
+  }
+}
