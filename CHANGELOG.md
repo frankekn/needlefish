@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.9 — 2026-09-28
+
+- Runners: the per-call timeout now defaults to 20 minutes (1,200,000 ms)
+  for every runner, the value only the Terra xhigh workflow lane had. Deep
+  passes on large PRs with DeepSeek V4.1 Flash were timing out at 10 minutes
+  and reporting `needs_human` with files left unreviewed.
+  `NEEDLEFISH_TIMEOUT_MS` / `CODEX_TIMEOUT_MS` still override, and the
+  whole-review deadline still caps a run.
+- Docs: `src/adapters/AGENTS.md` now matches local mode (a dirty worktree
+  reviews uncommitted changes by default); the critic matching key uses a
+  `"\u0000"` escape instead of a literal NUL byte. Eval records the 90-fixture
+  baseline and the large-path measurements.
+
 ## 0.4.8 — 2026-09-28
 
 - GitHub: review only PRs whose author is an OWNER, MEMBER, or COLLABORATOR
