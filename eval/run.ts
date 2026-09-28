@@ -944,7 +944,7 @@ export function aggregateDefectClassMetrics(
 const lastCheckpointCoverage = new Map<string, ReadonlySet<string>>();
 
 function coverageKey(fixtureId: string, draw: number): string {
-	return `${fixtureId} ${draw}`;
+	return `${fixtureId}\u0000${draw}`;
 }
 
 function coverageOf(
