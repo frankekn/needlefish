@@ -8,7 +8,7 @@
 
 | Task | Location | Notes |
 | --- | --- | --- |
-| Local diff review | `local.ts` | Uses merge-base..HEAD and warns that dirty worktree changes are excluded. |
+| Local diff review | `local.ts` | A dirty worktree (or no commits) reviews staged, unstaged, and untracked changes; a clean one reviews merge-base..HEAD. `--uncommitted` / `--branch` force either mode, and `--branch` warns that dirty changes are excluded. |
 | Local PR review | `local.ts` | Uses `gh pr view`, fetches refs, and reads `AGENTS.md` at PR head. |
 | GitHub Action review | `github.ts` | Uses Actions env, PR API, check-runs, and review comments. |
 | Posting behavior | `github-posting.test.ts` | Stale head and non-sticky comment behavior are protected here. |
@@ -23,6 +23,6 @@
 
 ## ANTI-PATTERNS
 
-- Do not include uncommitted local changes in local review; this tool reviews merge-base..HEAD.
+- Do not mix modes: branch mode reviews merge-base..HEAD only, and uncommitted mode reviews only the working-tree diff.
 - Do not make GitHub review output sticky by using `REQUEST_CHANGES`.
 - Do not let `GITHUB_TOKEN`, `GH_TOKEN`, or runner auth leak into model-runner subprocesses; shared runner code strips these.
