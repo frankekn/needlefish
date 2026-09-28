@@ -6,10 +6,16 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish to npm (e.g. v0.4.9); npm job only
+        required: true
 permissions:
   contents: write
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       # Persist credentials (checkout default): "Roll floating major tag" runs
@@ -40,3 +46,56 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" -R "${{ github.repository }}" \
             --title "needlefish ${GITHUB_REF_NAME}" --generate-notes || true
+  # npm Trusted Publishing (OIDC): no long-lived token. The package's npm
+  # settings must list this repo and workflow file as its trusted publisher.
+  npm:
+    needs: release
+    if: always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.release.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Check version
+        id: version
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::not a release tag: $RELEASE_TAG"; exit 1 ;; esac
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$RELEASE_TAG" ]; then
+            echo "::error::package.json version $version does not match $RELEASE_TAG"
+            exit 1
+          fi
+          if ! node -e 'const [a, b] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && b >= 5) ? 0 : 1)' "$(npm --version)"; then
+            npm install -g npm@^11.5.1
+          fi
+          if ! node -e 'const [a, b] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && b >= 5) ? 0 : 1)' "$(npm --version)"; then
+            echo "::error::npm $(npm --version) cannot use trusted publishing; need npm 11.5+"
+            exit 1
+          fi
+          if npm view "needlefish@$version" version >/dev/null 2>&1; then
+            echo "needlefish@$version is already on npm; nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install and smoke the packed tarball
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm pack:smoke
+      - name: Publish
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --provenance --access public
