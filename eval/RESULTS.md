@@ -145,6 +145,7 @@ twelve. Single draw, not a gate; other lanes need the same measurement before
 any lane skips the critic.
 
 Report: `eval/evidence/2026-09-28-critic-value/critic-value-90-x1.json`.
+
 ### 2026-09-28 — Large-PR path measurement and the 90-fixture baseline
 
 No fixture exercised the large path (map → deep hotspots → tail coverage →
