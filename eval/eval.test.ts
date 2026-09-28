@@ -2172,6 +2172,32 @@ test("writeReport: counts mustFind misses matched before critic pruning", () => 
   assert.equal(hasConsistentCheatDetection(contradictory), false);
 });
 
+test("writeReport: merges critic value aggregates only when draws carry them", (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-critic-value-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const args = parseArgs(["--draws", "1", "--report", path.join(dir, "report.json")]);
+  const spec = holdoutSpec("critic-value", false);
+  const legacyDraw = {
+    fixtureId: spec.id, draw: 0,
+    score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id),
+    durationMs: 1, calls: 1, retries: 0,
+  };
+  const legacy = writeReport(args, [legacyDraw], [spec]);
+  assert.equal("criticDelta" in legacy.aggregates, false);
+  assert.equal("criticTimeShare" in legacy.aggregates, false);
+
+  const traced = writeReport(args, [{
+    ...legacyDraw,
+    candidateScore: { recall: true, falsePositive: false, noiseFindingCount: 2, findingCount: 3, blockingFindingCount: 3 },
+    criticMs: 25,
+    totalPassMs: 100,
+  }], [spec]);
+  assert.equal(traced.aggregates.candidateMeanNoisePerPositive, 2);
+  assert.deepEqual(traced.aggregates.criticDelta, { meanNoisePerPositive: -2, recall: -1 });
+  assert.equal(traced.aggregates.criticTimeShare, 0.25);
+  assert.equal(hasConsistentCheatDetection(traced), true);
+});
+
 test("renderResults displays bait exposure and distinguishes critic-pruned misses", () => {
   const spec = holdoutSpec("visible-prune", false);
   const seed = resumeReport(spec, { anticheatVersion: 2 });
