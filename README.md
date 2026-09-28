@@ -464,7 +464,7 @@ runner. Common options:
 | runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
 | model | `NEEDLEFISH_MODEL` | runner default |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `high` for `gpt-5.6-terra`) |
-| per-attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| per-attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000` (20 min) |
 | shared review deadline | `NEEDLEFISH_REVIEW_TIMEOUT_MS` | unset |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 

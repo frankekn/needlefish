@@ -16,6 +16,7 @@ import {
 	RunnerOperationalError,
 	safeOutputCause,
 	safeRunnerCause,
+	timeoutMsFor,
 } from "./codex";
 import {
 	commitAll,
@@ -1011,4 +1012,29 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 	}
 	assert.match((invalid as Error).message, /invalid JSON in codex output/);
 	assert.doesNotMatch((invalid as Error).message, /likely cause/);
+});
+
+test("per-call timeout defaults to 20 minutes and env overrides win", (t) => {
+	const saved = {
+		needlefish: process.env.NEEDLEFISH_TIMEOUT_MS,
+		codex: process.env.CODEX_TIMEOUT_MS,
+	};
+	t.after(() => {
+		for (const [name, value] of [
+			["NEEDLEFISH_TIMEOUT_MS", saved.needlefish],
+			["CODEX_TIMEOUT_MS", saved.codex],
+		] as const) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	});
+	delete process.env.NEEDLEFISH_TIMEOUT_MS;
+	delete process.env.CODEX_TIMEOUT_MS;
+	assert.equal(timeoutMsFor("codex"), 1_200_000);
+	assert.equal(timeoutMsFor("claude"), 1_200_000);
+	process.env.CODEX_TIMEOUT_MS = "7000";
+	assert.equal(timeoutMsFor("codex"), 7000);
+	assert.equal(timeoutMsFor("claude"), 1_200_000);
+	process.env.NEEDLEFISH_TIMEOUT_MS = "5000";
+	assert.equal(timeoutMsFor("codex"), 5000);
 });
