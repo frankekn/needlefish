@@ -375,9 +375,6 @@ jobs:
               deepseek-v4.1-flash|glm-5.3-flash|devin/swe-2) export CODEX_REASONING_EFFORT="high" ;;
             esac
           fi
-          if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
-            NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"
-          fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
             export CODEX_SERVICE_TIER="fast"
           fi

@@ -625,7 +625,7 @@ export async function runCodex(
 				throw err;
 			}
 			// A run that exhausted its whole per-call deadline is not retried: the second
-			// attempt waits out the same stuck upstream and doubles the pass to ~20 min.
+			// attempt waits out the same stuck upstream and doubles the pass to ~40 min.
 			// An idle stall (RunnerIdleTimeoutError) stays retryable; README documents it.
 			if (err.cause instanceof RunnerTimeoutError) {
 				emitStat(false);
@@ -958,7 +958,7 @@ function resolveModel(
 	return modelEnv === undefined ? undefined : process.env[modelEnv];
 }
 
-function timeoutMsFor(runner: RunnerName): number {
+export function timeoutMsFor(runner: RunnerName): number {
 	if (process.env.NEEDLEFISH_TIMEOUT_MS !== undefined) {
 		return parsePositiveInteger(
 			process.env.NEEDLEFISH_TIMEOUT_MS,
@@ -971,7 +971,7 @@ function timeoutMsFor(runner: RunnerName): number {
 			"CODEX_TIMEOUT_MS",
 		);
 	}
-	return 600000;
+	return 1200000;
 }
 
 function retryMsFor(runner: RunnerName): number {

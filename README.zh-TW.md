@@ -403,7 +403,7 @@ runner。共通選項：
 | runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude`、`opencode` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `high`） |
-| timeout | `NEEDLEFISH_TIMEOUT_MS` | `600000` |
+| timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000`（20 分鐘） |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
 
 opencode 的 idle deadline 在 CLI 每次產生 stdout 或 stderr 時重設。若

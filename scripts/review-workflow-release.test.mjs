@@ -170,8 +170,8 @@ test("review forwards the optional opencode idle timeout without exporting an em
 	);
 });
 
-test("review gives the Terra xhigh lane a production timeout", () => {
-	assert.match(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"/);
+test("review leaves the per-call timeout to the binary default and keeps the Terra xhigh fast tier", () => {
+	assert.doesNotMatch(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="\d+"/);
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
 });
 
