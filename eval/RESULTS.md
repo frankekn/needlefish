@@ -128,6 +128,23 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-28 — What the critic buys on the production lane
+
+Eval reports now carry the pre-critic score of every draw (same scorer rules,
+applied to the merged candidate findings), the critic's change to FP rate,
+noise and recall, and the critic's share of pass time. The scorer hash is
+unchanged (`8bbc6152d8b45a43`), so older reports still compare.
+
+First measurement, Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high,
+90 fixtures × 1 draw: the critic took the false-positive rate from 8.3% to 0
+(two clean fixtures that would have been blocked), left noise unchanged
+(0.016), cost one true positive (recall −1.6%, `rs-backend-spec-drift`), and
+used 30.5% of summed pass time (33% of wall time). Reading: on this lane the
+critic is worth its cost; skipping it would block about one clean PR in
+twelve. Single draw, not a gate; other lanes need the same measurement before
+any lane skips the critic.
+
+Report: `eval/evidence/2026-09-28-critic-value/critic-value-90-x1.json`.
 ### 2026-09-28 — Large-PR path measurement and the 90-fixture baseline
 
 No fixture exercised the large path (map → deep hotspots → tail coverage →
