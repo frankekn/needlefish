@@ -54,16 +54,50 @@ function detectBase(cwd: string, override?: string): string {
   return "main";
 }
 
-function ensureGitRepo(cwd: string): void {
+export const BASE_FIX = "Pass --base <ref> to name the branch to compare against.";
+
+export class BaseRefError extends Error {
+  constructor(
+    readonly baseRef: string,
+    readonly reason: string,
+    options?: ErrorOptions,
+  ) {
+    super(`Base ref '${baseRef}' cannot be used (${reason}). ${BASE_FIX}`, options);
+    this.name = "BaseRefError";
+  }
+}
+
+export interface ReviewBase {
+  readonly baseRef: string;
+  readonly baseSha: string;
+}
+
+/** The branch-mode review base: `--base`, else origin/HEAD, else `main`, resolved to its merge base with HEAD. */
+export function resolveReviewBase(cwd: string, override?: string): ReviewBase {
+  const baseRef = detectBase(cwd, override);
   try {
-    if (git(["rev-parse", "--is-inside-work-tree"], cwd) === "true") return;
+    return { baseRef, baseSha: git(["merge-base", baseRef, "HEAD"], cwd) };
   } catch (err) {
     if (!(err instanceof Error)) throw err;
+    throw new BaseRefError(baseRef, err.message, { cause: err });
   }
+}
+
+export function isGitRepo(cwd: string): boolean {
+  try {
+    return git(["rev-parse", "--is-inside-work-tree"], cwd) === "true";
+  } catch (err) {
+    if (err instanceof Error) return false;
+    throw err;
+  }
+}
+
+function ensureGitRepo(cwd: string): void {
+  if (isGitRepo(cwd)) return;
   throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
 }
 
-function hasHeadCommit(cwd: string): boolean {
+export function hasHeadCommit(cwd: string): boolean {
   try {
     git(["cat-file", "-e", "HEAD^{commit}"], cwd);
     return true;
@@ -130,13 +164,12 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
       "needlefish: warning: uncommitted changes are not included; review is merge-base..HEAD only.\n"
     );
   }
-  const baseRef = detectBase(cwd, opts.base);
-  const baseSha = git(["merge-base", baseRef, "HEAD"], cwd);
+  const { baseRef, baseSha } = resolveReviewBase(cwd, opts.base);
   const headSha = git(["rev-parse", "HEAD"], cwd);
   const patch = git(["diff", baseSha, "HEAD"], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(
-      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review.`
+      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.`
     );
   }
   return makeBundle({
@@ -209,11 +242,20 @@ export interface LocalBundle {
   readonly mode: LocalDiffMode;
 }
 
+/** A dirty worktree or a repo with no commits reviews uncommitted changes; a clean one reviews merge-base..HEAD. */
+export function localDiffMode(
+  headExists: boolean,
+  dirty: boolean,
+  override: LocalDiffMode | undefined,
+): LocalDiffMode {
+  return override ?? (!headExists || dirty ? "uncommitted" : "branch");
+}
+
 export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   ensureGitRepo(cwd);
   const headExists = hasHeadCommit(cwd);
   const dirty = git(["status", "--porcelain"], cwd).trim() !== "";
-  const mode: LocalDiffMode = opts.localMode ?? (!headExists || dirty ? "uncommitted" : "branch");
+  const mode = localDiffMode(headExists, dirty, opts.localMode);
   const bundle = mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
   return { bundle, mode };
 }

@@ -72,3 +72,36 @@ function clearRunnerEnv(pathValue: string): void {
   delete process.env.OPENCODE_BIN;
   delete process.env.NEEDLEFISH_RUNNER;
 }
+
+// Regression: detection once trimmed CODEX_BIN while the spawn used it raw, so
+// a padded override was auto-detected and then failed ENOENT instead of
+// falling through to the next runner.
+test("runCodex skips a padded CODEX_BIN because the codex spawn does not trim it", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-detect-test-"));
+  const repo = initRepo(tmp);
+  const fakeBin = path.join(tmp, "bin");
+  const inputPath = path.join(tmp, "stdin.txt");
+  const previous = captureEnv(RUNNER_ENV_KEYS);
+  t.after(() => {
+    restoreEnv(previous);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  mkdirSync(fakeBin);
+  for (const name of ["codex", "claude"]) {
+    const file = path.join(fakeBin, name);
+    writeFileSync(file, ["#!/bin/sh", `cat > ${JSON.stringify(inputPath)}`, `printf '{"runner":"${name}"}'`].join("\n"));
+    chmodSync(file, 0o755);
+  }
+  clearRunnerEnv(`/usr/bin:/bin:/usr/sbin:/sbin`);
+  process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
+  process.env.CODEX_BIN = ` ${path.join(fakeBin, "codex")} \n`;
+
+  const output = await runCodex("prompt", {
+    repoPath: repo,
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  assert.equal(output, '{"runner":"claude"}');
+});

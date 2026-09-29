@@ -18,6 +18,7 @@ import {
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
+	RunnerIdleTimeoutError,
 	RunnerTimeoutError,
 	spawnRunnerProcess,
 	type RunnerProcessResult,
@@ -83,7 +84,7 @@ const BASE_ENV_ALLOWLIST = [
 	"RUNNER_TRACKING_ID",
 ] as const;
 
-function buildRunnerEnv(
+export function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
 	ephemeralHome?: string,
@@ -185,6 +186,28 @@ function hasCodexProxyEnvCredential(): boolean {
 	);
 }
 
+// The env-credential modes a review accepts without the runner's HOME
+// credential store. ephemeralAuthFiles relaxes its required files on exactly
+// this answer, and the doctor accepts the setup on it before probing the CLI's
+// own login state. Never reads the values themselves beyond non-emptiness.
+export function hasRunnerEnvCredential(runner: RunnerName): boolean {
+	switch (runner) {
+		case "codex":
+			// CODEX_API_KEY through the passthrough authenticates without auth.json.
+			return hasCodexProxyEnvCredential() || hasPassthroughCredential(["CODEX_API_KEY"]);
+		case "claude":
+			return !!process.env.ANTHROPIC_API_KEY || !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+		case "opencode":
+			return hasOpenCodeEnvCredential();
+		case "grok":
+			return hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"]);
+		case "openai":
+		case "pi":
+		case "acp":
+			return false;
+	}
+}
+
 export function hasPiProviderEnvCredential(
 	provider: string,
 	env: RunnerEnvironment = process.env,
@@ -278,14 +301,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly optional: readonly string[];
 } {
 	if (runner === "codex") {
-		if (hasCodexProxyEnvCredential()) {
-			return {
-				required: [],
-				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
-			};
-		}
-		// CODEX_API_KEY through the passthrough authenticates without auth.json.
-		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
+		if (hasRunnerEnvCredential(runner)) {
 			return {
 				required: [],
 				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
@@ -298,10 +314,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			optional: [".codex/config.toml"],
 		};
 	}
-	if (
-		runner === "grok" &&
-		hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"])
-	) {
+	if (runner === "grok" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.grok.envConfigFiles,
@@ -310,7 +323,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST). Other provider API keys must be explicitly named
 	// in the passthrough and non-empty.
-	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
+	if (runner === "opencode" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.opencode.envConfigFiles,
@@ -762,10 +775,12 @@ async function runCodexOnce(
 			return err;
 		};
 		if (result.res.error) {
+			const nextStep = spawnFailureNextStep(runner, result.res.error, invocation.timeoutMs);
 			throw withRunnerOutput(
-				new RunnerOperationalError(result.res.error.message, {
-					cause: result.res.error,
-				}),
+				new RunnerOperationalError(
+					nextStep === undefined ? result.res.error.message : `${result.res.error.message}. ${nextStep}`,
+					{ cause: result.res.error },
+				),
 			);
 		}
 		if (result.res.status !== 0) {
@@ -775,7 +790,7 @@ async function runCodexOnce(
 			const cause = safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
-					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt`,
+					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
 				),
 			);
 		}
@@ -851,6 +866,62 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	return undefined;
 }
 
+// One concrete next step per exit-failure class. Only catalog commands and
+// canned phrases reach the message; review.yml advances its provider fallback
+// on the `likely cause:` token, so an auth step must never contain a fallback
+// keyword (timeout, unreachable, ...).
+function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
+	if (cause === undefined) {
+		return "Run `needlefish doctor` to check the runner setup, then retry.";
+	}
+	if (cause.startsWith("auth")) {
+		const login = RUNNER_DEFINITIONS[runner].login;
+		return login === undefined
+			? `Log in to the ${runner} CLI again, then retry.`
+			: `Run \`${login.command}\`, then retry.`;
+	}
+	switch (cause) {
+		case "usage limit":
+			return "Wait for the usage limit to reset, or switch --runner or --model, then retry.";
+		case "rate limited":
+			return "Retry in a few minutes.";
+		case "network error":
+			return "Check network and proxy settings, then retry.";
+		default:
+			return "Retry.";
+	}
+}
+
+// Spawn-level failures the user can act on. Other spawn errors keep their
+// bare errno message.
+function spawnFailureNextStep(
+	runner: RunnerName,
+	error: Error,
+	timeoutMs: number,
+): string | undefined {
+	if (error instanceof RunnerTimeoutError) {
+		return `The ${runner} runner used its whole ${timeoutMs} ms per-call timeout. Retry; if it repeats, raise --timeout-ms or NEEDLEFISH_TIMEOUT_MS.`;
+	}
+	if (error instanceof RunnerIdleTimeoutError) {
+		return `The ${runner} runner stopped producing output. Retry; if it repeats, raise OPENCODE_IDLE_TIMEOUT_MS.`;
+	}
+	if ("code" in error && error.code === "ENOENT") {
+		const definition = RUNNER_DEFINITIONS[runner];
+		const install = definition.autoDetect?.installCommand;
+		const binEnv = definition.bin?.env;
+		if (install !== undefined && binEnv !== undefined) {
+			return `The ${runner} CLI is not installed or not on PATH. Install it with \`${install}\`, or set ${binEnv} to its executable.`;
+		}
+		if (binEnv !== undefined) {
+			return `The ${runner} CLI is not installed or not on PATH. Set ${binEnv} to its executable.`;
+		}
+	}
+	return undefined;
+}
+
+export const MALFORMED_OUTPUT_NEXT_STEP =
+	"Retry; if it repeats, try another --model or --runner.";
+
 // Allowlisted cause classification for output that cannot be parsed, mirroring
 // safeRunnerCause: only the canned tokens ever reach the PR-visible message, the
 // output text never does (it may echo the review prompt).
@@ -886,7 +957,7 @@ export function safeOutputCause(text: string): string | undefined {
 function unparseableOutputError(text: string): Error {
 	const cause = safeOutputCause(text);
 	return new Error(
-		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}`,
+		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}. ${MALFORMED_OUTPUT_NEXT_STEP}`,
 	);
 }
 
@@ -903,7 +974,7 @@ function parseJsonObject(raw: string): unknown {
 		return JSON.parse(raw.slice(start, end + 1));
 	} catch (error) {
 		if (error instanceof SyntaxError) {
-			throw new Error(`invalid JSON in codex output: ${error.message}`, {
+			throw new Error(`invalid JSON in codex output: ${error.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
 				cause: error,
 			});
 		}
@@ -938,14 +1009,14 @@ export function extractJson(text: string): unknown {
 
 	const jsonFences = fences.filter((fence) => fence.tag === "json");
 	if (jsonFences.length > 1) {
-		throw new Error("ambiguous JSON fences in codex output");
+		throw new Error(`ambiguous JSON fences in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`);
 	}
 	if (jsonFences.length === 1) {
 		return parseJsonObject(jsonFences[0].body);
 	}
 
 	if (fences.length > 1) {
-		throw new Error("ambiguous fenced output in codex output");
+		throw new Error(`ambiguous fenced output in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`);
 	}
 	if (fences.length === 1) {
 		const fence = fences[0];
@@ -956,7 +1027,7 @@ export function extractJson(text: string): unknown {
 	}
 
 	if (documentError) {
-		throw new Error(`invalid JSON in codex output: ${documentError.message}`, {
+		throw new Error(`invalid JSON in codex output: ${documentError.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
 			cause: documentError,
 		});
 	}

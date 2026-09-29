@@ -219,3 +219,18 @@ test("parseArgs rejects render/verdict without exactly one file", () => {
     /verdict takes exactly one file argument/,
   );
 });
+
+test("parseArgs accepts the doctor command with its diagnostic options only", () => {
+  assert.deepEqual(parseArgs(["doctor"]), { kind: "doctor", json: false });
+  assert.deepEqual(parseArgs(["doctor", "--repo", "/tmp/repo", "--runner", "claude", "--base", "develop", "--json"]), {
+    kind: "doctor",
+    json: true,
+    repo: "/tmp/repo",
+    runner: "claude",
+    base: "develop",
+  });
+  assert.deepEqual(parseArgs(["doctor", "--help"]), { kind: "help" });
+  for (const flag of ["--deep", "--pr=1", "--github", "--dry-run", "--focus=x", "--model=m", "--uncommitted"]) {
+    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner, --base, and --json/, flag);
+  }
+});

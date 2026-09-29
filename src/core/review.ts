@@ -2,6 +2,7 @@ import {
 	runCodex,
 	extractJson,
 	isRunnerSafetyError,
+	MALFORMED_OUTPUT_NEXT_STEP,
 	type CodexOptions,
 } from "../shared/codex.js";
 import {
@@ -375,7 +376,7 @@ async function runJsonPrompt<T>(
 function assertUsableReview(review: RawReview, label: string): void {
 	if (!review.summary || review.checked.length === 0) {
 		throw new Error(
-			`${label} produced no summary or checked list (likely malformed output)`,
+			`${label} produced no summary or checked list (likely malformed output). ${MALFORMED_OUTPUT_NEXT_STEP}`,
 		);
 	}
 }

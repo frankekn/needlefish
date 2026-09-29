@@ -435,7 +435,7 @@ test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t
 	const err = caught as Error & { rawOutput?: string };
 	assert.match(
 		err.message,
-		/codex runner exited 1; likely cause: auth error \(invalid_api_key\); stderr withheld/,
+		/codex runner exited 1; likely cause: auth error \(invalid_api_key\); stderr withheld because it may contain the review prompt\. Run `codex login`, then retry\.$/,
 	);
 	assert.doesNotMatch(err.message, new RegExp(stderrMarker));
 	assert.match(err.rawOutput ?? "", new RegExp(stderrMarker));
@@ -482,7 +482,7 @@ test("runCodex keeps the generic withheld message when stderr has no allowlisted
 	assert.ok(caught instanceof Error);
 	assert.match(
 		(caught as Error).message,
-		/codex runner exited 3; stderr withheld because it may contain the review prompt/,
+		/codex runner exited 3; stderr withheld because it may contain the review prompt\. Run `needlefish doctor` to check the runner setup, then retry\.$/,
 	);
 	assert.doesNotMatch((caught as Error).message, /likely cause/);
 });
@@ -531,7 +531,7 @@ test("runCodex reports opencode exit errors before parsing stdout", async (t) =>
 	const err = caught as Error & { rawOutput?: string };
 	assert.match(
 		err.message,
-		/opencode runner exited 2; stderr withheld because it may contain the review prompt/,
+		/opencode runner exited 2; stderr withheld because it may contain the review prompt\. Run `needlefish doctor` to check the runner setup, then retry\.$/,
 	);
 	assert.doesNotMatch(err.message, new RegExp(stderrMarker));
 	assert.match(
@@ -1012,6 +1012,105 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 	}
 	assert.match((invalid as Error).message, /invalid JSON in codex output/);
 	assert.doesNotMatch((invalid as Error).message, /likely cause/);
+});
+
+test("extractJson ends every malformed-output message with the same next step", () => {
+	for (const output of [
+		"",
+		'```json\n{"summary":"cut off',
+		"I reviewed the diff but will not answer in JSON.",
+		'```json\n{"a": 1,}\n```',
+		'```json\n{"a":1}\n```\n```json\n{"b":2}\n```',
+		'```\n{"a":1}\n```\n```\n{"b":2}\n```',
+	]) {
+		assert.throws(
+			() => extractJson(output),
+			/\. Retry; if it repeats, try another --model or --runner\.$/,
+			output,
+		);
+	}
+});
+
+test("runCodex names the runner's login command when claude rejects auth", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "claude-bin.js");
+	const previous = {
+		bin: process.env.CLAUDE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+		else process.env.CLAUDE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"process.stderr.write('Not logged in. Please run /login.');",
+			"process.exit(1);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CLAUDE_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "claude";
+
+	await assert.rejects(
+		() => runCodex("prompt", { repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 }),
+		/claude runner exited 1; likely cause: auth rejected; stderr withheld because it may contain the review prompt\. Run `claude auth login`, then retry\.$/,
+	);
+});
+
+test("runCodex tells the user how to install an explicitly selected runner that is missing", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const previous = {
+		bin: process.env.OPENCODE_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
+		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.OPENCODE_BIN = path.join(tmp, "missing-opencode");
+	process.env.NEEDLEFISH_RUNNER = "opencode";
+
+	await assert.rejects(
+		() => runCodex("prompt", { repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 }),
+		/spawn .*missing-opencode ENOENT\. The opencode CLI is not installed or not on PATH\. Install it with `npm install -g @opencode\/cli`, or set OPENCODE_BIN to its executable\.$/,
+	);
+});
+
+test("runCodex ends a per-call timeout with the timeout knobs to raise", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		runner: process.env.NEEDLEFISH_RUNNER,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+		else process.env.NEEDLEFISH_RUNNER = previous.runner;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(bin, ["#!/usr/bin/env node", "setInterval(() => {}, 1000);"].join("\n"));
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_RUNNER = "codex";
+
+	await assert.rejects(
+		() => runCodex("prompt", { repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 300 }),
+		/spawn .*codex-bin\.js ETIMEDOUT\. The codex runner used its whole 300 ms per-call timeout\. Retry; if it repeats, raise --timeout-ms or NEEDLEFISH_TIMEOUT_MS\.$/,
+	);
 });
 
 test("per-call timeout defaults to 20 minutes and env overrides win", (t) => {

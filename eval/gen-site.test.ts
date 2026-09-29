@@ -366,6 +366,19 @@ test("renderSite scores a runner deadline timeout as a failed review, not an ope
     ),
   };
   assert.deepEqual(operationalFailures(spacedPath), []);
+  const withNextStep = {
+    ...timedOut[1].report,
+    results: timedOut[1].report.results.map((result, drawIndex) =>
+      drawIndex === 0
+        ? { ...result, operationalFailure: "spawn codex ETIMEDOUT. The codex runner used its whole 1000 ms per-call timeout. Retry; if it repeats, raise --timeout-ms or NEEDLEFISH_TIMEOUT_MS." }
+        : drawIndex === 1
+          ? { ...result, operationalFailure: "spawn opencode EIDLETIMEDOUT. The opencode runner stopped producing output. Retry; if it repeats, raise OPENCODE_IDLE_TIMEOUT_MS." }
+          : result,
+    ),
+  };
+  assert.deepEqual(operationalFailures(withNextStep), [
+    "spawn opencode EIDLETIMEDOUT. The opencode runner stopped producing output. Retry; if it repeats, raise OPENCODE_IDLE_TIMEOUT_MS.",
+  ]);
   const deadlineOnly = lanes.map((lane, index) =>
     index === 1
       ? {

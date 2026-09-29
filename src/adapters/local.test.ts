@@ -368,3 +368,31 @@ test("local review prints no progress when stderr is not a TTY", (t) => {
   assert.match(result.stdout, /pass/i);
   assert.equal(result.stderr, "");
 });
+
+test("runLocal names --base when the detected base ref does not exist", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-test-"));
+  const repo = initRepo(tmp);
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  gitText(["branch", "-M", "trunk"], repo);
+
+  await assert.rejects(
+    () => runLocal(repo, { localMode: "branch" }),
+    /Base ref 'main' cannot be used \(git merge-base main HEAD failed: .*\)\. Pass --base <ref> to name the branch to compare against\.$/,
+  );
+});
+
+test("runLocal tells the user what to do when the branch has no diff against its base", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-test-"));
+  const repo = initRepo(tmp);
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  gitText(["branch", "-M", "main"], repo);
+
+  await assert.rejects(
+    () => runLocal(repo, { localMode: "branch" }),
+    /No diff between [0-9a-f]{40} and HEAD \(main\)\. Nothing to review\. Commit changes on this branch first, or pass --base <ref> to compare against another branch\.$/,
+  );
+});
