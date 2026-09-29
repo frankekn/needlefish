@@ -31,6 +31,8 @@ Adoption rate = addressed / (addressed + kept). The Markdown report splits it
 by repo, severity, category, and ISO week of the thread's creation. Category
 comes from the early header when present, otherwise from the round-state marker
 in Needlefish's review body matched by normalized title, otherwise `unknown`.
+Each round overwrites that marker with only its own findings, so threads from
+earlier rounds of a multi-round PR usually end up `unknown`.
 
 `--since` counts only threads created on or after that UTC date and stops
 paging at the first PR last updated before it. For the weekly report, pass the

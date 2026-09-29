@@ -188,8 +188,9 @@ export function parsePrPage(raw: unknown): PrPage {
   };
 }
 
-// Category lookup from the round-state markers Needlefish writes into its
-// review bodies. Reviews arrive oldest first, so a later round wins.
+// Category lookup from the round-state marker. Each round PUTs a fresh marker
+// onto the first-round review body, replacing the previous one, so only the
+// latest round's findings are present; earlier-round threads end up unknown.
 function stateCategories(reviewBodies: readonly string[]): Map<string, string> {
   const categories = new Map<string, string>();
   for (const body of reviewBodies) {
