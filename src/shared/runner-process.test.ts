@@ -20,6 +20,23 @@ test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", 
   assert.match(result.error?.message ?? "", /EPIPE/);
 });
 
+// Issue #201 item 3: a stdin EPIPE only says the child stopped reading. When the
+// child then exited nonzero on its own, that exit status is the diagnosis.
+test("spawnRunnerProcess keeps a nonzero exit status over a stdin EPIPE", async () => {
+  const result = await spawnRunnerProcess({
+    command: process.execPath,
+    args: ["-e", "process.stderr.write('boom'); process.exit(1)"],
+    stdin: "x".repeat(10_000_000),
+    repoPath: process.cwd(),
+    timeoutMs: 1000,
+    env: process.env,
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, "boom");
+});
+
 test("spawnRunnerProcess reports ENOBUFS when stdout exceeds the buffer cap", async () => {
   const result = await spawnRunnerProcess({
     command: process.execPath,

@@ -98,6 +98,7 @@ export async function runManagedRunnerProcess(
     const stderrBytes = { count: 0 };
     let settled = false;
     let spawnError: Error | undefined;
+    let stdinError: Error | undefined;
     let bufferError: Error | undefined;
     let timeoutError: Error | undefined;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -178,15 +179,17 @@ export async function runManagedRunnerProcess(
       if (cancelTimer !== null) clearTimeout(cancelTimer);
       if (hardKillTimer !== null) clearTimeout(hardKillTimer);
       if (giveUpTimer !== null) clearTimeout(giveUpTimer);
+      const error = spawnError ?? bufferError ?? timeoutError;
+      // A stdin error only says the child stopped reading. When the child then
+      // exited nonzero on its own, its exit status and stderr are the diagnosis;
+      // a zero exit or a signal keeps the stdin error, since the prompt was lost.
+      const explainedByExit = stdinError !== undefined && error === stdinError && status !== null && status !== 0;
       resolve({
         status,
         signal,
         stdout: stdout.join(""),
         stderr: stderr.join(""),
-        error:
-          spawnError ??
-          bufferError ??
-          timeoutError,
+        error: explainedByExit ? undefined : error,
       });
     };
 
@@ -293,6 +296,7 @@ export async function runManagedRunnerProcess(
     child.stdin.on("error", (error) => {
       if (timeoutError === undefined && bufferError === undefined && spawnError === undefined) {
         spawnError = error;
+        stdinError = error;
       }
     });
     child.on("error", (error) => {
