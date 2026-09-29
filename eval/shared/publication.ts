@@ -68,8 +68,9 @@ type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 // draw is already scored as a miss with invalid output; only its publication status
 // changes. Idle timeouts, spawn errors, crashes, and rate limits stay operational.
 // The command is interpolated verbatim and may contain spaces; the space before
-// ETIMEDOUT keeps EIDLETIMEDOUT out.
-const RUNNER_DEADLINE_TIMEOUT = /^spawn .+ ETIMEDOUT$/;
+// ETIMEDOUT keeps EIDLETIMEDOUT out. runCodex appends a next-step sentence after
+// the errno, so the match ends at the errno or the sentence boundary.
+const RUNNER_DEADLINE_TIMEOUT = /^spawn .+ ETIMEDOUT(\.|$)/;
 
 export function operationalFailures(report: PublishedReport): string[] {
   return report.results.flatMap((result) => {
