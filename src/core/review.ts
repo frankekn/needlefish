@@ -43,6 +43,24 @@ const MAX_HOTSPOTS = 6;
 const DEFAULT_DEEP_CONCURRENCY = 3;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
+// Stage boundaries of a model-backed review, for human progress display.
+// Observation only: nothing here feeds prompts, findings, or the result.
+export type ReviewProgressEvent =
+	| { readonly stage: "review"; readonly files: number }
+	| { readonly stage: "map"; readonly files: number }
+	| {
+			readonly stage: "deep";
+			readonly done: number;
+			readonly failed: number;
+			readonly total: number;
+			readonly tail: boolean;
+	  }
+	| { readonly stage: "dedup"; readonly before: number; readonly after: number }
+	| { readonly stage: "critic"; readonly findings: number }
+	| { readonly stage: "done"; readonly durationMs: number };
+
+export type ReviewProgressObserver = (event: ReviewProgressEvent) => void;
+
 interface TraceDeliveryHealth {
 	// Mutable: set true on the first observer throw. Review semantics continue;
 	// consumers (eval score) withhold robustness when this is true.
@@ -66,6 +84,7 @@ interface ReviewRun {
 	readonly onTrace?: ReviewTraceObserver;
 	// Present only when the caller registered a trace observer.
 	readonly traceHealth?: TraceDeliveryHealth;
+	readonly onProgress?: ReviewProgressObserver;
 	readonly startedAt: number;
 	readonly reviewDeadlineMs?: number;
 }
@@ -673,6 +692,7 @@ async function runCritic(
 	run: ReviewRun,
 ): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
+	run.onProgress?.({ stage: "critic", findings: candidate.findings.length });
 	const criticPrompt = loadPrompt("critic.md")
 		.replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
 		.replace("{{PATCH}}", () => patchText)
@@ -769,6 +789,7 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const reviewPrompt = loadPrompt("review.md")
 		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
 		.replace("{{PATCH}}", () => patch);
+	run.onProgress?.({ stage: "review", files: bundle.changedFiles.length });
 	const candidate = await runJsonPrompt(
 		{
 			label: "review",
@@ -818,6 +839,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () =>
 		JSON.stringify(mapBundle, null, 2),
 	);
+	run.onProgress?.({ stage: "map", files: bundle.changedFiles.length });
 	const mapResult = await runJsonPrompt(
 		{
 			label: "map",
@@ -858,6 +880,28 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 
 	const agents = bundle.agentsMd;
+	let deepDone = 0;
+	let deepFailed = 0;
+	const reportDeep = () =>
+		run.onProgress?.({
+			stage: "deep",
+			done: deepDone,
+			failed: deepFailed,
+			total: hotspots.length,
+			tail: tailAdded,
+		});
+	const countDeepPass =
+		<R extends { readonly ok: boolean }>(
+			pass: (h: Hotspot, passIndex: number) => Promise<R>,
+		) =>
+		async (h: Hotspot, passIndex: number): Promise<R> => {
+			const result = await pass(h, passIndex);
+			deepDone++;
+			if (!result.ok) deepFailed++;
+			reportDeep();
+			return result;
+		};
+	reportDeep();
 	// mapLimit drains every in-flight deep pass before rethrowing, so the
 	// snapshot refresh in the catch below sees transcripts siblings emitted
 	// AFTER the first rejection — the per-pass snapshot attached inside
@@ -867,7 +911,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		passes = await mapLimit(
 			hotspots,
 			deepConcurrency(),
-			async (h, passIndex) => {
+			countDeepPass(async (h, passIndex) => {
 				const hotspot = {
 					...h,
 					...(bundle.untrackedSkipped?.length
@@ -927,7 +971,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						] as readonly ResidualRisk[],
 					};
 				}
-			},
+			}),
 		);
 	} catch (err) {
 		attachRunRaws(err, run);
@@ -938,6 +982,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const residuals = passes.flatMap((p) => p.residuals);
 
 	const merged = dedup(all);
+	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
 	const candidateMerged: RawReview = {
 		summary: mapResult.value.summary,
 		findings: merged,
@@ -1021,6 +1066,7 @@ export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
 	onTrace?: ReviewTraceObserver,
+	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle);
@@ -1069,6 +1115,7 @@ export async function review(
 					traceHealth,
 				}
 			: {}),
+		...(onProgress ? { onProgress } : {}),
 		startedAt,
 		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
 	};
@@ -1077,6 +1124,7 @@ export async function review(
 			? reviewLarge(run)
 			: reviewSmall(run));
 		await drainTraceDeliveries(traceHealth);
+		onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
 		return traceHealth?.failed
 			? { ...result, traceDeliveryFailed: true }
 			: result;

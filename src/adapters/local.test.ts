@@ -4,7 +4,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { runLocal, runLocalPr } from "./local";
+import { runLocal, runLocalPr, terminalProgress } from "./local";
+import type { ReviewProgressEvent } from "../core/review";
 import { serializeReviewResult } from "../shared/schema";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 
@@ -248,4 +249,122 @@ test("local --pr records the PR base tip as prBaseSha, distinct from the merge b
   assert.equal(serialized.prNumber, 7);
   assert.equal(serialized.prBaseSha, baseTip);
   assert.equal(serialized.baseSha, mergeBase);
+});
+
+test("terminalProgress writes stage lines only to a TTY without --json", () => {
+  const writes: string[] = [];
+  const sink = (isTTY: boolean | undefined) => ({
+    ...(isTTY === undefined ? {} : { isTTY }),
+    write: (chunk: string) => writes.push(chunk),
+  });
+  assert.equal(terminalProgress(sink(undefined), false), undefined);
+  assert.equal(terminalProgress(sink(false), false), undefined);
+  assert.equal(terminalProgress(sink(true), true), undefined);
+  const onProgress = terminalProgress(sink(true), false);
+  assert.ok(onProgress);
+  onProgress({ stage: "deep", done: 2, failed: 1, total: 3, tail: true });
+  onProgress({ stage: "done", durationMs: 72_049 });
+  assert.deepEqual(writes, [
+    "needlefish: deep review: 2/3 done, 1 failed\n",
+    "needlefish: done in 72.0s\n",
+  ]);
+});
+
+test("progress leaves model prompts and the cached result unchanged", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-progress-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "claude-bin.js");
+  const promptLog = path.join(tmp, "prompts.txt");
+  const previous = {
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  mkdirSync(path.join(repo, "src"));
+  writeFileSync(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+  commitAll(repo, "feature");
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
+      "const finding = { severity: 'P2', title: 'Bug', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'test' };",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [finding], checked: ['checked'], residual_risks: [] }));",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CLAUDE_BIN = bin;
+  process.env.NEEDLEFISH_RUNNER = "claude";
+
+  const runOnce = async (label: string, withProgress: boolean) => {
+    const cacheDir = path.join(tmp, `cache-${label}`);
+    rmSync(promptLog, { force: true });
+    const events: ReviewProgressEvent[] = [];
+    await runLocal(repo, { cacheDir }, withProgress ? (e) => events.push(e) : undefined);
+    const cache = readFileSync(path.join(cacheDir, "last-review.json"), "utf8")
+      .replace(/"(durationMs|totalDurationMs)": \d+/g, '"$1": 0');
+    // The throwaway runner clone lives under a fresh temp dir per run.
+    const prompts = readFileSync(promptLog, "utf8").replace(/needlefish-managed-[^/]+/g, "needlefish-managed-X");
+    return { cache, prompts, events };
+  };
+  const off = await runOnce("off", false);
+  const on = await runOnce("on", true);
+
+  assert.deepEqual(
+    on.events.map((e) => e.stage),
+    ["review", "critic", "done"]
+  );
+  assert.equal(on.prompts, off.prompts);
+  assert.equal(on.cache, off.cache);
+  assert.match(on.cache, /"verdict": "changes_requested"/);
+});
+
+test("local review prints no progress when stderr is not a TTY", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-pipe-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "claude-bin.js");
+  t.after(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  mkdirSync(path.join(repo, "src"));
+  writeFileSync(path.join(repo, "src", "app.ts"), "export const value = 1;\n");
+  commitAll(repo, "feature");
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", path.join(process.cwd(), "src/cli.ts"), "--repo", repo, "--runner", "claude"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, CLAUDE_BIN: bin, HOME: path.join(tmp, "home") },
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /pass/i);
+  assert.equal(result.stderr, "");
 });

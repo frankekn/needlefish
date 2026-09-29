@@ -1,7 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { review, reviewPlan } from "../core/review.js";
+import {
+  review,
+  reviewPlan,
+  type ReviewProgressEvent,
+  type ReviewProgressObserver,
+} from "../core/review.js";
 import { renderMarkdown } from "../shared/render.js";
 import {
   changedFiles,
@@ -248,10 +253,11 @@ export interface LocalOptions extends RunnerOptions {
 
 export async function runLocal(
   cwd: string,
-  opts: LocalOptions
+  opts: LocalOptions,
+  onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const repoPath = path.resolve(cwd);
-  const result = await review(diffBundle(repoPath, opts).bundle, opts);
+  const result = await review(diffBundle(repoPath, opts).bundle, opts, undefined, onProgress);
   writeCache(repoPath, opts, result);
   return result;
 }
@@ -259,7 +265,8 @@ export async function runLocal(
 export async function runLocalPr(
   cwd: string,
   prNumber: number,
-  opts: LocalOptions
+  opts: LocalOptions,
+  onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const repoPath = path.resolve(cwd);
   const { bundle, pr } = prDiffBundle(repoPath, prNumber, opts);
@@ -267,7 +274,7 @@ export async function runLocalPr(
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
   const result: ReviewResult = {
-    ...(await review(bundle, opts)),
+    ...(await review(bundle, opts, undefined, onProgress)),
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };
@@ -277,6 +284,44 @@ export async function runLocalPr(
 
 export function printLocal(result: ReviewResult): void {
   process.stdout.write(renderMarkdown(result) + "\n");
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function progressLine(event: ReviewProgressEvent): string {
+  switch (event.stage) {
+    case "review":
+      return `reviewing ${plural(event.files, "changed file")} in one pass`;
+    case "map":
+      return `mapping ${plural(event.files, "changed file")} to hotspots`;
+    case "deep": {
+      const tail = event.tail ? ", incl. tail-coverage" : "";
+      const failed = event.failed > 0 ? `, ${event.failed} failed` : "";
+      return event.done === 0
+        ? `deep review: ${plural(event.total, "hotspot")}${tail}`
+        : `deep review: ${event.done}/${event.total} done${failed}`;
+    }
+    case "dedup":
+      return `merged ${plural(event.before, "candidate finding")}, ${event.after} after dedup`;
+    case "critic":
+      return `critic pass over ${plural(event.findings, "candidate finding")}`;
+    case "done":
+      return `done in ${(event.durationMs / 1000).toFixed(1)}s`;
+  }
+}
+
+// Stage lines are for a person watching a terminal. Pipes, CI logs, and
+// --json consumers (agents, hooks) must see the same stderr as before.
+export function terminalProgress(
+  stream: { readonly isTTY?: boolean; write(chunk: string): unknown },
+  json: boolean
+): ReviewProgressObserver | undefined {
+  if (json || !stream.isTTY) return undefined;
+  return (event) => {
+    stream.write(`needlefish: ${progressLine(event)}\n`);
+  };
 }
 
 // --- --dry-run: collect the bundle, report what a real run would do ---
