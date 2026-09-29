@@ -16,6 +16,13 @@ const ENV_KEYS = [
   "NEEDLEFISH_RUNNER",
   "NEEDLEFISH_ACP_BIN",
   "OPENAI_API_KEY",
+  "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+  "CODEX_API_KEY",
+  "CODEX_PROXY_BASE_URL",
+  "CODEX_PROXY_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "GROK_API_KEY",
 ] as const;
 
 type Fixture = {
@@ -306,4 +313,41 @@ test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => 
   assert.equal(passed.status, 0, passed.stderr);
   assert.match(passed.stdout, /^needlefish \d+\.\d+\.\d+/);
   assert.match(passed.stdout, /\nall checks passed\n$/);
+});
+
+// The review accepts these env-credential modes without the CLI's own
+// credential store (hasRunnerEnvCredential), so the doctor must too.
+test("doctor accepts env-credential setups the review accepts, without printing the value", (t) => {
+  const f = setup(t);
+  const secret = "s3cret-value-9f1c";
+  codexStub(f.bin, 1, "Not logged in");
+  stub(f.bin, "claude", 'case "$1" in --version) echo "1.0-stub"; exit 0 ;; esac; echo "Not logged in"; exit 1');
+  stub(f.bin, "opencode", 'case "$1" in --version) echo "opencode 1.0-stub"; exit 0 ;; esac; echo "[]"; exit 0');
+  stub(f.bin, "grok", 'case "$1" in --version) echo "grok 1.0-stub"; exit 0 ;; esac; exit 99');
+  const accepted = (runner: "codex" | "claude" | "opencode" | "grok", env: Record<string, string>) => {
+    for (const [key, value] of Object.entries(env)) process.env[key] = value;
+    const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner });
+    for (const key of Object.keys(env)) delete process.env[key];
+    assert.deepEqual(
+      check(report, "auth"),
+      { name: "auth", status: "ok", detail: `${runner}: env credential configured; CLI login state not probed` },
+      `${runner} with ${Object.keys(env).join(",")}`,
+    );
+    assert.equal(report.ok, true);
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
+  };
+  accepted("opencode", { OPENAI_API_KEY: secret });
+  accepted("opencode", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "ZAI_API_KEY", ZAI_API_KEY: secret });
+  accepted("codex", { CODEX_PROXY_BASE_URL: "http://127.0.0.1:1", CODEX_PROXY_API_KEY: secret });
+  accepted("codex", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "CODEX_API_KEY", CODEX_API_KEY: secret });
+  accepted("claude", { ANTHROPIC_API_KEY: secret });
+  accepted("claude", { CLAUDE_CODE_OAUTH_TOKEN: secret });
+  accepted("grok", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "GROK_API_KEY", GROK_API_KEY: secret });
+
+  // Without the env credential the same stubs are judged by their own status.
+  assert.equal(check(runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "opencode" }), "auth").status, "fail");
+  assert.equal(check(runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "codex" }), "auth").status, "fail");
+  // A passthrough name alone is configuration, not a credential.
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CODEX_API_KEY";
+  assert.equal(check(runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "codex" }), "auth").status, "fail");
 });

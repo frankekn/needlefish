@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { buildRunnerEnv } from "../shared/codex.js";
+import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
 import { git } from "../shared/repo.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
@@ -189,6 +189,11 @@ function authCheck(selection: RunnerSelection): DoctorCheck {
     return process.env.OPENAI_API_KEY
       ? { name: "auth", status: "ok", detail: `${runner}: OPENAI_API_KEY is set` }
       : { name: "auth", status: "fail", detail: `${runner}: OPENAI_API_KEY is not set`, fix: "Set OPENAI_API_KEY." };
+  }
+  // The review accepts these setups without the CLI's own credential store,
+  // so the CLI's login state is not the question. The value is never shown.
+  if (hasRunnerEnvCredential(runner)) {
+    return { name: "auth", status: "ok", detail: `${runner}: env credential configured; CLI login state not probed` };
   }
   const login = RUNNER_DEFINITIONS[runner].login;
   if (login === undefined) {

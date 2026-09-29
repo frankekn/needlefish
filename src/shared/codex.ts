@@ -186,6 +186,28 @@ function hasCodexProxyEnvCredential(): boolean {
 	);
 }
 
+// The env-credential modes a review accepts without the runner's HOME
+// credential store. ephemeralAuthFiles relaxes its required files on exactly
+// this answer, and the doctor accepts the setup on it before probing the CLI's
+// own login state. Never reads the values themselves beyond non-emptiness.
+export function hasRunnerEnvCredential(runner: RunnerName): boolean {
+	switch (runner) {
+		case "codex":
+			// CODEX_API_KEY through the passthrough authenticates without auth.json.
+			return hasCodexProxyEnvCredential() || hasPassthroughCredential(["CODEX_API_KEY"]);
+		case "claude":
+			return !!process.env.ANTHROPIC_API_KEY || !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+		case "opencode":
+			return hasOpenCodeEnvCredential();
+		case "grok":
+			return hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"]);
+		case "openai":
+		case "pi":
+		case "acp":
+			return false;
+	}
+}
+
 export function hasPiProviderEnvCredential(
 	provider: string,
 	env: RunnerEnvironment = process.env,
@@ -279,14 +301,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly optional: readonly string[];
 } {
 	if (runner === "codex") {
-		if (hasCodexProxyEnvCredential()) {
-			return {
-				required: [],
-				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
-			};
-		}
-		// CODEX_API_KEY through the passthrough authenticates without auth.json.
-		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
+		if (hasRunnerEnvCredential(runner)) {
 			return {
 				required: [],
 				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
@@ -299,10 +314,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			optional: [".codex/config.toml"],
 		};
 	}
-	if (
-		runner === "grok" &&
-		hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"])
-	) {
+	if (runner === "grok" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.grok.envConfigFiles,
@@ -311,7 +323,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST). Other provider API keys must be explicitly named
 	// in the passthrough and non-empty.
-	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
+	if (runner === "opencode" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.opencode.envConfigFiles,

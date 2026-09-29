@@ -65,8 +65,9 @@ npx needlefish
 Not sure the setup is right? `npx needlefish doctor` checks Node, the
 selected runner CLI and its version, whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
-uses), the git repo, and the detected base ref, in seconds and with no model
-call. Every failed check prints its fix; `--json` gives the same report to
+uses; an env credential the review accepts, such as `OPENAI_API_KEY` for
+opencode, passes without probing), the git repo, and the detected base ref,
+in seconds and with no model call. Every failed check prints its fix; `--json` gives the same report to
 scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
 reported as `unknown` and does not fail the exit code.
