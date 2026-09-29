@@ -39,7 +39,9 @@ export async function runGithubExplain(
     await explainFinding(bundle, findingKey, opts),
     process.env
   );
-  const body = `## 🔍 Needlefish explain\n\n${explanation}\n\n<sub>Explanation only — the review verdict is unchanged.</sub>`;
+  // The trailing marker is recognized by normalize.ts isNeedlefishPost when
+  // the comment is read back.
+  const body = `## 🔍 Needlefish explain\n\n${explanation}\n\n<sub>Explanation only — the review verdict is unchanged.</sub>\n<!-- needlefish-explain -->`;
   ghText(
     ["api", "-X", "POST", `repos/${repo}/issues/${prNumber}/comments`, "--input", "-"],
     repoPath,

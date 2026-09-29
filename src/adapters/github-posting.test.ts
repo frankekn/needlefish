@@ -641,7 +641,7 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 	const comment = payload.comments[0];
 	assert.equal(
 		String(comment.body),
-		"**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```",
+		"**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```\n\n<!-- needlefish-finding -->",
 	);
 });
 
