@@ -242,11 +242,20 @@ export interface LocalBundle {
   readonly mode: LocalDiffMode;
 }
 
+/** A dirty worktree or a repo with no commits reviews uncommitted changes; a clean one reviews merge-base..HEAD. */
+export function localDiffMode(
+  headExists: boolean,
+  dirty: boolean,
+  override: LocalDiffMode | undefined,
+): LocalDiffMode {
+  return override ?? (!headExists || dirty ? "uncommitted" : "branch");
+}
+
 export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   ensureGitRepo(cwd);
   const headExists = hasHeadCommit(cwd);
   const dirty = git(["status", "--porcelain"], cwd).trim() !== "";
-  const mode: LocalDiffMode = opts.localMode ?? (!headExists || dirty ? "uncommitted" : "branch");
+  const mode = localDiffMode(headExists, dirty, opts.localMode);
   const bundle = mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
   return { bundle, mode };
 }

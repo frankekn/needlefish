@@ -15,6 +15,7 @@ import {
   BaseRefError,
   hasHeadCommit,
   isGitRepo,
+  localDiffMode,
   resolveReviewBase,
 } from "./local.js";
 
@@ -237,7 +238,13 @@ function authCheck(selection: RunnerSelection): DoctorCheck {
   }
 }
 
-function gitCheck(repo: string): { readonly check: DoctorCheck; readonly headExists: boolean | undefined } {
+/** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
+interface WorktreeState {
+  readonly headExists: boolean;
+  readonly dirty: boolean;
+}
+
+function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktree: WorktreeState | undefined } {
   if (!isGitRepo(repo)) {
     return {
       check: {
@@ -246,7 +253,7 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly headExi
         detail: `${repo} is not a git repository`,
         fix: "Run `git init` inside your project folder.",
       },
-      headExists: undefined,
+      worktree: undefined,
     };
   }
   const headExists = hasHeadCommit(repo);
@@ -262,14 +269,17 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly headExi
   const commits = headExists ? "" : ", no commits yet";
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    headExists,
+    worktree: { headExists, dirty: changed > 0 },
   };
 }
 
-function baseCheck(repo: string, headExists: boolean | undefined, override: string | undefined): DoctorCheck {
-  if (headExists === undefined) return { name: "base", status: "unknown", detail: "skipped: not a git repository" };
-  if (!headExists) {
-    return { name: "base", status: "ok", detail: "not needed: no commits yet, so a review covers uncommitted changes" };
+// The base ref matters only when the default review runs in branch mode; the
+// same decision the review makes (localDiffMode) decides whether to check it.
+function baseCheck(repo: string, worktree: WorktreeState | undefined, override: string | undefined): DoctorCheck {
+  if (worktree === undefined) return { name: "base", status: "unknown", detail: "skipped: not a git repository" };
+  if (localDiffMode(worktree.headExists, worktree.dirty, undefined) === "uncommitted") {
+    const why = worktree.headExists ? "worktree has uncommitted changes" : "no commits yet";
+    return { name: "base", status: "ok", detail: `not needed: ${why}, so a review covers uncommitted changes` };
   }
   try {
     const { baseRef, baseSha } = resolveReviewBase(repo, override);
@@ -289,7 +299,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
     runner.check,
     authCheck(runner.selection),
     gitState.check,
-    baseCheck(repo, gitState.headExists, opts.base),
+    baseCheck(repo, gitState.worktree, opts.base),
   ];
   return {
     schemaVersion: 1,
@@ -313,7 +323,13 @@ export function renderDoctorReport(report: DoctorReport): string {
       for (const line of rest) lines.push(`${"".padEnd(21)}${line.trim()}`);
     }
   }
-  const failed = report.checks.filter((check) => check.status === "fail").length;
-  lines.push(failed === 0 ? "all checks passed" : `${failed} check(s) failed`);
+  const count = (status: DoctorStatus): number => report.checks.filter((check) => check.status === status).length;
+  const unknown = count("unknown");
+  const failed = count("fail");
+  lines.push(
+    unknown === 0 && failed === 0
+      ? "all checks passed"
+      : `${count("ok")} passed, ${unknown} unknown, ${failed} failed`,
+  );
   return `${lines.join("\n")}\n`;
 }

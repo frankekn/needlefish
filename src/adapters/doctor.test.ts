@@ -106,7 +106,32 @@ test("doctor fails the auth check with the runner's login command when its statu
     fix: "Run `codex login`.",
   });
   assert.match(renderDoctorReport(report), /^fail {4}auth {4}codex: Not logged in\n {16}fix: Run `codex login`\.\n/m);
-  assert.match(renderDoctorReport(report), /\n1 check\(s\) failed\n$/);
+  assert.match(renderDoctorReport(report), /\n4 passed, 0 unknown, 1 failed\n$/);
+});
+
+test("doctor mirrors the review's mode choice: a dirty worktree needs no base ref", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  gitText(["branch", "-M", "main", "trunk"], f.repo);
+  writeFileSync(path.join(f.repo, "app.ts"), "export const x = 2;\n");
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.deepEqual(check(report, "base"), {
+    name: "base",
+    status: "ok",
+    detail: "not needed: worktree has uncommitted changes, so a review covers uncommitted changes",
+  });
+  assert.equal(report.ok, true);
+  const cli = spawnSync(path.join(process.cwd(), "bin", "needlefish"), ["doctor", "--repo", f.repo], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  assert.equal(cli.status, 0, cli.stderr);
+
+  gitText(["checkout", "--", "app.ts"], f.repo);
+  const clean = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.equal(check(clean, "base").status, "fail", "a clean worktree reviews merge-base..HEAD and needs the base");
 });
 
 test("doctor fails the runner check with install commands when no runner is on PATH", (t) => {
@@ -170,6 +195,8 @@ test("doctor reports unknown, not a guess, when a runner has no status command o
     detail: "grok: no login status command known; `grok login` signs in",
   });
   assert.equal(grok.ok, true, "unknown must not fail the report");
+  assert.match(renderDoctorReport(grok), /\n4 passed, 1 unknown, 0 failed\n$/);
+  assert.doesNotMatch(renderDoctorReport(grok), /all checks passed/);
 
   stub(f.bin, "opencode", 'echo "not json"; exit 0');
   const garbled = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "opencode" });
@@ -200,6 +227,11 @@ test("doctor names the env var when an explicitly selected runner binary is miss
     detail: "acp: NEEDLEFISH_ACP_BIN is not set",
     fix: "Set NEEDLEFISH_ACP_BIN to the acp executable.",
   });
+
+  const agent = stub(f.bin, "acp-agent", "exit 0");
+  process.env.NEEDLEFISH_ACP_BIN = ` ${agent} \n`;
+  const padded = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "acp" });
+  assert.equal(check(padded, "runner").detail, `acp (--runner; ${agent})`, "trimmed like runAcp reads it");
 });
 
 test("doctor checks OPENAI_API_KEY for the HTTP runner without any network call", (t) => {

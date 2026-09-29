@@ -67,7 +67,9 @@ selected runner CLI and its version, whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
 uses), the git repo, and the detected base ref, in seconds and with no model
 call. Every failed check prints its fix; `--json` gives the same report to
-scripts and agents, and the exit code is 0 only when every check passes.
+scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
+a check the doctor cannot decide (a runner CLI with no status command) is
+reported as `unknown` and does not fail the exit code.
 
 **On every PR** — add `.github/workflows/needlefish.yml` to the target repo:
 

@@ -35,7 +35,8 @@ function autoDetectRunner(): RunnerName {
 export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  const command = process.env[bin.env] || bin.fallback;
+  // Trimmed like runAcp reads NEEDLEFISH_ACP_BIN, so the doctor and the runner agree on the binary.
+  const command = process.env[bin.env]?.trim() || bin.fallback;
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
     return { command, path: executableExists(command) ? command : undefined };
