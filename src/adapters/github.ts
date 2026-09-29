@@ -660,7 +660,7 @@ function updateReviewBody(
 	);
 }
 
-function findPreviousReview(
+export function findPreviousReview(
 	repo: string,
 	prNumber: number,
 ): { id: number; state: RoundState } | null {
