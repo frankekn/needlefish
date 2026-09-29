@@ -110,14 +110,13 @@ export function gitRepoState(cwd: string): GitRepoState {
   }
   if (res.status === 0) return res.stdout.trim() === "true" ? { kind: "repo" } : { kind: "not-a-repo" };
   const reason = res.stderr.trim().split(/\r?\n/)[0] ?? "";
-  if (/not a git repository/i.test(reason)) return { kind: "not-a-repo" };
-  return {
-    kind: "unavailable",
-    reason: reason || `git rev-parse exited ${res.status}`,
-    ...(/dubious ownership/i.test(reason)
-      ? { fix: `Run \`git config --global --add safe.directory ${cwd}\`.` }
-      : {}),
-  };
+  if (/not a git repository/.test(reason)) return { kind: "not-a-repo" };
+  if (/dubious ownership/.test(reason)) {
+    // git checks the repository root it names, which may be above cwd.
+    const root = reason.match(/repository at '(.+)'/)?.[1] ?? cwd;
+    return { kind: "unavailable", reason, fix: `Run \`git config --global --add safe.directory ${root}\`.` };
+  }
+  return { kind: "unavailable", reason: reason || `git rev-parse exited ${res.status}` };
 }
 
 function ensureGitRepo(cwd: string): void {

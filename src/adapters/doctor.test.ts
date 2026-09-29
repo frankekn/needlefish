@@ -391,6 +391,33 @@ test("doctor recognizes a non-repository under a non-English locale", (t) => {
   });
 });
 
+// git checks ownership of the repository root it names in stderr, not of the
+// --repo path, so the suggested safe.directory must be that root.
+test("doctor's safe.directory fix names the repository root git refused, not the --repo subdirectory", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const sub = path.join(f.repo, "sub");
+  mkdirSync(sub);
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = "1";
+
+  const report = runDoctor({ repo: sub, version: "0.0.0-test" });
+  assert.deepEqual(check(report, "git"), {
+    name: "git",
+    status: "fail",
+    detail: `fatal: detected dubious ownership in repository at '${f.repo}'`,
+    fix: `Run \`git config --global --add safe.directory ${f.repo}\`.`,
+  });
+
+  const probe = (safeDirectory: string) =>
+    spawnSync("git", ["-c", `safe.directory=${safeDirectory}`, "rev-parse", "--is-inside-work-tree"], {
+      cwd: sub,
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C" },
+    });
+  assert.equal(probe(sub).status, 128, "the --repo path itself does not clear the refusal");
+  assert.equal(probe(f.repo).stdout.trim(), "true", "the suggested root does");
+});
+
 test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => {
   const f = setup(t);
   codexStub(f.bin, 1, "Not logged in");
