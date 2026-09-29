@@ -45,9 +45,9 @@ function asString(value: unknown): string {
 // Every post Needlefish writes to a PR ends with one of these lines, so its
 // own text is recognized on the way back in without knowing which identity
 // posted it. Producers: github.ts (round, error, state), github-suggestions.ts
-// (finding), explain.ts (explain). Matched as a whole line at column 0:
-// GitHub's quote reply prefixes every quoted line with "> ", so a human who
-// quotes a Needlefish post keeps their comment.
+// (finding), explain.ts (explain). Only the body's final non-empty line
+// counts, and only with an authorship signal a human cannot produce, so a
+// human who quotes, pastes or fences a marker keeps their comment.
 const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
   "<!-- needlefish-round -->",
   "<!-- needlefish-error -->",
@@ -58,31 +58,53 @@ const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";
 
 // Inline findings and explain comments from releases before they carried a
 // marker line. A human can start a comment the same way, so these count only
-// when the poster is the identity Needlefish posts as.
+// for a post GitHub types as a bot AND attributes to the identity this run
+// posts as; a maintainer sharing a PAT with the runner is not a bot.
 const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [/^\*\*P[0-3]\*\* /, /^## 🔍 Needlefish explain\n/];
 
-export function isNeedlefishPost(body: string, ownAuthor: boolean): boolean {
-  const hasMarkerLine = body.split("\n").some((raw) => {
-    const line = raw.trimEnd();
-    return (
-      OWN_POST_MARKERS.has(line) ||
-      (line.startsWith(OWN_STATE_MARKER_PREFIX) && line.endsWith("-->"))
-    );
-  });
-  if (hasMarkerLine) return true;
-  return ownAuthor && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
+export interface PostAuthorship {
+  // GitHub asserts the poster is a bot: REST `user.type === "Bot"`, or, in
+  // `gh pr view` output (login only, no type), the fixed platform login the
+  // Actions bot renders as. No human account can hold either.
+  readonly bot: boolean;
+  // The poster is the identity this run posts as (github.ts
+  // isTrustedStateAuthor). Local mode never asserts it.
+  readonly own: boolean;
+}
+
+// What `gh pr view --json comments,reviews` reports as author.login for the
+// github-actions[bot] REST identity (GraphQL Bot actor login).
+const GH_ACTIONS_LOGIN = "github-actions";
+
+export function isNeedlefishPost(body: string, author: PostAuthorship): boolean {
+  if (!author.bot && !author.own) return false;
+  const lines = body.split("\n").map((line) => line.trimEnd()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? "";
+  if (OWN_POST_MARKERS.has(last)) return true;
+  if (last.startsWith(OWN_STATE_MARKER_PREFIX) && last.endsWith("-->")) return true;
+  return author.bot && author.own && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
 }
 
 type OwnAuthor = (item: JsonRecord) => boolean;
 const NEVER_OWN: OwnAuthor = () => false;
 
+function authorship(item: JsonRecord, ownAuthor: OwnAuthor): PostAuthorship {
+  const restType = isRecord(item.user) ? asString(item.user.type) : "";
+  const ghLogin = isRecord(item.author) ? asString(item.author.login) : "";
+  return { bot: restType === "Bot" || ghLogin === GH_ACTIONS_LOGIN, own: ownAuthor(item) };
+}
+
 function bodyList(value: unknown, ownAuthor: OwnAuthor = NEVER_OWN): string[] {
   if (!Array.isArray(value)) return [];
   const bodies: string[] = [];
   for (const item of value) {
-    const body = isRecord(item) ? asString(item.body) : asString(item);
-    if (!body) continue;
-    if (isNeedlefishPost(body, isRecord(item) && ownAuthor(item))) continue;
+    if (!isRecord(item)) {
+      const body = asString(item);
+      if (body) bodies.push(body);
+      continue;
+    }
+    const body = asString(item.body);
+    if (!body || isNeedlefishPost(body, authorship(item, ownAuthor))) continue;
     bodies.push(body);
   }
   return bodies;
