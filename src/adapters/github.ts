@@ -1144,6 +1144,7 @@ async function completeTerminatedCheck(
 	headSha: string,
 	checkId: number,
 	termination: Termination,
+	claimCheck: () => boolean,
 ): Promise<void> {
 	let skipReason: SkipReason | null = null;
 	try {
@@ -1175,6 +1176,9 @@ async function completeTerminatedCheck(
 					`Needlefish received ${termination.signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
 					checkId,
 				);
+	// Claimed only now: a verdict that became ready during the re-read above
+	// has already claimed and posted itself, and this PATCH must not overwrite it.
+	if (!claimCheck()) return;
 	if (skipReason !== null) emitSkip(skipReason, prNumber, headSha);
 	await ghJsonWhileTerminating(termination, write.args, screenedInput(write.input));
 }
@@ -1282,13 +1286,23 @@ export async function runGithub(
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);
-	// The owned check completes exactly once. Detaching after the verdict
-	// or error completion keeps a later signal from overwriting it.
+	// The owned check reaches a terminal state exactly once. The result path
+	// claims it before posting anything; the termination finalizer claims it
+	// right before its PATCH. A verdict ready before that PATCH wins and is
+	// posted in full. A verdict ready after it posts nothing, not even the
+	// review body: a rerun must re-review this head rather than dedupe on a
+	// review whose check says the run was terminated.
+	let checkClaimed = false;
+	const claimCheck = (): boolean => {
+		if (checkClaimed) return false;
+		checkClaimed = true;
+		return true;
+	};
 	const detachFinalizer =
 		pendingCheckId === null
 			? () => true
 			: registerTerminationFinalizer((termination) =>
-					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination),
+					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination, claimCheck),
 				);
 
 	try {
@@ -1301,6 +1315,7 @@ export async function runGithub(
 			prNumber,
 			prBaseSha: baseSha,
 		};
+		if (!claimCheck()) return;
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
 		if (skipReason) {
@@ -1431,8 +1446,8 @@ export async function runGithub(
 			process.stdout.write(stdoutSummary(summary));
 		}
 	} catch (err) {
-		// A signal mid-review already completed the check through the
-		// finalizer, and the coordinator exits the process; post nothing.
+		// A signal mid-review hands the check to the finalizer, and the
+		// coordinator exits the process; post nothing here.
 		if (!detachFinalizer()) return;
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld

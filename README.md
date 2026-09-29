@@ -495,9 +495,10 @@ exit, or idle stall fails that pass instead of running once more after the
 retry backoff. Use it on high-volume lanes that prefer a predictable completion
 time over retry recovery; the review deadline still bounds the run either way.
 
-On SIGINT or SIGTERM (a job timeout, cancellation, or watchdog) Needlefish sends
-the runner SIGTERM, then SIGKILL once `NEEDLEFISH_TERMINATION_GRACE_MS` has
-elapsed, and exits 130 or 143; a second signal exits at once. In GitHub mode
+On SIGINT or SIGTERM (a job timeout, cancellation, or watchdog) Needlefish
+forwards the received signal to the runner process group, SIGKILLs it once
+`NEEDLEFISH_TERMINATION_GRACE_MS` has elapsed, and exits 130 or 143; a second
+signal exits at once. In GitHub mode
 it first completes its own in_progress `Needlefish` check inside that same
 grace: `failure` titled `Needlefish: review terminated` on the current head,
 or neutral `Needlefish: superseded` when the head moved or the PR closed.

@@ -40,6 +40,12 @@ type FixtureOptions = {
 	readonly hangCheckPatch?: boolean;
 	// The check-run PATCH answers after this many ms (real gh latency).
 	readonly checkPatchDelayMs?: number;
+	// Pull re-reads after the first answer after this many ms.
+	readonly pullRereadDelayMs?: number;
+	// The review pass answers at once; the critic pass is the call that hangs.
+	readonly reviewPassAnswers?: boolean;
+	// The hanging runner prints valid output and exits 0 this long after SIGTERM.
+	readonly runnerExitsOnTermAfterMs?: number;
 	// Report a newer head from the second pull fetch onward.
 	readonly staleHeadAfterStart?: boolean;
 	readonly graceMs: number;
@@ -116,9 +122,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`  const count = fs.existsSync(${JSON.stringify(pullCount)}) ? Number(fs.readFileSync(${JSON.stringify(pullCount)}, 'utf8')) : 0;`,
 			`  fs.writeFileSync(${JSON.stringify(pullCount)}, String(count + 1));`,
 			`  const head = count > 0 && ${JSON.stringify(opts.staleHeadAfterStart === true)} ? ${JSON.stringify(laterHead)} : ${JSON.stringify(targetHead)};`,
-			"  process.stdout.write(JSON.stringify({ state: 'open', title: 'PR', body: '', author_association: 'OWNER', user: { login: 'dev', type: 'User' }, comments_url: '', review_comments_url: '',",
-			`    head: { sha: head }, base: { sha: ${JSON.stringify(baseSha)} } }));`,
-			"  process.exit(0);",
+			"  const pr = JSON.stringify({ state: 'open', title: 'PR', body: '', author_association: 'OWNER', user: { login: 'dev', type: 'User' }, comments_url: '', review_comments_url: '',",
+			`    head: { sha: head }, base: { sha: ${JSON.stringify(baseSha)} } });`,
+			`  setTimeout(() => { process.stdout.write(pr); process.exit(0); }, count > 0 ? ${opts.pullRereadDelayMs ?? 0} : 0);`,
+			"  return;",
 			"}",
 			"if (args[1] === '--paginate') { process.stdout.write('[[]]'); process.exit(0); }",
 			"if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: 'dev', type: 'User' })); process.exit(0); }",
@@ -131,14 +138,21 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	chmodSync(gh, 0o755);
 
 	const runnerPidFile = path.join(tmp, "runner.pid");
+	const runnerCount = path.join(tmp, "runner-count");
 	const runner = path.join(tmp, "claude.cjs");
+	const output = JSON.stringify({ summary: "reviewed", findings: [], checked: ["checked"], residual_risks: [] });
 	writeFileSync(
 		runner,
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
+			`const count = fs.existsSync(${JSON.stringify(runnerCount)}) ? Number(fs.readFileSync(${JSON.stringify(runnerCount)}, 'utf8')) : 0;`,
+			`fs.writeFileSync(${JSON.stringify(runnerCount)}, String(count + 1));`,
+			`const output = ${JSON.stringify(output)};`,
 			"process.stdin.resume();",
+			`if (count === 0 && ${JSON.stringify(opts.reviewPassAnswers === true)}) { process.stdin.on('end', () => { process.stdout.write(output); process.exit(0); }); return; }`,
 			`if (${JSON.stringify(opts.runnerIgnoresTerm === true)}) process.on('SIGTERM', () => {});`,
+			`if (${JSON.stringify(opts.runnerExitsOnTermAfterMs !== undefined)}) process.on('SIGTERM', () => setTimeout(() => { process.stdout.write(output); process.exit(0); }, ${opts.runnerExitsOnTermAfterMs ?? 0}));`,
 			`fs.writeFileSync(${JSON.stringify(runnerPidFile)}, String(process.pid));`,
 			"setInterval(() => {}, 1000);",
 		].join("\n"),
@@ -242,6 +256,10 @@ function patchCompleted(calls: readonly GhCall[]): boolean {
 	return calls.some((c) => c.args[0] === "patch-completed");
 }
 
+function reviewPosted(calls: readonly GhCall[]): boolean {
+	return calls.some((c) => c.args.includes("POST") && c.args.includes(`repos/${REPO}/pulls/${PR}/reviews`));
+}
+
 test("SIGTERM completes the owned check as a terminated failure and exits within the grace", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {
 	const fixture = setupFixture(t, { runnerIgnoresTerm: true, graceMs: 1500 });
 	const run = await terminateMidReview(t, fixture);
@@ -280,6 +298,53 @@ test("bin/needlefish exits at once on a forced second signal", { timeout: 30_000
 	assert.equal(run.status, 143, run.stderr);
 	assert.ok(run.elapsedMs < 1500, `second signal must exit at once, took ${run.elapsedMs}ms`);
 	assert.equal(run.runnerAlive, false, "the forced exit must still kill the runner group");
+});
+
+// The signal is processed while the critic call is pending; the runner then
+// exits 0 with valid output and review() resolves during the finalizer's
+// slow PR re-read. The verdict is ready before the finalizer's PATCH, so it
+// wins: full posting, one PATCH, and it is the verdict.
+test("bin/needlefish keeps a verdict that is ready before the finalizer's PATCH", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, {
+		reviewPassAnswers: true,
+		runnerExitsOnTermAfterMs: 0,
+		pullRereadDelayMs: 350,
+		checkPatchDelayMs: 350,
+		graceMs: 5000,
+	});
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	const calls = readGhLog(fixture.ghLog);
+	const patches = checkPatches(calls);
+	assert.equal(patches.length, 1, JSON.stringify(calls.map((c) => c.args)));
+	const body = completion(patches[0]);
+	assert.equal(body.conclusion, "success");
+	assert.equal(body.output.title, "Needlefish: pass");
+	assert.equal(reviewPosted(calls), true, "the verdict path posts the review in full");
+	assert.equal(run.runnerAlive, false);
+});
+
+// Same race, other order: the runner exits 0 only after the finalizer's
+// PATCH is sent. The late verdict posts nothing, so a rerun re-reviews the
+// head instead of deduping on a review body behind a terminated check.
+test("bin/needlefish posts nothing for a verdict that is ready after the finalizer's PATCH", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, {
+		reviewPassAnswers: true,
+		runnerExitsOnTermAfterMs: 800,
+		checkPatchDelayMs: 100,
+		graceMs: 5000,
+	});
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	const calls = readGhLog(fixture.ghLog);
+	const patches = checkPatches(calls);
+	assert.equal(patches.length, 1, JSON.stringify(calls.map((c) => c.args)));
+	assert.equal(completion(patches[0]).output.title, "Needlefish: review terminated");
+	assert.equal(reviewPosted(calls), false, "a late verdict must not leave a review body behind a terminated check");
+	assert.equal(postsToTimeline(calls), false);
+	assert.equal(run.runnerAlive, false);
 });
 
 test("a runner that exits on SIGTERM still yields exactly one terminated completion", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {
