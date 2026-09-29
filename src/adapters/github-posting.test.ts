@@ -88,6 +88,9 @@ type FixtureOptions = {
 	// PR author fields on the pull response; null omits the field.
 	readonly authorAssociation?: string | null;
 	readonly authorType?: string | null;
+	// Commit an LFS pointer blob (asset.bin) in the feature commit, with the
+	// repo-local filter config that keeps a git-lfs host from rewriting it.
+	readonly lfsPointerFile?: boolean;
 };
 
 function isPost(raw: unknown): raw is Post {
@@ -225,6 +228,17 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
 	if (opts.dependencyFile === true) {
 		writeFileSync(path.join(repo, "package.json"), '{"name":"fixture"}\n');
+	}
+	if (opts.lfsPointerFile === true) {
+		for (const key of ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"]) {
+			gitText(["config", key, ""], repo);
+		}
+		gitText(["config", "filter.lfs.required", "false"], repo);
+		writeFileSync(path.join(repo, ".gitattributes"), "*.bin filter=lfs -text\n");
+		writeFileSync(
+			path.join(repo, "asset.bin"),
+			`version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 40213\n`,
+		);
 	}
 	commitAll(repo, "feature");
 	const targetHeadSha = headSha(repo);
@@ -3067,3 +3081,53 @@ for (const [label, association, type] of [
 		assert.equal(runnerInvocationCount(fixture), 0);
 	});
 }
+
+test("runGithub shows the LFS coverage gap in the review body and check summary only", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 91,
+		rawReview: defaultRawReview(),
+		lfsPointerFile: true,
+	});
+	const notice = "**Not reviewed (non-blocking):**";
+	const checkSummaries = (posts: readonly Post[]): string[] =>
+		posts
+			.filter((p) => p.args.some((a) => a.includes("check-runs")))
+			.map((p) => JSON.parse(p.payload) as { output?: { summary?: string } })
+			.map((payload) => payload.output?.summary ?? "");
+
+	await runGithub(fixture.repo, 91, { timeoutMs: 1000 });
+	const round1 = readPosts(fixture.postLog);
+	const reviewPost = postedReview(round1, 91);
+	assert.ok(reviewPost);
+	const review = parseReviewPayload(reviewPost.payload);
+	assert.equal(review.body.split(notice).length - 1, 1, "review body carries the notice once");
+	assert.ok(review.body.includes("\n- asset.bin\n"));
+	assert.ok(review.comments.length > 0, "fixture must post an inline comment");
+	for (const comment of review.comments) {
+		assert.ok(!String(comment.body).includes("Not reviewed"), "inline comments are model input next round");
+	}
+	const completed1 = checkSummaries(round1).filter((summary) => summary.includes("- asset.bin"));
+	assert.equal(completed1.length, 1, "the completed check summary carries the notice");
+	assert.equal(completed1[0].split(notice).length - 1, 1);
+
+	// Round two: the round comment is an issue comment, which the next review
+	// reads back into prMeta.comments and hands to the model.
+	await runGithub(fixture.repo, 91, { timeoutMs: 1000 }, true);
+	const round2 = readPosts(fixture.postLog).slice(round1.length);
+	const roundComment = round2.find(
+		(p) => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/issues/91/comments"),
+	);
+	assert.ok(roundComment, "round two posts a round comment");
+	assert.ok(!roundComment.payload.includes("Not reviewed"), "round comment must not carry the notice");
+	const putPost = putReview(round2, 91, 1);
+	assert.ok(putPost, "round two PUT-updates the review body");
+	assert.equal(parseReviewPayload(putPost.payload).body.split(notice).length - 1, 1);
+	assert.equal(checkSummaries(round2).filter((summary) => summary.includes("- asset.bin")).length, 1);
+
+	// Both rounds' model prompts: the sandbox's own runner notice is present,
+	// the human notice never is, even after round one's comments were read back.
+	const prompts = readFileSync(fixture.promptLog, "utf8");
+	assert.ok(prompts.includes("GIT LFS NOTICE"));
+	assert.ok(!prompts.includes("Not reviewed"));
+	assert.ok(!prompts.includes("coverageGaps"));
+});

@@ -130,6 +130,16 @@ export function renderMarkdown(
 		lines.push(`Coverage: ${result.coverage}`);
 	}
 
+	if (result.coverageGaps?.length) {
+		lines.push("");
+		lines.push(
+			"**Not reviewed (non-blocking):** these changed files were available only as Git LFS pointers, so their contents were not read and are not covered by this review. Ask a maintainer to check them.",
+		);
+		for (const gap of result.coverageGaps) {
+			lines.push(`- ${oneLine(gap.file)}`);
+		}
+	}
+
 	if (result.reviewTarget) {
 		lines.push("");
 		lines.push(...result.reviewTarget.split("\n"));
