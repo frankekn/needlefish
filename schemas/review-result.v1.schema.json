@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/frankekn/needlefish/main/schemas/review-result.v1.schema.json",
+  "title": "Needlefish ReviewResult (schemaVersion 1)",
+  "description": "The object `needlefish --json` and `needlefish pr <number> --json` print to stdout, and the local cache stores as last-review.json. Within a schemaVersion fields are only added, never changed or removed, so unknown properties are allowed.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "verdict",
+    "summary",
+    "findings",
+    "checked",
+    "residualRisks",
+    "baseSha",
+    "headSha"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "verdict": {
+      "description": "Derived deterministically from findings and residualRisks.",
+      "enum": ["pass", "changes_requested", "needs_human"]
+    },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "checked": {
+      "description": "Evidence strings describing what the review examined.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "residualRisks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/residualRisk" }
+    },
+    "baseSha": {
+      "description": "The merge base the diff was taken from.",
+      "type": "string"
+    },
+    "headSha": { "type": "string" },
+    "reviewTarget": { "type": "string" },
+    "prNumber": {
+      "description": "Present for `needlefish pr <number>`.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "prBaseSha": {
+      "description": "The PR base branch tip, distinct from baseSha.",
+      "type": "string"
+    },
+    "scopeCallouts": {
+      "description": "Non-blocking callouts naming changed files on sensitive surfaces, derived from paths only.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/scopeCallout" }
+    },
+    "stats": {
+      "description": "Per-runner-call timing and attempt stats.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/runStat" }
+    },
+    "totalDurationMs": { "type": "number" },
+    "coverage": {
+      "description": "One-line coverage summary for large-diff reviews.",
+      "type": "string"
+    },
+    "candidateFindings": {
+      "description": "Eval tracing only (NEEDLEFISH_EVAL_TRACE=1): findings before the critic pass.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "failedRawOutputs": {
+      "description": "Eval tracing only (NEEDLEFISH_EVAL_TRACE=1).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rawOutputs": {
+      "description": "Eval tracing only (NEEDLEFISH_EVAL_TRACE=1).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "traceDeliveryFailed": {
+      "description": "Eval tracing only: true when a trace observer threw.",
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "severity",
+        "title",
+        "category",
+        "file",
+        "lineStart",
+        "lineEnd",
+        "confidence",
+        "whyItBreaks",
+        "suggestedFix",
+        "validation"
+      ],
+      "properties": {
+        "severity": {
+          "description": "P0-P2 block merge; P3 is reported but never blocks.",
+          "enum": ["P0", "P1", "P2", "P3"]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "category": {
+          "enum": ["bug", "contract", "duplicate", "runtime", "security", "validation"]
+        },
+        "file": { "type": "string", "minLength": 1 },
+        "lineStart": { "type": "number", "exclusiveMinimum": 0 },
+        "lineEnd": {
+          "description": "Never less than lineStart.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "whyItBreaks": { "type": "string", "minLength": 1 },
+        "suggestedFix": { "type": "string", "minLength": 1 },
+        "validation": { "type": "string" },
+        "consumerFile": {
+          "description": "Downstream file affected by the finding.",
+          "type": "string",
+          "minLength": 1
+        },
+        "consumerLine": {
+          "description": "Downstream line affected by the finding.",
+          "type": "number",
+          "not": { "const": 0 }
+        },
+        "replacement": {
+          "description": "Exact replacement for lines lineStart..lineEnd, one string per line.",
+          "type": "object",
+          "required": ["lines"],
+          "properties": {
+            "lines": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "pattern": "^[^\\r\\n]*$" }
+            }
+          }
+        }
+      },
+      "if": {
+        "required": ["severity"],
+        "properties": { "severity": { "enum": ["P0", "P1", "P2"] } }
+      },
+      "then": {
+        "properties": { "confidence": { "type": "number", "minimum": 0.7 } }
+      }
+    },
+    "residualRisk": {
+      "type": "object",
+      "required": ["text", "blocks"],
+      "properties": {
+        "text": { "type": "string" },
+        "blocks": {
+          "description": "true makes the verdict at least needs_human.",
+          "type": "boolean"
+        }
+      }
+    },
+    "scopeCallout": {
+      "type": "object",
+      "required": ["surface", "files"],
+      "properties": {
+        "surface": {
+          "enum": ["dependency", "schema", "workflow", "config", "public-api"]
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "runStat": {
+      "type": "object",
+      "required": ["label", "runner", "durationMs", "attempts", "ok"],
+      "properties": {
+        "label": { "type": "string" },
+        "runner": {
+          "enum": ["codex", "claude", "opencode", "openai", "grok", "pi", "acp"]
+        },
+        "model": { "type": "string" },
+        "durationMs": { "type": "number" },
+        "attempts": { "type": "integer", "minimum": 1 },
+        "ok": { "type": "boolean" },
+        "usage": { "$ref": "#/$defs/runUsage" }
+      }
+    },
+    "runUsage": {
+      "type": "object",
+      "required": ["totalTokens", "inputTokens", "outputTokens"],
+      "properties": {
+        "totalTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    }
+  }
+}

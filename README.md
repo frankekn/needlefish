@@ -288,6 +288,17 @@ changelog entry.
 | `stats` | Optional per-runner-call timing and attempt stats. |
 | `totalDurationMs` | Optional total review duration in milliseconds. |
 
+The full shape is published as a JSON Schema (draft 2020-12) at
+[`schemas/review-result.v1.schema.json`](schemas/review-result.v1.schema.json),
+also shipped in the npm package at
+`node_modules/needlefish/schemas/review-result.v1.schema.json`. The `v1`
+matches `schemaVersion`. The schema allows unknown properties, so a validator
+keeps working when a release adds a field. Two rules are not expressible in
+the schema: a finding's `lineEnd` is never below its `lineStart`, and
+`stats[].usage.totalTokens` is at least `inputTokens + outputTokens`.
+`--dry-run --json` prints a different summary object that this schema does
+not describe.
+
 ### Base detection
 
 `--base` → `origin/HEAD` → `main`. Pass `--base <ref>` to override.
