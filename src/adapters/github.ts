@@ -1178,7 +1178,7 @@ async function completeTerminatedCheck(
 				);
 	// Claimed only now: a verdict that became ready during the re-read above
 	// has already claimed and posted itself, and this PATCH must not overwrite it.
-	if (!claimCheck()) return;
+	if (termination.cancelled.aborted || !claimCheck()) return;
 	if (skipReason !== null) emitSkip(skipReason, prNumber, headSha);
 	await ghJsonWhileTerminating(termination, write.args, screenedInput(write.input));
 }
@@ -1286,23 +1286,26 @@ export async function runGithub(
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);
-	// The owned check reaches a terminal state exactly once. The result path
-	// claims it before posting anything; the termination finalizer claims it
-	// right before its PATCH. A verdict ready before that PATCH wins and is
-	// posted in full. A verdict ready after it posts nothing, not even the
-	// review body: a rerun must re-review this head rather than dedupe on a
-	// review whose check says the run was terminated.
-	let checkClaimed = false;
-	const claimCheck = (): boolean => {
-		if (checkClaimed) return false;
-		checkClaimed = true;
-		return true;
+	// The owned check reaches a terminal state exactly once, and whoever holds
+	// the claim completes it. The result path claims before posting anything
+	// and, if a post then throws, still completes the check from the catch.
+	// The termination finalizer claims right before its PATCH. A verdict
+	// ready before that PATCH wins and is posted in full. A verdict ready
+	// after it posts nothing, not even the review body: a rerun must
+	// re-review this head rather than dedupe on a review whose check says
+	// the run was terminated.
+	let checkOwner: "result" | "finalizer" | null = null;
+	const claimCheck = (owner: "result" | "finalizer"): boolean => {
+		if (checkOwner === null) checkOwner = owner;
+		return checkOwner === owner;
 	};
 	const detachFinalizer =
 		pendingCheckId === null
 			? () => true
 			: registerTerminationFinalizer((termination) =>
-					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination, claimCheck),
+					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination, () =>
+						claimCheck("finalizer"),
+					),
 				);
 
 	try {
@@ -1315,7 +1318,7 @@ export async function runGithub(
 			prNumber,
 			prBaseSha: baseSha,
 		};
-		if (!claimCheck()) return;
+		if (!claimCheck("result")) return;
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
 		if (skipReason) {
@@ -1447,8 +1450,11 @@ export async function runGithub(
 		}
 	} catch (err) {
 		// A signal mid-review hands the check to the finalizer, and the
-		// coordinator exits the process; post nothing here.
-		if (!detachFinalizer()) return;
+		// coordinator exits the process; post nothing here. Unless this path
+		// already claimed the check and then failed to post: the finalizer
+		// will not complete a claimed check, so this path must.
+		if (checkOwner !== "result" && !detachFinalizer()) return;
+		claimCheck("result");
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which
@@ -1459,8 +1465,18 @@ export async function runGithub(
 				? WITHHELD_MESSAGE
 				: outboundText(rawMsg, screenedMsg);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
-		// check on a stale head would hang forever otherwise.
-		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		// check on a stale head would hang forever otherwise. When the stale
+		// probe itself fails, staleness is unknown: the check still completes
+		// (harmless on an old head), but the timeline stays untouched.
+		let skipReason: SkipReason | null = null;
+		let staleUnknown = false;
+		try {
+			skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		} catch (probeErr) {
+			staleUnknown = true;
+			const pm = probeErr instanceof Error ? probeErr.message : String(probeErr);
+			process.stderr.write(`needlefish: could not re-read PR state: ${pm}\n`);
+		}
 		if (skipReason !== null) {
 			// The review errored AND the head moved or the PR closed: close our
 			// own check as superseded so it cannot hang, but post nothing to
@@ -1505,7 +1521,7 @@ export async function runGithub(
 				);
 			}
 			// S3: post a PR comment so a red X always has something to read.
-			postErrorComment(repo, prNumber, msg);
+			if (!staleUnknown) postErrorComment(repo, prNumber, msg);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;

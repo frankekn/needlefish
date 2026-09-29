@@ -42,6 +42,8 @@ type FixtureOptions = {
 	readonly checkPatchDelayMs?: number;
 	// Pull re-reads after the first answer after this many ms.
 	readonly pullRereadDelayMs?: number;
+	// Pull reads from this 1-based count onward exit 1 (a transient gh failure).
+	readonly failPullReadsFrom?: number;
 	// The review pass answers at once; the critic pass is the call that hangs.
 	readonly reviewPassAnswers?: boolean;
 	// The hanging runner prints valid output and exits 0 this long after SIGTERM.
@@ -124,6 +126,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`  const head = count > 0 && ${JSON.stringify(opts.staleHeadAfterStart === true)} ? ${JSON.stringify(laterHead)} : ${JSON.stringify(targetHead)};`,
 			"  const pr = JSON.stringify({ state: 'open', title: 'PR', body: '', author_association: 'OWNER', user: { login: 'dev', type: 'User' }, comments_url: '', review_comments_url: '',",
 			`    head: { sha: head }, base: { sha: ${JSON.stringify(baseSha)} } });`,
+			`  if (count + 1 >= ${opts.failPullReadsFrom ?? Number.MAX_SAFE_INTEGER}) { process.stderr.write('gh: Server Error (HTTP 502)'); process.exit(1); }`,
 			`  setTimeout(() => { process.stdout.write(pr); process.exit(0); }, count > 0 ? ${opts.pullRereadDelayMs ?? 0} : 0);`,
 			"  return;",
 			"}",
@@ -322,6 +325,32 @@ test("bin/needlefish keeps a verdict that is ready before the finalizer's PATCH"
 	assert.equal(body.conclusion, "success");
 	assert.equal(body.output.title, "Needlefish: pass");
 	assert.equal(reviewPosted(calls), true, "the verdict path posts the review in full");
+	assert.equal(run.runnerAlive, false);
+});
+
+// The result path claims the check, then its own PR re-read fails while the
+// finalizer (which does not complete a claimed check) is mid re-read. The
+// claim holder must finish the job: one terminal PATCH from the error path.
+test("bin/needlefish completes a claimed check whose posting fails during termination", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, {
+		reviewPassAnswers: true,
+		runnerExitsOnTermAfterMs: 0,
+		pullRereadDelayMs: 350,
+		failPullReadsFrom: 3,
+		checkPatchDelayMs: 100,
+		graceMs: 5000,
+	});
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	const calls = readGhLog(fixture.ghLog);
+	const patches = checkPatches(calls);
+	assert.equal(patches.length, 1, JSON.stringify(calls.map((c) => c.args)));
+	const body = completion(patches[0]);
+	assert.equal(body.status, "completed");
+	assert.equal(body.conclusion, "failure");
+	assert.equal(body.output.title, "Needlefish: review failed");
+	assert.equal(reviewPosted(calls), false);
 	assert.equal(run.runnerAlive, false);
 });
 

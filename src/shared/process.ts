@@ -29,7 +29,7 @@ export interface RunAsyncOptions {
   readonly input?: string;
   /** The child is SIGKILLed at this bound; a child that ignores SIGTERM cannot hold the caller. */
   readonly timeoutMs: number;
-  /** Aborting SIGKILLs the child; the caller is about to exit and must not orphan it. */
+  /** Aborting SIGKILLs the child, and an already-aborted signal spawns nothing: the caller is about to exit and must not orphan it. */
   readonly abortSignal?: AbortSignal;
 }
 
@@ -41,6 +41,9 @@ export function runTextAsync(
   args: readonly string[],
   opts: RunAsyncOptions,
 ): Promise<string> {
+  if (opts.abortSignal?.aborted === true) {
+    return Promise.reject(new Error(`${command} ${args.join(" ")} aborted before start`));
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(command, [...args], { cwd: opts.cwd, stdio: ["pipe", "pipe", "pipe"] });
     const stdout: string[] = [];
