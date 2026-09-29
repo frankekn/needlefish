@@ -155,40 +155,38 @@ test("renderMarkdown shows compact re-review deltas only for positive counts", (
 	const result = baseResult([finding("P2", "one", "a.ts")]);
 	// Summary occupies line 2 (reason replaced the headline); counts then delta.
 	assert.match(
-		renderMarkdown(result, { resolvedCount: 2 }),
-		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved\n/,
+		renderMarkdown(result, { priorFates: { code_changed: 2, code_unchanged: 0, undetermined: 0 } }),
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🔍 2 not re-found \(code changed\)\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { newCount: 1 }),
 		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🆕 1 new\n/,
 	);
 	assert.match(
-		renderMarkdown(result, { resolvedCount: 2, newCount: 1 }),
-		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
+		renderMarkdown(result, { priorFates: { code_changed: 2, code_unchanged: 0, undetermined: 0 }, newCount: 1 }),
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🔍 2 not re-found \(code changed\) · 🆕 1 new\n/,
 	);
 	assert.doesNotMatch(
-		renderMarkdown(result, { resolvedCount: 0, newCount: 0 }),
-		/resolved|🆕/,
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 0, undetermined: 0 }, newCount: 0 }),
+		/not re-found|🆕/,
 	);
 });
 
-test("renderMarkdown shows not-reproduced and undetermined deltas only for positive counts", () => {
+test("renderMarkdown shows code-unchanged and undetermined deltas only for positive counts", () => {
 	const result = baseResult([finding("P2", "one", "a.ts")]);
 	assert.match(
 		renderMarkdown(result, {
-			resolvedCount: 1,
-			notReproducedCount: 2,
-			undeterminedCount: 3,
+			priorFates: { code_changed: 1, code_unchanged: 2, undetermined: 3 },
 			newCount: 1,
 		}),
-		/\n✅ 1 resolved · 🔁 2 not reproduced \(code unchanged\) · ❔ 3 undetermined · 🆕 1 new\n/,
+		/\n🔍 1 not re-found \(code changed\) · 🔁 2 not re-found \(code unchanged\) · ❔ 3 undetermined · 🆕 1 new\n/,
 	);
 	assert.match(
-		renderMarkdown(result, { notReproducedCount: 1 }),
-		/\*\*1 blocking\*\*\n🔁 1 not reproduced \(code unchanged\)\n/,
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 1, undetermined: 0 } }),
+		/\*\*1 blocking\*\*\n🔁 1 not re-found \(code unchanged\)\n/,
 	);
 	assert.doesNotMatch(
-		renderMarkdown(result, { notReproducedCount: 0, undeterminedCount: 0 }),
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 0, undetermined: 0 } }),
 		/🔁|❔/,
 	);
 });
@@ -267,7 +265,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 
 	const markdown = renderMarkdown(result, {
 		openFindings: [open],
-		resolvedCount: 1,
+		priorFates: { code_changed: 1, code_unchanged: 0, undetermined: 0 },
 		stateMarker: "<!-- state -->",
 	});
 
@@ -275,7 +273,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	// empty); summary drops to line 2, delta follows.
 	assert.match(
 		markdown,
-		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n✅ 1 resolved\n/,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n🔍 1 not re-found \(code changed\)\n/,
 	);
 	assert.match(markdown, /Review target: local base\.\.head/);
 	assert.match(markdown, /PR context: #24 metadata only/);

@@ -1140,7 +1140,7 @@ test("oldSideTouches decodes C-quoted old paths", () => {
 	assert.deepEqual([...oldSideTouches(diff)], [['dir/café "q".ts', [[3, 3]]]]);
 });
 
-test("classifyUnmatched resolves only keys whose ±10 window overlaps a touched range", () => {
+test("classifyUnmatched counts code changed only for keys whose ±10 window overlaps a touched range", () => {
 	const key = (file: string, lineStart: number): FindingKey => ({
 		file,
 		lineStart,
@@ -1152,22 +1152,22 @@ test("classifyUnmatched resolves only keys whose ±10 window overlaps a touched 
 		["gone.ts", [[1, Number.POSITIVE_INFINITY]]],
 	]);
 	assert.deepEqual(classifyUnmatched([key("a.ts", 50)], touches), {
-		resolved: 1,
-		not_reproduced: 0,
+		code_changed: 1,
+		code_unchanged: 0,
 		undetermined: 0,
 	});
 	assert.deepEqual(classifyUnmatched([key("a.ts", 70)], touches), {
-		resolved: 1,
-		not_reproduced: 0,
+		code_changed: 1,
+		code_unchanged: 0,
 		undetermined: 0,
 	});
 	assert.deepEqual(
 		classifyUnmatched([key("a.ts", 49), key("a.ts", 71), key("b.ts", 60)], touches),
-		{ resolved: 0, not_reproduced: 3, undetermined: 0 },
+		{ code_changed: 0, code_unchanged: 3, undetermined: 0 },
 	);
 	assert.deepEqual(classifyUnmatched([key("gone.ts", 9000)], touches), {
-		resolved: 1,
-		not_reproduced: 0,
+		code_changed: 1,
+		code_unchanged: 0,
 		undetermined: 0,
 	});
 });
@@ -1178,13 +1178,13 @@ test("classifyUnmatched marks every key undetermined when the previous head is u
 		{ file: "b.ts", lineStart: 2, category: "bug", title: "y" },
 	];
 	assert.deepEqual(classifyUnmatched(keys, null), {
-		resolved: 0,
-		not_reproduced: 0,
+		code_changed: 0,
+		code_unchanged: 0,
 		undetermined: 2,
 	});
 	assert.deepEqual(classifyUnmatched([], null), {
-		resolved: 0,
-		not_reproduced: 0,
+		code_changed: 0,
+		code_unchanged: 0,
 		undetermined: 0,
 	});
 });
@@ -1250,7 +1250,7 @@ test("runGithub PUT-updates previous review when same findings persist", async (
 	);
 });
 
-test("runGithub reports a finding dropped on an unchanged head as not reproduced, not resolved", async (t) => {
+test("runGithub reports a finding dropped on an unchanged head as not re-found with code unchanged", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 22,
 		rawReview: JSON.stringify({
@@ -1287,7 +1287,7 @@ test("runGithub reports a finding dropped on an unchanged head as not reproduced
 	assert.ok(putPost);
 	const putBody = parseReviewPayload(putPost.payload).body;
 	assert.match(putBody, /Still open/);
-	assert.match(putBody, /🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/);
+	assert.match(putBody, /🔁 1 not re-found \(code unchanged\) · 🆕 1 new/);
 	assert.doesNotMatch(putBody, /✅/);
 });
 
@@ -1969,10 +1969,10 @@ test("runGithub posts a re-review round comment with counts on the second round"
 	);
 	assert.match(body, /Needlefish re-review/);
 	// Same head: to-be-fixed was dropped without a code change, so it is not
-	// reproduced rather than resolved; persisting is open; new issue is new.
+	// re-found with its code unchanged; persisting is open; new issue is new.
 	assert.match(
 		body,
-		/✅ 0 resolved · 🔁 1 not reproduced \(code unchanged\) · ❌ 1 still open · 🆕 1 new/,
+		/🔁 1 not re-found \(code unchanged\) · ❌ 1 still open · 🆕 1 new/,
 	);
 	assert.match(body, /<!-- needlefish-round -->/);
 
@@ -2650,7 +2650,7 @@ test("the retry backoff actually sleeps NEEDLEFISH_GH_POST_RETRY_MS", async (t) 
 	);
 });
 
-// --- Unmatched previous findings: resolved vs not reproduced vs undetermined ---
+// --- Unmatched previous findings: code changed vs code unchanged vs undetermined ---
 
 const FORTY_LINES = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";
 
@@ -2661,13 +2661,29 @@ function roundFateFindings(): Finding[] {
 	];
 }
 
-function roundFateReview(): string {
+function roundFateReview(
+	residualRisks: readonly { text: string; blocks: boolean }[] = [],
+): string {
 	return JSON.stringify({
 		summary: "neither prior finding re-reported",
 		findings: [mkFinding({ title: "unrelated", lineStart: 18, lineEnd: 18, category: "security" })],
 		checked: ["checked"],
-		residual_risks: [],
+		residual_risks: residualRisks,
 	});
+}
+
+function seedPrevHeadChangedAtLine30(fixture: Fixture): void {
+	// The previous round's head differs from the reviewed head only at
+	// README.md:30, so the finding there changed and the one at :5 did not.
+	gitText(["checkout", "-q", "-b", "prev-round"], fixture.repo);
+	writeFileSync(
+		path.join(fixture.repo, "README.md"),
+		FORTY_LINES.replace("line 30\n", "line 30 before the fix\n"),
+	);
+	commitAll(fixture.repo, "previous round head");
+	const prevHead = headSha(fixture.repo);
+	gitText(["checkout", "-q", "feature"], fixture.repo);
+	seedPrevRound(fixture, prevHead);
 }
 
 function seedPrevRound(fixture: Fixture, prevHead: string): void {
@@ -2690,35 +2706,26 @@ function roundCommentBody(posts: readonly Post[], prNumber: number): string {
 	return String((parseJson(post.payload) as { body?: unknown }).body ?? "");
 }
 
-test("runGithub splits dropped prior findings into resolved and not reproduced by the prev-head diff", async (t) => {
+test("runGithub splits dropped prior findings by whether the prev-head diff touched them", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 85,
-		rawReview: roundFateReview(),
+		// A non-blocking residual leaves the round complete.
+		rawReview: roundFateReview([{ text: "callers not traced", blocks: false }]),
 		readmeContent: FORTY_LINES,
 	});
-	// The previous round's head differs from the reviewed head only at
-	// README.md:30, so the finding there changed and the one at :5 did not.
-	gitText(["checkout", "-q", "-b", "prev-round"], fixture.repo);
-	writeFileSync(
-		path.join(fixture.repo, "README.md"),
-		FORTY_LINES.replace("line 30\n", "line 30 before the fix\n"),
-	);
-	commitAll(fixture.repo, "previous round head");
-	const prevHead = headSha(fixture.repo);
-	gitText(["checkout", "-q", "feature"], fixture.repo);
-	seedPrevRound(fixture, prevHead);
+	seedPrevHeadChangedAtLine30(fixture);
 
 	await runGithub(fixture.repo, 85, { timeoutMs: 1000 });
 
 	const posts = readPosts(fixture.postLog);
 	assert.match(
 		roundCommentBody(posts, 85),
-		/✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · ❌ 0 still open · 🆕 1 new/,
+		/🔍 1 not re-found \(code changed\) · 🔁 1 not re-found \(code unchanged\) · ❌ 0 still open · 🆕 1 new/,
 	);
 	const putPost = putReview(posts, 85, 1);
 	assert.ok(putPost, "re-review should PUT-update the previous review");
 	const putBody = parseReviewPayload(putPost.payload).body;
-	assert.match(putBody, /✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/);
+	assert.match(putBody, /🔍 1 not re-found \(code changed\) · 🔁 1 not re-found \(code unchanged\) · 🆕 1 new/);
 	assert.doesNotMatch(putBody, /undetermined/);
 	const checkPatch = posts.find(
 		(p) =>
@@ -2728,7 +2735,7 @@ test("runGithub splits dropped prior findings into resolved and not reproduced b
 	assert.ok(checkPatch, "re-review should complete the pending check run");
 	assert.match(
 		String((parseJson(checkPatch.payload) as { output?: { summary?: unknown } }).output?.summary ?? ""),
-		/✅ 1 resolved · 🔁 1 not reproduced \(code unchanged\) · 🆕 1 new/,
+		/🔍 1 not re-found \(code changed\) · 🔁 1 not re-found \(code unchanged\) · 🆕 1 new/,
 	);
 	assert.equal(
 		parseState(putBody)?.findings.map((f) => f.title).join(","),
@@ -2748,13 +2755,39 @@ test("runGithub reports dropped prior findings as undetermined when the prev hea
 
 	const posts = readPosts(fixture.postLog);
 	const round = roundCommentBody(posts, 86);
-	assert.match(round, /✅ 0 resolved · ❔ 2 undetermined · ❌ 0 still open · 🆕 1 new/);
+	assert.match(round, /❔ 2 undetermined · ❌ 0 still open · 🆕 1 new/);
 	assert.doesNotMatch(round, /🔁/);
 	const putPost = putReview(posts, 86, 1);
 	assert.ok(putPost, "re-review should PUT-update the previous review");
 	const putBody = parseReviewPayload(putPost.payload).body;
 	assert.match(putBody, /❔ 2 undetermined · 🆕 1 new/);
 	assert.doesNotMatch(putBody, /✅|🔁/);
+});
+
+// A failed or timed-out deep pass always leaves a blocking residual (see
+// review.test.ts), so an incomplete round cannot vouch for what it did not
+// re-report, even where the code under a prior finding changed.
+test("runGithub reports dropped prior findings as undetermined when the round has a blocking residual", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 87,
+		rawReview: roundFateReview([
+			{ text: 'deep review of "core" failed (timeout); 1 file(s) not deep-reviewed', blocks: true },
+		]),
+		readmeContent: FORTY_LINES,
+	});
+	seedPrevHeadChangedAtLine30(fixture);
+
+	await runGithub(fixture.repo, 87, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	const round = roundCommentBody(posts, 87);
+	assert.match(round, /❔ 2 undetermined · ❌ 0 still open · 🆕 1 new/);
+	assert.doesNotMatch(round, /resolved|not re-found|not reproduced/);
+	const putPost = putReview(posts, 87, 1);
+	assert.ok(putPost, "re-review should PUT-update the previous review");
+	const putBody = parseReviewPayload(putPost.payload).body;
+	assert.match(putBody, /❔ 2 undetermined · 🆕 1 new/);
+	assert.doesNotMatch(putBody, /✅ \d|🔍|🔁/);
 });
 
 function setEnvForTest(t: TestContext, name: string, value: string): void {
