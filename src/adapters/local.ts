@@ -94,7 +94,7 @@ const REPO_PATH_FIX = "Check the --repo path.";
 
 export function gitRepoState(cwd: string): GitRepoState {
   // The messages matched below are gettext-translated; C keeps them English.
-  const env = { ...process.env, LC_ALL: "C" };
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: "C" };
   delete env.LANGUAGE;
   const res = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf8", env });
   if (res.error) {
