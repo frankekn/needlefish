@@ -194,9 +194,9 @@
       "type": "object",
       "required": ["totalTokens", "inputTokens", "outputTokens"],
       "properties": {
-        "totalTokens": { "type": "integer", "minimum": 0 },
-        "inputTokens": { "type": "integer", "minimum": 0 },
-        "outputTokens": { "type": "integer", "minimum": 0 }
+        "totalTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
     }
   }

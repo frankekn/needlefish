@@ -236,6 +236,9 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["negative token usage", false, (_r, _f, s) => {
 			s.usage = { totalTokens: 1, inputTokens: -1, outputTokens: 0 };
 		}],
+		["token count above MAX_SAFE_INTEGER", false, (_r, _f, s) => {
+			s.usage = { totalTokens: Number.MAX_SAFE_INTEGER + 1, inputTokens: 0, outputTokens: 0 };
+		}],
 		["unknown callout surface", false, (r) => { r.scopeCallouts = [{ surface: "docs", files: ["a.md"] }]; }],
 		["callout without files", false, (r) => { r.scopeCallouts = [{ surface: "config", files: [] }]; }],
 	];
