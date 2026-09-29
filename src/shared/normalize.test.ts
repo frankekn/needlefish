@@ -198,8 +198,19 @@ test("isNeedlefishPost recognizes every kind of Needlefish post by its final mar
   }
 });
 
-test("isNeedlefishPost recognizes pre-marker inline findings and explain comments only from this run's bot identity", () => {
-  for (const body of [OWN_INLINE_FINDING_UNMARKED, OWN_EXPLAIN_UNMARKED]) {
+const OWN_INLINE_FINDING_OLDEST =
+  "**P2 (validation): Reject malformed model output before deriving a verdict**\n\nThe parser accepts any object.\n\n_Suggested fix:_ Make the model-output boundary strict.";
+
+const OWN_REVIEW_BODY_OLDEST =
+  "# Needlefish PR Review\n\n**Verdict:** PASS\n\n- Ran `pnpm check`; TypeScript completed without errors.";
+
+test("isNeedlefishPost recognizes pre-marker posts only from this run's bot identity", () => {
+  for (const body of [
+    OWN_INLINE_FINDING_UNMARKED,
+    OWN_INLINE_FINDING_OLDEST,
+    OWN_EXPLAIN_UNMARKED,
+    OWN_REVIEW_BODY_OLDEST,
+  ]) {
     assert.equal(isNeedlefishPost(body, OWN_BOT), true, body.slice(0, 40));
     assert.equal(isNeedlefishPost(body, BOT), false, body.slice(0, 40));
     assert.equal(isNeedlefishPost(body, OWN_HUMAN), false, "a maintainer on the runner's PAT is not a bot");

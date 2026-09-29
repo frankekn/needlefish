@@ -60,7 +60,13 @@ const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";
 // marker line. A human can start a comment the same way, so these count only
 // for a post GitHub types as a bot AND attributes to the identity this run
 // posts as; a maintainer sharing a PAT with the runner is not a bot.
-const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [/^\*\*P[0-3]\*\* /, /^## 🔍 Needlefish explain\n/];
+// Inline findings: `**P2** title` since July 2026, `**P2 (category): title**`
+// before. Review bodies before the state marker opened `# Needlefish PR Review`.
+const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [
+  /^\*\*P[0-3]\b/,
+  /^## 🔍 Needlefish explain\n/,
+  /^# Needlefish PR Review\n/,
+];
 
 export interface PostAuthorship {
   // GitHub asserts the poster is a bot: REST `user.type === "Bot"`, or, in
