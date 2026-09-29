@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCodex } from "./codex";
+import { resolveRunnerBinary, runnerCommand } from "./runner-detection";
+import { RUNNER_DEFINITIONS, RUNNERS } from "./runner";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
 import { captureEnv, restoreEnv } from "./runner-test-fixtures";
 
@@ -74,9 +76,9 @@ function clearRunnerEnv(pathValue: string): void {
 }
 
 // Regression: detection once trimmed CODEX_BIN while the spawn used it raw, so
-// a padded override was auto-detected and then failed ENOENT instead of
-// falling through to the next runner.
-test("runCodex skips a padded CODEX_BIN because the codex spawn does not trim it", async (t) => {
+// a padded override was auto-detected and then failed ENOENT. Both now read the
+// value through runnerCommand, which trims it.
+test("runCodex spawns a padded CODEX_BIN trimmed, the way detection resolved it", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-detect-test-"));
   const repo = initRepo(tmp);
   const fakeBin = path.join(tmp, "bin");
@@ -103,5 +105,54 @@ test("runCodex skips a padded CODEX_BIN because the codex spawn does not trim it
     timeoutMs: 1000,
   });
 
-  assert.equal(output, '{"runner":"claude"}');
+  assert.equal(output, '{"runner":"codex"}');
+});
+
+// Issue #201 item 1: codex on PATH and CODEX_BIN="" passed doctor, then the
+// review spawned "" ("The argument 'file' cannot be empty").
+test("runCodex treats an empty CODEX_BIN as unset and spawns codex from PATH", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-detect-test-"));
+  const repo = initRepo(tmp);
+  const fakeBin = path.join(tmp, "bin");
+  const previous = captureEnv(RUNNER_ENV_KEYS);
+  t.after(() => {
+    restoreEnv(previous);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  mkdirSync(fakeBin);
+  const codex = path.join(fakeBin, "codex");
+  writeFileSync(codex, ["#!/bin/sh", "cat > /dev/null", `printf '{"runner":"codex"}'`].join("\n"));
+  chmodSync(codex, 0o755);
+  clearRunnerEnv(`${fakeBin}:/usr/bin:/bin:/usr/sbin:/sbin`);
+  process.env.CODEX_BIN = "";
+
+  const output = await runCodex("prompt", {
+    runner: "codex",
+    repoPath: repo,
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  assert.equal(output, '{"runner":"codex"}');
+});
+
+test("runnerCommand trims every *_BIN override and treats blank as unset", (t) => {
+  const previous = captureEnv(RUNNERS.map((name) => RUNNER_DEFINITIONS[name].bin?.env ?? "").filter(Boolean));
+  t.after(() => restoreEnv(previous));
+  for (const name of RUNNERS) {
+    const bin = RUNNER_DEFINITIONS[name].bin;
+    if (bin === undefined) {
+      assert.equal(runnerCommand(name), undefined, name);
+      continue;
+    }
+    for (const blank of [undefined, "", "  ", "\n"]) {
+      if (blank === undefined) delete process.env[bin.env];
+      else process.env[bin.env] = blank;
+      assert.equal(runnerCommand(name), bin.fallback, `${name} with ${JSON.stringify(blank)}`);
+    }
+    process.env[bin.env] = " /opt/tools/agent \n";
+    assert.equal(runnerCommand(name), "/opt/tools/agent", name);
+    assert.equal(resolveRunnerBinary(name)?.command, "/opt/tools/agent", name);
+  }
 });

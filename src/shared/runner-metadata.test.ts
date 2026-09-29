@@ -90,7 +90,7 @@ test("auto-detected runners carry their verified login command and status probe"
       openai: undefined,
       grok: { env: "GROK_BIN", fallback: "grok" },
       pi: { env: "PI_BIN", fallback: "pi" },
-      acp: { env: "NEEDLEFISH_ACP_BIN", trim: true },
+      acp: { env: "NEEDLEFISH_ACP_BIN" },
     },
   );
 });

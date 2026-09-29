@@ -532,7 +532,8 @@ for those three CLIs instead of a stack trace. Auto-detect does not look for
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
 its env in-process (its subprocess allowlist is empty). Defaults in
-parentheses are the executable names used when the `*_BIN` var is unset:
+parentheses are the executable names used when the `*_BIN` var is unset or
+blank (values are trimmed):
 
 | runner | binary | model / other |
 | --- | --- | --- |

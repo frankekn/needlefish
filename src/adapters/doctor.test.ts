@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { runDoctor, renderDoctorReport, type DoctorCheck, type DoctorReport } from "./doctor";
-import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures";
+import { runCodex } from "../shared/codex";
+import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+import { RUNNER_DEFINITIONS, RUNNERS } from "../shared/runner";
 import { captureEnv, restoreEnv } from "../shared/runner-test-fixtures";
 
 const ENV_KEYS = [
@@ -15,6 +17,9 @@ const ENV_KEYS = [
   "OPENCODE_BIN",
   "NEEDLEFISH_RUNNER",
   "NEEDLEFISH_ACP_BIN",
+  "GROK_BIN",
+  "PI_BIN",
+  "NEEDLEFISH_NO_RETRY",
   "OPENAI_API_KEY",
   "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
   "CODEX_API_KEY",
@@ -239,6 +244,35 @@ test("doctor names the env var when an explicitly selected runner binary is miss
   process.env.NEEDLEFISH_ACP_BIN = ` ${agent} \n`;
   const padded = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "acp" });
   assert.equal(check(padded, "runner").detail, `acp (--runner; ${agent})`, "trimmed like runAcp reads it");
+});
+
+// Issue #201 item 1: detection, the doctor, and every spawn site read *_BIN
+// through one function, so the doctor's runner verdict is the review's spawn
+// outcome whatever shape the override takes.
+test("doctor's runner verdict equals whether the review spawns, for every CLI runner and override shape", async (t) => {
+  const f = setup(t);
+  process.env.NEEDLEFISH_NO_RETRY = "1";
+  const marker = path.join(f.tmp, "spawned");
+  for (const runner of RUNNERS) {
+    const bin = RUNNER_DEFINITIONS[runner].bin;
+    if (bin === undefined) continue;
+    const executable = stub(f.bin, runner, `touch ${JSON.stringify(marker)}`);
+    const shapes = {
+      padded: ` ${executable} \n`,
+      empty: "",
+      whitespace: "  ",
+      "missing-name": `missing-${runner}`,
+      "missing-path": path.join(f.tmp, "missing"),
+    };
+    for (const [shape, value] of Object.entries(shapes)) {
+      process.env[bin.env] = value;
+      const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner });
+      rmSync(marker, { force: true });
+      await runCodex("prompt", { runner, repoPath: f.repo, targetHeadSha: headSha(f.repo), timeoutMs: 5000 }).catch(() => undefined);
+      assert.equal(check(report, "runner").status === "ok", existsSync(marker), `${runner} with ${shape} ${bin.env}`);
+    }
+    delete process.env[bin.env];
+  }
 });
 
 test("doctor checks OPENAI_API_KEY for the HTTP runner without any network call", (t) => {

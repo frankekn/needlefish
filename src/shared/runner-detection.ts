@@ -31,12 +31,31 @@ function autoDetectRunner(): RunnerName {
   throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 
-/** Undefined when the runner has no executable to resolve: an HTTP runner, or a bin env that is required but unset. */
-export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | undefined {
+/**
+ * The command runner R is spawned as. The `*_BIN` override is trimmed and a blank
+ * value counts as unset; then the catalog default applies. Undefined when R has
+ * no CLI (openai) or its override is required and unset (acp). Detection, the
+ * doctor, and every spawn site read it here so they cannot disagree.
+ */
+export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  const raw = process.env[bin.env];
-  const command = (bin.trim ? raw?.trim() : raw) || bin.fallback;
+  return process.env[bin.env]?.trim() || bin.fallback;
+}
+
+/** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
+export function requireRunnerCommand(runner: RunnerName): string {
+  const command = runnerCommand(runner);
+  if (command !== undefined) return command;
+  const bin = RUNNER_DEFINITIONS[runner].bin;
+  throw new Error(
+    bin === undefined ? `${runner} runner has no CLI to spawn` : `${bin.env} is required for the ${runner} runner`,
+  );
+}
+
+/** Undefined when the runner has no executable to resolve: an HTTP runner, or a bin env that is required but unset. */
+export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | undefined {
+  const command = runnerCommand(runner);
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
     return { command, path: executableExists(command) ? command : undefined };
