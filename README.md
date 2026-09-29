@@ -90,7 +90,7 @@ jobs:
 Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in Codex CLI's
 `~/.codex/auth.json`) or `CODEX_API_KEY` — and open a PR. Findings arrive as
 inline review comments anchored to the diff; pushes update the same review in
-place (fresh / still-open / resolved) instead of stacking new ones.
+place (fresh / still-open / no longer reported) instead of stacking new ones.
 
 Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `high` effort
 by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
@@ -608,7 +608,7 @@ via the full path:
 ## Status
 
 v0.4.9. Read-only. Shipped: inline review comments, sticky re-review
-(fresh/open/resolved across pushes), docs-only fast path (no model calls),
+(fresh/open/no longer reported across pushes), docs-only fast path (no model calls),
 same-head dedupe, hosted-runner repo inspection (best-effort AppArmor
 sysctl), local `--dry-run` bundle preview, machine-readable skip reasons,
 non-blocking scope callouts, and cached-result `render` / `verdict`

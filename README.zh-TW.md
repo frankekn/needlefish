@@ -88,7 +88,7 @@ jobs:
 設定一個 secret——`CODEX_AUTH_JSON`（已登入 Codex CLI 的
 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY`——然後開啟 PR。finding 會
 以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
-份 review（fresh／still-open／resolved），而不是不斷堆疊新 review。
+份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
 
 成本：小型 PR 每次審查 2 次模型呼叫（預設 `gpt-5.6-terra` @ `high`
 effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR 與未
@@ -520,7 +520,7 @@ alias）。不做此步驟時，請用完整路徑呼叫：
 ## 狀態
 
 v0.4.9。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
-fresh／open／resolved）、純文件 fast path（不呼叫模型）、same-head
+fresh／open／未再回報）、純文件 fast path（不呼叫模型）、same-head
 dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）、本地
 `--dry-run` bundle 預覽、機器可讀的 skip reason、非阻塞 scope callouts，以及
 cached-result `render`／`verdict` 診斷。

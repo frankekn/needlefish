@@ -15,6 +15,25 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 	P3: "⚪ P3",
 };
 
+// What a re-review can say about a previous finding it did not re-report.
+// None of these means "fixed": not re-finding a bug is weaker evidence than
+// verifying its trigger is gone.
+export type PriorFate = "code_changed" | "code_unchanged" | "undetermined";
+
+export type PriorFateCounts = Readonly<Record<PriorFate, number>>;
+
+const PRIOR_FATE_LABEL: Record<PriorFate, (n: number) => string> = {
+	code_changed: (n) => `🔍 ${n} not re-found (code changed)`,
+	code_unchanged: (n) => `🔁 ${n} not re-found (code unchanged)`,
+	undetermined: (n) => `❔ ${n} undetermined`,
+};
+
+export function priorFateParts(fates: PriorFateCounts): string[] {
+	return (Object.keys(PRIOR_FATE_LABEL) as PriorFate[])
+		.filter((fate) => fates[fate] > 0)
+		.map((fate) => PRIOR_FATE_LABEL[fate](fates[fate]));
+}
+
 const VERDICT_HEADLINE: Record<Verdict, string> = {
 	pass: "LGTM ✅",
 	changes_requested: "CHANGES REQUESTED ⚠️",
@@ -26,9 +45,7 @@ export function renderMarkdown(
 	opts?: {
 		inlinedFindings?: ReadonlySet<Finding>;
 		openFindings?: readonly Finding[];
-		resolvedCount?: number;
-		notReproducedCount?: number;
-		undeterminedCount?: number;
+		priorFates?: PriorFateCounts;
 		newCount?: number;
 		repoSlug?: string;
 		stateMarker?: string;
@@ -91,16 +108,7 @@ export function renderMarkdown(
 	}
 	if (findingCounts.length > 0) lines.push(findingCounts.join(" · "));
 
-	const delta: string[] = [];
-	if (opts?.resolvedCount && opts.resolvedCount > 0) {
-		delta.push(`✅ ${opts.resolvedCount} resolved`);
-	}
-	if (opts?.notReproducedCount && opts.notReproducedCount > 0) {
-		delta.push(`🔁 ${opts.notReproducedCount} not reproduced (code unchanged)`);
-	}
-	if (opts?.undeterminedCount && opts.undeterminedCount > 0) {
-		delta.push(`❔ ${opts.undeterminedCount} undetermined`);
-	}
+	const delta = opts?.priorFates ? priorFateParts(opts.priorFates) : [];
 	if (opts?.newCount && opts.newCount > 0) {
 		delta.push(`🆕 ${opts.newCount} new`);
 	}

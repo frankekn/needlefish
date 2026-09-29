@@ -1,6 +1,11 @@
 import path from "node:path";
 import { review } from "../core/review.js";
-import { renderMarkdown } from "../shared/render.js";
+import {
+	priorFateParts,
+	renderMarkdown,
+	type PriorFate,
+	type PriorFateCounts,
+} from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText } from "../shared/process.js";
@@ -445,10 +450,6 @@ export function matchFindings(
 	return { fresh, open, unmatched };
 }
 
-export type PriorFate = "resolved" | "not_reproduced" | "undetermined";
-
-export type PriorFateCounts = Readonly<Record<PriorFate, number>>;
-
 const WHOLE_FILE: [number, number] = [1, Number.POSITIVE_INFINITY];
 
 // Old-side (previous head) line ranges per path from `git diff -U0`. A
@@ -498,8 +499,8 @@ export function classifyUnmatched(
 	touches: ReadonlyMap<string, ReadonlyArray<readonly [number, number]>> | null,
 ): PriorFateCounts {
 	const counts: Record<PriorFate, number> = {
-		resolved: 0,
-		not_reproduced: 0,
+		code_changed: 0,
+		code_unchanged: 0,
 		undetermined: 0,
 	};
 	for (const key of unmatched) {
@@ -512,7 +513,7 @@ export function classifyUnmatched(
 		const changed = (touches.get(key.file) ?? []).some(
 			([start, end]) => start <= hi && end >= lo,
 		);
-		counts[changed ? "resolved" : "not_reproduced"]++;
+		counts[changed ? "code_changed" : "code_unchanged"]++;
 	}
 	return counts;
 }
@@ -879,10 +880,7 @@ function buildRoundCommentBody(
 	newCount: number,
 ): string {
 	const lines: string[] = [];
-	const counts = [`✅ ${fates.resolved} resolved`];
-	if (fates.not_reproduced > 0)
-		counts.push(`🔁 ${fates.not_reproduced} not reproduced (code unchanged)`);
-	if (fates.undetermined > 0) counts.push(`❔ ${fates.undetermined} undetermined`);
+	const counts = priorFateParts(fates);
 	counts.push(`❌ ${open.length} still open`, `🆕 ${newCount} new`);
 	lines.push(
 		`**Needlefish re-review** @ ${headSha.slice(0, 7)} — ${counts.join(" · ")} → ${VERDICT_HEADLINE_WORD[result.verdict]}`,
@@ -1243,9 +1241,14 @@ export async function runGithub(
 				prev.state.findings,
 				result.findings,
 			);
+			// A blocking residual means this round could not reach a verdict
+			// (every failed or timed-out deep pass leaves one), so its silence
+			// on a prior finding proves nothing. Residuals carry no file list,
+			// so the whole round is treated as unable to vouch.
+			const roundIncomplete = result.residualRisks.some((risk) => risk.blocks);
 			const fates = classifyUnmatched(
 				unmatched,
-				unmatched.length > 0
+				unmatched.length > 0 && !roundIncomplete
 					? touchesSincePrevHead(repoPath, prev.state.headSha, headSha)
 					: null,
 			);
@@ -1258,9 +1261,7 @@ export async function runGithub(
 			const renderOpts = {
 				inlinedFindings: freshInlined,
 				openFindings: open,
-				resolvedCount: fates.resolved,
-				notReproducedCount: fates.not_reproduced,
-				undeterminedCount: fates.undetermined,
+				priorFates: fates,
 				// New = not matched to a previous-round key.
 				newCount: fresh.length,
 				repoSlug: repo,
