@@ -12,6 +12,7 @@ import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type CalloutSurface,
 	type Category,
+	type CoverageGap,
 	type Finding,
 	type ResidualRisk,
 	type ReviewResult,
@@ -241,6 +242,10 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		}],
 		["unknown callout surface", false, (r) => { r.scopeCallouts = [{ surface: "docs", files: ["a.md"] }]; }],
 		["callout without files", false, (r) => { r.scopeCallouts = [{ surface: "config", files: [] }]; }],
+		["pointer-only coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "assets/model.bin" }]; }],
+		["incomplete-scan coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_scan_incomplete" }]; }],
+		["unknown coverage gap kind", false, (r) => { r.coverageGaps = [{ kind: "missing_file", file: "a.bin" }]; }],
+		["pointer-only coverage gap with empty file", false, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "" }]; }],
 	];
 
 	for (const [name, accepted, mutate] of cases) {
@@ -289,6 +294,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		prNumber: "optional",
 		prBaseSha: "optional",
 		scopeCallouts: "optional",
+		coverageGaps: "optional",
 		stats: "optional",
 		totalDurationMs: "optional",
 		coverage: "optional",
@@ -325,6 +331,16 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 	);
 	assertFields<ResidualRisk>({ text: "required", blocks: "required" }, "$defs", "residualRisk");
 	assertFields<ScopeCallout>({ surface: "required", files: "required" }, "$defs", "scopeCallout");
+	assertFields<Extract<CoverageGap, { kind: "lfs_pointer_only" }>>(
+		{ kind: "required", file: "required" },
+		"$defs",
+		"lfsPointerOnlyGap",
+	);
+	assertFields<Extract<CoverageGap, { kind: "lfs_scan_incomplete" }>>(
+		{ kind: "required" },
+		"$defs",
+		"lfsScanIncompleteGap",
+	);
 	assertFields<RunStat>(
 		{
 			label: "required",
@@ -375,6 +391,17 @@ test("schema enums match the runtime value sets", (t) => {
 	assert.deepEqual(enums.category, Object.keys(categories).sort());
 	assert.deepEqual(enums.surface, Object.keys(surfaces).sort());
 	assert.deepEqual(schemaEnum("$defs", "runStat", "properties", "runner"), [...RUNNERS].sort());
+	// coverageGap is a oneOf over one definition per kind, each pinning kind
+	// with const; the union of those consts must be the runtime kind set.
+	const gapKinds: Record<CoverageGap["kind"], true> = {
+		lfs_pointer_only: true,
+		lfs_scan_incomplete: true,
+	};
+	const gapKindConsts = ["lfsPointerOnlyGap", "lfsScanIncompleteGap"]
+		.map((def) => schemaAt("$defs", def, "properties", "kind").const)
+		.filter((value): value is string => typeof value === "string")
+		.sort();
+	assert.deepEqual(gapKindConsts, Object.keys(gapKinds).sort());
 
 	// Every schema enum member must also survive the runtime reader.
 	const tmp = withTmp(t);
@@ -385,6 +412,7 @@ test("schema enums match the runtime value sets", (t) => {
 	const variants: JsonObject[] = [
 		...enums.verdict.map((verdict) => ({ ...real, verdict })),
 		...enums.surface.map((surface) => ({ ...real, scopeCallouts: [{ surface, files: ["f"] }] })),
+		{ ...real, coverageGaps: [{ kind: "lfs_pointer_only", file: "f" }, { kind: "lfs_scan_incomplete" }] },
 		...RUNNERS.map((runner) => ({
 			...real,
 			stats: [{ label: "review", runner, durationMs: 1, attempts: 1, ok: true }],

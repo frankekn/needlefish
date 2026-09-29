@@ -49,6 +49,11 @@ export function renderMarkdown(
 		newCount?: number;
 		repoSlug?: string;
 		stateMarker?: string;
+		// Review bodies are read back into prMeta.reviews by `needlefish pr`
+		// and `explain` (repo.ts fetchPrRefInfo), so a notice rendered there
+		// becomes model input on the next run. Check summaries are not read
+		// back (normalizePrMeta keeps only name/status/conclusion).
+		omitCoverageGaps?: boolean;
 	},
 ): string {
 	const lines: string[] = [];
@@ -128,6 +133,24 @@ export function renderMarkdown(
 		// ⛔ bullet list (or counts paragraph) in GFM.
 		lines.push("");
 		lines.push(`Coverage: ${result.coverage}`);
+	}
+
+	const coverageGaps = opts?.omitCoverageGaps ? [] : (result.coverageGaps ?? []);
+	const pointerOnly = coverageGaps.flatMap((gap) =>
+		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
+	);
+	if (pointerOnly.length > 0) {
+		lines.push("");
+		lines.push(
+			"**Not reviewed (non-blocking):** these changed files were available only as Git LFS pointers, so their contents were not read and are not covered by this review. Ask a maintainer to check them.",
+		);
+		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
+	}
+	if (coverageGaps.some((gap) => gap.kind === "lfs_scan_incomplete")) {
+		lines.push("");
+		lines.push(
+			"**Coverage uncertain (non-blocking):** could not determine whether any changed file is a Git LFS pointer. If this repository uses Git LFS, some changed files may have been reviewed as pointer stubs rather than their real contents. Ask a maintainer to check any LFS-tracked files in this change.",
+		);
 	}
 
 	if (result.reviewTarget) {

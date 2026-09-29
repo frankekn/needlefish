@@ -385,6 +385,78 @@ test("renderMarkdown renders non-blocking scope callouts after the review target
 	);
 });
 
+test("renderMarkdown lists coverage gaps once, between the coverage line and the review target", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		coverage: "full diff reviewed in one pass (2 files)",
+		reviewTarget: "Review target: local base..head",
+		coverageGaps: [
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+			{ kind: "lfs_pointer_only", file: "new\nline.bin" },
+			{ kind: "lfs_scan_incomplete" },
+		],
+	});
+
+	const header = "**Not reviewed (non-blocking):**";
+	const uncertain = "**Coverage uncertain (non-blocking):**";
+	assert.equal(markdown.split(uncertain).length - 1, 1);
+	assert.ok(markdown.includes("could not determine whether any changed file is a Git LFS pointer"));
+	assert.ok(markdown.includes("If this repository uses Git LFS"), "the notice must not assert LFS use");
+	assert.ok(markdown.indexOf(uncertain) > markdown.indexOf(header));
+	assert.ok(!markdown.includes("- undefined"), "an incomplete-scan gap names no file");
+	assert.equal(markdown.split(header).length - 1, 1, "one notice, not one per file");
+	assert.ok(markdown.includes("available only as Git LFS pointers"));
+	assert.ok(markdown.includes("Ask a maintainer to check them."));
+	assert.ok(markdown.includes("\n- assets/model.bin\n"));
+	assert.ok(markdown.includes("\n- new line.bin\n"), "a newline in a path must not split the bullet");
+
+	const coverageIdx = markdown.indexOf("Coverage: ");
+	const gapIdx = markdown.indexOf(header);
+	const targetIdx = markdown.indexOf("Review target:");
+	const findingsIdx = markdown.indexOf("## Findings");
+	assert.ok(coverageIdx !== -1 && targetIdx !== -1);
+	assert.ok(
+		gapIdx > coverageIdx && targetIdx > gapIdx && findingsIdx > targetIdx,
+		"gaps render after the coverage line and before the review target",
+	);
+});
+
+test("renderMarkdown omits the coverage gap notice when there are no gaps", () => {
+	assert.ok(!renderMarkdown(baseResult([], "pass")).includes("Not reviewed"));
+	assert.ok(
+		!renderMarkdown({ ...baseResult([], "pass"), coverageGaps: [] }).includes("Not reviewed"),
+		"an empty gap list must render no notice",
+	);
+	const onlyIncomplete = renderMarkdown({
+		...baseResult([], "pass"),
+		coverageGaps: [{ kind: "lfs_scan_incomplete" }],
+	});
+	assert.ok(!onlyIncomplete.includes("Not reviewed"));
+	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
+});
+
+test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
+	const result: ReviewResult = {
+		...baseResult([], "pass"),
+		coverage: "full diff reviewed in one pass (1 file)",
+		coverageGaps: [
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+			{ kind: "lfs_scan_incomplete" },
+		],
+	};
+	const omitted = renderMarkdown(result, { omitCoverageGaps: true });
+	assert.ok(!omitted.includes("Not reviewed"));
+	assert.ok(!omitted.includes("Coverage uncertain"));
+	assert.ok(!omitted.includes("assets/model.bin"));
+	assert.ok(omitted.includes("Coverage: full diff reviewed in one pass (1 file)"));
+	assert.notEqual(omitted, renderMarkdown(result), "the option must change the output when gaps exist");
+	assert.equal(
+		renderMarkdown(baseResult([], "pass"), { omitCoverageGaps: true }),
+		renderMarkdown(baseResult([], "pass")),
+		"without gaps the option is inert",
+	);
+});
+
 test("renderMarkdown omits the callouts section when none are present", () => {
 	assert.ok(!renderMarkdown(baseResult([], "pass")).includes("Human callouts"));
 	assert.ok(

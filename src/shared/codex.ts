@@ -510,6 +510,17 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	// Called once per sandbox. Output-only metadata for the human-facing
+	// result; the runner already gets the same facts in its prompt.
+	readonly onLfsReport?: (report: LfsSandboxReport) => void;
+}
+
+export interface LfsSandboxReport {
+	// Repo-relative paths the sandbox could only check out as LFS pointer stubs.
+	readonly pointerFiles: readonly string[];
+	// LFS configuration or pointer status could not be established, so
+	// pointerFiles may be missing entries.
+	readonly scanIncomplete: boolean;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -717,6 +728,10 @@ async function runCodexOnce(
 				throw asRunnerOperationalError(error);
 			}
 		})();
+		opts.onLfsReport?.({
+			pointerFiles: sandbox.lfsPointerFiles.map((file) => file.toString("utf8")),
+			scanIncomplete: sandbox.lfsScanIncomplete,
+		});
 		let result: RunnerResult;
 		try {
 			result = await runRunner(runner, invocation);
