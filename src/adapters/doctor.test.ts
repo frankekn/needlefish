@@ -352,7 +352,7 @@ test("doctor tells git failures apart from a missing repository, with a matching
     name: "git",
     status: "fail",
     detail: refusal,
-    fix: `Run \`git config --global --add safe.directory ${f.repo}\`.`,
+    fix: `Run \`git config --global --add safe.directory '${f.repo}'\`.`,
   });
   assert.deepEqual(check(refused, "base"), { name: "base", status: "unknown", detail: "skipped: git check failed" });
   rmSync(fakeGit);
@@ -395,30 +395,43 @@ test("doctor recognizes a non-repository under a non-English locale", (t) => {
 });
 
 // git checks ownership of the repository root it names in stderr, not of the
-// --repo path, so the suggested safe.directory must be that root.
-test("doctor's safe.directory fix names the repository root git refused, not the --repo subdirectory", (t) => {
+// --repo path, so the suggested safe.directory must be that root, quoted so a
+// path with a space survives the shell. Hosted CI images allow every directory
+// in their system gitconfig; the probe drops global and system config so git's
+// own ownership test hook refuses the repository.
+test("doctor's safe.directory fix names and quotes the repository root git refused", (t) => {
   const f = setup(t);
   codexStub(f.bin, 0, "Logged in using ChatGPT");
-  const sub = path.join(f.repo, "sub");
+  mkdirSync(path.join(f.tmp, "with space"));
+  const repo = initRepo(path.join(f.tmp, "with space"));
+  const sub = path.join(repo, "sub");
   mkdirSync(sub);
+  const globalConfig = path.join(f.tmp, "gitconfig");
   process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = "1";
+  process.env.GIT_CONFIG_GLOBAL = globalConfig;
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  const probe = () =>
+    spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: sub, encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  const before = probe();
+  if (before.status !== 128 || !/dubious ownership/.test(before.stderr)) {
+    const version = spawnSync("git", ["--version"], { encoding: "utf8" }).stdout.trim();
+    t.skip(`${version} ignores GIT_TEST_ASSUME_DIFFERENT_OWNER: exit ${before.status}, ${before.stderr.trim()}`);
+    return;
+  }
 
   const report = runDoctor({ repo: sub, version: "0.0.0-test" });
   assert.deepEqual(check(report, "git"), {
     name: "git",
     status: "fail",
-    detail: `fatal: detected dubious ownership in repository at '${f.repo}'`,
-    fix: `Run \`git config --global --add safe.directory ${f.repo}\`.`,
+    detail: `fatal: detected dubious ownership in repository at '${repo}'`,
+    fix: `Run \`git config --global --add safe.directory '${repo}'\`.`,
   });
 
-  const probe = (safeDirectory: string) =>
-    spawnSync("git", ["-c", `safe.directory=${safeDirectory}`, "rev-parse", "--is-inside-work-tree"], {
-      cwd: sub,
-      encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C" },
-    });
-  assert.equal(probe(sub).status, 128, "the --repo path itself does not clear the refusal");
-  assert.equal(probe(f.repo).stdout.trim(), "true", "the suggested root does");
+  const command = check(report, "git").fix?.match(/`(.+)`/)?.[1];
+  assert.ok(command);
+  const applied = spawnSync("bash", ["-c", command], { encoding: "utf8", env: process.env });
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(probe().stdout.trim(), "true", "the printed command clears the refusal");
 });
 
 test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => {

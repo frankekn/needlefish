@@ -114,7 +114,8 @@ export function gitRepoState(cwd: string): GitRepoState {
   if (/dubious ownership/.test(reason)) {
     // git checks the repository root it names, which may be above cwd.
     const root = reason.match(/repository at '(.+)'/)?.[1] ?? cwd;
-    return { kind: "unavailable", reason, fix: `Run \`git config --global --add safe.directory ${root}\`.` };
+    const quoted = `'${root.replaceAll("'", "'\\''")}'`;
+    return { kind: "unavailable", reason, fix: `Run \`git config --global --add safe.directory ${quoted}\`.` };
   }
   return { kind: "unavailable", reason: reason || `git rev-parse exited ${res.status}` };
 }
