@@ -330,7 +330,7 @@ export function anchorableIn(
 // --- Cross-round review state ---
 // Title normalizer mirrors dedup() in src/core/review.ts (same idea, duplicated
 // locally to keep the adapter layer free of core imports).
-function normalizeTitle(s: string): string {
+export function normalizeTitle(s: string): string {
 	return s.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
