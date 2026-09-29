@@ -518,8 +518,8 @@ export interface CodexOptions extends RunnerOptions {
 export interface LfsSandboxReport {
 	// Repo-relative paths the sandbox could only check out as LFS pointer stubs.
 	readonly pointerFiles: readonly string[];
-	// The repository configures LFS but the pointer list could not be
-	// established in full, so pointerFiles may be missing entries.
+	// LFS configuration or pointer status could not be established, so
+	// pointerFiles may be missing entries.
 	readonly scanIncomplete: boolean;
 }
 

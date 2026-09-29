@@ -400,7 +400,8 @@ test("renderMarkdown lists coverage gaps once, between the coverage line and the
 	const header = "**Not reviewed (non-blocking):**";
 	const uncertain = "**Coverage uncertain (non-blocking):**";
 	assert.equal(markdown.split(uncertain).length - 1, 1);
-	assert.ok(markdown.includes("some changed files may not have been reviewed"));
+	assert.ok(markdown.includes("could not determine whether any changed file is a Git LFS pointer"));
+	assert.ok(markdown.includes("If this repository uses Git LFS"), "the notice must not assert LFS use");
 	assert.ok(markdown.indexOf(uncertain) > markdown.indexOf(header));
 	assert.ok(!markdown.includes("- undefined"), "an incomplete-scan gap names no file");
 	assert.equal(markdown.split(header).length - 1, 1, "one notice, not one per file");

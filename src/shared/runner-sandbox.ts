@@ -60,9 +60,10 @@ export interface RunnerSandbox {
   // this checkout, as raw bytes (see sandboxChildPath). The same list the
   // prompt notice was rendered from; the caller filters and decodes it.
   readonly lfsPointerFiles: readonly Buffer[];
-  // True when the repository configures LFS but the probe could not establish
-  // the full pointer list (unreadable attributes, ls-files failure, candidate
-  // ceiling hit). An empty lfsPointerFiles then means "unknown", not "none".
+  // True when LFS configuration or pointer status could not be established:
+  // unreadable or too many .gitattributes (LFS use itself unknown), ls-files
+  // failure, or the candidate ceiling hit. An empty lfsPointerFiles then
+  // means "unknown", not "none".
   readonly lfsScanIncomplete: boolean;
 }
 

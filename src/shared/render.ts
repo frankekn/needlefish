@@ -149,7 +149,7 @@ export function renderMarkdown(
 	if (coverageGaps.some((gap) => gap.kind === "lfs_scan_incomplete")) {
 		lines.push("");
 		lines.push(
-			"**Coverage uncertain (non-blocking):** Git LFS pointer status could not be fully determined for this repository, so some changed files may not have been reviewed. Ask a maintainer to check any LFS-tracked files in this change.",
+			"**Coverage uncertain (non-blocking):** could not determine whether any changed file is a Git LFS pointer. If this repository uses Git LFS, some changed files may have been reviewed as pointer stubs rather than their real contents. Ask a maintainer to check any LFS-tracked files in this change.",
 		);
 	}
 

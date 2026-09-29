@@ -98,8 +98,9 @@ export interface ScopeCallout {
 // Content the review could not read. Output-only: reported by the runner
 // sandbox, never derived from model text. lfs_pointer_only names a changed
 // file checked out as a pointer stub; lfs_scan_incomplete means the sandbox
-// could not establish the full pointer list, so more changed files may be
-// unread than are named.
+// could not establish whether changed files are pointer stubs (LFS use or
+// the pointer list unknown), so more changed files may be unread than are
+// named.
 export type CoverageGap =
 	| { readonly kind: "lfs_pointer_only"; readonly file: string }
 	| { readonly kind: "lfs_scan_incomplete" };
