@@ -478,6 +478,8 @@ runner. Common options:
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `high` for `gpt-5.6-terra`) |
 | per-attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000` (20 min) |
 | shared review deadline | `NEEDLEFISH_REVIEW_TIMEOUT_MS` | unset |
+| single attempt per call | `NEEDLEFISH_NO_RETRY` | unset (`1` = on) |
+| termination grace | `NEEDLEFISH_TERMINATION_GRACE_MS` | `5000` |
 | opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
 
 `NEEDLEFISH_REVIEW_TIMEOUT_MS` sets one monotonic deadline for the model pipeline.
@@ -488,6 +490,23 @@ closed and never converts incomplete coverage into a pass. Leave this below the
 outer job/shell timeout to allow process teardown and report delivery; those
 operations are not replaced by this model-execution deadline. Unset preserves
 the existing per-attempt behavior.
+
+`NEEDLEFISH_NO_RETRY=1` gives every runner call one attempt: a crash, non-zero
+exit, or idle stall fails that pass instead of running once more after the
+retry backoff. Use it on high-volume lanes that prefer a predictable completion
+time over retry recovery; the review deadline still bounds the run either way.
+
+On SIGINT or SIGTERM (a job timeout, cancellation, or watchdog) Needlefish
+forwards the received signal to the runner process group, SIGKILLs it once
+`NEEDLEFISH_TERMINATION_GRACE_MS` has elapsed, and exits 130 or 143; a second
+signal exits at once. In GitHub mode
+it first completes its own in_progress `Needlefish` check inside that same
+grace: `failure` titled `Needlefish: review terminated` on the current head,
+or neutral `Needlefish: superseded` when the head moved or the PR closed.
+No review or comment is posted, and the completion's GitHub calls are cut off
+at the grace so a hung `gh` cannot hold the process. Keep the grace below the
+caller's forced kill: GitHub Actions sends SIGINT, SIGTERM 7.5 s later, then
+kills 2.5 s after that.
 
 The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
 a provider stream stops producing output, Needlefish terminates that attempt

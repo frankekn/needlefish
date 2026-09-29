@@ -8,8 +8,12 @@ import {
 } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
-import { runText } from "../shared/process.js";
+import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
+import {
+	registerTerminationFinalizer,
+	type Termination,
+} from "../shared/temp-lifecycle.js";
 import {
 	credentialValuesFromEnv,
 	screenPayload,
@@ -27,14 +31,33 @@ function isRecord(raw: unknown): raw is JsonRecord {
 	return typeof raw === "object" && raw !== null && !Array.isArray(raw);
 }
 
-function ghJson(args: readonly string[], input?: string): unknown {
-	const out = ghText(args, undefined, input);
+function parseGhJson(out: string): unknown {
 	if (!out) return {};
 	try {
 		return JSON.parse(out);
 	} catch (error) {
 		throw new Error("GitHub returned invalid JSON", { cause: error });
 	}
+}
+
+function ghJson(args: readonly string[], input?: string): unknown {
+	return parseGhJson(ghText(args, undefined, input));
+}
+
+// gh for the termination finalizer: off the event loop, cut off at the
+// termination deadline, killed with the process, and without ghPost's 5xx
+// retry backoff, which the deadline would not cover.
+async function ghJsonWhileTerminating(
+	termination: Termination,
+	args: readonly string[],
+	input?: string,
+): Promise<unknown> {
+	const out = await runTextAsync("gh", args, {
+		input,
+		timeoutMs: Math.max(1, termination.deadlineMs - Date.now()),
+		abortSignal: termination.cancelled,
+	});
+	return parseGhJson(out);
 }
 
 // Posting calls only: a transient GitHub 5xx must not turn a completed
@@ -94,16 +117,17 @@ function stdoutSummary(summary: string): string {
 		: outboundText(summary, screened);
 }
 
-// Every GitHub write passes here, so screening here covers every payload a
-// PR reader can see.
+// Every GitHub write's payload passes here (ghPost and the termination
+// finalizer), so screening here covers every payload a PR reader can see.
+function screenedInput(rawInput: string): string {
+	return outboundText(
+		rawInput,
+		screenPayload(rawInput, credentialValuesFromEnv(process.env)),
+	);
+}
+
 function ghPost(args: readonly string[], rawInput?: string): unknown {
-	const input =
-		rawInput === undefined
-			? undefined
-			: outboundText(
-					rawInput,
-					screenPayload(rawInput, credentialValuesFromEnv(process.env)),
-				);
+	const input = rawInput === undefined ? undefined : screenedInput(rawInput);
 	if (!isIdempotentWrite(args)) return ghJson(args, input);
 	for (let attempt = 1; ; attempt++) {
 		try {
@@ -735,6 +759,8 @@ function createPendingCheck(repo: string, headSha: string): number | null {
 	return null;
 }
 
+type GhWrite = { readonly args: readonly string[]; readonly input: string };
+
 function postCheck(
 	repo: string,
 	headSha: string,
@@ -743,7 +769,20 @@ function postCheck(
 	title: string,
 	summary: string,
 	checkId?: number | null,
-) {
+): void {
+	const write = checkCompletion(repo, headSha, result, conclusion, title, summary, checkId);
+	ghPost(write.args, write.input);
+}
+
+function checkCompletion(
+	repo: string,
+	headSha: string,
+	result: ReviewResult | null,
+	conclusion: "success" | "failure" | "neutral",
+	title: string,
+	summary: string,
+	checkId?: number | null,
+): GhWrite {
 	// Checks cap Markdown by UTF-8 bytes, unlike review bodies. The full
 	// review has already been posted; keep its verdict and evidence there.
 	if (Buffer.byteLength(summary, "utf8") > 65_535) {
@@ -761,28 +800,26 @@ function postCheck(
 		}
 		summary = notice + prefix;
 	}
-	const output = JSON.stringify({
-		status: "completed",
-		conclusion,
-		output: { title, summary },
-	});
 	if (typeof checkId === "number") {
-		ghPost(
-			["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
-			output,
-		);
-		return;
+		return {
+			args: ["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
+			input: JSON.stringify({
+				status: "completed",
+				conclusion,
+				output: { title, summary },
+			}),
+		};
 	}
-	ghPost(
-		["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
-		JSON.stringify({
+	return {
+		args: ["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
+		input: JSON.stringify({
 			name: "Needlefish",
 			head_sha: headSha,
 			status: "completed",
 			conclusion,
 			output: { title, summary },
 		}),
-	);
+	};
 }
 
 const SEV_RANK: Record<Finding["severity"], number> = {
@@ -1072,7 +1109,10 @@ function postReviewSkipReason(
 	prNumber: number,
 	headSha: string,
 ): SkipReason | null {
-	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
+	return skipReasonForPr(ghJson(["api", `repos/${repo}/pulls/${prNumber}`]), prNumber, headSha);
+}
+
+function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipReason | null {
 	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
 	const state = stringField(pr, "state");
 	if (state !== "open") {
@@ -1089,6 +1129,58 @@ function postReviewSkipReason(
 		return "stale_head";
 	}
 	return null;
+}
+
+// A job timeout or watchdog terminates the process while the owned check is
+// in_progress, and a consumer workflow has nothing else that completes it.
+// Runs inside the termination grace, off the event loop. Same stale-head rule
+// as the error path: a moved head or closed PR gets a neutral superseded
+// completion and nothing on the timeline. A current head gets a failure that
+// names the termination, not a code defect, and no timeline comment either,
+// since nothing was reviewed.
+async function completeTerminatedCheck(
+	repo: string,
+	prNumber: number,
+	headSha: string,
+	checkId: number,
+	termination: Termination,
+	claimCheck: () => boolean,
+): Promise<void> {
+	let skipReason: SkipReason | null = null;
+	try {
+		const pr = await ghJsonWhileTerminating(termination, ["api", `repos/${repo}/pulls/${prNumber}`]);
+		skipReason = skipReasonForPr(pr, prNumber, headSha);
+	} catch (probeErr) {
+		const pm = probeErr instanceof Error ? probeErr.message : String(probeErr);
+		process.stderr.write(
+			`needlefish: could not re-read PR state during termination; completing the check anyway: ${pm}\n`,
+		);
+	}
+	const write =
+		skipReason !== null
+			? checkCompletion(
+					repo,
+					headSha,
+					null,
+					"neutral",
+					"Needlefish: superseded",
+					`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
+					checkId,
+				)
+			: checkCompletion(
+					repo,
+					headSha,
+					null,
+					"failure",
+					"Needlefish: review terminated",
+					`Needlefish received ${termination.signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
+					checkId,
+				);
+	// Claimed only now: a verdict that became ready during the re-read above
+	// has already claimed and posted itself, and this PATCH must not overwrite it.
+	if (termination.cancelled.aborted || !claimCheck()) return;
+	if (skipReason !== null) emitSkip(skipReason, prNumber, headSha);
+	await ghJsonWhileTerminating(termination, write.args, screenedInput(write.input));
 }
 
 export async function runGithub(
@@ -1194,6 +1286,27 @@ export async function runGithub(
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);
+	// The owned check reaches a terminal state exactly once, and whoever holds
+	// the claim completes it. The result path claims before posting anything
+	// and, if a post then throws, still completes the check from the catch.
+	// The termination finalizer claims right before its PATCH. A verdict
+	// ready before that PATCH wins and is posted in full. A verdict ready
+	// after it posts nothing, not even the review body: a rerun must
+	// re-review this head rather than dedupe on a review whose check says
+	// the run was terminated.
+	let checkOwner: "result" | "finalizer" | null = null;
+	const claimCheck = (owner: "result" | "finalizer"): boolean => {
+		if (checkOwner === null) checkOwner = owner;
+		return checkOwner === owner;
+	};
+	const detachFinalizer =
+		pendingCheckId === null
+			? () => true
+			: registerTerminationFinalizer((termination) =>
+					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination, () =>
+						claimCheck("finalizer"),
+					),
+				);
 
 	try {
 		// Scope and base-tip fields are attached after review(): anything on
@@ -1205,6 +1318,7 @@ export async function runGithub(
 			prNumber,
 			prBaseSha: baseSha,
 		};
+		if (!claimCheck("result")) return;
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
 		if (skipReason) {
@@ -1337,6 +1451,12 @@ export async function runGithub(
 			process.stdout.write(stdoutSummary(summary));
 		}
 	} catch (err) {
+		// A signal mid-review hands the check to the finalizer, and the
+		// coordinator exits the process; post nothing here. Unless this path
+		// already claimed the check and then failed to post: the finalizer
+		// will not complete a claimed check, so this path must.
+		if (checkOwner !== "result" && !detachFinalizer()) return;
+		claimCheck("result");
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which
@@ -1347,8 +1467,18 @@ export async function runGithub(
 				? WITHHELD_MESSAGE
 				: outboundText(rawMsg, screenedMsg);
 		// The pending check must ALWAYS reach a terminal state — an in_progress
-		// check on a stale head would hang forever otherwise.
-		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		// check on a stale head would hang forever otherwise. When the stale
+		// probe itself fails, staleness is unknown: the check still completes
+		// (harmless on an old head), but the timeline stays untouched.
+		let skipReason: SkipReason | null = null;
+		let staleUnknown = false;
+		try {
+			skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		} catch (probeErr) {
+			staleUnknown = true;
+			const pm = probeErr instanceof Error ? probeErr.message : String(probeErr);
+			process.stderr.write(`needlefish: could not re-read PR state: ${pm}\n`);
+		}
 		if (skipReason !== null) {
 			// The review errored AND the head moved or the PR closed: close our
 			// own check as superseded so it cannot hang, but post nothing to
@@ -1393,9 +1523,11 @@ export async function runGithub(
 				);
 			}
 			// S3: post a PR comment so a red X always has something to read.
-			postErrorComment(repo, prNumber, msg);
+			if (!staleUnknown) postErrorComment(repo, prNumber, msg);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
+	} finally {
+		detachFinalizer();
 	}
 }
