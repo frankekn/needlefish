@@ -54,6 +54,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/scopeCallout" }
     },
+    "coverageGaps": {
+      "description": "Changed files whose contents the review could not read. lfs_pointer_only names a file the sandbox could only check out as a Git LFS pointer stub; at most one lfs_scan_incomplete entry means the sandbox could not establish the full pointer list. Reported by the sandbox, never by the model; does not affect the verdict.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/coverageGap" }
+    },
     "stats": {
       "description": "Per-runner-call timing and attempt stats.",
       "type": "array",
@@ -159,6 +164,27 @@
           "description": "true makes the verdict at least needs_human.",
           "type": "boolean"
         }
+      }
+    },
+    "coverageGap": {
+      "oneOf": [
+        { "$ref": "#/$defs/lfsPointerOnlyGap" },
+        { "$ref": "#/$defs/lfsScanIncompleteGap" }
+      ]
+    },
+    "lfsPointerOnlyGap": {
+      "type": "object",
+      "required": ["kind", "file"],
+      "properties": {
+        "kind": { "const": "lfs_pointer_only" },
+        "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
+      }
+    },
+    "lfsScanIncompleteGap": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "lfs_scan_incomplete" }
       }
     },
     "scopeCallout": {
