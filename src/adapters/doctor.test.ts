@@ -363,6 +363,34 @@ test("doctor tells git failures apart from a missing repository, with a matching
   });
 });
 
+// git translates its messages; the probe must read them in one locale. The stub
+// answers in German unless it is asked in C, the way a real localized git would.
+test("doctor recognizes a non-repository under a non-English locale", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  stub(
+    f.bin,
+    "git",
+    [
+      'if [ "$LC_ALL" = C ] && [ -z "$LANGUAGE" ]; then',
+      '  echo "fatal: not a git repository (or any of the parent directories): .git" >&2',
+      "else",
+      '  echo "fatal: Kein Git-Repository (oder irgendeines der Elternverzeichnisse): .git" >&2',
+      "fi",
+      "exit 128",
+    ].join("\n"),
+  );
+  process.env.LC_ALL = "de_DE.UTF-8";
+  process.env.LANGUAGE = "de";
+
+  assert.deepEqual(check(runDoctor({ repo: f.tmp, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: `${f.tmp} is not a git repository`,
+    fix: "Run `git init` inside your project folder.",
+  });
+});
+
 test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => {
   const f = setup(t);
   codexStub(f.bin, 1, "Not logged in");

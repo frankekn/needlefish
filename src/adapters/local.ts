@@ -93,7 +93,10 @@ export type GitRepoState =
 const REPO_PATH_FIX = "Check the --repo path.";
 
 export function gitRepoState(cwd: string): GitRepoState {
-  const res = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf8" });
+  // The messages matched below are gettext-translated; C keeps them English.
+  const env = { ...process.env, LC_ALL: "C" };
+  delete env.LANGUAGE;
+  const res = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf8", env });
   if (res.error) {
     // A missing cwd and a missing git both surface as ENOENT on the spawn.
     const code = "code" in res.error ? res.error.code : undefined;
