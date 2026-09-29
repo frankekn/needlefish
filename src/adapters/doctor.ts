@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
@@ -46,7 +47,10 @@ export interface DoctorOptions {
 // Each probe is a local status command of the runner CLI: no model call, no
 // repository content. It runs under the same env allowlist a review attempt
 // gets, so a credential that only exists outside that allowlist is reported
-// as missing here instead of failing later inside the review.
+// as missing here instead of failing later inside the review. Its cwd is an
+// empty temp dir, never the repository: `opencode auth list --standalone`
+// starts a server that reads the working tree and .git objects of its cwd,
+// and claude reads .git/config.
 const PROBE_TIMEOUT_MS = 10_000;
 const MIN_NODE_MAJOR = 20;
 
@@ -54,8 +58,9 @@ type ProbeResult =
   | { readonly kind: "exited"; readonly status: number; readonly stdout: string; readonly stderr: string }
   | { readonly kind: "failed"; readonly reason: string };
 
-function probe(runner: RunnerName, command: string, args: readonly string[]): ProbeResult {
+function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): ProbeResult {
   const res = spawnSync(command, [...args], {
+    cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: PROBE_TIMEOUT_MS,
@@ -94,7 +99,7 @@ type RunnerSelection =
   | { readonly kind: "http"; readonly runner: RunnerName }
   | { readonly kind: "unavailable" };
 
-function selectRunner(explicit: RunnerName | undefined): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
+function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
   const envRunner = process.env.NEEDLEFISH_RUNNER;
   let runner: RunnerName | undefined = explicit;
   if (runner === undefined && envRunner) {
@@ -115,7 +120,7 @@ function selectRunner(explicit: RunnerName | undefined): { readonly check: Docto
     for (const candidate of RUNNER_CATALOG) {
       if (!("autoDetect" in candidate)) continue;
       const binary = resolveRunnerBinary(candidate.name);
-      if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected");
+      if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected", probeCwd);
     }
     const [summary, ...installLines] = NO_AUTO_DETECTED_RUNNER_MESSAGE.split("\n");
     return {
@@ -157,16 +162,17 @@ function selectRunner(explicit: RunnerName | undefined): { readonly check: Docto
       selection: { kind: "unavailable" },
     };
   }
-  return cliRunnerCheck(runner, { ...binary, path: binary.path }, explicit === undefined ? "NEEDLEFISH_RUNNER" : "--runner");
+  return cliRunnerCheck(runner, { ...binary, path: binary.path }, explicit === undefined ? "NEEDLEFISH_RUNNER" : "--runner", probeCwd);
 }
 
 function cliRunnerCheck(
   runner: RunnerName,
   binary: ResolvedRunnerBinary & { readonly path: string },
   source: string,
+  probeCwd: string,
 ): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
   // An ACP agent is a JSON-RPC process; `--version` is not part of that contract.
-  const version = runner === "acp" ? undefined : probe(runner, binary.path, ["--version"]);
+  const version = runner === "acp" ? undefined : probe(runner, binary.path, ["--version"], probeCwd);
   const versionText =
     version === undefined
       ? ""
@@ -179,7 +185,7 @@ function cliRunnerCheck(
   };
 }
 
-function authCheck(selection: RunnerSelection): DoctorCheck {
+function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
   }
@@ -207,7 +213,7 @@ function authCheck(selection: RunnerSelection): DoctorCheck {
     };
   }
   const fix = `Run \`${login.command}\`.`;
-  const result = probe(runner, selection.binary.path, login.status.args);
+  const result = probe(runner, selection.binary.path, login.status.args, probeCwd);
   const probeCommand = `${selection.binary.command} ${login.status.args.join(" ")}`;
   if (result.kind === "failed") {
     return { name: "auth", status: "unknown", detail: `${runner}: \`${probeCommand}\` ${result.reason}` };
@@ -297,15 +303,21 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
-  const runner = selectRunner(opts.runner);
-  const gitState = gitCheck(repo);
-  const checks: readonly DoctorCheck[] = [
-    nodeCheck(),
-    runner.check,
-    authCheck(runner.selection),
-    gitState.check,
-    baseCheck(repo, gitState.worktree, opts.base),
-  ];
+  const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
+  let checks: readonly DoctorCheck[];
+  try {
+    const runner = selectRunner(opts.runner, probeCwd);
+    const gitState = gitCheck(repo);
+    checks = [
+      nodeCheck(),
+      runner.check,
+      authCheck(runner.selection, probeCwd),
+      gitState.check,
+      baseCheck(repo, gitState.worktree, opts.base),
+    ];
+  } finally {
+    rmSync(probeCwd, { recursive: true, force: true });
+  }
   return {
     schemaVersion: 1,
     needlefish: opts.version,

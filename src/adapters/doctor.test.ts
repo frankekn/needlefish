@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -350,4 +350,37 @@ test("doctor accepts env-credential setups the review accepts, without printing 
   // A passthrough name alone is configuration, not a credential.
   process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CODEX_API_KEY";
   assert.equal(check(runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "codex" }), "auth").status, "fail");
+});
+
+// A status probe must never run inside the repository: `opencode auth list
+// --standalone` starts a server that reads the working tree and .git objects
+// of its cwd, and claude reads .git/config.
+test("doctor runs every runner probe in an empty temp dir, not the repository", (t) => {
+  const f = setup(t);
+  const seen = path.join(f.tmp, "probe-cwds.txt");
+  stub(
+    f.bin,
+    "codex",
+    [
+      `pwd >> ${JSON.stringify(seen)}`,
+      'case "$1" in',
+      '  --version) echo "codex-cli 9.9.9-stub"; exit 0 ;;',
+      '  login) echo "Logged in"; exit 0 ;;',
+      "esac",
+      "exit 99",
+    ].join("\n"),
+  );
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(check(report, "auth").status, "ok");
+  const cwds = readFileSync(seen, "utf8").trim().split("\n");
+  assert.equal(cwds.length, 2, "one --version probe and one status probe");
+  for (const cwd of cwds) {
+    assert.notEqual(cwd, f.repo);
+    assert.ok(cwd.startsWith(os.tmpdir()), cwd);
+    assert.ok(path.basename(cwd).startsWith("needlefish-doctor-"), cwd);
+    assert.equal(existsSync(cwd), false, "probe dir is removed after the report");
+  }
+  assert.equal(cwds[0], cwds[1]);
 });
