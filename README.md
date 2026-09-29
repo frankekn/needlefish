@@ -501,10 +501,10 @@ elapsed, and exits 130 or 143; a second signal exits at once. In GitHub mode
 it first completes its own in_progress `Needlefish` check inside that same
 grace: `failure` titled `Needlefish: review terminated` on the current head,
 or neutral `Needlefish: superseded` when the head moved or the PR closed.
-No review or comment is posted, and each GitHub call is cut off at the grace
-so a hung `gh` cannot hold the process. Keep the grace below the caller's
-forced kill: GitHub Actions sends SIGINT, SIGTERM 7.5 s later, then kills
-2.5 s after that.
+No review or comment is posted, and the completion's GitHub calls are cut off
+at the grace so a hung `gh` cannot hold the process. Keep the grace below the
+caller's forced kill: GitHub Actions sends SIGINT, SIGTERM 7.5 s later, then
+kills 2.5 s after that.
 
 The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
 a provider stream stops producing output, Needlefish terminates that attempt

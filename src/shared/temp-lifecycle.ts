@@ -55,7 +55,10 @@ const startupSweeps = new Map<string, Promise<void>>();
 const processOwnerPromises = new Map<string, Promise<ProcessOwner>>();
 let coordinatorInstalled = false;
 let termination: Termination | null = null;
+// Aborted right before every exit so finalizer subprocesses die with the process.
+let terminationCancel = new AbortController();
 let forceTermination = false;
+let finalizersSettled = true;
 const terminationWaiters = new Set<() => void>();
 const terminationFinalizers = new Set<TerminationFinalizer>();
 let lockSequence = 0;
@@ -67,9 +70,11 @@ export interface Termination {
   // One grace covers the finalizers and the runner shutdown together, so a
   // caller's forced-kill window only has to exceed NEEDLEFISH_TERMINATION_GRACE_MS.
   readonly deadlineMs: number;
+  // Fires right before the process exits; finalizer subprocesses must die with it.
+  readonly cancelled: AbortSignal;
 }
 
-type TerminationFinalizer = (signal: TerminationSignal) => void;
+type TerminationFinalizer = (termination: Termination) => Promise<void>;
 
 export class RunnerTerminatingError extends Error {
   readonly name = "RunnerTerminatingError";
@@ -90,13 +95,11 @@ export function installTerminationCoordinator(): void {
   process.on("SIGTERM", onSigterm);
 }
 
-export function activeTermination(): Termination | null {
-  return termination;
-}
-
-// A finalizer runs once, synchronously, when the first SIGINT/SIGTERM arrives,
-// before the runner grace wait; the forced second signal skips it. Detaching
-// returns false when the finalizer already ran.
+// A finalizer starts once, when the first SIGINT/SIGTERM arrives, and runs
+// alongside the runner grace wait under the same deadline. It must not block
+// the event loop: under the tsx wrapper the process has ~30 ms to acknowledge
+// a relayed signal or it is SIGKILLed. The forced second signal skips it.
+// Detaching returns false when the finalizer already started.
 export function registerTerminationFinalizer(finalize: TerminationFinalizer): () => boolean {
   installTerminationCoordinator();
   terminationFinalizers.add(finalize);
@@ -302,41 +305,56 @@ function coordinateTermination(signal: TerminationSignal): void {
   if (termination !== null) {
     forceTermination = true;
     notifyTerminationWaiters();
-    if (isLinux()) terminateImmediately(termination.signal);
+    if (isLinux()) terminateImmediately(termination);
+    terminationCancel.abort();
     signalRegisteredRunners("kill", termination.signal);
     return;
   }
-  termination = { signal, deadlineMs: Date.now() + terminationGraceMs() };
+  terminationCancel = new AbortController();
+  termination = {
+    signal,
+    deadlineMs: Date.now() + terminationGraceMs(),
+    cancelled: terminationCancel.signal,
+  };
   signalRegisteredRunners("terminate", signal);
-  runTerminationFinalizers(signal);
-  if (activeRunnerProcessGroups.size === 0) {
-    terminateImmediately(signal);
+  startTerminationFinalizers(termination);
+  if (runnersGone() && finalizersSettled) {
+    terminateImmediately(termination);
     return;
   }
   void completeTermination(termination);
 }
 
-function runTerminationFinalizers(signal: TerminationSignal): void {
-  for (const finalize of [...terminationFinalizers]) {
+function startTerminationFinalizers(current: Termination): void {
+  const started = [...terminationFinalizers].map((finalize) => {
     terminationFinalizers.delete(finalize);
-    try {
-      finalize(signal);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`needlefish: termination finalizer failed: ${message}\n`);
-    }
-  }
+    return Promise.resolve()
+      .then(() => finalize(current))
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`needlefish: termination finalizer failed: ${message}\n`);
+      });
+  });
+  finalizersSettled = started.length === 0;
+  if (finalizersSettled) return;
+  void Promise.all(started).then(() => {
+    finalizersSettled = true;
+    notifyTerminationWaiters();
+  });
 }
 
 function notifyTerminationWaiters(): void {
   for (const wake of [...terminationWaiters]) wake();
 }
 
-async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (activeRunnerProcessGroups.size > 0) {
+function runnersGone(): boolean {
+  return activeRunnerProcessGroups.size === 0;
+}
+
+async function waitUntil(done: () => boolean, deadlineMs: number): Promise<boolean> {
+  while (!done()) {
     if (forceTermination) return false;
-    const remaining = deadline - Date.now();
+    const remaining = deadlineMs - Date.now();
     if (remaining <= 0) return false;
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -349,7 +367,7 @@ async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
       };
       const timer = setTimeout(finish, remaining);
       terminationWaiters.add(finish);
-      if (activeRunnerProcessGroups.size === 0 || forceTermination) finish();
+      if (done() || forceTermination) finish();
     });
   }
   return true;
@@ -376,12 +394,15 @@ function isGoneProcessError(error: unknown): boolean {
 }
 
 async function completeTermination({ signal, deadlineMs }: Termination): Promise<never> {
-  const exitedDuringGrace = await waitForRegisteredRunners(Math.max(0, deadlineMs - Date.now()));
-  if (!exitedDuringGrace) signalRegisteredRunners("kill", signal);
+  await waitUntil(() => runnersGone() && finalizersSettled, deadlineMs);
+  if (!runnersGone()) signalRegisteredRunners("kill", signal);
 
-  if (isLinux()) process.exit(signal === "SIGINT" ? 130 : 143);
+  if (isLinux()) {
+    terminationCancel.abort();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
 
-  await waitForRegisteredRunners(terminationGraceMs());
+  await waitUntil(runnersGone, Date.now() + terminationGraceMs());
   const unsafeDirectories = new Set<string>();
   let unmappedRunnerIsAlive = false;
   for (const group of activeRunnerProcessGroups.values()) {
@@ -393,10 +414,12 @@ async function completeTermination({ signal, deadlineMs }: Termination): Promise
     await rm(directory, { recursive: true, force: true });
     activeTempDirectories.delete(directory);
   }
+  terminationCancel.abort();
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
-function terminateImmediately(signal: TerminationSignal): never {
+function terminateImmediately({ signal }: Termination): never {
+  terminationCancel.abort();
   signalRegisteredRunners("kill", signal);
   process.exit(signal === "SIGINT" ? 130 : 143);
 }

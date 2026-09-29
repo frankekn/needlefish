@@ -38,6 +38,8 @@ type FixtureOptions = {
 	readonly runnerIgnoresTerm?: boolean;
 	// The check-run PATCH never returns and ignores SIGTERM.
 	readonly hangCheckPatch?: boolean;
+	// The check-run PATCH answers after this many ms (real gh latency).
+	readonly checkPatchDelayMs?: number;
 	// Report a newer head from the second pull fetch onward.
 	readonly staleHeadAfterStart?: boolean;
 	readonly graceMs: number;
@@ -122,6 +124,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: 'dev', type: 'User' })); process.exit(0); }",
 			`if (apiPath === ${JSON.stringify(`repos/${REPO}/check-runs`)} && method === 'POST') { process.stdout.write(JSON.stringify({ id: ${CHECK_ID} })); process.exit(0); }`,
 			`if (method === 'PATCH' && ${JSON.stringify(opts.hangCheckPatch === true)}) { process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); }`,
+			`else if (method === 'PATCH') { setTimeout(() => { fs.appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify({ args: ['patch-completed'], payload }) + '\\n'); process.stdout.write('{}'); process.exit(0); }, ${opts.checkPatchDelayMs ?? 0}); }`,
 			"else { process.stdout.write('{}'); process.exit(0); }",
 		].join("\n"),
 	);
@@ -183,15 +186,26 @@ function waitForExit(child: ChildProcess): Promise<[number | null, NodeJS.Signal
 	return new Promise((resolve) => child.once("exit", (status, signal) => resolve([status, signal])));
 }
 
+type Launch = "node" | "bin";
+
+// "bin" runs bin/needlefish, the production entry: a tsx wrapper that relays
+// signals to the node child and SIGKILLs it unless the child acknowledges
+// over IPC within ~30 ms, which needs a free event loop.
 async function terminateMidReview(
 	t: TestContext,
 	fixture: Fixture,
-): Promise<{ status: number | null; signal: NodeJS.Signals | null; elapsedMs: number; stderr: string }> {
-	const child = spawn(
-		process.execPath,
-		["--import", "tsx", path.join(process.cwd(), "src/cli.ts"), "--github", "--pr", String(PR), "--repo", fixture.repo],
-		{ env: fixture.env, stdio: ["ignore", "pipe", "pipe"] },
-	);
+	launch: Launch = "node",
+	secondSignalAfterMs?: number,
+): Promise<{ status: number | null; signal: NodeJS.Signals | null; elapsedMs: number; stderr: string; runnerAlive: boolean }> {
+	const cliArgs = ["--github", "--pr", String(PR), "--repo", fixture.repo];
+	const child =
+		launch === "bin"
+			? spawn(path.join(process.cwd(), "bin/needlefish"), cliArgs, { env: fixture.env, stdio: ["ignore", "pipe", "pipe"] })
+			: spawn(
+					process.execPath,
+					["--import", "tsx", path.join(process.cwd(), "src/cli.ts"), ...cliArgs],
+					{ env: fixture.env, stdio: ["ignore", "pipe", "pipe"] },
+				);
 	let stderr = "";
 	child.stderr?.setEncoding("utf8");
 	child.stderr?.on("data", (chunk: string) => (stderr += chunk));
@@ -203,8 +217,29 @@ async function terminateMidReview(
 	await waitForFile(fixture.runnerPidFile);
 	const started = Date.now();
 	child.kill("SIGTERM");
+	if (secondSignalAfterMs !== undefined) {
+		await delay(secondSignalAfterMs);
+		child.kill("SIGTERM");
+	}
 	const [status, signal] = await waitForExit(child);
-	return { status, signal, elapsedMs: Date.now() - started, stderr };
+	const elapsedMs = Date.now() - started;
+	// A detached runner group dies asynchronously after SIGKILL; give it a beat.
+	const runnerPid = Number(readFileSync(fixture.runnerPidFile, "utf8"));
+	let runnerAlive = true;
+	for (let i = 0; i < 50 && runnerAlive; i++) {
+		try {
+			process.kill(-runnerPid, 0);
+			await delay(20);
+		} catch (error) {
+			if (!isMissingProcess(error)) throw error;
+			runnerAlive = false;
+		}
+	}
+	return { status, signal, elapsedMs, stderr, runnerAlive };
+}
+
+function patchCompleted(calls: readonly GhCall[]): boolean {
+	return calls.some((c) => c.args[0] === "patch-completed");
 }
 
 test("SIGTERM completes the owned check as a terminated failure and exits within the grace", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {
@@ -224,6 +259,27 @@ test("SIGTERM completes the owned check as a terminated failure and exits within
 	assert.match(body.output.summary, /SIGTERM/);
 	assert.match(body.output.summary, /not a code verdict/);
 	assert.equal(postsToTimeline(calls), false, "termination must not post review or timeline comments");
+});
+
+test("bin/needlefish completes the check, kills the runner group, and exits within the grace", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { runnerIgnoresTerm: true, checkPatchDelayMs: 350, graceMs: 2000 });
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 3000, `termination took ${run.elapsedMs}ms`);
+	const calls = readGhLog(fixture.ghLog);
+	assert.equal(checkPatches(calls).length, 1, JSON.stringify(calls.map((c) => c.args)));
+	assert.equal(patchCompleted(calls), true, "the wrapper must not SIGKILL the process before the PATCH completes");
+	assert.equal(run.runnerAlive, false, "the runner group must be dead after termination");
+});
+
+test("bin/needlefish exits at once on a forced second signal", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { runnerIgnoresTerm: true, hangCheckPatch: true, graceMs: 5000 });
+	const run = await terminateMidReview(t, fixture, "bin", 300);
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 1500, `second signal must exit at once, took ${run.elapsedMs}ms`);
+	assert.equal(run.runnerAlive, false, "the forced exit must still kill the runner group");
 });
 
 test("a runner that exits on SIGTERM still yields exactly one terminated completion", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {
@@ -246,6 +302,7 @@ test("termination finishes within the grace when gh hangs on the check PATCH", {
 	assert.equal(run.status, 143, run.stderr);
 	assert.ok(run.elapsedMs < 4000, `termination took ${run.elapsedMs}ms`);
 	assert.equal(checkPatches(readGhLog(fixture.ghLog)).length, 1, "the PATCH must be attempted before giving up");
+	assert.equal(run.runnerAlive, false);
 });
 
 test("termination on a stale head completes the check as superseded", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {

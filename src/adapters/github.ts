@@ -8,11 +8,11 @@ import {
 } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
-import { runText } from "../shared/process.js";
+import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
 import {
 	registerTerminationFinalizer,
-	type TerminationSignal,
+	type Termination,
 } from "../shared/temp-lifecycle.js";
 import {
 	credentialValuesFromEnv,
@@ -31,14 +31,33 @@ function isRecord(raw: unknown): raw is JsonRecord {
 	return typeof raw === "object" && raw !== null && !Array.isArray(raw);
 }
 
-function ghJson(args: readonly string[], input?: string): unknown {
-	const out = ghText(args, undefined, input);
+function parseGhJson(out: string): unknown {
 	if (!out) return {};
 	try {
 		return JSON.parse(out);
 	} catch (error) {
 		throw new Error("GitHub returned invalid JSON", { cause: error });
 	}
+}
+
+function ghJson(args: readonly string[], input?: string): unknown {
+	return parseGhJson(ghText(args, undefined, input));
+}
+
+// gh for the termination finalizer: off the event loop, cut off at the
+// termination deadline, killed with the process, and without ghPost's 5xx
+// retry backoff, which the deadline would not cover.
+async function ghJsonWhileTerminating(
+	termination: Termination,
+	args: readonly string[],
+	input?: string,
+): Promise<unknown> {
+	const out = await runTextAsync("gh", args, {
+		input,
+		timeoutMs: Math.max(1, termination.deadlineMs - Date.now()),
+		abortSignal: termination.cancelled,
+	});
+	return parseGhJson(out);
 }
 
 // Posting calls only: a transient GitHub 5xx must not turn a completed
@@ -98,16 +117,17 @@ function stdoutSummary(summary: string): string {
 		: outboundText(summary, screened);
 }
 
-// Every GitHub write passes here, so screening here covers every payload a
-// PR reader can see.
+// Every GitHub write's payload passes here (ghPost and the termination
+// finalizer), so screening here covers every payload a PR reader can see.
+function screenedInput(rawInput: string): string {
+	return outboundText(
+		rawInput,
+		screenPayload(rawInput, credentialValuesFromEnv(process.env)),
+	);
+}
+
 function ghPost(args: readonly string[], rawInput?: string): unknown {
-	const input =
-		rawInput === undefined
-			? undefined
-			: outboundText(
-					rawInput,
-					screenPayload(rawInput, credentialValuesFromEnv(process.env)),
-				);
+	const input = rawInput === undefined ? undefined : screenedInput(rawInput);
 	if (!isIdempotentWrite(args)) return ghJson(args, input);
 	for (let attempt = 1; ; attempt++) {
 		try {
@@ -739,6 +759,8 @@ function createPendingCheck(repo: string, headSha: string): number | null {
 	return null;
 }
 
+type GhWrite = { readonly args: readonly string[]; readonly input: string };
+
 function postCheck(
 	repo: string,
 	headSha: string,
@@ -747,7 +769,20 @@ function postCheck(
 	title: string,
 	summary: string,
 	checkId?: number | null,
-) {
+): void {
+	const write = checkCompletion(repo, headSha, result, conclusion, title, summary, checkId);
+	ghPost(write.args, write.input);
+}
+
+function checkCompletion(
+	repo: string,
+	headSha: string,
+	result: ReviewResult | null,
+	conclusion: "success" | "failure" | "neutral",
+	title: string,
+	summary: string,
+	checkId?: number | null,
+): GhWrite {
 	// Checks cap Markdown by UTF-8 bytes, unlike review bodies. The full
 	// review has already been posted; keep its verdict and evidence there.
 	if (Buffer.byteLength(summary, "utf8") > 65_535) {
@@ -765,28 +800,26 @@ function postCheck(
 		}
 		summary = notice + prefix;
 	}
-	const output = JSON.stringify({
-		status: "completed",
-		conclusion,
-		output: { title, summary },
-	});
 	if (typeof checkId === "number") {
-		ghPost(
-			["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
-			output,
-		);
-		return;
+		return {
+			args: ["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
+			input: JSON.stringify({
+				status: "completed",
+				conclusion,
+				output: { title, summary },
+			}),
+		};
 	}
-	ghPost(
-		["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
-		JSON.stringify({
+	return {
+		args: ["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
+		input: JSON.stringify({
 			name: "Needlefish",
 			head_sha: headSha,
 			status: "completed",
 			conclusion,
 			output: { title, summary },
 		}),
-	);
+	};
 }
 
 const SEV_RANK: Record<Finding["severity"], number> = {
@@ -1076,7 +1109,10 @@ function postReviewSkipReason(
 	prNumber: number,
 	headSha: string,
 ): SkipReason | null {
-	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
+	return skipReasonForPr(ghJson(["api", `repos/${repo}/pulls/${prNumber}`]), prNumber, headSha);
+}
+
+function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipReason | null {
 	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
 	const state = stringField(pr, "state");
 	if (state !== "open") {
@@ -1097,49 +1133,50 @@ function postReviewSkipReason(
 
 // A job timeout or watchdog terminates the process while the owned check is
 // in_progress, and a consumer workflow has nothing else that completes it.
-// Runs inside the termination grace; ghText bounds each call by it. Same
-// stale-head rule as the error path: a moved head or closed PR gets a neutral
-// superseded completion and nothing on the timeline. A current head gets a
-// failure that names the termination, not a code defect, and no timeline
-// comment either, since nothing was reviewed.
-function completeTerminatedCheck(
+// Runs inside the termination grace, off the event loop. Same stale-head rule
+// as the error path: a moved head or closed PR gets a neutral superseded
+// completion and nothing on the timeline. A current head gets a failure that
+// names the termination, not a code defect, and no timeline comment either,
+// since nothing was reviewed.
+async function completeTerminatedCheck(
 	repo: string,
 	prNumber: number,
 	headSha: string,
 	checkId: number,
-	signal: TerminationSignal,
-): void {
+	termination: Termination,
+): Promise<void> {
 	let skipReason: SkipReason | null = null;
 	try {
-		skipReason = postReviewSkipReason(repo, prNumber, headSha);
+		const pr = await ghJsonWhileTerminating(termination, ["api", `repos/${repo}/pulls/${prNumber}`]);
+		skipReason = skipReasonForPr(pr, prNumber, headSha);
 	} catch (probeErr) {
 		const pm = probeErr instanceof Error ? probeErr.message : String(probeErr);
 		process.stderr.write(
 			`needlefish: could not re-read PR state during termination; completing the check anyway: ${pm}\n`,
 		);
 	}
-	if (skipReason !== null) {
-		emitSkip(skipReason, prNumber, headSha);
-		postCheck(
-			repo,
-			headSha,
-			null,
-			"neutral",
-			"Needlefish: superseded",
-			`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
-			checkId,
-		);
-		return;
-	}
-	postCheck(
-		repo,
-		headSha,
-		null,
-		"failure",
-		"Needlefish: review terminated",
-		`Needlefish received ${signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
-		checkId,
-	);
+	const write =
+		skipReason !== null
+			? checkCompletion(
+					repo,
+					headSha,
+					null,
+					"neutral",
+					"Needlefish: superseded",
+					`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
+					checkId,
+				)
+			: checkCompletion(
+					repo,
+					headSha,
+					null,
+					"failure",
+					"Needlefish: review terminated",
+					`Needlefish received ${termination.signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
+					checkId,
+				);
+	if (skipReason !== null) emitSkip(skipReason, prNumber, headSha);
+	await ghJsonWhileTerminating(termination, write.args, screenedInput(write.input));
 }
 
 export async function runGithub(
@@ -1250,8 +1287,8 @@ export async function runGithub(
 	const detachFinalizer =
 		pendingCheckId === null
 			? () => true
-			: registerTerminationFinalizer((signal) =>
-					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, signal),
+			: registerTerminationFinalizer((termination) =>
+					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination),
 				);
 
 	try {
