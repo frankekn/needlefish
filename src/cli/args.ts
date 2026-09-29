@@ -49,6 +49,13 @@ export type CliCommand =
       readonly finding: string;
       readonly repo?: string;
       readonly opts: RunnerOptions;
+    }
+  | {
+      readonly kind: "doctor";
+      readonly repo?: string;
+      readonly runner?: RunnerName;
+      readonly base?: string;
+      readonly json: boolean;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -62,6 +69,9 @@ Usage:
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
                                        (exits 1 when stored and derived differ)
+  needlefish doctor [options]          check runner, login, Node, git repo, and
+                                       base ref; no model call (--repo, --runner,
+                                       --base, --json; exits 1 when a check fails)
 
 Shared options:
   --repo <path>        target repository
@@ -174,10 +184,11 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   }
   const explainCommand = argv[0] === "explain";
   const prCommand = argv[0] === "pr" || explainCommand;
+  const doctorCommand = argv[0] === "doctor";
   if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
   if (prCommand && (argv[1] === "-v" || argv[1] === "--version")) return { kind: "version" };
   const prCommandNumber = prCommand ? parsePositiveInteger(argv[1] ?? "", explainCommand ? "explain" : "pr") : undefined;
-  const start = prCommand ? 2 : 0;
+  const start = prCommand ? 2 : doctorCommand ? 1 : 0;
   let finding: string | undefined;
   let github = false;
   let pr: number | undefined;
@@ -287,6 +298,30 @@ export function parseArgs(argv: readonly string[]): CliCommand {
 
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
+  }
+
+  if (doctorCommand) {
+    const unsupported =
+      github ||
+      pr !== undefined ||
+      fix ||
+      recheck ||
+      dryRun ||
+      printBundle ||
+      finding !== undefined ||
+      opts.focus !== undefined ||
+      opts.deep !== undefined ||
+      opts.model !== undefined ||
+      opts.timeoutMs !== undefined ||
+      opts.localMode !== undefined;
+    if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");
+    return {
+      kind: "doctor",
+      json,
+      ...(repo !== undefined ? { repo } : {}),
+      ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
+      ...(opts.base !== undefined ? { base: opts.base } : {}),
+    };
   }
 
   if (printBundle && !dryRun) {
