@@ -14,8 +14,8 @@ import { RUNNER_DEFINITIONS, RUNNERS, isRunnerName, type RunnerName } from "../s
 import {
   BASE_FIX,
   BaseRefError,
+  gitRepoState,
   hasHeadCommit,
-  isGitRepo,
   localDiffMode,
   resolveReviewBase,
 } from "./local.js";
@@ -256,7 +256,8 @@ interface WorktreeState {
 }
 
 function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktree: WorktreeState | undefined } {
-  if (!isGitRepo(repo)) {
+  const state = gitRepoState(repo);
+  if (state.kind === "not-a-repo") {
     return {
       check: {
         name: "git",
@@ -264,6 +265,12 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
         detail: `${repo} is not a git repository`,
         fix: "Run `git init` inside your project folder.",
       },
+      worktree: undefined,
+    };
+  }
+  if (state.kind === "unavailable") {
+    return {
+      check: { name: "git", status: "fail", detail: state.reason, ...(state.fix === undefined ? {} : { fix: state.fix }) },
       worktree: undefined,
     };
   }
@@ -287,7 +294,7 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
 // The base ref matters only when the default review runs in branch mode; the
 // same decision the review makes (localDiffMode) decides whether to check it.
 function baseCheck(repo: string, worktree: WorktreeState | undefined, override: string | undefined): DoctorCheck {
-  if (worktree === undefined) return { name: "base", status: "unknown", detail: "skipped: not a git repository" };
+  if (worktree === undefined) return { name: "base", status: "unknown", detail: "skipped: git check failed" };
   if (localDiffMode(worktree.headExists, worktree.dirty, undefined) === "uncommitted") {
     const why = worktree.headExists ? "worktree has uncommitted changes" : "no commits yet";
     return { name: "base", status: "ok", detail: `not needed: ${why}, so a review covers uncommitted changes` };

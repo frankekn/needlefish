@@ -304,7 +304,7 @@ test("doctor explains git and base failures with the fix", (t) => {
     detail: `${f.tmp} is not a git repository`,
     fix: "Run `git init` inside your project folder.",
   });
-  assert.deepEqual(check(notRepo, "base"), { name: "base", status: "unknown", detail: "skipped: not a git repository" });
+  assert.deepEqual(check(notRepo, "base"), { name: "base", status: "unknown", detail: "skipped: git check failed" });
 
   const badBase = runDoctor({ repo: f.repo, version: "0.0.0-test", base: "develop" });
   assert.deepEqual(check(badBase, "base"), {
@@ -326,6 +326,41 @@ test("doctor explains git and base failures with the fix", (t) => {
   assert.equal(check(noCommits, "git").detail, `${fresh} (branch main, clean, no commits yet)`);
   assert.equal(check(noCommits, "base").detail, "not needed: no commits yet, so a review covers uncommitted changes");
   assert.equal(noCommits.ok, true);
+});
+
+// Issue #201 item 2: isGitRepo mapped every failure to "not a repo", so a
+// missing path, a missing git, and git's own refusal all printed `git init`.
+test("doctor tells git failures apart from a missing repository, with a matching fix", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+
+  const missing = path.join(f.tmp, "missing");
+  assert.deepEqual(check(runDoctor({ repo: missing, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: `${missing} does not exist`,
+    fix: "Check the --repo path.",
+  });
+
+  const refusal = `fatal: detected dubious ownership in repository at '${f.repo}'`;
+  const fakeGit = stub(f.bin, "git", `echo ${JSON.stringify(refusal)} >&2; exit 128`);
+  const refused = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.deepEqual(check(refused, "git"), {
+    name: "git",
+    status: "fail",
+    detail: refusal,
+    fix: `Run \`git config --global --add safe.directory ${f.repo}\`.`,
+  });
+  assert.deepEqual(check(refused, "base"), { name: "base", status: "unknown", detail: "skipped: git check failed" });
+  rmSync(fakeGit);
+
+  process.env.PATH = f.bin;
+  assert.deepEqual(check(runDoctor({ repo: f.repo, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: "git is not installed or not on PATH",
+    fix: "Install git.",
+  });
 });
 
 test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => {
