@@ -95,12 +95,14 @@ export interface ScopeCallout {
 	readonly files: readonly string[];
 }
 
-// A changed file whose contents the review could not read. Output-only:
-// reported by the runner sandbox, never derived from model text.
-export interface CoverageGap {
-	readonly kind: "lfs_pointer_only";
-	readonly file: string;
-}
+// Content the review could not read. Output-only: reported by the runner
+// sandbox, never derived from model text. lfs_pointer_only names a changed
+// file checked out as a pointer stub; lfs_scan_incomplete means the sandbox
+// could not establish the full pointer list, so more changed files may be
+// unread than are named.
+export type CoverageGap =
+	| { readonly kind: "lfs_pointer_only"; readonly file: string }
+	| { readonly kind: "lfs_scan_incomplete" };
 
 export interface RawReview {
 	readonly summary: string;
@@ -127,7 +129,9 @@ export interface ReviewResult {
 	// from changedFiles at result assembly, never part of the model bundle.
 	readonly scopeCallouts?: readonly ScopeCallout[];
 	// Changed files the sandbox could only check out as Git LFS pointer stubs,
-	// in changed-file order, one entry per file across every pass. Output-only.
+	// in changed-file order, one entry per file across every pass, followed by
+	// one lfs_scan_incomplete entry when any pass could not finish the scan.
+	// Output-only.
 	readonly coverageGaps?: readonly CoverageGap[];
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;

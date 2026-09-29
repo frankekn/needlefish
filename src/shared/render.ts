@@ -130,14 +130,21 @@ export function renderMarkdown(
 		lines.push(`Coverage: ${result.coverage}`);
 	}
 
-	if (result.coverageGaps?.length) {
+	const pointerOnly = (result.coverageGaps ?? []).flatMap((gap) =>
+		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
+	);
+	if (pointerOnly.length > 0) {
 		lines.push("");
 		lines.push(
 			"**Not reviewed (non-blocking):** these changed files were available only as Git LFS pointers, so their contents were not read and are not covered by this review. Ask a maintainer to check them.",
 		);
-		for (const gap of result.coverageGaps) {
-			lines.push(`- ${oneLine(gap.file)}`);
-		}
+		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
+	}
+	if (result.coverageGaps?.some((gap) => gap.kind === "lfs_scan_incomplete")) {
+		lines.push("");
+		lines.push(
+			"**Coverage uncertain (non-blocking):** Git LFS pointer status could not be fully determined for this repository, so some changed files may not have been reviewed. Ask a maintainer to check any LFS-tracked files in this change.",
+		);
 	}
 
 	if (result.reviewTarget) {

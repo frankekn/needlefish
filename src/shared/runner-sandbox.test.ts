@@ -275,6 +275,7 @@ test("prepareRunnerSandbox discloses LFS pointer stubs in the runner prompt", (t
   // prompt bytes are pinned so the returned metadata can never restyle the
   // model input (that would move this change into eval Class R).
   assert.deepEqual(sandbox.lfsPointerFiles, [Buffer.from("asset.bin")]);
+  assert.equal(sandbox.lfsScanIncomplete, false);
   assert.equal(
     sandbox.prompt,
     [
@@ -311,6 +312,7 @@ test("prepareRunnerSandbox leaves the prompt untouched when no LFS is configured
   // Inert for every repository that does not use LFS: byte-identical prompt.
   assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
   assert.deepEqual(sandbox.lfsPointerFiles, []);
+  assert.equal(sandbox.lfsScanIncomplete, false);
 });
 
 test("prepareRunnerSandbox does not disclose LFS-tracked files that hold real content", (t) => {
@@ -455,6 +457,9 @@ test("prepareRunnerSandbox discloses uncertainty when the LFS candidate list is 
   });
 
   assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+  // The data channel must not collapse "could not finish" into "none".
+  assert.deepEqual(sandbox.lfsPointerFiles, []);
+  assert.equal(sandbox.lfsScanIncomplete, true);
   assert.match(sandbox.prompt, /could not\n?\s*establish the full list/);
 });
 

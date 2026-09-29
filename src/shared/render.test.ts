@@ -393,10 +393,16 @@ test("renderMarkdown lists coverage gaps once, between the coverage line and the
 		coverageGaps: [
 			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 			{ kind: "lfs_pointer_only", file: "new\nline.bin" },
+			{ kind: "lfs_scan_incomplete" },
 		],
 	});
 
 	const header = "**Not reviewed (non-blocking):**";
+	const uncertain = "**Coverage uncertain (non-blocking):**";
+	assert.equal(markdown.split(uncertain).length - 1, 1);
+	assert.ok(markdown.includes("some changed files may not have been reviewed"));
+	assert.ok(markdown.indexOf(uncertain) > markdown.indexOf(header));
+	assert.ok(!markdown.includes("- undefined"), "an incomplete-scan gap names no file");
 	assert.equal(markdown.split(header).length - 1, 1, "one notice, not one per file");
 	assert.ok(markdown.includes("available only as Git LFS pointers"));
 	assert.ok(markdown.includes("Ask a maintainer to check them."));
@@ -420,6 +426,12 @@ test("renderMarkdown omits the coverage gap notice when there are no gaps", () =
 		!renderMarkdown({ ...baseResult([], "pass"), coverageGaps: [] }).includes("Not reviewed"),
 		"an empty gap list must render no notice",
 	);
+	const onlyIncomplete = renderMarkdown({
+		...baseResult([], "pass"),
+		coverageGaps: [{ kind: "lfs_scan_incomplete" }],
+	});
+	assert.ok(!onlyIncomplete.includes("Not reviewed"));
+	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
 });
 
 test("renderMarkdown omits the callouts section when none are present", () => {

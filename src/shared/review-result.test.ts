@@ -287,6 +287,7 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	const coverageGaps = [
 		{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 		{ kind: "lfs_pointer_only", file: "data/train.parquet" },
+		{ kind: "lfs_scan_incomplete" },
 	];
 	const result = parseReviewResult(serialized({ coverageGaps }));
 	assert.deepEqual(result.coverageGaps, coverageGaps);
@@ -303,6 +304,7 @@ test("parseReviewResult rejects mistyped coverageGaps entries", () => {
 		[[{ kind: "missing_file", file: "a.bin" }], /kind invalid missing_file/],
 		[[{ kind: "lfs_pointer_only", file: "" }], /file not a non-empty string/],
 		[[{ kind: "lfs_pointer_only" }], /file not a non-empty string/],
+		[[{ kind: "LFS_SCAN_INCOMPLETE" }], /kind invalid/],
 		[["a.bin"], /entry 0: not an object/],
 	] as const) {
 		assert.throws(() => parseReviewResult(serialized({ coverageGaps: value })), pattern);

@@ -60,6 +60,10 @@ export interface RunnerSandbox {
   // this checkout, as raw bytes (see sandboxChildPath). The same list the
   // prompt notice was rendered from; the caller filters and decodes it.
   readonly lfsPointerFiles: readonly Buffer[];
+  // True when the repository configures LFS but the probe could not establish
+  // the full pointer list (unreadable attributes, ls-files failure, candidate
+  // ceiling hit). An empty lfsPointerFiles then means "unknown", not "none".
+  readonly lfsScanIncomplete: boolean;
 }
 
 export interface RunnerSandboxOptions {
@@ -158,6 +162,7 @@ function finishSandbox(
     prompt: lfs.notice === "" ? prompt : `${prompt}\n\n${lfs.notice}`,
     expectedHeadSha,
     lfsPointerFiles: lfs.pointers,
+    lfsScanIncomplete: lfs.incomplete,
   };
 }
 
@@ -287,10 +292,15 @@ const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
 interface LfsDisclosure {
   readonly notice: string;
   readonly pointers: readonly Buffer[];
+  readonly incomplete: boolean;
 }
 
-const NO_LFS_DISCLOSURE: LfsDisclosure = { notice: "", pointers: [] };
-const UNCERTAIN_LFS_DISCLOSURE: LfsDisclosure = { notice: renderUncertainNotice(), pointers: [] };
+const NO_LFS_DISCLOSURE: LfsDisclosure = { notice: "", pointers: [], incomplete: false };
+const UNCERTAIN_LFS_DISCLOSURE: LfsDisclosure = {
+  notice: renderUncertainNotice(),
+  pointers: [],
+  incomplete: true,
+};
 
 function lfsDisclosure(sandboxPath: string): LfsDisclosure {
   // Cheap gate first: repositories that never mention filter=lfs pay one
@@ -313,7 +323,11 @@ function lfsDisclosure(sandboxPath: string): LfsDisclosure {
   // exhaustive scan may conclude silence; a truncated one must still say so,
   // or the disclosure reintroduces the very silence it exists to remove.
   if (pointers.length === 0) return truncated ? UNCERTAIN_LFS_DISCLOSURE : NO_LFS_DISCLOSURE;
-  return { notice: renderLfsNotice(pointers, candidates.length, truncated), pointers };
+  return {
+    notice: renderLfsNotice(pointers, candidates.length, truncated),
+    pointers,
+    incomplete: truncated,
+  };
 }
 
 type LfsAttributeScan = "none" | "present" | "unknown";

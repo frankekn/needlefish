@@ -2630,3 +2630,75 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 	assert.equal(unrelated.verdict, "pass");
 	assert.ok(!Object.hasOwn(unrelated, "coverageGaps"));
 });
+
+test("review reports an unfinished LFS scan as one coverage gap without touching prompt or verdict", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const promptLog = path.join(tmp, "prompts.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	// An attributes file past the sandbox's read ceiling: the sandbox knows it
+	// cannot rule LFS out, so it must say so on the data channel too.
+	writeFileSync(
+		path.join(repo, ".gitattributes"),
+		`${"# padding\n".repeat(30000)}*.bin filter=lfs -text\n`,
+	);
+	writeFileSync(path.join(repo, "asset.bin"), "real content\n");
+	commitAll(repo, "oversized attributes");
+
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+	const result = await review({
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/asset.bin b/asset.bin\n+real content\n",
+		patchStat: " asset.bin | 1 +",
+		changedFiles: [{ path: "asset.bin", surface: classifySurface("asset.bin") }],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	});
+	assert.equal(result.verdict, "pass");
+	assert.equal(result.stats?.length, 2);
+	assert.deepEqual(result.coverageGaps, [{ kind: "lfs_scan_incomplete" }]);
+
+	const prompts = readFileSync(promptLog, "utf8");
+	assert.equal(prompts.split("could not\nestablish the full list").length - 1, 2);
+	for (const leak of ["coverageGaps", "lfs_scan_incomplete", "Coverage uncertain"]) {
+		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
+	}
+});
