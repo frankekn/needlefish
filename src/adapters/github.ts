@@ -1269,6 +1269,7 @@ export async function runGithub(
 			const body = renderMarkdown(freshResult, {
 				...renderOpts,
 				stateMarker: renderState(headSha, result.findings),
+				omitCoverageGaps: true,
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
 			// Fail-soft: the round comment is cosmetic; a transient POST failure
@@ -1316,6 +1317,7 @@ export async function runGithub(
 				inlinedFindings: inlined,
 				repoSlug: repo,
 				stateMarker: renderState(headSha, result.findings),
+				omitCoverageGaps: true,
 			});
 			postReview(repo, prNumber, headSha, body, comments);
 			await applyVerdictLabel(repo, prNumber, result.verdict);

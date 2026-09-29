@@ -49,6 +49,11 @@ export function renderMarkdown(
 		newCount?: number;
 		repoSlug?: string;
 		stateMarker?: string;
+		// Review bodies are read back into prMeta.reviews by `needlefish pr`
+		// and `explain` (repo.ts fetchPrRefInfo), so a notice rendered there
+		// becomes model input on the next run. Check summaries are not read
+		// back (normalizePrMeta keeps only name/status/conclusion).
+		omitCoverageGaps?: boolean;
 	},
 ): string {
 	const lines: string[] = [];
@@ -130,7 +135,8 @@ export function renderMarkdown(
 		lines.push(`Coverage: ${result.coverage}`);
 	}
 
-	const pointerOnly = (result.coverageGaps ?? []).flatMap((gap) =>
+	const coverageGaps = opts?.omitCoverageGaps ? [] : (result.coverageGaps ?? []);
+	const pointerOnly = coverageGaps.flatMap((gap) =>
 		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
 	);
 	if (pointerOnly.length > 0) {
@@ -140,7 +146,7 @@ export function renderMarkdown(
 		);
 		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
 	}
-	if (result.coverageGaps?.some((gap) => gap.kind === "lfs_scan_incomplete")) {
+	if (coverageGaps.some((gap) => gap.kind === "lfs_scan_incomplete")) {
 		lines.push("");
 		lines.push(
 			"**Coverage uncertain (non-blocking):** Git LFS pointer status could not be fully determined for this repository, so some changed files may not have been reviewed. Ask a maintainer to check any LFS-tracked files in this change.",

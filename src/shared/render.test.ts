@@ -434,6 +434,28 @@ test("renderMarkdown omits the coverage gap notice when there are no gaps", () =
 	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
 });
 
+test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
+	const result: ReviewResult = {
+		...baseResult([], "pass"),
+		coverage: "full diff reviewed in one pass (1 file)",
+		coverageGaps: [
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+			{ kind: "lfs_scan_incomplete" },
+		],
+	};
+	const omitted = renderMarkdown(result, { omitCoverageGaps: true });
+	assert.ok(!omitted.includes("Not reviewed"));
+	assert.ok(!omitted.includes("Coverage uncertain"));
+	assert.ok(!omitted.includes("assets/model.bin"));
+	assert.ok(omitted.includes("Coverage: full diff reviewed in one pass (1 file)"));
+	assert.notEqual(omitted, renderMarkdown(result), "the option must change the output when gaps exist");
+	assert.equal(
+		renderMarkdown(baseResult([], "pass"), { omitCoverageGaps: true }),
+		renderMarkdown(baseResult([], "pass")),
+		"without gaps the option is inert",
+	);
+});
+
 test("renderMarkdown omits the callouts section when none are present", () => {
 	assert.ok(!renderMarkdown(baseResult([], "pass")).includes("Human callouts"));
 	assert.ok(

@@ -3082,7 +3082,7 @@ for (const [label, association, type] of [
 	});
 }
 
-test("runGithub shows the LFS coverage gap in the review body and check summary only", async (t) => {
+test("runGithub shows the LFS coverage gap in the check summary and keeps it out of every model-readable surface", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 91,
 		rawReview: defaultRawReview(),
@@ -3100,8 +3100,11 @@ test("runGithub shows the LFS coverage gap in the review body and check summary 
 	const reviewPost = postedReview(round1, 91);
 	assert.ok(reviewPost);
 	const review = parseReviewPayload(reviewPost.payload);
-	assert.equal(review.body.split(notice).length - 1, 1, "review body carries the notice once");
-	assert.ok(review.body.includes("\n- asset.bin\n"));
+	// Review bodies come back through `gh pr view --json reviews` into
+	// prMeta.reviews for `needlefish pr` and `explain`, so they are model input.
+	assert.ok(!review.body.includes("Not reviewed"), "review body must not carry the notice");
+	assert.ok(!review.body.includes("asset.bin"), "review body must not name the pointer file");
+	assert.match(review.body, /needlefish-state:/, "positive control: the body was rendered");
 	assert.ok(review.comments.length > 0, "fixture must post an inline comment");
 	for (const comment of review.comments) {
 		assert.ok(!String(comment.body).includes("Not reviewed"), "inline comments are model input next round");
@@ -3121,7 +3124,7 @@ test("runGithub shows the LFS coverage gap in the review body and check summary 
 	assert.ok(!roundComment.payload.includes("Not reviewed"), "round comment must not carry the notice");
 	const putPost = putReview(round2, 91, 1);
 	assert.ok(putPost, "round two PUT-updates the review body");
-	assert.equal(parseReviewPayload(putPost.payload).body.split(notice).length - 1, 1);
+	assert.ok(!parseReviewPayload(putPost.payload).body.includes("Not reviewed"));
 	assert.equal(checkSummaries(round2).filter((summary) => summary.includes("- asset.bin")).length, 1);
 
 	// Both rounds' model prompts: the sandbox's own runner notice is present,
