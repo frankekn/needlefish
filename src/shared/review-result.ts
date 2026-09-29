@@ -3,6 +3,7 @@ import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type CalloutSurface,
 	type Category,
+	type CoverageGap,
 	type Finding,
 	type ResidualRisk,
 	type ReviewResult,
@@ -348,6 +349,20 @@ function findingListField(value: unknown): Finding[] {
 	});
 }
 
+function coverageGapListField(value: unknown): CoverageGap[] {
+	if (!Array.isArray(value)) throw new Error("not an array");
+	return value.map((entry, index): CoverageGap => {
+		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
+		if (entry.kind !== "lfs_pointer_only") {
+			throw new Error(`entry ${index}: kind invalid ${String(entry.kind)}`);
+		}
+		if (typeof entry.file !== "string" || entry.file === "") {
+			throw new Error(`entry ${index}: file not a non-empty string`);
+		}
+		return { kind: entry.kind, file: entry.file };
+	});
+}
+
 const OPTIONAL_FIELD_PARSERS: {
 	readonly [K in OptionalFieldKey]-?: (value: unknown) => ReviewResult[K];
 } = {
@@ -355,6 +370,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
+	coverageGaps: coverageGapListField,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

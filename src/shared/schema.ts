@@ -95,6 +95,13 @@ export interface ScopeCallout {
 	readonly files: readonly string[];
 }
 
+// A changed file whose contents the review could not read. Output-only:
+// reported by the runner sandbox, never derived from model text.
+export interface CoverageGap {
+	readonly kind: "lfs_pointer_only";
+	readonly file: string;
+}
+
 export interface RawReview {
 	readonly summary: string;
 	readonly findings: readonly Finding[];
@@ -119,6 +126,9 @@ export interface ReviewResult {
 	// Non-blocking, path-derived file-surface callouts. Output-only: computed
 	// from changedFiles at result assembly, never part of the model bundle.
 	readonly scopeCallouts?: readonly ScopeCallout[];
+	// Changed files the sandbox could only check out as Git LFS pointer stubs,
+	// in changed-file order, one entry per file across every pass. Output-only.
+	readonly coverageGaps?: readonly CoverageGap[];
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;
 	// Preformatted one-line coverage summary rendered visibly below the counts

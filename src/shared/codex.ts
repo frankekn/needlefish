@@ -510,6 +510,10 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	// Called once per sandbox with the repo-relative paths the sandbox could
+	// only check out as Git LFS pointer stubs. Output-only metadata for the
+	// human-facing result; the runner already gets the same list in its prompt.
+	readonly onLfsPointerFiles?: (files: readonly string[]) => void;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -717,6 +721,9 @@ async function runCodexOnce(
 				throw asRunnerOperationalError(error);
 			}
 		})();
+		opts.onLfsPointerFiles?.(
+			sandbox.lfsPointerFiles.map((file) => file.toString("utf8")),
+		);
 		let result: RunnerResult;
 		try {
 			result = await runRunner(runner, invocation);

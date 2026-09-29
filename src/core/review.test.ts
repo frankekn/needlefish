@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -13,7 +15,7 @@ import test from "node:test";
 import { review } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
 import { classifySurface } from "../shared/classify";
-import { headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+import { commitAll, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import type { Bundle } from "../shared/schema";
 
 test("review preserves deep evidence through tail coverage", async (t) => {
@@ -2526,4 +2528,105 @@ test("review attaches scope callouts without touching verdict or prompt", async 
 		!prompts.includes("callout"),
 		"model prompt must not mention callouts",
 	);
+});
+
+test("review reports changed LFS pointer files as one coverage gap without touching prompt or verdict", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const promptLog = path.join(tmp, "prompts.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	// A committed pointer blob is exactly what the sandbox checks out when no
+	// LFS filter is registered; git-lfs itself is not needed. Repo-local empty
+	// filter values keep a host with git-lfs installed from rewriting the blob.
+	for (const key of ["filter.lfs.clean", "filter.lfs.smudge", "filter.lfs.process"]) {
+		execFileSync("git", ["-C", repo, "config", key, ""]);
+	}
+	execFileSync("git", ["-C", repo, "config", "filter.lfs.required", "false"]);
+	const pointer = `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 40213\n`;
+	writeFileSync(path.join(repo, ".gitattributes"), "*.bin filter=lfs -text\n");
+	writeFileSync(path.join(repo, "asset.bin"), pointer);
+	mkdirSync(path.join(repo, "unrelated"));
+	writeFileSync(path.join(repo, "unrelated", "other.bin"), pointer);
+	mkdirSync(path.join(repo, "src"));
+	writeFileSync(path.join(repo, "src", "app.ts"), "export const app = 1;\n");
+	commitAll(repo, "lfs fixture");
+
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"let input = '';",
+			"process.stdin.setEncoding('utf8');",
+			"process.stdin.on('data', (chunk) => { input += chunk; });",
+			"process.stdin.on('end', () => {",
+			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"});",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+	const bundle: Bundle = {
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/asset.bin b/asset.bin\n+version https://git-lfs.github.com/spec/v1\n",
+		patchStat: " asset.bin | 3 +\n src/app.ts | 1 +",
+		changedFiles: [
+			{ path: "asset.bin", surface: classifySurface("asset.bin") },
+			{ path: "src/app.ts", surface: "source" },
+		],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	};
+
+	const result = await review(bundle);
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.findings, []);
+	assert.deepEqual(result.residualRisks, []);
+	assert.equal(result.stats?.length, 2, "review and critic passes each prepared a sandbox");
+	assert.deepEqual(result.coverageGaps, [{ kind: "lfs_pointer_only", file: "asset.bin" }]);
+
+	// Model input is unchanged: every pass still gets the sandbox's own LFS
+	// notice (positive control, listing the unrelated pointer too), and none
+	// gets the human-facing notice or the result field.
+	const prompts = readFileSync(promptLog, "utf8");
+	assert.equal(prompts.split("<<<PROMPT-END>>>").length - 1, 2);
+	assert.equal(prompts.split("GIT LFS NOTICE").length - 1, 2);
+	assert.ok(prompts.includes('- "unrelated/other.bin"'));
+	for (const leak of ["coverageGaps", "lfs_pointer_only", "Not reviewed", "Ask a maintainer"]) {
+		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
+	}
+
+	// A pointer outside the diff is not a gap in this review's coverage.
+	const unrelated = await review({
+		...bundle,
+		patch: "diff --git a/src/app.ts b/src/app.ts\n+export const app = 1;\n",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+	});
+	assert.equal(unrelated.verdict, "pass");
+	assert.ok(!Object.hasOwn(unrelated, "coverageGaps"));
 });

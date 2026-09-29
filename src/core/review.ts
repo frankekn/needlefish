@@ -14,6 +14,7 @@ import { envFlagOn } from "../shared/env.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
+	type CoverageGap,
 	type Finding,
 	type Hotspot,
 	type RawReview,
@@ -81,6 +82,10 @@ interface ReviewRun {
 	// why/edges, critic-pruned residual text) — the canary scan needs the full
 	// transcript, not just what survived into ReviewResult.
 	readonly rawOutputs: string[];
+	// Repo-relative paths every pass's sandbox reported as Git LFS pointer
+	// stubs. A Set because each pass prepares its own sandbox of the same
+	// checkout and reports the same list.
+	readonly lfsPointerFiles: Set<string>;
 	readonly onTrace?: ReviewTraceObserver;
 	// Present only when the caller registered a trace observer.
 	readonly traceHealth?: TraceDeliveryHealth;
@@ -256,6 +261,9 @@ function codexOptions(
 		onRaw: (raw, runnerAttempt) => {
 			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
+		},
+		onLfsPointerFiles: (files) => {
+			for (const file of files) run.lfsPointerFiles.add(file);
 		},
 		...run.runnerOptions,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
@@ -724,6 +732,11 @@ function toReviewResult(
 	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
+	// Only files in the diff: a pointer elsewhere in the repository is not a
+	// gap in this review's coverage.
+	const coverageGaps: CoverageGap[] = bundle.changedFiles
+		.filter((file) => run.lfsPointerFiles.has(file.path))
+		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
@@ -735,6 +748,7 @@ function toReviewResult(
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
 		...(coverage ? { coverage } : {}),
@@ -1109,6 +1123,7 @@ export async function review(
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],
+		lfsPointerFiles: new Set(),
 		...(onTrace && traceHealth
 			? {
 					onTrace: wrapTraceObserver(onTrace, traceHealth),
