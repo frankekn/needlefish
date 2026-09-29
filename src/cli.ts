@@ -9,6 +9,7 @@ import {
   localDryRun,
   localPrDryRun,
   printDryRun,
+  terminalProgress,
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
@@ -87,8 +88,11 @@ async function main() {
         );
       }
       const cwd = command.repo ?? process.cwd();
+      const progress = terminalProgress(process.stderr, command.json);
       const result =
-        command.kind === "pr" ? await runLocalPr(cwd, command.pr, command.opts) : await runLocal(cwd, command.opts);
+        command.kind === "pr"
+          ? await runLocalPr(cwd, command.pr, command.opts, progress)
+          : await runLocal(cwd, command.opts, progress);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {
