@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveVerdict } from "../core/verdict";
-import { normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
+import { isNeedlefishPost, normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
 
 test("normalizeMap accepts a summary with no hotspots", () => {
   const map = normalizeMap({ summary: "reviewed", hotspots: [] });
@@ -143,6 +143,158 @@ test("normalizePrMeta accepts complete PR metadata", () => {
       { name: "lint", status: "PENDING", conclusion: null },
     ],
   });
+});
+
+// Bodies sampled from this repo's PRs 182, 198 and 200 via the reviews and
+// comments APIs, cut to the lines that carry the shape.
+const OWN_ROUND_COMMENT =
+  "**Needlefish re-review** @ fae252a — ✅ 1 resolved · 🔁 1 not reproduced (code unchanged) · ❌ 0 still open · 🆕 0 new → LGTM\n<!-- needlefish-round -->";
+const OWN_ERROR_COMMENT =
+  "⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n```\nspawn codex ETIMEDOUT\n```\n\nRe-trigger: push a new commit or re-run with --recheck.\n<!-- needlefish-error -->";
+const OWN_REVIEW_BODY =
+  'LGTM ✅ — Adds a `needlefish doctor` setup-diagnostic command.\n\nCoverage: 18/18 changed files deep-reviewed across 4 hotspots\n\n## Findings\n\n<sub>6 calls · total 15m 13s</sub>\n\n<!-- needlefish-state: {"v":1,"headSha":"691005cd691922be6916b3dfa33b344480f5b8a6","findings":[{"file":"src/adapters/doctor.ts","lineStart":150,"category":"validation","title":"doctor runner check passes"}]} -->\n';
+const OWN_INLINE_FINDING_UNMARKED =
+  "**P2** Doctor base check fails (exit 1) on a dirty worktree that needs no base ref\n\nbaseCheck only skips the base-ref precondition for `headExists === false`.\n\n**Fix:** Make the base check mirror the review's mode selection.\n\n**Validate:** Add a doctor.test.ts case.";
+const OWN_INLINE_FINDING_MARKED = `${OWN_INLINE_FINDING_UNMARKED}\n\n<!-- needlefish-finding -->`;
+const OWN_EXPLAIN_UNMARKED =
+  "## 🔍 Needlefish explain\n\nThe guard runs after the write.\n\n<sub>Explanation only — the review verdict is unchanged.</sub>";
+const OWN_EXPLAIN_MARKED = `${OWN_EXPLAIN_UNMARKED}\n<!-- needlefish-explain -->`;
+
+const HUMAN_QUOTE_REPLY = `${OWN_ROUND_COMMENT.split("\n")
+  .map((line) => `> ${line}`)
+  .join("\n")}\n\nThe resolved one was intentional, see the design note.`;
+const HUMAN_THREAD_REPLY = "We keep this behavior on purpose; the caller validates upstream.";
+const HUMAN_SEVERITY_STYLE = "**P2** I think this is actually a real bug, not a nit.";
+const HUMAN_MENTIONS_MARKER =
+  "The round comment ends in `<!-- needlefish-round -->` so later rounds can find it.";
+const HUMAN_LANE_NOTE =
+  "Lane qualification: eval/results/2026-09-20-codex-cpa-deepseek41-flash-high-x1.json — 87 fixtures.";
+
+// GitHub asserts the poster is a bot; not this run's identity (local mode, another setup).
+const BOT = { bot: true, own: false };
+// github-actions[bot] posting from this run.
+const OWN_BOT = { bot: true, own: true };
+const HUMAN = { bot: false, own: false };
+// A maintainer whose PAT the runner also posts with.
+const OWN_HUMAN = { bot: false, own: true };
+const HUMAN_PASTED_MARKER_LAST = `Pasting the raw round comment for reference:\n\n${OWN_ROUND_COMMENT}`;
+const HUMAN_PASTED_MARKER_MID = `${OWN_ROUND_COMMENT}\n\nI disagree with the resolved count.`;
+const HUMAN_FENCED_MARKER = "The marker looks like this:\n\n```html\n<!-- needlefish-round -->\n```";
+const HUMAN_FENCED_STATE = `See the state marker:\n\n\`\`\`\n${OWN_REVIEW_BODY.trim().split("\n").pop()}\n\`\`\``;
+
+test("isNeedlefishPost recognizes every kind of Needlefish post by its final marker line", () => {
+  for (const body of [
+    OWN_ROUND_COMMENT,
+    OWN_ERROR_COMMENT,
+    OWN_REVIEW_BODY,
+    OWN_INLINE_FINDING_MARKED,
+    OWN_EXPLAIN_MARKED,
+  ]) {
+    for (const author of [BOT, OWN_BOT]) {
+      assert.equal(isNeedlefishPost(body, author), true, body.slice(0, 40));
+    }
+    assert.equal(isNeedlefishPost(body.trim(), BOT), true, body.slice(0, 40));
+    for (const author of [HUMAN, OWN_HUMAN]) {
+      assert.equal(isNeedlefishPost(body, author), false, "no bot identity keeps the body");
+    }
+  }
+});
+
+const OWN_INLINE_FINDING_OLDEST =
+  "**P2 (validation): Reject malformed model output before deriving a verdict**\n\nThe parser accepts any object.\n\n_Suggested fix:_ Make the model-output boundary strict.";
+
+const OWN_REVIEW_BODY_OLDEST =
+  "# Needlefish PR Review\n\n**Verdict:** PASS\n\n- Ran `pnpm check`; TypeScript completed without errors.";
+
+test("isNeedlefishPost recognizes pre-marker posts only from this run's bot identity", () => {
+  for (const body of [
+    OWN_INLINE_FINDING_UNMARKED,
+    OWN_INLINE_FINDING_OLDEST,
+    OWN_EXPLAIN_UNMARKED,
+    OWN_REVIEW_BODY_OLDEST,
+  ]) {
+    assert.equal(isNeedlefishPost(body, OWN_BOT), true, body.slice(0, 40));
+    assert.equal(isNeedlefishPost(body, BOT), false, body.slice(0, 40));
+    assert.equal(isNeedlefishPost(body, OWN_HUMAN), false, "a maintainer on the runner's PAT is not a bot");
+    assert.equal(isNeedlefishPost(body, HUMAN), false, body.slice(0, 40));
+  }
+});
+
+test("isNeedlefishPost never drops a human comment", () => {
+  const humanBodies = [
+    HUMAN_QUOTE_REPLY,
+    HUMAN_THREAD_REPLY,
+    HUMAN_SEVERITY_STYLE,
+    HUMAN_MENTIONS_MARKER,
+    HUMAN_LANE_NOTE,
+    HUMAN_PASTED_MARKER_LAST,
+    HUMAN_PASTED_MARKER_MID,
+    HUMAN_FENCED_MARKER,
+    HUMAN_FENCED_STATE,
+    OWN_EXPLAIN_UNMARKED,
+    "LGTM from me, one nit inline.",
+    "### 💡 Codex Review\n\nHere are some automated review suggestions for this pull request.",
+  ];
+  for (const body of humanBodies) {
+    assert.equal(isNeedlefishPost(body, HUMAN), false, body.slice(0, 40));
+  }
+  // A maintainer whose PAT the runner posts with is still a human-typed
+  // user: nothing they write is dropped, a pasted marker as last line included.
+  for (const body of [...humanBodies, OWN_ROUND_COMMENT, OWN_REVIEW_BODY]) {
+    assert.equal(isNeedlefishPost(body, OWN_HUMAN), false, body.slice(0, 40));
+  }
+  // A bot-typed post with a marker only mid-body is not one of ours either.
+  assert.equal(isNeedlefishPost(HUMAN_PASTED_MARKER_MID, OWN_BOT), false);
+});
+
+test("normalizeBodyList reads REST authorship and drops only Needlefish's own posts, in order", () => {
+  const own = { login: "github-actions[bot]", type: "Bot" };
+  const otherBot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot" };
+  const human = { login: "frankekn", type: "User" };
+  const bodies = normalizeBodyList(
+    [
+      { user: own, body: OWN_ROUND_COMMENT },
+      { user: human, body: HUMAN_QUOTE_REPLY },
+      { user: own, body: OWN_ERROR_COMMENT },
+      { user: own, body: OWN_INLINE_FINDING_UNMARKED },
+      { user: human, body: HUMAN_THREAD_REPLY },
+      { user: human, body: HUMAN_SEVERITY_STYLE },
+      { user: human, body: HUMAN_PASTED_MARKER_LAST },
+      { user: otherBot, body: OWN_INLINE_FINDING_UNMARKED },
+      { user: own, body: "" },
+      " plain string comment ",
+    ],
+    (item) => (item.user as { login: string }).login === own.login
+  );
+  assert.deepEqual(bodies, [
+    HUMAN_QUOTE_REPLY,
+    HUMAN_THREAD_REPLY,
+    HUMAN_SEVERITY_STYLE,
+    HUMAN_PASTED_MARKER_LAST,
+    OWN_INLINE_FINDING_UNMARKED,
+    "plain string comment",
+  ]);
+});
+
+test("normalizePrMeta reads gh authorship and drops Needlefish's own review bodies and comments", () => {
+  const meta = normalizePrMeta({
+    number: 200,
+    title: "doctor",
+    comments: [
+      { author: { login: "github-actions" }, body: OWN_ROUND_COMMENT },
+      { author: { login: "frankekn" }, body: HUMAN_LANE_NOTE },
+      { author: { login: "frankekn" }, body: HUMAN_PASTED_MARKER_LAST },
+      { author: { login: "github-actions" }, body: OWN_EXPLAIN_UNMARKED },
+    ],
+    reviews: [
+      { author: { login: "github-actions" }, body: OWN_REVIEW_BODY },
+      { author: { login: "github-actions" }, body: "" },
+      { author: { login: "frankekn" }, body: "LGTM from me, one nit inline." },
+      { author: { login: "chatgpt-codex-connector" }, body: "### 💡 Codex Review" },
+    ],
+  });
+  assert.deepEqual(meta.comments, [HUMAN_LANE_NOTE, HUMAN_PASTED_MARKER_LAST, OWN_EXPLAIN_UNMARKED]);
+  assert.deepEqual(meta.reviews, ["LGTM from me, one nit inline.", "### 💡 Codex Review"]);
 });
 
 test("normalizePrMeta uses fallback number when number is missing", () => {

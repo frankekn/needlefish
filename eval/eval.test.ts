@@ -98,6 +98,22 @@ test("aggregateDefectClassMetrics reports recall and localization by review fami
   });
 });
 
+// PR discussion is filtered inside normalizePrMeta/normalizeBodyList before it
+// becomes prMeta. A fixture that carried prMeta would make that filter part of
+// the eval input and turn a discussion-filter change into a Class R gate.
+test("no eval fixture bundle carries PR discussion (prMeta is null)", async () => {
+  const specs = await loadFixtures(null);
+  assert.ok(specs.length > 0);
+  for (const spec of specs) {
+    const loaded = loadFixture(spec);
+    try {
+      assert.equal(loaded.bundle.prMeta, null, spec.id);
+    } finally {
+      loaded.cleanup();
+    }
+  }
+});
+
 test("loadFixture materializes a git repo and builds a bundle with the defect diff", () => {
   const loaded = loadFixture(posOverBlock);
   try {

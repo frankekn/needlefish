@@ -42,11 +42,79 @@ function asString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function bodyList(value: unknown): string[] {
+// Every post Needlefish writes to a PR ends with one of these lines, so its
+// own text is recognized on the way back in without knowing which identity
+// posted it. Producers: github.ts (round, error, state), github-suggestions.ts
+// (finding), explain.ts (explain). Only the body's final non-empty line
+// counts, and only on a post GitHub types as a bot, so a human who quotes,
+// pastes or fences a marker keeps their comment whatever token the runner
+// uses. A deployment that posts with a human's PAT therefore filters nothing.
+const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
+  "<!-- needlefish-round -->",
+  "<!-- needlefish-error -->",
+  "<!-- needlefish-finding -->",
+  "<!-- needlefish-explain -->",
+]);
+const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";
+
+// Posts from releases before every kind carried a marker line. Another bot
+// may open a comment the same way, so these count only for this run's own
+// bot identity. Inline findings: `**P2** title` since July 2026,
+// `**P2 (category): title**` before. Review bodies before the state marker
+// opened `# Needlefish PR Review`.
+const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [
+  /^\*\*P[0-3]\b/,
+  /^## 🔍 Needlefish explain\n/,
+  /^# Needlefish PR Review\n/,
+];
+
+export interface PostAuthorship {
+  // GitHub asserts the poster is a bot: REST `user.type === "Bot"`, or, in
+  // `gh pr view` output (login only, no type), the fixed platform login the
+  // Actions bot renders as. No human account can hold either. Nothing is
+  // dropped without it.
+  readonly bot: boolean;
+  // The poster is the identity this run posts as (github.ts
+  // isTrustedStateAuthor). Local mode never asserts it.
+  readonly own: boolean;
+}
+
+// What `gh pr view --json comments,reviews` reports as author.login for the
+// github-actions[bot] REST identity (GraphQL Bot actor login).
+const GH_ACTIONS_LOGIN = "github-actions";
+
+export function isNeedlefishPost(body: string, author: PostAuthorship): boolean {
+  if (!author.bot) return false;
+  const lines = body.split("\n").map((line) => line.trimEnd()).filter(Boolean);
+  const last = lines[lines.length - 1] ?? "";
+  if (OWN_POST_MARKERS.has(last)) return true;
+  if (last.startsWith(OWN_STATE_MARKER_PREFIX) && last.endsWith("-->")) return true;
+  return author.own && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
+}
+
+type OwnAuthor = (item: JsonRecord) => boolean;
+const NEVER_OWN: OwnAuthor = () => false;
+
+function authorship(item: JsonRecord, ownAuthor: OwnAuthor): PostAuthorship {
+  const restType = isRecord(item.user) ? asString(item.user.type) : "";
+  const ghLogin = isRecord(item.author) ? asString(item.author.login) : "";
+  return { bot: restType === "Bot" || ghLogin === GH_ACTIONS_LOGIN, own: ownAuthor(item) };
+}
+
+function bodyList(value: unknown, ownAuthor: OwnAuthor = NEVER_OWN): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => (isRecord(item) ? asString(item.body) : asString(item)))
-    .filter(Boolean);
+  const bodies: string[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      const body = asString(item);
+      if (body) bodies.push(body);
+      continue;
+    }
+    const body = asString(item.body);
+    if (!body || isNeedlefishPost(body, authorship(item, ownAuthor))) continue;
+    bodies.push(body);
+  }
+  return bodies;
 }
 
 export function normalizeMap(raw: unknown): MapResult {
@@ -247,6 +315,8 @@ export function normalizePrMeta(raw: unknown, fallbackNumber?: number): PrMeta {
   };
 }
 
-export function normalizeBodyList(raw: unknown): string[] {
-  return bodyList(raw);
+// ownAuthor answers whether an item was posted by the identity Needlefish
+// posts as; it matters only for posts older than the marker line.
+export function normalizeBodyList(raw: unknown, ownAuthor?: OwnAuthor): string[] {
+  return bodyList(raw, ownAuthor);
 }

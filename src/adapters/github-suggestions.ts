@@ -48,6 +48,8 @@ function formatCommentBody(finding: Finding, replacementLines: readonly string[]
   ];
   if (finding.validation) lines.push("", `**Validate:** ${finding.validation}`);
   if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
+  // Recognized by normalize.ts isNeedlefishPost when the comment is read back.
+  lines.push("", "<!-- needlefish-finding -->");
   return lines.join("\n");
 }
 

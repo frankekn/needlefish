@@ -29,7 +29,7 @@ test("formatSuggestionComment emits exact suggestion block for valid single-line
 
   assert.equal(formatted.line, 1);
   assert.equal(formatted.startLine, undefined);
-  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```");
+  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```\n\n<!-- needlefish-finding -->");
 });
 
 test("formatSuggestionComment preserves multiline replacement anchor data", () => {
@@ -46,7 +46,7 @@ test("formatSuggestionComment preserves multiline replacement anchor data", () =
 
   assert.equal(formatted.line, 3);
   assert.equal(formatted.startLine, 2);
-  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\nagain\n```");
+  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\nagain\n```\n\n<!-- needlefish-finding -->");
 });
 
 test("formatSuggestionComment omits out-of-range replacement suggestions", () => {
@@ -63,7 +63,7 @@ test("formatSuggestionComment omits out-of-range replacement suggestions", () =>
 
   assert.equal(formatted.line, 1);
   assert.equal(formatted.startLine, undefined);
-  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test");
+  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
 });
 
 test("formatSuggestionComment omits replacement suggestions containing three-plus backticks", () => {
@@ -78,5 +78,5 @@ test("formatSuggestionComment omits replacement suggestions containing three-plu
 
   assert.equal(formatted.line, 1);
   assert.equal(formatted.startLine, undefined);
-  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test");
+  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
 });

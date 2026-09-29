@@ -251,6 +251,118 @@ test("local --pr records the PR base tip as prBaseSha, distinct from the merge b
   assert.equal(serialized.baseSha, mergeBase);
 });
 
+test("local pr prompts keep human PR discussion and drop Needlefish's own review text", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-pr-discussion-test-"));
+  const repo = initRepo(tmp);
+  const fakeBin = path.join(tmp, "bin");
+  const cacheDir = path.join(tmp, "cache");
+  const promptLog = path.join(tmp, "prompts.txt");
+  const previous = {
+    path: process.env.PATH,
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+  };
+  t.after(() => {
+    if (previous.path === undefined) delete process.env.PATH;
+    else process.env.PATH = previous.path;
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  const base = headSha(repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  commitAll(repo, "feature");
+  const head = headSha(repo);
+
+  // Shapes as `gh pr view --json comments,reviews` returns them: gh renders
+  // the Actions identity as the plain login "github-actions".
+  const roundComment =
+    "**Needlefish re-review** @ 1a2b3c4 — ✅ 1 resolved · ❌ 0 still open · 🆕 0 new → LGTM\n<!-- needlefish-round -->";
+  const prView = {
+    number: 7,
+    title: "PR",
+    body: null,
+    comments: [
+      { author: { login: "github-actions" }, body: roundComment },
+      {
+        author: { login: "github-actions" },
+        body: "⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n```\nspawn codex ETIMEDOUT\n```\n\nRe-trigger: push a new commit or re-run with --recheck.\n<!-- needlefish-error -->",
+      },
+      {
+        author: { login: "frankekn" },
+        body: `${roundComment.split("\n").map((line) => `> ${line}`).join("\n")}\n\nThe resolved one was intentional, see the design note.`,
+      },
+    ],
+    reviews: [
+      {
+        author: { login: "github-actions" },
+        state: "COMMENTED",
+        body: 'LGTM ✅ — Pruned the single candidate finding.\n\nCoverage: full diff reviewed in one pass (1 file)\n\n## Findings\n\nNo actionable findings.\n\n<!-- needlefish-state: {"v":1,"headSha":"1a2b3c4d","findings":[]} -->\n',
+      },
+      { author: { login: "github-actions" }, state: "COMMENTED", body: "" },
+      { author: { login: "frankekn" }, state: "APPROVED", body: "LGTM from me, one nit inline." },
+      {
+        author: { login: "chatgpt-codex-connector" },
+        state: "COMMENTED",
+        body: "### 💡 Codex Review\n\nHere are some automated review suggestions for this pull request.",
+      },
+    ],
+    statusCheckRollup: [],
+    baseRefOid: base,
+    headRefOid: head,
+    baseRefName: "main",
+    headRefName: "feature",
+  };
+  mkdirSync(fakeBin);
+  writeFileSync(
+    path.join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'pr' && process.argv[3] === 'view') {",
+      `  process.stdout.write(${JSON.stringify(JSON.stringify(prView))});`,
+      "  process.exit(0);",
+      "}",
+      "process.stderr.write('unexpected gh call');",
+      "process.exit(1);",
+    ].join("\n")
+  );
+  writeFileSync(
+    path.join(fakeBin, "claude"),
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+    ].join("\n")
+  );
+  chmodSync(path.join(fakeBin, "gh"), 0o755);
+  chmodSync(path.join(fakeBin, "claude"), 0o755);
+  process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
+  process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
+  process.env.NEEDLEFISH_RUNNER = "claude";
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+  await runLocalPr(repo, 7, { cacheDir });
+  const prompts = readFileSync(promptLog, "utf8");
+
+  assert.ok(prompts.includes("The resolved one was intentional"), "human comment reaches the model");
+  assert.ok(prompts.includes("> **Needlefish re-review**"), "the human's quote stays with the human's comment");
+  assert.ok(prompts.includes("LGTM from me, one nit inline."), "human review body reaches the model");
+  assert.ok(prompts.includes("Codex Review"), "another reviewer's text is not Needlefish's");
+  assert.equal(prompts.includes('"**Needlefish re-review**'), false, "own round comment dropped");
+  assert.equal(prompts.includes("FAILED TO RUN"), false, "own infra-failure comment dropped");
+  assert.equal(prompts.includes("needlefish-state"), false, "own review body dropped");
+  assert.equal(prompts.includes("Pruned the single candidate finding"), false, "own review body dropped");
+});
+
 test("terminalProgress writes stage lines only to a TTY without --json", () => {
   const writes: string[] = [];
   const sink = (isTTY: boolean | undefined) => ({

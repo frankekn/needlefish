@@ -7,6 +7,7 @@ import {
 } from "../shared/outbound-screen.js";
 import { ghText } from "../shared/repo.js";
 import type { RunnerOptions } from "../shared/runner.js";
+import { findPreviousReview } from "./github.js";
 import { prDiffBundle } from "./local.js";
 
 // The explanation is model text posted publicly and outside ghPost, so it
@@ -35,11 +36,16 @@ export async function runGithubExplain(
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
   const repoPath = path.resolve(cwd);
   const { bundle } = prDiffBundle(repoPath, prNumber, opts);
+  // Same trusted resolver as re-review: only a state marker written by the
+  // identity this run posts as names the findings.
+  const latestReview = findPreviousReview(repo, prNumber)?.state ?? null;
   const explanation = screenExplanation(
-    await explainFinding(bundle, findingKey, opts),
+    await explainFinding(bundle, findingKey, opts, latestReview),
     process.env
   );
-  const body = `## 🔍 Needlefish explain\n\n${explanation}\n\n<sub>Explanation only — the review verdict is unchanged.</sub>`;
+  // The trailing marker is recognized by normalize.ts isNeedlefishPost when
+  // the comment is read back.
+  const body = `## 🔍 Needlefish explain\n\n${explanation}\n\n<sub>Explanation only — the review verdict is unchanged.</sub>\n<!-- needlefish-explain -->`;
   ghText(
     ["api", "-X", "POST", `repos/${repo}/issues/${prNumber}/comments`, "--input", "-"],
     repoPath,
