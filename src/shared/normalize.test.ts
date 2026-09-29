@@ -190,11 +190,13 @@ test("isNeedlefishPost recognizes every kind of Needlefish post by its final mar
     OWN_INLINE_FINDING_MARKED,
     OWN_EXPLAIN_MARKED,
   ]) {
-    for (const author of [BOT, OWN_BOT, OWN_HUMAN]) {
+    for (const author of [BOT, OWN_BOT]) {
       assert.equal(isNeedlefishPost(body, author), true, body.slice(0, 40));
     }
     assert.equal(isNeedlefishPost(body.trim(), BOT), true, body.slice(0, 40));
-    assert.equal(isNeedlefishPost(body, HUMAN), false, "no authorship signal keeps the body");
+    for (const author of [HUMAN, OWN_HUMAN]) {
+      assert.equal(isNeedlefishPost(body, author), false, "no bot identity keeps the body");
+    }
   }
 });
 
@@ -236,17 +238,9 @@ test("isNeedlefishPost never drops a human comment", () => {
   for (const body of humanBodies) {
     assert.equal(isNeedlefishPost(body, HUMAN), false, body.slice(0, 40));
   }
-  // Under the runner's PAT identity only a body whose final line is a raw
-  // marker counts as Needlefish's; everything else a maintainer writes stays.
-  for (const body of [
-    HUMAN_QUOTE_REPLY,
-    HUMAN_THREAD_REPLY,
-    HUMAN_SEVERITY_STYLE,
-    HUMAN_MENTIONS_MARKER,
-    HUMAN_PASTED_MARKER_MID,
-    HUMAN_FENCED_MARKER,
-    HUMAN_FENCED_STATE,
-  ]) {
+  // A maintainer whose PAT the runner posts with is still a human-typed
+  // user: nothing they write is dropped, a pasted marker as last line included.
+  for (const body of [...humanBodies, OWN_ROUND_COMMENT, OWN_REVIEW_BODY]) {
     assert.equal(isNeedlefishPost(body, OWN_HUMAN), false, body.slice(0, 40));
   }
   // A bot-typed post with a marker only mid-body is not one of ours either.

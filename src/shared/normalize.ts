@@ -46,8 +46,9 @@ function asString(value: unknown): string {
 // own text is recognized on the way back in without knowing which identity
 // posted it. Producers: github.ts (round, error, state), github-suggestions.ts
 // (finding), explain.ts (explain). Only the body's final non-empty line
-// counts, and only with an authorship signal a human cannot produce, so a
-// human who quotes, pastes or fences a marker keeps their comment.
+// counts, and only on a post GitHub types as a bot, so a human who quotes,
+// pastes or fences a marker keeps their comment whatever token the runner
+// uses. A deployment that posts with a human's PAT therefore filters nothing.
 const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
   "<!-- needlefish-round -->",
   "<!-- needlefish-error -->",
@@ -56,12 +57,11 @@ const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
 ]);
 const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";
 
-// Inline findings and explain comments from releases before they carried a
-// marker line. A human can start a comment the same way, so these count only
-// for a post GitHub types as a bot AND attributes to the identity this run
-// posts as; a maintainer sharing a PAT with the runner is not a bot.
-// Inline findings: `**P2** title` since July 2026, `**P2 (category): title**`
-// before. Review bodies before the state marker opened `# Needlefish PR Review`.
+// Posts from releases before every kind carried a marker line. Another bot
+// may open a comment the same way, so these count only for this run's own
+// bot identity. Inline findings: `**P2** title` since July 2026,
+// `**P2 (category): title**` before. Review bodies before the state marker
+// opened `# Needlefish PR Review`.
 const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [
   /^\*\*P[0-3]\b/,
   /^## 🔍 Needlefish explain\n/,
@@ -71,7 +71,8 @@ const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [
 export interface PostAuthorship {
   // GitHub asserts the poster is a bot: REST `user.type === "Bot"`, or, in
   // `gh pr view` output (login only, no type), the fixed platform login the
-  // Actions bot renders as. No human account can hold either.
+  // Actions bot renders as. No human account can hold either. Nothing is
+  // dropped without it.
   readonly bot: boolean;
   // The poster is the identity this run posts as (github.ts
   // isTrustedStateAuthor). Local mode never asserts it.
@@ -83,12 +84,12 @@ export interface PostAuthorship {
 const GH_ACTIONS_LOGIN = "github-actions";
 
 export function isNeedlefishPost(body: string, author: PostAuthorship): boolean {
-  if (!author.bot && !author.own) return false;
+  if (!author.bot) return false;
   const lines = body.split("\n").map((line) => line.trimEnd()).filter(Boolean);
   const last = lines[lines.length - 1] ?? "";
   if (OWN_POST_MARKERS.has(last)) return true;
   if (last.startsWith(OWN_STATE_MARKER_PREFIX) && last.endsWith("-->")) return true;
-  return author.bot && author.own && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
+  return author.own && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
 }
 
 type OwnAuthor = (item: JsonRecord) => boolean;
