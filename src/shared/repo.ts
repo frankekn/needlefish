@@ -3,6 +3,7 @@ import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
 import { runText, type RunOptions } from "./process.js";
+import { activeTermination } from "./temp-lifecycle.js";
 import type { Bundle, ChangedFile, PrMeta, UntrackedSkippedFile } from "./schema.js";
 
 // Exported so --dry-run can report whether a real AGENTS.md was collected
@@ -19,7 +20,15 @@ export function git(
 }
 
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {
-  return runText("gh", args, { cwd, input });
+  const termination = activeTermination();
+  // A termination finalizer posts through here and must finish inside the
+  // grace even when gh hangs. SIGKILL, because spawnSync keeps waiting for a
+  // child that survives its kill signal.
+  const bound =
+    termination === null
+      ? {}
+      : { timeoutMs: Math.max(1, termination.deadlineMs - Date.now()), killSignal: "SIGKILL" as const };
+  return runText("gh", args, { cwd, input, ...bound });
 }
 
 // Pathname output is NUL-delimited and never trimmed: newline-delimited

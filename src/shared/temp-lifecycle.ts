@@ -54,15 +54,27 @@ const activeRunnerProcessGroups = new Map<number, RunnerProcessGroup>();
 const startupSweeps = new Map<string, Promise<void>>();
 const processOwnerPromises = new Map<string, Promise<ProcessOwner>>();
 let coordinatorInstalled = false;
-let terminationSignal: "SIGINT" | "SIGTERM" | null = null;
+let termination: Termination | null = null;
 let forceTermination = false;
 const terminationWaiters = new Set<() => void>();
+const terminationFinalizers = new Set<TerminationFinalizer>();
 let lockSequence = 0;
+
+export type TerminationSignal = "SIGINT" | "SIGTERM";
+
+export interface Termination {
+  readonly signal: TerminationSignal;
+  // One grace covers the finalizers and the runner shutdown together, so a
+  // caller's forced-kill window only has to exceed NEEDLEFISH_TERMINATION_GRACE_MS.
+  readonly deadlineMs: number;
+}
+
+type TerminationFinalizer = (signal: TerminationSignal) => void;
 
 export class RunnerTerminatingError extends Error {
   readonly name = "RunnerTerminatingError";
 
-  constructor(signal: "SIGINT" | "SIGTERM") {
+  constructor(signal: TerminationSignal) {
     super(`cannot schedule runner work while terminating from ${signal}`);
   }
 }
@@ -76,6 +88,19 @@ export function installTerminationCoordinator(): void {
   coordinatorInstalled = true;
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
+}
+
+export function activeTermination(): Termination | null {
+  return termination;
+}
+
+// A finalizer runs once, synchronously, when the first SIGINT/SIGTERM arrives,
+// before the runner grace wait; the forced second signal skips it. Detaching
+// returns false when the finalizer already ran.
+export function registerTerminationFinalizer(finalize: TerminationFinalizer): () => boolean {
+  installTerminationCoordinator();
+  terminationFinalizers.add(finalize);
+  return () => terminationFinalizers.delete(finalize);
 }
 
 export async function initializeTempLifecycle(): Promise<void> {
@@ -126,7 +151,7 @@ export async function disposeManagedTempDirectory(directory: string): Promise<vo
   if (!activeTempDirectories.has(directory)) {
     throw new Error(`temp directory is not registered: ${directory}`);
   }
-  if (terminationSignal !== null) return;
+  if (termination !== null) return;
   await rm(directory, { recursive: true, force: true });
   activeTempDirectories.delete(directory);
 }
@@ -273,21 +298,34 @@ function onSigterm(): void {
   coordinateTermination("SIGTERM");
 }
 
-function coordinateTermination(signal: "SIGINT" | "SIGTERM"): void {
-  if (terminationSignal !== null) {
+function coordinateTermination(signal: TerminationSignal): void {
+  if (termination !== null) {
     forceTermination = true;
     notifyTerminationWaiters();
-    if (isLinux()) terminateImmediately(terminationSignal);
-    signalRegisteredRunners("kill", terminationSignal);
+    if (isLinux()) terminateImmediately(termination.signal);
+    signalRegisteredRunners("kill", termination.signal);
     return;
   }
-  terminationSignal = signal;
+  termination = { signal, deadlineMs: Date.now() + terminationGraceMs() };
   signalRegisteredRunners("terminate", signal);
+  runTerminationFinalizers(signal);
   if (activeRunnerProcessGroups.size === 0) {
     terminateImmediately(signal);
     return;
   }
-  void completeTermination(signal);
+  void completeTermination(termination);
+}
+
+function runTerminationFinalizers(signal: TerminationSignal): void {
+  for (const finalize of [...terminationFinalizers]) {
+    terminationFinalizers.delete(finalize);
+    try {
+      finalize(signal);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`needlefish: termination finalizer failed: ${message}\n`);
+    }
+  }
 }
 
 function notifyTerminationWaiters(): void {
@@ -317,7 +355,7 @@ async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
   return true;
 }
 
-function signalRegisteredRunners(method: "terminate" | "kill", signal: "SIGINT" | "SIGTERM"): void {
+function signalRegisteredRunners(method: "terminate" | "kill", signal: TerminationSignal): void {
   for (const [pid, group] of [...activeRunnerProcessGroups.entries()]) {
     if (activeRunnerProcessGroups.get(pid) !== group) continue;
     try {
@@ -337,8 +375,8 @@ function isGoneProcessError(error: unknown): boolean {
   );
 }
 
-async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never> {
-  const exitedDuringGrace = await waitForRegisteredRunners(terminationGraceMs());
+async function completeTermination({ signal, deadlineMs }: Termination): Promise<never> {
+  const exitedDuringGrace = await waitForRegisteredRunners(Math.max(0, deadlineMs - Date.now()));
   if (!exitedDuringGrace) signalRegisteredRunners("kill", signal);
 
   if (isLinux()) process.exit(signal === "SIGINT" ? 130 : 143);
@@ -358,7 +396,7 @@ async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never>
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
-function terminateImmediately(signal: "SIGINT" | "SIGTERM"): never {
+function terminateImmediately(signal: TerminationSignal): never {
   signalRegisteredRunners("kill", signal);
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
@@ -382,8 +420,8 @@ function findRegisteredTempDirectory(repoPath: string): string | null {
 }
 
 export function assertRunnerSchedulingAllowed(): void {
-  if (terminationSignal !== null) {
-    throw new RunnerTerminatingError(terminationSignal);
+  if (termination !== null) {
+    throw new RunnerTerminatingError(termination.signal);
   }
 }
 

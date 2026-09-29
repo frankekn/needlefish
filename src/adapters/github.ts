@@ -11,6 +11,10 @@ import { normalizeBodyList } from "../shared/normalize.js";
 import { runText } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
 import {
+	registerTerminationFinalizer,
+	type TerminationSignal,
+} from "../shared/temp-lifecycle.js";
+import {
 	credentialValuesFromEnv,
 	screenPayload,
 	screenText,
@@ -1091,6 +1095,53 @@ function postReviewSkipReason(
 	return null;
 }
 
+// A job timeout or watchdog terminates the process while the owned check is
+// in_progress, and a consumer workflow has nothing else that completes it.
+// Runs inside the termination grace; ghText bounds each call by it. Same
+// stale-head rule as the error path: a moved head or closed PR gets a neutral
+// superseded completion and nothing on the timeline. A current head gets a
+// failure that names the termination, not a code defect, and no timeline
+// comment either, since nothing was reviewed.
+function completeTerminatedCheck(
+	repo: string,
+	prNumber: number,
+	headSha: string,
+	checkId: number,
+	signal: TerminationSignal,
+): void {
+	let skipReason: SkipReason | null = null;
+	try {
+		skipReason = postReviewSkipReason(repo, prNumber, headSha);
+	} catch (probeErr) {
+		const pm = probeErr instanceof Error ? probeErr.message : String(probeErr);
+		process.stderr.write(
+			`needlefish: could not re-read PR state during termination; completing the check anyway: ${pm}\n`,
+		);
+	}
+	if (skipReason !== null) {
+		emitSkip(skipReason, prNumber, headSha);
+		postCheck(
+			repo,
+			headSha,
+			null,
+			"neutral",
+			"Needlefish: superseded",
+			`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
+			checkId,
+		);
+		return;
+	}
+	postCheck(
+		repo,
+		headSha,
+		null,
+		"failure",
+		"Needlefish: review terminated",
+		`Needlefish received ${signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
+		checkId,
+	);
+}
+
 export async function runGithub(
 	cwd: string,
 	prNumber: number,
@@ -1194,6 +1245,14 @@ export async function runGithub(
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);
+	// The owned check completes exactly once. Detaching after the verdict
+	// or error completion keeps a later signal from overwriting it.
+	const detachFinalizer =
+		pendingCheckId === null
+			? () => true
+			: registerTerminationFinalizer((signal) =>
+					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, signal),
+				);
 
 	try {
 		// Scope and base-tip fields are attached after review(): anything on
@@ -1335,6 +1394,9 @@ export async function runGithub(
 			process.stdout.write(stdoutSummary(summary));
 		}
 	} catch (err) {
+		// A signal mid-review already completed the check through the
+		// finalizer, and the coordinator exits the process; post nothing.
+		if (!detachFinalizer()) return;
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which
@@ -1395,5 +1457,7 @@ export async function runGithub(
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
+	} finally {
+		detachFinalizer();
 	}
 }

@@ -424,9 +424,11 @@ jobs:
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Crashed runs would
-  # otherwise leave a head with no verdict at all. Bounded: at most two
-  # infra-failed checks on a head are tolerated before the finalizer gives up
-  # loudly. The cap counts ALL check-runs on the head (filter=all); a
+  # otherwise leave a head with no verdict at all. Infra errors are the checks
+  # the binary completes without a verdict: "review failed" and, when a job
+  # timeout or cancellation interrupted it, "review terminated". Bounded: at
+  # most two infra-failed checks on a head are tolerated before the finalizer
+  # gives up loudly. The cap counts ALL check-runs on the head (filter=all); a
   # usage-limited runner does not recover in minutes, and every re-dispatch
   # spends a full model call before failing again.
   reconcile:
@@ -481,7 +483,7 @@ jobs:
           # every review check is named "Needlefish", so the retry cap below would
           # otherwise never see more than one failure and could never trip.
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100&filter=all"
-          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
+          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
             exit 0
@@ -514,7 +516,7 @@ jobs:
             echo "a $workflow_file run for PR #$PR_NUM is still active or queued; letting it finish"
             exit 0
           fi
-          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
+          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0

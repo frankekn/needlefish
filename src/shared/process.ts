@@ -4,6 +4,8 @@ export interface RunOptions {
   readonly cwd?: string;
   readonly input?: string;
   readonly timeoutMs?: number;
+  /** Signal sent at `timeoutMs`; spawnSync keeps waiting for a child that survives it. */
+  readonly killSignal?: NodeJS.Signals;
   /** Keep stdout as-is. `git diff` needs this so a final blank context line survives. */
   readonly preserveOutput?: boolean;
 }
@@ -15,6 +17,7 @@ export function runText(command: string, args: readonly string[], opts: RunOptio
     input: opts.input,
     maxBuffer: 1024 * 1024 * 64,
     timeout: opts.timeoutMs,
+    killSignal: opts.killSignal,
   });
   if (res.error) throw res.error;
   if (res.status !== 0) {
