@@ -1171,13 +1171,15 @@ export async function runGithub(
 	const reviewsUrl = stringField(pr, "review_comments_url");
 	const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
 	const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
+	const selfLogin = authenticatedLogin();
+	const ownAuthor = (item: JsonRecord) => isTrustedStateAuthor(item, selfLogin);
 
 	const prMeta = {
 		number: prNumber,
 		title: stringField(pr, "title"),
 		body: typeof pr.body === "string" ? pr.body : null,
-		comments: normalizeBodyList(comments),
-		reviews: normalizeBodyList(reviews),
+		comments: normalizeBodyList(comments, ownAuthor),
+		reviews: normalizeBodyList(reviews, ownAuthor),
 		checks: [],
 	};
 

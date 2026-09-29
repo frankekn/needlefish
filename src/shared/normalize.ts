@@ -42,11 +42,50 @@ function asString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function bodyList(value: unknown): string[] {
+// Every post Needlefish writes to a PR ends with one of these lines, so its
+// own text is recognized on the way back in without knowing which identity
+// posted it. Producers: github.ts (round, error, state), github-suggestions.ts
+// (finding), explain.ts (explain). Matched as a whole line at column 0:
+// GitHub's quote reply prefixes every quoted line with "> ", so a human who
+// quotes a Needlefish post keeps their comment.
+const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
+  "<!-- needlefish-round -->",
+  "<!-- needlefish-error -->",
+  "<!-- needlefish-finding -->",
+  "<!-- needlefish-explain -->",
+]);
+const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";
+
+// Inline findings and explain comments from releases before they carried a
+// marker line. A human can start a comment the same way, so these count only
+// when the poster is the identity Needlefish posts as.
+const UNMARKED_OWN_POST_HEADERS: readonly RegExp[] = [/^\*\*P[0-3]\*\* /, /^## 🔍 Needlefish explain\n/];
+
+export function isNeedlefishPost(body: string, ownAuthor: boolean): boolean {
+  const hasMarkerLine = body.split("\n").some((raw) => {
+    const line = raw.trimEnd();
+    return (
+      OWN_POST_MARKERS.has(line) ||
+      (line.startsWith(OWN_STATE_MARKER_PREFIX) && line.endsWith("-->"))
+    );
+  });
+  if (hasMarkerLine) return true;
+  return ownAuthor && UNMARKED_OWN_POST_HEADERS.some((header) => header.test(body));
+}
+
+type OwnAuthor = (item: JsonRecord) => boolean;
+const NEVER_OWN: OwnAuthor = () => false;
+
+function bodyList(value: unknown, ownAuthor: OwnAuthor = NEVER_OWN): string[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => (isRecord(item) ? asString(item.body) : asString(item)))
-    .filter(Boolean);
+  const bodies: string[] = [];
+  for (const item of value) {
+    const body = isRecord(item) ? asString(item.body) : asString(item);
+    if (!body) continue;
+    if (isNeedlefishPost(body, isRecord(item) && ownAuthor(item))) continue;
+    bodies.push(body);
+  }
+  return bodies;
 }
 
 export function normalizeMap(raw: unknown): MapResult {
@@ -247,6 +286,8 @@ export function normalizePrMeta(raw: unknown, fallbackNumber?: number): PrMeta {
   };
 }
 
-export function normalizeBodyList(raw: unknown): string[] {
-  return bodyList(raw);
+// ownAuthor answers whether an item was posted by the identity Needlefish
+// posts as; it matters only for posts older than the marker line.
+export function normalizeBodyList(raw: unknown, ownAuthor?: OwnAuthor): string[] {
+  return bodyList(raw, ownAuthor);
 }

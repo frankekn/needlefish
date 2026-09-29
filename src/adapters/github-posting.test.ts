@@ -41,6 +41,7 @@ type Fixture = {
 	readonly reviewOutput: string;
 	readonly reviewsState: string;
 	readonly issueCommentsState: string;
+	readonly reviewCommentsState: string;
 	readonly runnerLog: string;
 	readonly promptLog: string;
 	readonly headSha: string;
@@ -177,6 +178,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const postLog = path.join(tmp, "posts.jsonl");
 	const reviewsState = path.join(tmp, "reviews-state.json");
 	const issueCommentsState = path.join(tmp, "issue-comments-state.json");
+	const reviewCommentsState = path.join(tmp, "review-comments-state.json");
 	const checksStatePath = path.join(tmp, "checks-state.json");
 	const runnerLog = path.join(tmp, "runner.log");
 	const promptLog = path.join(tmp, "prompts.log");
@@ -319,8 +321,15 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  }",
 			"  if (apiPath === reviewsEndpoint && method === 'POST') {",
 			"    const parsed = JSON.parse(payload);",
-			"    reviews.push({ id: reviews.length + 1, body: parsed.body || '', user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
+			"    const reviewId = reviews.length + 1;",
+			"    reviews.push({ id: reviewId, body: parsed.body || '', user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
 			"    fs.writeFileSync(reviewsPath, JSON.stringify(reviews));",
+			`    const reviewCommentsPath = ${JSON.stringify(reviewCommentsState)};`,
+			"    const reviewComments = fs.existsSync(reviewCommentsPath) ? JSON.parse(fs.readFileSync(reviewCommentsPath, 'utf8')) : [];",
+			"    for (const c of parsed.comments || []) {",
+			"      reviewComments.push({ id: reviewComments.length + 1, pull_request_review_id: reviewId, in_reply_to_id: null, path: c.path, body: c.body, user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
+			"    }",
+			"    fs.writeFileSync(reviewCommentsPath, JSON.stringify(reviewComments));",
 			"  }",
 			"  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT') {",
 			"    const id = Number(apiPath.split('/').pop());",
@@ -386,7 +395,11 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  process.stdout.write(JSON.stringify(pages));",
 			"  process.exit(0);",
 			"}",
-			"if (args[1] === 'https://example.invalid/comments' || args[1] === 'https://example.invalid/reviews') { process.stdout.write('[]'); process.exit(0); }",
+			// comments_url and review_comments_url serve what earlier rounds and
+			// seeded humans posted, as the live API does; their bodies are what
+			// reaches the model as prMeta.
+			`if (args[1] === 'https://example.invalid/comments') { const p = ${JSON.stringify(issueCommentsState)}; process.stdout.write(fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '[]'); process.exit(0); }`,
+			`if (args[1] === 'https://example.invalid/reviews') { const p = ${JSON.stringify(reviewCommentsState)}; process.stdout.write(fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '[]'); process.exit(0); }`,
 			// Paginated GET must come with --slurp (page-wrapped array of arrays);
 			// the stub emulates the slurped shape to pin the flat(1) handling.
 			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
@@ -446,6 +459,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		reviewOutput: reviewOutputFile,
 		reviewsState,
 		issueCommentsState,
+		reviewCommentsState,
 		runnerLog,
 		promptLog,
 		headSha: targetHeadSha,
@@ -2041,6 +2055,90 @@ test("runGithub posts a re-review round comment with counts on the second round"
 	assert.match(
 		String(checkPayload.output?.title ?? ""),
 		/^Needlefish: changes_requested — persisting/,
+	);
+});
+
+test("re-review prompts keep human PR discussion and drop Needlefish's own posts", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 46,
+		rawReview: defaultRawReview(),
+	});
+
+	// Round 1 posts the review (inline **P2** bug comment); round 2 posts a
+	// round comment; round 3 fails and posts the infra-failure comment.
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 });
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
+	writeFileSync(fixture.reviewOutput, "definitely not json");
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
+	writeFileSync(fixture.reviewOutput, defaultRawReview());
+
+	const issueComments = JSON.parse(
+		readFileSync(fixture.issueCommentsState, "utf8"),
+	) as Record<string, unknown>[];
+	const roundComment = issueComments.find((c) =>
+		String(c.body).includes("<!-- needlefish-round -->"),
+	);
+	assert.ok(roundComment, "round 2 should have posted a round comment");
+	assert.ok(
+		issueComments.some((c) => String(c.body).includes("FAILED TO RUN")),
+		"round 3 should have posted the infra-failure comment",
+	);
+	// A human quote-reply carries the raw marker line prefixed with "> ".
+	const quotedRound = String(roundComment.body)
+		.split("\n")
+		.map((line) => `> ${line}`)
+		.join("\n");
+	issueComments.push({
+		id: 99,
+		body: `${quotedRound}\n\nThe resolved one was intentional, see the design note.`,
+		user: { login: "frankekn", type: "User" },
+	});
+	writeFileSync(fixture.issueCommentsState, JSON.stringify(issueComments));
+	const reviewComments = JSON.parse(
+		readFileSync(fixture.reviewCommentsState, "utf8"),
+	) as Record<string, unknown>[];
+	assert.ok(
+		reviewComments.some((c) => String(c.body).startsWith("**P2** bug")),
+		"round 1 should have posted the inline finding",
+	);
+	reviewComments.push({
+		id: 99,
+		pull_request_review_id: 1,
+		in_reply_to_id: 1,
+		path: "README.md",
+		body: "We keep this behavior on purpose; the caller validates upstream.",
+		user: { login: "frankekn", type: "User" },
+	});
+	writeFileSync(fixture.reviewCommentsState, JSON.stringify(reviewComments));
+
+	const promptsBefore = readFileSync(fixture.promptLog, "utf8").length;
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
+	const prompts = readFileSync(fixture.promptLog, "utf8").slice(promptsBefore);
+	assert.ok(prompts.length > 0, "round 4 should have prompted the runner");
+
+	assert.ok(
+		prompts.includes("The resolved one was intentional"),
+		"human issue comment must reach the model",
+	);
+	assert.ok(
+		prompts.includes("We keep this behavior on purpose"),
+		"human reply inside a Needlefish thread must reach the model",
+	);
+	assert.ok(
+		prompts.includes("> **Needlefish re-review**"),
+		"the human's quote of a round comment is the human's text",
+	);
+	assert.equal(
+		prompts.includes('"**Needlefish re-review**'),
+		false,
+		"Needlefish's own round comment must not reach the model",
+	);
+	assert.equal(prompts.includes("FAILED TO RUN"), false);
+	assert.equal(prompts.includes("<!-- needlefish-error -->"), false);
+	assert.equal(
+		prompts.includes("**P2** bug"),
+		false,
+		"Needlefish's own inline finding must not reach the model",
 	);
 });
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveVerdict } from "../core/verdict";
-import { normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
+import { isNeedlefishPost, normalizeBodyList, normalizeFinding, normalizeMap, normalizePrMeta, normalizeReview } from "./normalize";
 
 test("normalizeMap accepts a summary with no hotspots", () => {
   const map = normalizeMap({ summary: "reviewed", hotspots: [] });
@@ -143,6 +143,112 @@ test("normalizePrMeta accepts complete PR metadata", () => {
       { name: "lint", status: "PENDING", conclusion: null },
     ],
   });
+});
+
+// Bodies sampled from this repo's PRs 182, 198 and 200 via the reviews and
+// comments APIs, cut to the lines that carry the shape.
+const OWN_ROUND_COMMENT =
+  "**Needlefish re-review** @ fae252a — ✅ 1 resolved · 🔁 1 not reproduced (code unchanged) · ❌ 0 still open · 🆕 0 new → LGTM\n<!-- needlefish-round -->";
+const OWN_ERROR_COMMENT =
+  "⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n```\nspawn codex ETIMEDOUT\n```\n\nRe-trigger: push a new commit or re-run with --recheck.\n<!-- needlefish-error -->";
+const OWN_REVIEW_BODY =
+  'LGTM ✅ — Adds a `needlefish doctor` setup-diagnostic command.\n\nCoverage: 18/18 changed files deep-reviewed across 4 hotspots\n\n## Findings\n\n<sub>6 calls · total 15m 13s</sub>\n\n<!-- needlefish-state: {"v":1,"headSha":"691005cd691922be6916b3dfa33b344480f5b8a6","findings":[{"file":"src/adapters/doctor.ts","lineStart":150,"category":"validation","title":"doctor runner check passes"}]} -->\n';
+const OWN_INLINE_FINDING_UNMARKED =
+  "**P2** Doctor base check fails (exit 1) on a dirty worktree that needs no base ref\n\nbaseCheck only skips the base-ref precondition for `headExists === false`.\n\n**Fix:** Make the base check mirror the review's mode selection.\n\n**Validate:** Add a doctor.test.ts case.";
+const OWN_INLINE_FINDING_MARKED = `${OWN_INLINE_FINDING_UNMARKED}\n\n<!-- needlefish-finding -->`;
+const OWN_EXPLAIN_UNMARKED =
+  "## 🔍 Needlefish explain\n\nThe guard runs after the write.\n\n<sub>Explanation only — the review verdict is unchanged.</sub>";
+const OWN_EXPLAIN_MARKED = `${OWN_EXPLAIN_UNMARKED}\n<!-- needlefish-explain -->`;
+
+const HUMAN_QUOTE_REPLY = `${OWN_ROUND_COMMENT.split("\n")
+  .map((line) => `> ${line}`)
+  .join("\n")}\n\nThe resolved one was intentional, see the design note.`;
+const HUMAN_THREAD_REPLY = "We keep this behavior on purpose; the caller validates upstream.";
+const HUMAN_SEVERITY_STYLE = "**P2** I think this is actually a real bug, not a nit.";
+const HUMAN_MENTIONS_MARKER =
+  "The round comment ends in `<!-- needlefish-round -->` so later rounds can find it.";
+const HUMAN_LANE_NOTE =
+  "Lane qualification: eval/results/2026-09-20-codex-cpa-deepseek41-flash-high-x1.json — 87 fixtures.";
+
+test("isNeedlefishPost recognizes every kind of Needlefish post by its marker line", () => {
+  for (const body of [
+    OWN_ROUND_COMMENT,
+    OWN_ERROR_COMMENT,
+    OWN_REVIEW_BODY,
+    OWN_INLINE_FINDING_MARKED,
+    OWN_EXPLAIN_MARKED,
+  ]) {
+    assert.equal(isNeedlefishPost(body, false), true, body.slice(0, 40));
+    assert.equal(isNeedlefishPost(body.trim(), false), true, body.slice(0, 40));
+  }
+});
+
+test("isNeedlefishPost recognizes pre-marker inline findings and explain comments only from Needlefish's own identity", () => {
+  for (const body of [OWN_INLINE_FINDING_UNMARKED, OWN_EXPLAIN_UNMARKED]) {
+    assert.equal(isNeedlefishPost(body, true), true, body.slice(0, 40));
+    assert.equal(isNeedlefishPost(body, false), false, body.slice(0, 40));
+  }
+});
+
+test("isNeedlefishPost never drops a human comment", () => {
+  for (const body of [
+    HUMAN_QUOTE_REPLY,
+    HUMAN_THREAD_REPLY,
+    HUMAN_SEVERITY_STYLE,
+    HUMAN_MENTIONS_MARKER,
+    HUMAN_LANE_NOTE,
+    "LGTM from me, one nit inline.",
+    "### 💡 Codex Review\n\nHere are some automated review suggestions for this pull request.",
+  ]) {
+    assert.equal(isNeedlefishPost(body, false), false, body.slice(0, 40));
+  }
+  // The same texts under Needlefish's own identity: only a body that starts
+  // with a pre-marker Needlefish header is treated as its own.
+  assert.equal(isNeedlefishPost(HUMAN_QUOTE_REPLY, true), false);
+  assert.equal(isNeedlefishPost(HUMAN_THREAD_REPLY, true), false);
+  assert.equal(isNeedlefishPost(HUMAN_MENTIONS_MARKER, true), false);
+});
+
+test("normalizeBodyList drops Needlefish's own posts and keeps the rest in order", () => {
+  const own = { login: "github-actions[bot]", type: "Bot" };
+  const human = { login: "frankekn", type: "User" };
+  const bodies = normalizeBodyList(
+    [
+      { user: own, body: OWN_ROUND_COMMENT },
+      { user: human, body: HUMAN_QUOTE_REPLY },
+      { user: own, body: OWN_ERROR_COMMENT },
+      { user: own, body: OWN_INLINE_FINDING_UNMARKED },
+      { user: human, body: HUMAN_THREAD_REPLY },
+      { user: human, body: HUMAN_SEVERITY_STYLE },
+      { user: own, body: "" },
+      " plain string comment ",
+    ],
+    (item) => (item.user as { login: string }).login === own.login
+  );
+  assert.deepEqual(bodies, [
+    HUMAN_QUOTE_REPLY,
+    HUMAN_THREAD_REPLY,
+    HUMAN_SEVERITY_STYLE,
+    "plain string comment",
+  ]);
+});
+
+test("normalizePrMeta drops Needlefish's own review bodies and comments without an identity", () => {
+  const meta = normalizePrMeta({
+    number: 200,
+    title: "doctor",
+    comments: [
+      { author: { login: "github-actions" }, body: OWN_ROUND_COMMENT },
+      { author: { login: "frankekn" }, body: HUMAN_LANE_NOTE },
+    ],
+    reviews: [
+      { author: { login: "github-actions" }, body: OWN_REVIEW_BODY },
+      { author: { login: "github-actions" }, body: "" },
+      { author: { login: "frankekn" }, body: "LGTM from me, one nit inline." },
+    ],
+  });
+  assert.deepEqual(meta.comments, [HUMAN_LANE_NOTE]);
+  assert.deepEqual(meta.reviews, ["LGTM from me, one nit inline."]);
 });
 
 test("normalizePrMeta uses fallback number when number is missing", () => {
