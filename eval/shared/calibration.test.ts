@@ -127,6 +127,10 @@ test("buildCalibration: refuses mixed contracts, void reports, and small zoos", 
 		/fixtureSetHash differs/,
 	);
 	assert.throws(() => buildCalibration(lanes.slice(0, 4)), /at least 5/);
+	assert.throws(
+		() => buildCalibration([...lanes.slice(1), { ...lanes[1], createdAt: "2026-01-02T00:00:00.000Z" }]),
+		/duplicate lane configuration/,
+	);
 	const cheat = {
 		...lanes[0],
 		aggregates: { ...lanes[0].aggregates, cheatDetectedCount: 1 },
@@ -264,6 +268,7 @@ test("acceptance: false positives pool up to the allowance; subset and short run
 		"a full run is admitted",
 	);
 	assert.throws(() => acceptance(calibration, { ...withNegative, gateClass: "D" }, "f1"), /Class R run/);
+	assert.throws(() => acceptance(calibration, { ...withNegative, mergedFrom: ["a.json", "b.json"] }, "f1"), /merged report/);
 	assert.throws(() => acceptance(calibration, withNegative, "f-newer"), /!= current catalog f-newer/);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
 	assert.throws(() => acceptance(calibration, noCore, "f1"), /missing core fixtures easy/);

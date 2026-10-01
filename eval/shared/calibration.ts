@@ -63,7 +63,14 @@ export interface LaneScore {
 }
 
 export function laneKey(report: Report): string {
-	return `${report.runner}/${report.model ?? "default"}@${report.effort ?? "default"} ${report.createdAt}`;
+	return `${laneConfig(report)} ${report.createdAt}`;
+}
+
+// Lane identity without the timestamp: reruns of one configuration are one
+// lane, so they cannot stand in for the multi-lane zoo calibration needs.
+function laneConfig(report: Report & { readonly route?: string }): string {
+	const base = `${report.runner}/${report.model ?? "default"}@${report.effort ?? "default"}`;
+	return report.route ? `${base} via ${report.route}` : base;
 }
 
 // Same admission rule as the published results: current anti-cheat
@@ -134,9 +141,10 @@ export function buildCalibration(reports: readonly Report[]): Calibration {
 		if (report.promptHash !== first.promptHash)
 			throw new Error(`${laneKey(report)}: promptHash differs`);
 	}
+	const configs = reports.map(laneConfig);
+	if (new Set(configs).size !== configs.length)
+		throw new Error("duplicate lane configuration: reruns of one lane are not separate lanes");
 	const lanes = reports.map(laneKey);
-	if (new Set(lanes).size !== lanes.length)
-		throw new Error("duplicate lane keys");
 
 	const perLane = reports.map(fixtureRates);
 	const fixtureIds = [...perLane[0].keys()].sort();
@@ -276,8 +284,13 @@ export interface AcceptanceResult {
 export const ACCEPT_MIN_DRAWS = 3;
 export const ACCEPT_MAX_FALSE_POSITIVES = 2;
 
-// Run reports record the command line; legacy reports may not.
-export type AcceptanceReport = Report & { readonly invocation?: string };
+// Run reports record the command line; legacy reports may not. A report
+// assembled from several runs is scoring evidence only and records
+// `mergedFrom`.
+export type AcceptanceReport = Report & {
+	readonly invocation?: string;
+	readonly mergedFrom?: readonly string[];
+};
 
 // A --fixtures or holdout subset can contain every core positive and no
 // negatives, which would make the false-positive half of acceptance
@@ -287,6 +300,8 @@ function acceptanceRunError(
 	report: AcceptanceReport,
 	currentFixtureSetHash: string,
 ): string | null {
+	if (report.mergedFrom !== undefined)
+		return "merged report: acceptance needs a single run";
 	if ((report.gateClass ?? "R") !== "R")
 		return `gateClass ${report.gateClass}: acceptance needs a Class R run`;
 	if (report.fixtureSetHash !== currentFixtureSetHash)
