@@ -17,7 +17,7 @@ import type { Report } from "./shared/types";
 const USAGE = `usage:
   calibrate.ts build [--out <file>] <report.json>...
   calibrate.ts score --calibration <file> <report.json>...
-  calibrate.ts accept --calibration <file> <report.json>...
+  calibrate.ts accept --calibration <file> --lane <runner/model@effort> <report.json>...
 
 build   derives per-fixture difficulty from same-contract lanes (default out:
         eval/calibration/<fixtureSetHash>-<promptHash>.json)
@@ -29,7 +29,8 @@ accept  core acceptance: every zoo-saturated or Tier-1 positive hit on every
         (exit 2 on any failure). Needs a single Class R x3 run of the
         checked-out prompt over the current fixture catalog; refuses
         --fixtures, holdout subsets, and merged reports. Current Tier-1
-        fixtures are core even if the calibration predates them.
+        fixtures are core even if the calibration predates them. --lane is
+        the production lane the report must mirror.
 `;
 
 function readReport(file: string): Report {
@@ -113,10 +114,12 @@ async function main(argv: readonly string[]): Promise<number> {
 	const [command, ...rest] = argv;
 	let out: string | null = null;
 	let calibrationPath: string | null = null;
+	let lane: string | null = null;
 	const files: string[] = [];
 	for (let i = 0; i < rest.length; i++) {
 		if (rest[i] === "--out") out = rest[++i] ?? null;
 		else if (rest[i] === "--calibration") calibrationPath = rest[++i] ?? null;
+		else if (rest[i] === "--lane") lane = rest[++i] ?? null;
 		else files.push(rest[i]);
 	}
 	if (files.length === 0) {
@@ -139,11 +142,12 @@ async function main(argv: readonly string[]): Promise<number> {
 		process.stdout.write(`wrote ${target}\n`);
 		return 0;
 	}
-	if (command === "accept" && calibrationPath) {
+	if (command === "accept" && calibrationPath && lane) {
 		const calibration = JSON.parse(readFileSync(calibrationPath, "utf8")) as Calibration;
 		const current = {
 			fixtureSetHash: fixtureSetHash(await loadFixtures(null)),
 			promptHash: promptHash(),
+			lane,
 		};
 		const results = reports.map((report) => acceptance(calibration, report, current));
 		process.stdout.write(renderAcceptance(results));

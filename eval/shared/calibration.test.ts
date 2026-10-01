@@ -207,7 +207,8 @@ test("scoreLane: refuses a report from another fixture set", () => {
 	);
 });
 
-const CURRENT = { fixtureSetHash: "f1", promptHash: "p1" };
+const current = (model: string) => ({ fixtureSetHash: "f1", promptHash: "p1", lane: `codex/${model}@high` });
+const CURRENT = current("fp");
 
 test("acceptance: core = saturated plus Tier-1; misses carry their stage", () => {
 	const calibration = buildCalibration(zoo());
@@ -217,14 +218,14 @@ test("acceptance: core = saturated plus Tier-1; misses carry their stage", () =>
 		mid: { hits: [0, 0, 0], total: 1 },
 		hard: { hits: [0, 0, 0], total: 1 },
 		multi: { hits: [0, 0, 0], total: 2 },
-	}), CURRENT);
+	}), current("clean"));
 	assert.equal(clean.passed, true, "edge-case misses do not fail acceptance");
 	const pruned = acceptance(calibration, lane("pruned", {
 		easy: { hits: [1, 0, 1], total: 1, candidate: [1, 1, 1] },
 		mid: { hits: [1, 1, 1], total: 1 },
 		hard: { hits: [1, 1, 1], total: 1 },
 		multi: { hits: [2, 2, 2], total: 2 },
-	}), CURRENT);
+	}), current("pruned"));
 	assert.equal(pruned.passed, false);
 	assert.deepEqual(pruned.coreMisses, [{ fixtureId: "easy", draw: 1, cause: "critic" }]);
 });
@@ -272,6 +273,7 @@ test("acceptance: false positives pool up to the allowance; subset and short run
 	assert.throws(() => acceptance(calibration, { ...withNegative, gateClass: "D" }, CURRENT), /Class R run/);
 	assert.throws(() => acceptance(calibration, { ...withNegative, mergedFrom: ["a.json", "b.json"] }, CURRENT), /merged report/);
 	assert.throws(() => acceptance(calibration, withNegative, { ...CURRENT, promptHash: "p-other" }), /checked-out prompt p-other/);
+	assert.throws(() => acceptance(calibration, withNegative, current("production")), /!= production lane codex\/production@high/);
 	assert.throws(() => acceptance({ ...calibration, scorerHash: "stale" }, withNegative, CURRENT), /different scorer/);
 	const newTier1 = acceptance(calibration, {
 		...withNegative,
@@ -285,7 +287,7 @@ test("acceptance: false positives pool up to the allowance; subset and short run
 	assert.deepEqual(newTier1.coreMisses.map((miss) => miss.fixtureId), ["new-tier1"], "a Tier-1 fixture the calibration predates is still core");
 	assert.throws(() => acceptance(calibration, withNegative, { ...CURRENT, fixtureSetHash: "f-newer" }), /!= current catalog f-newer/);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
-	assert.throws(() => acceptance(calibration, noCore, CURRENT), /missing core fixtures easy/);
+	assert.throws(() => acceptance(calibration, noCore, current("no-core")), /missing core fixtures easy/);
 });
 
 test("paretoFrontier: keeps lanes no other lane beats on recall and time", () => {

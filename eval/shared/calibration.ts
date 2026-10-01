@@ -69,8 +69,13 @@ export function laneKey(report: Report): string {
 // Lane identity without the timestamp: reruns of one configuration are one
 // lane, so they cannot stand in for the multi-lane zoo calibration needs.
 function laneConfig(report: Report & { readonly route?: string }): string {
-	const base = `${report.runner}/${report.model ?? "default"}@${report.effort ?? "default"}`;
+	const base = laneIdentity(report);
 	return report.route ? `${base} via ${report.route}` : base;
+}
+
+// runner/model@effort: what a Class R gate must mirror from production.
+export function laneIdentity(report: Report): string {
+	return `${report.runner}/${report.model ?? "default"}@${report.effort ?? "default"}`;
 }
 
 // Same admission rule as the published results: current anti-cheat
@@ -299,6 +304,8 @@ export type AcceptanceReport = Report & {
 export interface CurrentContract {
 	readonly fixtureSetHash: string;
 	readonly promptHash: string;
+	// Production lane as runner/model@effort.
+	readonly lane: string;
 }
 
 function acceptanceRunError(
@@ -313,6 +320,8 @@ function acceptanceRunError(
 		return `fixtureSetHash ${report.fixtureSetHash} != current catalog ${current.fixtureSetHash}`;
 	if (report.promptHash !== current.promptHash)
 		return `promptHash ${report.promptHash} != checked-out prompt ${current.promptHash}`;
+	if (laneIdentity(report) !== current.lane)
+		return `lane ${laneIdentity(report)} != production lane ${current.lane}`;
 	if (report.draws < ACCEPT_MIN_DRAWS)
 		return `draws ${report.draws} < ${ACCEPT_MIN_DRAWS}: acceptance needs a confirm-tier run`;
 	if (report.holdout !== "include") return `holdout '${report.holdout}' is a subset run`;
