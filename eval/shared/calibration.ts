@@ -280,8 +280,17 @@ export const ACCEPT_MAX_FALSE_POSITIVES = 2;
 export type AcceptanceReport = Report & { readonly invocation?: string };
 
 // A --fixtures or holdout subset can contain every core positive and no
-// negatives, which would make the zero-FP half of acceptance vacuous.
-function subsetRunError(report: AcceptanceReport): string | null {
+// negatives, which would make the false-positive half of acceptance
+// vacuous; an older full run can miss newer holdouts. Acceptance therefore
+// needs a Class R run over exactly the current fixture catalog.
+function acceptanceRunError(
+	report: AcceptanceReport,
+	currentFixtureSetHash: string,
+): string | null {
+	if ((report.gateClass ?? "R") !== "R")
+		return `gateClass ${report.gateClass}: acceptance needs a Class R run`;
+	if (report.fixtureSetHash !== currentFixtureSetHash)
+		return `fixtureSetHash ${report.fixtureSetHash} != current catalog ${currentFixtureSetHash}`;
 	if (report.draws < ACCEPT_MIN_DRAWS)
 		return `draws ${report.draws} < ${ACCEPT_MIN_DRAWS}: acceptance needs a confirm-tier run`;
 	if (report.holdout !== "include") return `holdout '${report.holdout}' is a subset run`;
@@ -290,11 +299,15 @@ function subsetRunError(report: AcceptanceReport): string | null {
 	return null;
 }
 
-// Accepts reports from a later fixture set as long as every core fixture is
-// present, so a contract change (new holdout) does not strand the core list.
-// Subset runs are refused: acceptance needs the full negative set.
-export function acceptance(calibration: Calibration, report: AcceptanceReport): AcceptanceResult {
-	const error = reportAdmissionError(report) ?? subsetRunError(report);
+// The calibration may come from an older fixture set: the core list stays
+// valid as long as every core fixture is present in the current run.
+export function acceptance(
+	calibration: Calibration,
+	report: AcceptanceReport,
+	currentFixtureSetHash: string,
+): AcceptanceResult {
+	const error =
+		reportAdmissionError(report) ?? acceptanceRunError(report, currentFixtureSetHash);
 	if (error) throw new Error(`${laneKey(report)}: ${error}`);
 	const core = new Set(coreFixtureIds(calibration));
 	const present = new Set(report.results.map((result) => result.fixtureId));

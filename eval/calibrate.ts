@@ -10,6 +10,7 @@ import {
 	type Calibration,
 	type LaneScore,
 } from "./shared/calibration";
+import { fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 import type { Report } from "./shared/types";
 
 const USAGE = `usage:
@@ -24,8 +25,8 @@ score   offline difficulty-weighted, partial-credit, and per-stage scores;
 accept  core acceptance: every zoo-saturated or Tier-1 positive hit on every
         draw, at most 2 false positives pooled across negatives, no
         unusable negative output; misses split reviewer/critic/format
-        (exit 2 on any failure). Refuses --fixtures, holdout subset, and
-        fewer-than-3-draw runs.
+        (exit 2 on any failure). Needs a Class R x3 run over the current
+        fixture catalog; refuses --fixtures and holdout subsets.
 `;
 
 function readReport(file: string): Report {
@@ -105,7 +106,7 @@ export function renderFixtures(calibration: Calibration): string {
 	return lines.join("\n") + "\n";
 }
 
-function main(argv: readonly string[]): number {
+async function main(argv: readonly string[]): Promise<number> {
 	const [command, ...rest] = argv;
 	let out: string | null = null;
 	let calibrationPath: string | null = null;
@@ -137,7 +138,8 @@ function main(argv: readonly string[]): number {
 	}
 	if (command === "accept" && calibrationPath) {
 		const calibration = JSON.parse(readFileSync(calibrationPath, "utf8")) as Calibration;
-		const results = reports.map((report) => acceptance(calibration, report));
+		const current = fixtureSetHash(await loadFixtures(null));
+		const results = reports.map((report) => acceptance(calibration, report, current));
 		process.stdout.write(renderAcceptance(results));
 		return results.every((result) => result.passed) ? 0 : 2;
 	}
@@ -152,7 +154,7 @@ function main(argv: readonly string[]): number {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
 	try {
-		process.exit(main(process.argv.slice(2)));
+		process.exit(await main(process.argv.slice(2)));
 	} catch (error) {
 		process.stderr.write(`calibrate: ${error instanceof Error ? error.message : String(error)}\n`);
 		process.exit(1);
