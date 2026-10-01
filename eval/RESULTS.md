@@ -128,6 +128,164 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-09-30 — Critic contract-drift "affects" clause (Class R; round 1 adopted 2026-10-01)
+
+Defect: `critic.md` kept contract-drift findings only when the unmet promise
+"changes" what a caller receives. Critics read that as a base-vs-head delta and
+deleted renames that newly promise behavior over an unchanged body. Captured
+critic output on `rs-backend-spec-drift`: "No return value … differs before vs
+after … Deleted per the naming-only rule." Candidate `46d207a` aligned the
+clause with `review.md` Trigger C ("affects", substitute an excluded input
+against HEAD, byte-identical body never clears it) and sealed a new negative
+holdout, `holdout-descriptive-rename`. Criteria were declared before the run
+in `docs/plans/critic-contract-drift-affects.md`.
+
+Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high, x3, holdouts
+included. Control prompt `d95aa170f3a37cf3` (88 fixtures); candidate
+`c59d803f0d0dc476` (89 fixtures, the added holdout). Both reports have
+`cheatDetectedCount: 0` and invalid output 0.
+
+| | Control | Candidate |
+| --- | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** |
+| Tier-1 / Tier-2 / Tier-3 | 1 / 0.917 / **0.852** | 1 / **0.972** / 0.815 |
+| Critic-pruned must-find hits | 5 | **0** |
+| `rs-backend-spec-drift` / `py-backend-spec-drift` / `py-backend-flag-ignored` | 0/3, 2/3, 2/3 | **3/3, 3/3, 3/3** |
+| `holdout-spec-drift` | 3/3 | 3/3 |
+| False positives | **0/78** | 1/81 (`go-harmless-variadic` draw 2) |
+| `holdout-descriptive-rename` clean | — | 3/3 |
+| Noise per positive | 0.027 | **0.011** |
+| Mean review time | 59s | **51s** |
+
+Verdict: **fail** on criterion 5 (zero false positives on
+`go-harmless-variadic`). The P2 said the new variadic `tag` parameter is
+"ignored, silently dropping caller tags" — the new "caller-supplied argument
+the promise says is honored" wording let the critic treat an unused input as a
+promise. That is exactly the false positive the 2026-07-04 tightening removed.
+`prompts/critic.md` is reverted; the holdout stays. Tier-3 moved by one
+fixture-draw on the reviewer-limited `real-pr1-*` cases, none critic-pruned.
+
+Next candidate: keep the "affects / HEAD output / byte-identical body does not
+clear" part, drop the caller-supplied-argument clause, and restate that an
+unused parameter with no doc or name promise about output is naming-only.
+
+Reports: `eval/evidence/2026-09-30-critic-affects/{control,candidate}-full-x3.json`.
+
+**Round 2** (`6e10f32`, prompt `c44c37348480838b`, 90 fixtures incl. new
+sealed negative holdout `holdout-unused-keyword-arg`): dropped the
+caller-supplied-argument clause and said "a parameter's mere presence promises
+nothing". Same lane, x3, cheat 0, invalid 0.
+
+| | Control | Round 1 | Round 2 |
+| --- | ---: | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** | 0.902 |
+| Critic-pruned must-find hits | 5 | **0** | 4 |
+| `rs-backend-spec-drift` / `py-backend-spec-drift` / `py-backend-flag-ignored` | 0/3, 2/3, 2/3 | **3/3, 3/3, 3/3** | 3/3, 3/3, **0/3** |
+| False positives | **0/78** | 1/81 | **0/84** |
+| Noise per positive | 0.027 | **0.011** | 0.022 |
+| Mean review time | 59s | 51s | 52s |
+
+Verdict: **fail** on criteria 3 and 4. The unused-parameter sentence fixed the
+false positive and also deleted `py-backend-flag-ignored` on every draw: its
+new `limit` argument is exactly an unused input, and the only thing
+separating it from the harmless variadic is that the name `limit` promises a
+cap on the output. Reverted to `d95aa170f3a37cf3`; both holdouts stay.
+
+Finding across both rounds: one prose clause cannot separate "unused input
+whose name promises an output property" from "unused input that promises
+nothing" reliably — each wording moves the boundary to the wrong side of one
+fixture pair. Per the repo rule (structural fixes over prompt prose), the next
+candidate should change the critic's output shape instead: require the critic
+to record, for every deleted contract finding, the promised property and the
+HEAD-body output for an excluded input, and keep the finding when that output
+violates the named property.
+
+Report: `eval/evidence/2026-09-30-critic-affects/candidate2-full-x3.json`.
+
+**Round 3** (`c75d9c4`, prompt `9e9a4de009936c92`, 91 fixtures incl. new
+sealed positive holdout `holdout-clamp-rename-drift`): structural instead of
+wording. Original clause kept; the critic must record
+`CONTRACT_DROP … violates=yes|no` for every deleted contract finding, and
+`review.ts` restores a deleted contract candidate whose own record says
+`violates=yes`. Same lane, x3, cheat 0.
+
+| | Control | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** | 0.902 | 0.887 |
+| Critic-pruned must-find hits | 5 | **0** | 4 | 4 |
+| Contract-drift trio (rs / py-spec / py-flag) | 0, 2, 2 /3 | **3, 3, 3** | 3, 3, 0 | 3, 3, 2 |
+| `holdout-clamp-rename-drift` | — | — | — | 3/3 |
+| False positives | **0/78** | 1/81 | **0/84** | **0/84** |
+| Invalid output | **0** | **0** | **0** | 1 (`snapshot-ref-drift`, critic finding not in candidate bag ×3) |
+
+Verdict: **fail** on criteria 3 (`py-backend-flag-ignored` 2/3), 4 (4
+critic prunes > 2), 7 (recall 0.887 < 0.89), and the zero-invalid-output
+expectation. The restore path fired on the rename fixtures, but on the
+`py-backend-flag-ignored` miss the critic deleted the finding without any
+`CONTRACT_DROP` record, and the remaining prunes were not contract findings
+(`go-backend-slop-swallow`, `ts-data-duplicate`, `real-pr10`). Reverted to
+`d95aa170f3a37cf3`; all three new holdouts stay.
+
+Across three rounds, the rename fixtures are fixed by any of the candidates;
+the unused-`limit` case and non-contract prunes flicker per draw at about the
+control's rate. A 3/3 criterion on a single fixture cannot separate these
+candidates from noise at x3.
+
+Report: `eval/evidence/2026-09-30-critic-affects/candidate3-full-x3.json`.
+
+**Round 1 x10 confirmation** (2026-10-01, criteria declared in
+`docs/plans/critic-contract-drift-affects.md` before any draw). Control vs
+round 1 from the same commit, only `prompts/critic.md` differing; 14
+contract-adjacent fixtures × 10 draws per arm.
+
+| | Control | Round 1 |
+| --- | ---: | ---: |
+| Contract positives (5 fixtures) | 40/50 | **49/50** |
+| — critic-pruned | 10 | **0** |
+| Adjacent-negative FP (8 fixtures) | 1/80 | 2/80 |
+| `go-harmless-variadic` FP | 0/10 | 1/10 |
+| Cheat / invalid | 0 / 0 | 0 / 0 |
+
++9 hits, one-sided Fisher p = 0.0039; all four criteria hold. The x3
+`py-backend-flag-ignored` signal was noise (control 10/10 here); the real
+gap is the four rename fixtures, where control lost 10 of 40 draws, all to
+critic prunes. Round 1 goes to a full Class R gate with pooled, draw-count-aware
+criteria. Evidence: `eval/evidence/2026-10-01-critic-r1-x10/`.
+
+**Round 1 full gate** (`613dd73`, prompt `c59d803f0d0dc476`, 91 fixtures,
+x3, holdouts included). The main run stopped at 267/273 with no error; the
+report is marked `privateEnvironment`, so it cannot resume. The missing
+`real-pr4-options-not-forwarded`, `real-pr8`, and `real-pr9` draws ran in a
+separate same-prompt, same-lane report and were merged for scoring only.
+
+| Criterion | Result | |
+| --- | --- | --- |
+| 1. Tier-1 recall = 1 | 21/21 | pass |
+| 2. Contract positives ≥ 14/15 | 15/15 | pass |
+| 3. FP ≤ 2; `go-harmless-variadic` pooled ≤ 2/13 | 2/84; **3/13** | **fail** |
+| 4. Critic-pruned hits ≤ 4 | 1 (control 5) | pass |
+| 5. Recall ≥ 0.89; noise ≤ 0.05 | 0.931; 0.016 | pass |
+| 6. Cheat 0; invalid ≤ 1 | 0; 0 | pass |
+| 7. No critic miss on contract fixtures | 0 | pass |
+
+Core-39 acceptance: 0 misses, but both false positives are on
+`go-harmless-variadic`, so it also fails zero-FP acceptance.
+
+Verdict: **fail** on criterion 3. Reverted to `d95aa170f3a37cf3`. Round 1
+moves the boundary as a whole: contract drift goes from 40/50 to 49/50 at
+x10, and critic-pruned hits from 5 to 1. The unused-variadic negative now
+reports in 3 of 13 draws, against 0 of 13 for control. The pair
+`py-backend-flag-ignored` / `go-harmless-variadic` remains the deciding
+boundary. Evidence: `eval/evidence/2026-10-01-critic-r1-full/`.
+
+**Gate rule change, round 1 adopted** (2026-10-01, owner decision after the
+data, recorded as such). Class R false positives are now judged by the
+pooled count (≤ 2 per full x3 gate); a single contract-adjacent negative is
+no longer a hard veto. Under this rule the round-1 gate passes (2/84 FP), and
+`c59d803f0d0dc476` ships as the critic. Accepted cost: an occasional P2 on an
+unused parameter (`go-harmless-variadic` 3/13). The merged report cannot
+anchor `--baseline`; the next Class R full gate does.
+
 ### 2026-09-28 — What the critic buys on the production lane
 
 Eval reports now carry the pre-critic score of every draw (same scorer rules,
