@@ -296,16 +296,23 @@ export type AcceptanceReport = Report & {
 // negatives, which would make the false-positive half of acceptance
 // vacuous; an older full run can miss newer holdouts. Acceptance therefore
 // needs a Class R run over exactly the current fixture catalog.
+export interface CurrentContract {
+	readonly fixtureSetHash: string;
+	readonly promptHash: string;
+}
+
 function acceptanceRunError(
 	report: AcceptanceReport,
-	currentFixtureSetHash: string,
+	current: CurrentContract,
 ): string | null {
 	if (report.mergedFrom !== undefined)
 		return "merged report: acceptance needs a single run";
 	if ((report.gateClass ?? "R") !== "R")
 		return `gateClass ${report.gateClass}: acceptance needs a Class R run`;
-	if (report.fixtureSetHash !== currentFixtureSetHash)
-		return `fixtureSetHash ${report.fixtureSetHash} != current catalog ${currentFixtureSetHash}`;
+	if (report.fixtureSetHash !== current.fixtureSetHash)
+		return `fixtureSetHash ${report.fixtureSetHash} != current catalog ${current.fixtureSetHash}`;
+	if (report.promptHash !== current.promptHash)
+		return `promptHash ${report.promptHash} != checked-out prompt ${current.promptHash}`;
 	if (report.draws < ACCEPT_MIN_DRAWS)
 		return `draws ${report.draws} < ${ACCEPT_MIN_DRAWS}: acceptance needs a confirm-tier run`;
 	if (report.holdout !== "include") return `holdout '${report.holdout}' is a subset run`;
@@ -315,16 +322,24 @@ function acceptanceRunError(
 }
 
 // The calibration may come from an older fixture set: the core list stays
-// valid as long as every core fixture is present in the current run.
+// valid as long as every core fixture is present in the current run. Tier-1
+// fixtures the calibration has not seen are core too.
 export function acceptance(
 	calibration: Calibration,
 	report: AcceptanceReport,
-	currentFixtureSetHash: string,
+	current: CurrentContract,
 ): AcceptanceResult {
 	const error =
-		reportAdmissionError(report) ?? acceptanceRunError(report, currentFixtureSetHash);
+		reportAdmissionError(report) ?? acceptanceRunError(report, current);
 	if (error) throw new Error(`${laneKey(report)}: ${error}`);
-	const core = new Set(coreFixtureIds(calibration));
+	if (calibration.scorerHash !== scorerHash())
+		throw new Error("calibration was built under a different scorer");
+	const core = new Set([
+		...coreFixtureIds(calibration),
+		...Object.entries(report.fixtureTiers ?? {})
+			.filter(([, tier]) => tier === 1)
+			.map(([id]) => id),
+	]);
 	const present = new Set(report.results.map((result) => result.fixtureId));
 	const absent = [...core].filter((id) => !present.has(id));
 	if (absent.length)

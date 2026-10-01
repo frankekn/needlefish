@@ -11,6 +11,7 @@ import {
 	type LaneScore,
 } from "./shared/calibration";
 import { fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
+import { promptHash } from "./shared/prompt-hash";
 import type { Report } from "./shared/types";
 
 const USAGE = `usage:
@@ -25,8 +26,10 @@ score   offline difficulty-weighted, partial-credit, and per-stage scores;
 accept  core acceptance: every zoo-saturated or Tier-1 positive hit on every
         draw, at most 2 false positives pooled across negatives, no
         unusable negative output; misses split reviewer/critic/format
-        (exit 2 on any failure). Needs a Class R x3 run over the current
-        fixture catalog; refuses --fixtures and holdout subsets.
+        (exit 2 on any failure). Needs a single Class R x3 run of the
+        checked-out prompt over the current fixture catalog; refuses
+        --fixtures, holdout subsets, and merged reports. Current Tier-1
+        fixtures are core even if the calibration predates them.
 `;
 
 function readReport(file: string): Report {
@@ -138,7 +141,10 @@ async function main(argv: readonly string[]): Promise<number> {
 	}
 	if (command === "accept" && calibrationPath) {
 		const calibration = JSON.parse(readFileSync(calibrationPath, "utf8")) as Calibration;
-		const current = fixtureSetHash(await loadFixtures(null));
+		const current = {
+			fixtureSetHash: fixtureSetHash(await loadFixtures(null)),
+			promptHash: promptHash(),
+		};
 		const results = reports.map((report) => acceptance(calibration, report, current));
 		process.stdout.write(renderAcceptance(results));
 		return results.every((result) => result.passed) ? 0 : 2;

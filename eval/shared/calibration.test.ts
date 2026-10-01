@@ -207,6 +207,8 @@ test("scoreLane: refuses a report from another fixture set", () => {
 	);
 });
 
+const CURRENT = { fixtureSetHash: "f1", promptHash: "p1" };
+
 test("acceptance: core = saturated plus Tier-1; misses carry their stage", () => {
 	const calibration = buildCalibration(zoo());
 	assert.deepEqual(coreFixtureIds(calibration), ["easy"]);
@@ -215,14 +217,14 @@ test("acceptance: core = saturated plus Tier-1; misses carry their stage", () =>
 		mid: { hits: [0, 0, 0], total: 1 },
 		hard: { hits: [0, 0, 0], total: 1 },
 		multi: { hits: [0, 0, 0], total: 2 },
-	}), "f1");
+	}), CURRENT);
 	assert.equal(clean.passed, true, "edge-case misses do not fail acceptance");
 	const pruned = acceptance(calibration, lane("pruned", {
 		easy: { hits: [1, 0, 1], total: 1, candidate: [1, 1, 1] },
 		mid: { hits: [1, 1, 1], total: 1 },
 		hard: { hits: [1, 1, 1], total: 1 },
 		multi: { hits: [2, 2, 2], total: 2 },
-	}), "f1");
+	}), CURRENT);
 	assert.equal(pruned.passed, false);
 	assert.deepEqual(pruned.coreMisses, [{ fixtureId: "easy", draw: 1, cause: "critic" }]);
 });
@@ -238,40 +240,52 @@ test("acceptance: false positives pool up to the allowance; subset and short run
 		candidateMatchEvidence: [],
 	};
 	const withNegative = { ...base, fixtures: ["easy", "clean-negative"], draws: 3, results: [...base.results, { ...negative, draw: 0 }, { ...negative, draw: 1, score: { ...negative.score, falsePositive: false } }, { ...negative, draw: 2, score: { ...negative.score, falsePositive: false } }] };
-	const result = acceptance(calibration, withNegative, "f1");
+	const result = acceptance(calibration, withNegative, CURRENT);
 	assert.equal(result.passed, true, "one pooled false positive is within the allowance");
 	assert.deepEqual(result.falsePositives, [{ fixtureId: "clean-negative", draw: 0 }]);
 	const allFp = acceptance(calibration, {
 		...withNegative,
 		results: [...base.results, ...[0, 1, 2].map((draw) => ({ ...negative, draw }))],
-	}, "f1");
+	}, CURRENT);
 	assert.equal(allFp.passed, false, "three pooled false positives exceed the allowance");
 	assert.throws(
-		() => acceptance(calibration, { ...withNegative, draws: 1, results: [base.results[0], { ...negative, draw: 0 }] }, "f1"),
+		() => acceptance(calibration, { ...withNegative, draws: 1, results: [base.results[0], { ...negative, draw: 0 }] }, CURRENT),
 		/draws 1 < 3/,
 	);
 	const malformed = acceptance(calibration, {
 		...withNegative,
 		results: [...base.results, ...[0, 1, 2].map((draw) => ({ ...negative, draw, score: { ...negative.score, falsePositive: false, formatOk: draw !== 1 } }))],
-	}, "f1");
+	}, CURRENT);
 	assert.equal(malformed.passed, false, "unusable negative output is not a clean pass");
 	assert.deepEqual(malformed.falsePositives, []);
 	assert.deepEqual(malformed.invalidNegatives, [{ fixtureId: "clean-negative", draw: 1 }]);
 	assert.throws(
-		() => acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --fixtures '^easy$' --report r.json" }, "f1"),
+		() => acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --fixtures '^easy$' --report r.json" }, CURRENT),
 		/--fixtures subset run/,
 	);
-	assert.throws(() => acceptance(calibration, { ...withNegative, holdout: "exclude" }, "f1"), /subset run/);
+	assert.throws(() => acceptance(calibration, { ...withNegative, holdout: "exclude" }, CURRENT), /subset run/);
 	assert.equal(
-		acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --draws 3 --report r.json" }, "f1").passed,
+		acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --draws 3 --report r.json" }, CURRENT).passed,
 		true,
 		"a full run is admitted",
 	);
-	assert.throws(() => acceptance(calibration, { ...withNegative, gateClass: "D" }, "f1"), /Class R run/);
-	assert.throws(() => acceptance(calibration, { ...withNegative, mergedFrom: ["a.json", "b.json"] }, "f1"), /merged report/);
-	assert.throws(() => acceptance(calibration, withNegative, "f-newer"), /!= current catalog f-newer/);
+	assert.throws(() => acceptance(calibration, { ...withNegative, gateClass: "D" }, CURRENT), /Class R run/);
+	assert.throws(() => acceptance(calibration, { ...withNegative, mergedFrom: ["a.json", "b.json"] }, CURRENT), /merged report/);
+	assert.throws(() => acceptance(calibration, withNegative, { ...CURRENT, promptHash: "p-other" }), /checked-out prompt p-other/);
+	assert.throws(() => acceptance({ ...calibration, scorerHash: "stale" }, withNegative, CURRENT), /different scorer/);
+	const newTier1 = acceptance(calibration, {
+		...withNegative,
+		fixtures: [...withNegative.fixtures, "new-tier1"],
+		fixtureTiers: { ...withNegative.fixtureTiers, "new-tier1": 1 },
+		results: [
+			...withNegative.results,
+			...[0, 1, 2].map((draw) => ({ ...base.results[0], fixtureId: "new-tier1", draw, score: { ...base.results[0].score, fixtureId: "new-tier1", recall: draw !== 0, mustFindHits: draw === 0 ? 0 : 1 } })),
+		],
+	}, CURRENT);
+	assert.deepEqual(newTier1.coreMisses.map((miss) => miss.fixtureId), ["new-tier1"], "a Tier-1 fixture the calibration predates is still core");
+	assert.throws(() => acceptance(calibration, withNegative, { ...CURRENT, fixtureSetHash: "f-newer" }), /!= current catalog f-newer/);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
-	assert.throws(() => acceptance(calibration, noCore, "f1"), /missing core fixtures easy/);
+	assert.throws(() => acceptance(calibration, noCore, CURRENT), /missing core fixtures easy/);
 });
 
 test("paretoFrontier: keeps lanes no other lane beats on recall and time", () => {
