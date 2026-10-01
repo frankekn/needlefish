@@ -75,12 +75,14 @@ export function renderAcceptance(results: readonly AcceptanceResult[]): string {
 			return acc;
 		}, {});
 		lines.push(
-			`${result.passed ? "PASS" : "FAIL"} ${result.lane}${result.sameFixtureSet ? "" : " [later fixture set]"} · core ${result.coreFixtures} fixtures · misses ${result.coreMisses.length} ${JSON.stringify(causes)} · false positives ${result.falsePositives.length}`,
+			`${result.passed ? "PASS" : "FAIL"} ${result.lane}${result.sameFixtureSet ? "" : " [later fixture set]"} · core ${result.coreFixtures} fixtures · misses ${result.coreMisses.length} ${JSON.stringify(causes)} · false positives ${result.falsePositives.length} · invalid negatives ${result.invalidNegatives.length}`,
 		);
 		for (const miss of result.coreMisses)
 			lines.push(`  miss ${miss.fixtureId} draw ${miss.draw} (${miss.cause})`);
 		for (const fp of result.falsePositives)
 			lines.push(`  fp   ${fp.fixtureId} draw ${fp.draw}`);
+		for (const bad of result.invalidNegatives)
+			lines.push(`  invalid ${bad.fixtureId} draw ${bad.draw}`);
 	}
 	return lines.join("\n") + "\n";
 }

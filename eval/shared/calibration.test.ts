@@ -237,6 +237,13 @@ test("acceptance: a false positive on a negative fails; missing core fixtures re
 	const result = acceptance(calibration, withNegative);
 	assert.equal(result.passed, false);
 	assert.deepEqual(result.falsePositives, [{ fixtureId: "clean-negative", draw: 0 }]);
+	const malformed = acceptance(calibration, {
+		...withNegative,
+		results: [...base.results, ...[0, 1, 2].map((draw) => ({ ...negative, draw, score: { ...negative.score, falsePositive: false, formatOk: draw !== 1 } }))],
+	});
+	assert.equal(malformed.passed, false, "unusable negative output is not a clean pass");
+	assert.deepEqual(malformed.falsePositives, []);
+	assert.deepEqual(malformed.invalidNegatives, [{ fixtureId: "clean-negative", draw: 1 }]);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
 	assert.throws(() => acceptance(calibration, noCore), /missing core fixtures easy/);
 });

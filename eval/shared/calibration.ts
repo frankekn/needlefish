@@ -269,6 +269,7 @@ export interface AcceptanceResult {
 	readonly coreFixtures: number;
 	readonly coreMisses: readonly { fixtureId: string; draw: number; cause: MissCause }[];
 	readonly falsePositives: readonly { fixtureId: string; draw: number }[];
+	readonly invalidNegatives: readonly { fixtureId: string; draw: number }[];
 }
 
 // Accepts reports from a later fixture set as long as every core fixture is
@@ -295,13 +296,21 @@ export function acceptance(calibration: Calibration, report: Report): Acceptance
 	const falsePositives = report.results
 		.filter((result) => !isPositive(result) && result.score.falsePositive)
 		.map((result) => ({ fixtureId: result.fixtureId, draw: result.draw }));
+	// A negative with unusable output reviewed nothing; it is not a clean pass.
+	const invalidNegatives = report.results
+		.filter((result) => !isPositive(result) && !result.score.formatOk)
+		.map((result) => ({ fixtureId: result.fixtureId, draw: result.draw }));
 	return {
 		lane: laneKey(report),
-		passed: coreMisses.length === 0 && falsePositives.length === 0,
+		passed:
+			coreMisses.length === 0 &&
+			falsePositives.length === 0 &&
+			invalidNegatives.length === 0,
 		sameFixtureSet: report.fixtureSetHash === calibration.fixtureSetHash,
 		coreFixtures: core.size,
 		coreMisses,
 		falsePositives,
+		invalidNegatives,
 	};
 }
 
