@@ -244,6 +244,16 @@ test("acceptance: a false positive on a negative fails; missing core fixtures re
 	assert.equal(malformed.passed, false, "unusable negative output is not a clean pass");
 	assert.deepEqual(malformed.falsePositives, []);
 	assert.deepEqual(malformed.invalidNegatives, [{ fixtureId: "clean-negative", draw: 1 }]);
+	assert.throws(
+		() => acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --fixtures '^easy$' --report r.json" }),
+		/--fixtures subset run/,
+	);
+	assert.throws(() => acceptance(calibration, { ...withNegative, holdout: "exclude" }), /subset run/);
+	assert.equal(
+		acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --draws 3 --report r.json" }).passed,
+		false,
+		"a full run is admitted and still judged on its false positive",
+	);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
 	assert.throws(() => acceptance(calibration, noCore), /missing core fixtures easy/);
 });

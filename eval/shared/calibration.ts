@@ -272,10 +272,23 @@ export interface AcceptanceResult {
 	readonly invalidNegatives: readonly { fixtureId: string; draw: number }[];
 }
 
+// Run reports record the command line; legacy reports may not.
+export type AcceptanceReport = Report & { readonly invocation?: string };
+
+// A --fixtures or holdout subset can contain every core positive and no
+// negatives, which would make the zero-FP half of acceptance vacuous.
+function subsetRunError(report: AcceptanceReport): string | null {
+	if (report.holdout !== "include") return `holdout '${report.holdout}' is a subset run`;
+	if (report.invocation !== undefined && /(?:^|\s)--fixtures(?:\s|=|$)/.test(report.invocation))
+		return "--fixtures subset run";
+	return null;
+}
+
 // Accepts reports from a later fixture set as long as every core fixture is
 // present, so a contract change (new holdout) does not strand the core list.
-export function acceptance(calibration: Calibration, report: Report): AcceptanceResult {
-	const error = reportAdmissionError(report);
+// Subset runs are refused: acceptance needs the full negative set.
+export function acceptance(calibration: Calibration, report: AcceptanceReport): AcceptanceResult {
+	const error = reportAdmissionError(report) ?? subsetRunError(report);
 	if (error) throw new Error(`${laneKey(report)}: ${error}`);
 	const core = new Set(coreFixtureIds(calibration));
 	const present = new Set(report.results.map((result) => result.fixtureId));
