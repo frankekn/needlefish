@@ -22,9 +22,10 @@ build   derives per-fixture difficulty from same-contract lanes (default out:
 score   offline difficulty-weighted, partial-credit, and per-stage scores;
         diagnostic only, never a gate
 accept  core acceptance: every zoo-saturated or Tier-1 positive hit on every
-        draw, zero false positives, no unusable negative output; misses
-        split reviewer/critic/format (exit 2 on any failure). Refuses
-        --fixtures and holdout subset runs.
+        draw, at most 2 false positives pooled across negatives, no
+        unusable negative output; misses split reviewer/critic/format
+        (exit 2 on any failure). Refuses --fixtures, holdout subset, and
+        fewer-than-3-draw runs.
 `;
 
 function readReport(file: string): Report {

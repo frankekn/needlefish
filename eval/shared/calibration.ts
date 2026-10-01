@@ -272,12 +272,18 @@ export interface AcceptanceResult {
 	readonly invalidNegatives: readonly { fixtureId: string; draw: number }[];
 }
 
+// Class R confirm tier and pooled false-positive allowance (AGENTS.md).
+export const ACCEPT_MIN_DRAWS = 3;
+export const ACCEPT_MAX_FALSE_POSITIVES = 2;
+
 // Run reports record the command line; legacy reports may not.
 export type AcceptanceReport = Report & { readonly invocation?: string };
 
 // A --fixtures or holdout subset can contain every core positive and no
 // negatives, which would make the zero-FP half of acceptance vacuous.
 function subsetRunError(report: AcceptanceReport): string | null {
+	if (report.draws < ACCEPT_MIN_DRAWS)
+		return `draws ${report.draws} < ${ACCEPT_MIN_DRAWS}: acceptance needs a confirm-tier run`;
 	if (report.holdout !== "include") return `holdout '${report.holdout}' is a subset run`;
 	if (report.invocation !== undefined && /(?:^|\s)--fixtures(?:\s|=|$)/.test(report.invocation))
 		return "--fixtures subset run";
@@ -317,7 +323,7 @@ export function acceptance(calibration: Calibration, report: AcceptanceReport): 
 		lane: laneKey(report),
 		passed:
 			coreMisses.length === 0 &&
-			falsePositives.length === 0 &&
+			falsePositives.length <= ACCEPT_MAX_FALSE_POSITIVES &&
 			invalidNegatives.length === 0,
 		sameFixtureSet: report.fixtureSetHash === calibration.fixtureSetHash,
 		coreFixtures: core.size,

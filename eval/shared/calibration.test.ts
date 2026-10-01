@@ -223,7 +223,7 @@ test("acceptance: core = saturated plus Tier-1; misses carry their stage", () =>
 	assert.deepEqual(pruned.coreMisses, [{ fixtureId: "easy", draw: 1, cause: "critic" }]);
 });
 
-test("acceptance: a false positive on a negative fails; missing core fixtures refuse", () => {
+test("acceptance: false positives pool up to the allowance; subset and short runs refuse", () => {
 	const calibration = buildCalibration(zoo());
 	const base = lane("fp", { easy: { hits: [1, 1, 1], total: 1 } });
 	const negative: DrawResult = {
@@ -235,8 +235,17 @@ test("acceptance: a false positive on a negative fails; missing core fixtures re
 	};
 	const withNegative = { ...base, fixtures: ["easy", "clean-negative"], draws: 3, results: [...base.results, { ...negative, draw: 0 }, { ...negative, draw: 1, score: { ...negative.score, falsePositive: false } }, { ...negative, draw: 2, score: { ...negative.score, falsePositive: false } }] };
 	const result = acceptance(calibration, withNegative);
-	assert.equal(result.passed, false);
+	assert.equal(result.passed, true, "one pooled false positive is within the allowance");
 	assert.deepEqual(result.falsePositives, [{ fixtureId: "clean-negative", draw: 0 }]);
+	const allFp = acceptance(calibration, {
+		...withNegative,
+		results: [...base.results, ...[0, 1, 2].map((draw) => ({ ...negative, draw }))],
+	});
+	assert.equal(allFp.passed, false, "three pooled false positives exceed the allowance");
+	assert.throws(
+		() => acceptance(calibration, { ...withNegative, draws: 1, results: [base.results[0], { ...negative, draw: 0 }] }),
+		/draws 1 < 3/,
+	);
 	const malformed = acceptance(calibration, {
 		...withNegative,
 		results: [...base.results, ...[0, 1, 2].map((draw) => ({ ...negative, draw, score: { ...negative.score, falsePositive: false, formatOk: draw !== 1 } }))],
@@ -251,8 +260,8 @@ test("acceptance: a false positive on a negative fails; missing core fixtures re
 	assert.throws(() => acceptance(calibration, { ...withNegative, holdout: "exclude" }), /subset run/);
 	assert.equal(
 		acceptance(calibration, { ...withNegative, invocation: "node --import tsx eval/run.ts --draws 3 --report r.json" }).passed,
-		false,
-		"a full run is admitted and still judged on its false positive",
+		true,
+		"a full run is admitted",
 	);
 	const noCore = lane("no-core", { mid: { hits: [1, 1, 1], total: 1 } });
 	assert.throws(() => acceptance(calibration, noCore), /missing core fixtures easy/);
