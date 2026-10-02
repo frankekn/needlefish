@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.10 — 2026-10-02
+
+- Prompts: the critic no longer deletes a contract-drift finding when a
+  rename, doc, or type change newly promises a behavior over an unchanged
+  body. Its exception now matches `review.md` Trigger C: substitute an input
+  the promise excludes and check the HEAD output (#205, Class R; prompt hash
+  `c59d803f0d0dc476`).
+- Review: Needlefish's own PR posts (round comments, error comments, inline
+  findings, review bodies with the state marker) are no longer fed back to the
+  model on re-review, `pr`, or `explain`. Only bot-typed posts are dropped;
+  human comments that quote them are kept (#202).
+- GitHub: a SIGINT/SIGTERM during a review completes the owned `Needlefish`
+  check as `Needlefish: review terminated` (or neutral `superseded` on a stale
+  head) instead of leaving it in progress. `review.yml` treats that title as
+  an infra failure and re-dispatches (#198).
+- GitHub: an unmatched prior finding is never called resolved. Labels are now
+  `🔍 not re-found (code changed)`, `🔁 not re-found (code unchanged)`, and
+  `❔ undetermined`; a round with a blocking residual marks every dropped
+  prior finding undetermined (#195).
+- Review: changed files reviewed only as Git LFS pointers are listed as a
+  non-blocking coverage gap (`coverageGaps` in `--json`) (#199).
+- CLI: `needlefish doctor` checks Node, runner, login, repo, and base; runner
+  failures end with one concrete next step (#200). Interactive terminals show
+  one stderr line per review stage (#196). `schemas/review-result.v1.schema.json`
+  publishes the `--json` shape (#197).
+- Release: tag pushes also publish to npm via trusted publishing (#192).
+- Eval: reports record candidate (pre-critic) scores and critic time share
+  (#189); `eval/tools/adoption.ts` reports real-PR finding adoption (#194);
+  `eval/calibrate.ts` adds difficulty calibration and core acceptance (#205).
+
 ## 0.4.9 — 2026-09-28
 
 - Runners: the per-call timeout now defaults to 20 minutes (1,200,000 ms)
