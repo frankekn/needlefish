@@ -1,4 +1,5 @@
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { review } from "../core/review.js";
 import {
 	priorFateParts,
@@ -46,7 +47,7 @@ function ghJson(args: readonly string[], input?: string): unknown {
 
 // gh for the termination finalizer: off the event loop, cut off at the
 // termination deadline, killed with the process, and without ghPost's 5xx
-// retry backoff, which the deadline would not cover.
+// retry schedule, which the deadline would not cover.
 async function ghJsonWhileTerminating(
 	termination: Termination,
 	args: readonly string[],
@@ -1180,7 +1181,22 @@ async function completeTerminatedCheck(
 	// has already claimed and posted itself, and this PATCH must not overwrite it.
 	if (termination.cancelled.aborted || !claimCheck()) return;
 	if (skipReason !== null) emitSkip(skipReason, prNumber, headSha);
-	await ghJsonWhileTerminating(termination, write.args, screenedInput(write.input));
+	const input = screenedInput(write.input);
+	const started = Date.now();
+	try {
+		await ghJsonWhileTerminating(termination, write.args, input);
+		return;
+	} catch (error) {
+		// One retry, and only when the backoff plus another attempt as slow as
+		// this one fits before the deadline. A timeout or abort is not retried.
+		const backoffMs = ghPostRetryBaseMs();
+		const fits = termination.deadlineMs - Date.now() >= backoffMs + (Date.now() - started);
+		if (termination.cancelled.aborted || !isTransientGh5xx(error) || !fits) throw error;
+		const message = error instanceof Error ? error.message : String(error);
+		process.stderr.write(`needlefish: check completion failed during termination; retrying once: ${message}\n`);
+		await sleep(backoffMs, undefined, { signal: termination.cancelled });
+	}
+	await ghJsonWhileTerminating(termination, write.args, input);
 }
 
 export async function runGithub(

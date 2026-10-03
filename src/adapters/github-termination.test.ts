@@ -50,6 +50,10 @@ type FixtureOptions = {
 	readonly runnerExitsOnTermAfterMs?: number;
 	// Report a newer head from the second pull fetch onward.
 	readonly staleHeadAfterStart?: boolean;
+	// The first this-many check-run PATCHes fail with HTTP 502.
+	readonly failCheckPatches?: number;
+	// Backoff before the finalizer's single PATCH retry.
+	readonly patchRetryMs?: number;
 	readonly graceMs: number;
 };
 
@@ -108,6 +112,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	mkdirSync(fakeBin);
 	const ghLog = path.join(tmp, "gh.log");
 	const pullCount = path.join(tmp, "pull-count");
+	const patchCount = path.join(tmp, "patch-count");
 	const gh = path.join(fakeBin, "gh");
 	writeFileSync(
 		gh,
@@ -133,6 +138,11 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"if (args[1] === '--paginate') { process.stdout.write('[[]]'); process.exit(0); }",
 			"if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: 'dev', type: 'User' })); process.exit(0); }",
 			`if (apiPath === ${JSON.stringify(`repos/${REPO}/check-runs`)} && method === 'POST') { process.stdout.write(JSON.stringify({ id: ${CHECK_ID} })); process.exit(0); }`,
+			"if (method === 'PATCH') {",
+			`  const count = fs.existsSync(${JSON.stringify(patchCount)}) ? Number(fs.readFileSync(${JSON.stringify(patchCount)}, 'utf8')) : 0;`,
+			`  fs.writeFileSync(${JSON.stringify(patchCount)}, String(count + 1));`,
+			`  if (count < ${opts.failCheckPatches ?? 0}) { process.stderr.write('gh: Server Error (HTTP 502)'); process.exit(1); }`,
+			"}",
 			`if (method === 'PATCH' && ${JSON.stringify(opts.hangCheckPatch === true)}) { process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); }`,
 			`else if (method === 'PATCH') { setTimeout(() => { fs.appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify({ args: ['patch-completed'], payload }) + '\\n'); process.stdout.write('{}'); process.exit(0); }, ${opts.checkPatchDelayMs ?? 0}); }`,
 			"else { process.stdout.write('{}'); process.exit(0); }",
@@ -174,6 +184,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 		NEEDLEFISH_NO_RETRY: "1",
 		NEEDLEFISH_TMPDIR: path.join(tmp, "nftmp"),
 		NEEDLEFISH_TERMINATION_GRACE_MS: String(opts.graceMs),
+		NEEDLEFISH_GH_POST_RETRY_MS: String(opts.patchRetryMs ?? 0),
 	};
 	delete env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR;
 	return { repo, ghLog, runnerPidFile, env };
@@ -411,4 +422,53 @@ test("termination on a stale head completes the check as superseded", { timeout:
 	assert.equal(body.conclusion, "neutral");
 	assert.equal(body.output.title, "Needlefish: superseded");
 	assert.equal(postsToTimeline(calls), false);
+});
+
+test("bin/needlefish retries a check PATCH that fails with a transient 5xx", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { runnerIgnoresTerm: true, failCheckPatches: 1, patchRetryMs: 100, graceMs: 2000 });
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 3000, `termination took ${run.elapsedMs}ms`);
+	const calls = readGhLog(fixture.ghLog);
+	const patches = checkPatches(calls);
+	assert.equal(patches.length, 2, JSON.stringify(calls.map((c) => c.args)));
+	assert.equal(calls.filter((c) => c.args[0] === "patch-completed").length, 1);
+	assert.equal(patches[1].payload, patches[0].payload, "the retry sends the same screened payload");
+	assert.equal(completion(patches[1]).output.title, "Needlefish: review terminated");
+	assert.equal(run.runnerAlive, false);
+});
+
+test("bin/needlefish gives up after one PATCH retry and exits within the grace", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { runnerIgnoresTerm: true, failCheckPatches: 2, patchRetryMs: 100, graceMs: 2000 });
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 3000, `termination took ${run.elapsedMs}ms`);
+	const calls = readGhLog(fixture.ghLog);
+	assert.equal(checkPatches(calls).length, 2, JSON.stringify(calls.map((c) => c.args)));
+	assert.equal(patchCompleted(calls), false);
+	assert.equal(run.runnerAlive, false);
+});
+
+test("bin/needlefish exits at once on a second signal during the PATCH retry backoff", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { runnerIgnoresTerm: true, failCheckPatches: 1, patchRetryMs: 3000, graceMs: 5000 });
+	const run = await terminateMidReview(t, fixture, "bin", 1000);
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 1800, `second signal must exit at once, took ${run.elapsedMs}ms`);
+	assert.equal(checkPatches(readGhLog(fixture.ghLog)).length, 1, "no PATCH retry after the forced signal");
+	assert.equal(run.runnerAlive, false);
+});
+
+// The runner exits on SIGTERM, so the finalizer is all that holds the exit.
+// A backoff that cannot fit in the remaining grace is not started.
+test("bin/needlefish skips a PATCH retry that the remaining grace cannot fit", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { failCheckPatches: 1, patchRetryMs: 5000, graceMs: 3000 });
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.ok(run.elapsedMs < 2000, `a doomed retry must not hold the exit, took ${run.elapsedMs}ms`);
+	assert.equal(checkPatches(readGhLog(fixture.ghLog)).length, 1);
+	assert.equal(run.runnerAlive, false);
 });
