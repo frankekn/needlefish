@@ -16,7 +16,7 @@ import {
 	type RunStat,
 	type RunUsage,
 } from "./runner.js";
-import { resolveRunner } from "./runner-detection.js";
+import { requireRunnerCommand, resolveRunner } from "./runner-detection.js";
 import {
 	RunnerIdleTimeoutError,
 	RunnerTimeoutError,
@@ -1146,7 +1146,7 @@ async function runCodexCli(
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CODEX_BIN ?? "codex",
+		command: requireRunnerCommand("codex"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -1191,7 +1191,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 		args.push("--effort", invocation.reasoningEffort);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CLAUDE_BIN ?? "claude",
+		command: requireRunnerCommand("claude"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -1251,7 +1251,7 @@ async function runOpenCode(
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({
-		command: process.env.OPENCODE_BIN ?? "opencode",
+		command: requireRunnerCommand("opencode"),
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -1285,7 +1285,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	if (invocation.reasoningEffort)
 		args.push("--reasoning-effort", invocation.reasoningEffort);
 	const res = await spawnRunnerProcess({
-		command: process.env.GROK_BIN ?? "grok",
+		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -1340,7 +1340,7 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	// positional arg. Verified 2026-07-10: `pi -p --no-session --mode text` with
 	// no positional message reads the full prompt from stdin.
 	const res = await spawnRunnerProcess({
-		command: process.env.PI_BIN ?? "pi",
+		command: requireRunnerCommand("pi"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,

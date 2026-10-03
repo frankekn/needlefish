@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { runDoctor, renderDoctorReport, type DoctorCheck, type DoctorReport } from "./doctor";
-import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures";
+import { runCodex } from "../shared/codex";
+import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+import { RUNNER_DEFINITIONS, RUNNERS } from "../shared/runner";
 import { captureEnv, restoreEnv } from "../shared/runner-test-fixtures";
 
 const ENV_KEYS = [
@@ -15,6 +17,12 @@ const ENV_KEYS = [
   "OPENCODE_BIN",
   "NEEDLEFISH_RUNNER",
   "NEEDLEFISH_ACP_BIN",
+  "GROK_BIN",
+  "PI_BIN",
+  "NEEDLEFISH_NO_RETRY",
+  "LC_ALL",
+  "LANGUAGE",
+  "GIT_TEST_ASSUME_DIFFERENT_OWNER",
   "OPENAI_API_KEY",
   "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
   "CODEX_API_KEY",
@@ -241,6 +249,35 @@ test("doctor names the env var when an explicitly selected runner binary is miss
   assert.equal(check(padded, "runner").detail, `acp (--runner; ${agent})`, "trimmed like runAcp reads it");
 });
 
+// Issue #201 item 1: detection, the doctor, and every spawn site read *_BIN
+// through one function, so the doctor's runner verdict is the review's spawn
+// outcome whatever shape the override takes.
+test("doctor's runner verdict equals whether the review spawns, for every CLI runner and override shape", async (t) => {
+  const f = setup(t);
+  process.env.NEEDLEFISH_NO_RETRY = "1";
+  const marker = path.join(f.tmp, "spawned");
+  for (const runner of RUNNERS) {
+    const bin = RUNNER_DEFINITIONS[runner].bin;
+    if (bin === undefined) continue;
+    const executable = stub(f.bin, runner, `touch ${JSON.stringify(marker)}`);
+    const shapes = {
+      padded: ` ${executable} \n`,
+      empty: "",
+      whitespace: "  ",
+      "missing-name": `missing-${runner}`,
+      "missing-path": path.join(f.tmp, "missing"),
+    };
+    for (const [shape, value] of Object.entries(shapes)) {
+      process.env[bin.env] = value;
+      const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner });
+      rmSync(marker, { force: true });
+      await runCodex("prompt", { runner, repoPath: f.repo, targetHeadSha: headSha(f.repo), timeoutMs: 5000 }).catch(() => undefined);
+      assert.equal(check(report, "runner").status === "ok", existsSync(marker), `${runner} with ${shape} ${bin.env}`);
+    }
+    delete process.env[bin.env];
+  }
+});
+
 test("doctor checks OPENAI_API_KEY for the HTTP runner without any network call", (t) => {
   const f = setup(t);
 
@@ -270,7 +307,7 @@ test("doctor explains git and base failures with the fix", (t) => {
     detail: `${f.tmp} is not a git repository`,
     fix: "Run `git init` inside your project folder.",
   });
-  assert.deepEqual(check(notRepo, "base"), { name: "base", status: "unknown", detail: "skipped: not a git repository" });
+  assert.deepEqual(check(notRepo, "base"), { name: "base", status: "unknown", detail: "skipped: git check failed" });
 
   const badBase = runDoctor({ repo: f.repo, version: "0.0.0-test", base: "develop" });
   assert.deepEqual(check(badBase, "base"), {
@@ -292,6 +329,109 @@ test("doctor explains git and base failures with the fix", (t) => {
   assert.equal(check(noCommits, "git").detail, `${fresh} (branch main, clean, no commits yet)`);
   assert.equal(check(noCommits, "base").detail, "not needed: no commits yet, so a review covers uncommitted changes");
   assert.equal(noCommits.ok, true);
+});
+
+// Issue #201 item 2: isGitRepo mapped every failure to "not a repo", so a
+// missing path, a missing git, and git's own refusal all printed `git init`.
+test("doctor tells git failures apart from a missing repository, with a matching fix", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+
+  const missing = path.join(f.tmp, "missing");
+  assert.deepEqual(check(runDoctor({ repo: missing, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: `${missing} does not exist`,
+    fix: "Check the --repo path.",
+  });
+
+  const refusal = `fatal: detected dubious ownership in repository at '${f.repo}'`;
+  const fakeGit = stub(f.bin, "git", `echo ${JSON.stringify(refusal)} >&2; exit 128`);
+  const refused = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.deepEqual(check(refused, "git"), {
+    name: "git",
+    status: "fail",
+    detail: refusal,
+    fix: `Run \`git config --global --add safe.directory '${f.repo}'\`.`,
+  });
+  assert.deepEqual(check(refused, "base"), { name: "base", status: "unknown", detail: "skipped: git check failed" });
+  rmSync(fakeGit);
+
+  process.env.PATH = f.bin;
+  assert.deepEqual(check(runDoctor({ repo: f.repo, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: "git is not installed or not on PATH",
+    fix: "Install git.",
+  });
+});
+
+// git translates its messages; the probe must read them in one locale. The stub
+// answers in German unless it is asked in C, the way a real localized git would.
+test("doctor recognizes a non-repository under a non-English locale", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  stub(
+    f.bin,
+    "git",
+    [
+      'if [ "$LC_ALL" = C ] && [ -z "$LANGUAGE" ]; then',
+      '  echo "fatal: not a git repository (or any of the parent directories): .git" >&2',
+      "else",
+      '  echo "fatal: Kein Git-Repository (oder irgendeines der Elternverzeichnisse): .git" >&2',
+      "fi",
+      "exit 128",
+    ].join("\n"),
+  );
+  process.env.LC_ALL = "de_DE.UTF-8";
+  process.env.LANGUAGE = "de";
+
+  assert.deepEqual(check(runDoctor({ repo: f.tmp, version: "0.0.0-test" }), "git"), {
+    name: "git",
+    status: "fail",
+    detail: `${f.tmp} is not a git repository`,
+    fix: "Run `git init` inside your project folder.",
+  });
+});
+
+// git checks ownership of the repository root it names in stderr, not of the
+// --repo path, so the suggested safe.directory must be that root, quoted so a
+// path with a space survives the shell. Hosted CI images allow every directory
+// in their system gitconfig; the probe drops global and system config so git's
+// own ownership test hook refuses the repository.
+test("doctor's safe.directory fix names and quotes the repository root git refused", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  mkdirSync(path.join(f.tmp, "with space"));
+  const repo = initRepo(path.join(f.tmp, "with space"));
+  const sub = path.join(repo, "sub");
+  mkdirSync(sub);
+  const globalConfig = path.join(f.tmp, "gitconfig");
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = "1";
+  process.env.GIT_CONFIG_GLOBAL = globalConfig;
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  const probe = () =>
+    spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: sub, encoding: "utf8", env: { ...process.env, LC_ALL: "C" } });
+  const before = probe();
+  if (before.status !== 128 || !/dubious ownership/.test(before.stderr)) {
+    const version = spawnSync("git", ["--version"], { encoding: "utf8" }).stdout.trim();
+    t.skip(`${version} ignores GIT_TEST_ASSUME_DIFFERENT_OWNER: exit ${before.status}, ${before.stderr.trim()}`);
+    return;
+  }
+
+  const report = runDoctor({ repo: sub, version: "0.0.0-test" });
+  assert.deepEqual(check(report, "git"), {
+    name: "git",
+    status: "fail",
+    detail: `fatal: detected dubious ownership in repository at '${repo}'`,
+    fix: `Run \`git config --global --add safe.directory '${repo}'\`.`,
+  });
+
+  const command = check(report, "git").fix?.match(/`(.+)`/)?.[1];
+  assert.ok(command);
+  const applied = spawnSync("bash", ["-c", command], { encoding: "utf8", env: process.env });
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(probe().stdout.trim(), "true", "the printed command clears the refusal");
 });
 
 test("bin/needlefish doctor exits 1 and prints JSON for a failed check", (t) => {

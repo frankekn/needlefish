@@ -3,6 +3,7 @@ import {
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
 } from "./runner-process.js";
+import { requireRunnerCommand } from "./runner-detection.js";
 import type { RunUsage } from "./runner.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -43,8 +44,7 @@ interface AcpClientState {
 }
 
 export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
-  const command = process.env.NEEDLEFISH_ACP_BIN?.trim();
-  if (!command) throw new Error("NEEDLEFISH_ACP_BIN is required for the acp runner");
+  const command = requireRunnerCommand("acp");
 
   const state: AcpClientState = {
     nextId: 1,

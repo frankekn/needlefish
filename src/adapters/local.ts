@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -83,18 +84,49 @@ export function resolveReviewBase(cwd: string, override?: string): ReviewBase {
   }
 }
 
-export function isGitRepo(cwd: string): boolean {
-  try {
-    return git(["rev-parse", "--is-inside-work-tree"], cwd) === "true";
-  } catch (err) {
-    if (err instanceof Error) return false;
-    throw err;
+export type GitRepoState =
+  | { readonly kind: "repo" }
+  | { readonly kind: "not-a-repo" }
+  /** git could not answer: the path or git itself is missing, or git refused the repository. */
+  | { readonly kind: "unavailable"; readonly reason: string; readonly fix?: string };
+
+const REPO_PATH_FIX = "Check the --repo path.";
+
+export function gitRepoState(cwd: string): GitRepoState {
+  // The messages matched below are gettext-translated; C keeps them English.
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: "C" };
+  delete env.LANGUAGE;
+  const res = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf8", env });
+  if (res.error) {
+    // A missing cwd and a missing git both surface as ENOENT on the spawn.
+    const code = "code" in res.error ? res.error.code : undefined;
+    if (code === "ENOENT" && !existsSync(cwd)) {
+      return { kind: "unavailable", reason: `${cwd} does not exist`, fix: REPO_PATH_FIX };
+    }
+    if (code === "ENOENT") {
+      return { kind: "unavailable", reason: "git is not installed or not on PATH", fix: "Install git." };
+    }
+    return { kind: "unavailable", reason: `${cwd} cannot be used (${res.error.message})`, fix: REPO_PATH_FIX };
   }
+  if (res.status === 0) return res.stdout.trim() === "true" ? { kind: "repo" } : { kind: "not-a-repo" };
+  const reason = res.stderr.trim().split(/\r?\n/)[0] ?? "";
+  if (/not a git repository/.test(reason)) return { kind: "not-a-repo" };
+  if (/dubious ownership/.test(reason)) {
+    // git checks the repository root it names, which may be above cwd.
+    const root = reason.match(/repository at '(.+)'/)?.[1] ?? cwd;
+    const quoted = `'${root.replaceAll("'", "'\\''")}'`;
+    return { kind: "unavailable", reason, fix: `Run \`git config --global --add safe.directory ${quoted}\`.` };
+  }
+  return { kind: "unavailable", reason: reason || `git rev-parse exited ${res.status}` };
 }
 
 function ensureGitRepo(cwd: string): void {
-  if (isGitRepo(cwd)) return;
-  throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
+  const state = gitRepoState(cwd);
+  if (state.kind === "repo") return;
+  if (state.kind === "not-a-repo") {
+    throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
+  }
+  throw new Error(state.fix === undefined ? state.reason : `${state.reason}. ${state.fix}`);
 }
 
 export function hasHeadCommit(cwd: string): boolean {

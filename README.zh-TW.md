@@ -418,8 +418,8 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
-內讀取環境變數（其 subprocess allowlist 為空）。括號內是未設定 `*_BIN`
-變數時使用的執行檔名：
+內讀取環境變數（其 subprocess allowlist 為空）。括號內是 `*_BIN` 變數
+未設定或為空白時使用的執行檔名（值會去除前後空白）：
 
 | runner | binary | model／其他 |
 | --- | --- | --- |

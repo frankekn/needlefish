@@ -28,7 +28,7 @@ const step = workflow.match(
 assert.ok(step, "Needlefish review step must exist");
 const script = workflowRun(workflow, "review", "Needlefish review");
 
-function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false } = {}) {
+function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false, codexBinValue } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
@@ -65,7 +65,7 @@ printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
 		env: {
 			...process.env,
 			ARGV_LOG: argvLog,
-			CODEX_BIN: configuredCodex ? expectedConfiguredCodex : "",
+			CODEX_BIN: codexBinValue === undefined ? (configuredCodex ? expectedConfiguredCodex : "") : codexBinValue(expectedConfiguredCodex),
 			CODEX_BIN_LOG: codexBinLog,
 			CODEX_REASONING_EFFORT: "",
 			HOME: root,
@@ -132,6 +132,27 @@ test("review preserves an explicitly configured CODEX_BIN", () => {
 
 	assert.equal(result.status, 0, result.stderr);
 	assert.equal(result.codexBin, result.expectedConfiguredCodex);
+});
+
+// The pre-flight applies runnerCommand's rule (trim, blank means unset) so a
+// `needlefish doctor` verdict predicts the lane.
+test("review trims a padded CODEX_BIN before probing it", () => {
+	const result = runReview("42", {
+		runner: "codex",
+		homeCodex: true,
+		configuredCodex: true,
+		codexBinValue: (configured) => ` ${configured} \n`,
+	});
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.codexBin, result.expectedConfiguredCodex);
+});
+
+test("review treats a whitespace-only CODEX_BIN as unset", () => {
+	const result = runReview("42", { runner: "codex", homeCodex: true, codexBinValue: () => "  " });
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.codexBin, result.expectedHomeCodex);
 });
 
 test("review accepts the installed Codex CLI version", () => {

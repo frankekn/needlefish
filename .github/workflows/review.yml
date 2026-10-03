@@ -339,10 +339,14 @@ jobs:
             exit 1
           fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
-            if [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
-              export CODEX_BIN="$HOME/.local/bin/codex"
+            # Same rule as runnerCommand: trim, and a blank value means unset.
+            codex_bin="${CODEX_BIN:-}"
+            codex_bin="${codex_bin#"${codex_bin%%[![:space:]]*}"}"
+            codex_bin="${codex_bin%"${codex_bin##*[![:space:]]}"}"
+            if [ -z "$codex_bin" ] && [ -x "$HOME/.local/bin/codex" ]; then
+              codex_bin="$HOME/.local/bin/codex"
             fi
-            codex_bin="${CODEX_BIN:-codex}"
+            [ -n "$codex_bin" ] || codex_bin=codex
             codex_version=$("$codex_bin" --version) || {
               echo "Unable to run the selected Codex CLI." >&2
               exit 1

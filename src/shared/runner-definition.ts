@@ -2,14 +2,12 @@
 export interface RunnerDefinition {
   readonly name: string;
   /**
-   * CLI executable: the env override and the command name used when it is unset. Absent for HTTP runners.
-   * `trim` mirrors how the runner reads the value: runAcp trims it, the other CLI runners spawn it raw,
-   * and detection must agree with the spawn.
+   * CLI executable: the env override and the command name used when it is unset or blank. Absent for
+   * HTTP runners; no fallback when the override is required. runnerCommand is the one reader.
    */
   readonly bin?: {
     readonly env: string;
     readonly fallback?: string;
-    readonly trim?: true;
   };
   readonly autoDetect?: {
     readonly installCommand: string;
@@ -104,7 +102,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "acp",
-    bin: { env: "NEEDLEFISH_ACP_BIN", trim: true },
+    bin: { env: "NEEDLEFISH_ACP_BIN" },
     envAllowlist: ["NEEDLEFISH_ACP_BIN"],
     authFiles: [],
     envConfigFiles: [],

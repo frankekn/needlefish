@@ -347,6 +347,21 @@ test("local CLI reports a friendly git init message outside git repos", (t) => {
   assert.equal(result.stderr.includes("fatal:"), false);
 });
 
+test("local CLI names a missing --repo path instead of suggesting git init", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-missing-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const missing = join(tmp, "missing");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", TSX_IMPORT, join(process.cwd(), "src/cli.ts"), "--repo", missing],
+    { cwd: process.cwd(), encoding: "utf8" }
+  );
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr.trim(), `needlefish: ${missing} does not exist. Check the --repo path.`);
+});
+
 test("runLocal uses branch review when the worktree is clean", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-clean-"));
   const repo = initRepo(tmp);
