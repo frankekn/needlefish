@@ -171,9 +171,11 @@ Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-48b3dd0-x3.json`.
 The earlier 91-fixture results are not directly comparable because the current
 fixture hash is different; no improvement claim is inferred from those scores.
 
-**Confirmation tier complete:** twelve divergent or imperfect fixtures x3
-(36/36 draws), including `holdout-pagination-round-down`, ran from the same
-immutable `48b3dd0` with the same runner/model/effort/version. No comparable
+**Confirmation tier complete:** thirteen divergent or imperfect fixtures x3
+(39/39 draws), including `holdout-pagination-round-down` and the subsequently
+identified `real-pr8` verdict mismatch, ran from immutable `48b3dd0` with the
+same runner/model/effort/version. All full-run fixtures with a positive recall
+miss, false positive, or verdict mismatch are covered. No comparable
 pre-change full report exists for main's 93-fixture hash; the older 91-fixture
 report was used only to identify common-fixture diagnostic differences, not to
 claim a regression or improvement. The confirmation kept all 279 full-run draws.
@@ -182,18 +184,40 @@ Full/confirm must-find hits: `go-backend-slop-swallow` 2/3→3/3, pagination
 holdout 3/3→2/3, `t3-multi-bug` 6/6→6/6, `ts-data-duplicate` 2/3→3/3,
 bundle-base mismatch 1/3→1/3, fallback commit pin 1/3→1/3, lenient candidate
 parse 2/3→2/3, neutral-conclusion fixture 3/6→3/6, zero override 2/3→3/3,
-hotspot truncation 5/9→7/9, options forwarding 2/3→3/3. Harmless-variadic FP
-1/3→0/3. Confirmation invalid/operational/cheat counts are zero; subset noise
-0.0606 is not a replacement full-contract score. Persistent tier-2/3 misses
+hotspot truncation 5/9→7/9, options forwarding 2/3→3/3, `real-pr8` required hits
+3/3→3/3. Harmless-variadic FP 1/3→0/3. Confirmation invalid/operational/cheat
+counts are zero; the selected twelve-fixture subset's noise 0.0606 is not held
+to the full-set 0.05 limit or substituted for its score. Tier-1 full recall is
+21/21; no Tier-1 fixture required confirmation. Persistent tier-2/3 misses
 remain model limitations; prompts and answer keys were not tuned.
 
-Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-confirm-48b3dd0-x3.json`.
-The full run meets the predeclared limits and its required confirmation tier is
-complete; **Class R gate passed**. The first live review had 20/29 coverage;
-the evidence-head review also timed out on two hotspots, with **20/30** coverage.
-Neither `needs_human` result is clean despite zero actionable findings and green
-workflow/CI. PR #209 remains draft pending complete current-head review. No merge
-or deployment.
+Pooled full-plus-confirm outcomes are not uniformly clean: neutral-conclusion
+has complete recall **0/6** draws and required hits **6/12** (historical diagnostic
+report: 0/3 and 3/6). Bundle-base mismatch and fallback commit pin each have
+required hits **2/6**, lenient candidate parse **4/6**, hotspot truncation **12/18**.
+`real-pr8` has required hits and complete recall **6/6**, but verdict match
+**1/6**; its supplemental x3 returned `pass` on all three draws despite matching
+the required defect. These are confirmed limitations, not claims that all
+required findings or verdicts succeeded. Historical fixture-set hashes differ,
+so these diagnostic counts do not establish a regression or improvement.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-confirm-48b3dd0-x3.json`
+and `main-port-verdict-confirm-48b3dd0-x3.json` in the same directory. The latter
+is a byte-preserved raw report, SHA256
+`63694f94f17fd80edf1cc0255d56dfdf3c38b39b6925a39d95eda1ef38f013ff`.
+The full run meets the predeclared numerical limits; its required confirmation
+tier became complete after the `real-pr8` supplement. **Class R gate passed**
+does not mean every tier-2/3 fixture or verdict was successful.
+
+Historical live-review sequence for PR #209: automatic reviews had 20/29, 20/30,
+and 23/31 coverage with two deep-pass timeouts, so none was clean. The later
+scoped run [37480362891](https://github.com/frankekn/needlefish/actions/runs/37480362891)
+used `timeout_ms=2400000` without changing repo defaults and completed **31/31**
+files across five hotspots on head `8ce9074354bafa720eb2d4671624586cedc50871`.
+Its check-run **112327504256** was `SUCCESS / Needlefish: pass`; the review body's
+state marker named that head (the existing review's API commit remains its first
+posting commit). This is a historical receipt, not a statement of current draft,
+merge, or deployment status; current status belongs in the PR body and comments.
 
 
 ### 2026-09-30 — Critic contract-drift "affects" clause (Class R; round 1 adopted 2026-10-01)

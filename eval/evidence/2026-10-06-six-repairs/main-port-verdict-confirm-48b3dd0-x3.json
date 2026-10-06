@@ -1,0 +1,287 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "provider": "DeepSeek",
+  "route": "codex over CLIProxyAPI (DGX Spark, Tailscale)",
+  "runnerVersion": "codex-cli 0.160.1",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr8$' --report eval/reports/2026-10-06-main-port-verdict-confirm-48b3dd0-r-x3.json",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:1d710fd0c587a9a0\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr8$' --report eval/reports/2026-10-06-main-port-verdict-confirm-48b3dd0-r-x3.json",
+  "draws": 3,
+  "createdAt": "2026-10-06T16:00:08.636Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "real-pr8",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 99843,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 92,
+          "title": "formatDuration can render 60 seconds (\"1m 60s\")",
+          "whyItBreaks": "minutes is Math.floor(ms/60000) while seconds is Math.round((ms%60000)/1000) computed independently, so when ms%60000 >= 59500 the seconds component rounds up to 60 without carrying into minutes. For ms=119500: minutes=1, seconds=round(59500/1000)=60 -> \"1m 60s\" (base code produced \"2m 0s\"); for ms=59500..59999: minutes=0, seconds=60 -> \"60s\". Both call sites (render.ts:75 per-call durations, render.ts:80 total) embed this in the rendered review output, so the displayed duration is wrong/invalid."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 43885,
+      "totalPassMs": 99839
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 100485,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 92,
+          "title": "formatDuration can print \"Nm 60s\" instead of rolling over",
+          "whyItBreaks": "Minutes are floored from the raw ms while seconds are rounded independently, so when the leftover remainder is >= 59.5s the round-up reaches 60 without carrying into the minutes. Example: ms=119900 -> minutes=Math.floor(119900/60000)=1, seconds=Math.round(59900/1000)=60 -> \"1m 60s\". The previous code computed totalSeconds=Math.round(ms/1000)=120 first, yielding \"2m 0s\". This is rendered into every review report via renderMarkdown's stats line (src/shared/render.ts:75 and :80), so reports can display an out-of-range duration."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 14918,
+      "totalPassMs": 100483
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 61275,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 91,
+          "title": "formatDuration can render 60 seconds (\"1m 60s\")",
+          "whyItBreaks": "seconds = Math.round((ms % 60000) / 1000) rounds a remainder of [59500, 59999] up to 60, and it is never re-normalized into minutes. So ms=59500 renders \"60s\" and ms=119500 renders \"1m 60s\". The previous implementation floored total seconds into minutes first (totalSeconds % 60), so seconds was always in 0..59 and this output was impossible."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 8937,
+      "totalPassMs": 61269
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 87201,
+    "recallByFixture": {
+      "real-pr8": 1
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr8": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t3": 1
+    },
+    "recallByDefectClass": {
+      "rounding-carry-overflow": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "rounding-carry-overflow": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0,
+    "candidateMeanNoisePerPositive": 0,
+    "criticDelta": {
+      "meanNoisePerPositive": 0,
+      "recall": 0
+    },
+    "criticTimeShare": 0.2589538630916201
+  },
+  "gitSha": "48b3dd06221a3fffd6b1de5cacc11de57c69b3ba",
+  "fixtureSetHash": "9eef7a4a3a6ba771",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "real-pr8": 3
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr8"
+  ],
+  "fixtureKinds": {
+    "real-pr8": "positive"
+  },
+  "fixtureDefectClasses": {
+    "real-pr8": "rounding-carry-overflow"
+  }
+}
