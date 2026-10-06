@@ -9,8 +9,10 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
+  type Dirent,
+  type Stats,
 } from "node:fs";
-import { rm } from "node:fs/promises";
+import { chmod, lstat, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { envFlagOn } from "./env.js";
@@ -155,8 +157,106 @@ export async function disposeManagedTempDirectory(directory: string): Promise<vo
     throw new Error(`temp directory is not registered: ${directory}`);
   }
   if (termination !== null) return;
-  await rm(directory, { recursive: true, force: true });
+  try {
+    await removeOwnedTempTree(directory);
+  } catch (error) {
+    // A runner that already produced valid output must not be failed (and
+    // retried) just because its throwaway tree could not be removed. Warn and
+    // leave the directory registered and on disk so process exit / the next
+    // startup reaper can try again once the offending barrier is gone.
+    warnCleanupFailure(`temp directory ${directory}`, error);
+    return;
+  }
   activeTempDirectories.delete(directory);
+}
+
+/**
+ * Remove an owned temp tree, tolerating directories whose owner
+ * read/write/traverse bits were stripped (e.g. a runner cache made read-only).
+ * The plain recursive delete is tried first so a healthy tree is never walked;
+ * only after a permission failure do we restore access and retry.
+ */
+async function removeOwnedTempTree(directory: string): Promise<void> {
+  try {
+    await rm(directory, { recursive: true, force: true });
+    return;
+  } catch (error) {
+    if (!isPermissionDenied(error)) throw error;
+  }
+  await restoreOwnerAccess(directory);
+  await rm(directory, { recursive: true, force: true });
+}
+
+const OWNER_ONLY_ACCESS = 0o700;
+
+/**
+ * Restore owner rwx on directories inside an owned tree so a recursive delete
+ * can descend into and unlink their contents. Directories only: a file's
+ * deletion is governed by its parent directory's write bit, which this
+ * restores. `lstat` semantics throughout — symlinks are never followed, so a
+ * link pointing outside the owned tree is neither chmod-ed nor traversed and
+ * only the link itself is ever removed. Missing paths are ignored so a partial
+ * delete or a concurrent removal never aborts the walk.
+ */
+async function restoreOwnerAccess(directory: string): Promise<void> {
+  let stats: Stats;
+  try {
+    stats = await lstat(directory);
+  } catch (error) {
+    if (isPathMissing(error)) return;
+    throw error;
+  }
+  if (!stats.isDirectory()) return;
+  const permissions = stats.mode & 0o7777;
+  if ((permissions & OWNER_ONLY_ACCESS) !== OWNER_ONLY_ACCESS) {
+    try {
+      await chmod(directory, permissions | OWNER_ONLY_ACCESS);
+    } catch (error) {
+      if (isPathMissing(error)) return;
+      throw error;
+    }
+  }
+  let entries: Dirent[];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isPathMissing(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
+    // Dirent types come from lstat: a symlink reports as neither file nor
+    // directory, so it is skipped here and removed as a link by the retry.
+    if (!entry.isDirectory()) continue;
+    await restoreOwnerAccess(path.join(directory, entry.name));
+  }
+}
+
+function isPathMissing(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "EACCES" || error.code === "EPERM")
+  );
+}
+
+function warnCleanupFailure(target: string, error: unknown): void {
+  // Deliberately reports only the path and the errno/name: a cleanup failure
+  // must never echo runner output, a review prompt, or staged credentials.
+  const reason =
+    error instanceof Error && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.name
+        : "unknown error";
+  process.stderr.write(`needlefish: could not remove ${target}: ${reason}\n`);
 }
 
 export function registerRunnerProcessGroup(
@@ -224,7 +324,16 @@ export async function reapManagedTempDirectories(root = resolveNeedlefishTempRoo
       quarantined.push(quarantine);
     }
 
-    await Promise.all(quarantined.map((directory) => rm(directory, { recursive: true, force: true })));
+    for (const directory of quarantined) {
+      // A single undeletable tree (e.g. a read-only runner cache) must not
+      // abort the sweep: the startup reaper runs before every allocation, so a
+      // throw here would fail the whole CLI run.
+      try {
+        await removeOwnedTempTree(directory);
+      } catch (error) {
+        warnCleanupFailure(`quarantined temp directory ${directory}`, error);
+      }
+    }
     reapOrphanedProcessOwnerLocks(root);
   } finally {
     await releaseLock(sweepLock);
@@ -619,7 +728,11 @@ function reapOrphanedProcessOwnerLocks(root: string): void {
     if (owner === null) continue;
     const ownerLock = path.join(root, entry.name);
     if (referencedLocks.has(ownerLock) || ownerIdentityIsAlive(owner) || !canTakeLock(ownerLock)) continue;
-    unlinkSync(ownerLock);
+    try {
+      unlinkSync(ownerLock);
+    } catch (error) {
+      warnCleanupFailure(`orphaned owner lock ${ownerLock}`, error);
+    }
   }
 }
 

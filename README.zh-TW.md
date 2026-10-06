@@ -179,6 +179,9 @@ raw report 在
 
 本機模式是唯讀的：Markdown 輸出到 stdout，不寫入 GitHub。
 
+從 repo 子目錄執行，或將子目錄傳給 `--repo`，仍會審查整個 repo。
+檔案路徑、根目錄 `AGENTS.md` 與快取位置皆以 Git work-tree 根目錄為準。
+
 **已提交的工作**——在目標 repo 內執行，或從任意位置用 `--repo` 指向
 它。預設範圍是 merge-base…`HEAD`（見[基準偵測](#基準偵測)）：
 
@@ -240,6 +243,15 @@ needlefish --repo . --json | jq .verdict
 | `checked[]` | 描述審查內容的證據字串。 |
 | `stats` | 選用的逐 runner 呼叫時間與嘗試次數統計。 |
 | `totalDurationMs` | 選用的總審查時間（毫秒）。 |
+
+GitHub 模式在診斷輸出後附上最終 `needlefish-outcome {json}`。
+備援流程只讀取此結果，不搜尋審查正文；只有辨識到 runner transport
+故障的 `outcome:"failure"` 才帶 `operational:true`。阻擋 verdict 維持
+exit 1，跳過仍使用 `needlefish-skip`。
+
+Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
+完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
+舊收據阻止恢復審查。
 
 ### 基準偵測
 
@@ -416,6 +428,10 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
 `acp`。
 
+`openai` HTTP runner 沒有讀取 repo 的工具，只支援小型完整 diff 審查。
+`--deep` 與自動判定的大型審查會在 HTTP request 前拒絕；請改用具工具
+能力的 CLI runner。純文件 fast path 仍可搭配任何 runner。
+
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 內讀取環境變數（其 subprocess allowlist 為空）。括號內是未設定 `*_BIN`
@@ -461,6 +477,10 @@ Needlefish 會用 `git status
 或刪除 branch。這只關閉現成的 push 路徑；它不是 OS 層級的邊界，知道
 原始路徑的 runner 仍可直接寫入該處。Closed PR 會在 diff 或模型呼叫前
 被跳過。
+
+未提交變更的 clone 以 `WORKING` 指向暫存審查 commit；原始 repo 尚無
+commit 時，`EMPTY` 指向空白基準 commit。結果 JSON 保留這些標記，
+兩者皆可在 disposable clone 中作為 Git ref 使用。
 
 ### Runner subprocess 環境
 

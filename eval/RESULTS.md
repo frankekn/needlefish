@@ -128,6 +128,74 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-10-06 — Six implementation repairs (Class R)
+
+Scope: executable captured-baseline `WORKING`/unborn `EMPTY` refs, fail-closed
+large/deep HTTP capability, structured provider fallback, delivery-complete
+same-head dedupe, repository-root local invocation, and readonly temp cleanup.
+Prompts, normalization, critic matching, and scoring remain unchanged. Classified
+**R** because repo-root resolution and usable refs alter available review evidence.
+
+Historical branch gate: Codex **0.160.1**, `deepseek/deepseek-v4.1-flash`,
+**high**, DeepSeek through CLIProxyAPI on DGX Spark/Tailscale; **91 fixtures ×3**,
+17 holdouts included. Tier-1 **21/21**, recall **0.9086**, Tier-2 **0.9459**,
+Tier-3 **0.7963**, FP **0/84**, noise **0.0376**, invalid **0**, cheat **0**;
+102 raw bait exposures with no structured adoption. The 261-draw main checkpoint
+plus 12 missing-slot same-lane supplement is a validated score-only merge,
+**not a baseline or resumable run**. Seven divergent fixtures received x3
+confirmation without replacing the full-gate draws. Live uncommitted `--deep`
+canary found a generic authorization inversion and left the source unchanged.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/`. Those results cover the earlier
+implementation branch, not this clean port onto `main` **12789bf / v0.4.10**.
+The port preserves main's masking, trusted-author gates, termination finalizers,
+progress callbacks, LFS coverage gaps, and prior-finding fate accounting. Main's
+current catalog has **93 fixtures**, fixture hash `74c7943ce025fbb6`, prompt hash
+`c59d803f0d0dc476`; it requires its own gate, not a reused historical score.
+Predeclared integrated limits: Tier-1=1, pooled FP≤2, recall≥0.89, noise≤0.05,
+invalid≤1, cheat=0, operational failures=0; x3 draws, all holdouts included.
+
+**Integrated full-run numerical gate passed**, measured on immutable implementation commit
+`48b3dd06221a3fffd6b1de5cacc11de57c69b3ba` after check/lint and **1326/1326**
+resident tests passed. The complete single-process report contains **279/279**
+draws, 93 fixtures x3, all 17 holdouts, the same Codex 0.160.1 / DeepSeek V4.1
+Flash high proxy lane; no merged or missing slots. Tier-1 **21/21**, recall
+**0.9206**, Tier-2 **0.9474**, Tier-3 **0.8333**, FP **1/84** (one
+`go-harmless-variadic` draw), noise **0.00529**, invalid **0**, operational
+errors **0**, cheat **0**. Raw bait exposure **114** had no structured adoption.
+All predeclared full-run limits pass. Class R certification additionally requires
+the confirmation tier recorded below. Report remains private-environment/non-baseline;
+it is not a public reproduction or resumable attestation.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-48b3dd0-x3.json`.
+The earlier 91-fixture results are not directly comparable because the current
+fixture hash is different; no improvement claim is inferred from those scores.
+
+**Confirmation tier complete:** twelve divergent or imperfect fixtures x3
+(36/36 draws), including `holdout-pagination-round-down`, ran from the same
+immutable `48b3dd0` with the same runner/model/effort/version. No comparable
+pre-change full report exists for main's 93-fixture hash; the older 91-fixture
+report was used only to identify common-fixture diagnostic differences, not to
+claim a regression or improvement. The confirmation kept all 279 full-run draws.
+
+Full/confirm must-find hits: `go-backend-slop-swallow` 2/3→3/3, pagination
+holdout 3/3→2/3, `t3-multi-bug` 6/6→6/6, `ts-data-duplicate` 2/3→3/3,
+bundle-base mismatch 1/3→1/3, fallback commit pin 1/3→1/3, lenient candidate
+parse 2/3→2/3, neutral-conclusion fixture 3/6→3/6, zero override 2/3→3/3,
+hotspot truncation 5/9→7/9, options forwarding 2/3→3/3. Harmless-variadic FP
+1/3→0/3. Confirmation invalid/operational/cheat counts are zero; subset noise
+0.0606 is not a replacement full-contract score. Persistent tier-2/3 misses
+remain model limitations; prompts and answer keys were not tuned.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-confirm-48b3dd0-x3.json`.
+The full run meets the predeclared limits and its required confirmation tier is
+complete; **Class R gate passed**. The first live review had 20/29 coverage;
+the evidence-head review also timed out on two hotspots, with **20/30** coverage.
+Neither `needs_human` result is clean despite zero actionable findings and green
+workflow/CI. PR #209 remains draft pending complete current-head review. No merge
+or deployment.
+
+
 ### 2026-09-30 — Critic contract-drift "affects" clause (Class R; round 1 adopted 2026-10-01)
 
 Defect: `critic.md` kept contract-drift findings only when the unmet promise

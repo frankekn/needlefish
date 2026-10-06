@@ -231,3 +231,40 @@ test("docs-only --deep --dry-run reports the fast path, not the large path", (t)
     "--deep on a docs-only diff still takes the fast path in review(); the dry-run plan must match",
   );
 });
+
+test("--dry-run with a nested --repo collects root-relative tracked and untracked changes", (t) => {
+  const fixture = setupDryRunFixture(t, [
+    { path: "app.ts", content: "export const app = 1;\n" },
+    { path: "pkg/deep/mod.ts", content: "export const mod = 1;\n" },
+  ]);
+  // Dirty both scopes after the fixture commit: tracked edits plus untracked
+  // files, outside and inside the nested directory.
+  writeFileSync(path.join(fixture.repo, "app.ts"), "export const app = 2;\n");
+  writeFileSync(path.join(fixture.repo, "pkg", "deep", "mod.ts"), "export const mod = 2;\n");
+  writeFileSync(path.join(fixture.repo, "newroot.ts"), "export const newroot = 1;\n");
+  writeFileSync(path.join(fixture.repo, "pkg", "deep", "newmod.ts"), "export const newmod = 1;\n");
+
+  const result = runCli(fixture, [
+    "--repo",
+    path.join(fixture.repo, "pkg", "deep"),
+    "--dry-run",
+    "--print-bundle",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(fixture.marker), false, "runner must not be invoked");
+  assert.equal(existsSync(cacheFile(fixture)), false, "no last-review.json may be written");
+  const bundle = parseJsonObject(result.stdout);
+  assert.equal(bundle.repoPath, fixture.repo, "the bundle must point at the repository root");
+  const patch = String(bundle.patch);
+  assert.match(patch, /diff --git a\/app\.ts b\/app\.ts/);
+  assert.match(patch, /diff --git a\/pkg\/deep\/mod\.ts b\/pkg\/deep\/mod\.ts/);
+  assert.match(patch, /diff --git a\/newroot\.ts b\/newroot\.ts/);
+  assert.match(patch, /diff --git a\/pkg\/deep\/newmod\.ts b\/pkg\/deep\/newmod\.ts/);
+  const changed = bundle.changedFiles;
+  assert.ok(Array.isArray(changed));
+  const paths = changed
+    .map((file) => (isJsonObject(file) && typeof file.path === "string" ? file.path : ""))
+    .sort();
+  assert.deepEqual(paths, ["app.ts", "newroot.ts", "pkg/deep/mod.ts", "pkg/deep/newmod.ts"]);
+});

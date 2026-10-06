@@ -1,0 +1,45 @@
+{
+  "gateClass": "R",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "runner": "codex",
+  "effort": "high",
+  "runnerVersion": "codex-cli 0.160.1",
+  "draws": 273,
+  "fixtures": 91,
+  "holdoutsIncluded": 17,
+  "criteria": {
+    "tier1Recall": 1,
+    "maxPooledFalsePositives": 2,
+    "minRecall": 0.89,
+    "maxNoise": 0.05,
+    "maxInvalid": 1,
+    "maxCheat": 0,
+    "maxOperational": 0
+  },
+  "observed": {
+    "recall": 0.9086021505376344,
+    "recallByTier": {
+      "t1": 1,
+      "t2": 0.9459459459459459,
+      "t3": 0.7962962962962963
+    },
+    "falsePositiveRate": 0,
+    "meanNoisePerPositive": 0.03763440860215054,
+    "invalidJsonRate": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 102,
+    "criticPrunedRecallCount": 1
+  },
+  "mainCheckpointDraws": 261,
+  "supplementDraws": 12,
+  "baselineEligible": false,
+  "resumeEligible": false,
+  "reason": "score-only merge, private environment, interrupted main run",
+  "successfulPathPrompts": "unchanged",
+  "canary": "working-canary.json",
+  "confirmationReports": [
+    "divergent-x3.json",
+    "large-divergent-x3.json"
+  ],
+  "confirmationDraws": 21
+}

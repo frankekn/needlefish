@@ -72,6 +72,7 @@ export interface RunnerSandboxOptions {
   readonly repoPath: string;
   readonly prompt: string;
   readonly targetHeadSha: string;
+  readonly targetBaseSha?: string;
   readonly targetPatch?: string;
   readonly tmp: string;
 }
@@ -114,11 +115,23 @@ function prepareWorkingSandbox(
   if (!options.targetPatch?.trim()) {
     throw new Error("WORKING sandbox requires a target patch");
   }
-  if (hasHeadCommit(sourceRepoPath)) {
+  if (options.targetBaseSha !== "EMPTY" && hasHeadCommit(sourceRepoPath)) {
     git(["clone", "--quiet", "--no-hardlinks", sourceRepoPath, sandboxPath], sourceRepoPath);
+    if (options.targetBaseSha) {
+      git(["checkout", "--quiet", "--detach", options.targetBaseSha], sandboxPath);
+    }
   } else {
     mkdirSync(sandboxPath, { recursive: true });
     git(["init", "--quiet"], sandboxPath);
+    git(
+      [
+        "-c", "user.name=Needlefish Sandbox",
+        "-c", "user.email=needlefish-sandbox@example.invalid",
+        "commit", "--quiet", "--allow-empty", "-m", "needlefish empty baseline",
+      ],
+      sandboxPath
+    );
+    git(["update-ref", "refs/heads/EMPTY", "HEAD"], sandboxPath);
   }
   // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
   // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
@@ -145,6 +158,10 @@ function prepareWorkingSandbox(
     sandboxPath
   );
   const expectedHeadSha = git(["rev-parse", "HEAD"], sandboxPath);
+  // Prompts and persisted results keep their WORKING/EMPTY labels. Make those
+  // labels real refs in this disposable clone, without rewriting source text.
+  git(["update-ref", "refs/heads/WORKING", expectedHeadSha], sandboxPath);
+  git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
   return finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha);
