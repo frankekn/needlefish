@@ -1,0 +1,488 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "provider": "DeepSeek",
+  "route": "codex over CLIProxyAPI (DGX Spark, Tailscale)",
+  "runnerVersion": "codex-cli 0.160.1",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr4-hotspot-truncation$' --report eval/reports/2026-10-06-six-repairs-large-divergent-r-x3.json",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:1d710fd0c587a9a0\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^real-pr4-hotspot-truncation$' --report eval/reports/2026-10-06-six-repairs-large-divergent-r-x3.json",
+  "draws": 3,
+  "createdAt": "2026-10-06T04:48:53.904Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 157903,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 94,
+          "title": "Restore tail-coverage backstop so no changed file is skipped",
+          "whyItBreaks": "The PR deletes the tail-coverage backstop that guaranteed every changed file lands in some deep-reviewed hotspot. After `hotspots` is truncated to MAX_HOTSPOTS (6) at line 93, any changed file not assigned to a selected hotspot (including files in the 7th+ hotspot discarded by slice, and files map.md never mapped) is now never passed to deep.md and produces no residual_risks entry. The large-PR review can therefore return a verdict while whole changed files were never reviewed, with nothing surfacing the gap."
+        },
+        {
+          "severity": "P2",
+          "category": "validation",
+          "file": "src/core/review.ts",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "title": "Propagate deep-pass residual risks instead of emptying the list",
+          "whyItBreaks": "`candidateMerged.residual_risks` is now hard-coded to `[]`, discarding every residual risk reported by the successful deep passes (base pushed `res.residual_risks` into `residuals`). Those residual risks are exactly the deep reviewer's unresolved/blocking signals (ResidualRisk.blocks gates the verdict). The critic receives a candidate whose residual_risks are empty, so it can no longer carry forward unresolved risks, and a review that previously blocked on a deep-pass residual can now pass."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 103,
+          "lineEnd": 105,
+          "title": "Restore per-hotspot error handling in reviewLarge",
+          "whyItBreaks": "The try/catch around each hotspot's deep pass was removed, so a single hotspot failure (malformed/empty model output → extractJson/normalizeReview throws) now propagates out of the loop and rejects the whole reviewLarge call. Previously one bad hotspot degraded gracefully: the failure was recorded as a `blocks:true` residual, the verdict blocked, and the remaining hotspots were still deep-reviewed and reported. Now all completed hotspots' work is discarded and the caller gets a hard error instead of a blocked-but-informative result."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 3,
+        "mustFindTotal": 3,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 164584,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 93,
+          "title": "Restore coverage backstop so unmapped changed files are reviewed",
+          "whyItBreaks": "The diff deletes the coverage backstop that collected every bundle.changedFiles path not present in a selected hotspot and pushed a tail hotspot so it still got deep-reviewed. `hotspots` is still truncated with `.slice(0, MAX_HOTSPOTS)` (MAX_HOTSPOTS = 6), so any file the map pass does not assign to the first six hotspots is now never deep-reviewed and nothing records that it was skipped (no residual, no checked entry). The removed comment stated the exact invariant now broken: 'never silently skip a changed file'. The head loop at lines 97-106 only iterates the (possibly truncated) hotspots."
+        },
+        {
+          "severity": "P1",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 108,
+          "lineEnd": 113,
+          "title": "Preserve deep-pass residual_risks so blocking gaps reach the verdict",
+          "whyItBreaks": "Base code accumulated `residuals.push(...res.residual_risks)` per hotspot and passed them to the critic via `candidateMerged.residual_risks`. Head removes the `residuals` array and hardcodes `residual_risks: []`. deriveVerdict() returns `needs_human` when any residual has `blocks: true` (src/core/verdict.ts: `residualRisks.some(r => r.blocks)`); with deep residuals discarded and the critic never seeing them, a deep pass reporting a `blocks:true` gap can no longer influence the verdict, so `deriveVerdict(pruned.findings, pruned.residual_risks)` can return `pass`. This is TRIGGER D: an added/changed path discards a failure signal (a blocking gap) so callers can no longer distinguish 'gap found' from 'no gaps'."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 115,
+          "lineEnd": 117,
+          "title": "Keep BASE/HEAD substitution in critic prompts",
+          "whyItBreaks": "TRIGGER C contract drift. The critic prompt template promises the critic receives the base/head SHAs (prompts/critic.md: 'You receive candidate findings (JSON) plus the diff stat and the base/head SHAs' and its Refs block is literally `BASE: {{BASE}}` / `HEAD: {{HEAD}}`), instructing it to run `git diff <base>..<head> -- <file>`. This diff removes `.replace(\"{{BASE}}\", ...)` and `.replace(\"{{HEAD}}\", ...)` at BOTH critic call sites (reviewLarge, here; and reviewSmall, lines 59-61), so the critic is handed the literal strings `{{BASE}}`/`{{HEAD}}` and can no longer resolve the SHAs it is told to use for re-verification. Body (no substitution) contradicts the unchanged carrier (prompt spec) relied on by the critic."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": 2
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": 2
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 189443,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 97,
+          "title": "Restore coverage backstop so every changed file is deep-reviewed",
+          "whyItBreaks": "Base computed `covered` from the sliced hotspots, added every uncovered changed file to a synthetic \"tail-coverage\" hotspot, and deep-reviewed it (explicit comment: \"never silently skip a changed file\"). Head removed that block: after `sortByRisk(...).slice(0, MAX_HOTSPOTS)` (line 93) only the selected hotspots are iterated (line 97). Any changed file that the map pass did not assign to a hotspot, or that belongs to a hotspot ranked below MAX_HOTSPOTS=6, is now never deep-reviewed and never reported in `checked`, yet `reviewLarge` can still return a passing verdict — a silent under-review regression."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 97,
+          "lineEnd": 106,
+          "title": "Isolate deep-pass failures instead of aborting the whole review",
+          "whyItBreaks": "Base wrapped each deep pass in try/catch: on failure it recorded `[hotspot] DEEP PASS FAILED`, pushed a `{blocks:true}` residual, and continued with the remaining hotspots. Head removed the try/catch, so `runCodex`/`extractJson`/`normalizeReview` throwing for a single hotspot propagates out of `reviewLarge` and `review` rejects. One transient/flaky hotspot failure now destroys the entire review instead of yielding a partial result plus a blocking residual, so no findings/verdict are produced at all."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "title": "Propagate deep-pass residual risks instead of hardcoding empty",
+          "whyItBreaks": "Base accumulated `residuals` from every deep pass (success: `residuals.push(...res.residual_risks)`; failure: a `{blocks:true}` entry) and forwarded them to the critic via `candidateMerged.residual_risks`. Head hardcodes `residual_risks: []`, discarding that signal before it reaches the critic. The final `residualRisks`/`deriveVerdict` call (line 122/128) only sees the critic's own list, so a blocking residual emitted by a deep pass can no longer force a blocking verdict — the failure/incompleteness is indistinguishable from \"everything verified\"."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.3333333333333333,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 170643.33333333334,
+    "recallByFixture": {
+      "real-pr4-hotspot-truncation": 0.3333333333333333
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr4-hotspot-truncation": 0.7777777777777777
+    },
+    "mustFindHitRate": 0.7777777777777777,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t3": 0.3333333333333333
+    },
+    "recallByDefectClass": {
+      "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode": 0.3333333333333333
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 3,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "012bec31d4443b12ea1d5e4e5cb30a5fb00a44bd",
+  "fixtureSetHash": "44533ed2cb41f1c3",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "real-pr4-hotspot-truncation": 3
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr4-hotspot-truncation"
+  ],
+  "fixtureKinds": {
+    "real-pr4-hotspot-truncation": "positive"
+  },
+  "fixtureDefectClasses": {
+    "real-pr4-hotspot-truncation": "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode"
+  }
+}

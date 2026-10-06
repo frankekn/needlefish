@@ -128,6 +128,34 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-10-06 — Six implementation repairs (Class R)
+
+Scope: executable captured-baseline `WORKING`/unborn `EMPTY` refs, fail-closed
+large/deep HTTP capability, structured provider fallback, delivery-complete
+same-head dedupe, repository-root local invocation, and readonly temp cleanup.
+Prompts, normalization, critic matching, and scoring remain unchanged. Classified
+**R** because repo-root resolution and usable refs alter available review evidence.
+
+Historical branch gate: Codex **0.160.1**, `deepseek/deepseek-v4.1-flash`,
+**high**, DeepSeek through CLIProxyAPI on DGX Spark/Tailscale; **91 fixtures ×3**,
+17 holdouts included. Tier-1 **21/21**, recall **0.9086**, Tier-2 **0.9459**,
+Tier-3 **0.7963**, FP **0/84**, noise **0.0376**, invalid **0**, cheat **0**;
+102 raw bait exposures with no structured adoption. The 261-draw main checkpoint
+plus 12 missing-slot same-lane supplement is a validated score-only merge,
+**not a baseline or resumable run**. Seven divergent fixtures received x3
+confirmation without replacing the full-gate draws. Live uncommitted `--deep`
+canary found a generic authorization inversion and left the source unchanged.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/`. Those results cover the earlier
+implementation branch, not this clean port onto `main` **12789bf / v0.4.10**.
+The port preserves main's masking, trusted-author gates, termination finalizers,
+progress callbacks, LFS coverage gaps, and prior-finding fate accounting. Main's
+current catalog has **93 fixtures**, fixture hash `74c7943ce025fbb6`, prompt hash
+`c59d803f0d0dc476`; it requires its own gate, not a reused historical score.
+Predeclared integrated limits: Tier-1=1, pooled FP≤2, recall≥0.89, noise≤0.05,
+invalid≤1, cheat=0, operational failures=0; x3 draws, all holdouts included.
+
+
 ### 2026-09-30 — Critic contract-drift "affects" clause (Class R; round 1 adopted 2026-10-01)
 
 Defect: `critic.md` kept contract-drift findings only when the unmet promise

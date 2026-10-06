@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { runLocal, runLocalPr, terminalProgress } from "./local";
 import type { ReviewProgressEvent } from "../core/review";
 import { serializeReviewResult } from "../shared/schema";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+
+// An absolute tsx entry so the CLI can be launched with a working directory
+// outside the needlefish checkout, where a bare `--import tsx` would not resolve.
+const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
 
 function isJsonObject(value: unknown): value is { readonly [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -506,5 +511,252 @@ test("runLocal tells the user what to do when the branch has no diff against its
   await assert.rejects(
     () => runLocal(repo, { localMode: "branch" }),
     /No diff between [0-9a-f]{40} and HEAD \(main\)\. Nothing to review\. Commit changes on this branch first, or pass --base <ref> to compare against another branch\.$/,
+  );
+});
+
+// --- Nested-directory invocation --------------------------------------------
+
+type NestedFixture = {
+  readonly tmp: string;
+  readonly repo: string;
+  readonly nested: string;
+  readonly home: string;
+  readonly promptPath: string;
+};
+
+// A repo whose reviewable surface spans the root and a nested directory, with a
+// stub claude runner that records the prompt it was handed and a fake HOME so
+// the default cache destination is observable.
+function setupNestedFixture(t: TestContext): NestedFixture {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-nested-"));
+  const repo = initRepo(tmp);
+  const nested = path.join(repo, "pkg", "deep");
+  const home = path.join(tmp, "home");
+  const promptPath = path.join(tmp, "prompt.txt");
+  const bin = path.join(tmp, "claude-bin.js");
+  const previous = {
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+  };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(
+    path.join(repo, "AGENTS.md"),
+    "ROOT-POLICY-SENTINEL: review from the repository root.\n"
+  );
+  writeFileSync(path.join(repo, "app.ts"), "export const app = 1;\n");
+  writeFileSync(path.join(nested, "mod.ts"), "export const mod = 1;\n");
+  commitAll(repo, "base");
+
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(promptPath)}, fs.readFileSync(0, 'utf8'));`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CLAUDE_BIN = bin;
+  process.env.NEEDLEFISH_RUNNER = "claude";
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+  return { tmp, repo, nested, home, promptPath };
+}
+
+// Uncommitted tracked and untracked changes both outside and inside `nested`.
+function dirtyNestedFixture(t: TestContext): NestedFixture {
+  const fixture = setupNestedFixture(t);
+  writeFileSync(path.join(fixture.repo, "app.ts"), "export const app = 2;\n");
+  writeFileSync(path.join(fixture.nested, "mod.ts"), "export const mod = 2;\n");
+  writeFileSync(path.join(fixture.repo, "newroot.ts"), "export const newroot = 1;\n");
+  writeFileSync(path.join(fixture.nested, "newmod.ts"), "export const newmod = 1;\n");
+  return fixture;
+}
+
+function runNestedCli(fixture: NestedFixture, cwd: string, args: readonly string[]) {
+  return spawnSync(
+    process.execPath,
+    ["--import", TSX_LOADER, path.join(process.cwd(), "src/cli.ts"), ...args],
+    { cwd, encoding: "utf8", env: { ...process.env, HOME: fixture.home } }
+  );
+}
+
+// The default cache destination is HOME/.cache/needlefish/<slug>/last-review.json;
+// the slug must be the repository root's name, never the invocation directory's.
+function cachePath(fixture: NestedFixture, slug: string): string {
+  return path.join(fixture.home, ".cache", "needlefish", slug, "last-review.json");
+}
+
+const NESTED_DIFF_HEADERS = [
+  /diff --git a\/app\.ts b\/app\.ts/,
+  /diff --git a\/pkg\/deep\/mod\.ts b\/pkg\/deep\/mod\.ts/,
+  /diff --git a\/newroot\.ts b\/newroot\.ts/,
+  /diff --git a\/pkg\/deep\/newmod\.ts b\/pkg\/deep\/newmod\.ts/,
+] as const;
+
+function assertRootScopedReview(fixture: NestedFixture, stdout: string): void {
+  const stdoutJson = parseJsonObject(stdout);
+  assert.equal(stdoutJson.verdict, "pass");
+
+  const prompts = readFileSync(fixture.promptPath, "utf8");
+  for (const header of NESTED_DIFF_HEADERS) {
+    assert.match(prompts, header);
+  }
+  assert.match(prompts, /ROOT-POLICY-SENTINEL/);
+}
+
+test("local CLI launched from a nested directory reviews the repository root scope", (t) => {
+  const fixture = dirtyNestedFixture(t);
+
+  const result = runNestedCli(fixture, fixture.nested, ["--json", "--runner", "claude"]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assertRootScopedReview(fixture, result.stdout);
+  assert.equal(existsSync(cachePath(fixture, "repo")), true, "cache must be keyed by the repository root");
+  assert.equal(readFileSync(cachePath(fixture, "repo"), "utf8"), result.stdout);
+  assert.equal(
+    existsSync(cachePath(fixture, "deep")),
+    false,
+    "the nested directory name must not become the cache slug"
+  );
+});
+
+test("local CLI --repo pointing at a nested directory resolves the same root scope", (t) => {
+  const fixture = dirtyNestedFixture(t);
+
+  const result = runNestedCli(fixture, process.cwd(), [
+    "--repo",
+    fixture.nested,
+    "--json",
+    "--runner",
+    "claude",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assertRootScopedReview(fixture, result.stdout);
+  assert.equal(existsSync(cachePath(fixture, "repo")), true, "cache must be keyed by the repository root");
+  assert.equal(existsSync(cachePath(fixture, "deep")), false);
+});
+
+test("branch-mode review from a nested directory keeps root-relative paths and root policy", (t) => {
+  const fixture = setupNestedFixture(t);
+  gitText(["checkout", "-b", "feature"], fixture.repo);
+  writeFileSync(path.join(fixture.repo, "app.ts"), "export const app = 2;\n");
+  writeFileSync(path.join(fixture.nested, "mod.ts"), "export const mod = 2;\n");
+  commitAll(fixture.repo, "feature");
+
+  const result = runNestedCli(fixture, fixture.nested, ["--json", "--runner", "claude"]);
+
+  assert.equal(result.status, 0, result.stderr);
+  const stdoutJson = parseJsonObject(result.stdout);
+  assert.equal(stdoutJson.verdict, "pass");
+  const prompts = readFileSync(fixture.promptPath, "utf8");
+  assert.match(prompts, /diff --git a\/app\.ts b\/app\.ts/);
+  assert.match(prompts, /diff --git a\/pkg\/deep\/mod\.ts b\/pkg\/deep\/mod\.ts/);
+  assert.match(prompts, /ROOT-POLICY-SENTINEL/);
+  assert.equal(existsSync(cachePath(fixture, "repo")), true);
+  assert.equal(existsSync(cachePath(fixture, "deep")), false);
+});
+
+test("runLocalPr from a nested directory resolves root refs and the root cache slug", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-pr-nested-"));
+  const repo = initRepo(tmp);
+  const nested = path.join(repo, "pkg", "deep");
+  const home = path.join(tmp, "home");
+  const fakeBin = path.join(tmp, "bin");
+  const previous = {
+    path: process.env.PATH,
+    home: process.env.HOME,
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+  };
+  t.after(() => {
+    if (previous.path === undefined) delete process.env.PATH;
+    else process.env.PATH = previous.path;
+    if (previous.home === undefined) delete process.env.HOME;
+    else process.env.HOME = previous.home;
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  mkdirSync(nested, { recursive: true });
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  writeFileSync(path.join(nested, "mod.ts"), "export const m = 1;\n");
+  commitAll(repo, "feature");
+  const head = headSha(repo);
+  // Advance main past the merge base so the PR base tip and merge base differ.
+  gitText(["checkout", "main"], repo);
+  writeFileSync(path.join(repo, "MAIN.md"), "main moved\n");
+  commitAll(repo, "main advanced");
+  const baseTip = headSha(repo);
+  gitText(["checkout", "feature"], repo);
+
+  mkdirSync(fakeBin);
+  writeFileSync(
+    path.join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'pr' && process.argv[3] === 'view') {",
+      "  process.stdout.write(JSON.stringify({",
+      "    number: 7, title: 'PR', body: null, comments: [], reviews: [],",
+      "    statusCheckRollup: [],",
+      `    baseRefOid: ${JSON.stringify(baseTip)},`,
+      `    headRefOid: ${JSON.stringify(head)},`,
+      "    baseRefName: 'main', headRefName: 'feature',",
+      "  }));",
+      "  process.exit(0);",
+      "}",
+      "process.stderr.write('unexpected gh call');",
+      "process.exit(1);",
+    ].join("\n")
+  );
+  writeFileSync(
+    path.join(fakeBin, "claude"),
+    [
+      "#!/usr/bin/env node",
+      "process.stdin.resume();",
+      "process.stdin.on('end', () => {",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "});",
+    ].join("\n")
+  );
+  chmodSync(path.join(fakeBin, "gh"), 0o755);
+  chmodSync(path.join(fakeBin, "claude"), 0o755);
+  process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
+  process.env.HOME = home;
+  process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
+  process.env.NEEDLEFISH_RUNNER = "claude";
+
+  const result = await runLocalPr(nested, 7, {});
+
+  const mergeBase = gitText(["merge-base", baseTip, head], repo);
+  assert.equal(result.prNumber, 7);
+  assert.equal(result.prBaseSha, baseTip);
+  assert.equal(result.baseSha, mergeBase);
+  assert.equal(result.verdict, "pass");
+  const rootCache = path.join(home, ".cache", "needlefish", "repo", "last-review.json");
+  assert.equal(existsSync(rootCache), true, "cache must be keyed by the repository root");
+  assert.equal(readFileSync(rootCache, "utf8"), serializeReviewResult(result));
+  assert.equal(
+    existsSync(path.join(home, ".cache", "needlefish", "deep", "last-review.json")),
+    false,
+    "the nested directory name must not become the cache slug"
   );
 });

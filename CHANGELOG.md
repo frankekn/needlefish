@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Local: resolve nested invocations to the repository root for diffs, policy,
+  sandbox cloning, and cache placement.
+- Runner: expose executable `WORKING` and unborn `EMPTY` sandbox refs and pin
+  working patches to their captured baseline without changing result labels.
+- Review: reject tool-less `openai` HTTP large/deep reviews before model calls;
+  small full-diff reviews and docs-only skips remain supported.
+- GitHub: advance provider fallback only on structured execution outcomes,
+  never finding prose or a blocking verdict; preserve typed transport failures.
+- GitHub: write dedupe receipts after delivery and require a completed verdict
+  check before skipping, so old failed or superseded deliveries can recover.
+- Runner: remove owned readonly cache trees without following symlinks;
+  unrecoverable cleanup warns without discarding valid output or retrying the
+  model, and one failed removal no longer aborts startup reaping.
+
 ## 0.4.10 — 2026-10-02
 
 - Prompts: the critic no longer deletes a contract-drift finding when a

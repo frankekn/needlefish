@@ -195,6 +195,10 @@ raw reports under
 
 Local mode is read-only: Markdown to stdout, no GitHub writes.
 
+Invoking from a repository subdirectory, or passing one to `--repo`, reviews the
+whole repository. Paths, root `AGENTS.md`, and cache placement use Git's
+work-tree top level.
+
 **Committed work** — run from inside the target repo, or point `--repo` at it
 from anywhere. The default range is merge-base…`HEAD` (see
 [base detection](#base-detection)):
@@ -309,6 +313,16 @@ the schema: a finding's `lineEnd` is never below its `lineStart`, and
 `stats[].usage.totalTokens` is at least `inputTokens + outputTokens`.
 `--dry-run --json` prints a different summary object that this schema does
 not describe.
+
+GitHub mode appends a final `needlefish-outcome {json}` line after diagnostics.
+`outcome:"verdict"` carries the computed verdict; `outcome:"failure"` has
+`operational:true` only for recognized runner transport failures. Provider
+fallback consumes this result, never review prose. Blocking verdicts still
+exit 1; skips keep the existing `needlefish-skip` line.
+
+Same-head dedupe requires a trusted receipt and a completed verdict check.
+Receipts are written after delivery; failed, missing, terminated, or superseded
+checks do not let old receipts suppress recovery.
 
 ### Base detection
 
@@ -529,6 +543,10 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
+The `openai` HTTP runner has no repository-reading tools. It supports small
+full-diff reviews; `--deep` and automatically large reviews fail before any
+request. Use a tool-capable CLI runner instead. Docs-only skips remain supported.
+
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
 its env in-process (its subprocess allowlist is empty). Defaults in
@@ -575,6 +593,10 @@ from inside the sandbox cannot create, force-update, or delete branches in
 the original. This closes the ready-made push route only; it is not an
 OS-level boundary, and a runner that learns the original path can still write
 there directly. Closed PRs are skipped before diffing or model invocation.
+
+Uncommitted clones expose `WORKING` as the synthetic review commit and, for an
+unborn source, `EMPTY` as an empty baseline commit. Result JSON retains these
+labels; both are executable Git refs inside the disposable clone.
 
 ### Subprocess environment
 

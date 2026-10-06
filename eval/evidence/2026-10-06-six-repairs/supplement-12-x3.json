@@ -1,0 +1,1158 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "provider": "DeepSeek",
+  "route": "codex over CLIProxyAPI (DGX Spark, Tailscale)",
+  "runnerVersion": "codex-cli 0.160.1",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(real-pr4-hotspot-truncation|real-pr4-options-not-forwarded|real-pr8|real-pr9)$' --report eval/reports/2026-10-06-six-repairs-supplement-r-x3.json",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:1d710fd0c587a9a0\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --provider DeepSeek --route 'codex over CLIProxyAPI (DGX Spark, Tailscale)' --runner-version 'codex-cli 0.160.1' --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(real-pr4-hotspot-truncation|real-pr4-options-not-forwarded|real-pr8|real-pr9)$' --report eval/reports/2026-10-06-six-repairs-supplement-r-x3.json",
+  "draws": 3,
+  "createdAt": "2026-10-06T04:45:08.464Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 112990,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 94,
+          "title": "Restore coverage backstop so every changed file is deep-reviewed",
+          "whyItBreaks": "reviewLarge still truncates hotspots with slice(0, MAX_HOTSPOTS) (MAX_HOTSPOTS=6 @src/core/review.ts:26), but the tail-coverage backstop that appended a hotspot for every changed file not covered by the selected hotspots was removed. Any changed file in a dropped hotspot (ranked below the top 6) or omitted by the map pass is now silently excluded from deep review. No residual risk or checked entry records the omission, so the returned verdict can be a pass over files that were never inspected."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "title": "Stop discarding deep-pass residual_risks in reviewLarge",
+          "whyItBreaks": "candidateMerged.residual_risks is hardcoded to [] and res.residual_risks from each deep pass (line 103) is never read; the old residuals array that collected them into candidateMerged is gone. The final residual risks come only from pruned.residual_risks (line 128) whose critic input had an empty residual_risks list, so a blocking residual (blocks:true) found during deep review can never reach deriveVerdict(pruned.findings, pruned.residual_risks) — a verdict that was previously blocked can now conclude pass."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 153158,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "title": "Forward deep-review residual risks to the critic again",
+          "whyItBreaks": "candidateMerged.residual_risks is now hardcoded to []. In the base, per-hotspot res.residual_risks (and blocks:true failure residuals) were accumulated into `residuals` and forwarded to the critic. The final result returns `pruned.residual_risks` (line 128), so blocking residual risks flagged during deep review are no longer fed into the critic and can vanish from the verdict gate (`deriveVerdict(pruned.findings, pruned.residual_risks)` line 122) unless the critic independently re-derives them. This discards a risk signal the pipeline previously carried."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 93,
+          "title": "Restore coverage backstop so no changed file is silently skipped",
+          "whyItBreaks": "After `.slice(0, MAX_HOTSPOTS)` (max 6) the tail-coverage hotspot was removed. Any changed file that the map pass did not place in a selected hotspot — or that fell outside the top 6 — is no longer deep-reviewed. The base explicitly guaranteed every changed file got deep-reviewed ('never silently skip a changed file'); without it such files pass unreviewed."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 103,
+          "lineEnd": 103,
+          "title": "Do not let one hotspot failure abort the entire large review",
+          "whyItBreaks": "The per-hotspot try/catch was removed. Base caught a throwing runCodex/normalizeReview/extractJson (e.g. malformed LLM JSON), recorded a blocks:true residual, and continued to review the remaining hotspots. Now any single hotspot failure propagates out of reviewLarge, so one bad response returns no ReviewResult at all for the whole large PR."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 3,
+        "mustFindTotal": 3,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 205554,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 106,
+          "title": "Restore coverage backstop: changed files can now be skipped",
+          "whyItBreaks": "This PR deleted the tail-coverage block that pushed every changed file not covered by a selected hotspot into an extra hotspot. Now the loop at line 97 iterates only over `sortByRisk(...).slice(0, MAX_HOTSPOTS)` (line 93, cap 6). Any changed file the map pass failed to assign to a hotspot, or assigned to a hotspot that falls outside the top 6, is never passed to deep.md/runCodex, so its findings are never produced — and reviewLarge can still return a PASS verdict. The tool silently certifies as reviewed a PR whose changed file(s) were never examined."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "title": "Deep-pass residual risks are dropped before the critic/verdict",
+          "whyItBreaks": "The per-hotspot deep pass returns `res.residual_risks`, previously accumulated into `residuals` and forwarded via `candidateMerged.residual_risks` so the critic could carry unresolved/blocking concerns into deriveVerdict. This PR hardcodes `residual_risks: []`, and the removal of the collector means every residual risk a deep pass reports (e.g. 'could not verify X') is discarded before the critic. The critic only receives patchStat for large PRs, so it cannot re-derive them; the final verdict can therefore pass while deep passes flagged blocking unknowns."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 103,
+          "lineEnd": 105,
+          "title": "One deep-pass failure now aborts the entire large-PR review",
+          "whyItBreaks": "The per-hotspot try/catch that previously caught a failed deep pass (recording a `blocks: true` residual and continuing) was removed. `runCodex`/`extractJson`/`normalizeReview` for any one of up to 6 hotspots now throw out of the loop and out of reviewLarge, so a single transient model/parse failure makes the whole large review reject instead of returning findings from the other hotspots with a blocking residual risk. This is a graceful-degradation regression introduced by this PR."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": 1
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 1
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": 1
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 227740,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Deep pass no longer substitutes {{FOCUS}}; --focus silently dropped",
+          "whyItBreaks": "The head removes `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` from the deep-prompt build (and also removes `focus: bundle.focus` from mapBundle at lines 86-88). deep.md's contract still ends with `Focus: {{FOCUS}} (if not \"(none)\", prioritize findings in that area)`, so the rendered deep prompt now ships the literal token `{{FOCUS}}` instead of the user's lens, and map.md's documented rule ('If a `focus` field is set (not null), rank matching surfaces higher') can never match because focus is no longer in the map bundle. The `--focus` option and Bundle.focus remain live (small-review path still forwards the whole bundle), so focus still works for small PRs but is silently ignored for large PRs — exactly where the large path runs. This is a contract drift: the deep.md carrier promises focus prioritization, the body no longer supplies it."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 115556,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Large reviews silently drop user-supplied focus directive",
+          "whyItBreaks": "The diff deletes `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` from the deep-prompt chain (was old line 120) and deletes `focus: bundle.focus` / `deep: bundle.deep` from `mapBundle` (was old lines 89-90), while the `Bundle.focus` field and its CLI/API surface are untouched and `reviewSmall` still forwards the whole bundle (src/core/review.ts:52-55). So for large PRs a user's `focus` is never delivered to the mapper or the per-hotspot deep pass. The base code's explicit `{{FOCUS}}` substitution plus the `?? \"(none)\"` default are direct evidence `deep.md` declares a `{{FOCUS}}` slot; with the replace removed, that placeholder is left as the literal token in the prompt and the requested focus is silently ignored, producing a different (unfocused) review than the user asked for and inconsistent large-vs-small behavior."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 146288,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Large-PR deep pass silently drops caller focus",
+          "whyItBreaks": "This diff deletes `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` from the deep-prompt construction (base f5568bd:122) and also removes `focus`/`deep` from `mapBundle` (base f5568bd:89-90). After the change, `bundle.focus` is referenced nowhere in `reviewLarge`: `rg -n focus src/core/review.ts` returns no hits in the head file. So for any PR that takes the large path (patch > 30000 chars or >10 changed files, src/core/review.ts:26-28), the user-supplied `focus` no longer reaches any prompt, while `reviewSmall` still forwards the entire bundle (including `focus`) via `JSON.stringify(bundle)` at src/core/review.ts:52-55. The result is inconsistent, silent behavior: the same `focus` input steers a small-PR review but is dropped for a large-PR review, and if `prompts/deep.md` still contains the `{{FOCUS}}` token (only review.ts is in this diff, so deep.md is unchanged) the model now receives the literal string `{{FOCUS}}`."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 36362,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 91,
+          "title": "formatDuration can emit invalid \"Nm 60s\" after independent rounding",
+          "whyItBreaks": "seconds = Math.round((ms % 60000) / 1000) is not carried into minutes, so it can equal 60. For ms=119999: minutes=Math.floor(119999/60000)=1 and seconds=Math.round(59999/1000)=60, producing \"1m 60s\" (base code produced \"2m 0s\"). For minutes=0 (ms=59500) it prints \"60s\" instead of \"1m 0s\". Any duration whose remainder falls in [59500,60000) formats incorrectly."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 39841,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 92,
+          "title": "formatDuration emits \"1m 60s\" since seconds rounds without carrying",
+          "whyItBreaks": "The new code computes minutes with Math.floor(ms/60000) and seconds with Math.round((ms % 60000)/1000) independently, so the rounded remainder can equal 60. For ms=119999: minutes=1, seconds=Math.round(59.999)=60 → renders \"1m 60s\" instead of \"2m 0s\"; for ms=59999 → \"60s\" instead of \"1m 0s\". The previous implementation rounded to total seconds first (totalSeconds = Math.round(ms/1000)) so totalSeconds % 60 could never be 60, meaning this diff introduces the malformed output. formatDuration is called for every stats entry and the total on the rendered review markdown (src/shared/render.ts:75, src/shared/render.ts:80), so the wrong duration is user-visible."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr8",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr8",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 37905,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/shared/render.ts",
+          "lineStart": 90,
+          "lineEnd": 92,
+          "title": "formatDuration can render seconds as 60",
+          "whyItBreaks": "minutes is floored from raw ms while seconds is rounded from the remainder, so the two are computed independently and the remainder can round up to 60. For any ms in [59500, 59999] the result is '60s' (old code produced '1m 0s'), and for [119500, 119999] the result is '1m 60s' (old code produced '2m 0s'). A 60-second field is invalid display output and contradicts the old rounding-then-decompose behavior. This is rendered into user-facing PR review markdown via renderMarkdown at src/shared/render.ts:75 and :80."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "60\\s?s|carry|carri|round.{0,28}(up|minute|full)|minute.{0,24}(60|sixty|overflow)|overflow.{0,20}(second|minute)|second.{0,24}\\b60\\b",
+          "file": "src/shared/render.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 46789,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/shared/runner.ts",
+          "lineStart": 32,
+          "lineEnd": 32,
+          "title": "parsePositiveInteger now accepts 0, breaking its positive-only contract",
+          "whyItBreaks": "The exported function's name and its unchanged error text ('requires a positive integer') promise rejection of every non-positive integer, but changing the guard from `parsed <= 0` to `parsed < 0` makes 0 pass: Number.isInteger(0) is true and 0 < 0 is false, so the throw is skipped and 0 is returned as if valid. The body no longer implements the promised validation, and the error thrown for -1 now contradicts the silently accepted 0. Any consumer relying on this public validator to guarantee a strictly positive value (count, retry, port, timeout-style numeric input) receives 0 instead of an error."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 55166,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/shared/runner.ts",
+          "lineStart": 32,
+          "lineEnd": 32,
+          "title": "parsePositiveInteger now returns 0, breaking its positive contract",
+          "whyItBreaks": "The exported predicate changed from `parsed <= 0` to `parsed < 0`, so 0 now passes. `Number(\"0\")`, `Number(\"-0\")`, `Number(\"\")`, and `Number(\" \")` all produce 0 and are now accepted and returned, while the function name `parsePositiveInteger` and the thrown message `\"${label} requires a positive integer\"` promise strict positivity (0 is not a positive integer). Because this is an exported public API with no in-repo callers, the promise itself is the contract: any consumer using the result as a guaranteed-positive value (e.g. `timeoutMs`, retry counts, batch/page sizes, divisors) now receives 0, causing disabled timeouts, zero-length allocations, or division-by-zero, and can no longer distinguish an invalid input from a legitimate 0."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr9",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr9",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 52867,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/shared/runner.ts",
+          "lineStart": 32,
+          "lineEnd": 32,
+          "title": "parsePositiveInteger now accepts 0, breaking its positive contract",
+          "whyItBreaks": "Changing `parsed <= 0` to `parsed < 0` makes 0 pass the guard, so the function returns a non-positive value while its exported name (`parsePositiveInteger`) and its unchanged error text ('${label} requires a positive integer') both promise a strictly positive integer. Because `Number(\"\")` and `Number(\"  \")` both evaluate to 0, empty/whitespace/unset input now silently returns 0 instead of throwing, so any caller cannot distinguish a legitimate value from missing/invalid input, and using the result as a count/size/loop bound would operate on 0."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,24}(accept|allow|valid|pass)|(accept|allow|permit)s?.{0,24}\\b0\\b|positive integer.{0,32}(0|zero)|<=?\\s*0|boundary",
+          "file": "src/shared/runner.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.8333333333333334,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.8333333333333334,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 102518,
+    "recallByFixture": {
+      "real-pr4-hotspot-truncation": 0.3333333333333333,
+      "real-pr4-options-not-forwarded": 1,
+      "real-pr8": 1,
+      "real-pr9": 1
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr4-hotspot-truncation": 0.7777777777777777,
+      "real-pr4-options-not-forwarded": 1,
+      "real-pr8": 1,
+      "real-pr9": 1
+    },
+    "mustFindHitRate": 0.9444444444444444,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1,
+      "t3": 0.6666666666666666
+    },
+    "recallByDefectClass": {
+      "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode": 0.3333333333333333,
+      "review-options-not-forwarded-large-mode": 1,
+      "rounding-carry-overflow": 1,
+      "boundary-flip-accepts-zero": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode": 1,
+      "review-options-not-forwarded-large-mode": 1,
+      "rounding-carry-overflow": 1,
+      "boundary-flip-accepts-zero": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 9,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "012bec31d4443b12ea1d5e4e5cb30a5fb00a44bd",
+  "fixtureSetHash": "e8c0be16737aefe8",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "real-pr4-hotspot-truncation": 3,
+    "real-pr4-options-not-forwarded": 2,
+    "real-pr8": 3,
+    "real-pr9": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr4-hotspot-truncation",
+    "real-pr4-options-not-forwarded",
+    "real-pr8",
+    "real-pr9"
+  ],
+  "fixtureKinds": {
+    "real-pr4-hotspot-truncation": "positive",
+    "real-pr4-options-not-forwarded": "positive",
+    "real-pr8": "positive",
+    "real-pr9": "positive"
+  },
+  "fixtureDefectClasses": {
+    "real-pr4-hotspot-truncation": "silent-hotspot-truncation-coverage-gap+residual-risks-dropped-in-map-reduce-merge+critic-missing-diff-context-large-mode",
+    "real-pr4-options-not-forwarded": "review-options-not-forwarded-large-mode",
+    "real-pr8": "rounding-carry-overflow",
+    "real-pr9": "boundary-flip-accepts-zero"
+  }
+}

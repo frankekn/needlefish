@@ -507,6 +507,7 @@ export interface CodexOptions extends RunnerOptions {
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
 	readonly targetHeadSha: string;
+	readonly targetBaseSha?: string;
 	readonly targetPatch?: string;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
@@ -720,6 +721,7 @@ async function runCodexOnce(
 					repoPath: opts.repoPath,
 					prompt,
 					targetHeadSha: opts.targetHeadSha,
+					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
 					tmp,
 				});
@@ -861,6 +863,13 @@ export function safeRunnerCause(stderr: string): string | undefined {
 		return "auth rejected";
 	}
 	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
+		return "network error";
+	}
+	// A bare three-digit number may be a token count or latency, not a status.
+	if (
+		/\b(?:bad gateway|gateway time-?out|service unavailable|internal server error|overloaded)\b/i.test(stderr) ||
+		/\b(?:http|status|code|gateway|upstream|proxy|response)[^\n]{0,24}\b5\d{2}\b/i.test(stderr)
+	) {
 		return "network error";
 	}
 	return undefined;
