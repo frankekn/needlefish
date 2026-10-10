@@ -322,25 +322,41 @@ function pathFromFileHeader(line: string, side: "a/" | "b/"): string | null {
 // `+++` paths follow git quoting: unquoted `b/<path>`, or C-quoted
 // `"b/<path>"` (the `b/` prefix sits inside the quotes). A tab after the
 // name is a GNU-patch terminator / timestamp separator, not part of the path.
-// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; d defaults to 1 when
-// omitted. Deleted files (`+++ /dev/null`) are skipped.
+// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; omitted counts default
+// to 1. Deleted files (`+++ /dev/null`) are skipped. Once a hunk header is
+// seen, the parser consumes exactly the declared line counts before reading
+// another header, so a hunk body line cannot masquerade as a file header:
+// an added line whose content starts with `++ ` (patch line `+++ b/x`)
+// stays inside the hunk instead of switching the current file.
 export function headLinesInPatch(
 	patch: string,
 ): Map<string, Array<[number, number]>> {
 	const ranges = new Map<string, Array<[number, number]>>();
 	let file: string | null = null;
+	let hunk: { old: number; new: number } | null = null;
 	for (const raw of patch.split("\n")) {
+		if (hunk) {
+			if (raw.startsWith("+")) hunk.new--;
+			else if (raw.startsWith("-")) hunk.old--;
+			else if (!raw.startsWith("\\")) {
+				hunk.old--;
+				hunk.new--;
+			}
+			if (hunk.old <= 0 && hunk.new <= 0) hunk = null;
+			continue;
+		}
 		if (raw.startsWith("+++ ")) {
 			file = pathFromFileHeader(raw, "b/");
 			if (file && !ranges.has(file)) ranges.set(file, []);
 			continue;
 		}
 		if (file && raw.startsWith("@@")) {
-			const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+			const h = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw);
 			if (h) {
-				const c = Number(h[1]);
-				const d = h[2] === undefined ? 1 : Number(h[2]);
+				const c = Number(h[2]);
+				const d = h[3] === undefined ? 1 : Number(h[3]);
 				if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
+				hunk = { old: h[1] === undefined ? 1 : Number(h[1]), new: d };
 			}
 		}
 	}
