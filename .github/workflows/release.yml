@@ -1,6 +1,8 @@
 # Release: on a semver tag push, verify the tagged commit and force-update
 # the floating major tag derived from the tag name (`v0.4.1` → `v0`) so
 # `uses: frankekn/needlefish@v0` consumers get the latest v0.x.y.
+# A tag is only released when its commit is reachable from origin/main;
+# both jobs check that before rolling v0, releasing, or publishing.
 name: needlefish-release
 on:
   push:
@@ -9,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to publish to npm (e.g. v0.4.9); npm job only
+        description: Existing release tag on main to publish to npm (e.g. v0.4.9); npm job only
         required: true
 permissions:
   contents: write
@@ -27,6 +29,14 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 20
+      # The fetch-depth: 0 checkout above provides refs/remotes/origin/main.
+      - name: Check tag is on main
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "${GITHUB_REF_NAME}^{commit}" origin/main; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not reachable from origin/main; refusing to release"
+            exit 1
+          fi
       - name: Verify
         run: |
           corepack enable
@@ -62,7 +72,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          # fetch-depth: 0 so refs/remotes/origin/main exists for the
+          # ancestry check below (persist-credentials: false means later
+          # git fetches here would be unauthenticated).
+          fetch-depth: 0
           persist-credentials: false
+      - name: Check tag is on main
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "${RELEASE_TAG}^{commit}" origin/main; then
+            echo "::error::tag $RELEASE_TAG is not reachable from origin/main; refusing to publish"
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
