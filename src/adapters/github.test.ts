@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+import { NO_AGENTS } from "../shared/repo.js";
 import { runGithub } from "./github";
 
 test("runGithub normalizes relative repo paths before building prompts", async (t) => {
@@ -152,9 +153,10 @@ test("runGithub skips closed PRs before review", async (t) => {
   assert.deepEqual(ghCalls, ["api repos/frankekn/needlefish/pulls/8"]);
 });
 
-// Issue #211: a committed `AGENTS.md` symlink must not make GitHub mode read the
-// link target from the runner's filesystem. The policy must come from the head
-// commit's Git blob, where a symlink is just its target path string.
+// Issue #211, PR #224 critic: a committed `AGENTS.md` symlink must not make
+// GitHub mode read the runner's filesystem, and its link text must not pass
+// as fake policy. An absolute target is not repo policy, so the bundle must
+// carry the no-AGENTS.md sentinel and the secret's contents must be absent.
 test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-github-symlink-test-"));
   const repo = initRepo(tmp);
@@ -253,5 +255,5 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
   assert.equal(prompts.includes("SECRET-TOKEN-xyz"), false);
   const agentsMd = /"agentsMd":\s*"([^"]+)"/.exec(prompts);
   assert.ok(agentsMd, "no agentsMd value reached the model prompt");
-  assert.equal(agentsMd[1].includes("runner-secret.txt"), true);
+  assert.equal(agentsMd[1], NO_AGENTS);
 });

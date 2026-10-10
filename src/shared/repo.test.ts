@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { changedFiles, ensurePrCommits, git, makeBundle, prDiffFromShas, readAgentsAt, type PrRefInfo } from "./repo";
+import { changedFiles, ensurePrCommits, git, makeBundle, NO_AGENTS, prDiffFromShas, readAgentsAt, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -145,26 +145,59 @@ test("makeBundle preserves review target disclosure", () => {
   assert.equal(bundle.agentsMd, "policy");
 });
 
-// Issue #211: AGENTS.md policy must come from the commit's Git object. A
-// symlink — live or broken — is stored as the blob holding its target path,
-// so a blob read can neither disclose the target's contents nor hang on a
-// special file.
-test("readAgentsAt returns the Git blob for a symlinked AGENTS.md, never the target's contents", () => {
+// Issue #211, PR #224 critic: policy comes only from git objects at <ref>.
+// A regular blob is returned verbatim. A committed symlink (mode 120000)
+// resolves exactly one hop when its link text names a repo-relative regular
+// blob in the same tree. Everything else — absolute target, escaping `..`,
+// chains, trees, submodules, missing targets — yields NO_AGENTS, never the
+// link's target path as fake policy and never the outside file's contents.
+test("readAgentsAt reads AGENTS.md only from git objects, resolving one in-tree symlink hop", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-symlink-"));
   try {
     const work = join(tmp, "work");
-    const secret = join(tmp, "secret.txt");
     gitText(["init", "-q", work], tmp);
+    writeFileSync(join(work, "README.md"), "repo\n");
+    commitAll(work, "base");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+
+    const commitLink = (linkText: string, message: string) => {
+      rmSync(join(work, "AGENTS.md"), { force: true });
+      symlinkSync(linkText, join(work, "AGENTS.md"));
+      commitAll(work, message);
+    };
+
+    // One-hop resolution: AGENTS.md -> CLAUDE.md returns CLAUDE.md's blob.
+    writeFileSync(join(work, "CLAUDE.md"), "LINKED-POLICY\n");
+    mkdirSync(join(work, "docs"));
+    writeFileSync(join(work, "docs", "guide.md"), "guide\n");
+    commitAll(work, "policy and docs");
+    commitLink("CLAUDE.md", "symlink to CLAUDE.md");
+    assert.equal(readAgentsAt(work, "HEAD"), "LINKED-POLICY");
+
+    // Out-of-tree targets never disclose their contents and never pass the
+    // link text through as policy.
+    writeFileSync(join(tmp, "outside.txt"), "OUTSIDE-SENTINEL\n");
+    commitLink("../outside.txt", "symlink escaping the repo");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    const secret = join(tmp, "secret.txt");
     writeFileSync(secret, "SECRET-TOKEN-xyz\n");
-    symlinkSync(secret, join(work, "AGENTS.md"));
-    commitAll(work, "symlinked policy");
+    commitLink(secret, "absolute symlink");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
 
-    assert.equal(readAgentsAt(work, "HEAD"), secret);
-
+    // Targets that are not regular blobs: a tree, another symlink, a missing path.
+    commitLink("docs", "symlink to a tree");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    // ls-tree lists a directory's contents for "docs/"; that must not pick a file inside.
+    commitLink("docs/", "symlink to a tree with a trailing slash");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    commitLink("relay.md", "symlink with no relay yet");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
     rmSync(join(work, "AGENTS.md"));
-    symlinkSync(join(tmp, "missing.txt"), join(work, "AGENTS.md"));
-    commitAll(work, "broken symlink");
-    assert.equal(readAgentsAt(work, "HEAD"), join(tmp, "missing.txt"));
+    symlinkSync("CLAUDE.md", join(work, "relay.md"));
+    commitLink("relay.md", "symlink chain");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    commitLink("missing.txt", "broken symlink");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
