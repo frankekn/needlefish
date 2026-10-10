@@ -307,6 +307,23 @@ function tableText(text: string): string {
 	return oneLine(text).replace(/\|/g, "\\|");
 }
 
+// finding.file is model output. Only repo-relative POSIX paths may become
+// hrefs: `..` segments, absolute paths, and scheme-like values would resolve
+// outside /<slug>/blob/<sha>/ after URL dot-segment removal, so they render
+// as plain text instead.
+function isRepoRelativePath(file: string): boolean {
+	// An empty first segment covers absolute paths ("/etc/passwd").
+	return file
+		.split("/")
+		.every(
+			(segment) =>
+				segment !== "" &&
+				segment !== "." &&
+				segment !== ".." &&
+				!segment.includes(":"),
+		);
+}
+
 function tableLocation(
 	finding: Finding,
 	repoSlug?: string,
@@ -314,10 +331,19 @@ function tableLocation(
 ): string {
 	if (!finding.file) return "—";
 	const location = tableText(plainLocation(finding));
-	if (!repoSlug || !headSha) return `\`${location}\``;
+	if (!repoSlug || !headSha || !isRepoRelativePath(finding.file)) {
+		return `\`${location}\``;
+	}
+	// encodeURIComponent leaves ( ) unescaped; an unescaped ) ends the
+	// markdown link early.
 	const encodedPath = finding.file
 		.split("/")
-		.map((segment) => encodeURIComponent(segment))
+		.map(
+			(segment) =>
+				encodeURIComponent(segment)
+					.replace(/\(/g, "%28")
+					.replace(/\)/g, "%29"),
+		)
 		.join("/");
 	const end =
 		finding.lineEnd !== finding.lineStart ? `-L${finding.lineEnd}` : "";
