@@ -115,6 +115,37 @@ test("runLocal skips tracked binary files while reviewing uncommitted text chang
   assert.equal(prompts.includes('"path": "tracked image.bin"'), false);
 });
 
+// The exclude pathspec for a skipped binary file is matched literally: with
+// plain `:(exclude)` magic, a binary named `a[b].png` is a glob that also
+// matched `ab.png`, so that modified text file disappeared from the patch,
+// from changedFiles, and from every skip list.
+test("runLocal excludes only the exact binary path, not glob matches, when reviewing uncommitted changes", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-glob-"));
+  const repo = initRepo(tmp);
+  const { promptPath } = installFakeClaude(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(join(repo, "a[b].png"), Buffer.from([0, 1, 2, 3]));
+  writeFileSync(join(repo, "ab.png"), "text one\n");
+  writeFileSync(join(repo, "keep.ts"), "export const keep = 1;\n");
+  commitAll(repo, "base");
+  writeFileSync(join(repo, "a[b].png"), Buffer.from([0, 9, 2, 3]));
+  writeFileSync(join(repo, "ab.png"), "text two\n");
+  writeFileSync(join(repo, "keep.ts"), "export const keep = 2;\n");
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+
+  assert.match(result.reviewTarget ?? "", /Skipped tracked files: a\[b\]\.png \(binary\)/);
+  const prompts = readFileSync(promptPath, "utf8");
+  assert.match(prompts, /diff --git a\/ab\.png b\/ab\.png/);
+  assert.match(prompts, /\+text two/);
+  assert.match(prompts, /diff --git a\/keep\.ts b\/keep\.ts/);
+  assert.equal(prompts.includes('"path": "ab.png"'), true);
+  assert.equal(prompts.includes('"path": "a[b].png"'), false);
+  assert.equal(prompts.includes("Binary files"), false);
+});
+
 test("runLocal reviews untracked files when a dangling symlink is present", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-dangling-review-"));
   const repo = initRepo(tmp);
