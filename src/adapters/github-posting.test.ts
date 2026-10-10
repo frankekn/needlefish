@@ -1079,6 +1079,20 @@ test("parseState round-trips through renderState", () => {
 	assert.equal(parsed!.findings[1].file, "other.ts");
 });
 
+test("state marker round-trips a title containing -->", () => {
+	const findings: Finding[] = [
+		mkFinding({ title: "stale comment x --> y kept", lineStart: 42 }),
+	];
+	const marker = renderState("abc123", findings);
+	// The JSON payload must not contain "-->", only the comment terminator may.
+	assert.equal(marker.split("-->").length - 1, 1);
+	const parsed = parseState(`# Review\n\nbody text\n\n${marker}\n`);
+	assert.ok(parsed);
+	assert.equal(parsed!.headSha, "abc123");
+	assert.equal(parsed!.findings.length, 1);
+	assert.equal(parsed!.findings[0].title, "stale comment x --> y kept");
+});
+
 test("parseState returns null for missing or corrupted markers", () => {
 	assert.equal(parseState("no marker here"), null);
 	assert.equal(parseState("<!-- needlefish-state: {bad json} -->"), null);
