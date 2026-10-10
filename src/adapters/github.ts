@@ -395,7 +395,10 @@ export function renderState(
 		headSha,
 		findings: findings.map(findingKey),
 	};
-	return `<!-- needlefish-state: ${JSON.stringify(state)} -->`;
+	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
+	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
+	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
+	return `<!-- needlefish-state: ${payload} -->`;
 }
 
 const STATE_PREFIX = "<!-- needlefish-state:";
