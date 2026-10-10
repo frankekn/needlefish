@@ -781,7 +781,12 @@ test("runGithub caps an oversized inline comment body", async (t) => {
 		body.length <= 65_536,
 		`inline comment body must fit GitHub's limit, got ${body.length}`,
 	);
-	assert.match(body, /Review body shortened to fit GitHub/);
+	assert.match(
+		body,
+		/^Review body shortened to fit GitHub's size limit; \d+ characters were dropped\.\n\n/,
+		"the notice must count what was cut instead of promising a full copy elsewhere",
+	);
+	assert.doesNotMatch(body, /full review/i);
 	const lastLine = body.trimEnd().split("\n").at(-1);
 	assert.equal(
 		lastLine,
@@ -806,6 +811,85 @@ test("capOutboundBody shrinks an oversized state marker rather than dropping it"
 		state.findings.length > 0 && state.findings.length < 3000,
 		`expected a strict non-empty prefix, got ${state.findings.length}`,
 	);
+});
+
+// #215 staff review: only a TRAILING state marker is the delivery marker. A
+// finding quoting a valid marker mid-text must not have the evidence, fix,
+// and own-post trailer after the quote swallowed as if the quote were the
+// receipt (a 70k-char comment once shrank to 262 chars).
+test("capOutboundBody keeps a quoted state marker as body text", () => {
+	const quoted = renderState("b".repeat(40), [
+		mkFinding({ title: "quoted prior" }),
+	]);
+	const body = [
+		"**P2** bug",
+		"",
+		`the diff quotes the receipt: ${quoted}`,
+		"",
+		"EVIDENCE_AFTER_QUOTE",
+		"",
+		"fix the truncation",
+		"x".repeat(70_000),
+		"",
+		"<!-- needlefish-finding -->",
+	].join("\n");
+	assert.ok(body.length > 65_536);
+	const capped = capOutboundBody(body);
+	assert.ok(capped.length <= 65_536, `got ${capped.length}`);
+	assert.match(capped, /Review body shortened to fit GitHub/);
+	assert.ok(
+		capped.includes("EVIDENCE_AFTER_QUOTE"),
+		"content after a mid-body quoted marker must survive the cut",
+	);
+	assert.ok(
+		capped.endsWith("<!-- needlefish-finding -->"),
+		"the own-post trailer must survive, not be replaced by the quoted marker",
+	);
+});
+
+// #215 staff review: capOutboundBody must not cut an env credential at the
+// cut point. A body truncated before screening leaves a credential prefix
+// that matches neither the known value nor a token shape, and the bare prefix
+// reaches the PR unredacted (a 24-char credential once leaked 23 chars). The
+// filler below parks a 160-char credential across the cut (~65,4xx) inside an
+// inline comment body.
+test("runGithub screens an env credential straddling the truncation cut", async (t) => {
+	const credential = "a1B2".repeat(40);
+	const fixture = setupFixture(t, {
+		prNumber: 195,
+		rawReview: JSON.stringify({
+			summary: "one huge finding",
+			findings: [
+				mkFinding({
+					severity: "P2",
+					whyItBreaks: "E".repeat(65_288) + credential + "T".repeat(3_000),
+				}),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+	setEnvForTest(t, "FAKE_API_KEY", credential);
+
+	await runGithub(fixture.repo, 195, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	assert.ok(posts.length > 0, "the run must reach the GitHub writes");
+	for (const post of posts) {
+		for (let n = 8; n <= credential.length; n++) {
+			assert.ok(
+				!post.payload.includes(credential.slice(0, n)),
+				`payload leaked a ${n}-char credential prefix: ${post.args.join(" ")}`,
+			);
+		}
+	}
+	// Screening the full text sees the whole value, so this behaves exactly
+	// like any other withheld body: the review POST never reaches gh, and the
+	// check completes as an infra failure naming the withhold.
+	assert.equal(postedReview(posts, 195), undefined);
+	const completion = lastCheckCompletion(posts);
+	assert.equal(completion.conclusion, "failure");
+	assert.ok(String(completion.output?.summary ?? "").includes(WITHHELD_MESSAGE));
 });
 
 function postedReview(posts: readonly Post[], prNumber: number): Post | undefined {
