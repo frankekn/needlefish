@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
@@ -44,14 +43,54 @@ export function changedFilesFromPaths(paths: readonly string[]): ChangedFile[] {
   return classifyFiles(paths.filter(Boolean));
 }
 
-export function readAgents(cwd: string): string {
-  const agentsPath = path.join(cwd, "AGENTS.md");
-  return existsSync(agentsPath) ? readFileSync(agentsPath, "utf8") : NO_AGENTS;
+interface TreeEntry {
+  readonly mode: string;
+  readonly type: string;
+  readonly sha: string;
 }
 
+// One path inside <ref>'s tree, from `git ls-tree <ref> -- <path>`; empty
+// output means the commit has no such path. A trailing-slash path lists the
+// directory's contents instead, so the entry's path must match exactly.
+// Never touches the working tree.
+function treeEntry(cwd: string, ref: string, filePath: string): TreeEntry | null {
+  // -z: raw, unquoted path (non-ASCII or quote characters are otherwise
+  // C-quoted). --literal-pathspecs: a target like "a[b].md" is not a glob.
+  const line = git(["--literal-pathspecs", "ls-tree", "-z", ref, "--", filePath], cwd, { preserveOutput: true }).split("\0", 1)[0];
+  if (!line) return null;
+  const tab = line.indexOf("\t");
+  if (tab < 0 || line.slice(tab + 1) !== filePath) return null;
+  const [mode, type, sha] = line.slice(0, tab).split(" ");
+  if (!mode || !type || !sha) return null;
+  return { mode, type, sha };
+}
+
+function isRegularBlob(entry: TreeEntry | null): entry is TreeEntry {
+  return entry !== null && entry.type === "blob" && (entry.mode === "100644" || entry.mode === "100755");
+}
+
+// The only policy read path (issue #211): everything comes from git objects
+// at <ref>, so a symlinked, tree-shaped, or otherwise special AGENTS.md can
+// never disclose a runner-readable file or hang on a special file. A
+// committed symlink is a blob holding its link text; it resolves exactly one
+// hop when that text is a repo-relative path (never absolute, never escaping
+// the root after normalization) to a regular blob in the same tree — no
+// chains, no trees, no submodules. Anything else yields NO_AGENTS rather
+// than feeding the link's target path to the model as fake policy.
 export function readAgentsAt(cwd: string, ref: string): string {
   try {
-    return git(["show", `${ref}:AGENTS.md`], cwd);
+    const entry = treeEntry(cwd, ref, "AGENTS.md");
+    if (!entry) return NO_AGENTS;
+    if (entry.mode !== "120000") {
+      return isRegularBlob(entry) ? git(["cat-file", "blob", entry.sha], cwd) : NO_AGENTS;
+    }
+    // Raw link text: trimming would turn " policy.md " into another file's name.
+    const resolved = path.posix.normalize(git(["cat-file", "blob", entry.sha], cwd, { preserveOutput: true }));
+    if (!resolved || resolved === "." || resolved.startsWith("/") || resolved === ".." || resolved.startsWith("../")) {
+      return NO_AGENTS;
+    }
+    const target = treeEntry(cwd, ref, resolved);
+    return isRegularBlob(target) ? git(["cat-file", "blob", target.sha], cwd) : NO_AGENTS;
   } catch (err) {
     if (err instanceof Error) return NO_AGENTS;
     throw err;
@@ -70,7 +109,7 @@ export interface BundleInput {
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
   readonly focus: string | null;
-  readonly agentsMd?: string;
+  readonly agentsMd: string;
 }
 
 export function makeBundle(input: BundleInput): Bundle {
@@ -83,7 +122,7 @@ export function makeBundle(input: BundleInput): Bundle {
     changedFiles: input.changedFiles,
     ...(input.reviewTarget ? { reviewTarget: input.reviewTarget } : {}),
     ...(input.untrackedSkipped?.length ? { untrackedSkipped: input.untrackedSkipped } : {}),
-    agentsMd: input.agentsMd ?? readAgents(input.repoPath),
+    agentsMd: input.agentsMd,
     prMeta: input.prMeta,
     deep: input.deep,
     focus: input.focus,

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { changedFilesFromPaths, git, gitPathList, makeBundle } from "../../src/shared/repo";
+import { changedFilesFromPaths, git, gitPathList, makeBundle, readAgentsAt } from "../../src/shared/repo";
 import type { Bundle } from "../../src/shared/schema";
 import type { FixtureSpec } from "./types";
 
@@ -277,6 +277,7 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 			prMeta: null,
 			deep: false,
 			focus: null,
+			agentsMd: readAgentsAt(tmp, headSha),
 		});
 		return {
 			bundle,
