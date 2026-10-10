@@ -248,9 +248,26 @@ export function normalizeFinding(raw: unknown): Finding {
 
 export function normalizeReview(raw: unknown, strict = true): RawReview {
   const record = requireRecord(raw, "malformed review output");
-  const summary = requireString(record, "summary", "malformed review output");
+  const summary = requireString(record, "summary", "malformed review output").trim();
+  // A blank summary is a truthiness pass, not a review. Same for checked:
+  // String() coercion turned null into "null" and " " into a fake coverage
+  // claim, so the usability gate saw content where there was none.
+  if (!summary) {
+    throw new Error("malformed review output: summary blank");
+  }
   const rawFindings = requireArray(record, "findings", "malformed review output");
   const rawChecked = requireArray(record, "checked", "malformed review output");
+  const checked = rawChecked
+    .map((item) => {
+      if (typeof item !== "string") {
+        throw new Error("malformed review output: checked item not a string");
+      }
+      return item.trim();
+    })
+    .filter((item) => item.length > 0);
+  if (checked.length === 0) {
+    throw new Error("malformed review output: checked list has no non-blank items");
+  }
   const rawResidual = requireArray(record, "residual_risks", "malformed review output");
   const findings = strict
     ? rawFindings.map(normalizeFinding)
@@ -282,7 +299,7 @@ export function normalizeReview(raw: unknown, strict = true): RawReview {
   return {
     summary,
     findings,
-    checked: rawChecked.map(String),
+    checked,
     residual_risks: residual,
   };
 }

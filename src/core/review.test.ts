@@ -443,7 +443,8 @@ test("review treats a degenerate deep response as a failed pass", async (t) => {
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			// Valid JSON shape, zero evidence: empty summary AND empty checked.
-			// normalizeReview accepts this; only the usability gate rejects it.
+			// normalizeReview itself rejects this; the usability gate is a
+			// second line of defense behind it.
 			"    fs.writeFileSync(out, JSON.stringify({ summary: '', findings: [], checked: [], residual_risks: [] }));",
 			"    return;",
 			"  }",

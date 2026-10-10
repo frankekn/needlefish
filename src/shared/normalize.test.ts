@@ -684,3 +684,50 @@ test("normalizeReview drops malformed findings in loose mode", () => {
   assert.equal(review.findings.length, 1);
   assert.deepEqual(review.checked, ["diff"]);
 });
+
+test("normalizeReview rejects blank summary in both strict modes", () => {
+  for (const strict of [true, false] as const) {
+    assert.throws(
+      () => normalizeReview({ ...rawReview([]), summary: " " }, strict),
+      /malformed review output: summary blank/,
+    );
+  }
+});
+
+test("normalizeReview trims summary and checked items and drops blank checked items", () => {
+  const raw = { summary: "  reviewed  ", findings: [], checked: [" diff ", "", "\t"], residual_risks: [] };
+  for (const strict of [true, false] as const) {
+    const review = normalizeReview(raw, strict);
+    assert.equal(review.summary, "reviewed");
+    assert.deepEqual(review.checked, ["diff"]);
+  }
+});
+
+test("normalizeReview rejects checked list with no non-blank items in both strict modes", () => {
+  for (const checked of [[], [""], [" "]]) {
+    for (const strict of [true, false] as const) {
+      assert.throws(
+        () => normalizeReview({ ...rawReview([]), checked }, strict),
+        /malformed review output: checked list has no non-blank items/,
+      );
+    }
+  }
+});
+
+test("normalizeReview rejects non-string checked items in both strict modes", () => {
+  for (const value of [null, 7, true, {}, []]) {
+    for (const strict of [true, false] as const) {
+      assert.throws(
+        () => normalizeReview({ ...rawReview([]), checked: ["diff", value] }, strict),
+        /malformed review output: checked item not a string/,
+      );
+    }
+  }
+});
+
+test("normalizeReview rejects the degenerate blank review from issue #222", () => {
+  const raw = { summary: " ", findings: [], checked: [""], residual_risks: [] };
+  for (const strict of [true, false] as const) {
+    assert.throws(() => normalizeReview(raw, strict), /malformed review output/);
+  }
+});
