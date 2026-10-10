@@ -121,7 +121,10 @@ export function hasHeadCommit(cwd: string): boolean {
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
   const args = ["diff", ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
-  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude)${filePath}`)];
+  // `literal` magic: a binary file named `a[b].png` must exclude only itself,
+  // not every path matching the glob (e.g. `ab.png`), or those changes vanish
+  // from the patch, the name list, and the stat without a trace.
+  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
 }
 
 function fetchPrMeta(cwd: string, prNumber: number) {
