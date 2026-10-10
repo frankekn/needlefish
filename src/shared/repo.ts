@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
 import { runText, type RunOptions } from "./process.js";
@@ -44,11 +42,9 @@ export function changedFilesFromPaths(paths: readonly string[]): ChangedFile[] {
   return classifyFiles(paths.filter(Boolean));
 }
 
-export function readAgents(cwd: string): string {
-  const agentsPath = path.join(cwd, "AGENTS.md");
-  return existsSync(agentsPath) ? readFileSync(agentsPath, "utf8") : NO_AGENTS;
-}
-
+// The only policy read path. Reading the working tree would follow a committed
+// AGENTS.md symlink into any runner-readable file (issue #211); the blob at the
+// reviewed commit yields at most the link's target path and never hangs.
 export function readAgentsAt(cwd: string, ref: string): string {
   try {
     return git(["show", `${ref}:AGENTS.md`], cwd);
@@ -70,7 +66,7 @@ export interface BundleInput {
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
   readonly focus: string | null;
-  readonly agentsMd?: string;
+  readonly agentsMd: string;
 }
 
 export function makeBundle(input: BundleInput): Bundle {
@@ -83,7 +79,7 @@ export function makeBundle(input: BundleInput): Bundle {
     changedFiles: input.changedFiles,
     ...(input.reviewTarget ? { reviewTarget: input.reviewTarget } : {}),
     ...(input.untrackedSkipped?.length ? { untrackedSkipped: input.untrackedSkipped } : {}),
-    agentsMd: input.agentsMd ?? readAgents(input.repoPath),
+    agentsMd: input.agentsMd,
     prMeta: input.prMeta,
     deep: input.deep,
     focus: input.focus,

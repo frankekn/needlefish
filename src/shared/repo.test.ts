@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { changedFiles, ensurePrCommits, git, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
+import { changedFiles, ensurePrCommits, git, makeBundle, prDiffFromShas, readAgentsAt, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -135,12 +135,39 @@ test("makeBundle preserves review target disclosure", () => {
     prMeta: null,
     deep: false,
     focus: null,
+    agentsMd: "policy",
   });
 
   assert.equal(
     bundle.reviewTarget,
     "Review target: local base..head\nPR context: #24 metadata only"
   );
+  assert.equal(bundle.agentsMd, "policy");
+});
+
+// Issue #211: AGENTS.md policy must come from the commit's Git object. A
+// symlink — live or broken — is stored as the blob holding its target path,
+// so a blob read can neither disclose the target's contents nor hang on a
+// special file.
+test("readAgentsAt returns the Git blob for a symlinked AGENTS.md, never the target's contents", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-symlink-"));
+  try {
+    const work = join(tmp, "work");
+    const secret = join(tmp, "secret.txt");
+    gitText(["init", "-q", work], tmp);
+    writeFileSync(secret, "SECRET-TOKEN-xyz\n");
+    symlinkSync(secret, join(work, "AGENTS.md"));
+    commitAll(work, "symlinked policy");
+
+    assert.equal(readAgentsAt(work, "HEAD"), secret);
+
+    rmSync(join(work, "AGENTS.md"));
+    symlinkSync(join(tmp, "missing.txt"), join(work, "AGENTS.md"));
+    commitAll(work, "broken symlink");
+    assert.equal(readAgentsAt(work, "HEAD"), join(tmp, "missing.txt"));
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 // `git diff --name-only` applies rename detection and reports only the

@@ -198,6 +198,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
       : { prMeta: null }),
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
+    agentsMd: readAgentsAt(cwd, headSha),
   });
 }
 
@@ -243,6 +244,9 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
+    // Uncommitted mode has no reviewed commit; read HEAD's blob. An AGENTS.md
+    // that exists only in the working tree is not git policy yet (issue #211).
+    agentsMd: readAgentsAt(cwd, "HEAD"),
   });
 }
 
