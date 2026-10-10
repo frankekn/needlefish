@@ -65,7 +65,9 @@ function git(cwd, ...args) {
 
 // Repo in the state a fetch-depth: 0 checkout leaves behind: origin/main as a
 // remote-tracking ref, with one lightweight and one annotated tag on main and
-// one annotated tag on a side branch that main cannot see.
+// one annotated tag on a side branch that main cannot see. A decoy tag named
+// `origin/main` points at the side commit: the short name `origin/main` would
+// resolve to it before the remote-tracking branch.
 function ancestryFixture() {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-release-ancestry-"));
 	git(root, "init", "-q", "-b", "main");
@@ -82,6 +84,7 @@ function ancestryFixture() {
 	git(root, "add", "-A");
 	git(root, "commit", "-qm", "off main");
 	git(root, "tag", "-a", "v0.9.9", "-m", "off main");
+	git(root, "tag", "origin/main");
 	git(root, "update-ref", "refs/remotes/origin/main", git(root, "rev-parse", "main"));
 	git(root, "checkout", "-q", "main");
 	return root;

@@ -33,7 +33,7 @@ jobs:
       - name: Check tag is on main
         run: |
           set -euo pipefail
-          if ! git merge-base --is-ancestor "${GITHUB_REF_NAME}^{commit}" origin/main; then
+          if ! git merge-base --is-ancestor "refs/tags/${GITHUB_REF_NAME}^{commit}" refs/remotes/origin/main; then
             echo "::error::tag ${GITHUB_REF_NAME} is not reachable from origin/main; refusing to release"
             exit 1
           fi
@@ -80,7 +80,7 @@ jobs:
       - name: Check tag is on main
         run: |
           set -euo pipefail
-          if ! git merge-base --is-ancestor "${RELEASE_TAG}^{commit}" origin/main; then
+          if ! git merge-base --is-ancestor "refs/tags/${RELEASE_TAG}^{commit}" refs/remotes/origin/main; then
             echo "::error::tag $RELEASE_TAG is not reachable from origin/main; refusing to publish"
             exit 1
           fi
