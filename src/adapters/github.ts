@@ -22,7 +22,10 @@ import {
 	WITHHELD_MESSAGE,
 	type Screened,
 } from "../shared/outbound-screen.js";
-import { formatSuggestionComment } from "./github-suggestions.js";
+import {
+	formatSuggestionComment,
+	GH_BODY_CHAR_LIMIT,
+} from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 
@@ -469,8 +472,9 @@ export function parseState(body: string): RoundState | null {
 // (#215, same class as the closed #179 on the check-summary endpoint). Unlike
 // the check-summary cap in checkCompletion, this limit counts characters, not
 // UTF-8 bytes. Every outbound body routes through screenAndCapOutboundBody at
-// the post site (postReview, updateReviewBody, postIssueComment).
-const GH_BODY_CHAR_LIMIT = 65_536;
+// the post site (postReview, updateReviewBody, postIssueComment). The limit
+// (GH_BODY_CHAR_LIMIT) lives in github-suggestions.ts, which drops a
+// suggestion block that would not fit rather than let the cut open its fence.
 
 // No claim of a full copy anywhere: the check summary omits inline findings'
 // evidence/fix and caps itself, so text cut from an inline comment exists
