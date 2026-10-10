@@ -174,6 +174,20 @@ test("readAgentsAt reads AGENTS.md only from git objects, resolving one in-tree 
     commitLink("CLAUDE.md", "symlink to CLAUDE.md");
     assert.equal(readAgentsAt(work, "HEAD"), "LINKED-POLICY");
 
+    // Raw paths: non-ASCII and glob characters, and link text with spaces.
+    writeFileSync(join(work, "規則.md"), "UNICODE-POLICY\n");
+    writeFileSync(join(work, "a[b].md"), "GLOB-POLICY\n");
+    writeFileSync(join(work, "ab.md"), "WRONG-POLICY\n");
+    writeFileSync(join(work, " policy.md "), "SPACED-POLICY\n");
+    writeFileSync(join(work, "policy.md"), "TRIMMED-POLICY\n");
+    commitAll(work, "oddly named policies");
+    commitLink("規則.md", "symlink to a non-ASCII name");
+    assert.equal(readAgentsAt(work, "HEAD"), "UNICODE-POLICY");
+    commitLink("a[b].md", "symlink to a glob-like name");
+    assert.equal(readAgentsAt(work, "HEAD"), "GLOB-POLICY");
+    commitLink(" policy.md ", "symlink with spaces in the link text");
+    assert.equal(readAgentsAt(work, "HEAD"), "SPACED-POLICY");
+
     // Out-of-tree targets never disclose their contents and never pass the
     // link text through as policy.
     writeFileSync(join(tmp, "outside.txt"), "OUTSIDE-SENTINEL\n");

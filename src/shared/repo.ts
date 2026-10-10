@@ -54,7 +54,9 @@ interface TreeEntry {
 // directory's contents instead, so the entry's path must match exactly.
 // Never touches the working tree.
 function treeEntry(cwd: string, ref: string, filePath: string): TreeEntry | null {
-  const line = git(["ls-tree", ref, "--", filePath], cwd).split("\n", 1)[0];
+  // -z: raw, unquoted path (non-ASCII or quote characters are otherwise
+  // C-quoted). --literal-pathspecs: a target like "a[b].md" is not a glob.
+  const line = git(["--literal-pathspecs", "ls-tree", "-z", ref, "--", filePath], cwd, { preserveOutput: true }).split("\0", 1)[0];
   if (!line) return null;
   const tab = line.indexOf("\t");
   if (tab < 0 || line.slice(tab + 1) !== filePath) return null;
@@ -82,7 +84,8 @@ export function readAgentsAt(cwd: string, ref: string): string {
     if (entry.mode !== "120000") {
       return isRegularBlob(entry) ? git(["cat-file", "blob", entry.sha], cwd) : NO_AGENTS;
     }
-    const resolved = path.posix.normalize(git(["cat-file", "blob", entry.sha], cwd));
+    // Raw link text: trimming would turn " policy.md " into another file's name.
+    const resolved = path.posix.normalize(git(["cat-file", "blob", entry.sha], cwd, { preserveOutput: true }));
     if (!resolved || resolved === "." || resolved.startsWith("/") || resolved === ".." || resolved.startsWith("../")) {
       return NO_AGENTS;
     }
