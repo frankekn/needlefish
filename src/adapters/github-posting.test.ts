@@ -26,6 +26,7 @@ import {
 	matchFindings,
 	oldSideTouches,
 	classifyUnmatched,
+	capOutboundBody,
 	type FindingKey,
 	runGithub,
 } from "./github";
@@ -369,8 +370,12 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"    fs.writeFileSync(reviewCommentsPath, JSON.stringify(reviewComments));",
 			// Mirror the live API: Create-a-review returns the review object,
 			// whose id the adapter needs to append the state marker later.
+			// `return` (valid at CJS top level) instead of process.exit: exit
+			// right after write drops queued pipe output above 64KB, which made
+			// oversized-body tests fail as "GitHub returned invalid JSON".
 			"    process.stdout.write(JSON.stringify({ id: reviewId, body: parsed.body || '' }));",
-			"    process.exit(0);",
+			"    process.exitCode = 0;",
+			"    return;",
 			"  }",
 			"  if (apiPath && apiPath.startsWith(reviewsEndpoint + '/') && method === 'PUT') {",
 			"    const id = Number(apiPath.split('/').pop());",
@@ -680,6 +685,128 @@ for (const opener of ["<!--", "```text"]) {
 		assert.ok(!payload.output.summary.includes("\uFFFD"));
 	});
 }
+
+// #215: an oversized review body must be delivered truncated, not rejected
+// by GitHub's 422 and reported as an infra failure.
+test("runGithub caps an oversized review body and keeps the state marker", async (t) => {
+	const detail = "核對付款證據".repeat(200);
+	const findings = Array.from({ length: 60 }, (_, i) =>
+		mkFinding({
+			severity: "P3",
+			title: `nit ${i}`,
+			whyItBreaks: detail,
+			suggestedFix: detail,
+		}),
+	);
+	const fixture = setupFixture(t, {
+		prNumber: 45,
+		rawReview: JSON.stringify({
+			summary: "many long findings",
+			findings,
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 45, { timeoutMs: 1000 });
+
+	const posts = readPosts(fixture.postLog);
+	const reviewPost = postedReview(posts, 45);
+	assert.ok(reviewPost);
+	const postedBody = parseReviewPayload(reviewPost.payload).body;
+	assert.ok(
+		postedBody.length <= 65_536,
+		`review body must fit GitHub's limit, got ${postedBody.length}`,
+	);
+	assert.match(
+		postedBody,
+		/Review body shortened to fit GitHub/,
+		"truncation must be visible to the reader",
+	);
+
+	// The computed verdict is delivered as a verdict check, not "FAILED TO RUN".
+	const checkPatch = posts.find(
+		(p) =>
+			p.args.includes("PATCH") &&
+			p.args.some((a) => a.includes("check-runs/")),
+	);
+	assert.ok(checkPatch, "the check run must reach completion");
+	const checkPayload = parseJson(checkPatch.payload) as {
+		conclusion: string;
+		output: { title: string };
+	};
+	assert.equal(checkPayload.conclusion, "success");
+	assert.equal(checkPayload.output.title, "Needlefish: pass");
+
+	// The state-marker PUT is the largest payload (body + marker); it must
+	// stay under the limit with a parseable marker, or every later trigger
+	// re-runs the full model review.
+	const markerPut = putReview(posts, 45, 1);
+	assert.ok(markerPut, "the review must receive the state marker");
+	const finalBody = parseReviewPayload(markerPut.payload).body;
+	assert.ok(
+		finalBody.length <= 65_536,
+		`marker-carrying body must fit GitHub's limit, got ${finalBody.length}`,
+	);
+	const state = parseState(finalBody);
+	assert.ok(state, "the state marker must survive truncation");
+	assert.equal(state.headSha, fixture.headSha);
+	assert.equal(state.findings.length, 60);
+});
+
+test("runGithub caps an oversized inline comment body", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 46,
+		rawReview: JSON.stringify({
+			summary: "one huge finding",
+			findings: [
+				mkFinding({
+					severity: "P2",
+					whyItBreaks: "核對付款證據".repeat(40_000),
+				}),
+			],
+			checked: ["checked"],
+			residual_risks: [],
+		}),
+	});
+
+	await runGithub(fixture.repo, 46, { timeoutMs: 1000 });
+
+	const reviewPost = postedReview(readPosts(fixture.postLog), 46);
+	assert.ok(reviewPost);
+	const payload = parseReviewPayload(reviewPost.payload);
+	assert.equal(payload.comments.length, 1);
+	const body = String(payload.comments[0].body);
+	assert.ok(
+		body.length <= 65_536,
+		`inline comment body must fit GitHub's limit, got ${body.length}`,
+	);
+	assert.match(body, /Review body shortened to fit GitHub/);
+	const lastLine = body.trimEnd().split("\n").at(-1);
+	assert.equal(
+		lastLine,
+		"<!-- needlefish-finding -->",
+		"the own-post marker must survive as the last line (normalize.ts read-back)",
+	);
+});
+
+test("capOutboundBody shrinks an oversized state marker rather than dropping it", () => {
+	const findings = Array.from({ length: 3000 }, (_, i) =>
+		mkFinding({ title: `finding ${i}`, lineStart: i + 1 }),
+	);
+	const body = `Review\n\n${renderState("a".repeat(40), findings)}\n`;
+	assert.ok(body.length > 65_536);
+	const capped = capOutboundBody(body);
+	assert.ok(capped.length <= 65_536, `got ${capped.length}`);
+	assert.match(capped, /Review body shortened to fit GitHub/);
+	const state = parseState(capped);
+	assert.ok(state, "the marker must survive even when the body cannot");
+	assert.equal(state.headSha, "a".repeat(40));
+	assert.ok(
+		state.findings.length > 0 && state.findings.length < 3000,
+		`expected a strict non-empty prefix, got ${state.findings.length}`,
+	);
+});
 
 function postedReview(posts: readonly Post[], prNumber: number): Post | undefined {
 	return posts.find(

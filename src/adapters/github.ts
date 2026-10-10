@@ -406,11 +406,17 @@ export function renderState(
 	headSha: string,
 	findings: readonly Finding[],
 ): string {
-	const state: RoundState = {
-		v: 1,
+	return renderStateKeys(
 		headSha,
-		findings: findings.map(findingKey),
-	};
+		findings.map(findingKey),
+	);
+}
+
+function renderStateKeys(
+	headSha: string,
+	findings: readonly FindingKey[],
+): string {
+	const state: RoundState = { v: 1, headSha, findings };
 	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
 	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
 	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
@@ -418,6 +424,11 @@ export function renderState(
 }
 
 const STATE_PREFIX = "<!-- needlefish-state:";
+
+// The same literal github-suggestions.ts writes as the body's final line;
+// normalize.ts recognizes it on read-back. Truncation keeps it as the last
+// line so a truncated inline finding is still recognized as Needlefish's own.
+const OWN_INLINE_POST_MARKER = "<!-- needlefish-finding -->";
 
 export function parseState(body: string): RoundState | null {
 	const start = body.lastIndexOf(STATE_PREFIX);
@@ -452,6 +463,78 @@ export function parseState(body: string): RoundState | null {
 		keys.push({ file, lineStart, category, title });
 	}
 	return { v: 1, headSha, findings: keys };
+}
+
+// GitHub rejects a review or comment body over 65,536 characters with a 422
+// (#215, same class as the closed #179 on the check-summary endpoint). Unlike
+// the check-summary cap in checkCompletion, this limit counts characters, not
+// UTF-8 bytes. Every outbound body routes through capOutboundBody at the post
+// site (postReview, updateReviewBody, postIssueComment).
+const GH_BODY_CHAR_LIMIT = 65_536;
+
+const BODY_TRUNCATED_NOTICE =
+	"Review body shortened to fit GitHub's size limit; the Needlefish check run for this head carries the full review.\n\n";
+
+// The state marker is the dedupe receipt and renderMarkdown appends it at the
+// very end — exactly where a naive truncation would cut it, turning every
+// later trigger into a full model re-review (see persistStateMarker). Own-post
+// markers (normalize.ts OWN_POST_MARKERS) ride the last non-empty line so a
+// Needlefish post is recognized on the way back in; a truncated inline
+// finding that lost it would be fed to the model as human discussion. So both
+// are pulled out before the cut and re-appended whole, notice first so it
+// stays visible even when the retained Markdown holds unclosed constructs.
+export function capOutboundBody(body: string): string {
+	if (body.length <= GH_BODY_CHAR_LIMIT) return body;
+	// Scan for the state marker exactly like parseState, so an extracted
+	// marker parses back exactly as the next run will read the posted body.
+	const markerStart = body.lastIndexOf(STATE_PREFIX);
+	const markerEnd =
+		markerStart < 0
+			? -1
+			: body.indexOf("-->", markerStart + STATE_PREFIX.length);
+	const state =
+		markerEnd < 0 ? null : parseState(body.slice(markerStart, markerEnd + 3));
+	let content = body;
+	let suffix = "";
+	if (state) {
+		suffix = `\n${fitStateMarker(
+			state,
+			GH_BODY_CHAR_LIMIT - BODY_TRUNCATED_NOTICE.length - 2,
+		)}\n`;
+		content = body.slice(0, markerStart);
+	} else if (body.endsWith(OWN_INLINE_POST_MARKER)) {
+		content = body
+			.slice(0, -OWN_INLINE_POST_MARKER.length)
+			.replace(/\n+$/, "");
+		suffix = `\n\n${OWN_INLINE_POST_MARKER}`;
+	}
+	const budget = Math.max(
+		0,
+		GH_BODY_CHAR_LIMIT - BODY_TRUNCATED_NOTICE.length - suffix.length,
+	);
+	let prefix = content.length > budget ? content.slice(0, budget) : content;
+	const last = prefix.charCodeAt(prefix.length - 1);
+	if (last >= 0xd800 && last <= 0xdbff) prefix = prefix.slice(0, -1);
+	return BODY_TRUNCATED_NOTICE + prefix + suffix;
+}
+
+// The marker carries one key per finding, so a large enough findings list can
+// push the marker itself past the limit. Keep the longest finding-key prefix
+// that fits: the headSha match still dedupes the same head, and dropped keys
+// only cost the next round's still-open accounting.
+function fitStateMarker(state: RoundState, budget: number): string {
+	let lo = 0;
+	let hi = state.findings.length;
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2);
+		if (
+			renderStateKeys(state.headSha, state.findings.slice(0, mid)).length <=
+			budget
+		)
+			lo = mid;
+		else hi = mid - 1;
+	}
+	return renderStateKeys(state.headSha, state.findings.slice(0, lo));
 }
 
 export interface MatchResult {
@@ -667,9 +750,13 @@ function postReview(
 ): number | null {
 	const payload = JSON.stringify({
 		commit_id: headSha,
-		body,
+		body: capOutboundBody(body),
 		event: "COMMENT",
-		comments,
+		// Inline comment bodies are model text on the same 422 endpoint.
+		comments: comments.map((comment) => ({
+			...comment,
+			body: capOutboundBody(comment.body),
+		})),
 	});
 
 	const created = ghPost(
@@ -742,7 +829,7 @@ function updateReviewBody(
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: capOutboundBody(body) }),
 	);
 }
 
@@ -946,7 +1033,7 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: capOutboundBody(body) }),
 	);
 }
 
