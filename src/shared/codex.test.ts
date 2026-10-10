@@ -64,6 +64,40 @@ test("extractJson rejects invalid JSON", () => {
   assert.throws(() => extractJson(text), /invalid JSON in codex output/);
 });
 
+test("extractJson rejects duplicated JSON keys instead of silently keeping the last value", () => {
+  // Regression #221: JSON.parse collapses duplicate keys last-value-wins, so a
+  // response repeating "findings" (P1, then []) or "residual_risks"
+  // (blocks:true, then []) normalized to zero findings and a pass verdict.
+  assert.throws(
+    () => extractJson('{"findings":[{"severity":"P1"}],"findings":[],"summary":"ok"}'),
+    /duplicate JSON key "findings" in codex output/,
+  );
+  assert.throws(
+    () => extractJson('{"residual_risks":[{"blocks":true}],"residual_risks":[]}'),
+    /duplicate JSON key "residual_risks" in codex output/,
+  );
+  // Same inside a fence body and inside nested finding objects.
+  assert.throws(
+    () => extractJson('```json\n{"findings":[{"severity":"P1","severity":"P0"}]}\n```'),
+    /duplicate JSON key "severity" in codex output/,
+  );
+  // Escaped keys are compared decoded, so the JSON.parse collision is caught.
+  assert.throws(
+    () => extractJson('{"a":1,"\\u0061":2}'),
+    /duplicate JSON key "a" in codex output/,
+  );
+  // The same key in sibling objects is not a duplicate.
+  assert.deepEqual(extractJson('{"a":{"k":1},"b":{"k":2}}'), {
+    a: { k: 1 },
+    b: { k: 2 },
+  });
+  // Braces and quotes inside string values must not confuse the scanner.
+  assert.deepEqual(extractJson('{"a":"{ \\"k\\":1, \\"k\\":2 }","b":[["x,y"],"z"]}'), {
+    a: '{ "k":1, "k":2 }',
+    b: [["x,y"], "z"],
+  });
+});
+
 test("extractJson parses a raw JSON document", () => {
   const parsed = extractJson('{"ok":true}');
 

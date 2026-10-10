@@ -970,6 +970,70 @@ function unparseableOutputError(text: string): Error {
 	);
 }
 
+// JSON.parse collapses a duplicated member key silently (last value wins), so
+// a response repeating `"findings"` (findings, then []) loses the findings and
+// normalizes to a pass. Reject duplicates anywhere instead of trusting the
+// collapsed object. The reviver cannot detect this (V8 calls it once per
+// collapsed key), so this scanner walks the text: in JSON that has already
+// parsed, the first token after `{` or `,` inside an object is a member name,
+// so a string in that position is a key and duplicate keys fail the set check.
+// Keys are compared decoded, matching what JSON.parse collided.
+function findDuplicateJsonKey(source: string): string | undefined {
+	type Scope = { isObject: true; keys: Set<string> } | { isObject: false };
+	const stack: Scope[] = [];
+	let nextIsKey = false;
+	for (let i = 0; i < source.length; ) {
+		const ch = source[i];
+		if (ch === '"') {
+			// Skip to the closing quote, stepping over escape pairs so `\"`
+			// and braces inside strings do not shift the structural scan.
+			let end = i + 1;
+			while (end < source.length) {
+				if (source[end] === "\\") end += 2;
+				else if (source[end] === '"') break;
+				else end += 1;
+			}
+			const top = stack[stack.length - 1];
+			if (top !== undefined && top.isObject && nextIsKey) {
+				const key = JSON.parse(source.slice(i, end + 1)) as string;
+				if (top.keys.has(key)) return key;
+				top.keys.add(key);
+			}
+			nextIsKey = false;
+			i = end + 1;
+			continue;
+		}
+		if (ch === "{") {
+			stack.push({ isObject: true, keys: new Set() });
+			nextIsKey = true;
+		} else if (ch === "[") {
+			stack.push({ isObject: false });
+			nextIsKey = false;
+		} else if (ch === "}" || ch === "]") {
+			stack.pop();
+			nextIsKey = false;
+		} else if (ch === ",") {
+			nextIsKey = stack[stack.length - 1]?.isObject === true;
+		} else if (ch === ":") {
+			nextIsKey = false;
+		}
+		i += 1;
+	}
+	return undefined;
+}
+
+// Complete response, duplicated member key: model-side contract failure, so
+// it stays unclassified like invalid JSON (no likely-cause token) and keeps
+// the shared malformed-output next step.
+function assertNoDuplicateJsonKeys(source: string): void {
+	const duplicate = findDuplicateJsonKey(source);
+	if (duplicate !== undefined) {
+		throw new Error(
+			`duplicate JSON key "${duplicate}" in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`,
+		);
+	}
+}
+
 function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
@@ -979,8 +1043,10 @@ function parseJsonObject(raw: string): unknown {
 		// answered, just not in JSON.
 		throw unparseableOutputError(raw);
 	}
+	const source = raw.slice(start, end + 1);
+	let parsed: unknown;
 	try {
-		return JSON.parse(raw.slice(start, end + 1));
+		parsed = JSON.parse(source);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			throw new Error(`invalid JSON in codex output: ${error.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
@@ -989,6 +1055,8 @@ function parseJsonObject(raw: string): unknown {
 		}
 		throw error;
 	}
+	assertNoDuplicateJsonKeys(source);
+	return parsed;
 }
 
 // Prompt contract: exactly one ```json fence. Prefer that tag so a leading
@@ -1001,7 +1069,10 @@ export function extractJson(text: string): unknown {
 	if (trimmed.startsWith("{")) {
 		try {
 			const parsed = JSON.parse(trimmed);
-			if (isRecord(parsed)) return parsed;
+			if (isRecord(parsed)) {
+				assertNoDuplicateJsonKeys(trimmed);
+				return parsed;
+			}
 		} catch (error) {
 			if (!(error instanceof SyntaxError)) throw error;
 			documentError = error;
