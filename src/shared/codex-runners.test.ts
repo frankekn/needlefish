@@ -1022,6 +1022,7 @@ test("extractJson ends every malformed-output message with the same next step", 
 		'```json\n{"a": 1,}\n```',
 		'```json\n{"a":1}\n```\n```json\n{"b":2}\n```',
 		'```\n{"a":1}\n```\n```\n{"b":2}\n```',
+		'{"a":1,"a":2}',
 	]) {
 		assert.throws(
 			() => extractJson(output),
