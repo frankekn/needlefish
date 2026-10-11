@@ -291,6 +291,10 @@ function handleMethodMessage(
   controller: ManagedRunnerProcessController,
   state: AcpClientState
 ): void {
+  if (method === "session/update") {
+    collectSessionUpdate(message.params, state);
+    return;
+  }
   // The prompt result closes stdin; no later request can invalidate completion.
   if (state.completed) return;
   if (method === "session/request_permission") {
@@ -304,10 +308,6 @@ function handleMethodMessage(
     cancelPermission(controller, id);
     sendCancel(controller, state);
     controller.stop();
-    return;
-  }
-  if (method === "session/update") {
-    collectSessionUpdate(message.params, state);
     return;
   }
   const id = rpcId(message.id);

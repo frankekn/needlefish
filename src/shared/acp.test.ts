@@ -9,7 +9,7 @@ import { headSha, initRepo } from "./codex-runner-test-fixtures";
 import type { RunStat } from "./runner";
 import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
-type AcpStubMode = "clean" | "error" | "invalid-usage" | "late-request" | "malformed" | "hang";
+type AcpStubMode = "clean" | "error" | "invalid-usage" | "late-request" | "late-update" | "malformed" | "hang";
 
 interface AcpFixture {
   readonly tmp: string;
@@ -109,6 +109,11 @@ test("runCodex acp rejects malformed stdout without hanging", async (t) => {
   const fixture = acpFixture(t, "malformed");
 
   await assert.rejects(() => runAcpPrompt(fixture, 1000), /malformed ACP JSON-RPC/);
+});
+
+test("runCodex acp preserves trailing text notifications after the prompt result", async (t) => {
+  const fixture = acpFixture(t, "late-update");
+  assert.equal(await runAcpPrompt(fixture, 1000), '{"ok":true}');
 });
 
 test("runCodex acp times out silent runner and kills process group", { timeout: 6_000 }, async (t) => {
@@ -236,6 +241,11 @@ function writeAcpStub(options: {
       "    } else if (request.method === 'session/prompt' && mode === 'late-request') {",
       "      update('{\"ok\":true}');",
       "      process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } })}\\n${JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'session/request_permission', params: { sessionId: 'sess', options: [], toolCall: { toolCallId: 'tc1', title: 'edit' } } })}\\n`);",
+      "      setTimeout(() => process.exit(0), 10);",
+      "    } else if (request.method === 'session/prompt' && mode === 'late-update') {",
+      "      update('{\"ok\":');",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
+      "      update('true}');",
       "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'error') {",
       "      send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'prompt failed' } });",
