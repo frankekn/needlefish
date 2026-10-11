@@ -11,6 +11,7 @@ import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
+import { resolveConnectionOptions } from "../shared/connections.js";
 import {
 	registerTerminationFinalizer,
 	type Termination,
@@ -1582,6 +1583,7 @@ export async function runGithub(
 		);
 	}
 
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath);
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
 	if (!baseSha || !headSha)
 		throw new Error("Could not resolve PR base/head SHA");
@@ -1651,7 +1653,7 @@ export async function runGithub(
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
 		const result: ReviewResult = {
-			...(await review(bundle, opts)),
+			...(await review(bundle, resolvedOpts)),
 			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
 			prNumber,
 			prBaseSha: baseSha,

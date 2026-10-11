@@ -16,6 +16,7 @@ interface FixtureOptions {
   readonly docs?: boolean;
   readonly promptResult?: unknown;
   readonly scenario?: "silent" | "incompatible" | "permission" | "session-retry" | "auth";
+  readonly github?: "closed" | "untrusted" | "active";
 }
 interface Launch { readonly argv: string[]; readonly cwd: string; readonly home: string }
 interface ClientMessage { readonly id?: unknown; readonly method?: string; readonly result?: unknown }
@@ -103,6 +104,18 @@ process.stdout.write(${JSON.stringify(response)});
   mkdirSync(home); mkdirSync(bin); mkdirSync(path.join(dir, "temp"));
   const pr = { number: 7, baseRefOid: base, headRefOid: head, baseRefName: "main", headRefName: "feature", title: "fixture", body: "", comments: [], reviews: [], statusCheckRollup: [] };
   writeFileSync(path.join(bin, "gh"), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'api') {
+  if (args.includes('--input')) { require('node:fs').readFileSync(0, 'utf8'); process.stdout.write('{"id":1}'); }
+  else if (args[1] === 'repos/frankekn/needlefish/pulls/7') process.stdout.write(${JSON.stringify(JSON.stringify({
+    state: options.github === "closed" ? "closed" : "open", head: { sha: head }, base: { sha: base },
+    author_association: options.github === "untrusted" ? "NONE" : "MEMBER", user: { login: "author", type: "User" },
+  }))});
+  else if (args.includes('--paginate')) process.stdout.write('[[]]');
+  else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
+  else process.exit(2);
+  process.exit(0);
+}
 if (process.argv[2] !== 'pr') process.exit(2);
 process.stdout.write(${JSON.stringify(JSON.stringify(pr))});
 `);
@@ -110,6 +123,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(pr))});
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) if (/^(NEEDLEFISH_|CODEX_|CLAUDE_|OPENAI_|PR_)/.test(key)) delete env[key];
   Object.assign(env, { HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+    GITHUB_REPOSITORY: "frankekn/needlefish",
     NEEDLEFISH_CONNECTIONS_FILE: file, NEEDLEFISH_MODEL: "wrong-ambient-model", NEEDLEFISH_RUNNER: "openai",
     NEEDLEFISH_NO_RETRY: "1", NEEDLEFISH_RETRY_MS: "1", NEEDLEFISH_TMPDIR: path.join(dir, "temp"),
     NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS: "1500",
@@ -129,6 +143,30 @@ process.stdout.write(${JSON.stringify(JSON.stringify(pr))});
   return { dir, repo, file, head, env, run, calls,
     launches: () => records<Launch>(launches), messages: () => records<ClientMessage>(messages) };
 }
+
+for (const github of ["closed", "untrusted"] as const) {
+  for (const config of ["missing", "malformed"] as const) {
+    test(`GitHub ${github} skip precedes ${config} connection configuration`, (t) => {
+      const f = fixture(t, "acp", { github });
+      if (config === "missing") f.env.NEEDLEFISH_CONNECTIONS_FILE = path.join(f.dir, "missing.json");
+      else writeFileSync(f.file, "{");
+      const result = f.run(["--github", "--pr", "7"]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /Needlefish skipped/);
+      assert.equal(f.launches().length, 0);
+    });
+  }
+}
+
+test("active GitHub review validates its connection with a single-line CLI error", (t) => {
+  const f = fixture(t, "acp", { github: "active" });
+  writeFileSync(f.file, "{");
+  const result = f.run(["--github", "--pr", "7"]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /^needlefish: [^\n]+\n$/);
+  assert.match(result.stderr, /connections/i);
+  assert.equal(f.launches().length, 0);
+});
 
 for (const adapter of ["claude", "acp"] as const) {
   for (const mode of ["local", "pr"] as const) {

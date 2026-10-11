@@ -328,6 +328,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus !== undefined ||
       opts.deep !== undefined ||
       opts.model !== undefined ||
+      opts.connection !== undefined ||
       opts.timeoutMs !== undefined ||
       opts.localMode !== undefined;
     if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");
