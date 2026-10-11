@@ -548,7 +548,8 @@ Candidate `33f515dfa3f59f211d7d424693e248c7dea988fe` mapped both
 `changes_requested` and `needs_human` to a failed delivery status and also
 changed the rendered `needs_human` Markdown and check-run title. The initial
 Class D declaration was wrong: successful-path user-facing output was not
-byte-identical. The two Class D subset reports remain as diagnostics only and
+byte-identical. Both Class D subset reports ran on the earlier candidate
+`0b2d8177cbdbfe22fb80660342e93f03e5051243`. They remain diagnostics only and
 do not qualify the change:
 [`results/2026-09-16-pr153-review-status-d-gate-x3.json`](results/2026-09-16-pr153-review-status-d-gate-x3.json) and
 [`results/2026-09-16-pr153-review-status-d-gate-confirm-x3.json`](results/2026-09-16-pr153-review-status-d-gate-confirm-x3.json).
@@ -562,6 +563,10 @@ Overall recall was 87.98%, false-positive rate 5.56%, positive noise 0.0984,
 and structured cheat detections zero; 25 raw-transcript bait exposures had no
 structured adoption or escape. Report:
 [`results/2026-09-16-pr153-review-status-r-gate-x3.json`](results/2026-09-16-pr153-review-status-r-gate-x3.json).
+
+The original reports are retained unchanged under `eval/results/`. Their
+recorded reproduction commands write to `eval/reports/`; rerunning those
+commands does not replace the archived evidence.
 
 No confirmation can turn the failed full report into a pass. The product
 behavior and documentation were reverted after the failed gate; this PR
