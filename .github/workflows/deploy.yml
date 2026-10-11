@@ -1,4 +1,5 @@
-# Installation is an operator action; source pushes never replace the local build.
+# The self-managed release is baked into the runner AMI (frankekn/gha-platform images/versions.json);
+# this workflow only verifies what the x64-review pool ships. Source pushes never replace it.
 name: needlefish-deploy
 on:
   workflow_dispatch:
@@ -9,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: x64-review
     steps:
       - name: Verify self-managed installation
         run: |

@@ -20,6 +20,8 @@ import {
 } from "./runner.js";
 import { resolveRunner } from "./runner-detection.js";
 import {
+	RunnerIdleTimeoutError,
+	RunnerTimeoutError,
 	spawnRunnerProcess,
 	type RunnerProcessResult,
 } from "./runner-process.js";
@@ -84,7 +86,7 @@ const BASE_ENV_ALLOWLIST = [
 	"RUNNER_TRACKING_ID",
 ] as const;
 
-function buildRunnerEnv(
+export function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
 	ephemeralHome?: string,
@@ -192,6 +194,28 @@ function hasCodexProxyEnvCredential(): boolean {
 	);
 }
 
+// The env-credential modes a review accepts without the runner's HOME
+// credential store. ephemeralAuthFiles relaxes its required files on exactly
+// this answer, and the doctor accepts the setup on it before probing the CLI's
+// own login state. Never reads the values themselves beyond non-emptiness.
+export function hasRunnerEnvCredential(runner: RunnerName): boolean {
+	switch (runner) {
+		case "codex":
+			// CODEX_API_KEY through the passthrough authenticates without auth.json.
+			return hasCodexProxyEnvCredential() || hasPassthroughCredential(["CODEX_API_KEY"]);
+		case "claude":
+			return !!process.env.ANTHROPIC_API_KEY || !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+		case "opencode":
+			return hasOpenCodeEnvCredential();
+		case "grok":
+			return hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"]);
+		case "openai":
+		case "pi":
+		case "acp":
+			return false;
+	}
+}
+
 export function hasPiProviderEnvCredential(
 	provider: string,
 	env: RunnerEnvironment = process.env,
@@ -285,14 +309,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	readonly optional: readonly string[];
 } {
 	if (runner === "codex") {
-		if (hasCodexProxyEnvCredential()) {
-			return {
-				required: [],
-				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
-			};
-		}
-		// CODEX_API_KEY through the passthrough authenticates without auth.json.
-		if (hasPassthroughCredential(["CODEX_API_KEY"])) {
+		if (hasRunnerEnvCredential(runner)) {
 			return {
 				required: [],
 				optional: RUNNER_DEFINITIONS.codex.envConfigFiles,
@@ -305,10 +322,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 			optional: [".codex/config.toml"],
 		};
 	}
-	if (
-		runner === "grok" &&
-		hasPassthroughCredential(["GROK_API_KEY", "XAI_API_KEY"])
-	) {
+	if (runner === "grok" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.grok.envConfigFiles,
@@ -317,7 +331,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	// opencode: OPENAI_API_KEY is an allowlisted auth input (see
 	// RUNNER_ENV_ALLOWLIST). Other provider API keys must be explicitly named
 	// in the passthrough and non-empty.
-	if (runner === "opencode" && hasOpenCodeEnvCredential()) {
+	if (runner === "opencode" && hasRunnerEnvCredential(runner)) {
 		return {
 			required: [],
 			optional: RUNNER_DEFINITIONS.opencode.envConfigFiles,
@@ -506,6 +520,7 @@ export interface CodexOptions extends RunnerOptions {
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
 	readonly targetHeadSha: string;
+	readonly targetBaseSha?: string;
 	readonly targetPatch?: string;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
@@ -522,6 +537,17 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	// Called once per sandbox. Output-only metadata for the human-facing
+	// result; the runner already gets the same facts in its prompt.
+	readonly onLfsReport?: (report: LfsSandboxReport) => void;
+}
+
+export interface LfsSandboxReport {
+	// Repo-relative paths the sandbox could only check out as LFS pointer stubs.
+	readonly pointerFiles: readonly string[];
+	// LFS configuration or pointer status could not be established, so
+	// pointerFiles may be missing entries.
+	readonly scanIncomplete: boolean;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -638,6 +664,13 @@ export async function runCodex(
 				emitStat(false);
 				throw err;
 			}
+			// A run that exhausted its whole per-call deadline is not retried: the second
+			// attempt waits out the same stuck upstream and doubles the pass to ~40 min.
+			// An idle stall (RunnerIdleTimeoutError) stays retryable; README documents it.
+			if (err.cause instanceof RunnerTimeoutError) {
+				emitStat(false);
+				throw err;
+			}
 			lastErr = err;
 			usage = undefined;
 			if (attempt < maxAttempts) {
@@ -703,6 +736,7 @@ async function runCodexOnce(
 					repoPath: opts.repoPath,
 					prompt,
 					targetHeadSha: opts.targetHeadSha,
+					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
 					tmp,
 				});
@@ -725,6 +759,10 @@ async function runCodexOnce(
 				throw asRunnerOperationalError(error);
 			}
 		})();
+		opts.onLfsReport?.({
+			pointerFiles: sandbox.lfsPointerFiles.map((file) => file.toString("utf8")),
+			scanIncomplete: sandbox.lfsScanIncomplete,
+		});
 		let result: RunnerResult;
 		try {
 			result = await runRunner(runner, invocation);
@@ -755,10 +793,12 @@ async function runCodexOnce(
 			return err;
 		};
 		if (result.res.error) {
+			const nextStep = spawnFailureNextStep(runner, result.res.error, invocation.timeoutMs);
 			throw withRunnerOutput(
-				new RunnerOperationalError(result.res.error.message, {
-					cause: result.res.error,
-				}),
+				new RunnerOperationalError(
+					nextStep === undefined ? result.res.error.message : `${result.res.error.message}. ${nextStep}`,
+					{ cause: result.res.error },
+				),
 			);
 		}
 		if (result.res.status !== 0) {
@@ -768,7 +808,7 @@ async function runCodexOnce(
 			const cause = safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
-					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt`,
+					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
 				),
 			);
 		}
@@ -813,32 +853,153 @@ async function runCodexOnce(
 // stderr text never does (it may contain the review prompt).
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
+	// Order matters. Explicit, self-labelling signals are checked before the loose
+	// numeric heuristics: `\b40[13]\b` matches any 401/403/413 anywhere in stderr —
+	// session ids, token counts, latency figures — so a genuine 429 whose output
+	// happens to contain such a number would otherwise be misreported as an auth
+	// failure, and the review workflow does not advance the fallback chain on auth.
 	const authCode = stderr.match(/auth error code:\s*([a-z0-9_]+)/i);
 	if (authCode) return `auth error (${authCode[1]})`;
-	if (/\b40[13]\b|unauthorized|login required|not logged in/i.test(stderr)) {
-		return "auth rejected";
-	}
-	if (/usage limit|quota exceeded|credit balance/i.test(stderr)) {
+	// "quota exhausted"/"insufficient_quota" are how OpenAI-compatible gateways and
+	// Bailian-style token plans phrase an exhausted allowance; "quota exceeded" alone
+	// missed them and the caller then saw no cause at all.
+	if (
+		/usage limit|quota exceeded|quota exhausted|insufficient_quota|credit balance/i.test(
+			stderr,
+		)
+	) {
 		return "usage limit";
 	}
-	if (/rate limit/i.test(stderr)) return "rate limited";
+	// 429 is the canonical rate-limit status and must classify even when the body
+	// uses a proxy-specific code such as CLIProxyAPI's model_cooldown. Codex phrases
+	// an exhausted budget as "exceeded retry limit, last status: 429 Too Many Requests"
+	// (verified on codex-cli 0.153.4 and 0.155.1).
+	if (/rate limit|\b429\b|model_cooldown/i.test(stderr)) return "rate limited";
+	if (/unauthorized|login required|not logged in|\b40[13]\b/i.test(stderr)) {
+		return "auth rejected";
+	}
 	if (/ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed/i.test(stderr)) {
 		return "network error";
 	}
+	// A bare three-digit number may be a token count or latency, not a status.
+	if (
+		/\b(?:bad gateway|gateway time-?out|service unavailable|internal server error|overloaded)\b/i.test(stderr) ||
+		/\b(?:http|status|code|gateway|upstream|proxy|response)[^\n]{0,24}\b5\d{2}\b/i.test(stderr)
+	) {
+		return "network error";
+	}
 	return undefined;
+}
+
+// One concrete next step per exit-failure class. Only catalog commands and
+// canned phrases reach the message; review.yml advances its provider fallback
+// on the `likely cause:` token, so an auth step must never contain a fallback
+// keyword (timeout, unreachable, ...).
+function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
+	if (cause === undefined) {
+		return "Run `needlefish doctor` to check the runner setup, then retry.";
+	}
+	if (cause.startsWith("auth")) {
+		const login = RUNNER_DEFINITIONS[runner].login;
+		return login === undefined
+			? `Log in to the ${runner} CLI again, then retry.`
+			: `Run \`${login.command}\`, then retry.`;
+	}
+	switch (cause) {
+		case "usage limit":
+			return "Wait for the usage limit to reset, or switch --runner or --model, then retry.";
+		case "rate limited":
+			return "Retry in a few minutes.";
+		case "network error":
+			return "Check network and proxy settings, then retry.";
+		default:
+			return "Retry.";
+	}
+}
+
+// Spawn-level failures the user can act on. Other spawn errors keep their
+// bare errno message.
+function spawnFailureNextStep(
+	runner: RunnerName,
+	error: Error,
+	timeoutMs: number,
+): string | undefined {
+	if (error instanceof RunnerTimeoutError) {
+		return `The ${runner} runner used its whole ${timeoutMs} ms per-call timeout. Retry; if it repeats, raise --timeout-ms or NEEDLEFISH_TIMEOUT_MS.`;
+	}
+	if (error instanceof RunnerIdleTimeoutError) {
+		return `The ${runner} runner stopped producing output. Retry; if it repeats, raise OPENCODE_IDLE_TIMEOUT_MS.`;
+	}
+	if ("code" in error && error.code === "ENOENT") {
+		const definition = RUNNER_DEFINITIONS[runner];
+		const install = definition.autoDetect?.installCommand;
+		const binEnv = definition.bin?.env;
+		if (install !== undefined && binEnv !== undefined) {
+			return `The ${runner} CLI is not installed or not on PATH. Install it with \`${install}\`, or set ${binEnv} to its executable.`;
+		}
+		if (binEnv !== undefined) {
+			return `The ${runner} CLI is not installed or not on PATH. Set ${binEnv} to its executable.`;
+		}
+	}
+	return undefined;
+}
+
+export const MALFORMED_OUTPUT_NEXT_STEP =
+	"Retry; if it repeats, try another --model or --runner.";
+
+// Allowlisted cause classification for output that cannot be parsed, mirroring
+// safeRunnerCause: only the canned tokens ever reach the PR-visible message, the
+// output text never does (it may echo the review prompt).
+//
+// The line drawn here is "did the provider deliver a complete response", not
+// "is the response usable". Nothing delivered ("empty output") or a stream that
+// stopped mid-structure ("truncated output") is a transport-class failure —
+// timeout, token ceiling consumed by reasoning, gateway returning an empty or
+// clipped body — and neither carries review content, so advancing the fallback
+// chain cannot mask a review defect. A response that arrived whole but ignores
+// the JSON contract (prose, wrong fence tag, ambiguous fences, syntactically
+// invalid JSON) stays unclassified on purpose: that is where a prompt, fixture
+// or model-capability defect hides, and retrying it on four providers burns four
+// model calls to reproduce the same defect.
+export function safeOutputCause(text: string): string | undefined {
+	if (!text.trim()) return "empty output";
+	// A response that IS an HTML/XML document never came from a model held to a
+	// JSON contract: it is a gateway or proxy error page that the runner passed
+	// through with a zero exit status.
+	if (/^\s*<(?:!doctype\s+html|html\b|\?xml\b)/i.test(text)) {
+		return "html error page";
+	}
+	// An odd number of fence delimiters means a fence was opened and never
+	// closed: the stream stopped inside it. A complete response — even one that
+	// fences the wrong language or answers in prose — balances them.
+	const delimiters = text.match(/```/g)?.length ?? 0;
+	if (delimiters % 2 === 1) return "truncated output";
+	return undefined;
+}
+
+// `text` is the material that was supposed to hold the JSON object: the whole
+// output when no fence was usable, the fence body when one was.
+function unparseableOutputError(text: string): Error {
+	const cause = safeOutputCause(text);
+	return new Error(
+		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}. ${MALFORMED_OUTPUT_NEXT_STEP}`,
+	);
 }
 
 function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
 	if (start === -1 || end === -1 || end <= start) {
-		throw new Error("no JSON object found in codex output");
+		// An empty fence body classifies as empty output: the fence markers are
+		// not review content. A body with text but no braces does not — the model
+		// answered, just not in JSON.
+		throw unparseableOutputError(raw);
 	}
 	try {
 		return JSON.parse(raw.slice(start, end + 1));
 	} catch (error) {
 		if (error instanceof SyntaxError) {
-			throw new Error(`invalid JSON in codex output: ${error.message}`, {
+			throw new Error(`invalid JSON in codex output: ${error.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
 				cause: error,
 			});
 		}
@@ -873,27 +1034,29 @@ export function extractJson(text: string): unknown {
 
 	const jsonFences = fences.filter((fence) => fence.tag === "json");
 	if (jsonFences.length > 1) {
-		throw new Error("ambiguous JSON fences in codex output");
+		throw new Error(`ambiguous JSON fences in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`);
 	}
 	if (jsonFences.length === 1) {
 		return parseJsonObject(jsonFences[0].body);
 	}
 
 	if (fences.length > 1) {
-		throw new Error("ambiguous fenced output in codex output");
+		throw new Error(`ambiguous fenced output in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`);
 	}
 	if (fences.length === 1) {
 		const fence = fences[0];
 		if (fence.tag === "") return parseJsonObject(fence.body);
-		throw new Error("no JSON object found in codex output");
+		// A closed fence with a non-json tag is a complete response that named the
+		// wrong language; only a dangling second fence would make this truncation.
+		throw unparseableOutputError(text);
 	}
 
 	if (documentError) {
-		throw new Error(`invalid JSON in codex output: ${documentError.message}`, {
+		throw new Error(`invalid JSON in codex output: ${documentError.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
 			cause: documentError,
 		});
 	}
-	throw new Error("no JSON object found in codex output");
+	throw unparseableOutputError(text);
 }
 
 function resolveModel(
@@ -908,7 +1071,7 @@ function resolveModel(
 	return modelEnv === undefined ? undefined : process.env[modelEnv];
 }
 
-function timeoutMsFor(runner: RunnerName): number {
+export function timeoutMsFor(runner: RunnerName): number {
 	if (process.env.NEEDLEFISH_TIMEOUT_MS !== undefined) {
 		return parsePositiveInteger(
 			process.env.NEEDLEFISH_TIMEOUT_MS,
@@ -921,7 +1084,7 @@ function timeoutMsFor(runner: RunnerName): number {
 			"CODEX_TIMEOUT_MS",
 		);
 	}
-	return 600000;
+	return 1200000;
 }
 
 function retryMsFor(runner: RunnerName): number {
@@ -1068,25 +1231,50 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 async function runOpenCode(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
-	const unrestrictedConfig = JSON.stringify({
+	// opencode v2 CLI contract: --pure/--dir/--variant were removed; the
+	// process cwd already selects the repo, and variants live in the model
+	// string as provider/model#variant. --standalone gives each invocation a
+	// private server: the default background-service mode hangs under the
+	// eval's isolated HOME.
+	const config: Record<string, unknown> = {
 		permission: "allow",
 		agent: { build: { permission: "allow" } },
-	});
+	};
+	// Zen models resolve against the models.dev catalog cached in the
+	// per-user db; an isolated HOME has no cache, so declare the model
+	// explicitly to keep provider resolution self-contained.
+	const zenModel = invocation.model?.startsWith("opencode/")
+		? invocation.model.slice("opencode/".length).split("#")[0]
+		: null;
+	if (zenModel)
+		config.providers = { opencode: { models: { [zenModel]: {} } } };
+	const unrestrictedConfig = JSON.stringify(config);
 	const promptPath = path.join(invocation.tmp, "prompt.md");
 	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
 	const args = [
 		"run",
 		"--format",
 		"json",
-		"--pure",
+		"--standalone",
 		"--auto",
-		"--dir",
-		invocation.repoPath,
 	];
 	args.push("--file", promptPath);
-	if (invocation.model) args.push("--model", invocation.model);
-	if (invocation.reasoningEffort)
-		args.push("--variant", invocation.reasoningEffort);
+	if (invocation.model) {
+		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
+		// variant already in the model id rather than appending a second one.
+		const effort =
+			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
+				? invocation.reasoningEffort
+				: null;
+		args.push(
+			"--model",
+			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
+		);
+	} else if (invocation.reasoningEffort) {
+		throw new RunnerOperationalError(
+			"opencode reasoning effort requires a model to be specified",
+		);
+	}
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({
@@ -1210,7 +1398,9 @@ async function runOpenAIDirect(
 			"model is required for the openai runner (use --model or OPENAI_MODEL)",
 		);
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	// The abort reason is the same typed timeout the spawned runners raise, so the
+	// retry loop treats an exhausted HTTP deadline like any other runner timeout.
+	const timer = setTimeout(() => controller.abort(new RunnerTimeoutError("openai")), timeoutMs);
 	try {
 		const res = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
@@ -1251,9 +1441,13 @@ async function runOpenAIDirect(
 		}
 		const content = json.choices?.[0]?.message?.content;
 		if (typeof content !== "string" || !content) {
+			// HTTP 200 with a well-formed envelope and no content is an upstream
+			// delivery failure, not a model that answered badly — reasoning tokens
+			// eating the whole budget is the usual cause. No review content exists
+			// to be masked, so the workflow should advance the fallback chain.
 			throw withBody(
 				new RunnerOutputError(
-					`openai runner: empty content in response: ${text.slice(0, 500)}`,
+					`openai runner: empty content in response; likely cause: empty output; body: ${text.slice(0, 500)}`,
 				),
 			);
 		}

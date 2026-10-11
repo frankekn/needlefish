@@ -2,9 +2,132 @@
 
 ## Unreleased
 
+- Local: resolve nested invocations to the repository root for diffs, policy,
+  sandbox cloning, and cache placement.
+- Runner: expose executable `WORKING` and unborn `EMPTY` sandbox refs and pin
+  working patches to their captured baseline without changing result labels.
+- Review: reject tool-less `openai` HTTP large/deep reviews before model calls;
+  small full-diff reviews and docs-only skips remain supported.
+- GitHub: advance provider fallback only on structured execution outcomes,
+  never finding prose or a blocking verdict; preserve typed transport failures.
+- GitHub: write dedupe receipts after delivery and require a completed verdict
+  check before skipping, so old failed or superseded deliveries can recover.
+- Runner: remove owned readonly cache trees without following symlinks;
+  unrecoverable cleanup warns without discarding valid output or retrying the
+  model, and one failed removal no longer aborts startup reaping.
+
+## 0.4.10 — 2026-10-02
+
+- Prompts: the critic no longer deletes a contract-drift finding when a
+  rename, doc, or type change newly promises a behavior over an unchanged
+  body. Its exception now matches `review.md` Trigger C: substitute an input
+  the promise excludes and check the HEAD output (#205, Class R; prompt hash
+  `c59d803f0d0dc476`).
+- Review: Needlefish's own PR posts (round comments, error comments, inline
+  findings, review bodies with the state marker) are no longer fed back to the
+  model on re-review, `pr`, or `explain`. Only bot-typed posts are dropped;
+  human comments that quote them are kept (#202).
+- GitHub: a SIGINT/SIGTERM during a review completes the owned `Needlefish`
+  check as `Needlefish: review terminated` (or neutral `superseded` on a stale
+  head) instead of leaving it in progress. `review.yml` treats that title as
+  an infra failure and re-dispatches (#198).
+- GitHub: an unmatched prior finding is never called resolved. Labels are now
+  `🔍 not re-found (code changed)`, `🔁 not re-found (code unchanged)`, and
+  `❔ undetermined`; a round with a blocking residual marks every dropped
+  prior finding undetermined (#195).
+- Review: changed files reviewed only as Git LFS pointers are listed as a
+  non-blocking coverage gap (`coverageGaps` in `--json`) (#199).
+- CLI: `needlefish doctor` checks Node, runner, login, repo, and base; runner
+  failures end with one concrete next step (#200). Interactive terminals show
+  one stderr line per review stage (#196). `schemas/review-result.v1.schema.json`
+  publishes the `--json` shape (#197).
+- Release: tag pushes also publish to npm via trusted publishing (#192).
+- Eval: reports record candidate (pre-critic) scores and critic time share
+  (#189); `eval/tools/adoption.ts` reports real-PR finding adoption (#194);
+  `eval/calibrate.ts` adds difficulty calibration and core acceptance (#205).
+
+## 0.4.9 — 2026-09-28
+
+- Runners: the per-call timeout now defaults to 20 minutes (1,200,000 ms)
+  for every runner, the value only the Terra xhigh workflow lane had. Deep
+  passes on large PRs with DeepSeek V4.1 Flash were timing out at 10 minutes
+  and reporting `needs_human` with files left unreviewed.
+  `NEEDLEFISH_TIMEOUT_MS` / `CODEX_TIMEOUT_MS` still override, and the
+  whole-review deadline still caps a run.
+- Docs: `src/adapters/AGENTS.md` now matches local mode (a dirty worktree
+  reviews uncommitted changes by default); the critic matching key uses a
+  `"\u0000"` escape instead of a literal NUL byte. Eval records the 90-fixture
+  baseline and the large-path measurements.
+
+## 0.4.8 — 2026-09-28
+
+- GitHub: review only PRs whose author is an OWNER, MEMBER, or COLLABORATOR
+  that is not a bot. Other PRs get one neutral `Needlefish: skipped (author
+  not trusted)` check and no model run. GitHub mode enforces this itself, so
+  it applies to consumer workflows that call the installed binary;
+  `review.yml` and `action.yml` also gate before checkout. A maintainer
+  overrides with `allow_untrusted_author: true` (workflows) or
+  `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`. An unreadable author fails the run
+  instead of skipping.
+- GitHub: every outbound text (reviews, comments, check runs, labels, the
+  explain comment, stdout, and error messages) is screened. A verbatim
+  credential value from the run's environment withholds the post and fails
+  the check; credential-shaped strings are replaced with `[redacted]`.
+  Clean output is byte-identical.
+- GitHub: a re-review no longer reports a dropped finding as resolved when
+  its code did not change. Dropped findings are classified against the diff
+  from the previous reviewed head: `✅ resolved` (its lines changed),
+  `🔁 not reproduced (code unchanged)`, or `❔ undetermined` (previous head
+  unavailable).
+- Eval: two 27-file fixtures exercise the large-PR path (map, deep, tail
+  coverage, critic); the full-set fixture hash is now `061a10be844a98ae`.
+
+## 0.4.7 — 2026-09-27
+
+- GitHub: bound the check-run summary by UTF-8 bytes, the unit GitHub enforces
+  (65,535), instead of posting the whole review there. An oversized summary is
+  truncated on a code-point boundary with the full-review link first, so a
+  finished review with a long Chinese summary no longer fails with HTTP 422
+  and is no longer reported as "FAILED TO RUN". Summaries that fit are
+  unchanged.
+- Prompts: review, deep and critic share one finding admission contract
+  (`prompts/finding-contract.md`): P0/P1/P2 findings require confidence
+  >= 0.70, matching what the normalizer already enforced. Deep passes no
+  longer lose coverage to blocking findings the normalizer rejected as
+  malformed.
+- Workflow: the provider fallback chain advances only when needlefish's own
+  terminal `needlefish review failed:` stderr line names an infra cause (an
+  allowlisted `likely cause:` token, HTTP 429/5xx, or a timeout or connection
+  error), so a completed review that merely discusses rate limits or quotas no
+  longer switches provider.
+- Runners: an attempt that exhausts its per-attempt timeout is no longer
+  retried, so a stuck upstream costs one timeout instead of two (about 20
+  minutes per deep pass at the default). An opencode idle stall is still
+  retried. The openai HTTP runner now aborts with the same typed timeout, so
+  its deadline is covered too and its error reads `spawn openai ETIMEDOUT`
+  instead of `This operation was aborted`.
 - GitHub: let self-hosted operators track the current Codex CLI instead of
-  enforcing the historical `0.153.4` fleet pin. Hosted action installs remain
-  pinned for reproducibility.
+  enforcing the historical `0.153.4` fleet pin.
+- GitHub: the hosted action now installs the latest release of the selected
+  runner CLI (Codex, Claude, OpenCode, pi) instead of a per-runner pin; set
+  `runner_version` to pin one. OpenCode moves to the v2 package
+  `@opencode/cli`, and pi moves to `@earendil-works/pi-coding-agent`. The
+  previous `@mariozechner/pi` package installs its bin as `pi-pods`, so the
+  action's `pi` invocation could never resolve; the successor package from the
+  same author ships a `pi` bin. Verified on 0.86.1 that the runner's contract
+  still holds: `pi -p --no-session --mode text --provider <name> --model <id>
+  --thinking <level>` with the prompt on stdin.
+- Runner: support the opencode v2 CLI contract (`--standalone`, variant in the
+  model string as `provider/model#variant`); reject an opencode effort with no
+  model instead of silently dropping it, and accept `default` as an attestable
+  model-default effort.
+- Runner: classify proxied quota and rate-limit failures (`429`,
+  `model_cooldown`, `insufficient_quota`) as infra causes so a fallback chain
+  can act on them, and check those explicit signals before the loose `40x`
+  heuristic. Unparseable output advances the chain only when the upstream never
+  delivered a complete response (empty, truncated, or an HTML error page); a
+  response that arrived whole but broke the JSON contract does not, because
+  switching provider would only reproduce it.
 - ACP: retain validated prompt token usage in review stats and render it with
   each measured call.
 

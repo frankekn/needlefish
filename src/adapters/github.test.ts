@@ -64,6 +64,8 @@ test("runGithub normalizes relative repo paths before building prompts", async (
           body: "",
           comments_url: "https://example.invalid/comments",
           review_comments_url: "https://example.invalid/reviews",
+          author_association: "MEMBER",
+          user: { login: "author", type: "User" },
           head: { sha: targetHeadSha },
           base: { sha: baseSha },
         })

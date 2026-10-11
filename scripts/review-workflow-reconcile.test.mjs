@@ -174,6 +174,16 @@ test("reconcile does not re-dispatch a head that already has a verdict", () => {
 	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
 });
 
+test("reconcile counts a terminated review as an infra failure", () => {
+	const terminated = checkRun("Needlefish: review terminated");
+	const once = runReconcile({ checkRunsAll: [terminated] });
+	assert.equal(once.status, 0, once.stderr);
+	assert.equal(once.dispatched, 1, once.stdout + once.stderr);
+	const capped = runReconcile({ checkRunsAll: [terminated, INFRA] });
+	assert.equal(capped.dispatched, 0);
+	assert.match(capped.stdout, /retry cap reached/);
+});
+
 test("reconcile treats a non-infra failure as a terminal verdict", () => {
 	const r = runReconcile({
 		checkRunsAll: [checkRun("Needlefish: changes_requested — Fix the thing", "failure")],
