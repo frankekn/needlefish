@@ -1,0 +1,23 @@
+Confidence contract 45e7252
+autoreview clean: no accepted/actionable findings reported
+overall: patch is correct (0.9)
+The change consistently centralizes and renders the confidence-admission contract across the review, deep, and critic prompts; includes the new prompt fragment in package contents and prompt hashing; and adds focused regression coverage. The historical README test adjustment remains scoped to the published baseline fixture set while preserving comparability checks. No actionable P0–P2 defect is evident in the provided bundle.
+
+Summary fix 0894cc0 (finding retained)
+autoreview findings: 1
+[P2] [P2] Put the fallback link before the truncated Markdown
+src/adapters/github.ts:624
+Appending the notice after an arbitrary Markdown prefix does not guarantee that the advertised “Full review” link is rendered. If the truncation point falls inside a fenced code block, HTML comment, or another unterminated Markdown construct from the generated summary, GitHub will render the notice as code or hide it rather than as a link. This is especially relevant because oversized evidence is precisely the content being cut at an arbitrary boundary. Place the notice before the retained prefix (or otherwise isolate it from the truncated Markdown) so every oversized summary reliably exposes the full review link.
+
+overall: patch is incorrect (0.9)
+The byte-bounding logic preserves valid UTF-8 and stays within the stated limit, but its core fallback link can be neutralized by Markdown syntax left open at the arbitrary truncation boundary. Therefore the patch does not reliably provide access to the full review for all oversized summaries.
+
+Link repair a131be2
+autoreview clean: no accepted/actionable findings reported
+overall: patch is correct (0.98)
+The change correctly prepends the full-review notice before potentially truncated Markdown while preserving the existing UTF-8 byte-budget calculation. The updated tests cover both unclosed HTML-comment and fenced-code constructs, verify the GitHub byte limit, preserve the full review elsewhere, and guard against invalid UTF-8 truncation.
+
+Test-only verifier repair 3817064
+autoreview clean: no accepted/actionable findings reported
+overall: patch is correct (0.93)
+The change replaces the racy immediate runner-group liveness assertion with bounded polling while preserving the existing two-second overall deadline. It still fails if the group remains alive or termination exceeds the deadline, and no actionable defect is evident in the provided bundle.

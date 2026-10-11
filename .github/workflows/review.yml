@@ -37,6 +37,11 @@ on:
         type: boolean
         required: false
         default: false
+      allow_untrusted_author:
+        description: Review a PR whose author is not OWNER, MEMBER, or COLLABORATOR, or is a bot (read the PR first)
+        type: boolean
+        required: false
+        default: false
       runs_on:
         description: Runner label for the review job (defaults to NEEDLEFISH_RUNS_ON or self-hosted)
         required: false
@@ -76,6 +81,11 @@ on:
         type: boolean
         required: false
         default: false
+      allow_untrusted_author:
+        description: Review a PR whose author is not OWNER, MEMBER, or COLLABORATOR, or is a bot (read the PR first)
+        type: boolean
+        required: false
+        default: false
       runs_on:
         description: Runner label for the review job
         type: string
@@ -110,6 +120,9 @@ jobs:
           EVENT_BASE: ${{ github.event.pull_request.base.sha }}
           EVENT_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           EVENT_ACTION: ${{ github.event.action }}
+          EVENT_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          EVENT_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ -n "$EVENT_HEAD" ]; then
             head="$EVENT_HEAD"
@@ -117,12 +130,32 @@ jobs:
             head_repo="$EVENT_HEAD_REPO"
             state="OPEN"
             if [ "$EVENT_ACTION" = "closed" ]; then state="CLOSED"; fi
+            author_association="$EVENT_AUTHOR_ASSOCIATION"
+            author_type="$EVENT_AUTHOR_TYPE"
           else
             mapfile -t pr_fields < <(gh pr view "$PR_NUM" -R "$REPO" --json baseRefOid,headRefOid,headRepository,state -q '.headRefOid, .baseRefOid, (.headRepository.nameWithOwner // ""), .state')
             head="${pr_fields[0]}"
             base="${pr_fields[1]}"
             head_repo="${pr_fields[2]}"
             state="${pr_fields[3]}"
+            if ! author_meta="$(gh api "repos/$REPO/pulls/$PR_NUM" --jq '(.author_association // ""), (.user.type // "")')"; then
+              echo "::error::could not read the author of PR #$PR_NUM"
+              exit 1
+            fi
+            mapfile -t author_fields <<< "$author_meta"
+            author_association="${author_fields[0]:-}"
+            author_type="${author_fields[1]:-}"
+            if [ -z "$author_association" ]; then
+              echo "::error::PR #$PR_NUM returned no author association"
+              exit 1
+            fi
+          fi
+
+          trusted_author=false
+          if [ "$author_type" != "Bot" ]; then
+            case "$author_association" in
+              OWNER|MEMBER|COLLABORATOR) trusted_author=true ;;
+            esac
           fi
 
           skip=false
@@ -136,6 +169,16 @@ jobs:
           elif [ "$head_repo" != "$REPO" ]; then
             skip=true
             skip_reason="PR head repository $head_repo differs from $REPO"
+          elif [ "$trusted_author" != true ] && [ -z "$ALLOW_UNTRUSTED_AUTHOR" ]; then
+            skip=true
+            skip_reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="neutral" \
+              -f "output[title]=Needlefish: skipped (author not trusted)" \
+              -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi
 
           {
@@ -264,10 +307,14 @@ jobs:
           PR_HEAD_SHA: ${{ steps.refs.outputs.head }}
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
-          NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model }}
+          # Self-hosted default lane comes from repo variables; qualified by eval/results/2026-09-20-codex-cpa-*-x1.json (#172):
+          # deepseek-v4.1-flash via CLIProxyAPI recall 87% / FP 4% / noise 0.016, mean 51 s. Hosted runs still pass explicit inputs.
+          NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model || vars.NEEDLEFISH_MODEL }}
+          # Comma-separated model ids on OTHER providers behind the proxy, tried in order on infra failures.
+          NEEDLEFISH_MODEL_FALLBACKS: ${{ vars.NEEDLEFISH_MODEL_FALLBACKS }}
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
-          CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort }}
+          CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort || vars.NEEDLEFISH_CODEX_REASONING_EFFORT }}
           # The base URL is not secret; a repo variable lets pull_request events
           # (which carry no workflow inputs) use the same proxy route that a
           # dispatch with codex_proxy_base_url uses. Inputs win when supplied.
@@ -281,6 +328,7 @@ jobs:
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
           NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
             echo "Selected self-managed Needlefish is unavailable. Reinstall the local bundle on this runner." >&2
@@ -324,10 +372,8 @@ jobs:
             case "$NEEDLEFISH_MODEL_INPUT" in
               gpt-5.6-sol) export CODEX_REASONING_EFFORT="medium" ;;
               gpt-5.6-terra) export CODEX_REASONING_EFFORT="xhigh" ;;
+              deepseek-v4.1-flash|glm-5.3-flash|devin/swe-2) export CODEX_REASONING_EFFORT="high" ;;
             esac
-          fi
-          if [ -z "$NEEDLEFISH_TIMEOUT_MS_INPUT" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
-            NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"
           fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ "$NEEDLEFISH_MODEL_INPUT" = "gpt-5.6-terra" ] && [ "$CODEX_REASONING_EFFORT" = "xhigh" ]; then
             export CODEX_SERVICE_TIER="fast"
@@ -337,13 +383,63 @@ jobs:
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
-          "$NEEDLEFISH_BIN" "${args[@]}"
+          # Provider fallback chain (self-hosted proxy lane only). Each model id lives on a different
+          # upstream provider behind CLIProxyAPI (Bailian -> Z.ai -> Devin), so switching the id switches
+          # the provider. Only infra-class failures (rate limit, upstream 5xx, timeout, proxy unreachable)
+          # advance the chain; a verdict of CHANGES REQUESTED is a result, not a failure.
+          chain=()
+          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
+            IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
+          fi
+          out=""; err_out=""
+          base_args=("${args[@]}")
+          run_review() {
+            local model="$1"; local rc
+            args=("${base_args[@]}")
+            if [ -n "$model" ]; then
+              for i in "${!args[@]}"; do if [ "${args[$i]}" = "--model" ]; then args[$((i+1))]="$model"; fi; done
+            fi
+            local err_file
+            err_file=$(mktemp)
+            set +e
+            out=$("$NEEDLEFISH_BIN" "${args[@]}" 2>"$err_file"); rc=$?
+            set -e
+            err_out=$(cat "$err_file"); rm -f "$err_file"
+            printf '%s\n' "$out"
+            [ -n "$err_out" ] && printf '%s\n' "$err_out" >&2
+            return $rc
+          }
+          if run_review ""; then exit 0; else rc=$?; fi
+          for next in "${chain[@]}"; do
+            [ -n "$next" ] || continue
+            # Provider fallback reads ONE controlled line and nothing else.
+            # Needlefish prints `needlefish-outcome {json}` after the rendered
+            # review and after every diagnostic, and sets "operational":true
+            # only for a recognized runner/transport cause (usage limit, rate
+            # limit, network error, empty/truncated/HTML output). The rendered
+            # review and the raw error text are model-influenced, so scanning
+            # them for "429"/"quota"/"5xx" would let a legitimate CHANGES
+            # REQUESTED verdict re-run the model on another provider. Only the
+            # LAST outcome line counts — it is the one this process wrote last.
+            # The JSON is parsed, not substring-matched, and the chain advances
+            # only on outcome === "failure" && operational === true. Fail
+            # closed: no line, unparseable JSON, or anything else never advances.
+            outcome_line="$(grep -a '^needlefish-outcome ' <<<"$out" | tail -n 1 || true)"
+            if ! node -e 'let s="";process.stdin.on("data",(d)=>{s+=d});process.stdin.on("end",()=>{let o;try{o=JSON.parse(s)}catch{process.exit(1)}process.exit(o&&o.outcome==="failure"&&o.operational===true?0:1)});' <<<"${outcome_line#needlefish-outcome }"; then
+              echo "needlefish: previous failure is not an operational runner fault; not switching provider" >&2; exit $rc
+            fi
+            echo "::warning title=Needlefish provider fallback::switching lane to $next after operational failure on previous provider"
+            if run_review "$next"; then echo "lane=fallback:$next" >> "$GITHUB_STEP_SUMMARY"; exit 0; else rc=$?; fi
+          done
+          exit $rc
 
   # S6 reconciliation: the latest open head of this PR must eventually carry a
   # terminal Needlefish check that is not an infra error. Crashed runs would
-  # otherwise leave a head with no verdict at all. Bounded: at most two
-  # infra-failed checks on a head are tolerated before the finalizer gives up
-  # loudly. The cap counts ALL check-runs on the head (filter=all); a
+  # otherwise leave a head with no verdict at all. Infra errors are the checks
+  # the binary completes without a verdict: "review failed" and, when a job
+  # timeout or cancellation interrupted it, "review terminated". Bounded: at
+  # most two infra-failed checks on a head are tolerated before the finalizer
+  # gives up loudly. The cap counts ALL check-runs on the head (filter=all); a
   # usage-limited runner does not recover in minutes, and every re-dispatch
   # spends a full model call before failing again.
   reconcile:
@@ -398,7 +494,7 @@ jobs:
           # every review check is named "Needlefish", so the retry cap below would
           # otherwise never see more than one failure and could never trip.
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100&filter=all"
-          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and (.output.title // "") != "Needlefish: review failed"))] | length')
+          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
             exit 0
@@ -431,7 +527,7 @@ jobs:
             echo "a $workflow_file run for PR #$PR_NUM is still active or queued; letting it finish"
             exit 0
           fi
-          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and (.output.title // "") == "Needlefish: review failed")] | length')
+          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0

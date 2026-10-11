@@ -7,8 +7,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { runCodex } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
 import type { RunStat } from "./runner";
+import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
-type AcpStubMode = "clean" | "error" | "invalid-usage" | "malformed" | "hang";
+type AcpStubMode = "clean" | "error" | "invalid-usage" | "late-request" | "malformed" | "hang";
 
 interface AcpFixture {
   readonly tmp: string;
@@ -89,6 +90,19 @@ test("runCodex acp ignores invalid usage telemetry", async (t) => {
 
   assert.equal(output, '{"ok":true}');
   assert.equal(stats[0]?.usage, undefined);
+});
+
+test("runCodex acp ignores agent request following the prompt result in one chunk", async (t) => {
+  const fixture = acpFixture(t, "late-request");
+
+  const output = await runAcpPrompt(fixture, 1000);
+
+  assert.equal(output, '{"ok":true}');
+  assert.doesNotMatch(
+    readFileSync(fixture.transcriptPath, "utf8"),
+    /Needlefish denied ACP agent request/,
+    "a request after completion must not be answered on closed stdin"
+  );
 });
 
 test("runCodex acp rejects malformed stdout without hanging", async (t) => {
@@ -219,6 +233,10 @@ function writeAcpStub(options: {
       "      update('{\"ok\":true}');",
       "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn', usage: { totalTokens: 1, inputTokens: 2, outputTokens: 3 } } });",
       "      setTimeout(() => process.exit(0), 10);",
+      "    } else if (request.method === 'session/prompt' && mode === 'late-request') {",
+      "      update('{\"ok\":true}');",
+      "      process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } })}\\n${JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'session/request_permission', params: { sessionId: 'sess', options: [], toolCall: { toolCallId: 'tc1', title: 'edit' } } })}\\n`);",
+      "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'error') {",
       "      send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'prompt failed' } });",
       "      setTimeout(() => process.exit(0), 10);",
@@ -245,17 +263,6 @@ async function runAcpPrompt(
   });
 }
 
-function captureEnv(keys: readonly string[]): Map<string, string | undefined> {
-  return new Map(keys.map((key) => [key, process.env[key]]));
-}
-
-function restoreEnv(previous: ReadonlyMap<string, string | undefined>): void {
-  for (const [key, value] of previous) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-}
-
 function readJsonRecord(file: string): Record<string, unknown> {
   const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (!isJsonRecord(raw)) throw new Error("expected JSON object");
@@ -276,17 +283,5 @@ async function waitForMissingProcessGroup(pgid: number, timeoutMs: number): Prom
       throw error;
     }
     await delay(25);
-  }
-}
-
-function isMissingProcess(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ESRCH";
-}
-
-function killProcessIfRunning(pid: number): void {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch (error) {
-    if (!isMissingProcess(error)) throw error;
   }
 }

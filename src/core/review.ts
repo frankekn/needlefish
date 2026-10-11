@@ -2,6 +2,7 @@ import {
 	runCodex,
 	extractJson,
 	isRunnerSafetyError,
+	MALFORMED_OUTPUT_NEXT_STEP,
 	type CodexOptions,
 } from "../shared/codex.js";
 import {
@@ -11,9 +12,11 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
+import { resolveRunner } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
+	type CoverageGap,
 	type Finding,
 	type Hotspot,
 	type RawReview,
@@ -43,6 +46,24 @@ const MAX_HOTSPOTS = 6;
 const DEFAULT_DEEP_CONCURRENCY = 3;
 const SEV_RANK: Record<Severity, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
+// Stage boundaries of a model-backed review, for human progress display.
+// Observation only: nothing here feeds prompts, findings, or the result.
+export type ReviewProgressEvent =
+	| { readonly stage: "review"; readonly files: number }
+	| { readonly stage: "map"; readonly files: number }
+	| {
+			readonly stage: "deep";
+			readonly done: number;
+			readonly failed: number;
+			readonly total: number;
+			readonly tail: boolean;
+	  }
+	| { readonly stage: "dedup"; readonly before: number; readonly after: number }
+	| { readonly stage: "critic"; readonly findings: number }
+	| { readonly stage: "done"; readonly durationMs: number };
+
+export type ReviewProgressObserver = (event: ReviewProgressEvent) => void;
+
 interface TraceDeliveryHealth {
 	// Mutable: set true on the first observer throw. Review semantics continue;
 	// consumers (eval score) withhold robustness when this is true.
@@ -63,9 +84,13 @@ interface ReviewRun {
 	// why/edges, critic-pruned residual text) — the canary scan needs the full
 	// transcript, not just what survived into ReviewResult.
 	readonly rawOutputs: string[];
+	// Merged LFS reports of every pass's sandbox. A Set because each pass
+	// prepares its own sandbox of the same checkout and reports the same list.
+	readonly lfs: { readonly pointerFiles: Set<string>; scanIncomplete: boolean };
 	readonly onTrace?: ReviewTraceObserver;
 	// Present only when the caller registered a trace observer.
 	readonly traceHealth?: TraceDeliveryHealth;
+	readonly onProgress?: ReviewProgressObserver;
 	readonly startedAt: number;
 	readonly reviewDeadlineMs?: number;
 }
@@ -206,7 +231,7 @@ function codexOptions(
 		repoPath: run.bundle.repoPath,
 		targetHeadSha: run.bundle.headSha,
 		...(run.bundle.headSha === "WORKING"
-			? { targetPatch: run.bundle.patch }
+			? { targetPatch: run.bundle.patch, targetBaseSha: run.bundle.baseSha }
 			: {}),
 		label,
 		onStat: (stat) => run.stats.push(stat),
@@ -237,6 +262,10 @@ function codexOptions(
 		onRaw: (raw, runnerAttempt) => {
 			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
+		},
+		onLfsReport: (report) => {
+			for (const file of report.pointerFiles) run.lfs.pointerFiles.add(file);
+			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
 		},
 		...run.runnerOptions,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
@@ -348,7 +377,7 @@ async function runJsonPrompt<T>(
 function assertUsableReview(review: RawReview, label: string): void {
 	if (!review.summary || review.checked.length === 0) {
 		throw new Error(
-			`${label} produced no summary or checked list (likely malformed output)`,
+			`${label} produced no summary or checked list (likely malformed output). ${MALFORMED_OUTPUT_NEXT_STEP}`,
 		);
 	}
 }
@@ -499,7 +528,7 @@ function canonicalFindingKey(finding: Finding): string {
 		String(finding.confidence),
 		finding.title,
 		finding.whyItBreaks,
-	].join(" ");
+	].join("\u0000");
 }
 
 // The eligibility relation — file + category + ±2 lineStart — and nothing
@@ -673,6 +702,7 @@ async function runCritic(
 	run: ReviewRun,
 ): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
+	run.onProgress?.({ stage: "critic", findings: candidate.findings.length });
 	const criticPrompt = loadPrompt("critic.md")
 		.replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
 		.replace("{{PATCH}}", () => patchText)
@@ -704,6 +734,13 @@ function toReviewResult(
 	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
+	// Only files in the diff: a pointer elsewhere in the repository is not a
+	// gap in this review's coverage. An unfinished scan is, since the diff may
+	// touch pointers the sandbox never probed.
+	const coverageGaps: CoverageGap[] = bundle.changedFiles
+		.filter((file) => run.lfs.pointerFiles.has(file.path))
+		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
+	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
@@ -715,6 +752,7 @@ function toReviewResult(
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
 		...(coverage ? { coverage } : {}),
@@ -769,6 +807,7 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const reviewPrompt = loadPrompt("review.md")
 		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
 		.replace("{{PATCH}}", () => patch);
+	run.onProgress?.({ stage: "review", files: bundle.changedFiles.length });
 	const candidate = await runJsonPrompt(
 		{
 			label: "review",
@@ -818,6 +857,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () =>
 		JSON.stringify(mapBundle, null, 2),
 	);
+	run.onProgress?.({ stage: "map", files: bundle.changedFiles.length });
 	const mapResult = await runJsonPrompt(
 		{
 			label: "map",
@@ -858,6 +898,28 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 
 	const agents = bundle.agentsMd;
+	let deepDone = 0;
+	let deepFailed = 0;
+	const reportDeep = () =>
+		run.onProgress?.({
+			stage: "deep",
+			done: deepDone,
+			failed: deepFailed,
+			total: hotspots.length,
+			tail: tailAdded,
+		});
+	const countDeepPass =
+		<R extends { readonly ok: boolean }>(
+			pass: (h: Hotspot, passIndex: number) => Promise<R>,
+		) =>
+		async (h: Hotspot, passIndex: number): Promise<R> => {
+			const result = await pass(h, passIndex);
+			deepDone++;
+			if (!result.ok) deepFailed++;
+			reportDeep();
+			return result;
+		};
+	reportDeep();
 	// mapLimit drains every in-flight deep pass before rethrowing, so the
 	// snapshot refresh in the catch below sees transcripts siblings emitted
 	// AFTER the first rejection — the per-pass snapshot attached inside
@@ -867,7 +929,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		passes = await mapLimit(
 			hotspots,
 			deepConcurrency(),
-			async (h, passIndex) => {
+			countDeepPass(async (h, passIndex) => {
 				const hotspot = {
 					...h,
 					...(bundle.untrackedSkipped?.length
@@ -927,7 +989,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						] as readonly ResidualRisk[],
 					};
 				}
-			},
+			}),
 		);
 	} catch (err) {
 		attachRunRaws(err, run);
@@ -938,6 +1000,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	const residuals = passes.flatMap((p) => p.residuals);
 
 	const merged = dedup(all);
+	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
 	const candidateMerged: RawReview = {
 		summary: mapResult.value.summary,
 		findings: merged,
@@ -1021,6 +1084,7 @@ export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
 	onTrace?: ReviewTraceObserver,
+	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle);
@@ -1044,6 +1108,11 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
+	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
+		throw new Error(
+			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
+		);
+	}
 
 	// Read only past the docs-only short-circuit, for the same reason
 	// reviewPlan() defers isLarge(): the fast path runs no model pipeline and
@@ -1063,12 +1132,14 @@ export async function review(
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],
+		lfs: { pointerFiles: new Set(), scanIncomplete: false },
 		...(onTrace && traceHealth
 			? {
 					onTrace: wrapTraceObserver(onTrace, traceHealth),
 					traceHealth,
 				}
 			: {}),
+		...(onProgress ? { onProgress } : {}),
 		startedAt,
 		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
 	};
@@ -1077,6 +1148,7 @@ export async function review(
 			? reviewLarge(run)
 			: reviewSmall(run));
 		await drainTraceDeliveries(traceHealth);
+		onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
 		return traceHealth?.failed
 			? { ...result, traceDeliveryFailed: true }
 			: result;

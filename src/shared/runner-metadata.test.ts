@@ -62,3 +62,35 @@ for (const name of RUNNERS) {
     assert.deepEqual({ modelEnv, envAllowlist, authFiles, envConfigFiles }, EXPECTED_METADATA[name]);
   });
 }
+
+// Verified 2026-09-29 against the real CLIs; a typo here sends users a command
+// that does not exist.
+test("auto-detected runners carry their verified login command and status probe", () => {
+  assert.deepEqual(
+    Object.fromEntries(RUNNERS.map((name) => [name, RUNNER_DEFINITIONS[name].login])),
+    {
+      codex: { command: "codex login", status: { args: ["login", "status"], loggedIn: "exit-zero" } },
+      claude: { command: "claude auth login", status: { args: ["auth", "status", "--text"], loggedIn: "exit-zero" } },
+      opencode: {
+        command: "opencode auth login",
+        status: { args: ["auth", "list", "--standalone", "--format", "json"], loggedIn: "non-empty-json-array" },
+      },
+      openai: undefined,
+      grok: { command: "grok login" },
+      pi: undefined,
+      acp: undefined,
+    },
+  );
+  assert.deepEqual(
+    Object.fromEntries(RUNNERS.map((name) => [name, RUNNER_DEFINITIONS[name].bin])),
+    {
+      codex: { env: "CODEX_BIN", fallback: "codex" },
+      claude: { env: "CLAUDE_BIN", fallback: "claude" },
+      opencode: { env: "OPENCODE_BIN", fallback: "opencode" },
+      openai: undefined,
+      grok: { env: "GROK_BIN", fallback: "grok" },
+      pi: { env: "PI_BIN", fallback: "pi" },
+      acp: { env: "NEEDLEFISH_ACP_BIN", trim: true },
+    },
+  );
+});
