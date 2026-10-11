@@ -7,6 +7,7 @@ import { runCodex, RunnerOperationalError } from "./codex.js";
 import { headSha, initRepo } from "./codex-runner-test-fixtures.js";
 import { findRunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
 import type { RunStat } from "./runner.js";
+import { RunnerTimeoutError } from "./runner-process.js";
 
 const PRIVATE_TEXT = "private-token-and-prompt-canary";
 interface Scenario {
@@ -17,7 +18,7 @@ interface Scenario {
   readonly lateSuccess?: boolean;
   readonly stubborn?: boolean;
   readonly recover?: boolean;
-  readonly timeout?: "result" | "error";
+  readonly timeout?: "result" | "error" | "end_turn";
 }
 
 for (const [reason, kind] of [
@@ -107,22 +108,41 @@ test("ACP malformed stdout is withheld publicly but retained in failed raw callb
   await assertFailure(fixture, "protocol_error");
 });
 
-for (const timeout of ["result", "error"] as const) {
-  test(`ACP timeout keeps retryability after a cancellation ${timeout}`, async (t) => {
+for (const timeout of ["result", "error", "end_turn"] as const) {
+  test(`ACP timeout stays terminal after a late ${timeout}`, async (t) => {
     const fixture = failureFixture(t, { timeout, recover: true });
     const stats: RunStat[] = [];
     const failed: string[] = [];
-    const out = await runCodex("prompt", {
+    await assert.rejects(runCodex("prompt", {
       ...fixture.options, timeoutMs: 750,
       onStat: (stat) => stats.push(stat), onFailedRaw: (raw) => failed.push(raw),
+    }), (error: unknown) => {
+      assert.ok(error instanceof RunnerOperationalError);
+      assert.ok(error.cause instanceof RunnerTimeoutError);
+      assert.match(error.message, /raise --timeout-ms/);
+      return true;
     });
-    assert.equal(out, '{"ok":true}');
-    assert.equal(stats[0].attempts, 2);
+    assert.equal(stats[0].attempts, 1);
+    assert.equal(stats[0].ok, false);
+    assert.equal(fixture.launches().length, 1);
     assert.equal(failed.length, 1);
-    assert.match(failed[0], timeout === "error" ? /-32800/ : /cancelled/);
+    assert.match(failed[0], timeout === "error" ? /-32800/ : timeout === "end_turn" ? /end_turn/ : /cancelled/);
     assertDisposed(fixture);
   });
 }
+
+test("ACP exhausted call timeout preserves its managed cause and timeout advice", async (t) => {
+  const fixture = failureFixture(t, { timeout: "result" });
+  await assert.rejects(runCodex("prompt", { ...fixture.options, timeoutMs: 750 }), (error: unknown) => {
+    assert.ok(error instanceof RunnerOperationalError);
+    assert.ok(error.cause instanceof RunnerTimeoutError);
+    assert.equal(findRunnerFailure(error), undefined, "managed timeouts need no adapter classification");
+    assert.match(error.message, /raise --timeout-ms/);
+    return true;
+  });
+  assert.equal(fixture.launches().length, 1);
+  assertDisposed(fixture);
+});
 
 for (const lateSuccess of [false, true]) {
   test(`ACP cancels all pending permissions; late success=${lateSuccess} cannot clear failure`, async (t) => {
@@ -307,14 +327,14 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: 1, agentCapabilities: {} } });
   else if (request.method === 'session/new') send({ jsonrpc: '2.0', id: request.id, result: { sessionId: 'sess' } });
   else if (request.method === 'session/cancel' && !scenario.stubborn) {
-    send({ jsonrpc: '2.0', id: promptId, ...(scenario.timeout === 'error' ? { error: { code: -32800, message: 'cancelled' } } : { result: { stopReason: 'cancelled' } }) });
+    send({ jsonrpc: '2.0', id: promptId, ...(scenario.timeout === 'error' ? { error: { code: -32800, message: 'cancelled' } } : { result: { stopReason: scenario.timeout === 'end_turn' ? 'end_turn' : 'cancelled' } }) });
     setTimeout(() => process.exit(0), 20);
   } else if (request.method === 'session/prompt') {
     promptId = request.id;
     // Diagnostic stderr must stay in failed transcripts, not public errors.
     process.stderr.write(privateText + '\\n');
     if (scenario.malformed) process.stdout.write('not-json ' + privateText + '\\n');
-    else if (scenario.timeout && attempt === 1) return;
+    else if (scenario.timeout && (!scenario.recover || attempt === 1)) return;
     else if (scenario.permission) {
       const pending = ['permission-a', 'permission-b'].map((id) => ({ jsonrpc: '2.0', id, method: 'session/request_permission', params: { sessionId: 'sess', toolCall: { toolCallId: id, title: privateText }, options: [{ optionId: 'allow', name: 'allow', kind: 'allow_once' }] } }));
       const late = scenario.lateSuccess ? [update, { jsonrpc: '2.0', id: promptId, result: scenario.result ?? { stopReason: 'end_turn' } }] : [];

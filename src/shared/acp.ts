@@ -1,5 +1,6 @@
 import {
   runManagedRunnerProcess,
+  RunnerTimeoutError,
   type ManagedRunnerProcessController,
   type RunnerProcessResult,
 } from "./runner-process.js";
@@ -44,6 +45,7 @@ interface AcpClientState {
   completed: boolean;
   usage?: RunUsage;
   cancelled: boolean;
+  timedOut: boolean;
   failure?: RunnerFailure;
   phase: AcpRequestMethod;
 }
@@ -73,6 +75,7 @@ export async function runAcp(
     completed: false,
     cancelled: false,
     phase: "initialize",
+    timedOut: false,
   };
   let res: RunnerProcessResult;
   try {
@@ -107,11 +110,10 @@ export async function runAcp(
         }
       },
       onTimeout: (controller) => {
-        if (!state.failure) {
-          state.failure = state.phase === "session/prompt"
-            ? new RunnerFailure("unknown", "ACP session/prompt review timeout (ETIMEDOUT); review not completed; raw streams withheld", true)
-            : new RunnerFailure(state.phase === "initialize" ? "startup_timeout" : "unknown",
-                `${state.phase} timeout`, state.phase !== "initialize");
+        state.timedOut = true;
+        if (!state.failure && state.phase !== "session/prompt") {
+          state.failure = new RunnerFailure(state.phase === "initialize" ? "startup_timeout" : "unknown",
+            `${state.phase} timeout`, state.phase !== "initialize");
         }
         sendCancel(controller, state);
       },
@@ -132,9 +134,16 @@ export async function runAcp(
     const reason = failure?.message ?? (res.error ? startupCause(res.error) : "agent exited before startup completed");
     const elapsed = Math.round(performance.now() - startedAt);
     const streams = `stdout=${Buffer.byteLength(res.stdout)}B; stderr=${Buffer.byteLength(res.stderr)}B (raw text withheld)`;
+    const diagnostic = new RunnerFailure(kind,
+      `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable, state.phase);
+    const error = res.error && !(res.error instanceof RunnerFailure) ? res.error : diagnostic;
+    if (error !== diagnostic) {
+      // Keep managed failure types and add the stage needed by deep scheduling.
+      error.message = diagnostic.message;
+      Object.defineProperty(error, "cause", { value: diagnostic, configurable: true });
+    }
     return {
-      res: { ...res, error: new RunnerFailure(kind,
-        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable, state.phase) },
+      res: { ...res, error },
       out: state.text.join(""),
     };
   }
@@ -143,6 +152,9 @@ export async function runAcp(
   // A failure is sticky, even if the agent emits end_turn or
   // valid review JSON in the same chunk, during cancellation, or before exit.
   if (state.failure) return { res: { ...res, error: state.failure }, out };
+  if (res.error instanceof RunnerTimeoutError) {
+    res.error.message = `ACP session/prompt review timeout (ETIMEDOUT); ${res.error.message}`;
+  }
   if (state.completed && res.error === undefined) {
     return {
       res: { status: 0, signal: null, stdout: res.stdout, stderr: res.stderr },
@@ -267,11 +279,11 @@ function handleLine(
   try {
     message = JSON.parse(line);
   } catch (error) {
-    if (state.failure) return;
+    if (state.failure || state.timedOut) return;
     if (error instanceof SyntaxError) throw new AcpProtocolError("malformed ACP JSON-RPC; raw text withheld");
     throw error;
   }
-  if (state.failure) {
+  if (state.failure || state.timedOut) {
     // Still answer pending permission requests while the process group stops.
     // Other late output remains in the raw transcript, never usable output.
     if (isRecord(message) && message.method === "session/request_permission") {

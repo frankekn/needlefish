@@ -8,6 +8,7 @@ import { runCodex, RunnerOperationalError } from "./codex.js";
 import { headSha, initRepo } from "./codex-runner-test-fixtures.js";
 import { findRunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
 import type { RunStat } from "./runner.js";
+import { RunnerTimeoutError } from "./runner-process.js";
 
 const PRIVATE = "startup-private-token-canary";
 
@@ -37,10 +38,15 @@ for (const mode of ["exit0", "exit7", "auth", "malformed", "wrong-id", "wrong-ve
 for (const mode of ["session-exit", "session-hang"]) {
   test(`ACP ${mode} reports session/new, not initialize or review`, async (t) => {
     const f = fixture(t, mode, 1300);
-    const error = await failed(f, "unknown", 2);
+    const attempts = mode === "session-hang" ? 1 : 2;
+    const error = await failed(f, "unknown", attempts);
     assert.equal(findRunnerFailure(error)?.retryable, true);
     assert.match(error.message, /ACP session\/new failed:/);
-    assert.deepEqual(f.requests().map((request) => request.method), ["initialize", "session/new", "initialize", "session/new"]);
+    assert.deepEqual(f.requests().map((request) => request.method), Array.from({ length: attempts }, () => ["initialize", "session/new"]).flat());
+    if (mode === "session-hang") {
+      assert.ok(error.cause instanceof RunnerTimeoutError);
+      assert.match(error.message, /raise --timeout-ms/);
+    }
   });
 }
 
@@ -84,12 +90,13 @@ test("valid initialize clears its timer; a longer review still succeeds", async 
   assertDisposed(f);
 });
 
-test("session/prompt timeout remains a review timeout and preserves bounded retry", async (t) => {
+test("session/prompt timeout preserves the managed no-retry policy and diagnostics", async (t) => {
   const f = fixture(t, "prompt-hang", 1300);
-  const error = await failed(f, "unknown", 2);
+  const error = await failed(f, undefined);
   assert.match(error.message, /ACP session\/prompt review timeout \(ETIMEDOUT\)/);
-  assert.equal(findRunnerFailure(error)?.retryable, true);
-  assert.equal(f.requests().filter((request) => request.method === "session/cancel").length, 2);
+  assert.ok(error.cause instanceof RunnerTimeoutError);
+  assert.match(error.message, /raise --timeout-ms/);
+  assert.equal(f.requests().filter((request) => request.method === "session/cancel").length, 1);
 });
 
 test("remaining call budget wins over a longer initialize budget", async (t) => {
@@ -133,7 +140,7 @@ for (const missing of [true, false]) {
   });
 }
 
-async function failed(f: ReturnType<typeof fixture>, kind: RunnerFailureKind, attempts = 1): Promise<Error> {
+async function failed(f: ReturnType<typeof fixture>, kind: RunnerFailureKind | undefined, attempts = 1): Promise<Error> {
   let caught: Error | undefined;
   const stats: RunStat[] = [];
   const successes: string[] = [];
