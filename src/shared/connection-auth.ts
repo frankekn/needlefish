@@ -1,4 +1,5 @@
 import type { RunnerName } from "./runner.js";
+import { screenPayload, screenText } from "./outbound-screen.js";
 
 export type AuthEnvironmentReferences = Readonly<Record<string, string>>;
 
@@ -56,5 +57,12 @@ export class AcpEnvironmentAuth {
 
   applyTo(env: NodeJS.ProcessEnv): void {
     Object.assign(env, this.#values);
+  }
+
+  assertOutputSafe(output: string): void {
+    const knownValues = Object.values(this.#values);
+    if (screenPayload(output, knownValues).kind === "withheld" || screenText(output, knownValues).kind === "withheld") {
+      throw new Error("Needlefish withheld runner output: it contained a selected connection credential.");
+    }
   }
 }

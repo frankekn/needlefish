@@ -91,7 +91,10 @@ Selection snapshots only the chosen sources. Missing, empty or invalid values
 stop before launch: no default account, login probe or automatic fallback.
 Retries and all review passes retain the snapshot without changing `process.env`.
 The bound values are private and absent from serialized options, result and cache.
-Raw agent transcripts remain sensitive; an agent can itself echo credentials.
+Runner output is screened against the selected snapshot before admission, including
+decoded JSON in Markdown fences. Echoed credentials stop the review with a safe
+diagnostic. Raw agent transcripts remain sensitive and can contain credentials.
+`--dry-run` validates the configuration but does not require or bind credentials.
 
 Explicit auth always gets a new empty disposable HOME/USERPROFILE and XDG
 config/data/cache/state roots, even when `NEEDLEFISH_EPHEMERAL_HOME` is off.

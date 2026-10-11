@@ -139,7 +139,7 @@ function readConnections(file: string, repoPath: string): readonly Connection[] 
 // authentication probes, or automatic provider switching. Legacy calls do
 // not even open the config file. The returned selection is fixed for all passes.
 export function resolveConnectionOptions<T extends RunnerOptions>(
-  opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env,
+  opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env, bindCredentials = true,
 ): T {
   if (opts.connection === undefined) return opts;
   text(opts.connection, "selected connection");
@@ -148,7 +148,7 @@ export function resolveConnectionOptions<T extends RunnerOptions>(
   }
   const selected = readConnections(connectionsFile(env), repoPath).find((entry) => entry.id === opts.connection);
   if (!selected) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
-  const connectionAuth = selected.auth ? new AcpEnvironmentAuth(selected.auth.env, env) : undefined;
+  const connectionAuth = selected.auth && bindCredentials ? new AcpEnvironmentAuth(selected.auth.env, env) : undefined;
   connectionAuth?.assertCompatible(selected.adapter, env);
   return Object.freeze({
     ...opts, runner: selected.adapter,

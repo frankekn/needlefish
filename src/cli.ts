@@ -58,14 +58,13 @@ async function main() {
     }
   }
 
-  const opts = command.kind === "github"
-    ? command.opts
-    : resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
-
   // --dry-run only collects and prints the bundle: no runners spawn, so the
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
+  const opts = command.kind === "github"
+    ? command.opts
+    : resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun);
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {

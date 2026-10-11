@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -60,7 +60,15 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
-      send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:${JSON.stringify(reviewJson)}}}}});
+      let output = ${JSON.stringify(reviewJson)};
+      if (mode.startsWith('leak')) {
+        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],findings:[],residual_risks:[]});
+        if (mode === 'leak-fenced') {
+          const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
+          output = '\x60\x60\x60json\\n' + output.replace(process.env.AGENT_API_KEY, escaped) + '\\n\x60\x60\x60';
+        }
+      }
+      send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:output}}}});
       send({id:request.id,result:{stopReason:'end_turn',usage:{totalTokens:3,inputTokens:2,outputTokens:1}}});
     }
   }
@@ -197,6 +205,68 @@ test("full CLI review and critic use one account without placing credentials in 
   const cached = readFileSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json"), "utf8");
   assert.deepEqual(JSON.parse(cached), output);
   assert.doesNotMatch(result.stdout + result.stderr + cached, /TEST-ACCOUNT|ACCOUNT_A_KEY|connectionAuth/);
+  f.clean();
+});
+
+for (const mode of ["leak", "leak-fenced"]) {
+  test(`${mode}: selected credentials are withheld before result, cache or public diagnostics`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /withheld.*credential/);
+    assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT/);
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
+    f.clean();
+  });
+
+  test(`${mode}: screening uses the frozen credential after source mutation`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([harness(f, false)]);
+    assert.equal(result.status, 1);
+    assert.match(JSON.parse(result.stdout).message, /withheld.*credential/);
+    assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT/);
+    f.clean();
+  });
+}
+
+test("GitHub never posts an echoed selected credential", (t) => {
+  const f = fixture(t, "leak-fenced");
+  const bin = path.join(f.root, "bin");
+  mkdirSync(bin);
+  const writes = path.join(f.root, "github-writes.jsonl");
+  const gh = path.join(bin, "gh");
+  writeFileSync(gh, `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args.includes('--input')) {
+  fs.appendFileSync(${JSON.stringify(writes)}, fs.readFileSync(0,'utf8') + '\\n');
+  process.stdout.write('{"id":1}');
+} else if (args[1] === 'repos/frankekn/needlefish/pulls/7') {
+  process.stdout.write(${JSON.stringify(JSON.stringify({ state: "open", author_association: "MEMBER", user: { login: "author", type: "User" }, head: { sha: f.head }, base: { sha: f.base } }))});
+} else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
+else if (args.includes('--paginate')) process.stdout.write('[[]]');
+else process.stdout.write('[]');
+`);
+  chmodSync(gh, 0o755);
+  const result = f.run([cli, "--repo", f.repo, "--github", "--pr", "7", "--connection", "a"], {
+    PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, GITHUB_REPOSITORY: "frankekn/needlefish",
+  });
+  assert.equal(result.status, 1);
+  const outbound = readFileSync(writes, "utf8");
+  assert.match(outbound, /withheld.*credential/);
+  assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
+  f.clean();
+});
+
+test("dry-run validates auth configuration without requiring its credential", (t) => {
+  const f = fixture(t);
+  const args = [cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--dry-run", "--json"];
+  const preview = f.run(args, { ACCOUNT_A_KEY: "" });
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.equal(f.records().length, 0);
+  writeFileSync(f.config, '{"version":1,"connections":[{"id":"a","adapter":"acp","auth":{"env":{}}}]}');
+  const invalid = f.run(args, { ACCOUNT_A_KEY: "" });
+  assert.equal(invalid.status, 1);
   f.clean();
 });
 

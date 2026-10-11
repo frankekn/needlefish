@@ -829,6 +829,17 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
+			if (opts.connectionAuth) {
+				opts.connectionAuth.assertOutputSafe(out);
+				let decoded: unknown;
+				try {
+					decoded = extractJson(out);
+				} catch (error) {
+					// Explain output can be plain text; raw screening still applies.
+					if (!(error instanceof Error)) throw error;
+				}
+				if (decoded !== undefined) opts.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
 			// output lands in the out-file) must reach the scan whole.
