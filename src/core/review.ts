@@ -974,7 +974,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 				} catch (e) {
 					if (isRunnerSafetyError(e)) throw e;
 					const failure = findRunnerFailure(e);
-					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed") throw e;
+					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).

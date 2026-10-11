@@ -39,6 +39,29 @@ test("post-startup deep failure keeps the existing conservative residual path", 
   assert.ok(f.phases().includes("critic"));
 });
 
+for (const [mode, kind, attempts] of [
+  ["session-server", "unknown", 2],
+  ["session-auth", "auth_required", 1],
+  ["session-malformed", "protocol_error", 1],
+] as const) {
+  test(`ACP ${mode} stops queued deep work after its allowed attempts`, async (t) => {
+    const f = fixture(t, 1, mode);
+    await assert.rejects(review(f.bundle, { runner: "acp", timeoutMs: 6000 }), (error: unknown) => {
+      const failure = findRunnerFailure(error);
+      assert.equal(failure?.kind, kind);
+      assert.equal(failure?.retryable, kind === "unknown");
+      assert.equal(failure?.stage, "session/new");
+      return true;
+    });
+    assert.equal(f.launches().length, 1 + attempts, "map plus only the failed deep attempts");
+    assert.deepEqual(f.phases(), ["map"], "no deep prompt or critic follows a session/new failure");
+    for (const launch of f.launches()) {
+      assert.equal(existsSync(launch.cwd), false);
+      assert.equal(existsSync(launch.home), false);
+    }
+  });
+}
+
 function fixture(t: TestContext, concurrency: number, mode: string) {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-startup-"));
   const repo = initRepo(root);
@@ -87,6 +110,11 @@ readline.createInterface({input:process.stdin}).on('line',(line) => {
     if (firstDeep && mode === 'startup') { process.stderr.write('failed-startup-transcript\n'); return; }
     send({jsonrpc:'2.0',id:request.id,result:{protocolVersion:1}});
   } else if (request.method === 'session/new') {
+    if (fs.existsSync(mapped) && mode.startsWith('session-')) {
+      if (mode === 'session-malformed') process.stdout.write('malformed session response\n');
+      else send({jsonrpc:'2.0',id:request.id,error:{code:mode === 'session-auth' ? -32000 : -32603,message:'session unavailable'}});
+      return;
+    }
     send({jsonrpc:'2.0',id:request.id,result:{sessionId:'s'}});
   } else if (request.method === 'session/prompt') {
     const input = request.params.prompt[0].text;
