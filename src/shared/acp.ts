@@ -44,6 +44,7 @@ interface AcpClientState {
   completed: boolean;
   usage?: RunUsage;
   cancelled: boolean;
+  timedOut: boolean;
   failure?: RunnerFailure;
 }
 
@@ -59,6 +60,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     text: [],
     completed: false,
     cancelled: false,
+    timedOut: false,
   };
   const res = await runManagedRunnerProcess({
     command,
@@ -69,7 +71,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     onSpawn: (controller) => sendRequest(controller, state, "initialize", initializeParams()),
     onStdout: (chunk, controller) => handleStdout(chunk, controller, state, invocation),
     onTimeout: (controller) => {
-      state.failure ??= new RunnerFailure("unknown", "ACP review timeout (ETIMEDOUT); review not completed; raw streams withheld", true);
+      state.timedOut = true;
       sendCancel(controller, state);
     },
   });
@@ -171,11 +173,11 @@ function handleLine(
   try {
     message = JSON.parse(line);
   } catch (error) {
-    if (state.failure) return;
+    if (state.failure || state.timedOut) return;
     if (error instanceof SyntaxError) throw new AcpProtocolError("malformed ACP JSON-RPC; raw text withheld");
     throw error;
   }
-  if (state.failure) {
+  if (state.failure || state.timedOut) {
     // Still answer pending permission requests while the process group stops.
     // Other late output remains in the raw transcript, never usable output.
     if (isRecord(message) && message.method === "session/request_permission") {
