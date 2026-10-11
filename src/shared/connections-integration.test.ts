@@ -144,6 +144,21 @@ process.stdout.write(${JSON.stringify(JSON.stringify(pr))});
     launches: () => records<Launch>(launches), messages: () => records<ClientMessage>(messages) };
 }
 
+for (const mode of ["local", "pr", "github"] as const) {
+  for (const config of ["missing", "malformed"] as const) {
+    test(`${mode}: --fix rejection precedes ${config} connection configuration`, (t) => {
+      const f = fixture(t, "acp");
+      if (config === "missing") f.env.NEEDLEFISH_CONNECTIONS_FILE = path.join(f.dir, "missing.json");
+      else writeFileSync(f.file, "{");
+      const args = mode === "github" ? ["--github", "--pr", "7"] : mode === "pr" ? ["pr", "7"] : [];
+      const result = f.run([...args, "--fix"]);
+      assert.equal(result.status, 2, result.stderr);
+      assert.equal(result.stderr, "--fix is not implemented (see FUTURE_TODO.md).\n");
+      assert.equal(f.launches().length, 0);
+    });
+  }
+}
+
 for (const github of ["closed", "untrusted"] as const) {
   for (const config of ["missing", "malformed"] as const) {
     test(`GitHub ${github} skip precedes ${config} connection configuration`, (t) => {
