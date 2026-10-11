@@ -68,11 +68,14 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     env: invocation.env,
     onSpawn: (controller) => sendRequest(controller, state, "initialize", initializeParams()),
     onStdout: (chunk, controller) => handleStdout(chunk, controller, state, invocation),
-    onTimeout: (controller) => sendCancel(controller, state),
+    onTimeout: (controller) => {
+      state.failure ??= new RunnerFailure("unknown", "ACP review timeout (ETIMEDOUT); review not completed; raw streams withheld", true);
+      sendCancel(controller, state);
+    },
   });
 
   const out = state.text.join("");
-  // A permission failure is sticky, even if the agent emits end_turn or
+  // A permission failure or timeout is sticky, even if the agent emits end_turn or
   // valid review JSON in the same chunk, during cancellation, or before exit.
   if (state.failure) return { res: { ...res, error: state.failure }, out };
   if (state.completed && res.error === undefined) {
@@ -196,6 +199,10 @@ function handleMethodMessage(
   controller: ManagedRunnerProcessController,
   state: AcpClientState
 ): void {
+  if (method === "session/update") {
+    collectSessionUpdate(message.params, state);
+    return;
+  }
   // The prompt result closes stdin; no later request can invalidate completion.
   if (state.completed) return;
   if (method === "session/request_permission") {
@@ -209,10 +216,6 @@ function handleMethodMessage(
     cancelPermission(controller, id);
     sendCancel(controller, state);
     controller.stop();
-    return;
-  }
-  if (method === "session/update") {
-    collectSessionUpdate(message.params, state);
     return;
   }
   const id = rpcId(message.id);
