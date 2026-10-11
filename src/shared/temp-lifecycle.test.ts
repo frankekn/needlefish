@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -26,6 +27,7 @@ import { isRunnerSafetyError } from "./runner-sandbox";
 
 const lifecycleUrl = pathToFileURL(path.resolve("src/shared/temp-lifecycle.ts")).href;
 const runnerProcessUrl = pathToFileURL(path.resolve("src/shared/runner-process.ts")).href;
+const isRoot = (process.getuid?.() ?? 1) === 0;
 
 test("NEEDLEFISH_TMPDIR overrides the ambient temp root", (t) => {
   const previous = process.env.NEEDLEFISH_TMPDIR;
@@ -139,6 +141,119 @@ setInterval(() => {}, 1000);
   utimesSync(quarantine, old, old);
   await reapManagedTempDirectories(root);
   assert.equal(existsSync(quarantine), false, "an aged, marker-owned quarantine is collectable");
+});
+
+// Removal must recover directories whose owner rwx bits were stripped (a
+// runner cache made read-only). As root, permission checks are bypassed and the
+// recovery walk would never be exercised, so these are non-root assertions.
+test("dispose removes a read-only nested temp tree without warning", { skip: process.platform !== "linux" || isRoot }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const result = path.join(root, "result.json");
+  const owner = spawnModule(`
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { createManagedTempDirectory, disposeManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+const directory = await createManagedTempDirectory();
+const objects = path.join(directory, "cache", "objects");
+mkdirSync(objects, { recursive: true });
+writeFileSync(path.join(objects, "blob"), "payload");
+chmodSync(path.dirname(objects), 0o500);
+chmodSync(objects, 0o500);
+await disposeManagedTempDirectory(directory);
+writeFileSync(${JSON.stringify(result)}, JSON.stringify({ exists: existsSync(directory) }));
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const [status, signal] = await waitForExit(owner);
+  const stderr = owner.stderr.read()?.toString() ?? "";
+  assert.equal(signal, null);
+  assert.equal(status, 0, stderr);
+  assert.doesNotMatch(
+    stderr,
+    /could not remove/,
+    "a recoverable read-only tree must be removed without a cleanup warning",
+  );
+  const parsed = JSON.parse(readFileSync(result, "utf8")) as { exists: boolean };
+  assert.equal(parsed.exists, false, "a read-only nested tree must still be removed");
+  assert.deepEqual(
+    readdirSync(root).filter((name) => /^needlefish-managed-/.test(name)),
+    [],
+    "no owned temp directory may be left behind",
+  );
+});
+
+test("read-only recovery never chmods or deletes a symlink target outside the tree", { skip: process.platform !== "linux" || isRoot }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const outside = mkdtempSync(path.join(os.tmpdir(), "needlefish-outside-"));
+  chmodSync(outside, 0o500);
+  const owner = spawnModule(`
+import { chmodSync, mkdirSync, symlinkSync } from "node:fs";
+import path from "node:path";
+import { createManagedTempDirectory, disposeManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+const directory = await createManagedTempDirectory();
+const cache = path.join(directory, "cache");
+mkdirSync(cache);
+symlinkSync(${JSON.stringify(outside)}, path.join(cache, "escape"));
+chmodSync(cache, 0o500);
+await disposeManagedTempDirectory(directory);
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 0, owner.stderr.read()?.toString());
+  assert.equal(existsSync(outside), true, "a symlink target outside the owned tree must survive");
+  assert.equal(
+    lstatSync(outside).mode & 0o7777,
+    0o500,
+    "a foreign directory's mode must never be altered by the recovery walk",
+  );
+  assert.deepEqual(
+    readdirSync(root).filter((name) => /^needlefish-managed-/.test(name)),
+    [],
+    "the owned tree and the link itself must be removed",
+  );
+});
+
+test("startup reaper removes a read-only abandoned tree without failing the sweep", { timeout: 10_000, skip: process.platform !== "linux" || isRoot }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const ready = path.join(root, "ready");
+  const owner = spawnModule(`
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { createManagedTempDirectory } from ${JSON.stringify(lifecycleUrl)};
+const directory = await createManagedTempDirectory();
+const objects = path.join(directory, "cache", "objects");
+mkdirSync(objects, { recursive: true });
+writeFileSync(path.join(objects, "blob"), "payload");
+chmodSync(path.dirname(objects), 0o500);
+chmodSync(objects, 0o500);
+writeFileSync(${JSON.stringify(ready)}, "1");
+process.stdin.resume();
+`, root);
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const directory = await waitForManagedDirectory(root);
+  await waitForFile(ready);
+  owner.kill("SIGKILL");
+  await waitForExit(owner);
+  await reapUntilGone(root, directory);
+
+  assert.equal(
+    existsSync(directory),
+    false,
+    "an abandoned read-only tree must be reaped instead of aborting the startup sweep",
+  );
 });
 
 test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {

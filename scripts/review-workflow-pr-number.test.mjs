@@ -155,6 +155,22 @@ test("review treats a whitespace-only CODEX_BIN as unset", () => {
 	assert.equal(result.codexBin, result.expectedHomeCodex);
 });
 
+for (const whitespace of ["\u00a0", "\ufeff", "\u2000\u2028\u2029\u3000"]) {
+	test(`review applies JavaScript trimming to CODEX_BIN with ${JSON.stringify(whitespace)}`, () => {
+		const padded = runReview("42", {
+			runner: "codex",
+			configuredCodex: true,
+			codexBinValue: (configured) => `${whitespace}${configured}${whitespace}`,
+		});
+		assert.equal(padded.status, 0, padded.stderr);
+		assert.equal(padded.codexBin, padded.expectedConfiguredCodex);
+
+		const blank = runReview("42", { runner: "codex", homeCodex: true, codexBinValue: () => whitespace });
+		assert.equal(blank.status, 0, blank.stderr);
+		assert.equal(blank.codexBin, blank.expectedHomeCodex);
+	});
+}
+
 test("review accepts the installed Codex CLI version", () => {
 	const result = runReview("42", {
 		runner: "codex",

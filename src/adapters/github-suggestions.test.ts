@@ -80,3 +80,16 @@ test("formatSuggestionComment omits replacement suggestions containing three-plu
   assert.equal(formatted.startLine, undefined);
   assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
 });
+
+test("formatSuggestionComment drops a suggestion that would exceed GitHub's body limit", () => {
+  const finding = mkFinding({ replacement: { lines: ["x".repeat(70_000)] } });
+
+  const formatted = formatSuggestionComment(finding, {
+    ranges: new Map([["README.md", [[1, 1]]]]),
+    headLineCount: () => 1,
+  });
+
+  assert.equal(formatted.line, 1);
+  assert.equal(formatted.startLine, undefined);
+  assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
+});

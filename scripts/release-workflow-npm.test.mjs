@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { parse } from "yaml";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
-const workflow = parse(readFileSync(".github/workflows/release.yml", "utf8"));
+const raw = readFileSync(".github/workflows/release.yml", "utf8");
+const workflow = parse(raw);
 const npmJob = workflow.jobs.npm;
 const runs = npmJob.steps.map((step) => step.run ?? "").join("\n");
 
@@ -50,4 +55,83 @@ test("npm job smoke-tests the packed tarball before publishing", () => {
 	const names = npmJob.steps.map((step) => step.name ?? step.uses);
 	assert.ok(names.indexOf("Install and smoke the packed tarball") < names.indexOf("Publish"));
 	assert.match(runs, /pnpm pack:smoke/);
+});
+
+function git(cwd, ...args) {
+	const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+	assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+	return r.stdout.trim();
+}
+
+// Repo in the state a fetch-depth: 0 checkout leaves behind: origin/main as a
+// remote-tracking ref, with one lightweight and one annotated tag on main and
+// one annotated tag on a side branch that main cannot see. A decoy tag named
+// `origin/main` points at the side commit: the short name `origin/main` would
+// resolve to it before the remote-tracking branch.
+function ancestryFixture() {
+	const root = mkdtempSync(join(tmpdir(), "needlefish-release-ancestry-"));
+	git(root, "init", "-q", "-b", "main");
+	git(root, "config", "user.email", "test@example.com");
+	git(root, "config", "user.name", "test");
+	git(root, "config", "commit.gpgsign", "false");
+	writeFileSync(join(root, "f"), "1");
+	git(root, "add", "-A");
+	git(root, "commit", "-qm", "base");
+	git(root, "tag", "v0.1.0");
+	git(root, "tag", "-a", "v0.2.0", "-m", "release");
+	git(root, "checkout", "-qb", "side");
+	writeFileSync(join(root, "g"), "2");
+	git(root, "add", "-A");
+	git(root, "commit", "-qm", "off main");
+	git(root, "tag", "-a", "v0.9.9", "-m", "off main");
+	git(root, "tag", "origin/main");
+	git(root, "update-ref", "refs/remotes/origin/main", git(root, "rev-parse", "main"));
+	git(root, "checkout", "-q", "main");
+	return root;
+}
+
+function runAncestryCheck(jobId, env, cwd) {
+	const script = workflowRun(raw, jobId, "Check tag is on main");
+	return spawnSync("bash", ["-eo", "pipefail", "-c", script], {
+		cwd,
+		encoding: "utf8",
+		env: { ...process.env, ...env },
+	});
+}
+
+test("release and npm jobs refuse a tag whose commit is not on main", () => {
+	const root = ancestryFixture();
+	try {
+		for (const [jobId, envKey] of [
+			["release", "GITHUB_REF_NAME"],
+			["npm", "RELEASE_TAG"],
+		]) {
+			for (const tag of ["v0.1.0", "v0.2.0"]) {
+				const ok = runAncestryCheck(jobId, { [envKey]: tag }, root);
+				assert.equal(ok.status, 0, `${jobId}: ${tag} on main must pass: ${ok.stdout}${ok.stderr}`);
+			}
+			for (const tag of ["v0.9.9", "v9.9.9"]) {
+				const bad = runAncestryCheck(jobId, { [envKey]: tag }, root);
+				assert.notEqual(bad.status, 0, `${jobId}: ${tag} off main must fail`);
+				assert.match(`${bad.stdout}${bad.stderr}`, /not reachable from origin\/main/);
+			}
+		}
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("the ancestry check gates every mutating step and its checkout", () => {
+	for (const [jobId, mutating] of [
+		["release", "Roll floating major tag"],
+		["npm", "Publish"],
+	]) {
+		const names = workflow.jobs[jobId].steps.map((step) => step.name ?? step.uses);
+		const check = names.indexOf("Check tag is on main");
+		assert.ok(check > -1 && check < names.indexOf(mutating), `${jobId}: ancestry check must precede ${mutating}`);
+	}
+	for (const jobId of ["release", "npm"]) {
+		const checkout = workflow.jobs[jobId].steps.find((step) => String(step.uses ?? "").startsWith("actions/checkout"));
+		assert.equal(checkout.with["fetch-depth"], 0, `${jobId}: ancestry check needs origin/main from the checkout`);
+	}
 });
