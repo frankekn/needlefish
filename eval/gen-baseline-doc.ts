@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { fixtureSetHash, loadFixtures } from "./run";
+import { fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 import { isCompleteReport } from "./shared/report-completeness";
 import {
 	hasConsistentCheatDetection,

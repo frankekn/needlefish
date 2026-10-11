@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./run";
+import { fixtureSetHash as computeFixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 import { isRunnerName } from "../src/shared/runner";
 import type { Finding, Verdict } from "../src/shared/schema";
 import { classifySurface, isDocsFastPathEligible } from "../src/shared/classify";
@@ -17,77 +17,56 @@ import {
   type DrawResult,
   type Aggregates,
   type Expected,
-  type FixtureKind,
   type FixtureSpec,
-  type Report,
 } from "./shared/types";
 import { score } from "./shared/score";
+import {
+  MAX_MEAN_NOISE_PER_POSITIVE,
+  REPO_URL,
+  balancedReviewAccuracy,
+  compareLanes,
+  displayedMetrics,
+  operationalFailures,
+  sameRecord,
+  scoreConfidenceInterval,
+  statisticalRanks,
+  tierOneInterimGate,
+  tierRecall,
+  usableSpecificity,
+  type BlockedConfig,
+  type ExcludedConfig,
+  type FixtureClassifications,
+  type Lane,
+  type LaneConfig,
+  type LeaderboardManifest,
+  type PublishedReport,
+} from "./shared/publication";
+export {
+  MAX_MEAN_NOISE_PER_POSITIVE,
+  REPO_URL,
+  balancedReviewAccuracy,
+  compareLanes,
+  displayedMetrics,
+  operationalFailures,
+  sameRecord,
+  scoreConfidenceInterval,
+  statisticalRanks,
+  tierOneInterimGate,
+  tierRecall,
+  usableSpecificity,
+  type BlockedConfig,
+  type ExcludedConfig,
+  type FixtureClassifications,
+  type Lane,
+  type LaneConfig,
+  type LeaderboardManifest,
+  type PublishedReport,
+} from "./shared/publication";
 
 const EVAL_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.dirname(EVAL_DIR);
 const MANIFEST_PATH = path.join(EVAL_DIR, "leaderboard.json");
 const OUTPUT_PATH = path.join(REPO_ROOT, "docs", "index.html");
-export const REPO_URL = "https://github.com/frankekn/needlefish";
-export const MAX_MEAN_NOISE_PER_POSITIVE = 0.12;
-
-export interface LaneConfig {
-  readonly report: string;
-  readonly name: string;
-  readonly runner: Report["runner"];
-  readonly model: string;
-  readonly effort: string;
-  readonly status: "Deployed" | "Candidate";
-  readonly legacyConfigIdentityException?: string;
-  readonly legacyAuthIdentityException?: string;
-}
-
-export interface BlockedConfig {
-  readonly name: string;
-  readonly model: string;
-  readonly provider: string;
-  readonly reason: string;
-}
-
-export interface ExcludedConfig extends BlockedConfig {
-  readonly report: string;
-}
-
-export interface LeaderboardManifest {
-  readonly updated: string;
-  readonly baseline: string;
-  readonly lanes: readonly LaneConfig[];
-  readonly blocked: readonly BlockedConfig[];
-  readonly excluded?: readonly ExcludedConfig[];
-}
-
-export interface Lane {
-  readonly config: LaneConfig;
-  readonly report: PublishedReport;
-}
-
-export interface FixtureClassifications {
-  readonly fixtureIds: readonly string[];
-  readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
-  readonly fixtureTiers: Readonly<Record<string, number>>;
-  readonly fixtureDefectClasses?: Readonly<Record<string, string>>;
-  readonly fixtureSetHash: string;
-  readonly promptHash: string;
-  readonly expectedByFixture?: Readonly<Record<string, Expected>>;
-  readonly fastPathFixtureIds?: readonly string[];
-}
-
-export type PublishedReport = Report & {
-  readonly fixtureKinds?: Readonly<Record<string, FixtureKind>>;
-  readonly provider?: string;
-  readonly route?: string;
-  readonly runnerVersion?: string;
-  readonly invocation?: string;
-  readonly reproductionCommand?: string;
-  readonly runnerEnvironment?: string;
-  readonly privateEnvironment?: boolean;
-};
-
-type PublishedDraw = DrawResult & { readonly operationalFailure?: unknown };
 type ReviewFamilyAggregates = Aggregates & {
   readonly recallByDefectClass?: Readonly<Record<string, number>>;
   readonly lineAnchorValidRateByDefectClass?: Readonly<Record<string, number>>;
@@ -95,17 +74,6 @@ type ReviewFamilyAggregates = Aggregates & {
 
 function reviewFamilyAggregates(report: PublishedReport): ReviewFamilyAggregates {
   return report.aggregates as ReviewFamilyAggregates;
-}
-
-export function operationalFailures(report: PublishedReport): string[] {
-  return report.results.flatMap((result) => {
-    const failure = (result as PublishedDraw).operationalFailure;
-    if (failure === undefined) return [];
-    if (typeof failure !== "string" || failure.trim().length === 0) {
-      throw new Error("operational failure must be a non-empty string");
-    }
-    return [failure];
-  });
 }
 
 export function fixtureClassifications(
@@ -373,234 +341,6 @@ function escapeHtml(value: unknown): string {
 
 function percent(value: number, digits = 1): string {
   return `${(value * 100).toFixed(digits)}%`;
-}
-
-function reviewRates(report: PublishedReport): {
-  readonly recall: number;
-  readonly specificity: number;
-  readonly falsePositiveRate: number;
-} {
-  if (!report.fixtureKinds) throw new Error("fixture kinds are required");
-  let positives = 0;
-  let truePositives = 0;
-  let negatives = 0;
-  let trueNegatives = 0;
-  let falsePositives = 0;
-  for (const result of report.results) {
-    const kind = report.fixtureKinds[result.fixtureId];
-    if (kind === "positive") {
-      positives += 1;
-      if (result.score.recall) truePositives += 1;
-    } else if (kind === "negative") {
-      negatives += 1;
-      if (result.score.falsePositive) falsePositives += 1;
-      if (result.score.formatOk && !result.score.falsePositive) {
-        trueNegatives += 1;
-      }
-    } else if (kind !== "parity" && kind !== "honeypot") {
-      throw new Error(`fixture kind is missing for ${result.fixtureId}`);
-    }
-  }
-  if (positives === 0 || negatives === 0) {
-    throw new Error("positive and negative draws are required");
-  }
-  return {
-    recall: truePositives / positives,
-    specificity: trueNegatives / negatives,
-    falsePositiveRate: falsePositives / negatives,
-  };
-}
-
-export function balancedReviewAccuracy(report: PublishedReport): number {
-  const { recall, specificity } = reviewRates(report);
-  return (recall + specificity) / 2;
-}
-
-export function usableSpecificity(report: PublishedReport): number {
-  return reviewRates(report).specificity;
-}
-
-export function tierRecall(report: PublishedReport, tier: 1 | 2 | 3): number {
-  if (!report.fixtureTiers) throw new Error("fixture tiers are required");
-  let total = 0;
-  let hits = 0;
-  for (const result of report.results) {
-    if (report.fixtureTiers[result.fixtureId] !== tier) continue;
-    if (report.fixtureKinds?.[result.fixtureId] !== "positive") {
-      throw new Error(`Tier-${tier} fixture is not positive: ${result.fixtureId}`);
-    }
-    total += 1;
-    if (result.score.recall) hits += 1;
-  }
-  if (total === 0) throw new Error(`Tier-${tier} draws are required`);
-  return hits / total;
-}
-
-export interface TierOneInterimGate {
-  readonly hits: number;
-  readonly total: number;
-  readonly passed: boolean;
-  readonly perFixture: Readonly<Record<string, { readonly hits: number; readonly total: number }>>;
-}
-
-export function tierOneInterimGate(report: PublishedReport): TierOneInterimGate {
-  if (!report.fixtureTiers) throw new Error("fixture tiers are required");
-  const byFixture = new Map<string, { hits: number; total: number }>();
-  for (const result of report.results) {
-    if (report.fixtureTiers[result.fixtureId] !== 1) continue;
-    const bucket = byFixture.get(result.fixtureId) ?? { hits: 0, total: 0 };
-    bucket.total += 1;
-    if (result.score.recall) bucket.hits += 1;
-    byFixture.set(result.fixtureId, bucket);
-  }
-  const perFixture = Object.fromEntries(
-    [...byFixture.entries()].sort(([a], [b]) => a.localeCompare(b)),
-  );
-  const total = [...byFixture.values()].reduce((sum, value) => sum + value.total, 0);
-  const hits = [...byFixture.values()].reduce((sum, value) => sum + value.hits, 0);
-  const passed =
-    total === 21 &&
-    hits >= 20 &&
-    [...byFixture.values()].every((value) => value.total === 3 && value.hits >= 2);
-  return { hits, total, passed, perFixture };
-}
-
-export function displayedMetrics(report: PublishedReport): {
-  readonly recall: number;
-  readonly falsePositiveRate: number;
-  readonly invalidJsonRate: number;
-  readonly verdictMatchRate: number;
-  readonly meanDurationMs: number;
-  readonly meanNoisePerPositive: number;
-} {
-  const { recall, falsePositiveRate } = reviewRates(report);
-  const positives = report.results.filter(
-    (result) => report.fixtureKinds?.[result.fixtureId] === "positive",
-  );
-  return {
-    recall,
-    falsePositiveRate,
-    invalidJsonRate:
-      report.results.filter((result) => !result.score.formatOk).length /
-      report.results.length,
-    verdictMatchRate:
-      report.results.filter((result) => result.score.verdictMatch).length /
-      report.results.length,
-    meanDurationMs:
-      report.results.reduce((sum, result) => sum + result.durationMs, 0) /
-      report.results.length,
-    meanNoisePerPositive:
-      positives.reduce((sum, result) => sum + result.score.noiseFindingCount, 0) /
-      positives.length,
-  };
-}
-
-function sameRecord(
-  left: Readonly<Record<string, unknown>> | undefined,
-  right: Readonly<Record<string, unknown>> | undefined,
-): boolean {
-  const leftEntries = Object.entries(left ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  const rightEntries = Object.entries(right ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  return JSON.stringify(leftEntries) === JSON.stringify(rightEntries);
-}
-
-function mean(values: readonly number[]): number {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function sampleVariance(values: readonly number[]): number {
-  if (values.length < 2) return 0;
-  const average = mean(values);
-  return (
-    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
-    (values.length - 1)
-  );
-}
-
-function fixtureOutcomes(
-  report: PublishedReport,
-  kind: "positive" | "negative",
-): number[] {
-  if (!report.fixtures || !report.fixtureKinds) {
-    throw new Error("fixture manifest and kinds are required");
-  }
-  return report.fixtures
-    .filter((fixtureId) => report.fixtureKinds?.[fixtureId] === kind)
-    .sort()
-    .map((fixtureId) => {
-      const draws = report.results.filter((result) => result.fixtureId === fixtureId);
-      return mean(
-        draws.map((result) =>
-          kind === "positive"
-            ? Number(result.score.recall)
-            : Number(result.score.formatOk && !result.score.falsePositive),
-        ),
-      );
-    });
-}
-
-function scoreStandardError(report: PublishedReport): number {
-  const positives = fixtureOutcomes(report, "positive");
-  const negatives = fixtureOutcomes(report, "negative");
-  return (
-    0.5 *
-    Math.sqrt(
-      sampleVariance(positives) / positives.length +
-      sampleVariance(negatives) / negatives.length,
-    )
-  );
-}
-
-export function scoreConfidenceInterval(report: PublishedReport): readonly [number, number] {
-  const score = balancedReviewAccuracy(report);
-  const margin = 1.96 * scoreStandardError(report);
-  return [Math.max(0, score - margin), Math.min(1, score + margin)];
-}
-
-function statisticallyTied(left: PublishedReport, right: PublishedReport): boolean {
-  const leftPositive = fixtureOutcomes(left, "positive");
-  const rightPositive = fixtureOutcomes(right, "positive");
-  const leftNegative = fixtureOutcomes(left, "negative");
-  const rightNegative = fixtureOutcomes(right, "negative");
-  const positiveDifferences = leftPositive.map(
-    (value, index) => value - rightPositive[index],
-  );
-  const negativeDifferences = leftNegative.map(
-    (value, index) => value - rightNegative[index],
-  );
-  const standardError =
-    0.5 *
-    Math.sqrt(
-      sampleVariance(positiveDifferences) / positiveDifferences.length +
-      sampleVariance(negativeDifferences) / negativeDifferences.length,
-    );
-  return (
-    Math.abs(balancedReviewAccuracy(left) - balancedReviewAccuracy(right)) <=
-    1.96 * standardError
-  );
-}
-
-export function statisticalRanks(lanes: readonly Lane[]): number[] {
-  // Statistical non-separation is not transitive. Anchor each point-sorted
-  // group to its highest-scoring lane so bridge lanes cannot collapse the
-  // entire leaderboard into one rank.
-  let groupStart = 0;
-  return lanes.map((lane, index) => {
-    if (index > 0 && !statisticallyTied(lanes[groupStart].report, lane.report)) {
-      groupStart = index;
-    }
-    return groupStart + 1;
-  });
-}
-
-export function compareLanes(a: Lane, b: Lane): number {
-  const aMetrics = displayedMetrics(a.report);
-  const bMetrics = displayedMetrics(b.report);
-  return (
-    balancedReviewAccuracy(b.report) - balancedReviewAccuracy(a.report) ||
-    bMetrics.recall - aMetrics.recall ||
-    aMetrics.falsePositiveRate - bMetrics.falsePositiveRate
-  );
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -1097,7 +837,7 @@ function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane
       const noise = displayedMetrics(report).meanNoisePerPositive;
       const reasons: string[] = [];
       if (gate) {
-        if (t1 !== undefined && t1 < 1) reasons.push(`Tier-1 ${percent(t1)}`);
+        if (!tierOneInterimGate(report).passed) reasons.push(`Tier-1 ${percent(t1)}`);
         if (noise > MAX_MEAN_NOISE_PER_POSITIVE) reasons.push(`noise ${noise.toFixed(3)}`);
       }
       const gateWhy = reasons.length
@@ -1127,7 +867,9 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
       const t1 = tierRecall(report, 1);
       const t2 = tierRecall(report, 2);
       const t3 = tierRecall(report, 3);
-      const tierOneMiss = t1 !== undefined && t1 < 1;
+      // The Tier-1 gate tolerates one intermittent miss (see tierOneInterimGate), so a
+      // ranked lane can show Tier-1 below 100% without having missed the gate.
+      const tierOneMiss = !tierOneInterimGate(report).passed;
       const noiseMiss = metrics.meanNoisePerPositive > MAX_MEAN_NOISE_PER_POSITIVE;
       const rank = ranked ? String(ranks[index]) : "—";
       const status = tierOneMiss
@@ -1269,7 +1011,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Below the gate</h2><p class="intro">These complete reports missed a Tier-1 defect or exceeded the 0.12 positive-noise envelope. Their balanced scores remain visible for comparison, but they receive no rank.</p>${laneTable(disqualified, "Below-gate model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${notRanked.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Compromised or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(notRanked)}</ul></div></section>` : ""}
-<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Point-sorted uncertainty groups are anchored to their highest-scoring lane; lower lanes share that rank while their paired 95% normal interval versus the anchor includes zero. This avoids non-transitive bridge comparisons. The table also shows each lane's 95% interval. A Tier-1 miss or positive-fixture noise above 0.12 overrides the rank: the lane keeps its score for comparison but leaves the ranked table. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect removes the lane from the ranked table regardless of its average.</p><h3>False positives and noise</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Positive-fixture noise counts unrelated blocking findings on buggy changes; recall bought with noise above the production envelope is not qualified.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Harness, provider, and route labels are operator-attested report metadata, not independently derived by the site generator. Provider failures are operational failures, not proof of model quality.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
+<section class="section" id="method"><div class="shell method"><div><h2>How to read it</h2><p class="hashes">Updated ${escapeHtml(manifest.updated)}<br>prompt ${escapeHtml(baseline.report.promptHash)}<br>fixtures ${escapeHtml(baseline.report.fixtureSetHash)}<br>scorer ${escapeHtml(baseline.report.scorerHash)}</p></div><div><h3>Balanced Review Accuracy</h3><p>The primary score is the arithmetic mean of anchored recall and usable specificity. Invalid model output cannot count as a correct positive or negative result, so each unusable draw is counted once. Point-sorted uncertainty groups are anchored to their highest-scoring lane; lower lanes share that rank while their paired 95% normal interval versus the anchor includes zero. This avoids non-transitive bridge comparisons. The table also shows each lane's 95% interval. A Tier-1 miss or positive-fixture noise above 0.12 overrides the rank: the lane keeps its score for comparison but leaves the ranked table. Verdict match, invalid rate, and speed remain separate diagnostics.</p><h3>Anchored recall</h3><p>A defect counts only when the finding matches the expected behavior and the expected file. Missing a Tier-1 defect removes the lane from the ranked table regardless of its average.</p><h3>False positives and noise</h3><p>Clean fixtures measure whether a reviewer blocks a change that should pass. Positive-fixture noise counts unrelated blocking findings on buggy changes; recall bought with noise above the production envelope is not qualified.</p><h3>Integrity</h3><p>Every published lane includes sealed holdouts, a disposable HOME, a planted canary, full-transcript scanning, and post-run repository mutation checks. Harness, provider, and route labels are operator-attested report metadata, not independently derived by the site generator. Provider failures are operational failures, not proof of model quality. A review that exhausts its per-call deadline is scored as a failed review, because in production the author receives no review.</p><h3>Reproduce</h3><p>Read the <a href="${REPO_URL}/blob/main/eval/RESULTS.md">chronological experiment record</a>, inspect each raw report, or run the <a href="${REPO_URL}/tree/main/eval">evaluation harness</a>.</p></div></div></section></main>
 <footer class="shell"><span>Needlefish — strict local PR review.</span><span><a href="${REPO_URL}">Use Needlefish</a> · <a href="${REPO_URL}/blob/main/LICENSE">MIT License</a></span></footer>
 </body>
 </html>`;

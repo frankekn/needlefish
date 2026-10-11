@@ -126,6 +126,35 @@ test("renderMarkdown links locations only when repository context is available",
 	assert.doesNotMatch(plain, /github\.com/);
 });
 
+test("renderMarkdown keeps location hrefs inside the repository and escapes link-breaking characters", () => {
+	const linked = renderMarkdown(
+		baseResult([
+			finding("P1", "dot escape", "../../../../evil/x.ts", {
+				lineStart: 5,
+				lineEnd: 5,
+			}),
+			finding("P2", "absolute", "/etc/passwd"),
+			finding("P2", "scheme", "https://evil.example/x.ts"),
+			finding("P3", "paren", "src/foo).ts", { lineStart: 7, lineEnd: 7 }),
+		]),
+		{ repoSlug: "owner/name" },
+	);
+
+	// Non-repo-relative paths render as plain text cells, no href.
+	assert.ok(linked.includes("`../../../../evil/x.ts:5` |"));
+	assert.ok(linked.includes("`/etc/passwd:1` |"));
+	assert.ok(linked.includes("`https://evil.example/x.ts:1` |"));
+
+	// `)` in a valid path is percent-encoded so the link does not end early.
+	assert.match(
+		linked,
+		/\[`src\/foo\)\.ts:7`\]\(https:\/\/github\.com\/owner\/name\/blob\/head\/src\/foo%29\.ts#L7\)/,
+	);
+
+	// The only rendered href stays under /<slug>/blob/<sha>/.
+	assert.equal(linked.split("blob/head/").length - 1, 1);
+});
+
 test("renderMarkdown adds blocking and nit counts directly below the headline", () => {
 	const four = renderMarkdown(
 		baseResult([
@@ -155,20 +184,39 @@ test("renderMarkdown shows compact re-review deltas only for positive counts", (
 	const result = baseResult([finding("P2", "one", "a.ts")]);
 	// Summary occupies line 2 (reason replaced the headline); counts then delta.
 	assert.match(
-		renderMarkdown(result, { resolvedCount: 2 }),
-		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved\n/,
+		renderMarkdown(result, { priorFates: { code_changed: 2, code_unchanged: 0, undetermined: 0 } }),
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🔍 2 not re-found \(code changed\)\n/,
 	);
 	assert.match(
 		renderMarkdown(result, { newCount: 1 }),
 		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🆕 1 new\n/,
 	);
 	assert.match(
-		renderMarkdown(result, { resolvedCount: 2, newCount: 1 }),
-		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n✅ 2 resolved · 🆕 1 new\n/,
+		renderMarkdown(result, { priorFates: { code_changed: 2, code_unchanged: 0, undetermined: 0 }, newCount: 1 }),
+		/^([^\n]+\n)First sentence\.\n\*\*1 blocking\*\*\n🔍 2 not re-found \(code changed\) · 🆕 1 new\n/,
 	);
 	assert.doesNotMatch(
-		renderMarkdown(result, { resolvedCount: 0, newCount: 0 }),
-		/resolved|🆕/,
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 0, undetermined: 0 }, newCount: 0 }),
+		/not re-found|🆕/,
+	);
+});
+
+test("renderMarkdown shows code-unchanged and undetermined deltas only for positive counts", () => {
+	const result = baseResult([finding("P2", "one", "a.ts")]);
+	assert.match(
+		renderMarkdown(result, {
+			priorFates: { code_changed: 1, code_unchanged: 2, undetermined: 3 },
+			newCount: 1,
+		}),
+		/\n🔍 1 not re-found \(code changed\) · 🔁 2 not re-found \(code unchanged\) · ❔ 3 undetermined · 🆕 1 new\n/,
+	);
+	assert.match(
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 1, undetermined: 0 } }),
+		/\*\*1 blocking\*\*\n🔁 1 not re-found \(code unchanged\)\n/,
+	);
+	assert.doesNotMatch(
+		renderMarkdown(result, { priorFates: { code_changed: 0, code_unchanged: 0, undetermined: 0 } }),
+		/🔁|❔/,
 	);
 });
 
@@ -227,6 +275,11 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 				durationMs: 212000,
 				attempts: 2,
 				ok: true,
+				usage: {
+					totalTokens: 845,
+					inputTokens: 816,
+					outputTokens: 29,
+				},
 			},
 			{
 				label: "critic",
@@ -241,7 +294,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 
 	const markdown = renderMarkdown(result, {
 		openFindings: [open],
-		resolvedCount: 1,
+		priorFates: { code_changed: 1, code_unchanged: 0, undetermined: 0 },
 		stateMarker: "<!-- state -->",
 	});
 
@@ -249,7 +302,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	// empty); summary drops to line 2, delta follows.
 	assert.match(
 		markdown,
-		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n✅ 1 resolved\n/,
+		/^CHANGES REQUESTED ⚠️ — 1 blocking: still broken \(open\.ts:1\)\nFirst sentence\.\n🔍 1 not re-found \(code changed\)\n/,
 	);
 	assert.match(markdown, /Review target: local base\.\.head/);
 	assert.match(markdown, /PR context: #24 metadata only/);
@@ -257,7 +310,7 @@ test("renderMarkdown preserves review target, round state options, marker, and s
 	assert.match(markdown, /<summary>Checked \(1\)<\/summary>/);
 	assert.match(
 		markdown,
-		/<sub>2 calls · review 3m 32s → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
+		/<sub>2 calls · review 3m 32s · tokens 845 \(816 in \/ 29 out\) → critic 1m 36s · 1 retry · total 5m 8s<\/sub>/,
 	);
 	assert.match(markdown, /<!-- state -->\n$/);
 });
@@ -358,6 +411,78 @@ test("renderMarkdown renders non-blocking scope callouts after the review target
 	assert.ok(
 		calloutIdx > targetIdx && findingsIdx > calloutIdx,
 		"callouts must render between the review target and Findings",
+	);
+});
+
+test("renderMarkdown lists coverage gaps once, between the coverage line and the review target", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		coverage: "full diff reviewed in one pass (2 files)",
+		reviewTarget: "Review target: local base..head",
+		coverageGaps: [
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+			{ kind: "lfs_pointer_only", file: "new\nline.bin" },
+			{ kind: "lfs_scan_incomplete" },
+		],
+	});
+
+	const header = "**Not reviewed (non-blocking):**";
+	const uncertain = "**Coverage uncertain (non-blocking):**";
+	assert.equal(markdown.split(uncertain).length - 1, 1);
+	assert.ok(markdown.includes("could not determine whether any changed file is a Git LFS pointer"));
+	assert.ok(markdown.includes("If this repository uses Git LFS"), "the notice must not assert LFS use");
+	assert.ok(markdown.indexOf(uncertain) > markdown.indexOf(header));
+	assert.ok(!markdown.includes("- undefined"), "an incomplete-scan gap names no file");
+	assert.equal(markdown.split(header).length - 1, 1, "one notice, not one per file");
+	assert.ok(markdown.includes("available only as Git LFS pointers"));
+	assert.ok(markdown.includes("Ask a maintainer to check them."));
+	assert.ok(markdown.includes("\n- assets/model.bin\n"));
+	assert.ok(markdown.includes("\n- new line.bin\n"), "a newline in a path must not split the bullet");
+
+	const coverageIdx = markdown.indexOf("Coverage: ");
+	const gapIdx = markdown.indexOf(header);
+	const targetIdx = markdown.indexOf("Review target:");
+	const findingsIdx = markdown.indexOf("## Findings");
+	assert.ok(coverageIdx !== -1 && targetIdx !== -1);
+	assert.ok(
+		gapIdx > coverageIdx && targetIdx > gapIdx && findingsIdx > targetIdx,
+		"gaps render after the coverage line and before the review target",
+	);
+});
+
+test("renderMarkdown omits the coverage gap notice when there are no gaps", () => {
+	assert.ok(!renderMarkdown(baseResult([], "pass")).includes("Not reviewed"));
+	assert.ok(
+		!renderMarkdown({ ...baseResult([], "pass"), coverageGaps: [] }).includes("Not reviewed"),
+		"an empty gap list must render no notice",
+	);
+	const onlyIncomplete = renderMarkdown({
+		...baseResult([], "pass"),
+		coverageGaps: [{ kind: "lfs_scan_incomplete" }],
+	});
+	assert.ok(!onlyIncomplete.includes("Not reviewed"));
+	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
+});
+
+test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
+	const result: ReviewResult = {
+		...baseResult([], "pass"),
+		coverage: "full diff reviewed in one pass (1 file)",
+		coverageGaps: [
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+			{ kind: "lfs_scan_incomplete" },
+		],
+	};
+	const omitted = renderMarkdown(result, { omitCoverageGaps: true });
+	assert.ok(!omitted.includes("Not reviewed"));
+	assert.ok(!omitted.includes("Coverage uncertain"));
+	assert.ok(!omitted.includes("assets/model.bin"));
+	assert.ok(omitted.includes("Coverage: full diff reviewed in one pass (1 file)"));
+	assert.notEqual(omitted, renderMarkdown(result), "the option must change the output when gaps exist");
+	assert.equal(
+		renderMarkdown(baseResult([], "pass"), { omitCoverageGaps: true }),
+		renderMarkdown(baseResult([], "pass")),
+		"without gaps the option is inert",
 	);
 });
 

@@ -1,9 +1,8 @@
 import {
-	readdirSync,
+	existsSync,
 	readFileSync,
 	readlinkSync,
 	writeFileSync,
-	existsSync,
 	lstatSync,
 	mkdirSync,
 	renameSync,
@@ -11,7 +10,7 @@ import {
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { git } from "../src/shared/repo";
 import { isDocsFastPathEligible } from "../src/shared/classify";
 import { review } from "../src/core/review";
@@ -24,8 +23,16 @@ import type { ReviewTraceEvent } from "../src/core/review-trace.js";
 import { parseRunnerName, type RunnerName } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
+import { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 import { promptHash } from "./shared/prompt-hash";
 import { isCompleteReport } from "./shared/report-completeness";
+import {
+	criticDrawFields,
+	criticValueAggregates,
+	formatCriticValue,
+	type CriticDrawFields,
+	type CriticValueAggregates,
+} from "./shared/critic-value";
 import { drawFindings, matchEvidence, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
 import {
@@ -51,8 +58,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.join(__dirname, "..");
-const FIXTURES_DIR = path.join(__dirname, "fixtures");
-const FIXTURES_REAL_DIR = path.join(__dirname, "fixtures-real");
+// Preserve existing imports from the eval entrypoint during the extraction.
+export { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
 
 interface RunArgs {
 	runner: RunnerName;
@@ -193,45 +200,6 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	};
 }
 
-async function loadFixturesFrom(
-	dirPath: string,
-	glob: string | null,
-): Promise<FixtureSpec[]> {
-	const dirs = readdirSync(dirPath, { withFileTypes: true })
-		.filter((d) => d.isDirectory())
-		.map((d) => d.name)
-		.filter((name) => (glob ? new RegExp(glob).test(name) : true))
-		.sort();
-	const specs: FixtureSpec[] = [];
-	for (const dir of dirs) {
-		const specPath = path.join(dirPath, dir, "spec.ts");
-		if (!existsSync(specPath)) continue;
-		const mod = await import(pathToFileURL(specPath).href);
-		if (mod.default) specs.push(mod.default as FixtureSpec);
-	}
-	return specs;
-}
-
-export async function loadFixtures(
-	glob: string | null,
-): Promise<FixtureSpec[]> {
-	const specs = await loadFixturesFrom(FIXTURES_DIR, glob);
-	if (!existsSync(FIXTURES_REAL_DIR)) return specs;
-	return [...specs, ...(await loadFixturesFrom(FIXTURES_REAL_DIR, glob))];
-}
-
-// Holdout filtering is a pure post-load step so plain runs always tell the
-// full truth (include), prompt-tuning iteration can hide sealed holdouts
-// (exclude), and final gates can run just the holdouts (only).
-export function filterByHoldout(
-	specs: readonly FixtureSpec[],
-	mode: HoldoutMode,
-): FixtureSpec[] {
-	if (mode === "include") return [...specs];
-	if (mode === "only") return specs.filter((s) => s.holdout === true);
-	return specs.filter((s) => s.holdout !== true);
-}
-
 async function runOne(
 	spec: FixtureSpec,
 	runner: RunnerName,
@@ -300,10 +268,11 @@ async function runOne(
 			(file) =>
 				file.surface === "docs" && isDocsFastPathEligible(file.path),
 		);
-	const drawResult: DrawResult & {
-		readonly fastPath?: "docs";
-		readonly operationalFailure?: string;
-	} = {
+	const drawResult: DrawResult &
+		CriticDrawFields & {
+			readonly fastPath?: "docs";
+			readonly operationalFailure?: string;
+		} = {
 		fixtureId: spec.id,
 		draw: 0,
 		score: score(
@@ -324,6 +293,7 @@ async function runOne(
 		candidateMatchEvidence: result?.candidateFindings
 			? matchEvidence(result.candidateFindings, spec.expected)
 			: undefined,
+		...criticDrawFields(result, spec.expected, spec.id),
 		...(docsFastPath ? { fastPath: "docs" as const } : {}),
 		...(operationalFailure ? { operationalFailure } : {}),
 	};
@@ -585,40 +555,6 @@ async function runWork(
 	});
 }
 
-// Stable 16-hex digest of the fixture set actually run. Two reports are only
-// comparable when both promptHash and fixtureSetHash match.
-export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
-	const canonical = [...specs]
-		.sort((a, b) => a.id.localeCompare(b.id))
-		.map((s) => ({
-			id: s.id,
-			kind: s.kind,
-			tier: s.tier ?? null,
-			baseFiles: s.baseFiles,
-			...(s.deletedFiles && s.deletedFiles.length > 0
-				? { deletedFiles: [...s.deletedFiles].sort() }
-				: {}),
-			...(s.renamedFiles && s.renamedFiles.length > 0
-				? {
-						renamedFiles: s.renamedFiles
-							.map(({ from, to }) => ({ from, to }))
-							.sort(
-								(a, b) =>
-									a.from.localeCompare(b.from) || a.to.localeCompare(b.to),
-							),
-					}
-				: {}),
-			headFiles: s.headFiles,
-			expected: s.expected,
-			holdout: s.holdout ?? false,
-			provenance: s.provenance,
-		}));
-	return createHash("sha256")
-		.update(JSON.stringify(canonical))
-		.digest("hex")
-		.slice(0, 16);
-}
-
 function repoGitSha(): string | null {
 	try {
 		return git(["rev-parse", "HEAD"], path.join(__dirname, "..")).trim();
@@ -762,7 +698,11 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			: args.runner === "grok"
 				? [["GROK_CONFIG_TOML", home ? path.join(home, ".grok", "config.toml") : null]]
 				: args.runner === "opencode"
-					? [["OPENCODE_CONFIG_JSON", home ? path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode", "opencode.json") : null]]
+					? [["OPENCODE_CONFIG_JSON", home ? (() => {
+							const base = path.join(args.env.XDG_CONFIG_HOME?.trim() || process.env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config"), "opencode");
+							const json = path.join(base, "opencode.json");
+							return existsSync(json) ? json : path.join(base, "opencode.jsonc");
+						})() : null]]
 					: [];
 	const identities = files.map(([key, file]): [string, string] => {
 		if (file === null) return [key, "missing"];
@@ -1004,7 +944,7 @@ export function aggregateDefectClassMetrics(
 const lastCheckpointCoverage = new Map<string, ReadonlySet<string>>();
 
 function coverageKey(fixtureId: string, draw: number): string {
-	return `${fixtureId} ${draw}`;
+	return `${fixtureId}\u0000${draw}`;
 }
 
 function coverageOf(
@@ -1137,9 +1077,9 @@ function atomicWriteFile(targetPath: string, contents: string): void {
 }
 
 function aggregate(
-	results: readonly DrawResult[],
+	results: readonly (DrawResult & CriticDrawFields)[],
 	specs: readonly FixtureSpec[],
-): Aggregates & ReviewFamilyAggregates {
+): Aggregates & ReviewFamilyAggregates & CriticValueAggregates {
 	const kindByFixture = new Map(specs.map((s) => [s.id, s.kind]));
 	const tierByFixture = new Map(specs.map((s) => [s.id, s.tier ?? 2]));
 	const positiveResults = results.filter(
@@ -1224,14 +1164,16 @@ function aggregate(
 		cheatDetectedCount,
 		baitExposureCount,
 		criticPrunedRecallCount,
+		...criticValueAggregates(results, specs),
 	};
 }
 
 export function writeReport(
 	args: RunArgs,
-	results: readonly DrawResult[],
+	results: readonly (DrawResult & CriticDrawFields)[],
 	specs: readonly FixtureSpec[],
 ): Report & {
+	readonly aggregates: Aggregates & CriticValueAggregates;
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
 	readonly fixtureDefectClasses: Readonly<Record<string, string>>;
@@ -1304,6 +1246,7 @@ export function writeReport(
 		fixtureKinds,
 		fixtureDefectClasses,
 	} satisfies Report & {
+		readonly aggregates: Aggregates & CriticValueAggregates;
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
 		readonly fixtureDefectClasses: Readonly<Record<string, string>>;
@@ -1456,6 +1399,11 @@ export function compare(baselinePath: string, candidate: Report): void {
 	process.stdout.write(lines.join("\n") + "\n");
 }
 
+function printCriticValue(aggregates: CriticValueAggregates): void {
+	const block = formatCriticValue(aggregates);
+	if (block) process.stderr.write(`${block}\n`);
+}
+
 // Any anti-cheat detection (repository bait canary and/or honeypot trap)
 // voids the report. Wording is detector-neutral: G3 bait hits are not
 // honeypot-only, and operators must not be steered to the wrong root cause.
@@ -1545,6 +1493,7 @@ async function main(): Promise<void> {
 			const results = await runWork(args, work, slots, canary, checkpoint);
 			const report = writeReport(args, results, specs);
 			cheatAlert(report);
+			printCriticValue(report.aggregates);
 			compare(args.compare, report);
 			return;
 		}
@@ -1563,6 +1512,7 @@ async function main(): Promise<void> {
 		const report = writeReport(args, results, specs);
 		cheatAlert(report);
 		process.stderr.write(`report: ${args.report}\n`);
+		printCriticValue(report.aggregates);
 		process.stdout.write(
 			JSON.stringify(
 				{ promptHash: report.promptHash, aggregates: report.aggregates },

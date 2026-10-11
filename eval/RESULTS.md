@@ -128,6 +128,420 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-10-06 — Six implementation repairs (Class R)
+
+Scope: executable captured-baseline `WORKING`/unborn `EMPTY` refs, fail-closed
+large/deep HTTP capability, structured provider fallback, delivery-complete
+same-head dedupe, repository-root local invocation, and readonly temp cleanup.
+Prompts, normalization, critic matching, and scoring remain unchanged. Classified
+**R** because repo-root resolution and usable refs alter available review evidence.
+
+Historical branch gate: Codex **0.160.1**, `deepseek/deepseek-v4.1-flash`,
+**high**, DeepSeek through CLIProxyAPI on DGX Spark/Tailscale; **91 fixtures ×3**,
+17 holdouts included. Tier-1 **21/21**, recall **0.9086**, Tier-2 **0.9459**,
+Tier-3 **0.7963**, FP **0/84**, noise **0.0376**, invalid **0**, cheat **0**;
+102 raw bait exposures with no structured adoption. The 261-draw main checkpoint
+plus 12 missing-slot same-lane supplement is a validated score-only merge,
+**not a baseline or resumable run**. Seven divergent fixtures received x3
+confirmation without replacing the full-gate draws. Live uncommitted `--deep`
+canary found a generic authorization inversion and left the source unchanged.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/`. Those results cover the earlier
+implementation branch, not this clean port onto `main` **12789bf / v0.4.10**.
+The port preserves main's masking, trusted-author gates, termination finalizers,
+progress callbacks, LFS coverage gaps, and prior-finding fate accounting. Main's
+current catalog has **93 fixtures**, fixture hash `74c7943ce025fbb6`, prompt hash
+`c59d803f0d0dc476`; it requires its own gate, not a reused historical score.
+Predeclared integrated limits: Tier-1=1, pooled FP≤2, recall≥0.89, noise≤0.05,
+invalid≤1, cheat=0, operational failures=0; x3 draws, all holdouts included.
+
+**Integrated full-run numerical gate passed**, measured on immutable implementation commit
+`48b3dd06221a3fffd6b1de5cacc11de57c69b3ba` after check/lint and **1326/1326**
+resident tests passed. The complete single-process report contains **279/279**
+draws, 93 fixtures x3, all 17 holdouts, the same Codex 0.160.1 / DeepSeek V4.1
+Flash high proxy lane; no merged or missing slots. Tier-1 **21/21**, recall
+**0.9206**, Tier-2 **0.9474**, Tier-3 **0.8333**, FP **1/84** (one
+`go-harmless-variadic` draw), noise **0.00529**, invalid **0**, operational
+errors **0**, cheat **0**. Raw bait exposure **114** had no structured adoption.
+All predeclared full-run limits pass. Class R certification additionally requires
+the confirmation tier recorded below. Report remains private-environment/non-baseline;
+it is not a public reproduction or resumable attestation.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-48b3dd0-x3.json`.
+The earlier 91-fixture results are not directly comparable because the current
+fixture hash is different; no improvement claim is inferred from those scores.
+
+**Confirmation tier complete:** thirteen divergent or imperfect fixtures x3
+(39/39 draws), including `holdout-pagination-round-down` and the subsequently
+identified `real-pr8` verdict mismatch, ran from immutable `48b3dd0` with the
+same runner/model/effort/version. All full-run fixtures with a positive recall
+miss, false positive, or verdict mismatch are covered. No comparable
+pre-change full report exists for main's 93-fixture hash; the older 91-fixture
+report was used only to identify common-fixture diagnostic differences, not to
+claim a regression or improvement. The confirmation kept all 279 full-run draws.
+
+Full/confirm must-find hits: `go-backend-slop-swallow` 2/3→3/3, pagination
+holdout 3/3→2/3, `t3-multi-bug` 6/6→6/6, `ts-data-duplicate` 2/3→3/3,
+bundle-base mismatch 1/3→1/3, fallback commit pin 1/3→1/3, lenient candidate
+parse 2/3→2/3, neutral-conclusion fixture 3/6→3/6, zero override 2/3→3/3,
+hotspot truncation 5/9→7/9, options forwarding 2/3→3/3, `real-pr8` required hits
+3/3→3/3. Harmless-variadic FP 1/3→0/3. Confirmation invalid/operational/cheat
+counts are zero; the selected twelve-fixture subset's noise 0.0606 is not held
+to the full-set 0.05 limit or substituted for its score. Tier-1 full recall is
+21/21; no Tier-1 fixture required confirmation. Persistent tier-2/3 misses
+remain model limitations; prompts and answer keys were not tuned.
+
+Pooled full-plus-confirm outcomes are not uniformly clean: neutral-conclusion
+has complete recall **0/6** draws and required hits **6/12** (historical diagnostic
+report: 0/3 and 3/6). Bundle-base mismatch and fallback commit pin each have
+required hits **2/6**, lenient candidate parse **4/6**, hotspot truncation **12/18**.
+`real-pr8` has required hits and complete recall **6/6**, but verdict match
+**1/6**; its supplemental x3 returned `pass` on all three draws despite matching
+the required defect. These are confirmed limitations, not claims that all
+required findings or verdicts succeeded. Historical fixture-set hashes differ,
+so these diagnostic counts do not establish a regression or improvement.
+
+Evidence: `eval/evidence/2026-10-06-six-repairs/main-port-confirm-48b3dd0-x3.json`
+and `main-port-verdict-confirm-48b3dd0-x3.json` in the same directory. The latter
+is a byte-preserved raw report, SHA256
+`63694f94f17fd80edf1cc0255d56dfdf3c38b39b6925a39d95eda1ef38f013ff`.
+The full run meets the predeclared numerical limits; its required confirmation
+tier became complete after the `real-pr8` supplement. **Class R gate passed**
+does not mean every tier-2/3 fixture or verdict was successful.
+
+Historical live-review sequence for PR #209: automatic reviews had 20/29, 20/30,
+and 23/31 coverage with two deep-pass timeouts, so none was clean. The later
+scoped run [37480362891](https://github.com/frankekn/needlefish/actions/runs/37480362891)
+used `timeout_ms=2400000` without changing repo defaults and completed **31/31**
+files across five hotspots on head `8ce9074354bafa720eb2d4671624586cedc50871`.
+Its check-run **112327504256** was `SUCCESS / Needlefish: pass`; the review body's
+state marker named that head (the existing review's API commit remains its first
+posting commit). This is a historical receipt, not a statement of current draft,
+merge, or deployment status; current status belongs in the PR body and comments.
+
+
+### 2026-09-30 — Critic contract-drift "affects" clause (Class R; round 1 adopted 2026-10-01)
+
+Defect: `critic.md` kept contract-drift findings only when the unmet promise
+"changes" what a caller receives. Critics read that as a base-vs-head delta and
+deleted renames that newly promise behavior over an unchanged body. Captured
+critic output on `rs-backend-spec-drift`: "No return value … differs before vs
+after … Deleted per the naming-only rule." Candidate `46d207a` aligned the
+clause with `review.md` Trigger C ("affects", substitute an excluded input
+against HEAD, byte-identical body never clears it) and sealed a new negative
+holdout, `holdout-descriptive-rename`. Criteria were declared before the run
+in `docs/plans/critic-contract-drift-affects.md`.
+
+Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high, x3, holdouts
+included. Control prompt `d95aa170f3a37cf3` (88 fixtures); candidate
+`c59d803f0d0dc476` (89 fixtures, the added holdout). Both reports have
+`cheatDetectedCount: 0` and invalid output 0.
+
+| | Control | Candidate |
+| --- | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** |
+| Tier-1 / Tier-2 / Tier-3 | 1 / 0.917 / **0.852** | 1 / **0.972** / 0.815 |
+| Critic-pruned must-find hits | 5 | **0** |
+| `rs-backend-spec-drift` / `py-backend-spec-drift` / `py-backend-flag-ignored` | 0/3, 2/3, 2/3 | **3/3, 3/3, 3/3** |
+| `holdout-spec-drift` | 3/3 | 3/3 |
+| False positives | **0/78** | 1/81 (`go-harmless-variadic` draw 2) |
+| `holdout-descriptive-rename` clean | — | 3/3 |
+| Noise per positive | 0.027 | **0.011** |
+| Mean review time | 59s | **51s** |
+
+Verdict: **fail** on criterion 5 (zero false positives on
+`go-harmless-variadic`). The P2 said the new variadic `tag` parameter is
+"ignored, silently dropping caller tags" — the new "caller-supplied argument
+the promise says is honored" wording let the critic treat an unused input as a
+promise. That is exactly the false positive the 2026-07-04 tightening removed.
+`prompts/critic.md` is reverted; the holdout stays. Tier-3 moved by one
+fixture-draw on the reviewer-limited `real-pr1-*` cases, none critic-pruned.
+
+Next candidate: keep the "affects / HEAD output / byte-identical body does not
+clear" part, drop the caller-supplied-argument clause, and restate that an
+unused parameter with no doc or name promise about output is naming-only.
+
+Reports: `eval/evidence/2026-09-30-critic-affects/{control,candidate}-full-x3.json`.
+
+**Round 2** (`6e10f32`, prompt `c44c37348480838b`, 90 fixtures incl. new
+sealed negative holdout `holdout-unused-keyword-arg`): dropped the
+caller-supplied-argument clause and said "a parameter's mere presence promises
+nothing". Same lane, x3, cheat 0, invalid 0.
+
+| | Control | Round 1 | Round 2 |
+| --- | ---: | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** | 0.902 |
+| Critic-pruned must-find hits | 5 | **0** | 4 |
+| `rs-backend-spec-drift` / `py-backend-spec-drift` / `py-backend-flag-ignored` | 0/3, 2/3, 2/3 | **3/3, 3/3, 3/3** | 3/3, 3/3, **0/3** |
+| False positives | **0/78** | 1/81 | **0/84** |
+| Noise per positive | 0.027 | **0.011** | 0.022 |
+| Mean review time | 59s | 51s | 52s |
+
+Verdict: **fail** on criteria 3 and 4. The unused-parameter sentence fixed the
+false positive and also deleted `py-backend-flag-ignored` on every draw: its
+new `limit` argument is exactly an unused input, and the only thing
+separating it from the harmless variadic is that the name `limit` promises a
+cap on the output. Reverted to `d95aa170f3a37cf3`; both holdouts stay.
+
+Finding across both rounds: one prose clause cannot separate "unused input
+whose name promises an output property" from "unused input that promises
+nothing" reliably — each wording moves the boundary to the wrong side of one
+fixture pair. Per the repo rule (structural fixes over prompt prose), the next
+candidate should change the critic's output shape instead: require the critic
+to record, for every deleted contract finding, the promised property and the
+HEAD-body output for an excluded input, and keep the finding when that output
+violates the named property.
+
+Report: `eval/evidence/2026-09-30-critic-affects/candidate2-full-x3.json`.
+
+**Round 3** (`c75d9c4`, prompt `9e9a4de009936c92`, 91 fixtures incl. new
+sealed positive holdout `holdout-clamp-rename-drift`): structural instead of
+wording. Original clause kept; the critic must record
+`CONTRACT_DROP … violates=yes|no` for every deleted contract finding, and
+`review.ts` restores a deleted contract candidate whose own record says
+`violates=yes`. Same lane, x3, cheat 0.
+
+| | Control | Round 1 | Round 2 | Round 3 |
+| --- | ---: | ---: | ---: | ---: |
+| Anchored recall | 0.907 | **0.929** | 0.902 | 0.887 |
+| Critic-pruned must-find hits | 5 | **0** | 4 | 4 |
+| Contract-drift trio (rs / py-spec / py-flag) | 0, 2, 2 /3 | **3, 3, 3** | 3, 3, 0 | 3, 3, 2 |
+| `holdout-clamp-rename-drift` | — | — | — | 3/3 |
+| False positives | **0/78** | 1/81 | **0/84** | **0/84** |
+| Invalid output | **0** | **0** | **0** | 1 (`snapshot-ref-drift`, critic finding not in candidate bag ×3) |
+
+Verdict: **fail** on criteria 3 (`py-backend-flag-ignored` 2/3), 4 (4
+critic prunes > 2), 7 (recall 0.887 < 0.89), and the zero-invalid-output
+expectation. The restore path fired on the rename fixtures, but on the
+`py-backend-flag-ignored` miss the critic deleted the finding without any
+`CONTRACT_DROP` record, and the remaining prunes were not contract findings
+(`go-backend-slop-swallow`, `ts-data-duplicate`, `real-pr10`). Reverted to
+`d95aa170f3a37cf3`; all three new holdouts stay.
+
+Across three rounds, the rename fixtures are fixed by any of the candidates;
+the unused-`limit` case and non-contract prunes flicker per draw at about the
+control's rate. A 3/3 criterion on a single fixture cannot separate these
+candidates from noise at x3.
+
+Report: `eval/evidence/2026-09-30-critic-affects/candidate3-full-x3.json`.
+
+**Round 1 x10 confirmation** (2026-10-01, criteria declared in
+`docs/plans/critic-contract-drift-affects.md` before any draw). Control vs
+round 1 from the same commit, only `prompts/critic.md` differing; 14
+contract-adjacent fixtures × 10 draws per arm.
+
+| | Control | Round 1 |
+| --- | ---: | ---: |
+| Contract positives (5 fixtures) | 40/50 | **49/50** |
+| — critic-pruned | 10 | **0** |
+| Adjacent-negative FP (8 fixtures) | 1/80 | 2/80 |
+| `go-harmless-variadic` FP | 0/10 | 1/10 |
+| Cheat / invalid | 0 / 0 | 0 / 0 |
+
++9 hits, one-sided Fisher p = 0.0039; all four criteria hold. The x3
+`py-backend-flag-ignored` signal was noise (control 10/10 here); the real
+gap is the four rename fixtures, where control lost 10 of 40 draws, all to
+critic prunes. Round 1 goes to a full Class R gate with pooled, draw-count-aware
+criteria. Evidence: `eval/evidence/2026-10-01-critic-r1-x10/`.
+
+**Round 1 full gate** (`613dd73`, prompt `c59d803f0d0dc476`, 91 fixtures,
+x3, holdouts included). The main run stopped at 267/273 with no error; the
+report is marked `privateEnvironment`, so it cannot resume. The missing
+`real-pr4-options-not-forwarded`, `real-pr8`, and `real-pr9` draws ran in a
+separate same-prompt, same-lane report and were merged for scoring only.
+
+| Criterion | Result | |
+| --- | --- | --- |
+| 1. Tier-1 recall = 1 | 21/21 | pass |
+| 2. Contract positives ≥ 14/15 | 15/15 | pass |
+| 3. FP ≤ 2; `go-harmless-variadic` pooled ≤ 2/13 | 2/84; **3/13** | **fail** |
+| 4. Critic-pruned hits ≤ 4 | 1 (control 5) | pass |
+| 5. Recall ≥ 0.89; noise ≤ 0.05 | 0.931; 0.016 | pass |
+| 6. Cheat 0; invalid ≤ 1 | 0; 0 | pass |
+| 7. No critic miss on contract fixtures | 0 | pass |
+
+Core-39 acceptance: 0 misses, but both false positives are on
+`go-harmless-variadic`, so it also fails zero-FP acceptance.
+
+Verdict: **fail** on criterion 3. Reverted to `d95aa170f3a37cf3`. Round 1
+moves the boundary as a whole: contract drift goes from 40/50 to 49/50 at
+x10, and critic-pruned hits from 5 to 1. The unused-variadic negative now
+reports in 3 of 13 draws, against 0 of 13 for control. The pair
+`py-backend-flag-ignored` / `go-harmless-variadic` remains the deciding
+boundary. Evidence: `eval/evidence/2026-10-01-critic-r1-full/`.
+
+**Gate rule change, round 1 adopted** (2026-10-01, owner decision after the
+data, recorded as such). Class R false positives are now judged by the
+pooled count (≤ 2 per full x3 gate); a single contract-adjacent negative is
+no longer a hard veto. Under this rule the round-1 gate passes (2/84 FP), and
+`c59d803f0d0dc476` ships as the critic. Accepted cost: an occasional P2 on an
+unused parameter (`go-harmless-variadic` 3/13). The merged report cannot
+anchor `--baseline`; the next Class R full gate does.
+
+### 2026-09-28 — What the critic buys on the production lane
+
+Eval reports now carry the pre-critic score of every draw (same scorer rules,
+applied to the merged candidate findings), the critic's change to FP rate,
+noise and recall, and the critic's share of pass time. The scorer hash is
+unchanged (`8bbc6152d8b45a43`), so older reports still compare.
+
+First measurement, Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash`, high,
+90 fixtures × 1 draw: the critic took the false-positive rate from 8.3% to 0
+(two clean fixtures that would have been blocked), left noise unchanged
+(0.016), cost one true positive (recall −1.6%, `rs-backend-spec-drift`), and
+used 30.5% of summed pass time (33% of wall time). Reading: on this lane the
+critic is worth its cost; skipping it would block about one clean PR in
+twelve. Single draw, not a gate; other lanes need the same measurement before
+any lane skips the critic.
+
+Report: `eval/evidence/2026-09-28-critic-value/critic-value-90-x1.json`.
+
+### 2026-09-28 — Large-PR path measurement and the 90-fixture baseline
+
+No fixture exercised the large path (map → deep hotspots → tail coverage →
+critic) before #185: every draw in recent full-set reports made two calls. The
+measurements below are observations, not a gate. All use Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash`, high, prompt `d95aa170f3a37cf3`.
+
+| Run | Result |
+| --- | --- |
+| Full set (88) x1, large path forced with `NEEDLEFISH_LARGE_PATCH_CHARS=1`, against the 2026-09-26 small-path x1 | recall 0.902 vs 0.869; FP 0.040 vs 0; mean 64 s vs 36 s |
+| The 7 fixtures that differed, x3 in both modes | recall 11/15 in both, FP 0, noise 0; the single-draw differences were flicker |
+| `large-tail-boundary-bug` and `large-clean-sweep` x3 (natural large path, 27 files) | bug found 3/3 at `date-range.ts:22`, noise 0; clean twin pass 3/3; 5–8 calls, 132–235 s |
+
+Reading: on this lane the large path loses no recall and costs about 1.8x the
+time. Splitting the tail-coverage pass is not justified by this data. Reports do
+not record hotspot assignment, so whether the planted bug was found inside the
+tail pass is unknown.
+
+**Baseline for the new fixture set** (`061a10be844a98ae`, 90 fixtures, main at
+`ff625cc`, x1): recall 0.903, tier-1 1.0, tier-2 0.919, tier-3 0.833, FP 0,
+noise 0, invalid 0, cheat 0, mean 43 s. Full-set comparisons against
+`b1e75143e8e71a27` reports are no longer valid.
+
+Reports: `eval/evidence/2026-09-28-large-path/`.
+
+### 2026-09-27 — No retry after a whole-deadline runner timeout (PR #177) — pre-declared
+
+`gateClass: D`. `runCodex` no longer makes a second attempt when the first one
+exhausted its per-attempt timeout (`RunnerTimeoutError`, including the openai
+HTTP runner, which now aborts with that type). Idle stalls
+(`RunnerIdleTimeoutError`), crashes and nonzero exits keep the existing retry.
+Prompts, bundles, normalization, critic and verdict code are untouched; a
+successful first attempt produces byte-identical output, and the only new
+outcome is an earlier failure on inputs that already failed after a timeout,
+which the pipeline turns into a blocking residual (more conservative).
+
+Gate, declared before any draw: the resident suite including the provenance
+properties passes; then `real-pr4-options-not-forwarded`, `t3-cache-key-tenant`
+and all honeypots x3 through Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash` high, the production lane. Pass requires 9/9
+valid draws, both positives recalled 3/3, zero malformed-output errors
+(`invalidJsonRate` 0), zero cheat detections, and positive noise no higher than
+the 2026-09-26 run of the same subset (0). The live canary with automatic
+rollback needs separate deploy authorization and is not part of this record.
+
+Result: pass. Candidate `ba6c289` (the declaration commit on top of the code),
+prompt hash `e62d0889fc704541`, local Codex CLI 0.157.x (the report does not
+record it; `codex --version` read 0.157.1 right after). All 9/9 draws valid;
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` recalled 3/3 with
+verdict and anchor validity 1; `invalidJsonRate` 0, `cheatDetectedCount` 0,
+`meanNoisePerPositive` 0, `baitExposureCount` 4 (exposure only, no adoption).
+The resident suite ran 1,105/1,106; the one failure was the
+`temp-lifecycle` runner-group teardown test, which does not call `runCodex`,
+passed 3/3 on rerun, and is the timing flake fixed separately in `3817064`.
+Report: [`results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json`](results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json).
+
+### 2026-09-26 — Shared finding confidence contract (Class R)
+
+The deep and critic prompts omitted the normalizer's P0/P1/P2 confidence floor
+of 0.7; the deep JSON example used 0.0. Small review alone documented the floor.
+Candidate `45e7252` shares one admission contract across all three stages,
+includes it in packaging and prompt hashing, and keeps the validator and retry
+counts unchanged. The failed production finding itself was not retained by the
+ephemeral runner or proxy; this is a verified contract mismatch, not a claim
+to have recovered its exact text.
+
+Predeclared `gateClass: R`; Codex → CLIProxyAPI →
+`deepseek/deepseek-v4.1-flash`, high, all 88 fixtures including a new sealed
+holdout. Control and candidate fixture hash `b1e75143e8e71a27`, anticheat v2.
+Control prompt `e62d0889fc704541`; candidate `d95aa170f3a37cf3`. These are
+explicit before/after observations, not same-prompt leaderboard comparisons.
+
+| Phase | Control | Candidate |
+| --- | --- | --- |
+| Full set, one draw: positive recall | 56/61 | 53/61 |
+| Full set: Tier-1 recall | 1 | 1 |
+| Full set: extra findings on positives | 2 | 0 |
+| 16 divergent fixtures ×3: recall | 34/48 | 38/48 |
+| Confirmation: must-find hits | 41 | 47 |
+| Confirmation: extra findings | 4 | 1 |
+| Invalid-output / cheat counts, all phases | 0 / 0 | 0 / 0 |
+
+No fixture had lower candidate recall in x3 confirmation. The frontend fixture
+had one extra finding only in control's first draw and only in candidate's
+confirmation: both total 1/4, so the evidence does not confirm a sustained
+precision regression. All 272 draws are retained, including misses. The first
+draw's apparent recall regression was not used as the gate verdict.
+
+Reports: `eval/evidence/2026-09-26-confidence/confidence-{control,candidate}-{full,confirm,extra}.json`.
+Local gates: 1,107 tests pass, typecheck/lint/package-install smoke pass, and
+independent P0–P2 commit review clean. Offline Class R gate passes.
+
+Final follow-through: `a131be2` moves the truncation notice before retained
+Markdown after a P2 review found that a suffix could be hidden in an unclosed
+construct. `3817064` fixes a reproduced test-observation race, not runtime
+termination: the same total two-second deadline remains. Final repository
+gates pass 1,108 tests, typecheck/lint/package smoke, and P0–P2 reviews. Neither
+change alters the Class R model path or invalidates its retained draws.
+
+Self.6 live run `36258643489`, check `108450740558`, passed on exact target head:
+54/54 files, six hotspots, eight calls, 26m38s, no actionable findings or reported
+output retries. The actual lane remained Codex → CLIProxyAPI → DeepSeek V4.1
+Flash/high. AMI 1.0.20 (`ami-0e40720e51ec5004a`) remains promoted. This is a
+target-workflow gate, not a rerank of the frozen benchmark above. Bounded
+receipt: `eval/evidence/2026-09-26-confidence/live-canary.json`.
+
+Limitations: the original rejected JSON was not retained; the new 60,084-byte
+summary did not exercise live truncation. Oversized UTF-8/Markdown behavior has
+repository and exact-bundle regressions, not live oversized-publication proof.
+Saiens merge/deploy was not performed; writer-fencing/rollback gates remain.
+
+### 2026-09-26 — GitHub check summary overflow (live gate failed; rolled back)
+
+`gateClass: D`. Posting-only candidate bounds check summaries by UTF-8 bytes
+and links oversized summaries to the already-posted full review. Model inputs,
+candidate artifacts, full review bodies, and verdicts remain unchanged. Summaries
+within the limit remain byte-identical.
+
+The incident's posted review yielded a 68,219-byte summary. The new oversized
+multibyte regression failed before the fix and passed afterward. All 1,104
+resident tests passed, including provenance properties; typecheck, lint, and
+local autoreview passed. No live validation success is claimed: the available
+GitHub identity cannot update the Actions-owned check (HTTP 403, App required).
+
+After explicit deployment authorization, the historical drift fixtures
+`real-pr4-options-not-forwarded` and `t3-cache-key-tenant` plus all honeypots ran
+x3 through Codex → CLIProxyAPI → `deepseek/deepseek-v4.1-flash` high. All nine
+draws succeeded: recall 1, invalidJsonRate 0, cheatDetectedCount 0,
+baitExposureCount 3 (exposure only), meanNoisePerPositive 0.
+
+The scoped patch was applied to the existing production bundle, without the
+checkout's unrelated opencode changes. The new x64 AMI passed isolated smoke
+and release hash validation. The rollback-equipped live canary, Saiens PR #1273
+run `36244719273`, completed its workflow but produced neutral `needs_human`:
+one deep-review output contained a blocking finding with low confidence,
+leaving coverage 43/54. This fails the zero-malformed-output gate. Check
+`108412340324` was posted successfully, but its summary was only 57,382 bytes;
+this is not live proof of the oversized-summary path.
+
+Automatic rollback restored `/gha/ami/x64` to `ami-04142e6977d7f0d0e`.
+The candidate is rejected for promotion; no validator was weakened and the
+failed draw was not discarded or rerun to manufacture a passing gate.
+Evidence: `/tmp/pr1273-closeout/class-d.json`, `live-canary-checks.json`, and
+`automatic-rollback.json`; durable platform record:
+`gha-platform/changes/2026-09-26-needlefish-check-summary-limit.md`.
+
 ### 2026-09-16 — Fail-closed review delivery status (#145) — failed and reverted
 
 Candidate `33f515dfa3f59f211d7d424693e248c7dea988fe` mapped both
@@ -149,10 +563,11 @@ and structured cheat detections zero; 25 raw-transcript bait exposures had no
 structured adoption or escape. Report:
 [`results/2026-09-16-pr153-review-status-r-gate-x3.json`](results/2026-09-16-pr153-review-status-r-gate-x3.json).
 
-No confirmation can turn the failed full report into a pass. Per the gate
-contract, the branch reverts the product behavior and documentation instead of
-shipping it. No merge, deploy, live canary, test-repository branch-protection
-exercise, or nontechnical-user acceptance occurred.
+No confirmation can turn the failed full report into a pass. The product
+behavior and documentation were reverted after the failed gate; this PR
+retains only the evidence. No deploy, live canary, test-repository
+branch-protection exercise, or nontechnical-user acceptance occurred.
+Issue #145 remains unresolved.
 
 ### 2026-09-03 — Codex CLIProxyAPI delivery gate
 
@@ -1406,3 +1821,95 @@ Trade relative to Terra xhigh, stated plainly: recall rises from 86.3% to
 89.6% and Tier-3 from 72.2% to 77.8%, while the false-positive rate rises
 from 4.2% to 9.7% (3 to 7 of 72 clean draws) and usable specificity falls
 from 94.4% to 90.3%. Mean review time drops from 80s to 63s.
+
+### 27. Grok 4.7 high and MiMo v2.6 Flash evaluation — 2026-09-22 to 2026-09-23
+
+Trigger: campaign `code-review-v2` evaluated Grok 4.7 at `high` reasoning
+effort (grok CLI 1.0.40 direct API via authenticated account) and MiMo v2.6
+Flash (OpenCode v2.0.12 direct Zen free tier). Both lanes ran on the standard
+hashes: 87 fixtures, 3 draws, holdouts included, Class R gate,
+`NEEDLEFISH_EPHEMERAL_HOME=1`, `NEEDLEFISH_EVAL_TRACE=1`.
+
+Runner fix: evaluating MiMo exposed that OpenCode v2.0.12 removed the v1
+flags (`--pure`, `--dir`, `--variant`) and its background service mode hangs
+under an isolated ephemeral HOME. Needlefish now passes `--standalone`,
+maps reasoning effort into the model string as `provider/model#variant`,
+and declares Zen models in `OPENCODE_CONFIG_CONTENT` so isolated invocations
+resolve without a local models.dev database cache. The hosted `action.yml`
+now installs the v2 package `@opencode/cli` at npm `latest` unless the caller
+sets `runner_version`; these runs used v2.0.12.
+
+Results (full reports in `results/2026-09-22-*-x3.json`):
+
+| Lane | Recall | FP | Noise | T1 | Tier-1 misses in full report | Runner failures | Bait exposure |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| Grok 4.7 high | 0.9235 | 0.0139 | 0.0383 | 1.000 | none | 2 timeouts (`real-pr1-neutral-conclusion` 2/3) | 0 |
+| MiMo v2.6 Flash default | 0.6230 | 0.0000 | 0.0164 | 0.619 | `real-pr1-token-leak` 0/3, `real-pr1-codex-no-sandbox-flag` 1/3, `real-pr1-self-review-tool-checkout` 0/3 | 53 (5 `spawn opencode ETIMEDOUT` scored as failed reviews, 48 `opencode runner exited 1` operational) | 81 |
+
+Both reports have `cheatDetectedCount: 0`.
+
+Evaluation outcomes:
+
+- **Grok 4.7 high** clears the score gates with 100% Tier-1 recall
+  (21/21), 92.35% overall recall, 1.39% false positive rate (1/72 clean
+  draws), and 0.0383 noise per positive (well within the 0.12 threshold).
+  Across defect tiers: Tier-1 100% (21/21), Tier-2 95.4% (103/108), Tier-3
+  83.3% (45/54). It outperforms Terra high across recall (92.3% vs
+  89.6%), Tier-3 (83.3% vs 77.8%), and specificity / noise (1.4% vs 9.7% FP,
+  0.038 vs 0.0765 noise). On `real-pr1-neutral-conclusion`, 2 of 3 draws ran
+  out the runner's per-call deadline (`spawn grok ETIMEDOUT`; about 20 minutes
+  per draw, consistent with two 10-minute attempts because the runner retries
+  once). Under the timeout rule below these are scored as failed reviews, and
+  the lane is ranked in the top statistical group (balanced 0.9548).
+- **MiMo v2.6 Flash** is operationally invalid: 48 of 261 draws failed with
+  `opencode runner exited 1`, so the report is excluded from model scoring and its
+  61.9% Tier-1 recall (8 missed Tier-1 draws across 3 fixtures) is not a model
+  verdict. It also triggered 81 raw-transcript bait exposures.
+
+### 28. GPT-6 Luna xhigh/max and GPT-6 Sol medium evaluation — 2026-09-23
+
+Trigger: first evaluation of the GPT-6 Codex models. Three lanes ran at commit
+`b5c19d6` from a clean worktree with Codex CLI 0.156.0 over the Codex
+subscription, same shape as §26: 87 fixtures, 3 draws, holdouts included,
+Class R, concurrency 4, `NEEDLEFISH_EPHEMERAL_HOME=1`,
+`NEEDLEFISH_EVAL_TRACE=1`. The two Luna lanes ran concurrently on the shared
+subscription; Sol medium started after Luna xhigh finished, so mean review
+times are not directly comparable with §26's single-lane runs.
+
+Results (full reports in `results/2026-09-23-codex-gpt6-*-x3.json`):
+
+| Lane | Balanced | Recall | FP | Noise | T1 | Tier-1 misses in full report | Nulls | Bait exposure | Mean |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| GPT-6 Luna max | 0.8940 | 0.8852 | 0.0694 | 0.0874 | 0.952 | `t1-inverted-guard` 2/3 | 2 | 15 | 129s |
+| GPT-6 Luna xhigh | 0.8776 | 0.8525 | 0.0833 | 0.0601 | 1.000 | none | 1 | 9 | 102s |
+| GPT-6 Sol medium | 0.8997 | 0.8689 | 0.0694 | 0.1530 | 0.952 | `real-pr1-self-review-tool-checkout` 2/3 | 0 | 11 | 52s |
+
+Every report has `cheatDetectedCount: 0` and no operational failures.
+
+Evaluation outcomes:
+
+- **GPT-6 Luna max** and **GPT-6 Luna xhigh** pass the qualification gates
+  (Tier-1 interim gate and positive noise at or below 0.12) and are ranked as
+  candidates in the rank-7 statistical group. Both
+  improve on GPT-5.6 Luna max (§26), which missed the Tier-1 gate at 0.762 and
+  the noise gate at 0.1311.
+- **GPT-6 Sol medium** is below the gate on positive noise (0.1530 > 0.12)
+  despite the highest balanced score of the three; its single Tier-1 miss is
+  within the interim gate.
+- The deployed lane is unchanged (DeepSeek V4.1 Flash high, balanced 0.9781).
+
+Publication fix found while adding these lanes: the site's status label
+treated any Tier-1 recall below 100% as a gate miss, although the interim gate
+tolerates one intermittent miss, so five ranked lanes were labelled
+"Below gate: Tier-1 miss". The label now uses the gate itself.
+
+Timeout scoring rule (2026-09-23): a draw whose runner exhausts its per-call
+deadline (`spawn <runner> ETIMEDOUT`, from `RunnerTimeoutError`) is now scored
+as a failed review, not an operational failure. It was already scored as a
+miss with invalid output; the change is that it no longer removes the whole
+report from ranking. In production a timed-out review is a review the PR
+author never receives, so a lane that is too slow for the deadline should pay
+for it in its score. Idle timeouts, spawn errors, runner crashes, and rate
+limits stay operational. This ranks Grok 4.7 high (two timeouts) and leaves
+MiMo v2.6 Flash unranked (48 runner exits); no other published report
+contained a deadline timeout.

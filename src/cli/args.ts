@@ -49,6 +49,13 @@ export type CliCommand =
       readonly finding: string;
       readonly repo?: string;
       readonly opts: RunnerOptions;
+    }
+  | {
+      readonly kind: "doctor";
+      readonly repo?: string;
+      readonly runner?: RunnerName;
+      readonly base?: string;
+      readonly json: boolean;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -62,6 +69,9 @@ Usage:
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
                                        (exits 1 when stored and derived differ)
+  needlefish doctor [options]          check runner, login, Node, git repo, and
+                                       base ref; no model call (--repo, --runner,
+                                       --base, --json; exits 1 when a check fails)
 
 Shared options:
   --repo <path>        target repository
@@ -86,8 +96,9 @@ Local diff options:
 Env:
   NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
   NEEDLEFISH_MODEL        model id for the selected runner
-  NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 600000)
+  NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 1200000)
   NEEDLEFISH_GH_POST_RETRY_MS  base delay between idempotent GitHub write retries on a 5xx (default: 250)
+  NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR  1 = --github reviews PRs whose author is not OWNER/MEMBER/COLLABORATOR, or is a bot
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
   OPENCODE_BIN            opencode executable (default: opencode)
@@ -128,6 +139,22 @@ function inlineValue(arg: string, flag: string): string {
   return value;
 }
 
+
+function optionValue(
+  argv: readonly string[],
+  index: number,
+  flag: string,
+): { readonly value: string; readonly consumedNext: boolean } | undefined {
+  const arg = argv[index];
+  if (arg === flag) {
+    return { value: takeValue(argv, index, flag), consumedNext: true };
+  }
+  if (arg.startsWith(`${flag}=`)) {
+    return { value: inlineValue(arg, flag), consumedNext: false };
+  }
+  return undefined;
+}
+
 function parsePr(value: string): number {
   return parsePositiveInteger(value, "--pr");
 }
@@ -157,10 +184,11 @@ export function parseArgs(argv: readonly string[]): CliCommand {
   }
   const explainCommand = argv[0] === "explain";
   const prCommand = argv[0] === "pr" || explainCommand;
+  const doctorCommand = argv[0] === "doctor";
   if (prCommand && (argv[1] === "-h" || argv[1] === "--help")) return { kind: "help" };
   if (prCommand && (argv[1] === "-v" || argv[1] === "--version")) return { kind: "version" };
   const prCommandNumber = prCommand ? parsePositiveInteger(argv[1] ?? "", explainCommand ? "explain" : "pr") : undefined;
-  const start = prCommand ? 2 : 0;
+  const start = prCommand ? 2 : doctorCommand ? 1 : 0;
   let finding: string | undefined;
   let github = false;
   let pr: number | undefined;
@@ -216,78 +244,53 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       printBundle = true;
       continue;
     }
-    if (arg === "--pr") {
-      pr = parsePr(takeValue(argv, i, "--pr"));
+    const prOption = optionValue(argv, i, "--pr");
+    if (prOption) {
+      pr = parsePr(prOption.value);
       opts.pr = pr;
-      i++;
+      if (prOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--base") {
-      opts.base = takeValue(argv, i, "--base");
-      i++;
+    const baseOption = optionValue(argv, i, "--base");
+    if (baseOption) {
+      opts.base = baseOption.value;
+      if (baseOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--finding") {
-      finding = takeValue(argv, i, "--finding");
-      i++;
+    const findingOption = optionValue(argv, i, "--finding");
+    if (findingOption) {
+      finding = findingOption.value;
+      if (findingOption.consumedNext) i++;
       continue;
     }
-    if (arg.startsWith("--finding=")) {
-      finding = inlineValue(arg, "--finding");
+    const repoOption = optionValue(argv, i, "--repo");
+    if (repoOption) {
+      repo = repoOption.value;
+      if (repoOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--repo") {
-      repo = takeValue(argv, i, "--repo");
-      i++;
+    const focusOption = optionValue(argv, i, "--focus");
+    if (focusOption) {
+      opts.focus = focusOption.value;
+      if (focusOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--focus") {
-      opts.focus = takeValue(argv, i, "--focus");
-      i++;
+    const runnerOption = optionValue(argv, i, "--runner");
+    if (runnerOption) {
+      opts.runner = parseRunnerName(runnerOption.value, "--runner");
+      if (runnerOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--runner") {
-      opts.runner = parseRunnerName(takeValue(argv, i, "--runner"), "--runner");
-      i++;
+    const modelOption = optionValue(argv, i, "--model");
+    if (modelOption) {
+      opts.model = modelOption.value;
+      if (modelOption.consumedNext) i++;
       continue;
     }
-    if (arg === "--model") {
-      opts.model = takeValue(argv, i, "--model");
-      i++;
-      continue;
-    }
-    if (arg === "--timeout-ms") {
-      opts.timeoutMs = parsePositiveInteger(takeValue(argv, i, "--timeout-ms"), "--timeout-ms");
-      i++;
-      continue;
-    }
-    if (arg.startsWith("--pr=")) {
-      pr = parsePr(inlineValue(arg, "--pr"));
-      opts.pr = pr;
-      continue;
-    }
-    if (arg.startsWith("--base=")) {
-      opts.base = inlineValue(arg, "--base");
-      continue;
-    }
-    if (arg.startsWith("--repo=")) {
-      repo = inlineValue(arg, "--repo");
-      continue;
-    }
-    if (arg.startsWith("--focus=")) {
-      opts.focus = inlineValue(arg, "--focus");
-      continue;
-    }
-    if (arg.startsWith("--runner=")) {
-      opts.runner = parseRunnerName(inlineValue(arg, "--runner"), "--runner");
-      continue;
-    }
-    if (arg.startsWith("--model=")) {
-      opts.model = inlineValue(arg, "--model");
-      continue;
-    }
-    if (arg.startsWith("--timeout-ms=")) {
-      opts.timeoutMs = parsePositiveInteger(inlineValue(arg, "--timeout-ms"), "--timeout-ms");
+    const timeoutOption = optionValue(argv, i, "--timeout-ms");
+    if (timeoutOption) {
+      opts.timeoutMs = parsePositiveInteger(timeoutOption.value, "--timeout-ms");
+      if (timeoutOption.consumedNext) i++;
       continue;
     }
     throw new Error(`unknown option ${arg}`);
@@ -295,6 +298,30 @@ export function parseArgs(argv: readonly string[]): CliCommand {
 
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
+  }
+
+  if (doctorCommand) {
+    const unsupported =
+      github ||
+      pr !== undefined ||
+      fix ||
+      recheck ||
+      dryRun ||
+      printBundle ||
+      finding !== undefined ||
+      opts.focus !== undefined ||
+      opts.deep !== undefined ||
+      opts.model !== undefined ||
+      opts.timeoutMs !== undefined ||
+      opts.localMode !== undefined;
+    if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");
+    return {
+      kind: "doctor",
+      json,
+      ...(repo !== undefined ? { repo } : {}),
+      ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
+      ...(opts.base !== undefined ? { base: opts.base } : {}),
+    };
   }
 
   if (printBundle && !dryRun) {

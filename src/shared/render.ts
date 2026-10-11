@@ -1,4 +1,5 @@
 import type { Finding, ReviewResult, Severity, Verdict } from "./schema.js";
+import type { RunUsage } from "./runner.js";
 
 const SEV_ORDER: Record<Severity, number> = {
 	P0: 0,
@@ -14,6 +15,25 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 	P3: "⚪ P3",
 };
 
+// What a re-review can say about a previous finding it did not re-report.
+// None of these means "fixed": not re-finding a bug is weaker evidence than
+// verifying its trigger is gone.
+export type PriorFate = "code_changed" | "code_unchanged" | "undetermined";
+
+export type PriorFateCounts = Readonly<Record<PriorFate, number>>;
+
+const PRIOR_FATE_LABEL: Record<PriorFate, (n: number) => string> = {
+	code_changed: (n) => `🔍 ${n} not re-found (code changed)`,
+	code_unchanged: (n) => `🔁 ${n} not re-found (code unchanged)`,
+	undetermined: (n) => `❔ ${n} undetermined`,
+};
+
+export function priorFateParts(fates: PriorFateCounts): string[] {
+	return (Object.keys(PRIOR_FATE_LABEL) as PriorFate[])
+		.filter((fate) => fates[fate] > 0)
+		.map((fate) => PRIOR_FATE_LABEL[fate](fates[fate]));
+}
+
 const VERDICT_HEADLINE: Record<Verdict, string> = {
 	pass: "LGTM ✅",
 	changes_requested: "CHANGES REQUESTED ⚠️",
@@ -25,10 +45,15 @@ export function renderMarkdown(
 	opts?: {
 		inlinedFindings?: ReadonlySet<Finding>;
 		openFindings?: readonly Finding[];
-		resolvedCount?: number;
+		priorFates?: PriorFateCounts;
 		newCount?: number;
 		repoSlug?: string;
 		stateMarker?: string;
+		// Review bodies are read back into prMeta.reviews by `needlefish pr`
+		// and `explain` (repo.ts fetchPrRefInfo), so a notice rendered there
+		// becomes model input on the next run. Check summaries are not read
+		// back (normalizePrMeta keeps only name/status/conclusion).
+		omitCoverageGaps?: boolean;
 	},
 ): string {
 	const lines: string[] = [];
@@ -88,10 +113,7 @@ export function renderMarkdown(
 	}
 	if (findingCounts.length > 0) lines.push(findingCounts.join(" · "));
 
-	const delta: string[] = [];
-	if (opts?.resolvedCount && opts.resolvedCount > 0) {
-		delta.push(`✅ ${opts.resolvedCount} resolved`);
-	}
+	const delta = opts?.priorFates ? priorFateParts(opts.priorFates) : [];
 	if (opts?.newCount && opts.newCount > 0) {
 		delta.push(`🆕 ${opts.newCount} new`);
 	}
@@ -111,6 +133,24 @@ export function renderMarkdown(
 		// ⛔ bullet list (or counts paragraph) in GFM.
 		lines.push("");
 		lines.push(`Coverage: ${result.coverage}`);
+	}
+
+	const coverageGaps = opts?.omitCoverageGaps ? [] : (result.coverageGaps ?? []);
+	const pointerOnly = coverageGaps.flatMap((gap) =>
+		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
+	);
+	if (pointerOnly.length > 0) {
+		lines.push("");
+		lines.push(
+			"**Not reviewed (non-blocking):** these changed files were available only as Git LFS pointers, so their contents were not read and are not covered by this review. Ask a maintainer to check them.",
+		);
+		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
+	}
+	if (coverageGaps.some((gap) => gap.kind === "lfs_scan_incomplete")) {
+		lines.push("");
+		lines.push(
+			"**Coverage uncertain (non-blocking):** could not determine whether any changed file is a Git LFS pointer. If this repository uses Git LFS, some changed files may have been reviewed as pointer stubs rather than their real contents. Ask a maintainer to check any LFS-tracked files in this change.",
+		);
 	}
 
 	if (result.reviewTarget) {
@@ -220,7 +260,7 @@ export function renderMarkdown(
 		const calls = result.stats
 			.map(
 				(stat) =>
-					`${stat.label} ${formatDuration(stat.durationMs)}${stat.ok ? "" : " ✗"}`,
+					`${stat.label} ${formatDuration(stat.durationMs)}${stat.ok ? "" : " ✗"}${stat.usage ? ` · ${formatUsage(stat.usage)}` : ""}`,
 			)
 			.join(" → ");
 		const parts = [
@@ -239,6 +279,10 @@ export function renderMarkdown(
 	let output = `${lines.join("\n").trim()}\n`;
 	if (opts?.stateMarker) output += `\n${opts.stateMarker}\n`;
 	return output;
+}
+
+function formatUsage(usage: RunUsage): string {
+	return `tokens ${usage.totalTokens} (${usage.inputTokens} in / ${usage.outputTokens} out)`;
 }
 
 function firstSentence(summary: string): string {
@@ -263,6 +307,23 @@ function tableText(text: string): string {
 	return oneLine(text).replace(/\|/g, "\\|");
 }
 
+// finding.file is model output. Only repo-relative POSIX paths may become
+// hrefs: `..` segments, absolute paths, and scheme-like values would resolve
+// outside /<slug>/blob/<sha>/ after URL dot-segment removal, so they render
+// as plain text instead.
+function isRepoRelativePath(file: string): boolean {
+	// An empty first segment covers absolute paths ("/etc/passwd").
+	return file
+		.split("/")
+		.every(
+			(segment) =>
+				segment !== "" &&
+				segment !== "." &&
+				segment !== ".." &&
+				!segment.includes(":"),
+		);
+}
+
 function tableLocation(
 	finding: Finding,
 	repoSlug?: string,
@@ -270,10 +331,19 @@ function tableLocation(
 ): string {
 	if (!finding.file) return "—";
 	const location = tableText(plainLocation(finding));
-	if (!repoSlug || !headSha) return `\`${location}\``;
+	if (!repoSlug || !headSha || !isRepoRelativePath(finding.file)) {
+		return `\`${location}\``;
+	}
+	// encodeURIComponent leaves ( ) unescaped; an unescaped ) ends the
+	// markdown link early.
 	const encodedPath = finding.file
 		.split("/")
-		.map((segment) => encodeURIComponent(segment))
+		.map(
+			(segment) =>
+				encodeURIComponent(segment)
+					.replace(/\(/g, "%28")
+					.replace(/\)/g, "%29"),
+		)
 		.join("/");
 	const end =
 		finding.lineEnd !== finding.lineStart ? `-L${finding.lineEnd}` : "";

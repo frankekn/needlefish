@@ -1,6 +1,6 @@
 {
   "name": "needlefish",
-  "version": "0.4.6",
+  "version": "0.4.10",
   "type": "module",
   "packageManager": "pnpm@10.34.4",
   "description": "Strict local PR review agent.",
@@ -17,9 +17,11 @@
     "dist",
     "prompts/critic.md",
     "prompts/deep.md",
+    "prompts/finding-contract.md",
     "prompts/explain.md",
     "prompts/map.md",
     "prompts/review.md",
+    "schemas/review-result.v1.schema.json",
     "README.md",
     "CHANGELOG.md"
   ],
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.9.0",
+    "ajv": "^8.20.0",
     "eslint": "^10.6.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

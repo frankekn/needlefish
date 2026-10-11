@@ -6,8 +6,10 @@ import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { runCodex } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import type { RunStat } from "./runner";
+import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
-type AcpStubMode = "clean" | "error" | "malformed" | "hang";
+type AcpStubMode = "clean" | "error" | "invalid-usage" | "late-request" | "malformed" | "hang";
 
 interface AcpFixture {
   readonly tmp: string;
@@ -19,11 +21,12 @@ interface AcpFixture {
 
 test("runCodex acp clean stub returns agent text", async (t) => {
   const fixture = acpFixture(t, "clean");
+  const stats: RunStat[] = [];
   process.env.GH_TOKEN = "secret-gh";
   process.env.GITHUB_TOKEN = "secret-github";
   process.env.GITHUB_API_TOKEN = "secret-api";
 
-  const output = await runAcpPrompt(fixture, 1000);
+  const output = await runAcpPrompt(fixture, 1000, (stat) => stats.push(stat));
 
   assert.equal(output, '{"ok":true}');
   assert.deepEqual(readJsonRecord(fixture.envPath), {});
@@ -31,6 +34,11 @@ test("runCodex acp clean stub returns agent text", async (t) => {
   assert.match(transcript, /"method":"initialize"/);
   assert.match(transcript, /"method":"session\/new"/);
   assert.match(transcript, /"method":"session\/prompt"/);
+  assert.deepEqual(stats[0]?.usage, {
+    totalTokens: 845,
+    inputTokens: 816,
+    outputTokens: 29,
+  });
 });
 
 test("runCodex acp env credentials use and dispose the isolated HOME", async (t) => {
@@ -72,6 +80,29 @@ test("runCodex acp surfaces session prompt JSON-RPC errors", async (t) => {
   const fixture = acpFixture(t, "error");
 
   await assert.rejects(() => runAcpPrompt(fixture, 1000), /acp session\/prompt failed: prompt failed/);
+});
+
+test("runCodex acp ignores invalid usage telemetry", async (t) => {
+  const fixture = acpFixture(t, "invalid-usage");
+  const stats: RunStat[] = [];
+
+  const output = await runAcpPrompt(fixture, 1000, (stat) => stats.push(stat));
+
+  assert.equal(output, '{"ok":true}');
+  assert.equal(stats[0]?.usage, undefined);
+});
+
+test("runCodex acp ignores agent request following the prompt result in one chunk", async (t) => {
+  const fixture = acpFixture(t, "late-request");
+
+  const output = await runAcpPrompt(fixture, 1000);
+
+  assert.equal(output, '{"ok":true}');
+  assert.doesNotMatch(
+    readFileSync(fixture.transcriptPath, "utf8"),
+    /Needlefish denied ACP agent request/,
+    "a request after completion must not be answered on closed stdin"
+  );
 });
 
 test("runCodex acp rejects malformed stdout without hanging", async (t) => {
@@ -193,10 +224,18 @@ function writeAcpStub(options: {
       "      send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: 1, agentCapabilities: {} } });",
       "    } else if (request.method === 'session/new') {",
       "      send({ jsonrpc: '2.0', id: request.id, result: { sessionId: 'sess' } });",
-      "    } else if (request.method === 'session/prompt' && mode === 'clean') {",
+    "    } else if (request.method === 'session/prompt' && mode === 'clean') {",
       "      update('{\"ok\"');",
       "      update(':true}');",
-      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } });",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn', usage: { totalTokens: 845, inputTokens: 816, outputTokens: 29 } } });",
+      "      setTimeout(() => process.exit(0), 10);",
+      "    } else if (request.method === 'session/prompt' && mode === 'invalid-usage') {",
+      "      update('{\"ok\":true}');",
+      "      send({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn', usage: { totalTokens: 1, inputTokens: 2, outputTokens: 3 } } });",
+      "      setTimeout(() => process.exit(0), 10);",
+      "    } else if (request.method === 'session/prompt' && mode === 'late-request') {",
+      "      update('{\"ok\":true}');",
+      "      process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { stopReason: 'end_turn' } })}\\n${JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'session/request_permission', params: { sessionId: 'sess', options: [], toolCall: { toolCallId: 'tc1', title: 'edit' } } })}\\n`);",
       "      setTimeout(() => process.exit(0), 10);",
       "    } else if (request.method === 'session/prompt' && mode === 'error') {",
       "      send({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'prompt failed' } });",
@@ -210,24 +249,18 @@ function writeAcpStub(options: {
   chmodSync(options.bin, 0o755);
 }
 
-async function runAcpPrompt(fixture: AcpFixture, timeoutMs: number): Promise<string> {
+async function runAcpPrompt(
+  fixture: AcpFixture,
+  timeoutMs: number,
+  onStat?: (stat: RunStat) => void,
+): Promise<string> {
   return await runCodex("prompt", {
     repoPath: fixture.repo,
     runner: "acp",
     targetHeadSha: headSha(fixture.repo),
     timeoutMs,
+    ...(onStat ? { onStat } : {}),
   });
-}
-
-function captureEnv(keys: readonly string[]): Map<string, string | undefined> {
-  return new Map(keys.map((key) => [key, process.env[key]]));
-}
-
-function restoreEnv(previous: ReadonlyMap<string, string | undefined>): void {
-  for (const [key, value] of previous) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
 }
 
 function readJsonRecord(file: string): Record<string, unknown> {
@@ -250,17 +283,5 @@ async function waitForMissingProcessGroup(pgid: number, timeoutMs: number): Prom
       throw error;
     }
     await delay(25);
-  }
-}
-
-function isMissingProcess(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ESRCH";
-}
-
-function killProcessIfRunning(pid: number): void {
-  try {
-    process.kill(pid, "SIGKILL");
-  } catch (error) {
-    if (!isMissingProcess(error)) throw error;
   }
 }

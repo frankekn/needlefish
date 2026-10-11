@@ -36,7 +36,7 @@ needlefish/
 | Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read from target repo root only. |
 | Prompt behavior | `prompts/*.md` | Must remain read-only and output JSON contracts exactly. |
 | Tests | `src/**/*.test.ts`, `scripts/test.mjs` | Node test runner, no Jest/Vitest. |
-| CI/deploy | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/deploy-ubuntu.sh` | Own-repo required check is `needlefish-ci`; deploy waits on that SHA. |
+| CI/deploy | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/deploy-ubuntu.sh` | `needlefish-ci` is the merge gate. `needlefish-deploy` only verifies an operator-installed self-managed release; `deploy-ubuntu.sh` is a separate source-install path. |
 
 ## CODE MAP
 
@@ -79,7 +79,7 @@ needlefish/
 ## EVAL DISCIPLINE
 
 - Every pipeline/prompt change ships through an eval gate classified `gateClass: R` or `D`, declared in the report. Gate fails → revert, record the data in eval/RESULTS.md anyway.
-- **Class R (recall-affecting)** — full fixture set mirroring the production lane's model and effort, confirm tier (x3 draws) on divergent fixtures, holdouts included, tier-1 = 1 absolute. Required whenever the change can alter what the models are fed (prompts/, bundle contents such as round context) or what counts as usable output (`src/shared/normalize.ts`), alter critic matching/severity semantics beyond provenance-preserving restore, or touch scoring. Mixed changes (part R, part D) are always R.
+- **Class R (recall-affecting)** — full fixture set mirroring the production lane's model and effort, confirm tier (x3 draws) on divergent fixtures, holdouts included, tier-1 = 1 absolute. Required whenever the change can alter what the models are fed (prompts/, bundle contents such as round context) or what counts as usable output (`src/shared/normalize.ts`), alter critic matching/severity semantics beyond provenance-preserving restore, or touch scoring. Mixed changes (part R, part D) are always R. False positives are judged by the pooled count across all negatives (≤ 2 per full x3 gate); a single negative fixture is not a veto on its own.
 - **Class D (delivery/reliability)** — changes whose successful-path output is byte-identical to the old pipeline and whose new outputs on previously-failing inputs are subsets of artifacts the old pipeline had already admitted (candidate bag), with signals never removed and verdicts only moving more conservative. Examples: error handling, retry/timeout tuning, fail-soft restore of candidate residuals, posting/check-run plumbing. D gate = resident property suite (`final findings/residuals ⊆ candidate bag`; drift corpus replay must not throw) + x3 gate on the historical critic-drift fixture subset plus all honeypots with pre-declared zero malformed-output errors and zero cheat detections + live canary window with automatic rollback to the last-known-good install.
 - The classification test is provenance containment, not motive. A change motivated by delivery that alters model inputs is R.
 - Miss museum: every confirmed real-PR miss becomes a generic fixture (no target-repo nouns) within a week.
@@ -109,4 +109,4 @@ pnpm review -- --repo /path/to/target
 - GitHub Action mode requires `gh`, a self-hosted runner, and `~/.local/bin/needlefish`; the reusable workflow does not reinstall Needlefish.
 - `changes_requested` maps to a failed check-run but still posts a non-sticky COMMENT review, not a GitHub blocking review state.
 - Closed PRs and stale heads must be skipped before posting.
-- Own-repo CI is the GitHub Actions check named `needlefish-ci` (job `needlefish-ci` in `.github/workflows/ci.yml`). Mark **`needlefish-ci`** required on `main`. It runs on `ubuntu-latest` and must not reference `secrets.*`. `needlefish-deploy` is not a merge gate; it deploys `workflow_run.head_sha` after a successful `needlefish-ci` **push** to `main`. `workflow_dispatch` on `needlefish-deploy` remains for recovery. Branch protection is a repo setting, not a workflow file.
+- Own-repo CI is the GitHub Actions check named `needlefish-ci` (job `needlefish-ci` in `.github/workflows/ci.yml`). Mark **`needlefish-ci`** required on `main`. It runs on `ubuntu-latest` and must not reference `secrets.*`. `needlefish-deploy` is not a merge gate and does not install source: it is a manual verification workflow for the operator-managed release under `~/.local/share/needlefish-self`. `scripts/deploy-ubuntu.sh` manages the separate `~/.local/share/needlefish` source-install path. Branch protection is a repo setting, not a workflow file.

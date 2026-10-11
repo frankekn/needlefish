@@ -3,6 +3,7 @@ import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type CalloutSurface,
 	type Category,
+	type CoverageGap,
 	type Finding,
 	type ResidualRisk,
 	type ReviewResult,
@@ -285,6 +286,19 @@ function stringListField(value: unknown): string[] {
 	return value;
 }
 
+function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
+	if (!isRecord(value)) throw new Error("entry.usage not an object");
+	const fields = [value.totalTokens, value.inputTokens, value.outputTokens];
+	if (!fields.every((field) => typeof field === "number" && Number.isSafeInteger(field) && field >= 0)) {
+		throw new Error("entry.usage token counts not nonnegative safe integers");
+	}
+	const [totalTokens, inputTokens, outputTokens] = fields as [number, number, number];
+	if (totalTokens < inputTokens + outputTokens) {
+		throw new Error("entry.usage totalTokens below input and output sum");
+	}
+	return { totalTokens, inputTokens, outputTokens };
+}
+
 function runStatField(value: unknown): RunStat[] {
 	if (!Array.isArray(value)) throw new Error("not an array");
 	return value.map((entry): RunStat => {
@@ -310,22 +324,16 @@ function runStatField(value: unknown): RunStat[] {
 		if (entry.model !== undefined && typeof entry.model !== "string") {
 			throw new Error("entry.model not a string");
 		}
-		return entry.model === undefined
-			? {
-					label: entry.label,
-					runner: entry.runner,
-					durationMs: entry.durationMs,
-					attempts: entry.attempts,
-					ok: entry.ok,
-				}
-			: {
-					label: entry.label,
-					runner: entry.runner,
-					model: entry.model,
-					durationMs: entry.durationMs,
-					attempts: entry.attempts,
-					ok: entry.ok,
-				};
+		const stat: RunStat = {
+			label: entry.label,
+			runner: entry.runner,
+			...(entry.model === undefined ? {} : { model: entry.model }),
+			durationMs: entry.durationMs,
+			attempts: entry.attempts,
+			ok: entry.ok,
+			...(entry.usage === undefined ? {} : { usage: runUsageField(entry.usage) }),
+		};
+		return stat;
 	});
 }
 
@@ -341,6 +349,21 @@ function findingListField(value: unknown): Finding[] {
 	});
 }
 
+function coverageGapListField(value: unknown): CoverageGap[] {
+	if (!Array.isArray(value)) throw new Error("not an array");
+	return value.map((entry, index): CoverageGap => {
+		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
+		if (entry.kind === "lfs_scan_incomplete") return { kind: entry.kind };
+		if (entry.kind !== "lfs_pointer_only") {
+			throw new Error(`entry ${index}: kind invalid ${String(entry.kind)}`);
+		}
+		if (typeof entry.file !== "string" || entry.file === "") {
+			throw new Error(`entry ${index}: file not a non-empty string`);
+		}
+		return { kind: entry.kind, file: entry.file };
+	});
+}
+
 const OPTIONAL_FIELD_PARSERS: {
 	readonly [K in OptionalFieldKey]-?: (value: unknown) => ReviewResult[K];
 } = {
@@ -348,6 +371,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
+	coverageGaps: coverageGapListField,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

@@ -116,6 +116,25 @@ test("parseArgs accepts runner options", () => {
   }
 });
 
+test("parseArgs treats spaced and inline value options equivalently", () => {
+  const pairs = [
+    [["--pr", "24"], ["--pr=24"]],
+    [["--base", "main"], ["--base=main"]],
+    [["--repo", "/tmp/repo"], ["--repo=/tmp/repo"]],
+    [["--focus", "security"], ["--focus=security"]],
+    [["--runner", "acp"], ["--runner=acp"]],
+    [["--model", "opus"], ["--model=opus"]],
+    [["--timeout-ms", "1234"], ["--timeout-ms=1234"]],
+  ] as const;
+  for (const [spaced, inline] of pairs) {
+    assert.deepEqual(parseArgs(spaced), parseArgs(inline));
+  }
+  assert.deepEqual(
+    parseArgs(["explain", "8", "--finding", "rounded seconds"]),
+    parseArgs(["explain", "8", "--finding=rounded seconds"]),
+  );
+});
+
 test("parseArgs validates runner options", () => {
   assert.throws(() => parseArgs(["--runner", "wat"]), /codex, claude, opencode, openai, grok, pi, acp/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /--timeout-ms requires a positive integer/);
@@ -199,4 +218,19 @@ test("parseArgs rejects render/verdict without exactly one file", () => {
     () => parseArgs(["verdict", "a.json", "--repo", "."]),
     /verdict takes exactly one file argument/,
   );
+});
+
+test("parseArgs accepts the doctor command with its diagnostic options only", () => {
+  assert.deepEqual(parseArgs(["doctor"]), { kind: "doctor", json: false });
+  assert.deepEqual(parseArgs(["doctor", "--repo", "/tmp/repo", "--runner", "claude", "--base", "develop", "--json"]), {
+    kind: "doctor",
+    json: true,
+    repo: "/tmp/repo",
+    runner: "claude",
+    base: "develop",
+  });
+  assert.deepEqual(parseArgs(["doctor", "--help"]), { kind: "help" });
+  for (const flag of ["--deep", "--pr=1", "--github", "--dry-run", "--focus=x", "--model=m", "--uncommitted"]) {
+    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner, --base, and --json/, flag);
+  }
 });

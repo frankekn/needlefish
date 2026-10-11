@@ -1,6 +1,6 @@
 # Own-repo verification for pull requests and pushes to main.
 # Required branch-protection check name: needlefish-ci
-# Does not deploy. deploy.yml waits on a successful main-push run of this workflow.
+# Does not deploy. The self-hosted deploy workflow is a separate manual verification path.
 name: needlefish-ci
 
 on:

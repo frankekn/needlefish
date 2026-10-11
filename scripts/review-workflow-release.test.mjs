@@ -14,25 +14,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 const workflow = readFileSync(".github/workflows/review.yml", "utf8");
 
 function workflowScript(stepName) {
-	const escapedName = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const step = workflow.match(
-		new RegExp(`      - name: ${escapedName}\\n([\\s\\S]*?)(?=\\n      - name:|$)`),
-	);
-	assert.ok(step, `${stepName} step must exist`);
-	const runBlock = step[1].match(/        run: \|\n([\s\S]*)/);
-	assert.ok(runBlock, `${stepName} must have a run block`);
-	const scriptLines = [];
-	for (const line of runBlock[1].split("\n")) {
-		if (line.length > 0 && !line.startsWith("          ")) break;
-		scriptLines.push(line);
-	}
-	return scriptLines
-		.map((line) => line.replace(/^          /, ""))
-		.join("\n");
+	return workflowRun(workflow, "review", stepName);
 }
 
 const selectScript = workflowScript("Select self-managed Needlefish");
@@ -117,6 +104,66 @@ test("review invokes only the selected immutable release binary", () => {
 	assert.doesNotMatch(reviewScript, /\.local\/bin\/needlefish|needlefish\/current/);
 });
 
+test("provider fallback ignores verdict prose and follows only infra errors", t => {
+	const root = mkdtempSync(join(tmpdir(), "needlefish-fallback-"));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const binary = join(root, "needlefish");
+	const codex = join(root, "codex");
+	const calls = join(root, "calls");
+	const summary = join(root, "summary");
+	writeFileSync(codex, "#!/bin/sh\nprintf 'codex-cli test\\n'\n");
+	chmodSync(codex, 0o755);
+	writeFileSync(binary, `#!/bin/sh
+model=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--model" ]; then model="$2"; shift 2; else shift; fi
+done
+printf '%s\n' "$model" >> "$CALLS"
+if [ "$model" = "fallback" ]; then echo 'PASS'; exit 0; fi
+case "$SCENARIO" in
+  verdict) echo 'CHANGES REQUESTED: 53 timeouts, quota 429'; echo 'needlefish-outcome {"outcome":"verdict","verdict":"changes_requested"}'; exit 1 ;;
+  prose) echo 'quoted timeout'; echo 'provider said 429' >&2; exit 1 ;;
+  quota) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"usage limit"}'; exit 1 ;;
+  timeout) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error"}'; exit 1 ;;
+  http429) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"rate limited"}'; exit 1 ;;
+  http503) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error"}'; exit 1 ;;
+  nonoperational) echo 'needlefish-outcome {"outcome":"failure","operational":false}'; exit 1 ;;
+esac
+`);
+	chmodSync(binary, 0o755);
+	for (const [scenario, expectedStatus, expectedCalls] of [
+		["verdict", 1, "primary\n"],
+		["prose", 1, "primary\n"],
+		["nonoperational", 1, "primary\n"],
+		["quota", 0, "primary\nfallback\n"],
+		["timeout", 0, "primary\nfallback\n"],
+		["http429", 0, "primary\nfallback\n"],
+		["http503", 0, "primary\nfallback\n"],
+	]) {
+		writeFileSync(calls, "");
+		writeFileSync(summary, "");
+		const result = spawnSync("bash", ["-c", reviewScript], {
+			encoding: "utf8",
+			env: {
+				...process.env,
+				NEEDLEFISH_BIN: binary,
+				CODEX_BIN: codex,
+				NEEDLEFISH_RUNNER_INPUT: "codex",
+				NEEDLEFISH_MODEL_INPUT: "primary",
+				NEEDLEFISH_MODEL_FALLBACKS: "fallback",
+				CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1",
+				CODEX_PROXY_API_KEY_INPUT: "test-key",
+				PR_NUM: "98",
+				CALLS: calls,
+				SCENARIO: scenario,
+				GITHUB_STEP_SUMMARY: summary,
+			},
+		});
+		assert.equal(result.status, expectedStatus, `${scenario}: ${result.stderr}`);
+		assert.equal(readFileSync(calls, "utf8"), expectedCalls, scenario);
+	}
+});
+
 test("review forwards the optional opencode idle timeout without exporting an empty value", () => {
 	assert.match(workflow, /idle_timeout_ms:\n\s+description: Optional opencode inactivity timeout/);
 	assert.match(
@@ -125,9 +172,16 @@ test("review forwards the optional opencode idle timeout without exporting an em
 	);
 });
 
-test("review gives the Terra xhigh lane a production timeout", () => {
-	assert.match(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="1200000"/);
+test("review leaves the per-call timeout to the binary default and keeps the Terra xhigh fast tier", () => {
+	assert.doesNotMatch(reviewScript, /NEEDLEFISH_TIMEOUT_MS_INPUT="\d+"/);
 	assert.match(reviewScript, /export CODEX_SERVICE_TIER="fast"/);
+});
+
+test("review lets the operator select a runner label without changing the workflow", () => {
+	assert.match(
+		workflow,
+		/runs-on: \$\{\{ inputs\.runs_on \|\| github\.event\.inputs\.runs_on \|\| vars\.NEEDLEFISH_RUNS_ON \|\| 'self-hosted' \}\}/,
+	);
 });
 
 test("review maps supplied Codex proxy values atomically without erasing runner defaults", (t) => {
@@ -135,7 +189,7 @@ test("review maps supplied Codex proxy values atomically without erasing runner 
 	assert.match(workflow, /codex_proxy_api_key:\n\s+description: CLIProxyAPI credential for Codex/);
 	assert.match(workflow, /codex_proxy_required:\n\s+description: Prohibit Codex OAuth fallback\n\s+type: boolean/);
 	assert.match(workflow, /CODEX_PROXY_BASE_URL_INPUT: \$\{\{ inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL \}\}/);
-	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ secrets\.codex_proxy_api_key \}\}/);
+	assert.match(workflow, /CODEX_PROXY_API_KEY_INPUT: \$\{\{ \(inputs\.codex_proxy_base_url \|\| vars\.CODEX_PROXY_BASE_URL\) && secrets\.codex_proxy_api_key \|\| '' \}\}/);
 	assert.match(workflow, /NEEDLEFISH_CODEX_PROXY_REQUIRED_INPUT: \$\{\{ inputs\.codex_proxy_required && '1' \|\| '' \}\}/);
 	assert.match(reviewScript, /if \[ -n "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -n "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);
 	assert.match(reviewScript, /if \[ -z "\$CODEX_PROXY_BASE_URL_INPUT" \] \|\| \[ -z "\$CODEX_PROXY_API_KEY_INPUT" \]; then/);

@@ -12,18 +12,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { workflowRun } from "./workflow-test-helpers.mjs";
 
 const workflow = readFileSync(".github/workflows/review.yml", "utf8");
 const configureStep = workflow.match(
 	/      - name: Configure Needlefish temp storage\n([\s\S]*?)(?=\n      - name:)/,
 );
 assert.ok(configureStep, "Configure Needlefish temp storage step must exist");
-const runBlock = configureStep[1].match(/        run: \|\n([\s\S]*)/);
-assert.ok(runBlock, "Configure Needlefish temp storage must have a run block");
-const script = runBlock[1]
-	.split("\n")
-	.map((line) => line.replace(/^          /, ""))
-	.join("\n");
+const script = workflowRun(workflow, "review", "Configure Needlefish temp storage");
 
 function runPreflight({
 	spaceAvailableKib = "2097152",
@@ -82,6 +78,7 @@ esac
 		githubEnv: existsSync(githubEnv) ? readFileSync(githubEnv, "utf8") : "",
 		tempRoot: join(runnerTemp, "needlefish"),
 	};
+
 	rmSync(root, { recursive: true, force: true });
 	return output;
 }
