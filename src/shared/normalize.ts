@@ -257,6 +257,7 @@ export function normalizeReview(raw: unknown, strict = true): RawReview {
   }
   const rawFindings = requireArray(record, "findings", "malformed review output");
   const rawChecked = requireArray(record, "checked", "malformed review output");
+  // strict=false only tolerates malformed findings; coverage claims stay strict.
   const checked = rawChecked
     .map((item) => {
       if (typeof item !== "string") {
