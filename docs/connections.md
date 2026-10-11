@@ -94,7 +94,9 @@ The bound values are private and absent from serialized options, result and cach
 Runner output is screened against the selected snapshot before admission, including
 decoded JSON in Markdown fences. Echoed credentials stop the review with a safe
 diagnostic. Raw agent transcripts remain sensitive and can contain credentials.
-`--dry-run` validates the configuration but does not require or bind credentials.
+`--dry-run` and docs-only zero-model reviews validate the configuration but do not
+require or bind credentials. Other reviews bind once after collecting the bundle,
+before any model starts.
 
 Explicit auth always gets a new empty disposable HOME/USERPROFILE and XDG
 config/data/cache/state roots, even when `NEEDLEFISH_EPHEMERAL_HOME` is off.

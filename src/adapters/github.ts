@@ -1,5 +1,5 @@
 import path from "node:path";
-import { review } from "../core/review.js";
+import { review, reviewPlan } from "../core/review.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
 	priorFateParts,
@@ -1583,7 +1583,6 @@ export async function runGithub(
 		);
 	}
 
-	const resolvedOpts = resolveConnectionOptions(opts, repoPath);
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
 	if (!baseSha || !headSha)
 		throw new Error("Could not resolve PR base/head SHA");
@@ -1625,6 +1624,7 @@ export async function runGithub(
 		focus: null,
 	});
 
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
 	const pendingCheckId = createPendingCheck(repo, headSha);
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything

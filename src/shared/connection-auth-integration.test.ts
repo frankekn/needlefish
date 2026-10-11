@@ -276,7 +276,7 @@ for (const [name, overrides, expected] of [
 ] as const) {
   test(`CLI ${name} stops before any agent starts`, (t) => {
     const f = fixture(t);
-    const result = f.run([cli, "--repo", f.repo, "--connection", "a"], overrides);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a"], overrides);
     assert.equal(result.status, 1);
     assert.match(result.stderr, expected);
     assert.equal(f.records().length, 0);
