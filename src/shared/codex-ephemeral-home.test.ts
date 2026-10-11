@@ -17,6 +17,10 @@ import test from "node:test";
 import { prepareEphemeralHome, runCodex } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
 
+// Permission-based cleanup assertions are meaningless as root (mode bits are
+// bypassed) and on platforms whose chmod does not gate unlink (Windows).
+const isRoot = (process.getuid?.() ?? 1) === 0;
+
 // S3.1: flag on + non-claude → child HOME is <tmp>/home under os.tmpdir(),
 // NOT the real HOME; after the invocation returns, that dir is gone.
 test("runCodex ephemeral HOME: child HOME is <tmp>/home and is disposed after the call", async (t) => {
@@ -295,6 +299,124 @@ test("runCodex ephemeral HOME fail-closed: preparation failure leaves no tmp dir
 		};
 		poll();
 	});
+});
+
+// Disposal must never turn a successful run into a failure: when the
+// per-invocation tree cannot be removed (here its parent is read-only, so no
+// walk inside it can help), the model output still wins, the runner is never
+// retried, a warning is emitted without echoing staged credentials, and the
+// stranded tree is left for the reaper.
+test("runCodex keeps valid output when temp disposal fails and never retries", { skip: process.platform !== "linux" || isRoot }, async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const fakeHome = mkdtempSync(path.join(os.tmpdir(), "needlefish-fakehome-"));
+	mkdirSync(path.join(fakeHome, ".codex"));
+	writeFileSync(
+		path.join(fakeHome, ".codex", "auth.json"),
+		'{"token":"LEAK-CANARY-TOKEN"}',
+	);
+	writeFileSync(path.join(fakeHome, ".codex", "config.toml"), 'model = "x"');
+	const lifecycleRoot = path.join(tmp, "lifecycle-root");
+	mkdirSync(lifecycleRoot);
+	const bin = path.join(tmp, "codex-bin.js");
+	const counter = path.join(tmp, "invocations.txt");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		ephemeral: process.env.NEEDLEFISH_EPHEMERAL_HOME,
+		retry: process.env.NEEDLEFISH_NO_RETRY,
+		home: process.env.HOME,
+		needlefishTmpdir: process.env.NEEDLEFISH_TMPDIR,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.ephemeral === undefined)
+			delete process.env.NEEDLEFISH_EPHEMERAL_HOME;
+		else process.env.NEEDLEFISH_EPHEMERAL_HOME = previous.ephemeral;
+		if (previous.retry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.retry;
+		if (previous.home === undefined) delete process.env.HOME;
+		else process.env.HOME = previous.home;
+		if (previous.needlefishTmpdir === undefined)
+			delete process.env.NEEDLEFISH_TMPDIR;
+		else process.env.NEEDLEFISH_TMPDIR = previous.needlefishTmpdir;
+		// The runner deliberately made the lifecycle root read-only; restore it
+		// so this test's own cleanup can remove the preserved tree.
+		chmodSync(lifecycleRoot, 0o700);
+		rmSync(tmp, { recursive: true, force: true });
+		rmSync(fakeHome, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`fs.appendFileSync(${JSON.stringify(counter)}, 'x');`,
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [] }));",
+			`fs.chmodSync(${JSON.stringify(lifecycleRoot)}, 0o500);`,
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.NEEDLEFISH_EPHEMERAL_HOME = "1";
+	// Retries stay enabled (any non-"1" value is off): a cleanup failure that
+	// leaked into the attempt result would re-run the model here.
+	process.env.NEEDLEFISH_NO_RETRY = "";
+	process.env.HOME = fakeHome;
+	process.env.NEEDLEFISH_TMPDIR = lifecycleRoot;
+
+	const chunks: string[] = [];
+	const attemptCounts: number[] = [];
+	const attemptOutcomes: boolean[] = [];
+	const originalWrite = process.stderr.write;
+	process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+		chunks.push(String(chunk));
+		return true;
+	}) as typeof process.stderr.write;
+	try {
+		const output = await runCodex("prompt", {
+			repoPath: repo,
+			runner: "codex",
+			targetHeadSha: headSha(repo),
+			timeoutMs: 5000,
+			onStat: (stat) => {
+				attemptCounts.push(stat.attempts);
+				attemptOutcomes.push(stat.ok);
+			},
+		});
+		assert.match(
+			output,
+			/"summary":"clean"/,
+			"the successful model output must be returned",
+		);
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+
+	assert.deepEqual(
+		attemptCounts,
+		[1],
+		"a cleanup failure must not cause a retry: exactly one runner attempt",
+	);
+	assert.deepEqual(attemptOutcomes, [true]);
+	assert.equal(
+		readFileSync(counter, "utf8"),
+		"x",
+		"a cleanup failure must not trigger a second model invocation",
+	);
+	const warning = chunks.join("");
+	assert.match(warning, /could not remove temp directory/, "the cleanup failure must be warned about");
+	assert.doesNotMatch(
+		warning,
+		/LEAK-CANARY-TOKEN/,
+		"the warning must never echo staged credentials",
+	);
+	assert.equal(
+		readdirSync(lifecycleRoot).some((name) => /^needlefish-managed-/.test(name)),
+		true,
+		"the unremovable tree must be preserved for the reaper",
+	);
 });
 
 // S3.4: claude exemption — flag on + runner claude → real HOME retained.

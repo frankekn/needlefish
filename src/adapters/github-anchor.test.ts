@@ -122,3 +122,31 @@ test("headLinesInPatch returns empty map for empty patch", () => {
   const ranges = headLinesInPatch("");
   assert.equal(ranges.size, 0);
 });
+
+test("headLinesInPatch consumes hunks by declared counts so an added '++ ' line is not a header", () => {
+  // Issue #212: the patch line `+++ b/late.ts` is an added content line
+  // (`++ b/late.ts`) inside early.ts's first hunk, not a file header. Only
+  // the `@@` counts decide where the hunk body ends, so the second hunk
+  // stays recorded under early.ts and `late.ts` never enters the map.
+  const patch = [
+    "diff --git a/early.ts b/early.ts",
+    "--- a/early.ts",
+    "+++ b/early.ts",
+    "@@ -1,2 +1,2 @@",
+    " ctx",
+    "-old",
+    "+++ b/late.ts",
+    "@@ -50,1 +60,2 @@",
+    "-z",
+    "+y",
+    "+z",
+  ].join("\n");
+
+  const ranges = headLinesInPatch(patch);
+  assert.deepEqual(
+    [...ranges],
+    [["early.ts", [[1, 2], [60, 61]]]],
+  );
+  assert.equal(anchorableIn(ranges, "early.ts", 61), true);
+  assert.equal(anchorableIn(ranges, "late.ts", 61), false);
+});

@@ -8,7 +8,10 @@ const PACKAGE_ROOT = findPackageRoot(path.dirname(fileURLToPath(import.meta.url)
 const PROMPTS_DIR = path.join(PACKAGE_ROOT, "prompts");
 
 export function loadPrompt(name: PromptFile): string {
-  return readFileSync(path.join(PROMPTS_DIR, name), "utf8");
+  return readFileSync(path.join(PROMPTS_DIR, name), "utf8").replace(
+    "{{FINDING_CONTRACT}}",
+    () => readFileSync(path.join(PROMPTS_DIR, "finding-contract.md"), "utf8"),
+  );
 }
 
 function findPackageRoot(startDir: string): string {

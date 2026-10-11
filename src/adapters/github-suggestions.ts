@@ -2,6 +2,9 @@ import type { Finding } from "../shared/schema.js";
 
 export type DiffLineRange = readonly [number, number];
 
+// GitHub rejects a review or comment body over 65,536 characters (#215).
+export const GH_BODY_CHAR_LIMIT = 65_536;
+
 export type SuggestionFormatContext = {
   readonly ranges: ReadonlyMap<string, readonly DiffLineRange[]>;
   readonly headLineCount: () => number | null;
@@ -48,6 +51,8 @@ function formatCommentBody(finding: Finding, replacementLines: readonly string[]
   ];
   if (finding.validation) lines.push("", `**Validate:** ${finding.validation}`);
   if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
+  // Recognized by normalize.ts isNeedlefishPost when the comment is read back.
+  lines.push("", "<!-- needlefish-finding -->");
   return lines.join("\n");
 }
 
@@ -55,8 +60,14 @@ export function formatSuggestionComment(
   finding: Finding,
   context: SuggestionFormatContext
 ): FormattedSuggestionComment {
-  const replacementLines = validatedReplacementLines(finding, context);
-  const body = formatCommentBody(finding, replacementLines);
+  let replacementLines = validatedReplacementLines(finding, context);
+  let body = formatCommentBody(finding, replacementLines);
+  // A suggestion GitHub would only receive truncated is no longer the validated
+  // replacement, and the cut leaves its fence open. Post the plain comment.
+  if (replacementLines && body.length > GH_BODY_CHAR_LIMIT) {
+    replacementLines = null;
+    body = formatCommentBody(finding, null);
+  }
   if (replacementLines && finding.lineEnd !== finding.lineStart) {
     return { line: finding.lineEnd, startLine: finding.lineStart, body };
   }

@@ -25,6 +25,21 @@ src/
 | Change external IO | `shared/process.ts`, `shared/repo.ts`, `shared/codex.ts` | Most failures are boundary errors. |
 | Change JSON shape | `shared/schema.ts`, `shared/normalize.ts` | Validate unknown data before use. |
 
+## DEPENDENCY BOUNDARIES
+
+`pnpm lint` enforces downward relative imports: CLI -> adapters -> core -> shared.
+Peers and direct imports of lower layers are allowed; types follow the same rule.
+Shipping `src/` must not import `eval/`, `scripts/`, `node:test`, or test-only modules.
+Only `*.test.ts` and `*test-fixtures.ts` are exempt from these boundary rules,
+matching the build exclusions; ordinary lint rules still apply to those files.
+
+The policy lives in `eslint.config.js`. `scripts/architecture-lint.test.mjs`
+exercises the actual config with allowed and forbidden imports, re-exports,
+type imports, and literal dynamic imports. These are specifier-based checks,
+not a resolver or a proof against computed paths, aliases, or same-layer cycles.
+Keep reviewing ownership and runtime side effects; do not add wrappers merely
+to satisfy the layer names or move test helpers into a shipping module.
+
 ## CONVENTIONS
 
 - Keep TypeScript strict. No `any`, `as any`, or error suppression.

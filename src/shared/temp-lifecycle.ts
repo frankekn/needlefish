@@ -9,8 +9,10 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
+  type Dirent,
+  type Stats,
 } from "node:fs";
-import { rm } from "node:fs/promises";
+import { chmod, lstat, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { envFlagOn } from "./env.js";
@@ -54,15 +56,32 @@ const activeRunnerProcessGroups = new Map<number, RunnerProcessGroup>();
 const startupSweeps = new Map<string, Promise<void>>();
 const processOwnerPromises = new Map<string, Promise<ProcessOwner>>();
 let coordinatorInstalled = false;
-let terminationSignal: "SIGINT" | "SIGTERM" | null = null;
+let termination: Termination | null = null;
+// Aborted right before every exit so finalizer subprocesses die with the process.
+let terminationCancel = new AbortController();
 let forceTermination = false;
+let finalizersSettled = true;
 const terminationWaiters = new Set<() => void>();
+const terminationFinalizers = new Set<TerminationFinalizer>();
 let lockSequence = 0;
+
+export type TerminationSignal = "SIGINT" | "SIGTERM";
+
+export interface Termination {
+  readonly signal: TerminationSignal;
+  // One grace covers the finalizers and the runner shutdown together, so a
+  // caller's forced-kill window only has to exceed NEEDLEFISH_TERMINATION_GRACE_MS.
+  readonly deadlineMs: number;
+  // Fires right before the process exits; finalizer subprocesses must die with it.
+  readonly cancelled: AbortSignal;
+}
+
+type TerminationFinalizer = (termination: Termination) => Promise<void>;
 
 export class RunnerTerminatingError extends Error {
   readonly name = "RunnerTerminatingError";
 
-  constructor(signal: "SIGINT" | "SIGTERM") {
+  constructor(signal: TerminationSignal) {
     super(`cannot schedule runner work while terminating from ${signal}`);
   }
 }
@@ -76,6 +95,17 @@ export function installTerminationCoordinator(): void {
   coordinatorInstalled = true;
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
+}
+
+// A finalizer starts once, when the first SIGINT/SIGTERM arrives, and runs
+// alongside the runner grace wait under the same deadline. It must not block
+// the event loop: under the tsx wrapper the process has ~30 ms to acknowledge
+// a relayed signal or it is SIGKILLed. The forced second signal skips it.
+// Detaching returns false when the finalizer already started.
+export function registerTerminationFinalizer(finalize: TerminationFinalizer): () => boolean {
+  installTerminationCoordinator();
+  terminationFinalizers.add(finalize);
+  return () => terminationFinalizers.delete(finalize);
 }
 
 export async function initializeTempLifecycle(): Promise<void> {
@@ -126,9 +156,107 @@ export async function disposeManagedTempDirectory(directory: string): Promise<vo
   if (!activeTempDirectories.has(directory)) {
     throw new Error(`temp directory is not registered: ${directory}`);
   }
-  if (terminationSignal !== null) return;
-  await rm(directory, { recursive: true, force: true });
+  if (termination !== null) return;
+  try {
+    await removeOwnedTempTree(directory);
+  } catch (error) {
+    // A runner that already produced valid output must not be failed (and
+    // retried) just because its throwaway tree could not be removed. Warn and
+    // leave the directory registered and on disk so process exit / the next
+    // startup reaper can try again once the offending barrier is gone.
+    warnCleanupFailure(`temp directory ${directory}`, error);
+    return;
+  }
   activeTempDirectories.delete(directory);
+}
+
+/**
+ * Remove an owned temp tree, tolerating directories whose owner
+ * read/write/traverse bits were stripped (e.g. a runner cache made read-only).
+ * The plain recursive delete is tried first so a healthy tree is never walked;
+ * only after a permission failure do we restore access and retry.
+ */
+async function removeOwnedTempTree(directory: string): Promise<void> {
+  try {
+    await rm(directory, { recursive: true, force: true });
+    return;
+  } catch (error) {
+    if (!isPermissionDenied(error)) throw error;
+  }
+  await restoreOwnerAccess(directory);
+  await rm(directory, { recursive: true, force: true });
+}
+
+const OWNER_ONLY_ACCESS = 0o700;
+
+/**
+ * Restore owner rwx on directories inside an owned tree so a recursive delete
+ * can descend into and unlink their contents. Directories only: a file's
+ * deletion is governed by its parent directory's write bit, which this
+ * restores. `lstat` semantics throughout — symlinks are never followed, so a
+ * link pointing outside the owned tree is neither chmod-ed nor traversed and
+ * only the link itself is ever removed. Missing paths are ignored so a partial
+ * delete or a concurrent removal never aborts the walk.
+ */
+async function restoreOwnerAccess(directory: string): Promise<void> {
+  let stats: Stats;
+  try {
+    stats = await lstat(directory);
+  } catch (error) {
+    if (isPathMissing(error)) return;
+    throw error;
+  }
+  if (!stats.isDirectory()) return;
+  const permissions = stats.mode & 0o7777;
+  if ((permissions & OWNER_ONLY_ACCESS) !== OWNER_ONLY_ACCESS) {
+    try {
+      await chmod(directory, permissions | OWNER_ONLY_ACCESS);
+    } catch (error) {
+      if (isPathMissing(error)) return;
+      throw error;
+    }
+  }
+  let entries: Dirent[];
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isPathMissing(error)) return;
+    throw error;
+  }
+  for (const entry of entries) {
+    // Dirent types come from lstat: a symlink reports as neither file nor
+    // directory, so it is skipped here and removed as a link by the retry.
+    if (!entry.isDirectory()) continue;
+    await restoreOwnerAccess(path.join(directory, entry.name));
+  }
+}
+
+function isPathMissing(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "EACCES" || error.code === "EPERM")
+  );
+}
+
+function warnCleanupFailure(target: string, error: unknown): void {
+  // Deliberately reports only the path and the errno/name: a cleanup failure
+  // must never echo runner output, a review prompt, or staged credentials.
+  const reason =
+    error instanceof Error && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.name
+        : "unknown error";
+  process.stderr.write(`needlefish: could not remove ${target}: ${reason}\n`);
 }
 
 export function registerRunnerProcessGroup(
@@ -196,7 +324,16 @@ export async function reapManagedTempDirectories(root = resolveNeedlefishTempRoo
       quarantined.push(quarantine);
     }
 
-    await Promise.all(quarantined.map((directory) => rm(directory, { recursive: true, force: true })));
+    for (const directory of quarantined) {
+      // A single undeletable tree (e.g. a read-only runner cache) must not
+      // abort the sweep: the startup reaper runs before every allocation, so a
+      // throw here would fail the whole CLI run.
+      try {
+        await removeOwnedTempTree(directory);
+      } catch (error) {
+        warnCleanupFailure(`quarantined temp directory ${directory}`, error);
+      }
+    }
     reapOrphanedProcessOwnerLocks(root);
   } finally {
     await releaseLock(sweepLock);
@@ -273,32 +410,60 @@ function onSigterm(): void {
   coordinateTermination("SIGTERM");
 }
 
-function coordinateTermination(signal: "SIGINT" | "SIGTERM"): void {
-  if (terminationSignal !== null) {
+function coordinateTermination(signal: TerminationSignal): void {
+  if (termination !== null) {
     forceTermination = true;
     notifyTerminationWaiters();
-    if (isLinux()) terminateImmediately(terminationSignal);
-    signalRegisteredRunners("kill", terminationSignal);
+    if (isLinux()) terminateImmediately(termination);
+    terminationCancel.abort();
+    signalRegisteredRunners("kill", termination.signal);
     return;
   }
-  terminationSignal = signal;
+  terminationCancel = new AbortController();
+  termination = {
+    signal,
+    deadlineMs: Date.now() + terminationGraceMs(),
+    cancelled: terminationCancel.signal,
+  };
   signalRegisteredRunners("terminate", signal);
-  if (activeRunnerProcessGroups.size === 0) {
-    terminateImmediately(signal);
+  startTerminationFinalizers(termination);
+  if (runnersGone() && finalizersSettled) {
+    terminateImmediately(termination);
     return;
   }
-  void completeTermination(signal);
+  void completeTermination(termination);
+}
+
+function startTerminationFinalizers(current: Termination): void {
+  const started = [...terminationFinalizers].map((finalize) => {
+    terminationFinalizers.delete(finalize);
+    return Promise.resolve()
+      .then(() => finalize(current))
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`needlefish: termination finalizer failed: ${message}\n`);
+      });
+  });
+  finalizersSettled = started.length === 0;
+  if (finalizersSettled) return;
+  void Promise.all(started).then(() => {
+    finalizersSettled = true;
+    notifyTerminationWaiters();
+  });
 }
 
 function notifyTerminationWaiters(): void {
   for (const wake of [...terminationWaiters]) wake();
 }
 
-async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (activeRunnerProcessGroups.size > 0) {
+function runnersGone(): boolean {
+  return activeRunnerProcessGroups.size === 0;
+}
+
+async function waitUntil(done: () => boolean, deadlineMs: number): Promise<boolean> {
+  while (!done()) {
     if (forceTermination) return false;
-    const remaining = deadline - Date.now();
+    const remaining = deadlineMs - Date.now();
     if (remaining <= 0) return false;
     await new Promise<void>((resolve) => {
       let settled = false;
@@ -311,13 +476,13 @@ async function waitForRegisteredRunners(timeoutMs: number): Promise<boolean> {
       };
       const timer = setTimeout(finish, remaining);
       terminationWaiters.add(finish);
-      if (activeRunnerProcessGroups.size === 0 || forceTermination) finish();
+      if (done() || forceTermination) finish();
     });
   }
   return true;
 }
 
-function signalRegisteredRunners(method: "terminate" | "kill", signal: "SIGINT" | "SIGTERM"): void {
+function signalRegisteredRunners(method: "terminate" | "kill", signal: TerminationSignal): void {
   for (const [pid, group] of [...activeRunnerProcessGroups.entries()]) {
     if (activeRunnerProcessGroups.get(pid) !== group) continue;
     try {
@@ -337,13 +502,16 @@ function isGoneProcessError(error: unknown): boolean {
   );
 }
 
-async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never> {
-  const exitedDuringGrace = await waitForRegisteredRunners(terminationGraceMs());
-  if (!exitedDuringGrace) signalRegisteredRunners("kill", signal);
+async function completeTermination({ signal, deadlineMs }: Termination): Promise<never> {
+  await waitUntil(() => runnersGone() && finalizersSettled, deadlineMs);
+  if (!runnersGone()) signalRegisteredRunners("kill", signal);
 
-  if (isLinux()) process.exit(signal === "SIGINT" ? 130 : 143);
+  if (isLinux()) {
+    terminationCancel.abort();
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  }
 
-  await waitForRegisteredRunners(terminationGraceMs());
+  await waitUntil(runnersGone, Date.now() + terminationGraceMs());
   const unsafeDirectories = new Set<string>();
   let unmappedRunnerIsAlive = false;
   for (const group of activeRunnerProcessGroups.values()) {
@@ -355,10 +523,12 @@ async function completeTermination(signal: "SIGINT" | "SIGTERM"): Promise<never>
     await rm(directory, { recursive: true, force: true });
     activeTempDirectories.delete(directory);
   }
+  terminationCancel.abort();
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
 
-function terminateImmediately(signal: "SIGINT" | "SIGTERM"): never {
+function terminateImmediately({ signal }: Termination): never {
+  terminationCancel.abort();
   signalRegisteredRunners("kill", signal);
   process.exit(signal === "SIGINT" ? 130 : 143);
 }
@@ -382,8 +552,8 @@ function findRegisteredTempDirectory(repoPath: string): string | null {
 }
 
 export function assertRunnerSchedulingAllowed(): void {
-  if (terminationSignal !== null) {
-    throw new RunnerTerminatingError(terminationSignal);
+  if (termination !== null) {
+    throw new RunnerTerminatingError(termination.signal);
   }
 }
 
@@ -558,7 +728,11 @@ function reapOrphanedProcessOwnerLocks(root: string): void {
     if (owner === null) continue;
     const ownerLock = path.join(root, entry.name);
     if (referencedLocks.has(ownerLock) || ownerIdentityIsAlive(owner) || !canTakeLock(ownerLock)) continue;
-    unlinkSync(ownerLock);
+    try {
+      unlinkSync(ownerLock);
+    } catch (error) {
+      warnCleanupFailure(`orphaned owner lock ${ownerLock}`, error);
+    }
   }
 }
 

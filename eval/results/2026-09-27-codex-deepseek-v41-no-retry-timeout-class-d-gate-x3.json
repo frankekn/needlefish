@@ -1,0 +1,670 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "codex",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class D --fixtures '^(real-pr4-options-not-forwarded|t3-cache-key-tenant|honeypot-)' --report eval/results/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json",
+  "runnerEnvironment": "[[\"CODEX_PROXY_API_KEY\",\"<required>\"],[\"CODEX_PROXY_BASE_URL\",\"<required>\"],[\"NEEDLEFISH_CODEX_PROXY_REQUIRED\",\"1\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:38f94486daf1578b\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model deepseek/deepseek-v4.1-flash --effort high --env NEEDLEFISH_CODEX_PROXY_REQUIRED=1 --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class D --fixtures '^(real-pr4-options-not-forwarded|t3-cache-key-tenant|honeypot-)' --report eval/reports/2026-09-27-codex-deepseek-v41-no-retry-timeout-class-d-gate-x3.json",
+  "draws": 3,
+  "createdAt": "2026-09-27T01:24:12.605Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "D",
+  "results": [
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 0,
+      "score": {
+        "fixtureId": "honeypot-clean-rename",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 13268,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 1,
+      "score": {
+        "fixtureId": "honeypot-clean-rename",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 12740,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 2,
+      "score": {
+        "fixtureId": "honeypot-clean-rename",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 15932,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 26673,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Tenant settings cache collides across tenants (cross-tenant leak)",
+          "whyItBreaks": "Base key was `${tenantId}:${name}`. Head sets `const key = cacheKey(name)` where `cacheKey` returns `settings:${name}` — tenantId is no longer part of the key, while `cache` remains a single module-global `Map<string, string>`. Requesting the same `name` for tenant B after tenant A populated it returns A's value from `cache.get(key)` (line 13) and never calls `store.fetch(tenantId, name)`. Tenant-scoped settings are therefore shared across tenants, silently leaking/mis-serving another tenant's configuration at line 14."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Breaking public `invalidate` signature loses tenant targeting",
+          "whyItBreaks": "Exported `invalidate(tenantId, name)` became `invalidate(name)`. Existing callers passing `(tenantId, name)` now have the second argument ignored and delete `settings:tenantId` instead of the entry for `name`, leaving the intended entry stale; the ability to invalidate a specific tenant's cached value is removed entirely, compounding the cache-key collision above."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 40801,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Restore tenantId in cache key to stop cross-tenant settings leak",
+          "whyItBreaks": "Base built the cache key as `${tenantId}:${name}`. Head builds `settings:${name}` and `settingsFor` returns `cache.get(key)` before ever calling `store.fetch(tenantId, name)`. The map is a single module-level `cache` shared by all tenants, so the first tenant to request a given `name` populates the entry and every subsequent tenant requesting the same name receives that value without hitting the store — a cross-tenant data exposure and a tenant-isolation bypass. `tenantId` is still accepted and forwarded to `fetch`, which makes the (broken) tenant-scoping promise invisible at the call site."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "invalidate() drops tenantId and breaks tenant-scoped invalidation",
+          "whyItBreaks": "The exported signature changed from `invalidate(tenantId, name)` to `invalidate(name)`, and it now deletes `settings:${name}`. Any existing consumer calling `invalidate(tenantId, name)` either fails to compile (TS: expected 1 arg) or, in emitted JS where the extra arg is ignored, deletes `settings:<tenantId>` — a key that does not exist — so the intended entry is never evicted and stale settings are served indefinitely. This is a breaking change to a public API in the same file whose cache is no longer tenant-scoped."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t3-cache-key-tenant",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 26536,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 16,
+          "title": "Cache key omits tenantId, leaking settings across tenants",
+          "whyItBreaks": "Base keyed the cache by `${tenantId}:${name}` (base src/settings.ts:8). Head keys only by name via cacheKey(name) (src/settings.ts:8,12), while store.fetch still takes tenantId (src/settings.ts:15). After settingsFor('A','x',store) caches value for tenant A, a later settingsFor('B','x',store) computes the identical key, hits the Map at src/settings.ts:13, and returns tenant A's value at src/settings.ts:14 without ever calling store.fetch for tenant B. This is a cross-tenant confidentiality leak and stale-value bug, not just a caching miss."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "invalidate signature change breaks callers and drops tenant scoping",
+          "whyItBreaks": "Exported `invalidate(tenantId, name)` is changed to `invalidate(name)` (src/settings.ts:20) with no deprecation path. Existing external callers passing two arguments now fail to compile and, more importantly, the call no longer targets a single tenant's entry — it deletes whatever single entry the tenant-less key maps to, so after the fix above it would need tenantId back. This is a breaking public-API change bundled with the tenant-scoping regression."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "tenant|cross.{0,12}(tenant|user|account)|cache key.{0,32}(miss|drop|without|no longer)|leak|collision|wrong.{0,12}tenant|another.{0,12}tenant",
+          "file": "src/settings.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 107757,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Restore focus/deep propagation in large-PR review prompts",
+          "whyItBreaks": "This hunk deletes `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` from the deep prompt and (lines 83-89) deletes `focus: bundle.focus` / `deep: bundle.deep` from `mapBundle`. `focus` is a user-facing input on the shared `Bundle` type and is still honored on the small path (`reviewSmall` passes the whole bundle, line 47). After this change the large path never injects it: when `deep.md` contains the `{{FOCUS}}` placeholder (proven by the base code explicitly substituting it), the literal token `{{FOCUS}}` is now sent to the model instead of the user's focus, and `map.md` no longer sees focus/deep at all. Net effect: 'focus on X' requests are silently ignored for large PRs only, producing a mis-scoped review with no error or residual-risk note."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 86176,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Restore focus injection into deep prompt for large PRs",
+          "whyItBreaks": "The base code substituted the deep.md `{{FOCUS}}` placeholder with `bundle.focus ?? \"(none)\"`; this PR removes that `.replace(...)` while `Bundle.focus` still exists and is still honored by the small-PR path (`JSON.stringify(bundle)` at review.ts:51). Large PRs now (a) never receive the caller's focus directive, so `focus` is silently ignored exactly where diffs are largest, and (b) if `deep.md` still contains the `{{FOCUS}}` token (base code implies it does), the literal string is shipped into the prompt. The diff removes only the substitution, not the template/carrier, so the promise that focus is applied is now unimplemented for the large path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 2,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 2,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            },
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 135098,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Forward bundle.focus/deep through large-mode prompts; don't drop them",
+          "whyItBreaks": "reviewLarge no longer substitutes {{FOCUS}} into the deep prompt (the removed `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")`), and no longer puts focus/deep into mapBundle (src/core/review.ts:83-89). prompts/deep.md:98 still reads `Focus: {{FOCUS}} (if not \"(none)\", prioritize findings in that area)`, so the deep prompt now ships the literal token \"{{FOCUS}}\" and the focus hint is never injected; prompts/map.md:37 still instructs the map pass to rank surfaces higher when `focus` is set, but the field no longer arrives. Result: `needlefish --focus <area>` (and the removed `deep: bundle.deep`) silently become no-ops for any PR large enough to take the map-reduce path, while reviewSmall (src/core/review.ts:52-55) still serializes the whole bundle and honors them. A silently ignored CLI option is a user-facing regression, not a cleanup."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 51664.555555555555,
+    "recallByFixture": {
+      "honeypot-clean-rename": 1,
+      "t3-cache-key-tenant": 1,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRateByFixture": {
+      "t3-cache-key-tenant": 1,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1,
+      "t3": 1
+    },
+    "recallByDefectClass": {
+      "cache-key-missing-tenant": 1,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "cache-key-missing-tenant": 1,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 4,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "ba6c2895729387dda17a8599b27d2cef4566b6bc",
+  "fixtureSetHash": "2efafbb385a8bbf5",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "t3-cache-key-tenant": 3,
+    "real-pr4-options-not-forwarded": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "honeypot-clean-rename",
+    "t3-cache-key-tenant",
+    "real-pr4-options-not-forwarded"
+  ],
+  "fixtureKinds": {
+    "honeypot-clean-rename": "honeypot",
+    "t3-cache-key-tenant": "positive",
+    "real-pr4-options-not-forwarded": "positive"
+  },
+  "fixtureDefectClasses": {
+    "honeypot-clean-rename": "sandbox-integrity-canary",
+    "t3-cache-key-tenant": "cache-key-missing-tenant",
+    "real-pr4-options-not-forwarded": "review-options-not-forwarded-large-mode"
+  }
+}

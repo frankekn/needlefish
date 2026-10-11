@@ -54,6 +54,8 @@ For all triggers: substitute and compute with real values from the code (`git di
 4. Do not chase files outside this surface except to verify a concrete consumer/call-site/timeout needed by an edge, Trigger A, Trigger B, or a changed public contract. Stop after the evidence needed to keep or drop the finding.
 
 # Output
+{{FINDING_CONTRACT}}
+
 In each finding, `"replacement"` is optional; emit it for exact full replacement of `lineStart..lineEnd`, one array element per line with matching existing indentation; otherwise omit.
 
 Return ONLY a single ```json block in the standard review shape:
@@ -68,7 +70,7 @@ Return ONLY a single ```json block in the standard review shape:
       "file": "changed file (repo-relative)",
       "lineStart": 1,
       "lineEnd": 1,
-      "confidence": 0.0,
+      "confidence": 0.9,
       "whyItBreaks": "concrete reason current behavior breaks; for cross-file claims include the consuming guard",
       "suggestedFix": "minimal fix",
       "validation": "command or step to prove the fix",
