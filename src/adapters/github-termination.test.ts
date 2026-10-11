@@ -50,8 +50,9 @@ type FixtureOptions = {
 	readonly runnerExitsOnTermAfterMs?: number;
 	// Report a newer head from the second pull fetch onward.
 	readonly staleHeadAfterStart?: boolean;
-	// The first this-many check-run PATCHes fail with HTTP 502.
+	// The first this-many check-run PATCHes fail with the configured error.
 	readonly failCheckPatches?: number;
+	readonly checkPatchError?: string;
 	// Backoff before the finalizer's single PATCH retry.
 	readonly patchRetryMs?: number;
 	readonly graceMs: number;
@@ -141,7 +142,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"if (method === 'PATCH') {",
 			`  const count = fs.existsSync(${JSON.stringify(patchCount)}) ? Number(fs.readFileSync(${JSON.stringify(patchCount)}, 'utf8')) : 0;`,
 			`  fs.writeFileSync(${JSON.stringify(patchCount)}, String(count + 1));`,
-			`  if (count < ${opts.failCheckPatches ?? 0}) { process.stderr.write('gh: Server Error (HTTP 502)'); process.exit(1); }`,
+			`  if (count < ${opts.failCheckPatches ?? 0}) { process.stderr.write(${JSON.stringify(opts.checkPatchError ?? "gh: Server Error (HTTP 502)")}); process.exit(1); }`,
 			"}",
 			`if (method === 'PATCH' && ${JSON.stringify(opts.hangCheckPatch === true)}) { process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); }`,
 			`else if (method === 'PATCH') { setTimeout(() => { fs.appendFileSync(${JSON.stringify(ghLog)}, JSON.stringify({ args: ['patch-completed'], payload }) + '\\n'); process.stdout.write('{}'); process.exit(0); }, ${opts.checkPatchDelayMs ?? 0}); }`,
@@ -436,6 +437,18 @@ test("bin/needlefish retries a check PATCH that fails with a transient 5xx", { t
 	assert.equal(calls.filter((c) => c.args[0] === "patch-completed").length, 1);
 	assert.equal(patches[1].payload, patches[0].payload, "the retry sends the same screened payload");
 	assert.equal(completion(patches[1]).output.title, "Needlefish: review terminated");
+	assert.equal(run.runnerAlive, false);
+});
+
+test("bin/needlefish preserves a nontransient PATCH error when retry configuration is invalid", { timeout: 30_000, skip: process.platform !== "linux" }, async (t) => {
+	const fixture = setupFixture(t, { failCheckPatches: 1, checkPatchError: "gh: Forbidden (HTTP 403)", graceMs: 2000 });
+	fixture.env.NEEDLEFISH_GH_POST_RETRY_MS = "invalid";
+	const run = await terminateMidReview(t, fixture, "bin");
+
+	assert.equal(run.status, 143, run.stderr);
+	assert.match(run.stderr, /gh: Forbidden \(HTTP 403\)/);
+	assert.doesNotMatch(run.stderr, /requires a non-negative integer/);
+	assert.equal(checkPatches(readGhLog(fixture.ghLog)).length, 1);
 	assert.equal(run.runnerAlive, false);
 });
 

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { review } from "../core/review.js";
+import { RunnerOperationalError } from "../shared/codex.js";
 import {
 	priorFateParts,
 	renderMarkdown,
@@ -22,7 +23,10 @@ import {
 	WITHHELD_MESSAGE,
 	type Screened,
 } from "../shared/outbound-screen.js";
-import { formatSuggestionComment } from "./github-suggestions.js";
+import {
+	formatSuggestionComment,
+	GH_BODY_CHAR_LIMIT,
+} from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 
@@ -322,25 +326,41 @@ function pathFromFileHeader(line: string, side: "a/" | "b/"): string | null {
 // `+++` paths follow git quoting: unquoted `b/<path>`, or C-quoted
 // `"b/<path>"` (the `b/` prefix sits inside the quotes). A tab after the
 // name is a GNU-patch terminator / timestamp separator, not part of the path.
-// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; d defaults to 1 when
-// omitted. Deleted files (`+++ /dev/null`) are skipped.
+// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; omitted counts default
+// to 1. Deleted files (`+++ /dev/null`) are skipped. Once a hunk header is
+// seen, the parser consumes exactly the declared line counts before reading
+// another header, so a hunk body line cannot masquerade as a file header:
+// an added line whose content starts with `++ ` (patch line `+++ b/x`)
+// stays inside the hunk instead of switching the current file.
 export function headLinesInPatch(
 	patch: string,
 ): Map<string, Array<[number, number]>> {
 	const ranges = new Map<string, Array<[number, number]>>();
 	let file: string | null = null;
+	let hunk: { old: number; new: number } | null = null;
 	for (const raw of patch.split("\n")) {
+		if (hunk) {
+			if (raw.startsWith("+")) hunk.new--;
+			else if (raw.startsWith("-")) hunk.old--;
+			else if (!raw.startsWith("\\")) {
+				hunk.old--;
+				hunk.new--;
+			}
+			if (hunk.old <= 0 && hunk.new <= 0) hunk = null;
+			continue;
+		}
 		if (raw.startsWith("+++ ")) {
 			file = pathFromFileHeader(raw, "b/");
 			if (file && !ranges.has(file)) ranges.set(file, []);
 			continue;
 		}
 		if (file && raw.startsWith("@@")) {
-			const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+			const h = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw);
 			if (h) {
-				const c = Number(h[1]);
-				const d = h[2] === undefined ? 1 : Number(h[2]);
+				const c = Number(h[2]);
+				const d = h[3] === undefined ? 1 : Number(h[3]);
 				if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
+				hunk = { old: h[1] === undefined ? 1 : Number(h[1]), new: d };
 			}
 		}
 	}
@@ -390,15 +410,29 @@ export function renderState(
 	headSha: string,
 	findings: readonly Finding[],
 ): string {
-	const state: RoundState = {
-		v: 1,
+	return renderStateKeys(
 		headSha,
-		findings: findings.map(findingKey),
-	};
-	return `<!-- needlefish-state: ${JSON.stringify(state)} -->`;
+		findings.map(findingKey),
+	);
+}
+
+function renderStateKeys(
+	headSha: string,
+	findings: readonly FindingKey[],
+): string {
+	const state: RoundState = { v: 1, headSha, findings };
+	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
+	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
+	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
+	return `<!-- needlefish-state: ${payload} -->`;
 }
 
 const STATE_PREFIX = "<!-- needlefish-state:";
+
+// The same literal github-suggestions.ts writes as the body's final line;
+// normalize.ts recognizes it on read-back. Truncation keeps it as the last
+// line so a truncated inline finding is still recognized as Needlefish's own.
+const OWN_INLINE_POST_MARKER = "<!-- needlefish-finding -->";
 
 export function parseState(body: string): RoundState | null {
 	const start = body.lastIndexOf(STATE_PREFIX);
@@ -433,6 +467,112 @@ export function parseState(body: string): RoundState | null {
 		keys.push({ file, lineStart, category, title });
 	}
 	return { v: 1, headSha, findings: keys };
+}
+
+// GitHub rejects a review or comment body over 65,536 characters with a 422
+// (#215, same class as the closed #179 on the check-summary endpoint). Unlike
+// the check-summary cap in checkCompletion, this limit counts characters, not
+// UTF-8 bytes. Every outbound body routes through screenAndCapOutboundBody at
+// the post site (postReview, updateReviewBody, postIssueComment). The limit
+// (GH_BODY_CHAR_LIMIT) lives in github-suggestions.ts, which drops a
+// suggestion block that would not fit rather than let the cut open its fence.
+
+// No claim of a full copy anywhere: the check summary omits inline findings'
+// evidence/fix and caps itself, so text cut from an inline comment exists
+// nowhere else (#215 staff review). The dropped count sits inside the notice,
+// and the notice length feeds the cut budget; dropped only grows as the
+// notice grows, so the digit width converges after a few rounds.
+function truncatedNotice(dropped: number): string {
+	return `Review body shortened to fit GitHub's size limit; ${dropped} characters were dropped.\n\n`;
+}
+
+// The state marker is the dedupe receipt and renderMarkdown appends it at the
+// very end — exactly where a naive truncation would cut it, turning every
+// later trigger into a full model re-review (see persistStateMarker). Own-post
+// markers (normalize.ts OWN_POST_MARKERS) ride the last non-empty line so a
+// Needlefish post is recognized on the way back in; a truncated inline
+// finding that lost it would be fed to the model as human discussion. So both
+// are pulled out before the cut and re-appended whole, notice first so it
+// stays visible even when the retained Markdown holds unclosed constructs.
+export function capOutboundBody(body: string): string {
+	if (body.length <= GH_BODY_CHAR_LIMIT) return body;
+	// Scan for the state marker exactly like parseState, so an extracted
+	// marker parses back exactly as the next run will read the posted body.
+	const markerStart = body.lastIndexOf(STATE_PREFIX);
+	const markerEnd =
+		markerStart < 0
+			? -1
+			: body.indexOf("-->", markerStart + STATE_PREFIX.length);
+	// Only the body's trailing marker is the delivery marker. A finding that
+	// quotes a valid marker mid-text is model prose: treating the quote as the
+	// receipt would swallow the evidence, fix, and own-post trailer after it
+	// (#215 staff review).
+	const state =
+		markerEnd >= 0 && body.slice(markerEnd + 3).trim() === ""
+			? parseState(body.slice(markerStart, markerEnd + 3))
+			: null;
+	let content = body;
+	let suffix = "";
+	if (state) {
+		content = body.slice(0, markerStart);
+	} else if (body.endsWith(OWN_INLINE_POST_MARKER)) {
+		content = body
+			.slice(0, -OWN_INLINE_POST_MARKER.length)
+			.replace(/\n+$/, "");
+		suffix = `\n\n${OWN_INLINE_POST_MARKER}`;
+	}
+	let notice = truncatedNotice(1);
+	for (let round = 0; ; round++) {
+		if (state) {
+			suffix = `\n${fitStateMarker(
+				state,
+				GH_BODY_CHAR_LIMIT - notice.length - 2,
+			)}\n`;
+		}
+		const budget = Math.max(
+			0,
+			GH_BODY_CHAR_LIMIT - notice.length - suffix.length,
+		);
+		let prefix = content.length > budget ? content.slice(0, budget) : content;
+		const last = prefix.charCodeAt(prefix.length - 1);
+		if (last >= 0xd800 && last <= 0xdbff) prefix = prefix.slice(0, -1);
+		const next = truncatedNotice(
+			Math.max(0, body.length - prefix.length - suffix.length),
+		);
+		if (next.length === notice.length) return next + prefix + suffix;
+		notice = next;
+	}
+}
+
+// Screen before cutting: a credential straddling the cut loses its tail, then
+// matches neither the known value nor a token shape, and its bare prefix is
+// posted (#215 staff review: a 24-char env credential leaked its first 23
+// chars). Redaction only shrinks text, so capping after screening still fits,
+// and withheld propagates exactly as screenedInput does today — that final
+// gate stays, covering everything else in the payload.
+function screenAndCapOutboundBody(body: string): string {
+	return capOutboundBody(
+		outboundText(body, screenText(body, credentialValuesFromEnv(process.env))),
+	);
+}
+
+// The marker carries one key per finding, so a large enough findings list can
+// push the marker itself past the limit. Keep the longest finding-key prefix
+// that fits: the headSha match still dedupes the same head, and dropped keys
+// only cost the next round's still-open accounting.
+function fitStateMarker(state: RoundState, budget: number): string {
+	let lo = 0;
+	let hi = state.findings.length;
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2);
+		if (
+			renderStateKeys(state.headSha, state.findings.slice(0, mid)).length <=
+			budget
+		)
+			lo = mid;
+		else hi = mid - 1;
+	}
+	return renderStateKeys(state.headSha, state.findings.slice(0, lo));
 }
 
 export interface MatchResult {
@@ -645,15 +785,19 @@ function postReview(
 	headSha: string,
 	body: string,
 	comments: readonly InlineComment[],
-): void {
+): number | null {
 	const payload = JSON.stringify({
 		commit_id: headSha,
-		body,
+		body: screenAndCapOutboundBody(body),
 		event: "COMMENT",
-		comments,
+		// Inline comment bodies are model text on the same 422 endpoint.
+		comments: comments.map((comment) => ({
+			...comment,
+			body: screenAndCapOutboundBody(comment.body),
+		})),
 	});
 
-	ghPost(
+	const created = ghPost(
 		[
 			"api",
 			"-X",
@@ -664,6 +808,48 @@ function postReview(
 		],
 		payload,
 	);
+	// The id is needed later to append the dedupe state marker once delivery
+	// has completed. A response without an id is tolerated: the body is
+	// already posted, only the marker write is skipped (see persistStateMarker).
+	return isRecord(created) && typeof created.id === "number" ? created.id : null;
+}
+
+// The state marker is the dedupe receipt: a same-head run skips only when a
+// trusted review body carries it. It is written LAST — after the inline
+// comments, the verdict label and the check run have all landed — so a failure
+// anywhere in delivery can never leave a marker behind that makes the next run
+// silently skip a head whose review never completed.
+//
+// Fail-soft on purpose: the verdict check is already posted, so a failed marker
+// write must not turn a completed review red by falling through to the outer
+// catch. The cost is one duplicate re-review (the safe direction, since the
+// missing marker simply means "not delivered yet" to the next run).
+//
+// Legacy markers written before this ordering existed are still trusted and
+// still parse (no format change), but they may have been written before their
+// check run landed. The reconcile job covers exactly that: a head with no
+// terminal non-infra check is re-dispatched as a workflow_dispatch, which sets
+// NEEDLEFISH_RECHECK_INPUT=1 and so bypasses the same-head skip for one run.
+function persistStateMarker(
+	repo: string,
+	prNumber: number,
+	reviewId: number | null,
+	body: string,
+): void {
+	if (reviewId === null) {
+		process.stderr.write(
+			"needlefish: review posted without a state marker (GitHub returned no review id); the next run will re-review this head.\n",
+		);
+		return;
+	}
+	try {
+		updateReviewBody(repo, prNumber, reviewId, body);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		process.stderr.write(
+			`needlefish: could not persist the review state marker: ${msg}; the next run will re-review this head.\n`,
+		);
+	}
 }
 
 function updateReviewBody(
@@ -681,7 +867,7 @@ function updateReviewBody(
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: screenAndCapOutboundBody(body) }),
 	);
 }
 
@@ -885,7 +1071,7 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: screenAndCapOutboundBody(body) }),
 	);
 }
 
@@ -1073,6 +1259,109 @@ function emitSkip(reason: SkipReason, prNumber: number, headSha: string): void {
 	);
 }
 
+// The machine-readable terminal outcome, mirrored on stdout as
+// `needlefish-outcome {json}`. This is the ONLY thing the review workflow's
+// provider-fallback chain is allowed to read: the rendered review (which the
+// model influences) is printed before it, so a changes_requested finding that
+// merely quotes "429" or "quota" can never trigger a second model call on
+// another provider. The last `needlefish-outcome` line in the combined output
+// is always the one this process wrote last.
+interface ReviewOutcome {
+	readonly outcome: "verdict" | "failure";
+	readonly verdict?: Verdict;
+	readonly operational?: boolean;
+	readonly cause?: string;
+	readonly prNumber: number;
+	readonly headSha: string;
+}
+
+function emitOutcome(outcome: ReviewOutcome): void {
+	process.stdout.write(`needlefish-outcome ${JSON.stringify(outcome)}\n`);
+}
+
+// The controlled transport-cause vocabulary the runner layer appends to its
+// own errors via safeRunnerCause/safeOutputCause. Every producer terminates
+// the token with `;`, `.` (the output classifiers append a canned next-step
+// sentence), or the end of the message.
+// `auth error`/`auth rejected` are deliberately absent: the fallback chain has
+// never advanced on auth, and it still must not.
+const OPERATIONAL_CAUSE_RE =
+	/\blikely cause: (usage limit|rate limited|network error|empty output|truncated output|html error page)(?:[;.]|$)/;
+
+// Messages that only needlefish's own output classifiers can produce. A
+// normalization error embeds model-controlled field values verbatim (e.g.
+// `invalid severity "<value>"`), so an arbitrary validation message must never
+// be trusted even when it contains the token text — only these producers are.
+const CONTROLLED_OUTPUT_ERROR_PREFIXES = [
+	// extractJson: empty, truncated, or HTML output that could not be parsed.
+	"no JSON object found in codex output",
+	// direct-HTTP runner: an empty completion body.
+	"openai runner: empty content in response",
+];
+
+// Node socket-level failures the runner process reports as the cause of a
+// typed RunnerOperationalError. These are not text heuristics: the code is set
+// by Node/libuv or by runner-process.ts itself, so a model-influenced message
+// cannot fabricate one. Both map onto the existing "network error" token.
+const OPERATIONAL_ERROR_CODES: Record<string, true | undefined> = {
+	ETIMEDOUT: true, // runner-process.ts RunnerTimeoutError
+	EIDLETIMEDOUT: true, // runner-process.ts RunnerIdleTimeoutError
+	ECONNREFUSED: true,
+	ENOTFOUND: true,
+	EAI_AGAIN: true,
+};
+
+// The direct-HTTP runner stamps its upstream status into the message. Typed
+// prefix, not a text scan: only this runner produces it, and the status is the
+// gateway's own. 429 is a rate limit; 5xx is a transport failure.
+const OPERATIONAL_HTTP_RE = /^openai runner HTTP (\d{3})\b/;
+
+// operational=true means "the runner or its upstream transport failed in a
+// recognized way", which is the only condition the provider chain advances on.
+// Trust is established first — a typed RunnerOperationalError somewhere in the
+// cause chain, or a message from a controlled output-classifier producer — and
+// only then are the recognized signals read: the controlled `likely cause`
+// token, a socket error code, or the direct-HTTP runner's status. An arbitrary
+// validation message, the review output, and any other success-path text can
+// never mark a failure operational.
+function runnerOperationalCause(err: unknown): string | undefined {
+	const chain: Error[] = [];
+	let current: unknown = err;
+	for (let depth = 0; current instanceof Error && depth < 10; depth++) {
+		chain.push(current);
+		current = current.cause;
+	}
+	const typed = chain.some((e) => e instanceof RunnerOperationalError);
+	const trustedOutput = chain.some((e) =>
+		CONTROLLED_OUTPUT_ERROR_PREFIXES.some((prefix) =>
+			e.message.startsWith(prefix),
+		),
+	);
+	if (!typed && !trustedOutput) return undefined;
+	for (const e of chain) {
+		const token = OPERATIONAL_CAUSE_RE.exec(e.message);
+		if (token) return token[1];
+	}
+	if (typed) {
+		for (const e of chain) {
+			// Node and runner-process.ts attach `code` to these errors; the cast
+			// only names the well-known extension.
+			const { code } = e as Error & { readonly code?: unknown };
+			if (typeof code === "string" && OPERATIONAL_ERROR_CODES[code] === true) {
+				return "network error";
+			}
+		}
+		for (const e of chain) {
+			const http = OPERATIONAL_HTTP_RE.exec(e.message);
+			if (!http) continue;
+			const status = Number(http[1]);
+			if (status === 429) return "rate limited";
+			if (status >= 500 && status <= 599) return "network error";
+		}
+	}
+	return undefined;
+}
+
 type PrAuthor = { readonly association: string; readonly type: string };
 
 const TRUSTED_ASSOCIATIONS: ReadonlySet<string> = new Set([
@@ -1132,6 +1421,47 @@ function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipRe
 	return null;
 }
 
+// Dedupe is a delivery gate, not a "we tried" gate. A same-head marker alone
+// is not proof the head ever reached a verdict: any run that failed after
+// posting the review body — a check-run POST/PATCH error, an inline-comment
+// error, a crash — used to leave a marker behind. So the skip additionally
+// requires a completed, non-infra Needlefish check run for that exact head:
+// the same terminal state the reconcile job looks for. A marker with no such
+// check (or only an infra-failure check, or a check still in progress) reruns.
+//
+// Fail-closed on an unreadable check list: an extra review is the safe error,
+// a silently skipped one is not.
+function hasCompletedVerdictCheck(repo: string, headSha: string): boolean {
+	let raw: unknown;
+	try {
+		raw = ghJson([
+			"api",
+			`repos/${repo}/commits/${headSha}/check-runs?check_name=Needlefish&filter=all&per_page=100`,
+		]);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		process.stderr.write(
+			`needlefish: could not read check runs for ${headSha}: ${msg}; re-reviewing instead of skipping.\n`,
+		);
+		return false;
+	}
+	if (!isRecord(raw)) return false;
+	const runs = raw.check_runs;
+	if (!Array.isArray(runs)) return false;
+	const entries: unknown[] = runs;
+	return entries.some((run) => {
+		if (!isRecord(run)) return false;
+		if (stringField(run, "status") !== "completed") return false;
+		const conclusion = stringField(run, "conclusion");
+		const title = nestedString(run, "output", "title");
+		return (
+			(conclusion === "success" && title === "Needlefish: pass") ||
+			(conclusion === "neutral" && title.startsWith("Needlefish: needs_human")) ||
+			(conclusion === "failure" && title.startsWith("Needlefish: changes_requested"))
+		);
+	});
+}
+
 // A job timeout or watchdog terminates the process while the owned check is
 // in_progress, and a consumer workflow has nothing else that completes it.
 // Runs inside the termination grace, off the event loop. Same stale-head rule
@@ -1189,9 +1519,10 @@ async function completeTerminatedCheck(
 	} catch (error) {
 		// One retry, and only when the backoff plus another attempt as slow as
 		// this one fits before the deadline. A timeout or abort is not retried.
+		if (termination.cancelled.aborted || !isTransientGh5xx(error)) throw error;
 		const backoffMs = ghPostRetryBaseMs();
 		const fits = termination.deadlineMs - Date.now() >= backoffMs + (Date.now() - started);
-		if (termination.cancelled.aborted || !isTransientGh5xx(error) || !fits) throw error;
+		if (!fits) throw error;
 		const message = error instanceof Error ? error.message : String(error);
 		process.stderr.write(`needlefish: check completion failed during termination; retrying once: ${message}\n`);
 		await sleep(backoffMs, undefined, { signal: termination.cancelled });
@@ -1251,15 +1582,21 @@ export async function runGithub(
 		git(["rev-parse", "HEAD"], repoPath);
 
 	// Same-head dedupe: fetch the previous review once, reuse for both the
-	// short-circuit and the post-review posting logic. If we already reviewed
-	// this exact head and --recheck was not passed, skip entirely.
+	// short-circuit and the post-review posting logic. A same-head marker only
+	// skips when the head also carries a completed Needlefish verdict check —
+	// the marker is the review-body receipt, the check is the delivery proof.
 	const prev = findPreviousReview(repo, prNumber);
 	if (prev && prev.state.headSha === headSha && !recheck) {
+		if (hasCompletedVerdictCheck(repo, headSha)) {
+			process.stderr.write(
+				`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
+			);
+			emitSkip("same_head", prNumber, headSha);
+			return;
+		}
 		process.stderr.write(
-			`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
+			`needlefish: head ${headSha} has a state marker but no completed Needlefish verdict check; re-reviewing.\n`,
 		);
-		emitSkip("same_head", prNumber, headSha);
-		return;
 	}
 
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
@@ -1400,7 +1737,6 @@ export async function runGithub(
 			};
 			const body = renderMarkdown(freshResult, {
 				...renderOpts,
-				stateMarker: renderState(headSha, result.findings),
 				omitCoverageGaps: true,
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
@@ -1439,24 +1775,39 @@ export async function runGithub(
 				summary,
 				pendingCheckId,
 			);
+			persistStateMarker(
+				repo,
+				prNumber,
+				prev.id,
+				renderMarkdown(freshResult, {
+					...renderOpts,
+					stateMarker: renderState(headSha, result.findings),
+					omitCoverageGaps: true,
+				}),
+			);
 			process.stdout.write(stdoutSummary(summary));
+			emitOutcome({
+				outcome: "verdict",
+				verdict: result.verdict,
+				prNumber,
+				headSha,
+			});
 		} else {
 			const { comments, inlined } = buildInlineComments(result, patch, {
 				repoPath,
 				headSha,
 			});
+			const renderOpts = { inlinedFindings: inlined, repoSlug: repo };
+			// Body first, WITHOUT the state marker: the review content is the
+			// deliverable and fails hard. The dedupe marker rides a separate
+			// write at the very end, once delivery has actually completed.
 			const body = renderMarkdown(result, {
-				inlinedFindings: inlined,
-				repoSlug: repo,
-				stateMarker: renderState(headSha, result.findings),
+				...renderOpts,
 				omitCoverageGaps: true,
 			});
-			postReview(repo, prNumber, headSha, body, comments);
+			const reviewId = postReview(repo, prNumber, headSha, body, comments);
 			await applyVerdictLabel(repo, prNumber, result.verdict);
-			const summary = renderMarkdown(result, {
-				inlinedFindings: inlined,
-				repoSlug: repo,
-			});
+			const summary = renderMarkdown(result, renderOpts);
 			postCheck(
 				repo,
 				headSha,
@@ -1466,7 +1817,23 @@ export async function runGithub(
 				summary,
 				pendingCheckId,
 			);
+			persistStateMarker(
+				repo,
+				prNumber,
+				reviewId,
+				renderMarkdown(result, {
+					...renderOpts,
+					stateMarker: renderState(headSha, result.findings),
+					omitCoverageGaps: true,
+				}),
+			);
 			process.stdout.write(stdoutSummary(summary));
+			emitOutcome({
+				outcome: "verdict",
+				verdict: result.verdict,
+				prNumber,
+				headSha,
+			});
 		}
 	} catch (err) {
 		// A signal mid-review hands the check to the finalizer, and the
@@ -1545,6 +1912,21 @@ export async function runGithub(
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
+		// Machine-readable outcome LAST, after every diagnostic above: `msg` can
+		// embed model-controlled text (a malformed severity is echoed verbatim),
+		// including a newline followed by a fake `needlefish-outcome` line, so
+		// the real outcome must be written after it to stay the last one the
+		// workflow reads. operational=true only for a recognized runner/
+		// transport cause; a superseded head can never be delivered by another
+		// provider, so it stays false.
+		const cause = skipReason === null ? runnerOperationalCause(err) : undefined;
+		emitOutcome({
+			outcome: "failure",
+			operational: cause !== undefined,
+			...(cause !== undefined ? { cause } : {}),
+			prNumber,
+			headSha,
+		});
 	} finally {
 		detachFinalizer();
 	}

@@ -121,18 +121,20 @@ done
 printf '%s\n' "$model" >> "$CALLS"
 if [ "$model" = "fallback" ]; then echo 'PASS'; exit 0; fi
 case "$SCENARIO" in
-  verdict) echo 'CHANGES REQUESTED: 53 timeouts, quota 429'; exit 1 ;;
+  verdict) echo 'CHANGES REQUESTED: 53 timeouts, quota 429'; echo 'needlefish-outcome {"outcome":"verdict","verdict":"changes_requested"}'; exit 1 ;;
   prose) echo 'quoted timeout'; echo 'provider said 429' >&2; exit 1 ;;
-  quota) echo 'needlefish review failed: codex runner exited 1; likely cause: usage limit; stderr withheld because it may contain the review prompt' >&2; exit 1 ;;
-  timeout) echo 'needlefish review failed: spawn codex ETIMEDOUT' >&2; exit 1 ;;
-  http429) echo 'needlefish review failed: openai runner HTTP 429: upstream rejected request' >&2; exit 1 ;;
-  http503) echo 'needlefish review failed: openai runner HTTP 503: upstream unavailable' >&2; exit 1 ;;
+  quota) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"usage limit"}'; exit 1 ;;
+  timeout) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error"}'; exit 1 ;;
+  http429) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"rate limited"}'; exit 1 ;;
+  http503) echo 'needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error"}'; exit 1 ;;
+  nonoperational) echo 'needlefish-outcome {"outcome":"failure","operational":false}'; exit 1 ;;
 esac
 `);
 	chmodSync(binary, 0o755);
 	for (const [scenario, expectedStatus, expectedCalls] of [
 		["verdict", 1, "primary\n"],
 		["prose", 1, "primary\n"],
+		["nonoperational", 1, "primary\n"],
 		["quota", 0, "primary\nfallback\n"],
 		["timeout", 0, "primary\nfallback\n"],
 		["http429", 0, "primary\nfallback\n"],

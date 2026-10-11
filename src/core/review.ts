@@ -12,6 +12,7 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
+import { resolveRunner } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -230,7 +231,7 @@ function codexOptions(
 		repoPath: run.bundle.repoPath,
 		targetHeadSha: run.bundle.headSha,
 		...(run.bundle.headSha === "WORKING"
-			? { targetPatch: run.bundle.patch }
+			? { targetPatch: run.bundle.patch, targetBaseSha: run.bundle.baseSha }
 			: {}),
 		label,
 		onStat: (stat) => run.stats.push(stat),
@@ -1106,6 +1107,11 @@ export async function review(
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
+	}
+	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
+		throw new Error(
+			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
+		);
 	}
 
 	// Read only past the docs-only short-circuit, for the same reason

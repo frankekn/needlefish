@@ -92,8 +92,19 @@ export function isGitRepo(cwd: string): boolean {
   }
 }
 
-function ensureGitRepo(cwd: string): void {
-  if (isGitRepo(cwd)) return;
+// Resolve the work-tree top level before anything else. Collection run from a
+// nested directory is scoped to that directory (untracked `ls-files`, the `-- .`
+// pathspec), the AGENTS.md policy is read relative to the bundle's repoPath,
+// and the runner sandbox clones that same path — a subdirectory is not a
+// repository, so the clone fails and no review happens. Every local surface
+// collects, reads policy, and writes cache from this one root.
+function resolveRepoRoot(cwd: string): string {
+  try {
+    const top = git(["rev-parse", "--show-toplevel"], cwd);
+    if (top) return path.resolve(top);
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
+  }
   throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
 }
 
@@ -110,7 +121,10 @@ export function hasHeadCommit(cwd: string): boolean {
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
   const args = ["diff", ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
-  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude)${filePath}`)];
+  // `literal` magic: a binary file named `a[b].png` must exclude only itself,
+  // not every path matching the glob (e.g. `ab.png`), or those changes vanish
+  // from the patch, the name list, and the stat without a trace.
+  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
 }
 
 function fetchPrMeta(cwd: string, prNumber: number) {
@@ -252,11 +266,11 @@ export function localDiffMode(
 }
 
 export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
-  ensureGitRepo(cwd);
-  const headExists = hasHeadCommit(cwd);
-  const dirty = git(["status", "--porcelain"], cwd).trim() !== "";
+  const root = resolveRepoRoot(cwd);
+  const headExists = hasHeadCommit(root);
+  const dirty = git(["status", "--porcelain"], root).trim() !== "";
   const mode = localDiffMode(headExists, dirty, opts.localMode);
-  const bundle = mode === "uncommitted" ? uncommittedDiffBundle(cwd, opts, headExists) : branchDiffBundle(cwd, opts);
+  const bundle = mode === "uncommitted" ? uncommittedDiffBundle(root, opts, headExists) : branchDiffBundle(root, opts);
   return { bundle, mode };
 }
 
@@ -265,11 +279,12 @@ export function prDiffBundle(
   prNumber: number,
   opts: LocalOptions
 ): { bundle: Bundle; pr: PrRefInfo } {
-  const pr = fetchPrRefInfo(cwd, prNumber);
-  ensurePrCommits(cwd, pr);
-  const diff = prDiffFromShas(cwd, pr.baseSha, pr.headSha);
+  const root = resolveRepoRoot(cwd);
+  const pr = fetchPrRefInfo(root, prNumber);
+  ensurePrCommits(root, pr);
+  const diff = prDiffFromShas(root, pr.baseSha, pr.headSha);
   const bundle = makeBundle({
-    repoPath: cwd,
+    repoPath: root,
     baseSha: diff.baseSha,
     headSha: diff.headSha,
     patch: diff.patch,
@@ -279,7 +294,7 @@ export function prDiffBundle(
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    agentsMd: readAgentsAt(cwd, pr.headSha),
+    agentsMd: readAgentsAt(root, pr.headSha),
   });
   return { bundle, pr };
 }
@@ -298,9 +313,9 @@ export async function runLocal(
   opts: LocalOptions,
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
-  const repoPath = path.resolve(cwd);
-  const result = await review(diffBundle(repoPath, opts).bundle, opts, undefined, onProgress);
-  writeCache(repoPath, opts, result);
+  const { bundle } = diffBundle(cwd, opts);
+  const result = await review(bundle, opts, undefined, onProgress);
+  writeCache(bundle.repoPath, opts, result);
   return result;
 }
 
@@ -310,8 +325,7 @@ export async function runLocalPr(
   opts: LocalOptions,
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
-  const repoPath = path.resolve(cwd);
-  const { bundle, pr } = prDiffBundle(repoPath, prNumber, opts);
+  const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
@@ -320,7 +334,7 @@ export async function runLocalPr(
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };
-  writeCache(repoPath, opts, result);
+  writeCache(bundle.repoPath, opts, result);
   return result;
 }
 
@@ -381,12 +395,12 @@ export interface DryRunReport {
 // render; --print-bundle emits the bundle itself, which is the whole diff and
 // the repo AGENTS.md policy text verbatim.
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
-  const { bundle, mode } = diffBundle(path.resolve(cwd), opts);
+  const { bundle, mode } = diffBundle(cwd, opts);
   return { mode, bundle, ...reviewPlan(bundle) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
-  const { bundle } = prDiffBundle(path.resolve(cwd), prNumber, opts);
+  const { bundle } = prDiffBundle(cwd, prNumber, opts);
   return { mode: "pr", bundle, ...reviewPlan(bundle) };
 }
 

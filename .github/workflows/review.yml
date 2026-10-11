@@ -412,12 +412,23 @@ jobs:
           if run_review ""; then exit 0; else rc=$?; fi
           for next in "${chain[@]}"; do
             [ -n "$next" ] || continue
-            # A verdict may mention an infra word, so only Needlefish's own
-            # terminal stderr error can advance the provider chain.
-            if ! printf '%s\n' "$err_out" | grep '^needlefish review failed:' | tail -1 | grep -qiE 'likely cause: (usage limit|rate limited|network error|empty output|truncated output|html error page)|HTTP (429|5[0-9][0-9])|ETIMEDOUT|timed? ?out|ECONNREFUSED|ENOTFOUND|bad gateway|gateway time|unreachable|overloaded'; then
-              echo "needlefish: previous failure is not infra-class; not switching provider" >&2; exit $rc
+            # Provider fallback reads ONE controlled line and nothing else.
+            # Needlefish prints `needlefish-outcome {json}` after the rendered
+            # review and after every diagnostic, and sets "operational":true
+            # only for a recognized runner/transport cause (usage limit, rate
+            # limit, network error, empty/truncated/HTML output). The rendered
+            # review and the raw error text are model-influenced, so scanning
+            # them for "429"/"quota"/"5xx" would let a legitimate CHANGES
+            # REQUESTED verdict re-run the model on another provider. Only the
+            # LAST outcome line counts — it is the one this process wrote last.
+            # The JSON is parsed, not substring-matched, and the chain advances
+            # only on outcome === "failure" && operational === true. Fail
+            # closed: no line, unparseable JSON, or anything else never advances.
+            outcome_line="$(grep -a '^needlefish-outcome ' <<<"$out" | tail -n 1 || true)"
+            if ! node -e 'let s="";process.stdin.on("data",(d)=>{s+=d});process.stdin.on("end",()=>{let o;try{o=JSON.parse(s)}catch{process.exit(1)}process.exit(o&&o.outcome==="failure"&&o.operational===true?0:1)});' <<<"${outcome_line#needlefish-outcome }"; then
+              echo "needlefish: previous failure is not an operational runner fault; not switching provider" >&2; exit $rc
             fi
-            echo "::warning title=Needlefish provider fallback::switching lane to $next after infra failure on previous provider"
+            echo "::warning title=Needlefish provider fallback::switching lane to $next after operational failure on previous provider"
             if run_review "$next"; then echo "lane=fallback:$next" >> "$GITHUB_STEP_SUMMARY"; exit 0; else rc=$?; fi
           done
           exit $rc
