@@ -39,8 +39,13 @@ for (const raw of [null, [], "key", {}, { AGENT_API_KEY: 1 }, { AGENT_API_KEY: "
 for (const target of ["PATH", "HOME", "XDG_CONFIG_HOME", "NODE_OPTIONS", "HTTPS_PROXY", "GH_TOKEN", "GITHUB_TOKEN", "GIT_ACCESS_TOKEN", "NEEDLEFISH_TOKEN", "__proto__"]) {
   test(`auth cannot override ${target}`, () => assert.throws(() => parseAuthEnvironment({ [target]: "ACCOUNT_A_KEY" })));
 }
-for (const source of ["GH_TOKEN", "GITHUB_TOKEN", "gh_token", "GitHub_Token", "GIT_PASSWORD"]) {
-  test(`auth cannot forward orchestration source ${source}`, () => assert.throws(() => parseAuthEnvironment({ AGENT_API_KEY: source })));
+for (const source of [
+  "GH_TOKEN", "GITHUB_TOKEN", "gh_token", "GitHub_Token", "GIT_PASSWORD",
+  "NEEDLEFISH_TOKEN", "needlefish_model", "HOME", "home", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+  "XDG_CONFIG_HOME", "PATH", "PATHEXT", "SHELL", "COMSPEC", "BASH_ENV", "ENV",
+  "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "HTTP_PROXY", "https_proxy", "ALL_PROXY", "NO_PROXY",
+]) {
+  test(`auth cannot forward reserved source ${source}`, () => assert.throws(() => parseAuthEnvironment({ AGENT_API_KEY: source })));
 }
 for (const value of [undefined, "", " \n ", "TEST-SECRET\0TAIL"]) {
   test(`missing/invalid credential fails without exposing its value (${typeof value}:${value?.length ?? 0})`, () => {

@@ -20,8 +20,9 @@ export function parseAuthEnvironment(raw: unknown): AuthEnvironmentReferences {
       throw new Error("Connection auth.env targets must be API_KEY/TOKEN or end in _API_KEY/_TOKEN; GitHub, Git and Needlefish variables are reserved.");
     }
     if (typeof source !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(source)
-      || /^(?:GH|GITHUB|GIT)_/i.test(source)) {
-      throw new Error("Connection auth.env sources must be environment variable names, not credentials or GitHub/Git orchestration variables.");
+      || /^(?:GH|GITHUB|GIT|NEEDLEFISH|XDG|NODE|LD|DYLD)_/i.test(source)
+      || /^(?:HOME|USERPROFILE|HOMEDRIVE|HOMEPATH|PATH|PATHEXT|SHELL|COMSPEC|BASH_ENV|ENV|(?:HTTP|HTTPS|ALL|NO)_PROXY)$/i.test(source)) {
+      throw new Error("Connection auth.env sources must be credential environment variable names, not orchestration, process, HOME, executable or routing overrides.");
     }
   }
   return Object.freeze(Object.fromEntries(entries) as Record<string, string>);
