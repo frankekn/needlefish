@@ -18,6 +18,7 @@ export class RunnerFailure extends Error {
     readonly kind: RunnerFailureKind,
     message: string,
     readonly retryable: boolean = false,
+    readonly stage?: "initialize" | "session/new",
   ) {
     super(message);
     this.name = "RunnerFailure";

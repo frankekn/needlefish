@@ -130,7 +130,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
     const streams = `stdout=${Buffer.byteLength(res.stdout)}B; stderr=${Buffer.byteLength(res.stderr)}B (raw text withheld)`;
     return {
       res: { ...res, error: new RunnerFailure(kind,
-        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable) },
+        `ACP ${state.phase} failed: ${reason}; elapsed=${elapsed}ms; exit=${res.status ?? "none"}; signal=${res.signal ?? "none"}; ${streams}. Review not started; check launcher, login and agent configuration.`, retryable, state.phase) },
       out: state.text.join(""),
     };
   }
