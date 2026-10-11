@@ -659,7 +659,8 @@ function defaultRawReview(): string {
 
 for (const opener of ["<!--", "```text"]) {
 	test(`oversized UTF-8 check summaries keep the link ahead of ${opener}`, async (t) => {
-		const evidence = `\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
+		// Keep the opener on its own line after checked-item whitespace normalization.
+		const evidence = `Checked evidence:\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
 		const fixture = setupFixture(t, {
 			prNumber: 44,
 			rawReview: JSON.stringify({

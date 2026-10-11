@@ -703,6 +703,14 @@ test("normalizeReview trims summary and checked items and drops blank checked it
   }
 });
 
+test("normalizeReview preserves internal Markdown and UTF-8 while trimming checked items", () => {
+  const evidence = "Checked evidence:\n\n```text\n  核對證據𠮷  \n```";
+  for (const strict of [true, false] as const) {
+    const review = normalizeReview({ ...rawReview([]), checked: [` \n${evidence}\n\t `] }, strict);
+    assert.deepEqual(review.checked, [evidence]);
+  }
+});
+
 test("normalizeReview rejects checked list with no non-blank items in both strict modes", () => {
   for (const checked of [[], [""], [" "]]) {
     for (const strict of [true, false] as const) {
