@@ -58,6 +58,12 @@ async function main() {
     }
   }
 
+  if (command.kind !== "explain" && command.fix) {
+    process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
+    process.exitCode = 2;
+    return;
+  }
+
   const opts = command.kind === "github"
     ? command.opts
     : resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
@@ -70,11 +76,6 @@ async function main() {
 
   switch (command.kind) {
     case "github": {
-      if (command.fix) {
-        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
-        process.exitCode = 2;
-        return;
-      }
       await runGithub(command.repo ?? process.cwd(), command.pr, opts, command.recheck);
       return;
     }
@@ -84,11 +85,6 @@ async function main() {
     }
     case "local":
     case "pr": {
-      if (command.fix) {
-        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
-        process.exitCode = 2;
-        return;
-      }
       if (command.dryRun) {
         const cwd = command.repo ?? process.cwd();
         const report =
