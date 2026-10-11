@@ -21,7 +21,10 @@ jobs:
     with:
       pr_number: ${{ inputs.pr_number || inputs.pr }}
       runner: codex
-      model: gpt-5.6-terra
-      codex_reasoning_effort: xhigh
-      runs_on: Linux
+      # Self-hosted lane via CLIProxyAPI (frank_infra x64-review pool); eval #172.
+      model: deepseek-v4.1-flash
+      codex_reasoning_effort: high
+      codex_proxy_base_url: ${{ vars.CODEX_PROXY_BASE_URL }}
+      codex_proxy_required: true
+      runs_on: x64-review
     secrets: inherit

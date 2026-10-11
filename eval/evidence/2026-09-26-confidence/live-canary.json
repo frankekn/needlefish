@@ -1,0 +1,38 @@
+{
+  "gateClass": "R",
+  "release": "0.4.6-self.6-confidence-a131be2",
+  "sourceCommits": [
+    "0894cc0",
+    "45e7252",
+    "a131be2"
+  ],
+  "testOnlyFix": "3817064",
+  "headSha": "6aa8550d0b1875acd8ae66b85753be16292905e4",
+  "runId": "36258643489",
+  "checkId": 108450740558,
+  "conclusion": "success",
+  "completedAt": "2026-09-26T17:50:38Z",
+  "coverage": {
+    "reviewed": 54,
+    "total": 54,
+    "hotspots": 6
+  },
+  "pipelineCalls": 8,
+  "pipelineDuration": "26m38s",
+  "reportedOutputRetries": 0,
+  "summaryBytes": 60084,
+  "summarySha256": "a43c65c7189f337bee1350a0d3a786be619aee521f4de400e28da3b9d3c8d6e8",
+  "liveTruncationExercised": false,
+  "ami": "ami-0e40720e51ec5004a",
+  "imageVersion": "1.0.20",
+  "runnerInstance": "i-080dcd896c3a0ea54",
+  "smokeInstance": "i-04b1e94252b924bff",
+  "lane": "Codex → CLIProxyAPI → deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "offlineDraws": 272,
+  "repositoryTests": 1108,
+  "originalFailedJsonAvailable": false,
+  "promotionRetained": true,
+  "rollbackAmi": "ami-04142e6977d7f0d0e",
+  "saiensMergedOrDeployed": false
+}

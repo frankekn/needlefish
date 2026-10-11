@@ -56,6 +56,15 @@ export interface RunnerSandbox {
   readonly repoPath: string;
   readonly prompt: string;
   readonly expectedHeadSha: string;
+  // Repo-relative pathnames of tracked files that are Git LFS pointer stubs in
+  // this checkout, as raw bytes (see sandboxChildPath). The same list the
+  // prompt notice was rendered from; the caller filters and decodes it.
+  readonly lfsPointerFiles: readonly Buffer[];
+  // True when LFS configuration or pointer status could not be established:
+  // unreadable or too many .gitattributes (LFS use itself unknown), ls-files
+  // failure, or the candidate ceiling hit. An empty lfsPointerFiles then
+  // means "unknown", not "none".
+  readonly lfsScanIncomplete: boolean;
 }
 
 export interface RunnerSandboxOptions {
@@ -63,6 +72,7 @@ export interface RunnerSandboxOptions {
   readonly repoPath: string;
   readonly prompt: string;
   readonly targetHeadSha: string;
+  readonly targetBaseSha?: string;
   readonly targetPatch?: string;
   readonly tmp: string;
 }
@@ -94,11 +104,7 @@ export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandb
   git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandboxPath);
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
-  return {
-    repoPath: sandboxPath,
-    prompt: withLfsDisclosure(options.prompt.split(sourceRepoPath).join(sandboxPath), sandboxPath),
-    expectedHeadSha: options.targetHeadSha,
-  };
+  return finishSandbox(options, sourceRepoPath, sandboxPath, options.targetHeadSha);
 }
 
 function prepareWorkingSandbox(
@@ -109,11 +115,23 @@ function prepareWorkingSandbox(
   if (!options.targetPatch?.trim()) {
     throw new Error("WORKING sandbox requires a target patch");
   }
-  if (hasHeadCommit(sourceRepoPath)) {
+  if (options.targetBaseSha !== "EMPTY" && hasHeadCommit(sourceRepoPath)) {
     git(["clone", "--quiet", "--no-hardlinks", sourceRepoPath, sandboxPath], sourceRepoPath);
+    if (options.targetBaseSha) {
+      git(["checkout", "--quiet", "--detach", options.targetBaseSha], sandboxPath);
+    }
   } else {
     mkdirSync(sandboxPath, { recursive: true });
     git(["init", "--quiet"], sandboxPath);
+    git(
+      [
+        "-c", "user.name=Needlefish Sandbox",
+        "-c", "user.email=needlefish-sandbox@example.invalid",
+        "commit", "--quiet", "--allow-empty", "-m", "needlefish empty baseline",
+      ],
+      sandboxPath
+    );
+    git(["update-ref", "refs/heads/EMPTY", "HEAD"], sandboxPath);
   }
   // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
   // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
@@ -140,12 +158,29 @@ function prepareWorkingSandbox(
     sandboxPath
   );
   const expectedHeadSha = git(["rev-parse", "HEAD"], sandboxPath);
+  // Prompts and persisted results keep their WORKING/EMPTY labels. Make those
+  // labels real refs in this disposable clone, without rewriting source text.
+  git(["update-ref", "refs/heads/WORKING", expectedHeadSha], sandboxPath);
+  git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
+  return finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha);
+}
+
+function finishSandbox(
+  options: RunnerSandboxOptions,
+  sourceRepoPath: string,
+  sandboxPath: string,
+  expectedHeadSha: string
+): RunnerSandbox {
+  const prompt = options.prompt.split(sourceRepoPath).join(sandboxPath);
+  const lfs = lfsDisclosure(sandboxPath);
   return {
     repoPath: sandboxPath,
-    prompt: withLfsDisclosure(options.prompt.split(sourceRepoPath).join(sandboxPath), sandboxPath),
+    prompt: lfs.notice === "" ? prompt : `${prompt}\n\n${lfs.notice}`,
     expectedHeadSha,
+    lfsPointerFiles: lfs.pointers,
+    lfsScanIncomplete: lfs.incomplete,
   };
 }
 
@@ -263,31 +298,41 @@ export function assertRunnerSandboxClean(
 // This is the sandbox's own fact to report: the neutralized checkout is what
 // creates it, and the adapters that build the bundle run before the sandbox
 // exists (prepareRunnerSandbox is called only from codex.ts) so they cannot
-// know it. The prompt is the one channel this module already owns.
+// know it. The prompt is the channel to the runner; the same pointer list is
+// also returned on RunnerSandbox so the human-facing result can say which
+// changed files were reviewed as stubs, without the model being asked.
 const MAX_DISCLOSED_LFS_PATHS = 64;
 const MAX_LFS_PROBE_CANDIDATES = 512;
 const MAX_LFS_POINTER_BYTES = 1024;
 const MAX_GITATTRIBUTES_BYTES = 256 * 1024;
 const LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1";
 
-function withLfsDisclosure(prompt: string, sandboxPath: string): string {
-  const notice = lfsDisclosure(sandboxPath);
-  return notice === "" ? prompt : `${prompt}\n\n${notice}`;
+interface LfsDisclosure {
+  readonly notice: string;
+  readonly pointers: readonly Buffer[];
+  readonly incomplete: boolean;
 }
 
-function lfsDisclosure(sandboxPath: string): string {
+const NO_LFS_DISCLOSURE: LfsDisclosure = { notice: "", pointers: [], incomplete: false };
+const UNCERTAIN_LFS_DISCLOSURE: LfsDisclosure = {
+  notice: renderUncertainNotice(),
+  pointers: [],
+  incomplete: true,
+};
+
+function lfsDisclosure(sandboxPath: string): LfsDisclosure {
   // Cheap gate first: repositories that never mention filter=lfs pay one
   // small ls-files and produce no notice at all, so nothing changes for them.
   const scan = scanLfsAttributes(sandboxPath);
-  if (scan === "none") return "";
-  if (scan === "unknown") return renderUncertainNotice();
+  if (scan === "none") return NO_LFS_DISCLOSURE;
+  if (scan === "unknown") return UNCERTAIN_LFS_DISCLOSURE;
   let candidates: Buffer[];
   try {
     candidates = gitNulList(["ls-files", "-z", "--", ":(attr:filter=lfs)"], sandboxPath);
   } catch {
     // We already know the repo configures LFS, so failing to enumerate is
     // itself worth saying out loud rather than swallowing.
-    return renderUncertainNotice();
+    return UNCERTAIN_LFS_DISCLOSURE;
   }
   const probed = candidates.slice(0, MAX_LFS_PROBE_CANDIDATES);
   const truncated = candidates.length > probed.length;
@@ -295,8 +340,12 @@ function lfsDisclosure(sandboxPath: string): string {
   // "No pointer in the part we looked at" is not "no pointer". Only an
   // exhaustive scan may conclude silence; a truncated one must still say so,
   // or the disclosure reintroduces the very silence it exists to remove.
-  if (pointers.length === 0) return truncated ? renderUncertainNotice() : "";
-  return renderLfsNotice(pointers, candidates.length, truncated);
+  if (pointers.length === 0) return truncated ? UNCERTAIN_LFS_DISCLOSURE : NO_LFS_DISCLOSURE;
+  return {
+    notice: renderLfsNotice(pointers, candidates.length, truncated),
+    pointers,
+    incomplete: truncated,
+  };
 }
 
 type LfsAttributeScan = "none" | "present" | "unknown";

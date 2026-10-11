@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
+import { renderDoctorReport, runDoctor, serializeDoctorReport } from "./adapters/doctor.js";
 import { runGithubExplain } from "./adapters/explain.js";
 import { runGithub } from "./adapters/github.js";
 import {
@@ -9,6 +10,7 @@ import {
   localDryRun,
   localPrDryRun,
   printDryRun,
+  terminalProgress,
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { resolveConnectionOptions } from "./shared/connections.js";
@@ -41,6 +43,19 @@ async function main() {
     case "verdict":
       runCachedVerdict(command.file);
       return;
+    // doctor spawns only runner status commands, never a review attempt, so
+    // it stays outside the runner temp lifecycle too.
+    case "doctor": {
+      const report = runDoctor({
+        repo: command.repo ?? process.cwd(),
+        version: VERSION,
+        ...(command.runner !== undefined ? { runner: command.runner } : {}),
+        ...(command.base !== undefined ? { base: command.base } : {}),
+      });
+      process.stdout.write(command.json ? serializeDoctorReport(report) : renderDoctorReport(report));
+      if (!report.ok) process.exitCode = 1;
+      return;
+    }
   }
 
   const opts = resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
@@ -90,8 +105,11 @@ async function main() {
         );
       }
       const cwd = command.repo ?? process.cwd();
+      const progress = terminalProgress(process.stderr, command.json);
       const result =
-        command.kind === "pr" ? await runLocalPr(cwd, command.pr, opts) : await runLocal(cwd, opts);
+        command.kind === "pr"
+          ? await runLocalPr(cwd, command.pr, opts, progress)
+          : await runLocal(cwd, opts, progress);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {

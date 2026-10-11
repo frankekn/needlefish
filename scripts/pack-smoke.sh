@@ -40,6 +40,7 @@ git init "$repo" >/dev/null
 )
 
 needlefish="$install_dir/node_modules/.bin/needlefish"
+test -f "$install_dir/node_modules/needlefish/schemas/review-result.v1.schema.json"
 "$needlefish" --version
 PATH="$fakebin:/usr/bin:/bin:/usr/sbin:/sbin" \
   HOME="$home" \
