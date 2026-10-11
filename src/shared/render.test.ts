@@ -126,6 +126,35 @@ test("renderMarkdown links locations only when repository context is available",
 	assert.doesNotMatch(plain, /github\.com/);
 });
 
+test("renderMarkdown keeps location hrefs inside the repository and escapes link-breaking characters", () => {
+	const linked = renderMarkdown(
+		baseResult([
+			finding("P1", "dot escape", "../../../../evil/x.ts", {
+				lineStart: 5,
+				lineEnd: 5,
+			}),
+			finding("P2", "absolute", "/etc/passwd"),
+			finding("P2", "scheme", "https://evil.example/x.ts"),
+			finding("P3", "paren", "src/foo).ts", { lineStart: 7, lineEnd: 7 }),
+		]),
+		{ repoSlug: "owner/name" },
+	);
+
+	// Non-repo-relative paths render as plain text cells, no href.
+	assert.ok(linked.includes("`../../../../evil/x.ts:5` |"));
+	assert.ok(linked.includes("`/etc/passwd:1` |"));
+	assert.ok(linked.includes("`https://evil.example/x.ts:1` |"));
+
+	// `)` in a valid path is percent-encoded so the link does not end early.
+	assert.match(
+		linked,
+		/\[`src\/foo\)\.ts:7`\]\(https:\/\/github\.com\/owner\/name\/blob\/head\/src\/foo%29\.ts#L7\)/,
+	);
+
+	// The only rendered href stays under /<slug>/blob/<sha>/.
+	assert.equal(linked.split("blob/head/").length - 1, 1);
+});
+
 test("renderMarkdown adds blocking and nit counts directly below the headline", () => {
 	const four = renderMarkdown(
 		baseResult([

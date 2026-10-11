@@ -22,7 +22,10 @@ import {
 	WITHHELD_MESSAGE,
 	type Screened,
 } from "../shared/outbound-screen.js";
-import { formatSuggestionComment } from "./github-suggestions.js";
+import {
+	formatSuggestionComment,
+	GH_BODY_CHAR_LIMIT,
+} from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 
@@ -322,25 +325,41 @@ function pathFromFileHeader(line: string, side: "a/" | "b/"): string | null {
 // `+++` paths follow git quoting: unquoted `b/<path>`, or C-quoted
 // `"b/<path>"` (the `b/` prefix sits inside the quotes). A tab after the
 // name is a GNU-patch terminator / timestamp separator, not part of the path.
-// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; d defaults to 1 when
-// omitted. Deleted files (`+++ /dev/null`) are skipped.
+// Hunk headers `@@ -a,b +c,d @@` yield [c, c+d-1]; omitted counts default
+// to 1. Deleted files (`+++ /dev/null`) are skipped. Once a hunk header is
+// seen, the parser consumes exactly the declared line counts before reading
+// another header, so a hunk body line cannot masquerade as a file header:
+// an added line whose content starts with `++ ` (patch line `+++ b/x`)
+// stays inside the hunk instead of switching the current file.
 export function headLinesInPatch(
 	patch: string,
 ): Map<string, Array<[number, number]>> {
 	const ranges = new Map<string, Array<[number, number]>>();
 	let file: string | null = null;
+	let hunk: { old: number; new: number } | null = null;
 	for (const raw of patch.split("\n")) {
+		if (hunk) {
+			if (raw.startsWith("+")) hunk.new--;
+			else if (raw.startsWith("-")) hunk.old--;
+			else if (!raw.startsWith("\\")) {
+				hunk.old--;
+				hunk.new--;
+			}
+			if (hunk.old <= 0 && hunk.new <= 0) hunk = null;
+			continue;
+		}
 		if (raw.startsWith("+++ ")) {
 			file = pathFromFileHeader(raw, "b/");
 			if (file && !ranges.has(file)) ranges.set(file, []);
 			continue;
 		}
 		if (file && raw.startsWith("@@")) {
-			const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(raw);
+			const h = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(raw);
 			if (h) {
-				const c = Number(h[1]);
-				const d = h[2] === undefined ? 1 : Number(h[2]);
+				const c = Number(h[2]);
+				const d = h[3] === undefined ? 1 : Number(h[3]);
 				if (d > 0) ranges.get(file)!.push([c, c + d - 1]);
+				hunk = { old: h[1] === undefined ? 1 : Number(h[1]), new: d };
 			}
 		}
 	}
@@ -390,15 +409,29 @@ export function renderState(
 	headSha: string,
 	findings: readonly Finding[],
 ): string {
-	const state: RoundState = {
-		v: 1,
+	return renderStateKeys(
 		headSha,
-		findings: findings.map(findingKey),
-	};
-	return `<!-- needlefish-state: ${JSON.stringify(state)} -->`;
+		findings.map(findingKey),
+	);
+}
+
+function renderStateKeys(
+	headSha: string,
+	findings: readonly FindingKey[],
+): string {
+	const state: RoundState = { v: 1, headSha, findings };
+	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
+	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
+	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
+	return `<!-- needlefish-state: ${payload} -->`;
 }
 
 const STATE_PREFIX = "<!-- needlefish-state:";
+
+// The same literal github-suggestions.ts writes as the body's final line;
+// normalize.ts recognizes it on read-back. Truncation keeps it as the last
+// line so a truncated inline finding is still recognized as Needlefish's own.
+const OWN_INLINE_POST_MARKER = "<!-- needlefish-finding -->";
 
 export function parseState(body: string): RoundState | null {
 	const start = body.lastIndexOf(STATE_PREFIX);
@@ -433,6 +466,112 @@ export function parseState(body: string): RoundState | null {
 		keys.push({ file, lineStart, category, title });
 	}
 	return { v: 1, headSha, findings: keys };
+}
+
+// GitHub rejects a review or comment body over 65,536 characters with a 422
+// (#215, same class as the closed #179 on the check-summary endpoint). Unlike
+// the check-summary cap in checkCompletion, this limit counts characters, not
+// UTF-8 bytes. Every outbound body routes through screenAndCapOutboundBody at
+// the post site (postReview, updateReviewBody, postIssueComment). The limit
+// (GH_BODY_CHAR_LIMIT) lives in github-suggestions.ts, which drops a
+// suggestion block that would not fit rather than let the cut open its fence.
+
+// No claim of a full copy anywhere: the check summary omits inline findings'
+// evidence/fix and caps itself, so text cut from an inline comment exists
+// nowhere else (#215 staff review). The dropped count sits inside the notice,
+// and the notice length feeds the cut budget; dropped only grows as the
+// notice grows, so the digit width converges after a few rounds.
+function truncatedNotice(dropped: number): string {
+	return `Review body shortened to fit GitHub's size limit; ${dropped} characters were dropped.\n\n`;
+}
+
+// The state marker is the dedupe receipt and renderMarkdown appends it at the
+// very end — exactly where a naive truncation would cut it, turning every
+// later trigger into a full model re-review (see persistStateMarker). Own-post
+// markers (normalize.ts OWN_POST_MARKERS) ride the last non-empty line so a
+// Needlefish post is recognized on the way back in; a truncated inline
+// finding that lost it would be fed to the model as human discussion. So both
+// are pulled out before the cut and re-appended whole, notice first so it
+// stays visible even when the retained Markdown holds unclosed constructs.
+export function capOutboundBody(body: string): string {
+	if (body.length <= GH_BODY_CHAR_LIMIT) return body;
+	// Scan for the state marker exactly like parseState, so an extracted
+	// marker parses back exactly as the next run will read the posted body.
+	const markerStart = body.lastIndexOf(STATE_PREFIX);
+	const markerEnd =
+		markerStart < 0
+			? -1
+			: body.indexOf("-->", markerStart + STATE_PREFIX.length);
+	// Only the body's trailing marker is the delivery marker. A finding that
+	// quotes a valid marker mid-text is model prose: treating the quote as the
+	// receipt would swallow the evidence, fix, and own-post trailer after it
+	// (#215 staff review).
+	const state =
+		markerEnd >= 0 && body.slice(markerEnd + 3).trim() === ""
+			? parseState(body.slice(markerStart, markerEnd + 3))
+			: null;
+	let content = body;
+	let suffix = "";
+	if (state) {
+		content = body.slice(0, markerStart);
+	} else if (body.endsWith(OWN_INLINE_POST_MARKER)) {
+		content = body
+			.slice(0, -OWN_INLINE_POST_MARKER.length)
+			.replace(/\n+$/, "");
+		suffix = `\n\n${OWN_INLINE_POST_MARKER}`;
+	}
+	let notice = truncatedNotice(1);
+	for (let round = 0; ; round++) {
+		if (state) {
+			suffix = `\n${fitStateMarker(
+				state,
+				GH_BODY_CHAR_LIMIT - notice.length - 2,
+			)}\n`;
+		}
+		const budget = Math.max(
+			0,
+			GH_BODY_CHAR_LIMIT - notice.length - suffix.length,
+		);
+		let prefix = content.length > budget ? content.slice(0, budget) : content;
+		const last = prefix.charCodeAt(prefix.length - 1);
+		if (last >= 0xd800 && last <= 0xdbff) prefix = prefix.slice(0, -1);
+		const next = truncatedNotice(
+			Math.max(0, body.length - prefix.length - suffix.length),
+		);
+		if (next.length === notice.length) return next + prefix + suffix;
+		notice = next;
+	}
+}
+
+// Screen before cutting: a credential straddling the cut loses its tail, then
+// matches neither the known value nor a token shape, and its bare prefix is
+// posted (#215 staff review: a 24-char env credential leaked its first 23
+// chars). Redaction only shrinks text, so capping after screening still fits,
+// and withheld propagates exactly as screenedInput does today — that final
+// gate stays, covering everything else in the payload.
+function screenAndCapOutboundBody(body: string): string {
+	return capOutboundBody(
+		outboundText(body, screenText(body, credentialValuesFromEnv(process.env))),
+	);
+}
+
+// The marker carries one key per finding, so a large enough findings list can
+// push the marker itself past the limit. Keep the longest finding-key prefix
+// that fits: the headSha match still dedupes the same head, and dropped keys
+// only cost the next round's still-open accounting.
+function fitStateMarker(state: RoundState, budget: number): string {
+	let lo = 0;
+	let hi = state.findings.length;
+	while (lo < hi) {
+		const mid = Math.ceil((lo + hi) / 2);
+		if (
+			renderStateKeys(state.headSha, state.findings.slice(0, mid)).length <=
+			budget
+		)
+			lo = mid;
+		else hi = mid - 1;
+	}
+	return renderStateKeys(state.headSha, state.findings.slice(0, lo));
 }
 
 export interface MatchResult {
@@ -648,9 +787,13 @@ function postReview(
 ): number | null {
 	const payload = JSON.stringify({
 		commit_id: headSha,
-		body,
+		body: screenAndCapOutboundBody(body),
 		event: "COMMENT",
-		comments,
+		// Inline comment bodies are model text on the same 422 endpoint.
+		comments: comments.map((comment) => ({
+			...comment,
+			body: screenAndCapOutboundBody(comment.body),
+		})),
 	});
 
 	const created = ghPost(
@@ -723,7 +866,7 @@ function updateReviewBody(
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: screenAndCapOutboundBody(body) }),
 	);
 }
 
@@ -927,7 +1070,7 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 			"--input",
 			"-",
 		],
-		JSON.stringify({ body }),
+		JSON.stringify({ body: screenAndCapOutboundBody(body) }),
 	);
 }
 

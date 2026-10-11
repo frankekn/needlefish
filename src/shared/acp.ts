@@ -180,6 +180,8 @@ function handleMethodMessage(
     collectSessionUpdate(message.params, state);
     return;
   }
+  // The prompt result closes stdin; answering a later agent request would fail the completed run.
+  if (state.completed) return;
   const id = rpcId(message.id);
   if (id === undefined) return;
   writeJson(controller, {
