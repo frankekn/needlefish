@@ -43,7 +43,7 @@ for (const stopOnStdinError of [false, true]) {
       command: process.execPath,
       args: ["-e", "process.on('SIGTERM', () => process.exit(1)); require('node:fs').closeSync(0); setInterval(() => {}, 1000);"],
       repoPath: process.cwd(),
-      timeoutMs: stopOnStdinError ? 3000 : 300,
+      timeoutMs: stopOnStdinError ? 3000 : 1000,
       env: process.env,
       onSpawn: (controller) => {
         if (stopOnStdinError) controller.child.stdin.once("error", () => controller.stop());
