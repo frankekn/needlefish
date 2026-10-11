@@ -37,6 +37,25 @@ test("spawnRunnerProcess keeps a nonzero exit status over a stdin EPIPE", async 
   assert.equal(result.stderr, "boom");
 });
 
+for (const stopOnStdinError of [false, true]) {
+  test(`runManagedRunnerProcess retains EPIPE when ${stopOnStdinError ? "stopped" : "timed out"} child exits nonzero`, { skip: process.platform === "win32" }, async () => {
+    const result = await runManagedRunnerProcess({
+      command: process.execPath,
+      args: ["-e", "process.on('SIGTERM', () => process.exit(1)); require('node:fs').closeSync(0); setInterval(() => {}, 1000);"],
+      repoPath: process.cwd(),
+      timeoutMs: stopOnStdinError ? 3000 : 300,
+      env: process.env,
+      onSpawn: (controller) => {
+        if (stopOnStdinError) controller.child.stdin.once("error", () => controller.stop());
+        controller.child.stdin.end("x".repeat(10_000_000));
+      },
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.error?.message ?? "", /EPIPE/);
+  });
+}
+
 test("spawnRunnerProcess reports ENOBUFS when stdout exceeds the buffer cap", async () => {
   const result = await spawnRunnerProcess({
     command: process.execPath,

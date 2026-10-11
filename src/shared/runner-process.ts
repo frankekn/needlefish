@@ -182,8 +182,10 @@ export async function runManagedRunnerProcess(
       const error = spawnError ?? bufferError ?? timeoutError;
       // A stdin error only says the child stopped reading. When the child then
       // exited nonzero on its own, its exit status and stderr are the diagnosis;
-      // a zero exit or a signal keeps the stdin error, since the prompt was lost.
-      const explainedByExit = stdinError !== undefined && error === stdinError && status !== null && status !== 0;
+      // An interrupted run or a zero exit keeps the original error precedence.
+      const explainedByExit = stdinError !== undefined && error === stdinError
+        && status !== null && status !== 0 && signal === null
+        && !killStarted && bufferError === undefined && timeoutError === undefined;
       resolve({
         status,
         signal,
