@@ -16,7 +16,7 @@ const keyA = "TEST-ACCOUNT-A", keyB = "TEST-ACCOUNT-B";
 const reviewJson = JSON.stringify({ summary: "Checked source", checked: ["source.ts"], findings: [], residual_risks: [] });
 
 // Real child process and Git; only the external ACP agent is replaced.
-function fixture(t: TestContext, mode = "success") {
+function fixture(t: TestContext, mode = "success", credential = keyA) {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-account-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const repo = initRepo(root);
@@ -57,6 +57,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     else send({id:request.id,result:{sessionId:'test-session'}});
   }
   if (request.method === 'session/prompt') {
+    if (mode === 'stderr-leak') {
+      process.stderr.write('auth error code: ' + process.env.AGENT_API_KEY + '\\n', () => process.exit(1));
+      return;
+    }
+    if (mode === 'sandbox-leak') {
+      fs.writeFileSync(path.join(process.cwd(), process.env.AGENT_API_KEY), 'temporary');
+      process.stderr.write('sandbox filename: ' + process.env.AGENT_API_KEY + '\\n');
+    }
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
@@ -92,7 +100,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     HOME: home, USERPROFILE: home, NEEDLEFISH_CONNECTIONS_FILE: config,
     NEEDLEFISH_TMPDIR: tmp, NEEDLEFISH_TIMEOUT_MS: "5000", NEEDLEFISH_RETRY_MS: "1",
     NEEDLEFISH_EPHEMERAL_HOME: "0", NEEDLEFISH_ACP_AUTH_FILES: ".agent/auth.json",
-    ACCOUNT_A_KEY: keyA, ACCOUNT_B_KEY: keyB, AGENT_API_KEY: "WRONG-DEFAULT",
+    ACCOUNT_A_KEY: credential, ACCOUNT_B_KEY: keyB, AGENT_API_KEY: "WRONG-DEFAULT",
     OPENAI_API_KEY: "UNRELATED-KEY", CLAUDE_CODE_OAUTH_TOKEN: "UNRELATED-TOKEN",
     GH_TOKEN: "TEST-GH-ORCHESTRATOR", GITHUB_TOKEN: "TEST-GITHUB-ORCHESTRATOR",
     HTTPS_PROXY: "http://proxy.example.invalid:8888",
@@ -125,18 +133,22 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 function harness(f: ReturnType<typeof fixture>, parallel: boolean): string {
   const file = path.join(f.root, "invoke.mjs");
   writeFileSync(file, `
-import {runCodex} from ${JSON.stringify(new URL("./codex.ts", import.meta.url).href)};
+import {runCodex,isRunnerSafetyError} from ${JSON.stringify(new URL("./codex.ts", import.meta.url).href)};
 import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.ts", import.meta.url).href)};
 const repo = ${JSON.stringify(f.repo)}, head = ${JSON.stringify(f.head)};
 const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connection,repoPath:repo,targetHeadSha:head},repo));
 // Both real executions must retain selection-time values across concurrent calls and retries.
 process.env.ACCOUNT_A_KEY = process.env.ACCOUNT_B_KEY = 'CHANGED-AFTER-SELECTION';
 let sawFailedRaw = false;
+let sawFailedAttemptRaw = false;
 try {
-  const results = await Promise.all(opts.map(opt => runCodex('Return review JSON', {...opt,onFailedRaw:raw => {sawFailedRaw ||= raw.includes('TEST-ACCOUNT-A');}})));
+  const results = await Promise.all(opts.map(opt => runCodex('Return review JSON', {...opt,
+    onFailedRaw:raw => {sawFailedRaw ||= raw.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)});},
+    onFailedAttempt:(attempt,raw) => {sawFailedAttemptRaw ||= raw?.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)}) ?? false;}
+  })));
   console.log(JSON.stringify({ok:true,count:results.length,globalUnchanged:process.env.ACCOUNT_A_KEY === 'CHANGED-AFTER-SELECTION'}));
 } catch(error) {
-  console.log(JSON.stringify({ok:false,message:error.message,sawFailedRaw}));
+  console.log(JSON.stringify({ok:false,message:error.message,name:error.name,safetyError:isRunnerSafetyError(error),sawFailedRaw,sawFailedAttemptRaw}));
   process.exitCode = 1;
 }
 `);
@@ -194,6 +206,35 @@ test("structured auth failure does not retry or expose the key but retains contr
   f.clean();
 });
 
+for (const mode of ["stderr-leak", "sandbox-leak"]) {
+  const credential = "synthetic_secret_a1234567890";
+  test(`${mode}: failure screening retains raw evidence and error classification after source mutation`, (t) => {
+    const f = fixture(t, mode, credential);
+    const result = f.run([harness(f, false)], { NEEDLEFISH_NO_RETRY: mode === "stderr-leak" ? "1" : "0" });
+    assert.equal(result.status, 1);
+    const diagnostic = JSON.parse(result.stdout);
+    assert.match(diagnostic.message, /withheld.*credential/);
+    assert.equal(diagnostic.name, mode === "sandbox-leak" ? "RunnerWorktreeChangedError" : "RunnerOperationalError");
+    assert.equal(diagnostic.safetyError, mode === "sandbox-leak");
+    assert.equal(diagnostic.sawFailedRaw, true);
+    assert.equal(diagnostic.sawFailedAttemptRaw, true);
+    assert.ok(!(result.stdout + result.stderr).includes(credential));
+    assert.equal(f.records().length, 1);
+    f.clean();
+  });
+
+  test(`${mode}: local CLI withholds failure credentials and writes no cache`, (t) => {
+    const f = fixture(t, mode, credential);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], { NEEDLEFISH_NO_RETRY: "1" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /withheld.*credential/);
+    assert.ok(!result.stderr.includes(credential));
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
+    f.clean();
+  });
+}
+
 test("full CLI review and critic use one account without placing credentials in result or cache", (t) => {
   const f = fixture(t);
   const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"]);
@@ -229,13 +270,15 @@ for (const mode of ["leak", "leak-fenced"]) {
   });
 }
 
-test("GitHub never posts an echoed selected credential", (t) => {
-  const f = fixture(t, "leak-fenced");
-  const bin = path.join(f.root, "bin");
-  mkdirSync(bin);
-  const writes = path.join(f.root, "github-writes.jsonl");
-  const gh = path.join(bin, "gh");
-  writeFileSync(gh, `#!/usr/bin/env node
+for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak"]) {
+  test(`GitHub never posts an echoed selected credential: ${mode}`, (t) => {
+    const credential = mode === "leak-fenced" ? keyA : "synthetic_secret_a1234567890";
+    const f = fixture(t, mode, credential);
+    const bin = path.join(f.root, "bin");
+    mkdirSync(bin);
+    const writes = path.join(f.root, "github-writes.jsonl");
+    const gh = path.join(bin, "gh");
+    writeFileSync(gh, `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--input')) {
@@ -247,16 +290,19 @@ if (args.includes('--input')) {
 else if (args.includes('--paginate')) process.stdout.write('[[]]');
 else process.stdout.write('[]');
 `);
-  chmodSync(gh, 0o755);
-  const result = f.run([cli, "--repo", f.repo, "--github", "--pr", "7", "--connection", "a"], {
-    PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, GITHUB_REPOSITORY: "frankekn/needlefish",
+    chmodSync(gh, 0o755);
+    const result = f.run([cli, "--repo", f.repo, "--github", "--pr", "7", "--connection", "a"], {
+      PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, GITHUB_REPOSITORY: "frankekn/needlefish",
+      NEEDLEFISH_NO_RETRY: "1",
+    });
+    assert.equal(result.status, 1);
+    const outbound = readFileSync(writes, "utf8");
+    assert.match(outbound, /withheld.*credential/);
+    assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
+    assert.ok(!(result.stdout + result.stderr + outbound).includes(credential));
+    f.clean();
   });
-  assert.equal(result.status, 1);
-  const outbound = readFileSync(writes, "utf8");
-  assert.match(outbound, /withheld.*credential/);
-  assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
-  f.clean();
-});
+}
 
 test("dry-run validates auth configuration without requiring its credential", (t) => {
   const f = fixture(t);

@@ -59,6 +59,12 @@ export class AcpEnvironmentAuth {
     Object.assign(env, this.#values);
   }
 
+  screenDiagnostic(message: string): string {
+    return screenText(message, Object.values(this.#values)).kind === "withheld"
+      ? "Needlefish withheld runner diagnostic: it contained a selected connection credential."
+      : message;
+  }
+
   assertOutputSafe(output: string): void {
     const knownValues = Object.values(this.#values);
     if (screenPayload(output, knownValues).kind === "withheld" || screenText(output, knownValues).kind === "withheld") {

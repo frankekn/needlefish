@@ -80,6 +80,14 @@ test("native adapters and nonempty legacy passthrough fail explicitly", () => {
   auth.assertCompatible("acp", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: " " });
 });
 
+test("diagnostics use the frozen credentials and preserve safe messages", () => {
+  const source = { ...env };
+  const auth = new AcpEnvironmentAuth(refs, source);
+  source.ACCOUNT_A_KEY = "CHANGED";
+  assert.match(auth.screenDiagnostic(`auth error (${env.ACCOUNT_A_KEY.toLowerCase()})`), /withheld.*credential/);
+  assert.equal(auth.screenDiagnostic("ACP initialize timeout"), "ACP initialize timeout");
+});
+
 test("configuration permits only explicit ACP env authentication", () => {
   for (const auth of [null, {}, { env: refs, files: [] }, { files: ["auth.json"] }]) {
     assert.throws(() => parseConnections({ version: 1, connections: [entry("a", auth)] }));

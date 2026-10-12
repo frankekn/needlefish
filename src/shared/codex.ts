@@ -649,6 +649,10 @@ export async function runCodex(
 			emitStat(true);
 			return result.out;
 		} catch (err) {
+			if (err instanceof Error && opts.connectionAuth) {
+				// Keep failure types and raw provenance while withholding public credentials.
+				err.message = opts.connectionAuth.screenDiagnostic(err.message);
+			}
 			const raw =
 				err instanceof Error
 					? (err as Error & { rawOutput?: string }).rawOutput
