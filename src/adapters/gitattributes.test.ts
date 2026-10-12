@@ -501,3 +501,49 @@ for (const child of ["binary", "oversized"] as const) {
     assert.throws(() => diffBundle(repo, {}), /No uncommitted changes to review\./);
   });
 }
+
+test("a PR diff run from a subdirectory still covers the whole repository (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-subdir-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  mkdirSync(path.join(repo, "sub"));
+  writeFileSync(path.join(repo, "sub", "keep.md"), "# keep\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = eval;\n");
+  writeFileSync(path.join(repo, "pixel.bin"), NUL_BYTES);
+  commitAll(repo, "head");
+
+  const diff = prDiffFromShas(path.join(repo, "sub"), baseSha, headSha(repo));
+  assert.deepEqual(diff.binarySkipped, ["pixel.bin"]);
+  assert.match(diff.patch, /^\+export const a = eval;$/m);
+});
+
+test("inherited pathspec modes cannot turn the binary excludes off (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-pathspec-env-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = eval;\n");
+  writeFileSync(path.join(repo, "pixel.bin"), NUL_BYTES);
+  commitAll(repo, "head");
+
+  for (const name of ["GIT_LITERAL_PATHSPECS", "GIT_ICASE_PATHSPECS"]) {
+    const previous = process.env[name];
+    process.env[name] = "1";
+    try {
+      const diff = prDiffFromShas(repo, baseSha, headSha(repo));
+      assert.deepEqual(diff.binarySkipped, ["pixel.bin"], name);
+      assert.equal(diff.patch.includes("\u0000"), false, name);
+      assert.match(diff.patch, /^\+export const a = eval;$/m, name);
+    } finally {
+      if (previous === undefined) delete process.env[name];
+      else process.env[name] = previous;
+    }
+  }
+});

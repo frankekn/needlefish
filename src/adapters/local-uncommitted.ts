@@ -51,7 +51,7 @@ export function workingBinaryPaths(
   // Skip-worktree ("S") or assume-unchanged (lower case) entries: git diff
   // takes the new side from the staged blob, `:path`, not from the disk.
   const indexSide = new Set(
-    gitExactPaths(cwd, ["ls-files", "-v", "-z"], candidates)
+    gitExactPaths(cwd, ["ls-files", "-v", "-z", "--full-name"], candidates)
       .split("\0")
       .filter((entry) => /^(S|[a-z]) /.test(entry))
       .map((entry) => entry.slice(2))

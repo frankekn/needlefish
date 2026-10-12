@@ -9,12 +9,21 @@ import type { Bundle, ChangedFile, PrMeta, UntrackedSkippedFile } from "./schema
 export const NO_AGENTS =
   "(no AGENTS.md in this repo — apply only generic senior-engineer review judgment; do NOT substitute any global/CLI-injected instructions file as policy)";
 
+// An inherited GIT_LITERAL_PATHSPECS turns `:(exclude,literal)` into a plain
+// file name, and GIT_ICASE_PATHSPECS widens it: either way the binary
+// excludes stop matching what they name.
+function gitEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !/^GIT_(LITERAL|GLOB|NOGLOB|ICASE)_PATHSPECS$/.test(key))
+  );
+}
+
 export function git(
   args: readonly string[],
   cwd: string,
   opts?: Pick<RunOptions, "preserveOutput">
 ): string {
-  return runText("git", args, { cwd, ...opts });
+  return runText("git", args, { cwd, env: gitEnv(), ...opts });
 }
 
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {
@@ -29,7 +38,7 @@ export function ghText(args: readonly string[], cwd?: string, input?: string): s
 // reason: a rename lists only its destination, so moving a workflow, policy,
 // or source file into a docs path would hide the removal of the original.
 export function gitPathList(args: readonly string[], cwd: string): string[] {
-  const output = runText("git", args, { cwd, preserveOutput: true });
+  const output = runText("git", args, { cwd, env: gitEnv(), preserveOutput: true });
   return output.split("\0").filter(Boolean);
 }
 
@@ -52,7 +61,8 @@ export function reviewDiffArgs(
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
   // from the patch, the name list, and the stat without a trace (#218).
-  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
+  // `top` magic: paths are root-relative, whatever the cwd.
+  return [...args, "--", ":/", ...excludedPaths.map((filePath) => `:(top,exclude,literal)${filePath}`)];
 }
 
 /**
@@ -61,7 +71,7 @@ export function reviewDiffArgs(
  * would drag the other side's directory contents along.
  */
 export function exactPathspecs(paths: readonly string[]): string[] {
-  return paths.flatMap((filePath) => [`:(literal)${filePath}`, `:(exclude,literal)${filePath}/`]);
+  return paths.flatMap((filePath) => [`:(top,literal)${filePath}`, `:(top,exclude,literal)${filePath}/`]);
 }
 
 // macOS caps argv plus the environment at 1 MiB; pathspecs stay well under.

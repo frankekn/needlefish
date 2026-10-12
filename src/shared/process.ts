@@ -6,6 +6,7 @@ export interface RunOptions {
   readonly timeoutMs?: number;
   /** Keep stdout as-is. `git diff` needs this so a final blank context line survives. */
   readonly preserveOutput?: boolean;
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 export function runText(command: string, args: readonly string[], opts: RunOptions = {}): string {
@@ -13,6 +14,7 @@ export function runText(command: string, args: readonly string[], opts: RunOptio
     cwd: opts.cwd,
     encoding: "utf8",
     input: opts.input,
+    env: opts.env,
     maxBuffer: 1024 * 1024 * 64,
     timeout: opts.timeoutMs,
   });
