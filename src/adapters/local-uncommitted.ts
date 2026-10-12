@@ -6,9 +6,9 @@ import {
   BLOB_SNIFF_MAX_BYTES,
   contentBinaryPaths,
   exactPathspecs,
-  git,
   gitExactPaths,
   gitPathList,
+  gitPrefix,
 } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
@@ -67,19 +67,17 @@ export function workingBinaryPaths(
       if (!isMissingPathError(error)) throw error;
     }
     // Not a regular file: a symlink, whose new side is a short target.
-    if (!stat?.isFile()) continue;
-    if (stat.size > BLOB_SNIFF_MAX_BYTES) flagged.add(filePath);
-    else sniff.push(filePath);
+    if (stat?.isFile()) sniff.push(filePath);
   }
-  // One diff per path: each side is capped at BLOB_SNIFF_MAX_BYTES, so the
-  // output stays under runText's buffer, which a batch of files would not.
+  // One capped diff per path. The HEAD side has no NUL (checked above), so a
+  // NUL here is the new side as git compares it.
   for (const filePath of sniff) {
-    const patch = git(
+    const patch = gitPrefix(
       ["diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", ...exactPathspecs([filePath])],
       cwd,
-      { preserveOutput: true }
+      BLOB_SNIFF_MAX_BYTES
     );
-    if (patch.includes("\u0000")) flagged.add(filePath);
+    if (patch.includes(0)) flagged.add(filePath);
   }
   return paths.filter((filePath) => flagged.has(filePath));
 }

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
@@ -175,9 +176,25 @@ function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPa
   return headers.replace(/^(index [0-9a-f]+\.\.0+)$/gm, "$1\nBinary files differ");
 }
 
-// A blob bigger than this is binary for review purposes without reading it:
-// it is not reviewable text, and runText's 64MB stdout cap would throw on it.
+// Binary means a NUL within this many bytes of the content. Size alone is
+// not binary: a large text change must stay in review, not be skipped.
+// ponytail: a text change over runText's 64MB cap then fails the review with
+// ENOBUFS (fail closed, as plain `git diff` on main did).
 export const BLOB_SNIFF_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * About the first maxBytes of a git command's stdout. Past the cap the child
+ * is killed and the prefix kept; any other failure throws.
+ */
+export function gitPrefix(args: readonly string[], cwd: string, maxBytes: number): Buffer {
+  const res = spawnSync("git", [...args], { cwd, env: gitEnv(), maxBuffer: maxBytes });
+  const truncated = res.error !== undefined && (res.error as NodeJS.ErrnoException).code === "ENOBUFS";
+  if (res.error && !truncated) throw res.error;
+  if (!truncated && res.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${res.stderr.toString().trim()}`);
+  }
+  return res.stdout;
+}
 
 type BlobRecord = { readonly type: string; readonly size: number };
 
@@ -238,8 +255,7 @@ export function contentBinaryPaths(
   const isBinaryBlob = (record: BlobRecord | null, ref: string, filePath: string): boolean =>
     record !== null &&
     record.type === "blob" &&
-    (record.size > BLOB_SNIFF_MAX_BYTES ||
-      git(["cat-file", "blob", `${ref}:${filePath}`], cwd, { preserveOutput: true }).includes("\u0000"));
+    gitPrefix(["cat-file", "blob", `${ref}:${filePath}`], cwd, BLOB_SNIFF_MAX_BYTES).includes(0);
   return paths.filter((filePath) => {
     const [head, base] = records.get(filePath)!;
     return isBinaryBlob(head, headRef, filePath) || (baseRef !== headRef && isBinaryBlob(base, baseRef, filePath));

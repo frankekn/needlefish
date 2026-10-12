@@ -547,3 +547,30 @@ test("inherited pathspec modes cannot turn the binary excludes off (issue #213)"
     }
   }
 });
+
+// Over BLOB_SNIFF_MAX_BYTES, all text: size alone must not make it binary.
+function largeText(changedLine: string): string {
+  const lines = Array.from({ length: 1_400_000 }, (_, i) => `line ${String(i).padStart(7, "0")}`);
+  lines[700_000] = changedLine;
+  return `${lines.join("\n")}\n`;
+}
+
+test("a text change in a file over the sniff cap is reviewed, not skipped as binary (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-large-text-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "big.txt"), largeText("const x = 1;"));
+  commitAll(repo, "base");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "big.txt"), largeText("const x = eval;"));
+
+  const working = diffBundle(repo, {}).bundle;
+  assert.equal(working.binarySkipped, undefined);
+  assert.match(working.patch, /^\+const x = eval;$/m);
+
+  commitAll(repo, "head");
+  const diff = prDiffFromShas(repo, baseSha, headSha(repo));
+  assert.deepEqual(diff.binarySkipped, []);
+  assert.match(diff.patch, /^\+const x = eval;$/m);
+});
