@@ -59,6 +59,11 @@
       "type": "array",
       "items": { "$ref": "#/$defs/coverageGap" }
     },
+    "binarySkipped": {
+      "description": "Changed files whose content is binary, so they were left out of the review patch and not reviewed. Derived from file content, never by the model; does not affect the verdict.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "stats": {
       "description": "Per-runner-call timing and attempt stats.",
       "type": "array",
@@ -169,7 +174,6 @@
     "coverageGap": {
       "oneOf": [
         { "$ref": "#/$defs/lfsPointerOnlyGap" },
-        { "$ref": "#/$defs/binaryContentGap" },
         { "$ref": "#/$defs/lfsScanIncompleteGap" }
       ]
     },
@@ -178,14 +182,6 @@
       "required": ["kind", "file"],
       "properties": {
         "kind": { "const": "lfs_pointer_only" },
-        "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
-      }
-    },
-    "binaryContentGap": {
-      "type": "object",
-      "required": ["kind", "file"],
-      "properties": {
-        "kind": { "const": "binary_content" },
         "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
       }
     },

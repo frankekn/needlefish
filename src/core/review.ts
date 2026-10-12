@@ -740,9 +740,6 @@ function toReviewResult(
 	const coverageGaps: CoverageGap[] = bundle.changedFiles
 		.filter((file) => run.lfs.pointerFiles.has(file.path))
 		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
-	for (const file of bundle.binarySkipped ?? []) {
-		coverageGaps.push({ kind: "binary_content", file });
-	}
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -756,6 +753,7 @@ function toReviewResult(
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
 		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
+		...(bundle.binarySkipped?.length ? { binarySkipped: [...bundle.binarySkipped] } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
 		...(coverage ? { coverage } : {}),
@@ -1107,13 +1105,7 @@ function skippedModelResult(
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
-		...(bundle.binarySkipped?.length
-			? {
-					coverageGaps: bundle.binarySkipped.map(
-						(file): CoverageGap => ({ kind: "binary_content", file }),
-					),
-				}
-			: {}),
+		...(bundle.binarySkipped?.length ? { binarySkipped: [...bundle.binarySkipped] } : {}),
 		totalDurationMs: Date.now() - startedAt,
 	};
 }

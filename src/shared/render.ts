@@ -146,9 +146,7 @@ export function renderMarkdown(
 		);
 		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
 	}
-	const binaryContent = coverageGaps.flatMap((gap) =>
-		gap.kind === "binary_content" ? [gap.file] : [],
-	);
+	const binaryContent = opts?.omitCoverageGaps ? [] : (result.binarySkipped ?? []);
 	if (binaryContent.length > 0) {
 		lines.push("");
 		lines.push(

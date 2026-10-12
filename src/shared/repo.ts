@@ -81,7 +81,7 @@ const ancestorDirs = (filePath: string): string[] => {
  * A path and one beneath it (`old.ts` deleted, `old.ts/new.ts` added) go to
  * separate calls: the exclude half of `old.ts` would also drop `old.ts/new.ts`.
  */
-function gitExactPaths(cwd: string, args: readonly string[], paths: readonly string[]): string {
+export function gitExactPaths(cwd: string, args: readonly string[], paths: readonly string[]): string {
   let output = "";
   let batch: string[] = [];
   let bytes = 0;

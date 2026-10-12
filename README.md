@@ -295,6 +295,7 @@ changelog entry.
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
 | `coverageGaps` | Optional list of `{ kind: "lfs_pointer_only", file }` entries (changed files the review sandbox could only check out as Git LFS pointer stubs, so their contents were not reviewed), followed by at most one `{ kind: "lfs_scan_incomplete" }` entry when the sandbox could not determine whether changed files are pointer stubs (Git LFS use or the pointer list could not be established). Reported by the sandbox, never by the model; does not affect the verdict. |
+| `binarySkipped` | Optional list of changed files whose content is binary (judged by content, not `.gitattributes`), so they were left out of the review patch and not reviewed. Never set by the model; does not affect the verdict. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
 | `findings[].consumerLine` | Optional downstream line affected by the finding. |

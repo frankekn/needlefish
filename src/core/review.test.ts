@@ -1542,11 +1542,10 @@ test("review docs-only fast path skips all model calls", async (t) => {
 		assert.equal(result.coverageGaps, undefined);
 	}
 
-	// A docs file skipped as binary is still a coverage gap on the fast path.
+	// A docs file skipped as binary is still reported on the fast path.
 	const gapped = await review({ ...bundle, binarySkipped: ["README.md"] });
-	assert.deepEqual(gapped.coverageGaps, [
-		{ kind: "binary_content", file: "README.md" },
-	]);
+	assert.equal(gapped.coverageGaps, undefined);
+	assert.deepEqual(gapped.binarySkipped, ["README.md"]);
 });
 
 test("review does not fast-path policy markdown or executable files under docs paths", async (t) => {
@@ -2760,11 +2759,12 @@ test("review reports a binary-only change as coverage gaps without calling the m
 	assert.deepEqual(result.residualRisks, []);
 	assert.match(result.summary, /Binary-only change \(1 file\(s\)\); model review skipped\./);
 	assert.deepEqual(result.checked, ["FAST_PATH binary-only files=[icon.png]"]);
-	assert.deepEqual(result.coverageGaps, [{ kind: "binary_content", file: "icon.png" }]);
+	assert.equal(result.coverageGaps, undefined);
+	assert.deepEqual(result.binarySkipped, ["icon.png"]);
 	assert.ok(!existsSync(calls), "runner must not be invoked for a binary-only bundle");
 });
 
-test("review surfaces bundle.binarySkipped as binary_content coverage gaps", async (t) => {
+test("review surfaces bundle.binarySkipped on the result", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
@@ -2810,7 +2810,6 @@ test("review surfaces bundle.binarySkipped as binary_content coverage gaps", asy
 		focus: null,
 	});
 	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.coverageGaps, [
-		{ kind: "binary_content", file: "data/blob.bin" },
-	]);
+	assert.equal(result.coverageGaps, undefined);
+	assert.deepEqual(result.binarySkipped, ["data/blob.bin"]);
 });

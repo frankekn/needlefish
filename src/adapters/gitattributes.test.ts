@@ -444,3 +444,44 @@ test("a staged binary with no file on disk (skip-worktree) is skipped, not inlin
   assert.equal(bundle.patch.includes("\u0000"), false);
   assert.match(bundle.patch, /^\+export const a = 2;$/m);
 });
+
+test("a skip-worktree staged binary behind a directory or symlink is skipped, not inlined (issue #213)", (t) => {
+  for (const replacement of ["dir", "symlink", "assume-unchanged-dir"]) {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-skip-worktree-nonfile-"));
+    const repo = makeRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+    writeFileSync(path.join(repo, "data.txt"), "plain\n");
+    writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+    commitAll(repo, "base");
+    writeFileSync(path.join(repo, "data.txt"), Buffer.from([0x00, 0xff, 0x01]));
+    gitText(["add", "data.txt"], repo);
+    gitText(["update-index", replacement === "assume-unchanged-dir" ? "--assume-unchanged" : "--skip-worktree", "data.txt"], repo);
+    rmSync(path.join(repo, "data.txt"));
+    if (replacement === "symlink") symlinkSync("app.ts", path.join(repo, "data.txt"));
+    else mkdirSync(path.join(repo, "data.txt"));
+    writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+
+    const { bundle } = diffBundle(repo, {});
+    assert.deepEqual(bundle.binarySkipped, ["data.txt"], replacement);
+    assert.equal(bundle.patch.includes("\u0000"), false, replacement);
+    assert.match(bundle.patch, /^\+export const a = 2;$/m, replacement);
+  }
+});
+
+test("a skip-worktree staged text change is reviewed even if the file on disk is huge (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-skip-worktree-huge-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "data.ts"), "export const d = 1;\n");
+  commitAll(repo, "base");
+  writeFileSync(path.join(repo, "data.ts"), "export const d = eval;\n");
+  gitText(["add", "data.ts"], repo);
+  gitText(["update-index", "--skip-worktree", "data.ts"], repo);
+  truncateSync(path.join(repo, "data.ts"), 17 * 1024 * 1024);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped ?? [], []);
+  assert.match(bundle.patch, /^\+export const d = eval;$/m);
+});

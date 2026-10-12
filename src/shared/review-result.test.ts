@@ -287,7 +287,6 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	const coverageGaps = [
 		{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 		{ kind: "lfs_pointer_only", file: "data/train.parquet" },
-		{ kind: "binary_content", file: "assets/logo.png" },
 		{ kind: "lfs_scan_incomplete" },
 	];
 	const result = parseReviewResult(serialized({ coverageGaps }));
@@ -326,4 +325,10 @@ test("parseReviewResult rejects mistyped PR scope and callout fields", () => {
 	] as const) {
 		assert.throws(() => parseReviewResult(serialized({ [field]: value })), pattern);
 	}
+});
+
+test("parseReviewResult preserves binarySkipped exactly", () => {
+	const binarySkipped = ["assets/logo.png", "bin/tool"];
+	const result = parseReviewResult(serialized({ binarySkipped }));
+	assert.deepEqual(result.binarySkipped, binarySkipped);
 });

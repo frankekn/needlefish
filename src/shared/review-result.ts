@@ -354,7 +354,7 @@ function coverageGapListField(value: unknown): CoverageGap[] {
 	return value.map((entry, index): CoverageGap => {
 		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
 		if (entry.kind === "lfs_scan_incomplete") return { kind: entry.kind };
-		if (entry.kind !== "lfs_pointer_only" && entry.kind !== "binary_content") {
+		if (entry.kind !== "lfs_pointer_only") {
 			throw new Error(`entry ${index}: kind invalid ${String(entry.kind)}`);
 		}
 		if (typeof entry.file !== "string" || entry.file === "") {
@@ -372,6 +372,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
 	coverageGaps: coverageGapListField,
+	binarySkipped: stringListField,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

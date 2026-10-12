@@ -7,6 +7,7 @@ import {
   contentBinaryPaths,
   exactPathspecs,
   git,
+  gitExactPaths,
   gitPathList,
 } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
@@ -33,9 +34,9 @@ function isBinary(content: Buffer): boolean {
  * Changed tracked paths (vs HEAD) whose content is binary on either side,
  * judged by content, not by .gitattributes: the HEAD blob, and the work-tree
  * side as git compares it (after clean filters and working-tree-encoding),
- * read from the attribute-neutral patch, or the staged blob when the file is
- * not on disk. Input order is preserved so skip
- * lists stay stable.
+ * read from the attribute-neutral patch, or the staged blob for a
+ * skip-worktree or assume-unchanged entry, whatever is on disk.
+ * Input order is preserved so skip lists stay stable.
  */
 export function workingBinaryPaths(
   cwd: string,
@@ -46,18 +47,26 @@ export function workingBinaryPaths(
   // Deleted as git sees it: lstat would follow a symlinked parent directory
   // to an unrelated file of the same name.
   const deleted = new Set(gitPathList(["diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", headRef], cwd));
+  const candidates = paths.filter((filePath) => !flagged.has(filePath) && !deleted.has(filePath));
+  // Skip-worktree ("S") or assume-unchanged (lower case) entries: git diff
+  // takes the new side from the staged blob, `:path`, not from the disk.
+  const indexSide = new Set(
+    gitExactPaths(cwd, ["ls-files", "-v", "-z"], candidates)
+      .split("\0")
+      .filter((entry) => /^(S|[a-z]) /.test(entry))
+      .map((entry) => entry.slice(2))
+  );
+  for (const filePath of contentBinaryPaths(cwd, "", "", [...indexSide])) flagged.add(filePath);
   const sniff: string[] = [];
-  const absent: string[] = [];
-  for (const filePath of paths) {
-    if (flagged.has(filePath) || deleted.has(filePath)) continue;
+  for (const filePath of candidates) {
+    if (indexSide.has(filePath)) continue;
     let stat: Stats | undefined;
     try {
       stat = lstatSync(path.join(cwd, filePath));
     } catch (error) {
       if (!isMissingPathError(error)) throw error;
     }
-    if (!stat) absent.push(filePath);
-    // Not a regular file: the HEAD blob above is the whole story.
+    // Not a regular file: a symlink, whose new side is a short target.
     if (!stat?.isFile()) continue;
     if (stat.size > BLOB_SNIFF_MAX_BYTES) flagged.add(filePath);
     else sniff.push(filePath);
@@ -72,9 +81,6 @@ export function workingBinaryPaths(
     );
     if (patch.includes("\u0000")) flagged.add(filePath);
   }
-  // Changed but not deleted, yet missing on disk (skip-worktree): git diff
-  // compares the staged blob, `:path`.
-  for (const filePath of contentBinaryPaths(cwd, "", "", absent)) flagged.add(filePath);
   return paths.filter((filePath) => flagged.has(filePath));
 }
 
