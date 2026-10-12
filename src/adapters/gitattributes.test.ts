@@ -485,3 +485,19 @@ test("a skip-worktree staged text change is reviewed even if the file on disk is
   assert.deepEqual(bundle.binarySkipped ?? [], []);
   assert.match(bundle.patch, /^\+export const d = eval;$/m);
 });
+
+for (const child of ["binary", "oversized"] as const) {
+  test(`a binary swapped for a directory of skipped untracked files has nothing to review (${child}, issue #213)`, (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-skipped-"));
+    const repo = makeRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+    writeFileSync(path.join(repo, "payload"), NUL_BYTES);
+    commitAll(repo, "binary payload");
+    rmSync(path.join(repo, "payload"));
+    mkdirSync(path.join(repo, "payload"));
+    writeFileSync(path.join(repo, "payload", "child"), child === "binary" ? NUL_BYTES : "x".repeat(300 * 1024));
+
+    assert.throws(() => diffBundle(repo, {}), /No uncommitted changes to review\./);
+  });
+}

@@ -219,9 +219,11 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const untrackedFiles = headExists
     ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
     : gitPathList(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd);
-  // Untracked files count too: one under a binary swapped for a directory
-  // needs that binary's deletion in the patch, or `git apply` cannot add it.
-  const changedPaths = [...allTrackedPaths, ...untrackedFiles];
+  const untracked = buildUntrackedPatch(cwd, untrackedFiles);
+  // Inlined untracked files count too: one under a binary swapped for a
+  // directory needs that binary's deletion in the patch, or `git apply`
+  // cannot add it. Skipped ones must not pull a stub in on their own.
+  const changedPaths = [...allTrackedPaths, ...untracked.paths];
   const trackedPatch = headExists
     ? reviewDiff(cwd, [], ["HEAD"], trackedBinaryPaths, changedPaths)
     : "";
@@ -229,7 +231,6 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     ? reviewDiff(cwd, ["--stat"], ["HEAD"], trackedBinaryPaths, changedPaths)
     : "";
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
-  const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
   if (!patch.trim()) {
