@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -405,7 +405,7 @@ test("doctor's safe.directory fix names and quotes the repository root git refus
   const f = setup(t);
   codexStub(f.bin, 0, "Logged in using ChatGPT");
   mkdirSync(path.join(f.tmp, "with space"));
-  const repo = initRepo(path.join(f.tmp, "with space"));
+  const repo = realpathSync(initRepo(path.join(f.tmp, "with space")));
   const sub = path.join(repo, "sub");
   mkdirSync(sub);
   const globalConfig = path.join(f.tmp, "gitconfig");
