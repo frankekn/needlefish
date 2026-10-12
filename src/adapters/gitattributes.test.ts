@@ -574,3 +574,20 @@ test("a text change in a file over the sniff cap is reviewed, not skipped as bin
   assert.deepEqual(diff.binarySkipped, []);
   assert.match(diff.patch, /^\+const x = eval;$/m);
 });
+
+test("a large text file replaced by a small uncommitted binary is skipped as binary (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-large-text-to-binary-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "big.txt"), largeText("const x = 1;"));
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  writeFileSync(path.join(repo, "big.txt"), NUL_BYTES);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = eval;\n");
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["big.txt"]);
+  assert.equal(bundle.patch.includes("\u0000"), false);
+  assert.match(bundle.patch, /^\+export const a = eval;$/m);
+});

@@ -6,6 +6,7 @@ import {
   BLOB_SNIFF_MAX_BYTES,
   contentBinaryPaths,
   exactPathspecs,
+  git,
   gitExactPaths,
   gitPathList,
   gitPrefix,
@@ -69,11 +70,12 @@ export function workingBinaryPaths(
     // Not a regular file: a symlink, whose new side is a short target.
     if (stat?.isFile()) sniff.push(filePath);
   }
-  // One capped diff per path. The HEAD side has no NUL (checked above), so a
-  // NUL here is the new side as git compares it.
+  // One capped diff per path against the empty tree: the output is only the
+  // new side as git compares it, so deleted lines cannot fill the cap first.
+  const emptyTree = sniff.length > 0 ? git(["hash-object", "-t", "tree", "/dev/null"], cwd) : "";
   for (const filePath of sniff) {
     const patch = gitPrefix(
-      ["diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", ...exactPathspecs([filePath])],
+      ["diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, emptyTree, "--", ...exactPathspecs([filePath])],
       cwd,
       BLOB_SNIFF_MAX_BYTES
     );
