@@ -591,3 +591,38 @@ test("a large text file replaced by a small uncommitted binary is skipped as bin
   assert.equal(bundle.patch.includes("\u0000"), false);
   assert.match(bundle.patch, /^\+export const a = eval;$/m);
 });
+
+test("a skip-worktree file named like a stage ref is judged by its own staged blob (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-stage-name-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "app.ts"), NUL_BYTES);
+  writeFileSync(path.join(repo, "0:app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  writeFileSync(path.join(repo, "0:app.ts"), "export const a = eval;\n");
+  gitText(["add", "--", "0:app.ts"], repo);
+  gitText(["update-index", "--skip-worktree", "--", "0:app.ts"], repo);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.equal(bundle.binarySkipped, undefined);
+  assert.match(bundle.patch, /^\+export const a = eval;$/m);
+});
+
+test("an uncommitted NUL past a patch-inflating run of short lines is still binary (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-short-lines-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "lines.txt"), "x\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  // 15 MiB of content, but over 30 MiB of patch: one "+" per empty line.
+  writeFileSync(path.join(repo, "lines.txt"), Buffer.concat([Buffer.alloc(15 * 1024 * 1024, 0x0a), NUL_BYTES]));
+  writeFileSync(path.join(repo, "app.ts"), "export const a = eval;\n");
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["lines.txt"]);
+  assert.equal(bundle.patch.includes("\u0000"), false);
+  assert.match(bundle.patch, /^\+export const a = eval;$/m);
+});

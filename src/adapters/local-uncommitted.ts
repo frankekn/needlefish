@@ -57,7 +57,8 @@ export function workingBinaryPaths(
       .filter((entry) => /^(S|[a-z]) /.test(entry))
       .map((entry) => entry.slice(2))
   );
-  for (const filePath of contentBinaryPaths(cwd, "", "", [...indexSide])) flagged.add(filePath);
+  // Explicit stage: `:0:app.ts` alone would read stage 0 of `app.ts`.
+  for (const filePath of contentBinaryPaths(cwd, ":0", ":0", [...indexSide])) flagged.add(filePath);
   const sniff: string[] = [];
   for (const filePath of candidates) {
     if (indexSide.has(filePath)) continue;
@@ -72,12 +73,14 @@ export function workingBinaryPaths(
   }
   // One capped diff per path against the empty tree: the output is only the
   // new side as git compares it, so deleted lines cannot fill the cap first.
+  // Each content byte costs at most two output bytes (a "+" per line), plus
+  // headers, so the cap covers the same content prefix as contentBinaryPaths.
   const emptyTree = sniff.length > 0 ? git(["hash-object", "-t", "tree", "/dev/null"], cwd) : "";
   for (const filePath of sniff) {
     const patch = gitPrefix(
       ["diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, emptyTree, "--", ...exactPathspecs([filePath])],
       cwd,
-      BLOB_SNIFF_MAX_BYTES
+      2 * BLOB_SNIFF_MAX_BYTES + 1024 * 1024
     );
     if (patch.includes(0)) flagged.add(filePath);
   }
