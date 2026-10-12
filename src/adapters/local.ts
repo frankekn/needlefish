@@ -217,16 +217,19 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const trackedBinaryPaths = headExists ? workingBinaryPaths(cwd, baseSha, allTrackedPaths) : [];
   const binarySet = new Set(trackedBinaryPaths);
   const trackedPaths = allTrackedPaths.filter((filePath) => !binarySet.has(filePath));
-  const trackedPatch = headExists
-    ? reviewDiff(cwd, [], ["HEAD"], trackedBinaryPaths, allTrackedPaths)
-    : "";
-  const trackedPatchStat = headExists
-    ? reviewDiff(cwd, ["--stat"], ["HEAD"], trackedBinaryPaths, allTrackedPaths)
-    : "";
-  const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
     ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
     : gitPathList(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd);
+  // Untracked files count too: one under a binary swapped for a directory
+  // needs that binary's deletion in the patch, or `git apply` cannot add it.
+  const changedPaths = [...allTrackedPaths, ...untrackedFiles];
+  const trackedPatch = headExists
+    ? reviewDiff(cwd, [], ["HEAD"], trackedBinaryPaths, changedPaths)
+    : "";
+  const trackedPatchStat = headExists
+    ? reviewDiff(cwd, ["--stat"], ["HEAD"], trackedBinaryPaths, changedPaths)
+    : "";
+  const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 

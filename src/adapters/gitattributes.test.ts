@@ -244,31 +244,33 @@ test("re-review history diff skips binary content but keeps source touches (issu
   );
 });
 
-test("an uncommitted binary swapped for a directory yields a patch git apply accepts (issue #213)", (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-working-"));
-  const repo = makeRepo(tmp);
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+for (const staged of [true, false]) {
+  test(`an uncommitted binary swapped for a directory yields a patch git apply accepts (staged=${staged}, issue #213)`, (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-working-"));
+    const repo = makeRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-  writeFileSync(path.join(repo, "payload"), NUL_BYTES);
-  commitAll(repo, "binary payload");
-  rmSync(path.join(repo, "payload"));
-  mkdirSync(path.join(repo, "payload"));
-  writeFileSync(path.join(repo, "payload", "app.ts"), "export const run = eval;\n");
-  gitText(["add", "-A"], repo);
+    writeFileSync(path.join(repo, "payload"), NUL_BYTES);
+    commitAll(repo, "binary payload");
+    rmSync(path.join(repo, "payload"));
+    mkdirSync(path.join(repo, "payload"));
+    writeFileSync(path.join(repo, "payload", "app.ts"), "export const run = eval;\n");
+    if (staged) gitText(["add", "-A"], repo);
 
-  const { bundle } = diffBundle(repo, {});
-  assert.deepEqual(bundle.binarySkipped, ["payload"]);
-  assert.match(bundle.patch, /^\+export const run = eval;$/m);
-  assert.equal(bundle.patch.includes("\u0000"), false);
+    const { bundle } = diffBundle(repo, {});
+    assert.deepEqual(bundle.binarySkipped, ["payload"]);
+    assert.match(bundle.patch, /^\+export const run = eval;$/m);
+    assert.equal(bundle.patch.includes("\u0000"), false);
 
-  // The WORKING sandbox applies the patch to a clone of HEAD.
-  const clone = path.join(tmp, "clone");
-  gitText(["clone", "--quiet", repo, clone], tmp);
-  const patchFile = path.join(tmp, "working.patch");
-  writeFileSync(patchFile, bundle.patch);
-  gitText(["apply", "--whitespace=nowarn", patchFile], clone);
-  assert.equal(readFileSync(path.join(clone, "payload", "app.ts"), "utf8"), "export const run = eval;\n");
-});
+    // The WORKING sandbox applies the patch to a clone of HEAD.
+    const clone = path.join(tmp, "clone");
+    gitText(["clone", "--quiet", repo, clone], tmp);
+    const patchFile = path.join(tmp, "working.patch");
+    writeFileSync(patchFile, bundle.patch);
+    gitText(["apply", "--whitespace=nowarn", patchFile], clone);
+    assert.equal(readFileSync(path.join(clone, "payload", "app.ts"), "utf8"), "export const run = eval;\n");
+  });
+}
 
 test("a binary path containing a newline is still detected (issue #213)", (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-newline-"));
