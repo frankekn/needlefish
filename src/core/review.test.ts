@@ -16,6 +16,7 @@ import { review } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
 import { classifySurface } from "../shared/classify";
 import { commitAll, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
+import { prDiffFromShas } from "../shared/repo";
 import type { Bundle } from "../shared/schema";
 
 test("review preserves deep evidence through tail coverage", async (t) => {
@@ -2830,5 +2831,69 @@ test("review omits binary-skipped files from small and large coverage", async (t
 					: "full diff reviewed in one pass (1 file)",
 			);
 		}
+	}
+});
+
+test("review excludes skipped binaries from mapped and tail deep passes", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-binary-tail-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "deep-calls.txt");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	const baseSha = headSha(repo);
+	mkdirSync(path.join(repo, "src"));
+	mkdirSync(path.join(repo, "data"));
+	writeFileSync(path.join(repo, "src/app.ts"), "export const app = 1;\n");
+	writeFileSync(path.join(repo, "data/blob.bin"), Buffer.from([0, 1, 2]));
+	commitAll(repo, "source and binary");
+	const bundle: Bundle = {
+		repoPath: repo,
+		...prDiffFromShas(repo, baseSha, headSha(repo)),
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: true,
+		focus: null,
+	};
+
+	for (const mapIncludesBinary of [false, true]) {
+		writeFileSync(calls, "");
+		writeFileSync(bin, [
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"const input = fs.readFileSync(0, 'utf8');",
+			"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"if (input.includes('review-MAP pass')) {",
+			`  const files = ${JSON.stringify(mapIncludesBinary ? ["src/app.ts", "data/blob.bin"] : ["src/app.ts"])};`,
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'mapped', hotspots: [{ name: 'app', files, why: 'changed files', risk: 'high', edges: [] }] }));",
+			"  process.exit(0);",
+			"}",
+			"if (input.includes('doing a DEEP review')) {",
+			"  const hotspot = JSON.parse(input.split('# Hotspot (this surface)\\n')[1].split('\\n\\n# Refs')[0]);",
+			`  fs.appendFileSync(${JSON.stringify(calls)}, hotspot.files.join(',') + '\\n');`,
+			"  if (hotspot.files.includes('data/blob.bin')) { fs.writeFileSync(out, 'not json'); process.exit(0); }",
+			"}",
+			"fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+		].join("\n"));
+		chmodSync(bin, 0o755);
+
+		const result = await review(bundle);
+		assert.equal(result.verdict, "pass");
+		assert.deepEqual(result.residualRisks, []);
+		assert.equal(result.stats?.length, 3, "only map, source deep pass, and critic must run");
+		assert.equal(readFileSync(calls, "utf8"), "src/app.ts\n");
+		assert.equal(result.coverage, "1/2 changed files deep-reviewed across 1 hotspot");
+		assert.deepEqual(result.binarySkipped, ["data/blob.bin"]);
 	}
 });

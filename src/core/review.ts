@@ -194,9 +194,8 @@ function isLarge(bundle: Bundle): boolean {
 
 function changedHotspots(
 	hotspots: readonly Hotspot[],
-	bundle: Bundle,
+	changed: ReadonlySet<string>,
 ): Hotspot[] {
-	const changed = new Set(bundle.changedFiles.map((file) => file.path));
 	return hotspots
 		.map((hotspot) => ({
 			...hotspot,
@@ -877,15 +876,15 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		mapResult: mapResult.value,
 		provenance: mapResult,
 	});
-	const mappedHotspots = changedHotspots(mapResult.value.hotspots, bundle);
+	const binarySkipped = new Set(bundle.binarySkipped ?? []);
+	const reviewable = new Set(bundle.changedFiles.map((file) => file.path).filter((file) => !binarySkipped.has(file)));
+	const mappedHotspots = changedHotspots(mapResult.value.hotspots, reviewable);
 	const hotspots = sortByRisk(mappedHotspots).slice(0, MAX_HOTSPOTS);
 
-	// Coverage backstop: any changed file not in a selected hotspot goes into a tail
-	// hotspot so it still gets deep-reviewed (never silently skip a changed file).
+	// Coverage backstop: any reviewable file not in a selected hotspot goes into
+	// a tail hotspot so it still gets deep-reviewed.
 	const covered = new Set(hotspots.flatMap((h) => h.files));
-	const uncovered = bundle.changedFiles
-		.map((f) => f.path)
-		.filter((p) => !covered.has(p));
+	const uncovered = [...reviewable].filter((file) => !covered.has(file));
 	let tailAdded = false;
 	if (uncovered.length > 0) {
 		tailAdded = true;
@@ -1032,8 +1031,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// counting them (or their hotspot) would make the coverage line overstate
 	// exactly when it matters most; the failure itself is a blocking residual.
 	const okHotspots = hotspots.filter((_, i) => passes[i].ok);
-	const binarySkipped = new Set(bundle.binarySkipped ?? []);
-	const coveredFileCount = new Set(okHotspots.flatMap((h) => h.files).filter((file) => !binarySkipped.has(file))).size;
+	const coveredFileCount = new Set(okHotspots.flatMap((h) => h.files)).size;
 	const tailOk = tailAdded && passes[passes.length - 1].ok;
 	const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${okHotspots.length} hotspot${okHotspots.length === 1 ? "" : "s"}${tailOk ? ", incl. tail-coverage" : ""}`;
 	const summary = `${mapResult.value.summary} — ${pruned.value.summary}`;
