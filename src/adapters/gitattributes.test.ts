@@ -4,13 +4,13 @@
 // patches must be attribute-neutral, and files that are genuinely binary by
 // content must be reported as coverage gaps instead of vanishing.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import { contentBinaryPaths, prDiffFromShas } from "../shared/repo.js";
-import { touchesSincePrevHead } from "./github.js";
+import { classifyUnmatched, touchesSincePrevHead } from "./github.js";
 import { diffBundle } from "./local.js";
 
 const NUL_BYTES = Buffer.from([0x89, 0x00, 0x50, 0x4e, 0x47]);
@@ -235,7 +235,39 @@ test("re-review history diff skips binary content but keeps source touches (issu
   const touches = touchesSincePrevHead(repo, prevHead, headSha(repo));
   assert.ok(touches);
   assert.ok(touches.has("app.ts"));
-  assert.equal(touches.has("blob.bin"), false);
+  assert.equal(touches.get("blob.bin"), null);
+  // The binary changed but has no line ranges: a prior finding on it is
+  // undetermined, never "code unchanged".
+  assert.deepEqual(
+    classifyUnmatched([{ file: "blob.bin", lineStart: 1, category: "bug", title: "t" }], touches),
+    { code_changed: 0, code_unchanged: 0, undetermined: 1 }
+  );
+});
+
+test("an uncommitted binary swapped for a directory yields a patch git apply accepts (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-working-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "payload"), NUL_BYTES);
+  commitAll(repo, "binary payload");
+  rmSync(path.join(repo, "payload"));
+  mkdirSync(path.join(repo, "payload"));
+  writeFileSync(path.join(repo, "payload", "app.ts"), "export const run = eval;\n");
+  gitText(["add", "-A"], repo);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["payload"]);
+  assert.match(bundle.patch, /^\+export const run = eval;$/m);
+  assert.equal(bundle.patch.includes("\u0000"), false);
+
+  // The WORKING sandbox applies the patch to a clone of HEAD.
+  const clone = path.join(tmp, "clone");
+  gitText(["clone", "--quiet", repo, clone], tmp);
+  const patchFile = path.join(tmp, "working.patch");
+  writeFileSync(patchFile, bundle.patch);
+  gitText(["apply", "--whitespace=nowarn", patchFile], clone);
+  assert.equal(readFileSync(path.join(clone, "payload", "app.ts"), "utf8"), "export const run = eval;\n");
 });
 
 test("a binary path containing a newline is still detected (issue #213)", (t) => {

@@ -669,7 +669,10 @@ export function oldSideTouches(
 
 export function classifyUnmatched(
 	unmatched: readonly FindingKey[],
-	touches: ReadonlyMap<string, ReadonlyArray<readonly [number, number]>> | null,
+	touches: ReadonlyMap<
+		string,
+		ReadonlyArray<readonly [number, number]> | null
+	> | null,
 ): PriorFateCounts {
 	const counts: Record<PriorFate, number> = {
 		code_changed: 0,
@@ -677,13 +680,14 @@ export function classifyUnmatched(
 		undetermined: 0,
 	};
 	for (const key of unmatched) {
-		if (touches === null) {
+		const fileTouches = touches === null ? null : touches.get(key.file);
+		if (fileTouches === null) {
 			counts.undetermined++;
 			continue;
 		}
 		const lo = key.lineStart - LINE_DRIFT;
 		const hi = key.lineStart + LINE_DRIFT;
-		const changed = (touches.get(key.file) ?? []).some(
+		const changed = (fileTouches ?? []).some(
 			([start, end]) => start <= hi && end >= lo,
 		);
 		counts[changed ? "code_changed" : "code_unchanged"]++;
@@ -692,12 +696,13 @@ export function classifyUnmatched(
 }
 
 // null means the previous head is not available locally, even after one
-// fetch; every unmatched key is then undetermined rather than guessed.
+// fetch; every unmatched key is then undetermined rather than guessed. A
+// binary path maps to null: it changed, but no line ranges are known.
 export function touchesSincePrevHead(
 	repoPath: string,
 	prevHead: string,
 	headSha: string,
-): Map<string, Array<[number, number]>> | null {
+): Map<string, Array<[number, number]> | null> | null {
 	if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(prevHead)) return null;
 	try {
 		try {
@@ -713,15 +718,19 @@ export function touchesSincePrevHead(
 		const paths = changedFiles(repoPath, prevHead, headSha).map(
 			(file) => file.path,
 		);
-		return oldSideTouches(
-			reviewDiff(
-				repoPath,
-				["--no-color", "--no-renames", "-U0"],
-				[prevHead, headSha],
-				contentBinaryPaths(repoPath, headSha, prevHead, paths),
-				paths,
-			),
-		);
+		const binaryPaths = contentBinaryPaths(repoPath, headSha, prevHead, paths);
+		const touches: Map<string, Array<[number, number]> | null> =
+			oldSideTouches(
+				reviewDiff(
+					repoPath,
+					["--no-color", "--no-renames", "-U0"],
+					[prevHead, headSha],
+					binaryPaths,
+					paths,
+				),
+			);
+		for (const file of binaryPaths) touches.set(file, null);
+		return touches;
 	} catch {
 		return null;
 	}

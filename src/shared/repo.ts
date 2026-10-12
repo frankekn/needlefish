@@ -75,12 +75,38 @@ export function reviewDiff(
   );
   const main = git(reviewDiffArgs(extraArgs, rangeArgs, excludedPaths), cwd, { preserveOutput: true });
   if (shadowed.length === 0) return main;
+  const shadowing = excludedPaths.filter((binaryPath) =>
+    shadowed.some((filePath) => filePath.startsWith(`${binaryPath}/`))
+  );
   return (
+    (extraArgs.includes("--stat") ? "" : binaryDeletionStubs(cwd, rangeArgs, shadowing)) +
     main +
     git(["--literal-pathspecs", ...reviewDiffArgs(extraArgs, rangeArgs), "--", ...shadowed], cwd, {
       preserveOutput: true,
     })
   );
+}
+
+// `git apply` (the WORKING sandbox) cannot put a directory where a file still
+// is, so a binary swapped for a directory keeps a content-free deletion record:
+// git's header with the full preimage id, then the binary marker apply expects.
+function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPaths: readonly string[]): string {
+  const headers = git(
+    [
+      "--literal-pathspecs",
+      "diff",
+      "--full-index",
+      "--irreversible-delete",
+      "--diff-filter=D",
+      ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
+      ...rangeArgs,
+      "--",
+      ...binaryPaths,
+    ],
+    cwd,
+    { preserveOutput: true }
+  );
+  return headers.replace(/^(index [0-9a-f]+\.\.0+)$/gm, "$1\nBinary files differ");
 }
 
 // A blob bigger than this is binary for review purposes without reading it:
