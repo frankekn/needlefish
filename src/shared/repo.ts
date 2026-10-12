@@ -68,20 +68,45 @@ export function exactPathspecs(paths: readonly string[]): string[] {
 const PATHSPEC_ARGV_BUDGET = 256 * 1024;
 const pathspecBytes = (filePath: string): number => 2 * Buffer.byteLength(filePath) + 32;
 
-/** `git <args> -- <exactly these paths>`, split into calls that fit in argv. */
+const ancestorDirs = (filePath: string): string[] => {
+  const dirs: string[] = [];
+  for (let slash = filePath.indexOf("/"); slash !== -1; slash = filePath.indexOf("/", slash + 1)) {
+    dirs.push(filePath.slice(0, slash));
+  }
+  return dirs;
+};
+
+/**
+ * `git <args> -- <exactly these paths>`, split into calls that fit in argv.
+ * A path and one beneath it (`old.ts` deleted, `old.ts/new.ts` added) go to
+ * separate calls: the exclude half of `old.ts` would also drop `old.ts/new.ts`.
+ */
 function gitExactPaths(cwd: string, args: readonly string[], paths: readonly string[]): string {
   let output = "";
   let batch: string[] = [];
   let bytes = 0;
+  let batchPaths = new Set<string>();
+  let batchDirs = new Set<string>();
   const flush = () => {
     if (batch.length > 0) output += git([...args, "--", ...exactPathspecs(batch)], cwd, { preserveOutput: true });
     batch = [];
     bytes = 0;
+    batchPaths = new Set();
+    batchDirs = new Set();
   };
   for (const filePath of paths) {
-    if (bytes + pathspecBytes(filePath) > PATHSPEC_ARGV_BUDGET) flush();
+    const dirs = ancestorDirs(filePath);
+    if (
+      bytes + pathspecBytes(filePath) > PATHSPEC_ARGV_BUDGET ||
+      batchDirs.has(filePath) ||
+      dirs.some((dir) => batchPaths.has(dir))
+    ) {
+      flush();
+    }
     batch.push(filePath);
     bytes += pathspecBytes(filePath);
+    batchPaths.add(filePath);
+    for (const dir of dirs) batchDirs.add(dir);
   }
   flush();
   return output;
@@ -102,12 +127,8 @@ export function reviewDiff(
 ): string {
   const excluded = new Set(excludedPaths);
   const included = changedPaths.filter((filePath) => !excluded.has(filePath));
-  const excludedAncestor = (filePath: string): string | undefined => {
-    for (let slash = filePath.indexOf("/"); slash !== -1; slash = filePath.indexOf("/", slash + 1)) {
-      if (excluded.has(filePath.slice(0, slash))) return filePath.slice(0, slash);
-    }
-    return undefined;
-  };
+  const excludedAncestor = (filePath: string): string | undefined =>
+    ancestorDirs(filePath).find((dir) => excluded.has(dir));
   const shadowed = included.filter((filePath) => excludedAncestor(filePath) !== undefined);
   const shadowing = [...new Set(shadowed.map((filePath) => excludedAncestor(filePath)!))];
   const stubs =

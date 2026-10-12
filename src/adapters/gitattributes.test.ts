@@ -404,3 +404,43 @@ test("an exclusion list too long for one argv still yields the text patch (issue
   const patch = reviewDiff(repo, [], [baseSha, headSha(repo)], excluded, ["app.ts", ...excluded]);
   assert.match(patch, /^\+export const a = 2;$/m);
 });
+
+test("batched pathspecs keep a file added under a deleted file's path (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-argv-nested-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "old.ts"), "export const o = 1;\n");
+  commitAll(repo, "base");
+  const baseSha = headSha(repo);
+  rmSync(path.join(repo, "old.ts"));
+  mkdirSync(path.join(repo, "old.ts"));
+  writeFileSync(path.join(repo, "old.ts", "new.ts"), "export const n = eval;\n");
+  gitText(["add", "-A"], repo);
+  commitAll(repo, "head");
+
+  const excluded = Array.from({ length: 3000 }, (_, i) => `bin/${String(i).padStart(4, "0")}-${"x".repeat(480)}.bin`);
+  const patch = reviewDiff(repo, [], [baseSha, headSha(repo)], excluded, ["old.ts", "old.ts/new.ts", ...excluded]);
+  assert.match(patch, /^-export const o = 1;$/m);
+  assert.match(patch, /^\+export const n = eval;$/m);
+});
+
+test("a staged binary with no file on disk (skip-worktree) is skipped, not inlined (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-skip-worktree-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "data.txt"), "plain\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  writeFileSync(path.join(repo, "data.txt"), Buffer.from([0x00, 0xff, 0x01]));
+  gitText(["add", "data.txt"], repo);
+  gitText(["update-index", "--skip-worktree", "data.txt"], repo);
+  rmSync(path.join(repo, "data.txt"));
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["data.txt"]);
+  assert.equal(bundle.patch.includes("\u0000"), false);
+  assert.match(bundle.patch, /^\+export const a = 2;$/m);
+});

@@ -33,7 +33,8 @@ function isBinary(content: Buffer): boolean {
  * Changed tracked paths (vs HEAD) whose content is binary on either side,
  * judged by content, not by .gitattributes: the HEAD blob, and the work-tree
  * side as git compares it (after clean filters and working-tree-encoding),
- * read from the attribute-neutral patch. Input order is preserved so skip
+ * read from the attribute-neutral patch, or the staged blob when the file is
+ * not on disk. Input order is preserved so skip
  * lists stay stable.
  */
 export function workingBinaryPaths(
@@ -46,6 +47,7 @@ export function workingBinaryPaths(
   // to an unrelated file of the same name.
   const deleted = new Set(gitPathList(["diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", headRef], cwd));
   const sniff: string[] = [];
+  const absent: string[] = [];
   for (const filePath of paths) {
     if (flagged.has(filePath) || deleted.has(filePath)) continue;
     let stat: Stats | undefined;
@@ -54,7 +56,8 @@ export function workingBinaryPaths(
     } catch (error) {
       if (!isMissingPathError(error)) throw error;
     }
-    // Absent or not a regular file: the HEAD blob above is the whole story.
+    if (!stat) absent.push(filePath);
+    // Not a regular file: the HEAD blob above is the whole story.
     if (!stat?.isFile()) continue;
     if (stat.size > BLOB_SNIFF_MAX_BYTES) flagged.add(filePath);
     else sniff.push(filePath);
@@ -69,6 +72,9 @@ export function workingBinaryPaths(
     );
     if (patch.includes("\u0000")) flagged.add(filePath);
   }
+  // Changed but not deleted, yet missing on disk (skip-worktree): git diff
+  // compares the staged blob, `:path`.
+  for (const filePath of contentBinaryPaths(cwd, "", "", absent)) flagged.add(filePath);
   return paths.filter((filePath) => flagged.has(filePath));
 }
 
