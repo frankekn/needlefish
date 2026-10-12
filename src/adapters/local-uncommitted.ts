@@ -27,9 +27,9 @@ function isBinary(content: Buffer): boolean {
 }
 
 /**
- * Changed tracked paths (vs HEAD) whose new content is binary, judged by
- * content, not by .gitattributes: the work-tree file when present, the HEAD
- * blob for deletions. Input order is preserved so skip lists stay stable.
+ * Changed tracked paths (vs HEAD) whose content is binary on either side,
+ * judged by content, not by .gitattributes: the work-tree file when present,
+ * and the HEAD blob. Input order is preserved so skip lists stay stable.
  */
 export function workingBinaryPaths(
   cwd: string,
@@ -37,7 +37,7 @@ export function workingBinaryPaths(
   paths: readonly string[]
 ): string[] {
   const flagged = new Set<string>();
-  const absentFromWorkTree: string[] = [];
+  const notFlagged: string[] = [];
   for (const filePath of paths) {
     let stat: Stats | undefined;
     try {
@@ -45,18 +45,16 @@ export function workingBinaryPaths(
     } catch (error) {
       if (!isMissingPathError(error)) throw error;
     }
-    if (stat === undefined || !stat.isFile()) {
-      absentFromWorkTree.push(filePath);
-      continue;
-    }
     if (
-      stat.size > BLOB_SNIFF_MAX_BYTES ||
-      isBinary(readFileSync(path.join(cwd, filePath)))
+      stat?.isFile() &&
+      (stat.size > BLOB_SNIFF_MAX_BYTES || isBinary(readFileSync(path.join(cwd, filePath))))
     ) {
       flagged.add(filePath);
+    } else {
+      notFlagged.push(filePath);
     }
   }
-  for (const filePath of contentBinaryPaths(cwd, headRef, headRef, absentFromWorkTree)) {
+  for (const filePath of contentBinaryPaths(cwd, headRef, headRef, notFlagged)) {
     flagged.add(filePath);
   }
   return paths.filter((filePath) => flagged.has(filePath));

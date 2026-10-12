@@ -71,8 +71,8 @@ function blobRecord(line: string): { readonly type: string; readonly size: numbe
 
 /**
  * Changed paths whose content is binary, judged by content (NUL bytes), not
- * by .gitattributes. Each path is sniffed at headRef and, when absent there
- * (deleted), at baseRef. Paths containing newlines break the positional
+ * by .gitattributes. A path is binary when its blob at either headRef or
+ * baseRef is: --text would otherwise inline the raw side's bytes. Paths containing newlines break the positional
  * batch-check parsing and are reported as text: shown rather than hidden.
  */
 export function contentBinaryPaths(
@@ -92,13 +92,17 @@ export function contentBinaryPaths(
   const records = check.split("\n");
   const binary: string[] = [];
   for (let i = 0; i < queried.length; i += 1) {
-    const head = blobRecord(records[2 * i] ?? "");
-    const base = blobRecord(records[2 * i + 1] ?? "");
-    const record = head ?? base;
-    if (!record || record.type !== "blob") continue;
-    const spec = `${head ? headRef : baseRef}:${queried[i]}`;
-    if (record.size > BLOB_SNIFF_MAX_BYTES || git(["cat-file", "blob", spec], cwd, { preserveOutput: true }).includes("\u0000")) {
-      binary.push(queried[i]!);
+    const filePath = queried[i]!;
+    const isBinaryBlob = (record: ReturnType<typeof blobRecord>, ref: string): boolean =>
+      record !== null &&
+      record.type === "blob" &&
+      (record.size > BLOB_SNIFF_MAX_BYTES ||
+        git(["cat-file", "blob", `${ref}:${filePath}`], cwd, { preserveOutput: true }).includes("\u0000"));
+    if (
+      isBinaryBlob(blobRecord(records[2 * i] ?? ""), headRef) ||
+      (baseRef !== headRef && isBinaryBlob(blobRecord(records[2 * i + 1] ?? ""), baseRef))
+    ) {
+      binary.push(filePath);
     }
   }
   return binary;

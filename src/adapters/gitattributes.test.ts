@@ -101,7 +101,7 @@ test("textconv attributes cannot rewrite patch content (issue #213)", (t) => {
 
   writeFileSync(path.join(repo, "notes.txt"), "old txt\n");
   commitAll(repo, "base2");
-  writeFileSync(path.join(repo, ".gitattributes"), "*.txt textconv=tr\n");
+  writeFileSync(path.join(repo, ".gitattributes"), "*.txt diff=tr\n");
   gitText(["config", "diff.tr.textconv", "tr a-z A-Z"], repo);
   commitAll(repo, "attribute textconv");
   writeFileSync(path.join(repo, "notes.txt"), "new txt\n");
@@ -137,4 +137,29 @@ test("binary detection is content-truthed, not attribute-truthed (issue #213)", 
     contentBinaryPaths(repo, headSha(repo), beforeDelete, ["gone.bin", "app.ts"]),
     ["gone.bin"],
   );
+});
+
+test("a path binary only at base is skipped, not inlined by --text (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-baseside-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "pack.bin"), NUL_BYTES);
+  commitAll(repo, "binary at base");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "pack.bin"), "plain text now\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+  commitAll(repo, "text at head");
+
+  const diff = prDiffFromShas(repo, baseSha, headSha(repo));
+  assert.deepEqual(diff.binarySkipped, ["pack.bin"]);
+  assert.equal(diff.patch.includes("\u0000"), false);
+
+  writeFileSync(path.join(repo, "pack.bin"), NUL_BYTES);
+  commitAll(repo, "binary again");
+  writeFileSync(path.join(repo, "pack.bin"), "text in the work tree\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 3;\n");
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["pack.bin"]);
+  assert.equal(bundle.patch.includes("\u0000"), false);
 });
