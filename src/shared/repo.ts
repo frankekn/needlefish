@@ -97,6 +97,8 @@ function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPa
       "diff",
       "--full-index",
       "--irreversible-delete",
+      // A binary moved under its own path is a rename otherwise, not a D.
+      "--no-renames",
       "--diff-filter=D",
       ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
       ...rangeArgs,
@@ -117,15 +119,18 @@ type BlobRecord = { readonly type: string; readonly size: number };
 
 // A --batch-check line for a present object is "<oid> <type> <size>" (no
 // echo); for a missing input it is "<input> missing". Inputs may contain
-// spaces, so present records are matched from the end; inputs with newlines
-// never reach --batch-check (see blobRecordOf).
+// spaces, so present records are matched from the end; inputs with a newline
+// or CR never reach --batch-check (see blobRecordOf).
 function blobRecord(line: string): BlobRecord | null {
   const present = /(?:^| )([0-9a-f]{40,64}) (\w+) (\d+)$/.exec(line);
   return present ? { type: present[2]!, size: Number(present[3]) } : null;
 }
 
-// --batch-check is line-based, so a path containing a newline is looked up
-// on its own; a missing object is null, as in blobRecord.
+// --batch-check is line-based (and strips a trailing CR), so a path
+// containing a newline or CR is looked up on its own; a missing object is
+// null, as in blobRecord.
+const lineUnsafe = (filePath: string): boolean => /[\r\n]/.test(filePath);
+
 function blobRecordOf(cwd: string, spec: string): BlobRecord | null {
   try {
     return { type: git(["cat-file", "-t", spec], cwd), size: Number(git(["cat-file", "-s", spec], cwd)) };
@@ -146,7 +151,7 @@ export function contentBinaryPaths(
   paths: readonly string[]
 ): string[] {
   const records = new Map<string, readonly [BlobRecord | null, BlobRecord | null]>();
-  const batched = paths.filter((filePath) => !filePath.includes("\n"));
+  const batched = paths.filter((filePath) => !lineUnsafe(filePath));
   if (batched.length > 0) {
     const refs = batched.flatMap((filePath) => [`${headRef}:${filePath}`, `${baseRef}:${filePath}`]);
     const lines = runText("git", ["cat-file", "--batch-check"], {
@@ -159,7 +164,7 @@ export function contentBinaryPaths(
     );
   }
   for (const filePath of paths) {
-    if (filePath.includes("\n")) {
+    if (lineUnsafe(filePath)) {
       records.set(filePath, [
         blobRecordOf(cwd, `${headRef}:${filePath}`),
         blobRecordOf(cwd, `${baseRef}:${filePath}`),

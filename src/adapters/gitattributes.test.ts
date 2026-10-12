@@ -244,8 +244,8 @@ test("re-review history diff skips binary content but keeps source touches (issu
   );
 });
 
-for (const staged of [true, false]) {
-  test(`an uncommitted binary swapped for a directory yields a patch git apply accepts (staged=${staged}, issue #213)`, (t) => {
+for (const [staged, movedInside] of [[true, false], [false, false], [true, true]] as const) {
+  test(`an uncommitted binary swapped for a directory yields a patch git apply accepts (staged=${staged}, movedInside=${movedInside}, issue #213)`, (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-working-"));
     const repo = makeRepo(tmp);
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -255,10 +255,12 @@ for (const staged of [true, false]) {
     rmSync(path.join(repo, "payload"));
     mkdirSync(path.join(repo, "payload"));
     writeFileSync(path.join(repo, "payload", "app.ts"), "export const run = eval;\n");
+    // Same bytes under the new directory: git sees a rename, not a deletion.
+    if (movedInside) writeFileSync(path.join(repo, "payload", "asset.bin"), NUL_BYTES);
     if (staged) gitText(["add", "-A"], repo);
 
     const { bundle } = diffBundle(repo, {});
-    assert.deepEqual(bundle.binarySkipped, ["payload"]);
+    assert.deepEqual(bundle.binarySkipped, movedInside ? ["payload", "payload/asset.bin"] : ["payload"]);
     assert.match(bundle.patch, /^\+export const run = eval;$/m);
     assert.equal(bundle.patch.includes("\u0000"), false);
 
@@ -272,19 +274,20 @@ for (const staged of [true, false]) {
   });
 }
 
-test("a binary path containing a newline is still detected (issue #213)", (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-newline-"));
-  const repo = makeRepo(tmp);
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+for (const name of ["line\nbinary.bin", "image.bin\r"]) {
+  test(`a binary path containing a line break is still detected (${JSON.stringify(name)}, issue #213)`, (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-newline-"));
+    const repo = makeRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-  const name = "line\nbinary.bin";
-  writeFileSync(path.join(repo, name), Buffer.from([0x00, 0x01, 0xff]));
-  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
-  commitAll(repo, "newline binary");
-  rmSync(path.join(repo, name));
-  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+    writeFileSync(path.join(repo, name), Buffer.from([0x00, 0x01, 0xff]));
+    writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+    commitAll(repo, "newline binary");
+    rmSync(path.join(repo, name));
+    writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
 
-  const { bundle } = diffBundle(repo, {});
-  assert.deepEqual(bundle.binarySkipped, [name]);
-  assert.equal(bundle.patch.includes("\u0000"), false);
-});
+    const { bundle } = diffBundle(repo, {});
+    assert.deepEqual(bundle.binarySkipped, [name]);
+    assert.equal(bundle.patch.includes("\u0000"), false);
+  });
+}
