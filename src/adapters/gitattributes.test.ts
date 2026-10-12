@@ -193,3 +193,27 @@ test("a tracked path under a directory replaced by a file is reviewed as deleted
   const { bundle } = diffBundle(repo, {});
   assert.match(bundle.patch, /^-export const port = 1;$/m);
 });
+
+test("changes under a binary file swapped for a directory stay in the patch (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-swap-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "payload"), NUL_BYTES);
+  commitAll(repo, "binary payload");
+  const baseSha = headSha(repo);
+  rmSync(path.join(repo, "payload"));
+  mkdirSync(path.join(repo, "payload"));
+  writeFileSync(path.join(repo, "payload", "app.ts"), "export const run = eval;\n");
+  gitText(["add", "-A"], repo);
+  commitAll(repo, "payload becomes a directory");
+
+  const diff = prDiffFromShas(repo, baseSha, headSha(repo));
+  assert.deepEqual(diff.binarySkipped, ["payload"]);
+  assert.match(diff.patch, /^\+export const run = eval;$/m);
+  assert.match(diff.patchStat, /payload\/app\.ts/);
+  assert.equal(diff.patch.includes("\u0000"), false);
+
+  const { bundle } = diffBundle(repo, { localMode: "branch", base: baseSha });
+  assert.match(bundle.patch, /^\+export const run = eval;$/m);
+});

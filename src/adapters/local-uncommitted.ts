@@ -54,15 +54,15 @@ export function workingBinaryPaths(
     if (stat.size > BLOB_SNIFF_MAX_BYTES) flagged.add(filePath);
     else sniff.push(filePath);
   }
-  const patchHasNul = (filePaths: readonly string[]): boolean =>
-    git(
-      ["--literal-pathspecs", "diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", ...filePaths],
+  // One diff per path: each side is capped at BLOB_SNIFF_MAX_BYTES, so the
+  // output stays under runText's buffer, which a batch of files would not.
+  for (const filePath of sniff) {
+    const patch = git(
+      ["--literal-pathspecs", "diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", filePath],
       cwd,
       { preserveOutput: true }
-    ).includes("\u0000");
-  // One diff in the common all-text case; per path only when a NUL shows up.
-  if (sniff.length > 0 && patchHasNul(sniff)) {
-    for (const filePath of sniff) if (patchHasNul([filePath])) flagged.add(filePath);
+    );
+    if (patch.includes("\u0000")) flagged.add(filePath);
   }
   return paths.filter((filePath) => flagged.has(filePath));
 }

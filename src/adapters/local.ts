@@ -22,6 +22,7 @@ import {
   NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
+  reviewDiff,
   reviewDiffArgs,
   type PrRefInfo,
 } from "../shared/repo.js";
@@ -175,10 +176,9 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   const { baseRef, baseSha } = resolveReviewBase(cwd, opts.base);
   const headSha = git(["rev-parse", "HEAD"], cwd);
   const files = changedFiles(cwd, baseSha);
-  const binarySkipped = contentBinaryPaths(cwd, headSha, baseSha, files.map((file) => file.path));
-  const patch = git(reviewDiffArgs([], [baseSha, headSha], binarySkipped), cwd, {
-    preserveOutput: true,
-  });
+  const paths = files.map((file) => file.path);
+  const binarySkipped = contentBinaryPaths(cwd, headSha, baseSha, paths);
+  const patch = reviewDiff(cwd, [], [baseSha, headSha], binarySkipped, paths);
   if (!patch.trim()) {
     throw new Error(
       `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.${binarySkippedSuffix(binarySkipped)}`
@@ -189,9 +189,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     baseSha,
     headSha,
     patch,
-    patchStat: git(reviewDiffArgs(["--stat"], [baseSha, headSha], binarySkipped), cwd, {
-      preserveOutput: true,
-    }),
+    patchStat: reviewDiff(cwd, ["--stat"], [baseSha, headSha], binarySkipped, paths),
     changedFiles: files,
     binarySkipped,
     ...(opts.pr
@@ -219,10 +217,10 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const binarySet = new Set(trackedBinaryPaths);
   const trackedPaths = allTrackedPaths.filter((filePath) => !binarySet.has(filePath));
   const trackedPatch = headExists
-    ? git(reviewDiffArgs([], ["HEAD"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? reviewDiff(cwd, [], ["HEAD"], trackedBinaryPaths, allTrackedPaths)
     : "";
   const trackedPatchStat = headExists
-    ? git(reviewDiffArgs(["--stat"], ["HEAD"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? reviewDiff(cwd, ["--stat"], ["HEAD"], trackedBinaryPaths, allTrackedPaths)
     : "";
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists

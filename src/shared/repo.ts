@@ -56,6 +56,34 @@ export function reviewDiffArgs(
   return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
 }
 
+/**
+ * A review patch (or stat) minus excluded paths. An exclude pathspec also
+ * hides everything beneath the path, so when a binary file was swapped for a
+ * directory, the changed paths under it are diffed in a second pass instead
+ * of vanishing from review.
+ */
+export function reviewDiff(
+  cwd: string,
+  extraArgs: readonly string[],
+  rangeArgs: readonly string[],
+  excludedPaths: readonly string[],
+  changedPaths: readonly string[]
+): string {
+  const excluded = new Set(excludedPaths);
+  const shadowed = changedPaths.filter(
+    (filePath) =>
+      !excluded.has(filePath) && excludedPaths.some((binaryPath) => filePath.startsWith(`${binaryPath}/`))
+  );
+  const main = git(reviewDiffArgs(extraArgs, rangeArgs, excludedPaths), cwd, { preserveOutput: true });
+  if (shadowed.length === 0) return main;
+  return (
+    main +
+    git(["--literal-pathspecs", ...reviewDiffArgs(extraArgs, rangeArgs), "--", ...shadowed], cwd, {
+      preserveOutput: true,
+    })
+  );
+}
+
 // A blob bigger than this is binary for review purposes without reading it:
 // it is not reviewable text, and runText's 64MB stdout cap would throw on it.
 export const BLOB_SNIFF_MAX_BYTES = 16 * 1024 * 1024;
@@ -325,10 +353,9 @@ export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
 export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
   const mergeBase = git(["merge-base", baseSha, headSha], cwd);
   const files = changedFiles(cwd, mergeBase, headSha);
-  const binarySkipped = contentBinaryPaths(cwd, headSha, mergeBase, files.map((file) => file.path));
-  const patch = git(reviewDiffArgs([], [mergeBase, headSha], binarySkipped), cwd, {
-    preserveOutput: true,
-  });
+  const paths = files.map((file) => file.path);
+  const binarySkipped = contentBinaryPaths(cwd, headSha, mergeBase, paths);
+  const patch = reviewDiff(cwd, [], [mergeBase, headSha], binarySkipped, paths);
   if (!patch.trim()) {
     throw new Error(
       `No diff between ${mergeBase} and ${headSha}. Nothing to review.${binarySkippedSuffix(binarySkipped)}`
@@ -338,9 +365,7 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
     baseSha: mergeBase,
     headSha,
     patch,
-    patchStat: git(reviewDiffArgs(["--stat"], [mergeBase, headSha], binarySkipped), cwd, {
-      preserveOutput: true,
-    }),
+    patchStat: reviewDiff(cwd, ["--stat"], [mergeBase, headSha], binarySkipped, paths),
     changedFiles: files,
     binarySkipped,
   };
