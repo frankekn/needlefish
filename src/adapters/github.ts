@@ -7,7 +7,14 @@ import {
 	type PriorFate,
 	type PriorFateCounts,
 } from "../shared/render.js";
-import { ghText, git, makeBundle, prDiffFromShas, reviewDiffArgs } from "../shared/repo.js";
+import {
+	ghText,
+	git,
+	makeBundle,
+	prDiffFromShas,
+	readAgentsAt,
+	reviewDiffArgs,
+} from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
@@ -1623,6 +1630,7 @@ export async function runGithub(
 		prMeta,
 		deep: false,
 		focus: null,
+		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);

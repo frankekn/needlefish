@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha } from "./codex-runner-test-fixtures";
-import { changedFiles, ensurePrCommits, git, makeBundle, prDiffFromShas, type PrRefInfo } from "./repo";
+import { changedFiles, ensurePrCommits, git, makeBundle, NO_AGENTS, prDiffFromShas, readAgentsAt, type PrRefInfo } from "./repo";
 
 test("ensurePrCommits fetches enough history for a shallow PR graph", () => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-"));
@@ -135,12 +135,86 @@ test("makeBundle preserves review target disclosure", () => {
     prMeta: null,
     deep: false,
     focus: null,
+    agentsMd: "policy",
   });
 
   assert.equal(
     bundle.reviewTarget,
     "Review target: local base..head\nPR context: #24 metadata only"
   );
+  assert.equal(bundle.agentsMd, "policy");
+});
+
+// Issue #211, PR #224 critic: policy comes only from git objects at <ref>.
+// A regular blob is returned verbatim. A committed symlink (mode 120000)
+// resolves exactly one hop when its link text names a repo-relative regular
+// blob in the same tree. Everything else — absolute target, escaping `..`,
+// chains, trees, submodules, missing targets — yields NO_AGENTS, never the
+// link's target path as fake policy and never the outside file's contents.
+test("readAgentsAt reads AGENTS.md only from git objects, resolving one in-tree symlink hop", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-repo-symlink-"));
+  try {
+    const work = join(tmp, "work");
+    gitText(["init", "-q", work], tmp);
+    writeFileSync(join(work, "README.md"), "repo\n");
+    commitAll(work, "base");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+
+    const commitLink = (linkText: string, message: string) => {
+      rmSync(join(work, "AGENTS.md"), { force: true });
+      symlinkSync(linkText, join(work, "AGENTS.md"));
+      commitAll(work, message);
+    };
+
+    // One-hop resolution: AGENTS.md -> CLAUDE.md returns CLAUDE.md's blob.
+    writeFileSync(join(work, "CLAUDE.md"), "LINKED-POLICY\n");
+    mkdirSync(join(work, "docs"));
+    writeFileSync(join(work, "docs", "guide.md"), "guide\n");
+    commitAll(work, "policy and docs");
+    commitLink("CLAUDE.md", "symlink to CLAUDE.md");
+    assert.equal(readAgentsAt(work, "HEAD"), "LINKED-POLICY");
+
+    // Raw paths: non-ASCII and glob characters, and link text with spaces.
+    writeFileSync(join(work, "規則.md"), "UNICODE-POLICY\n");
+    writeFileSync(join(work, "a[b].md"), "GLOB-POLICY\n");
+    writeFileSync(join(work, "ab.md"), "WRONG-POLICY\n");
+    writeFileSync(join(work, " policy.md "), "SPACED-POLICY\n");
+    writeFileSync(join(work, "policy.md"), "TRIMMED-POLICY\n");
+    commitAll(work, "oddly named policies");
+    commitLink("規則.md", "symlink to a non-ASCII name");
+    assert.equal(readAgentsAt(work, "HEAD"), "UNICODE-POLICY");
+    commitLink("a[b].md", "symlink to a glob-like name");
+    assert.equal(readAgentsAt(work, "HEAD"), "GLOB-POLICY");
+    commitLink(" policy.md ", "symlink with spaces in the link text");
+    assert.equal(readAgentsAt(work, "HEAD"), "SPACED-POLICY");
+
+    // Out-of-tree targets never disclose their contents and never pass the
+    // link text through as policy.
+    writeFileSync(join(tmp, "outside.txt"), "OUTSIDE-SENTINEL\n");
+    commitLink("../outside.txt", "symlink escaping the repo");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    const secret = join(tmp, "secret.txt");
+    writeFileSync(secret, "SECRET-TOKEN-xyz\n");
+    commitLink(secret, "absolute symlink");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+
+    // Targets that are not regular blobs: a tree, another symlink, a missing path.
+    commitLink("docs", "symlink to a tree");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    // ls-tree lists a directory's contents for "docs/"; that must not pick a file inside.
+    commitLink("docs/", "symlink to a tree with a trailing slash");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    commitLink("relay.md", "symlink with no relay yet");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    rmSync(join(work, "AGENTS.md"));
+    symlinkSync("CLAUDE.md", join(work, "relay.md"));
+    commitLink("relay.md", "symlink chain");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+    commitLink("missing.txt", "broken symlink");
+    assert.equal(readAgentsAt(work, "HEAD"), NO_AGENTS);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 // `git diff --name-only` applies rename detection and reports only the
