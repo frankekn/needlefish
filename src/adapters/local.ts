@@ -136,9 +136,14 @@ function ensureGitRepo(cwd: string): void {
 // repository, so the clone fails and no review happens. Every local surface
 // collects, reads policy, and writes cache from this one root.
 function resolveRepoRoot(cwd: string): string {
-  ensureGitRepo(cwd);
-  const top = git(["rev-parse", "--show-toplevel"], cwd);
-  if (top) return path.resolve(top);
+  try {
+    const top = git(["rev-parse", "--show-toplevel"], cwd);
+    if (top) return path.resolve(top);
+  } catch (err) {
+    if (!(err instanceof Error)) throw err;
+    ensureGitRepo(cwd);
+    throw err;
+  }
   throw new Error("This folder is not a git repository yet. Run `git init` inside your project folder first.");
 }
 
