@@ -398,6 +398,7 @@ export interface DryRunReport {
   readonly mode: DryRunMode;
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -427,6 +428,7 @@ interface DryRunSummary {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly binarySkipped: readonly string[];
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -453,6 +455,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     binarySkipped: bundle.binarySkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
+    binaryOnlyFastPath: report.binaryOnlyFastPath,
     largePath: report.largePath,
   };
 }
@@ -507,6 +510,7 @@ export function printDryRun(
     lines.push(`  ${file}`);
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
+  lines.push(`binaryOnlyFastPath: ${summary.binaryOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -232,6 +232,23 @@ test("docs-only --deep --dry-run reports the fast path, not the large path", (t)
   );
 });
 
+test("binary-only --deep --dry-run reports the binary-only fast path, not the large path (issue #213)", (t) => {
+  const fixture = setupDryRunFixture(t, [
+    { path: "assets/icon.png", content: "\u0089PNG\u0000\u0001" },
+  ]);
+
+  const result = runCli(fixture, [
+    "--repo", fixture.repo, "--deep", "--dry-run", "--json",
+  ]);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(fixture.marker), false, "runner must not be invoked");
+  const summary = parseJsonObject(result.stdout);
+  assert.deepEqual(summary.binarySkipped, ["assets/icon.png"]);
+  assert.equal(summary.binaryOnlyFastPath, true);
+  assert.equal(summary.largePath, false);
+});
+
 test("--dry-run with a nested --repo collects root-relative tracked and untracked changes", (t) => {
   const fixture = setupDryRunFixture(t, [
     { path: "app.ts", content: "export const app = 1;\n" },

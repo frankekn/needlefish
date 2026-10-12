@@ -1070,9 +1070,15 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // only threshold owners.
 export function reviewPlan(bundle: Bundle): {
 	readonly docsOnlyFastPath: boolean;
+	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	// Every change is binary content the model cannot read (issue #213): the
+	// patch is empty, so there is nothing to send. Not an optional fast path,
+	// so NEEDLEFISH_NO_FAST_PATH does not apply.
+	const binaryOnlyFastPath =
+		!docsOnlyFastPath && !bundle.patch.trim() && (bundle.binarySkipped?.length ?? 0) > 0;
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1081,7 +1087,8 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
-		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		binaryOnlyFastPath,
+		largePath: docsOnlyFastPath || binaryOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
 
@@ -1128,14 +1135,13 @@ export async function review(
 			`FAST_PATH docs-only files=[${paths}]`,
 		);
 	}
-	// Every change is binary content the model cannot read (issue #213): the
-	// patch is empty, so report the files as coverage gaps without a model run.
-	if (!bundle.patch.trim() && bundle.binarySkipped?.length) {
+	if (plan.binaryOnlyFastPath) {
+		const binary = bundle.binarySkipped ?? [];
 		return skippedModelResult(
 			bundle,
 			startedAt,
-			`Binary-only change (${bundle.binarySkipped.length} file(s)); model review skipped.`,
-			`FAST_PATH binary-only files=[${bundle.binarySkipped.join(", ")}]`,
+			`Binary-only change (${binary.length} file(s)); model review skipped.`,
+			`FAST_PATH binary-only files=[${binary.join(", ")}]`,
 		);
 	}
 	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
