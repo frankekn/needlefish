@@ -1112,6 +1112,13 @@ export async function review(
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+			...(bundle.binarySkipped?.length
+				? {
+						coverageGaps: bundle.binarySkipped.map(
+							(file): CoverageGap => ({ kind: "binary_content", file }),
+						),
+					}
+				: {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}

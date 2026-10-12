@@ -1539,7 +1539,14 @@ test("review docs-only fast path skips all model calls", async (t) => {
 			!existsSync(calls),
 			"runner must not be invoked for docs-only bundle",
 		);
+		assert.equal(result.coverageGaps, undefined);
 	}
+
+	// A docs file skipped as binary is still a coverage gap on the fast path.
+	const gapped = await review({ ...bundle, binarySkipped: ["README.md"] });
+	assert.deepEqual(gapped.coverageGaps, [
+		{ kind: "binary_content", file: "README.md" },
+	]);
 });
 
 test("review does not fast-path policy markdown or executable files under docs paths", async (t) => {

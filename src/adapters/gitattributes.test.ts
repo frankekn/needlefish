@@ -4,7 +4,7 @@
 // patches must be attribute-neutral, and files that are genuinely binary by
 // content must be reported as coverage gaps instead of vanishing.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -162,4 +162,34 @@ test("a path binary only at base is skipped, not inlined by --text (issue #213)"
   const { bundle } = diffBundle(repo, {});
   assert.deepEqual(bundle.binarySkipped, ["pack.bin"]);
   assert.equal(bundle.patch.includes("\u0000"), false);
+});
+
+test("working-tree-encoding text is judged as git compares it, not by raw bytes (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-wte-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, ".gitattributes"), "*.ps1 working-tree-encoding=UTF-16LE\n");
+  writeFileSync(path.join(repo, "script.ps1"), Buffer.from("Write-Host old\n", "utf16le"));
+  commitAll(repo, "utf-16 script");
+  writeFileSync(path.join(repo, "script.ps1"), Buffer.from("Write-Host new\n", "utf16le"));
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped ?? [], []);
+  assert.match(bundle.patch, /^\+Write-Host new$/m);
+});
+
+test("a tracked path under a directory replaced by a file is reviewed as deleted (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-enotdir-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  mkdirSync(path.join(repo, "config"));
+  writeFileSync(path.join(repo, "config", "app.ts"), "export const port = 1;\n");
+  commitAll(repo, "config dir");
+  rmSync(path.join(repo, "config"), { recursive: true });
+  writeFileSync(path.join(repo, "config"), "now a file\n");
+
+  const { bundle } = diffBundle(repo, {});
+  assert.match(bundle.patch, /^-export const port = 1;$/m);
 });

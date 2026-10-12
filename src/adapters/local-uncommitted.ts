@@ -5,6 +5,7 @@ import {
   ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
   BLOB_SNIFF_MAX_BYTES,
   contentBinaryPaths,
+  git,
 } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
@@ -28,34 +29,40 @@ function isBinary(content: Buffer): boolean {
 
 /**
  * Changed tracked paths (vs HEAD) whose content is binary on either side,
- * judged by content, not by .gitattributes: the work-tree file when present,
- * and the HEAD blob. Input order is preserved so skip lists stay stable.
+ * judged by content, not by .gitattributes: the HEAD blob, and the work-tree
+ * side as git compares it (after clean filters and working-tree-encoding),
+ * read from the attribute-neutral patch. Input order is preserved so skip
+ * lists stay stable.
  */
 export function workingBinaryPaths(
   cwd: string,
   headRef: string,
   paths: readonly string[]
 ): string[] {
-  const flagged = new Set<string>();
-  const notFlagged: string[] = [];
+  const flagged = new Set(contentBinaryPaths(cwd, headRef, headRef, paths));
+  const sniff: string[] = [];
   for (const filePath of paths) {
+    if (flagged.has(filePath)) continue;
     let stat: Stats | undefined;
     try {
       stat = lstatSync(path.join(cwd, filePath));
     } catch (error) {
       if (!isMissingPathError(error)) throw error;
     }
-    if (
-      stat?.isFile() &&
-      (stat.size > BLOB_SNIFF_MAX_BYTES || isBinary(readFileSync(path.join(cwd, filePath))))
-    ) {
-      flagged.add(filePath);
-    } else {
-      notFlagged.push(filePath);
-    }
+    // Absent or not a regular file: the HEAD blob above is the whole story.
+    if (!stat?.isFile()) continue;
+    if (stat.size > BLOB_SNIFF_MAX_BYTES) flagged.add(filePath);
+    else sniff.push(filePath);
   }
-  for (const filePath of contentBinaryPaths(cwd, headRef, headRef, notFlagged)) {
-    flagged.add(filePath);
+  const patchHasNul = (filePaths: readonly string[]): boolean =>
+    git(
+      ["--literal-pathspecs", "diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", ...filePaths],
+      cwd,
+      { preserveOutput: true }
+    ).includes("\u0000");
+  // One diff in the common all-text case; per path only when a NUL shows up.
+  if (sniff.length > 0 && patchHasNul(sniff)) {
+    for (const filePath of sniff) if (patchHasNul([filePath])) flagged.add(filePath);
   }
   return paths.filter((filePath) => flagged.has(filePath));
 }
@@ -103,7 +110,8 @@ function statLine(filePath: string, insertions: number): string {
 
 /** ENOENT only (dangling/missing). EACCES and other I/O errors stay fail-closed. */
 function isMissingPathError(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+  // ENOTDIR: a parent directory was replaced by a file, so the path is gone.
+  return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR");
 }
 
 export function buildUntrackedPatch(cwd: string, files: readonly string[]): UntrackedPatch {
