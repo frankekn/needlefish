@@ -56,6 +56,15 @@ export function reviewDiffArgs(
 }
 
 /**
+ * Pathspecs matching exactly these files. A plain path also matches
+ * everything beneath it, so a file that replaced a directory (or the reverse)
+ * would drag the other side's directory contents along.
+ */
+export function exactPathspecs(paths: readonly string[]): string[] {
+  return paths.flatMap((filePath) => [`:(literal)${filePath}`, `:(exclude,literal)${filePath}/`]);
+}
+
+/**
  * A review patch (or stat) minus excluded paths. An exclude pathspec also
  * hides everything beneath the path, so when a binary file was swapped for a
  * directory, the changed paths under it are diffed in a second pass instead
@@ -81,7 +90,7 @@ export function reviewDiff(
   return (
     (extraArgs.includes("--stat") ? "" : binaryDeletionStubs(cwd, rangeArgs, shadowing)) +
     main +
-    git(["--literal-pathspecs", ...reviewDiffArgs(extraArgs, rangeArgs), "--", ...shadowed], cwd, {
+    git([...reviewDiffArgs(extraArgs, rangeArgs), "--", ...exactPathspecs(shadowed)], cwd, {
       preserveOutput: true,
     })
   );
@@ -93,7 +102,6 @@ export function reviewDiff(
 function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPaths: readonly string[]): string {
   const headers = git(
     [
-      "--literal-pathspecs",
       "diff",
       "--full-index",
       "--irreversible-delete",
@@ -103,7 +111,7 @@ function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPa
       ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
       ...rangeArgs,
       "--",
-      ...binaryPaths,
+      ...exactPathspecs(binaryPaths),
     ],
     cwd,
     { preserveOutput: true }

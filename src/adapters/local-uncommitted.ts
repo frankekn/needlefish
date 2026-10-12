@@ -5,6 +5,7 @@ import {
   ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
   BLOB_SNIFF_MAX_BYTES,
   contentBinaryPaths,
+  exactPathspecs,
   git,
 } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
@@ -58,7 +59,7 @@ export function workingBinaryPaths(
   // output stays under runText's buffer, which a batch of files would not.
   for (const filePath of sniff) {
     const patch = git(
-      ["--literal-pathspecs", "diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", filePath],
+      ["diff", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, headRef, "--", ...exactPathspecs([filePath])],
       cwd,
       { preserveOutput: true }
     );

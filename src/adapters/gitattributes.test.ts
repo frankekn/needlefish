@@ -274,6 +274,48 @@ for (const [staged, movedInside] of [[true, false], [false, false], [true, true]
   });
 }
 
+test("a text file that replaced a binary-holding directory is still reviewed (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-dir-to-file-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  mkdirSync(path.join(repo, "app.ts"));
+  writeFileSync(path.join(repo, "app.ts", "asset.bin"), NUL_BYTES);
+  writeFileSync(path.join(repo, "README.md"), "# a\n");
+  commitAll(repo, "binary under app.ts/");
+  rmSync(path.join(repo, "app.ts"), { recursive: true });
+  writeFileSync(path.join(repo, "app.ts"), "export const run = eval;\n");
+  writeFileSync(path.join(repo, "README.md"), "# b\n");
+  gitText(["add", "-A"], repo);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["app.ts/asset.bin"]);
+  assert.match(bundle.patch, /^\+export const run = eval;$/m);
+});
+
+test("a binary file that replaced a text directory yields a patch git apply accepts (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-dir-to-binary-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  mkdirSync(path.join(repo, "payload"));
+  writeFileSync(path.join(repo, "payload", "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "text under payload/");
+  rmSync(path.join(repo, "payload"), { recursive: true });
+  writeFileSync(path.join(repo, "payload"), NUL_BYTES);
+  gitText(["add", "-A"], repo);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped, ["payload"]);
+  assert.match(bundle.patch, /^-export const a = 1;$/m);
+
+  const clone = path.join(tmp, "clone");
+  gitText(["clone", "--quiet", repo, clone], tmp);
+  const patchFile = path.join(tmp, "working.patch");
+  writeFileSync(patchFile, bundle.patch);
+  gitText(["apply", "--whitespace=nowarn", patchFile], clone);
+});
+
 for (const name of ["line\nbinary.bin", "image.bin\r"]) {
   test(`a binary path containing a line break is still detected (${JSON.stringify(name)}, issue #213)`, (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-newline-"));
