@@ -20,6 +20,7 @@ import {
   NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
+  reviewDiff,
   type PrRefInfo,
 } from "../shared/repo.js";
 import { normalizePrMeta } from "../shared/normalize.js";
@@ -118,8 +119,11 @@ export function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = ["diff", ...extraArgs, "HEAD"];
+// Uncommitted mode reads attributes from HEAD, not the empty tree: the work
+// tree side goes through eol, working-tree-encoding and clean-filter
+// conversions, and without them a UTF-16 text change diffs as binary.
+function trackedDiffArgs(cwd: string, extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
+  const args = [...reviewDiff(cwd, "HEAD"), ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -180,7 +184,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   }
   const { baseRef, baseSha } = resolveReviewBase(cwd, opts.base);
   const headSha = git(["rev-parse", "HEAD"], cwd);
-  const patch = git(["diff", baseSha, "HEAD"], cwd, { preserveOutput: true });
+  const patch = git([...reviewDiff(cwd), baseSha, "HEAD"], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(
       `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.`
@@ -191,7 +195,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     baseSha,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
+    patchStat: git([...reviewDiff(cwd), "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, baseSha),
     ...(opts.pr
       ? {
@@ -208,19 +212,19 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
+    ? parseTrackedBinaryPathsFromNumstat(git([...reviewDiff(cwd, "HEAD"), "--numstat", "-z", "HEAD"], cwd))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs(cwd, [], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
   const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs(cwd, ["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
   // Rename detection off for the name list only: a `git mv` into a docs path
   // must keep its removed source path, or classification sees docs alone and
   // the fast path skips the review. The patch above keeps its rename headers.
   const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
+    ? gitPathList(trackedDiffArgs(cwd, ["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
     : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists

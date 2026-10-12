@@ -17,6 +17,20 @@ export function git(
   return runText("git", args, { cwd, ...opts });
 }
 
+// Issue #213: the reviewed commit's own .gitattributes must not shape the
+// review patch; `* -diff` or `* binary` turns every source hunk into
+// "Binary files differ". --attr-source (git >= 2.41; older git rejects the
+// flag) reads attributes from the given tree, and the empty tree means none.
+// Real binary content is still detected by git itself. Never GIT_ATTR_SOURCE:
+// an older git ignores the variable and the bypass returns silently.
+export function reviewDiff(cwd: string, attrSource = emptyTree(cwd)): string[] {
+  return [`--attr-source=${attrSource}`, "diff", "--no-textconv", "--no-ext-diff"];
+}
+
+function emptyTree(cwd: string): string {
+  return git(["hash-object", "-t", "tree", "/dev/null"], cwd);
+}
+
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {
   return runText("gh", args, { cwd, input });
 }
@@ -281,7 +295,7 @@ export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
 
 export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
   const mergeBase = git(["merge-base", baseSha, headSha], cwd);
-  const patch = git(["diff", mergeBase, headSha], cwd, { preserveOutput: true });
+  const patch = git([...reviewDiff(cwd), mergeBase, headSha], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
   }
@@ -289,7 +303,7 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
     baseSha: mergeBase,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
+    patchStat: git([...reviewDiff(cwd), "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, mergeBase, headSha),
   };
 }

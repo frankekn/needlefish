@@ -252,6 +252,7 @@ test("runLocal threads size-cap-skipped untracked files into large-path deep pro
 test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-total-cap-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  gitText(["init", "-q"], tmp);
   const files = Array.from({ length: 7 }, (_, index) => `cap-${index}.md`);
   for (const [index, file] of files.entries()) {
     writeFileSync(join(tmp, file), `${index}\n${"x".repeat(190 * 1024)}`);
@@ -270,6 +271,7 @@ test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {
 test("buildUntrackedPatch skips a dangling untracked symlink and still includes regular files", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-dangling-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  gitText(["init", "-q"], tmp);
   writeFileSync(join(tmp, "keep.ts"), "export const keep = 1;\n");
   symlinkSync("missing-target-does-not-exist", join(tmp, "dangling.link"));
 
@@ -286,6 +288,7 @@ test("buildUntrackedPatch skips a dangling untracked symlink and still includes 
 test("buildUntrackedPatch skips directories, FIFOs, and live symlinks as not regular files", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-nonregular-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  gitText(["init", "-q"], tmp);
   writeFileSync(join(tmp, "keep.ts"), "export const keep = 1;\n");
   mkdirSync(join(tmp, "subdir"));
   symlinkSync("keep.ts", join(tmp, "live.link"));
@@ -309,6 +312,7 @@ test("buildUntrackedPatch skips directories, FIFOs, and live symlinks as not reg
 test("buildUntrackedPatch skips a file that disappears before it is read", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-disappeared-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  gitText(["init", "-q"], tmp);
   writeFileSync(join(tmp, "before.ts"), "export const before = 1;\n");
   writeFileSync(join(tmp, "gone.ts"), "export const gone = 1;\n");
   writeFileSync(join(tmp, "after.ts"), "export const after = 1;\n");

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, type Stats } from "node:fs";
 import path from "node:path";
+import { reviewDiff } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
 export const EMPTY_BASE_SHA = "EMPTY";
@@ -82,11 +83,15 @@ function countInsertions(patch: string): number {
 }
 
 /** Real `git diff --no-index` for an untracked file. Exit 1 + stdout = success. */
+// No attributes at all (empty tree): a committed `* -diff` would otherwise
+// turn a new source file into "Binary files differ". The raw content was
+// already checked for NUL, so there is no conversion to keep.
 function gitNewFileDiff(
   cwd: string,
-  filePath: string
+  filePath: string,
+  diffArgs: readonly string[]
 ): { readonly patch: string; readonly insertions: number } {
-  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", filePath], {
+  const res = spawnSync("git", [...diffArgs, "--no-index", "--no-color", "--", "/dev/null", filePath], {
     cwd,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 64,
@@ -122,6 +127,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
   const skipped: string[] = [];
   const untrackedSkipped: UntrackedSkippedFile[] = [];
   let totalBytes = 0;
+  const diffArgs = reviewDiff(cwd);
 
   for (const file of files) {
     const absolutePath = path.join(cwd, file);
@@ -162,7 +168,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
       untrackedSkipped.push({ path: file, bytes: content.byteLength, reason: "total_cap" });
       continue;
     }
-    const diff = gitNewFileDiff(cwd, file);
+    const diff = gitNewFileDiff(cwd, file, diffArgs);
     totalBytes += content.byteLength;
     patches.push(diff.patch);
     statLines.push(statLine(file, diff.insertions));

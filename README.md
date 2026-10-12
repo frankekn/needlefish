@@ -55,7 +55,7 @@ supported too.
 
 ## Quick start
 
-**Locally** — from inside any git repo you want reviewed. Requires Node 20+
+**Locally** — from inside any git repo you want reviewed. Requires Node 20+, git 2.41+
 and one authed runner CLI (`codex`, `claude`, or `opencode`) on `PATH`:
 
 ```bash
