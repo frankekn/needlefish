@@ -53,6 +53,10 @@ export interface Bundle {
 	readonly changedFiles: readonly ChangedFile[];
 	readonly reviewTarget?: string;
 	readonly untrackedSkipped?: readonly UntrackedSkippedFile[];
+	// Changed paths whose blob/working content is binary. Excluded from the
+	// review patch (attribute-neutral diff flags would otherwise inline their
+	// raw bytes) and reported as coverage gaps instead.
+	readonly binarySkipped?: readonly string[];
 	readonly agentsMd: string;
 	readonly prMeta: PrMeta | null;
 	readonly deep: boolean;
@@ -96,13 +100,16 @@ export interface ScopeCallout {
 }
 
 // Content the review could not read. Output-only: reported by the runner
-// sandbox, never derived from model text. lfs_pointer_only names a changed
-// file checked out as a pointer stub; lfs_scan_incomplete means the sandbox
-// could not establish whether changed files are pointer stubs (LFS use or
-// the pointer list unknown), so more changed files may be unread than are
-// named.
+// sandbox or by bundle collection, never derived from model text.
+// lfs_pointer_only names a changed file checked out as a pointer stub;
+// lfs_scan_incomplete means the sandbox could not establish whether changed
+// files are pointer stubs (LFS use or the pointer list unknown), so more
+// changed files may be unread than are named. binary_content names a changed
+// file whose content is binary: the attribute-neutral patch would carry it as
+// raw bytes, so it is excluded from the diff and named here instead.
 export type CoverageGap =
 	| { readonly kind: "lfs_pointer_only"; readonly file: string }
+	| { readonly kind: "binary_content"; readonly file: string }
 	| { readonly kind: "lfs_scan_incomplete" };
 
 export interface RawReview {

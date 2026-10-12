@@ -464,6 +464,25 @@ test("renderMarkdown omits the coverage gap notice when there are no gaps", () =
 	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
 });
 
+test("renderMarkdown lists binary-content gaps as not reviewed, beside the LFS notice", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		coverageGaps: [
+			{ kind: "binary_content", file: "assets/logo.png" },
+			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
+		],
+	});
+	assert.ok(markdown.includes("these changed files hold binary content"));
+	assert.ok(markdown.includes("\n- assets/logo.png\n"));
+	assert.ok(markdown.includes("available only as Git LFS pointers"));
+	assert.ok(markdown.indexOf("- assets/logo.png") < markdown.indexOf("## Findings"));
+	const omitted = renderMarkdown({
+		...baseResult([], "pass"),
+		coverageGaps: [{ kind: "binary_content", file: "assets/logo.png" }],
+	}, { omitCoverageGaps: true });
+	assert.ok(!omitted.includes("Not reviewed"));
+});
+
 test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
 	const result: ReviewResult = {
 		...baseResult([], "pass"),

@@ -11,6 +11,8 @@ import { renderMarkdown } from "../shared/render.js";
 import {
   changedFiles,
   changedFilesFromPaths,
+  contentBinaryPaths,
+  binarySkippedSuffix,
   ensurePrCommits,
   fetchPrRefInfo,
   ghText,
@@ -20,6 +22,7 @@ import {
   NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
+  reviewDiffArgs,
   type PrRefInfo,
 } from "../shared/repo.js";
 import { normalizePrMeta } from "../shared/normalize.js";
@@ -36,7 +39,7 @@ import {
   EMPTY_BASE_SHA,
   formatUncommittedReviewTarget,
   joinSections,
-  parseTrackedBinaryPathsFromNumstat,
+  workingBinaryPaths,
   WORKING_HEAD_SHA,
 } from "./local-uncommitted.js";
 
@@ -118,15 +121,6 @@ export function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = ["diff", ...extraArgs, "HEAD"];
-  if (excludedPaths.length === 0) return args;
-  // `literal` magic: a binary file named `a[b].png` must exclude only itself,
-  // not every path matching the glob (e.g. `ab.png`), or those changes vanish
-  // from the patch, the name list, and the stat without a trace.
-  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
-}
-
 function fetchPrMeta(cwd: string, prNumber: number) {
   try {
     const raw = ghText(
@@ -180,10 +174,14 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   }
   const { baseRef, baseSha } = resolveReviewBase(cwd, opts.base);
   const headSha = git(["rev-parse", "HEAD"], cwd);
-  const patch = git(["diff", baseSha, "HEAD"], cwd, { preserveOutput: true });
+  const files = changedFiles(cwd, baseSha);
+  const binarySkipped = contentBinaryPaths(cwd, headSha, baseSha, files.map((file) => file.path));
+  const patch = git(reviewDiffArgs([], [baseSha, headSha], binarySkipped), cwd, {
+    preserveOutput: true,
+  });
   if (!patch.trim()) {
     throw new Error(
-      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.`
+      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.${binarySkippedSuffix(binarySkipped)}`
     );
   }
   return makeBundle({
@@ -191,8 +189,11 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     baseSha,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
-    changedFiles: changedFiles(cwd, baseSha),
+    patchStat: git(reviewDiffArgs(["--stat"], [baseSha, headSha], binarySkipped), cwd, {
+      preserveOutput: true,
+    }),
+    changedFiles: files,
+    binarySkipped,
     ...(opts.pr
       ? {
           reviewTarget: `Review target: local ${baseSha}..${headSha}\nPR context: #${opts.pr} metadata only`,
@@ -206,21 +207,23 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
-  const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
+  // Rename detection off for the name list: a `git mv` into a docs path
+  // must keep its removed source path, or classification sees docs alone and
+  // the fast path skips the review. The patch keeps its rename headers.
+  const allTrackedPaths = headExists
+    ? gitPathList(reviewDiffArgs(["--name-only", "-z", "--no-renames"], ["HEAD"]), cwd)
     : [];
+  // Binary detection is content-based: .gitattributes cannot make a text
+  // change vanish (issue #213) nor a real binary sneak raw bytes into the patch.
+  const trackedBinaryPaths = headExists ? workingBinaryPaths(cwd, baseSha, allTrackedPaths) : [];
+  const binarySet = new Set(trackedBinaryPaths);
+  const trackedPaths = allTrackedPaths.filter((filePath) => !binarySet.has(filePath));
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(reviewDiffArgs([], ["HEAD"], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
   const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(reviewDiffArgs(["--stat"], ["HEAD"], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
-  // Rename detection off for the name list only: a `git mv` into a docs path
-  // must keep its removed source path, or classification sees docs alone and
-  // the fast path skips the review. The patch above keeps its rename headers.
-  const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
-    : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
     ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
@@ -243,6 +246,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
+    binarySkipped: trackedBinaryPaths,
     prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
@@ -290,6 +294,7 @@ export function prDiffBundle(
     patch: diff.patch,
     patchStat: diff.patchStat,
     changedFiles: diff.changedFiles,
+    binarySkipped: diff.binarySkipped,
     reviewTarget: `Review target: PR #${pr.prMeta.number} ${diff.baseSha}..${diff.headSha}`,
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
@@ -415,6 +420,7 @@ interface DryRunSummary {
   readonly prMeta: { readonly present: boolean; readonly number?: number };
   readonly agentsMd: { readonly present: boolean; readonly bytes: number };
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
+  readonly binarySkipped: readonly string[];
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
@@ -440,6 +446,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
       bytes: Buffer.byteLength(bundle.agentsMd),
     },
     untrackedSkipped: bundle.untrackedSkipped ?? [],
+    binarySkipped: bundle.binarySkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
   };
@@ -489,6 +496,10 @@ export function printDryRun(
   lines.push(`untrackedSkipped: ${summary.untrackedSkipped.length}`);
   for (const skipped of summary.untrackedSkipped) {
     lines.push(`  ${skipped.path} (${skipped.reason}, ${skipped.bytes} bytes)`);
+  }
+  lines.push(`binarySkipped: ${summary.binarySkipped.length}`);
+  for (const file of summary.binarySkipped) {
+    lines.push(`  ${file}`);
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);

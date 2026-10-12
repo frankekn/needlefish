@@ -1,6 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync, type Stats } from "node:fs";
 import path from "node:path";
+import {
+  ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
+  BLOB_SNIFF_MAX_BYTES,
+  contentBinaryPaths,
+} from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
 export const EMPTY_BASE_SHA = "EMPTY";
@@ -17,60 +22,44 @@ export interface UntrackedPatch {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
 }
 
-interface NumstatRow {
-  readonly additions: string;
-  readonly deletions: string;
-  readonly path: string;
-}
-
 function isBinary(content: Buffer): boolean {
   return content.includes(0);
 }
 
-function parseNumstatRow(row: string): NumstatRow | null {
-  const firstTab = row.indexOf("\t");
-  if (firstTab === -1) return null;
-  const secondTab = row.indexOf("\t", firstTab + 1);
-  if (secondTab === -1) return null;
-  return {
-    additions: row.slice(0, firstTab),
-    deletions: row.slice(firstTab + 1, secondTab),
-    path: row.slice(secondTab + 1),
-  };
-}
-
-export function parseTrackedBinaryPathsFromNumstat(numstat: string): string[] {
-  const fields = numstat ? numstat.split("\0") : [];
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  const addPath = (filePath: string): void => {
-    if (!filePath || seen.has(filePath)) return;
-    seen.add(filePath);
-    paths.push(filePath);
-  };
-
-  let index = 0;
-  while (index < fields.length) {
-    const row = parseNumstatRow(fields[index] ?? "");
-    index += 1;
-    if (!row) continue;
-
-    const isBinaryRow = row.additions === "-" && row.deletions === "-";
-    if (row.path === "") {
-      const oldPath = fields[index] ?? "";
-      const newPath = fields[index + 1] ?? "";
-      index += 2;
-      if (isBinaryRow) {
-        addPath(oldPath);
-        addPath(newPath);
-      }
+/**
+ * Changed tracked paths (vs HEAD) whose new content is binary, judged by
+ * content, not by .gitattributes: the work-tree file when present, the HEAD
+ * blob for deletions. Input order is preserved so skip lists stay stable.
+ */
+export function workingBinaryPaths(
+  cwd: string,
+  headRef: string,
+  paths: readonly string[]
+): string[] {
+  const flagged = new Set<string>();
+  const absentFromWorkTree: string[] = [];
+  for (const filePath of paths) {
+    let stat: Stats | undefined;
+    try {
+      stat = lstatSync(path.join(cwd, filePath));
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+    if (stat === undefined || !stat.isFile()) {
+      absentFromWorkTree.push(filePath);
       continue;
     }
-
-    if (isBinaryRow) addPath(row.path);
+    if (
+      stat.size > BLOB_SNIFF_MAX_BYTES ||
+      isBinary(readFileSync(path.join(cwd, filePath)))
+    ) {
+      flagged.add(filePath);
+    }
   }
-
-  return paths;
+  for (const filePath of contentBinaryPaths(cwd, headRef, headRef, absentFromWorkTree)) {
+    flagged.add(filePath);
+  }
+  return paths.filter((filePath) => flagged.has(filePath));
 }
 
 function countInsertions(patch: string): number {
@@ -86,11 +75,15 @@ function gitNewFileDiff(
   cwd: string,
   filePath: string
 ): { readonly patch: string; readonly insertions: number } {
-  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", filePath], {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 64,
-  });
+  const res = spawnSync(
+    "git",
+    ["diff", "--no-index", ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, "--no-color", "--", "/dev/null", filePath],
+    {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 64,
+    }
+  );
   if (res.error) throw res.error;
   // Do not trim: trailing newline must survive for git apply.
   const stdout = res.stdout ?? "";

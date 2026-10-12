@@ -210,7 +210,9 @@ test("runLocal reports skipped tracked binary renames with spaces when no review
 
   await assert.rejects(
     () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-    /No uncommitted changes to review\. Skipped files: old image\.bin \(binary\), new image\.bin \(binary\)\./
+    // The skip list follows `git diff --name-only` order: new image.bin sorts
+    // ahead of old image.bin.
+    /No uncommitted changes to review\. Skipped files: new image\.bin \(binary\), old image\.bin \(binary\)\./
   );
 });
 

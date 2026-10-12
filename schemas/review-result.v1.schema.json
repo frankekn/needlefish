@@ -169,6 +169,7 @@
     "coverageGap": {
       "oneOf": [
         { "$ref": "#/$defs/lfsPointerOnlyGap" },
+        { "$ref": "#/$defs/binaryContentGap" },
         { "$ref": "#/$defs/lfsScanIncompleteGap" }
       ]
     },
@@ -177,6 +178,14 @@
       "required": ["kind", "file"],
       "properties": {
         "kind": { "const": "lfs_pointer_only" },
+        "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
+      }
+    },
+    "binaryContentGap": {
+      "type": "object",
+      "required": ["kind", "file"],
+      "properties": {
+        "kind": { "const": "binary_content" },
         "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
       }
     },

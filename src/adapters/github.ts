@@ -7,7 +7,7 @@ import {
 	type PriorFate,
 	type PriorFateCounts,
 } from "../shared/render.js";
-import { changedFiles, ghText, git, makeBundle } from "../shared/repo.js";
+import { ghText, git, makeBundle, prDiffFromShas, reviewDiffArgs } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
@@ -701,7 +701,10 @@ function touchesSincePrevHead(
 		}
 		return oldSideTouches(
 			git(
-				["diff", "--no-color", "--no-renames", "-U0", prevHead, headSha],
+				reviewDiffArgs(
+					["--no-color", "--no-renames", "-U0"],
+					[prevHead, headSha],
+				),
 				repoPath,
 				{ preserveOutput: true },
 			),
@@ -1585,15 +1588,13 @@ export async function runGithub(
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
 	if (!baseSha || !headSha)
 		throw new Error("Could not resolve PR base/head SHA");
-	const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
-	const patch = git(["diff", mergeBase, headSha], repoPath, { preserveOutput: true });
-	if (!patch.trim()) {
-		throw new Error(
-			`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
-		);
-	}
-	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath, { preserveOutput: true });
-	const changed = changedFiles(repoPath, mergeBase, headSha);
+	// One shared producer for every committed-range review patch, attribute-
+	// neutral so a `.gitattributes` in the PR cannot hide content (issue #213).
+	const diff = prDiffFromShas(repoPath, baseSha, headSha);
+	const mergeBase = diff.baseSha;
+	const patch = diff.patch;
+	const patchStat = diff.patchStat;
+	const changed = diff.changedFiles;
 
 	const commentsUrl = stringField(pr, "comments_url");
 	const reviewsUrl = stringField(pr, "review_comments_url");
@@ -1618,6 +1619,7 @@ export async function runGithub(
 		patch,
 		patchStat,
 		changedFiles: changed,
+		binarySkipped: diff.binarySkipped,
 		prMeta,
 		deep: false,
 		focus: null,

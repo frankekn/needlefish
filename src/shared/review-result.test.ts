@@ -287,6 +287,7 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	const coverageGaps = [
 		{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 		{ kind: "lfs_pointer_only", file: "data/train.parquet" },
+		{ kind: "binary_content", file: "assets/logo.png" },
 		{ kind: "lfs_scan_incomplete" },
 	];
 	const result = parseReviewResult(serialized({ coverageGaps }));

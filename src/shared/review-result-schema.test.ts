@@ -243,9 +243,11 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["unknown callout surface", false, (r) => { r.scopeCallouts = [{ surface: "docs", files: ["a.md"] }]; }],
 		["callout without files", false, (r) => { r.scopeCallouts = [{ surface: "config", files: [] }]; }],
 		["pointer-only coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "assets/model.bin" }]; }],
+		["binary content coverage gap", true, (r) => { r.coverageGaps = [{ kind: "binary_content", file: "assets/logo.png" }]; }],
 		["incomplete-scan coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_scan_incomplete" }]; }],
 		["unknown coverage gap kind", false, (r) => { r.coverageGaps = [{ kind: "missing_file", file: "a.bin" }]; }],
 		["pointer-only coverage gap with empty file", false, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "" }]; }],
+		["binary content coverage gap with empty file", false, (r) => { r.coverageGaps = [{ kind: "binary_content", file: "" }]; }],
 	];
 
 	for (const [name, accepted, mutate] of cases) {
@@ -336,6 +338,11 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		"$defs",
 		"lfsPointerOnlyGap",
 	);
+	assertFields<Extract<CoverageGap, { kind: "binary_content" }>>(
+		{ kind: "required", file: "required" },
+		"$defs",
+		"binaryContentGap",
+	);
 	assertFields<Extract<CoverageGap, { kind: "lfs_scan_incomplete" }>>(
 		{ kind: "required" },
 		"$defs",
@@ -395,9 +402,10 @@ test("schema enums match the runtime value sets", (t) => {
 	// with const; the union of those consts must be the runtime kind set.
 	const gapKinds: Record<CoverageGap["kind"], true> = {
 		lfs_pointer_only: true,
+		binary_content: true,
 		lfs_scan_incomplete: true,
 	};
-	const gapKindConsts = ["lfsPointerOnlyGap", "lfsScanIncompleteGap"]
+	const gapKindConsts = ["lfsPointerOnlyGap", "binaryContentGap", "lfsScanIncompleteGap"]
 		.map((def) => schemaAt("$defs", def, "properties", "kind").const)
 		.filter((value): value is string => typeof value === "string")
 		.sort();
@@ -412,7 +420,7 @@ test("schema enums match the runtime value sets", (t) => {
 	const variants: JsonObject[] = [
 		...enums.verdict.map((verdict) => ({ ...real, verdict })),
 		...enums.surface.map((surface) => ({ ...real, scopeCallouts: [{ surface, files: ["f"] }] })),
-		{ ...real, coverageGaps: [{ kind: "lfs_pointer_only", file: "f" }, { kind: "lfs_scan_incomplete" }] },
+		{ ...real, coverageGaps: [{ kind: "lfs_pointer_only", file: "f" }, { kind: "binary_content", file: "f" }, { kind: "lfs_scan_incomplete" }] },
 		...RUNNERS.map((runner) => ({
 			...real,
 			stats: [{ label: "review", runner, durationMs: 1, attempts: 1, ok: true }],

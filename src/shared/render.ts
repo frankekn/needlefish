@@ -146,6 +146,16 @@ export function renderMarkdown(
 		);
 		for (const file of pointerOnly) lines.push(`- ${oneLine(file)}`);
 	}
+	const binaryContent = coverageGaps.flatMap((gap) =>
+		gap.kind === "binary_content" ? [gap.file] : [],
+	);
+	if (binaryContent.length > 0) {
+		lines.push("");
+		lines.push(
+			"**Not reviewed (non-blocking):** these changed files hold binary content, so they were left out of the review patch and are not covered by this review. Ask a maintainer to check them.",
+		);
+		for (const file of binaryContent) lines.push(`- ${oneLine(file)}`);
+	}
 	if (coverageGaps.some((gap) => gap.kind === "lfs_scan_incomplete")) {
 		lines.push("");
 		lines.push(

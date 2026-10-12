@@ -2702,3 +2702,54 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
 	}
 });
+
+test("review surfaces bundle.binarySkipped as binary_content coverage gaps", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		retry: process.env.CODEX_RETRY_MS,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+
+	writeFileSync(bin, [
+		"#!/usr/bin/env node",
+		"const fs = require('node:fs');",
+		"fs.readFileSync(0, 'utf8');",
+		"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+		"fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+	].join("\n"));
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+	const result = await review({
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "diff --git a/src/app.ts b/src/app.ts\n+export const app = 1;\n",
+		patchStat: " src/app.ts | 1 +",
+		changedFiles: [{ path: "src/app.ts", surface: "source" }],
+		binarySkipped: ["data/blob.bin"],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	});
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.coverageGaps, [
+		{ kind: "binary_content", file: "data/blob.bin" },
+	]);
+});

@@ -740,6 +740,9 @@ function toReviewResult(
 	const coverageGaps: CoverageGap[] = bundle.changedFiles
 		.filter((file) => run.lfs.pointerFiles.has(file.path))
 		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
+	for (const file of bundle.binarySkipped ?? []) {
+		coverageGaps.push({ kind: "binary_content", file });
+	}
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -849,6 +852,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		patchStat: bundle.patchStat,
 		changedFiles: bundle.changedFiles,
 		untrackedSkipped: bundle.untrackedSkipped,
+		binarySkipped: bundle.binarySkipped,
 		agentsMd: bundle.agentsMd,
 		prMeta: bundle.prMeta,
 		focus: bundle.focus,
@@ -934,6 +938,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 					...h,
 					...(bundle.untrackedSkipped?.length
 						? { untrackedSkipped: bundle.untrackedSkipped }
+						: {}),
+					...(bundle.binarySkipped?.length
+						? { binarySkipped: bundle.binarySkipped }
 						: {}),
 				};
 				const deepPrompt = loadPrompt("deep.md")

@@ -34,6 +34,82 @@ export function gitPathList(args: readonly string[], cwd: string): string[] {
   return output.split("\0").filter(Boolean);
 }
 
+// .gitattributes is repository-controlled, so it must not decide what the
+// reviewer sees: one `* -diff` (or `* binary`) line in a PR turns every hunk
+// into a "Binary files differ" stub and hides all content from review. These
+// flags make git emit text content regardless of the diff/binary attributes,
+// textconv filters, and external diff drivers. Every patch producer used for
+// review must use reviewDiffArgs.
+export const ATTRIBUTE_NEUTRAL_DIFF_FLAGS = ["--text", "--no-textconv", "--no-ext-diff"] as const;
+
+/** `git diff` argv for a review patch: attribute-neutral, minus excluded paths. */
+export function reviewDiffArgs(
+  extraArgs: readonly string[],
+  rangeArgs: readonly string[],
+  excludedPaths: readonly string[] = []
+): string[] {
+  const args = ["diff", ...extraArgs, ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS, ...rangeArgs];
+  if (excludedPaths.length === 0) return args;
+  // `literal` magic: a binary file named `a[b].png` must exclude only itself,
+  // not every path matching the glob (e.g. `ab.png`), or those changes vanish
+  // from the patch, the name list, and the stat without a trace (#218).
+  return [...args, "--", ".", ...excludedPaths.map((filePath) => `:(exclude,literal)${filePath}`)];
+}
+
+// A blob bigger than this is binary for review purposes without reading it:
+// it is not reviewable text, and runText's 64MB stdout cap would throw on it.
+export const BLOB_SNIFF_MAX_BYTES = 16 * 1024 * 1024;
+
+// A --batch-check line for a present object is "<oid> <type> <size>" (no
+// echo); for a missing input it is "<input> missing". Inputs may contain
+// spaces, so present records are matched from the end; inputs with newlines
+// are filtered out by the caller and cannot appear here.
+function blobRecord(line: string): { readonly type: string; readonly size: number } | null {
+  const present = /(?:^| )([0-9a-f]{40,64}) (\w+) (\d+)$/.exec(line);
+  return present ? { type: present[2]!, size: Number(present[3]) } : null;
+}
+
+/**
+ * Changed paths whose content is binary, judged by content (NUL bytes), not
+ * by .gitattributes. Each path is sniffed at headRef and, when absent there
+ * (deleted), at baseRef. Paths containing newlines break the positional
+ * batch-check parsing and are reported as text: shown rather than hidden.
+ */
+export function contentBinaryPaths(
+  cwd: string,
+  headRef: string,
+  baseRef: string,
+  paths: readonly string[]
+): string[] {
+  const queried = paths.filter((filePath) => !filePath.includes("\n"));
+  if (queried.length === 0) return [];
+  const refs = queried.flatMap((filePath) => [`${headRef}:${filePath}`, `${baseRef}:${filePath}`]);
+  const check = runText("git", ["cat-file", "--batch-check"], {
+    cwd,
+    input: `${refs.join("\n")}\n`,
+    preserveOutput: true,
+  });
+  const records = check.split("\n");
+  const binary: string[] = [];
+  for (let i = 0; i < queried.length; i += 1) {
+    const head = blobRecord(records[2 * i] ?? "");
+    const base = blobRecord(records[2 * i + 1] ?? "");
+    const record = head ?? base;
+    if (!record || record.type !== "blob") continue;
+    const spec = `${head ? headRef : baseRef}:${queried[i]}`;
+    if (record.size > BLOB_SNIFF_MAX_BYTES || git(["cat-file", "blob", spec], cwd, { preserveOutput: true }).includes("\u0000")) {
+      binary.push(queried[i]!);
+    }
+  }
+  return binary;
+}
+
+export function binarySkippedSuffix(binarySkipped: readonly string[]): string {
+  return binarySkipped.length > 0
+    ? ` Binary files skipped from the patch: ${binarySkipped.join(", ")}.`
+    : "";
+}
+
 export function changedFiles(cwd: string, baseSha: string, headSha = "HEAD"): ChangedFile[] {
   return changedFilesFromPaths(
     gitPathList(["diff", "--name-only", "-z", "--no-renames", baseSha, headSha], cwd)
@@ -67,6 +143,7 @@ export interface BundleInput {
   readonly changedFiles: ChangedFile[];
   readonly reviewTarget?: string;
   readonly untrackedSkipped?: readonly UntrackedSkippedFile[];
+  readonly binarySkipped?: readonly string[];
   readonly prMeta: PrMeta | null;
   readonly deep: boolean;
   readonly focus: string | null;
@@ -83,6 +160,7 @@ export function makeBundle(input: BundleInput): Bundle {
     changedFiles: input.changedFiles,
     ...(input.reviewTarget ? { reviewTarget: input.reviewTarget } : {}),
     ...(input.untrackedSkipped?.length ? { untrackedSkipped: input.untrackedSkipped } : {}),
+    ...(input.binarySkipped?.length ? { binarySkipped: input.binarySkipped } : {}),
     agentsMd: input.agentsMd ?? readAgents(input.repoPath),
     prMeta: input.prMeta,
     deep: input.deep,
@@ -242,15 +320,24 @@ export function ensurePrCommits(cwd: string, pr: PrRefInfo): void {
 
 export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
   const mergeBase = git(["merge-base", baseSha, headSha], cwd);
-  const patch = git(["diff", mergeBase, headSha], cwd, { preserveOutput: true });
+  const files = changedFiles(cwd, mergeBase, headSha);
+  const binarySkipped = contentBinaryPaths(cwd, headSha, mergeBase, files.map((file) => file.path));
+  const patch = git(reviewDiffArgs([], [mergeBase, headSha], binarySkipped), cwd, {
+    preserveOutput: true,
+  });
   if (!patch.trim()) {
-    throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
+    throw new Error(
+      `No diff between ${mergeBase} and ${headSha}. Nothing to review.${binarySkippedSuffix(binarySkipped)}`
+    );
   }
   return {
     baseSha: mergeBase,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
-    changedFiles: changedFiles(cwd, mergeBase, headSha),
+    patchStat: git(reviewDiffArgs(["--stat"], [mergeBase, headSha], binarySkipped), cwd, {
+      preserveOutput: true,
+    }),
+    changedFiles: files,
+    binarySkipped,
   };
 }
