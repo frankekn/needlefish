@@ -33,7 +33,7 @@ needlefish/
 | Local review | `src/adapters/local.ts` | Writes `~/.cache/needlefish/<repo>/last-review.json`. |
 | GitHub review | `src/adapters/github.ts` | Posts COMMENT review plus `Needlefish` check-run. |
 | Runner invocation | `src/shared/codex.ts`, `src/shared/runner-process.ts` | Timeout, retry, target isolation, and runner env behavior live here. |
-| Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read from target repo root only. |
+| Git/PR bundle shape | `src/shared/repo.ts`, `src/shared/schema.ts` | `agentsMd` is read only via `readAgentsAt` (`git show <ref>:AGENTS.md`); no filesystem read of `AGENTS.md` (issue #211). |
 | Prompt behavior | `prompts/*.md` | Must remain read-only and output JSON contracts exactly. |
 | Tests | `src/**/*.test.ts`, `scripts/test.mjs` | Node test runner, no Jest/Vitest. |
 | CI/deploy | `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, `scripts/deploy-ubuntu.sh` | `needlefish-ci` is the merge gate. `needlefish-deploy` only verifies an operator-installed self-managed release; `deploy-ubuntu.sh` is a separate source-install path. |
