@@ -7,6 +7,7 @@ import {
   contentBinaryPaths,
   exactPathspecs,
   git,
+  gitPathList,
 } from "../shared/repo.js";
 import type { UntrackedSkippedFile } from "../shared/schema.js";
 
@@ -41,9 +42,12 @@ export function workingBinaryPaths(
   paths: readonly string[]
 ): string[] {
   const flagged = new Set(contentBinaryPaths(cwd, headRef, headRef, paths));
+  // Deleted as git sees it: lstat would follow a symlinked parent directory
+  // to an unrelated file of the same name.
+  const deleted = new Set(gitPathList(["diff", "--name-only", "-z", "--no-renames", "--diff-filter=D", headRef], cwd));
   const sniff: string[] = [];
   for (const filePath of paths) {
-    if (flagged.has(filePath)) continue;
+    if (flagged.has(filePath) || deleted.has(filePath)) continue;
     let stat: Stats | undefined;
     try {
       stat = lstatSync(path.join(cwd, filePath));

@@ -64,6 +64,29 @@ export function exactPathspecs(paths: readonly string[]): string[] {
   return paths.flatMap((filePath) => [`:(literal)${filePath}`, `:(exclude,literal)${filePath}/`]);
 }
 
+// macOS caps argv plus the environment at 1 MiB; pathspecs stay well under.
+const PATHSPEC_ARGV_BUDGET = 256 * 1024;
+const pathspecBytes = (filePath: string): number => 2 * Buffer.byteLength(filePath) + 32;
+
+/** `git <args> -- <exactly these paths>`, split into calls that fit in argv. */
+function gitExactPaths(cwd: string, args: readonly string[], paths: readonly string[]): string {
+  let output = "";
+  let batch: string[] = [];
+  let bytes = 0;
+  const flush = () => {
+    if (batch.length > 0) output += git([...args, "--", ...exactPathspecs(batch)], cwd, { preserveOutput: true });
+    batch = [];
+    bytes = 0;
+  };
+  for (const filePath of paths) {
+    if (bytes + pathspecBytes(filePath) > PATHSPEC_ARGV_BUDGET) flush();
+    batch.push(filePath);
+    bytes += pathspecBytes(filePath);
+  }
+  flush();
+  return output;
+}
+
 /**
  * A review patch (or stat) minus excluded paths. An exclude pathspec also
  * hides everything beneath the path, so when a binary file was swapped for a
@@ -78,21 +101,25 @@ export function reviewDiff(
   changedPaths: readonly string[]
 ): string {
   const excluded = new Set(excludedPaths);
-  const shadowed = changedPaths.filter(
-    (filePath) =>
-      !excluded.has(filePath) && excludedPaths.some((binaryPath) => filePath.startsWith(`${binaryPath}/`))
-  );
-  const main = git(reviewDiffArgs(extraArgs, rangeArgs, excludedPaths), cwd, { preserveOutput: true });
-  if (shadowed.length === 0) return main;
-  const shadowing = excludedPaths.filter((binaryPath) =>
-    shadowed.some((filePath) => filePath.startsWith(`${binaryPath}/`))
-  );
+  const included = changedPaths.filter((filePath) => !excluded.has(filePath));
+  const excludedAncestor = (filePath: string): string | undefined => {
+    for (let slash = filePath.indexOf("/"); slash !== -1; slash = filePath.indexOf("/", slash + 1)) {
+      if (excluded.has(filePath.slice(0, slash))) return filePath.slice(0, slash);
+    }
+    return undefined;
+  };
+  const shadowed = included.filter((filePath) => excludedAncestor(filePath) !== undefined);
+  const shadowing = [...new Set(shadowed.map((filePath) => excludedAncestor(filePath)!))];
+  const stubs =
+    shadowing.length > 0 && !extraArgs.includes("--stat") ? binaryDeletionStubs(cwd, rangeArgs, shadowing) : "";
+  // Too many exclusions for one argv: name the included files instead.
+  if (excludedPaths.reduce((sum, filePath) => sum + pathspecBytes(filePath), 0) > PATHSPEC_ARGV_BUDGET) {
+    return stubs + gitExactPaths(cwd, reviewDiffArgs(extraArgs, rangeArgs), included);
+  }
   return (
-    (extraArgs.includes("--stat") ? "" : binaryDeletionStubs(cwd, rangeArgs, shadowing)) +
-    main +
-    git([...reviewDiffArgs(extraArgs, rangeArgs), "--", ...exactPathspecs(shadowed)], cwd, {
-      preserveOutput: true,
-    })
+    stubs +
+    git(reviewDiffArgs(extraArgs, rangeArgs, excludedPaths), cwd, { preserveOutput: true }) +
+    gitExactPaths(cwd, reviewDiffArgs(extraArgs, rangeArgs), shadowed)
   );
 }
 
@@ -100,7 +127,8 @@ export function reviewDiff(
 // is, so a binary swapped for a directory keeps a content-free deletion record:
 // git's header with the full preimage id, then the binary marker apply expects.
 function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPaths: readonly string[]): string {
-  const headers = git(
+  const headers = gitExactPaths(
+    cwd,
     [
       "diff",
       "--full-index",
@@ -110,11 +138,8 @@ function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPa
       "--diff-filter=D",
       ...ATTRIBUTE_NEUTRAL_DIFF_FLAGS,
       ...rangeArgs,
-      "--",
-      ...exactPathspecs(binaryPaths),
     ],
-    cwd,
-    { preserveOutput: true }
+    binaryPaths
   );
   return headers.replace(/^(index [0-9a-f]+\.\.0+)$/gm, "$1\nBinary files differ");
 }
@@ -188,12 +213,6 @@ export function contentBinaryPaths(
     const [head, base] = records.get(filePath)!;
     return isBinaryBlob(head, headRef, filePath) || (baseRef !== headRef && isBinaryBlob(base, baseRef, filePath));
   });
-}
-
-export function binarySkippedSuffix(binarySkipped: readonly string[]): string {
-  return binarySkipped.length > 0
-    ? ` Binary files skipped from the patch: ${binarySkipped.join(", ")}.`
-    : "";
 }
 
 export function changedFiles(cwd: string, baseSha: string, headSha = "HEAD"): ChangedFile[] {
@@ -450,10 +469,10 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
   const paths = files.map((file) => file.path);
   const binarySkipped = contentBinaryPaths(cwd, headSha, mergeBase, paths);
   const patch = reviewDiff(cwd, [], [mergeBase, headSha], binarySkipped, paths);
-  if (!patch.trim()) {
-    throw new Error(
-      `No diff between ${mergeBase} and ${headSha}. Nothing to review.${binarySkippedSuffix(binarySkipped)}`
-    );
+  // A binary-only change has an empty patch but is still a change: review()
+  // reports its files as coverage gaps.
+  if (!patch.trim() && binarySkipped.length === 0) {
+    throw new Error(`No diff between ${mergeBase} and ${headSha}. Nothing to review.`);
   }
   return {
     baseSha: mergeBase,

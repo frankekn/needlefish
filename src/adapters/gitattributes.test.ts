@@ -4,12 +4,12 @@
 // patches must be attribute-neutral, and files that are genuinely binary by
 // content must be reported as coverage gaps instead of vanishing.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
-import { contentBinaryPaths, prDiffFromShas } from "../shared/repo.js";
+import { contentBinaryPaths, prDiffFromShas, reviewDiff } from "../shared/repo.js";
 import { classifyUnmatched, touchesSincePrevHead } from "./github.js";
 import { diffBundle } from "./local.js";
 
@@ -333,3 +333,74 @@ for (const name of ["line\nbinary.bin", "image.bin\r"]) {
     assert.equal(bundle.patch.includes("\u0000"), false);
   });
 }
+
+test("a binary-only change is a bundle with coverage gaps, not a throw (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-binary-only-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "icon.png"), NUL_BYTES);
+  commitAll(repo, "icon");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "icon.png"), Buffer.from([0x00, 0x02]));
+  commitAll(repo, "new icon");
+
+  const diff = prDiffFromShas(repo, baseSha, headSha(repo));
+  assert.equal(diff.patch, "");
+  assert.deepEqual(diff.binarySkipped, ["icon.png"]);
+
+  const branch = diffBundle(repo, { localMode: "branch", base: baseSha }).bundle;
+  assert.equal(branch.patch, "");
+  assert.deepEqual(branch.binarySkipped, ["icon.png"]);
+
+  // Uncommitted mode keeps its existing contract: nothing to review, with
+  // the skipped binaries named.
+  writeFileSync(path.join(repo, "icon.png"), Buffer.from([0x00, 0x03]));
+  assert.throws(() => diffBundle(repo, {}), /No uncommitted changes to review\. Skipped files: icon\.png \(binary\)\./);
+});
+
+test("a deletion behind a symlinked parent is not sniffed through the link (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-symlink-parent-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  mkdirSync(path.join(repo, "src"));
+  writeFileSync(path.join(repo, "src", "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "src");
+  // Outside the repo: a same-named file over the size limit, reached only
+  // by following the new `src` symlink.
+  const outside = path.join(tmp, "outside");
+  mkdirSync(outside);
+  writeFileSync(path.join(outside, "app.ts"), "");
+  truncateSync(path.join(outside, "app.ts"), 17 * 1024 * 1024);
+  rmSync(path.join(repo, "src"), { recursive: true });
+  symlinkSync(outside, path.join(repo, "src"));
+  gitText(["add", "-A"], repo);
+
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binarySkipped ?? [], []);
+  assert.match(bundle.patch, /^-export const a = 1;$/m);
+
+  const clone = path.join(tmp, "clone");
+  gitText(["clone", "--quiet", repo, clone], tmp);
+  const patchFile = path.join(tmp, "working.patch");
+  writeFileSync(patchFile, bundle.patch);
+  gitText(["apply", "--whitespace=nowarn", patchFile], clone);
+});
+
+test("an exclusion list too long for one argv still yields the text patch (issue #213)", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-argv-"));
+  const repo = makeRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "base");
+  const baseSha = headSha(repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+  commitAll(repo, "head");
+
+  // About 1.5 MB of exclusions: past macOS ARG_MAX (1 MiB) in a single call.
+  const excluded = Array.from({ length: 3000 }, (_, i) => `bin/${String(i).padStart(4, "0")}-${"x".repeat(480)}.bin`);
+  const patch = reviewDiff(repo, [], [baseSha, headSha(repo)], excluded, ["app.ts", ...excluded]);
+  assert.match(patch, /^\+export const a = 2;$/m);
+});

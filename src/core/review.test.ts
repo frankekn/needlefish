@@ -2710,6 +2710,60 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 	}
 });
 
+test("review reports a binary-only change as coverage gaps without calling the model (issue #213)", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const calls = path.join(tmp, "calls.log");
+	const previous = {
+		bin: process.env.CODEX_BIN,
+		noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.noFastPath === undefined)
+			delete process.env.NEEDLEFISH_NO_FAST_PATH;
+		else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(
+		bin,
+		[
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			`fs.appendFileSync(${JSON.stringify(calls)}, 'called\\n');`,
+			"process.exit(1);",
+		].join("\n"),
+	);
+	chmodSync(bin, 0o755);
+	process.env.CODEX_BIN = bin;
+	// There is nothing to send a model, so this is not an optional fast path.
+	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+	const result = await review({
+		repoPath: repo,
+		baseSha: "base",
+		headSha: headSha(repo),
+		patch: "",
+		patchStat: "",
+		changedFiles: [{ path: "icon.png", surface: classifySurface("icon.png") }],
+		binarySkipped: ["icon.png"],
+		agentsMd: "(none)",
+		prMeta: null,
+		deep: false,
+		focus: null,
+	});
+
+	assert.equal(result.verdict, "pass");
+	assert.deepEqual(result.findings, []);
+	assert.deepEqual(result.residualRisks, []);
+	assert.match(result.summary, /Binary-only change \(1 file\(s\)\); model review skipped\./);
+	assert.deepEqual(result.checked, ["FAST_PATH binary-only files=[icon.png]"]);
+	assert.deepEqual(result.coverageGaps, [{ kind: "binary_content", file: "icon.png" }]);
+	assert.ok(!existsSync(calls), "runner must not be invoked for a binary-only bundle");
+});
+
 test("review surfaces bundle.binarySkipped as binary_content coverage gaps", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);

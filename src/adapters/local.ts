@@ -12,7 +12,6 @@ import {
   changedFiles,
   changedFilesFromPaths,
   contentBinaryPaths,
-  binarySkippedSuffix,
   ensurePrCommits,
   fetchPrRefInfo,
   ghText,
@@ -179,9 +178,9 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   const paths = files.map((file) => file.path);
   const binarySkipped = contentBinaryPaths(cwd, headSha, baseSha, paths);
   const patch = reviewDiff(cwd, [], [baseSha, headSha], binarySkipped, paths);
-  if (!patch.trim()) {
+  if (!patch.trim() && binarySkipped.length === 0) {
     throw new Error(
-      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.${binarySkippedSuffix(binarySkipped)}`
+      `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.`
     );
   }
   return makeBundle({

@@ -1087,6 +1087,37 @@ export function reviewPlan(bundle: Bundle): {
 	};
 }
 
+function skippedModelResult(
+	bundle: Bundle,
+	startedAt: number,
+	summary: string,
+	checked: string,
+): ReviewResult {
+	// Docs-only input produces no callouts today, but compute it the same
+	// way so the rule stays uniform if classification changes.
+	const callouts = scopeCallouts(bundle.changedFiles);
+	return {
+		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
+		verdict: "pass",
+		summary,
+		findings: [],
+		checked: [checked],
+		residualRisks: [],
+		baseSha: bundle.baseSha,
+		headSha: bundle.headSha,
+		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(bundle.binarySkipped?.length
+			? {
+					coverageGaps: bundle.binarySkipped.map(
+						(file): CoverageGap => ({ kind: "binary_content", file }),
+					),
+				}
+			: {}),
+		totalDurationMs: Date.now() - startedAt,
+	};
+}
+
 export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
@@ -1098,29 +1129,22 @@ export async function review(
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
-		// Docs-only input produces no callouts today, but compute it the same
-		// way so the rule stays uniform if classification changes.
-		const callouts = scopeCallouts(bundle.changedFiles);
-		return {
-			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
-			verdict: "pass",
-			summary: `Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
-			findings: [],
-			checked: [`FAST_PATH docs-only files=[${paths}]`],
-			residualRisks: [],
-			baseSha: bundle.baseSha,
-			headSha: bundle.headSha,
-			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
-			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
-			...(bundle.binarySkipped?.length
-				? {
-						coverageGaps: bundle.binarySkipped.map(
-							(file): CoverageGap => ({ kind: "binary_content", file }),
-						),
-					}
-				: {}),
-			totalDurationMs: Date.now() - startedAt,
-		};
+		return skippedModelResult(
+			bundle,
+			startedAt,
+			`Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
+			`FAST_PATH docs-only files=[${paths}]`,
+		);
+	}
+	// Every change is binary content the model cannot read (issue #213): the
+	// patch is empty, so report the files as coverage gaps without a model run.
+	if (!bundle.patch.trim() && bundle.binarySkipped?.length) {
+		return skippedModelResult(
+			bundle,
+			startedAt,
+			`Binary-only change (${bundle.binarySkipped.length} file(s)); model review skipped.`,
+			`FAST_PATH binary-only files=[${bundle.binarySkipped.join(", ")}]`,
+		);
 	}
 	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
 		throw new Error(
