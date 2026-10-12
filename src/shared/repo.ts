@@ -87,20 +87,31 @@ export function reviewDiff(
 // it is not reviewable text, and runText's 64MB stdout cap would throw on it.
 export const BLOB_SNIFF_MAX_BYTES = 16 * 1024 * 1024;
 
+type BlobRecord = { readonly type: string; readonly size: number };
+
 // A --batch-check line for a present object is "<oid> <type> <size>" (no
 // echo); for a missing input it is "<input> missing". Inputs may contain
 // spaces, so present records are matched from the end; inputs with newlines
-// are filtered out by the caller and cannot appear here.
-function blobRecord(line: string): { readonly type: string; readonly size: number } | null {
+// never reach --batch-check (see blobRecordOf).
+function blobRecord(line: string): BlobRecord | null {
   const present = /(?:^| )([0-9a-f]{40,64}) (\w+) (\d+)$/.exec(line);
   return present ? { type: present[2]!, size: Number(present[3]) } : null;
+}
+
+// --batch-check is line-based, so a path containing a newline is looked up
+// on its own; a missing object is null, as in blobRecord.
+function blobRecordOf(cwd: string, spec: string): BlobRecord | null {
+  try {
+    return { type: git(["cat-file", "-t", spec], cwd), size: Number(git(["cat-file", "-s", spec], cwd)) };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Changed paths whose content is binary, judged by content (NUL bytes), not
  * by .gitattributes. A path is binary when its blob at either headRef or
- * baseRef is: --text would otherwise inline the raw side's bytes. Paths containing newlines break the positional
- * batch-check parsing and are reported as text: shown rather than hidden.
+ * baseRef is: --text would otherwise inline the raw side's bytes.
  */
 export function contentBinaryPaths(
   cwd: string,
@@ -108,31 +119,36 @@ export function contentBinaryPaths(
   baseRef: string,
   paths: readonly string[]
 ): string[] {
-  const queried = paths.filter((filePath) => !filePath.includes("\n"));
-  if (queried.length === 0) return [];
-  const refs = queried.flatMap((filePath) => [`${headRef}:${filePath}`, `${baseRef}:${filePath}`]);
-  const check = runText("git", ["cat-file", "--batch-check"], {
-    cwd,
-    input: `${refs.join("\n")}\n`,
-    preserveOutput: true,
-  });
-  const records = check.split("\n");
-  const binary: string[] = [];
-  for (let i = 0; i < queried.length; i += 1) {
-    const filePath = queried[i]!;
-    const isBinaryBlob = (record: ReturnType<typeof blobRecord>, ref: string): boolean =>
-      record !== null &&
-      record.type === "blob" &&
-      (record.size > BLOB_SNIFF_MAX_BYTES ||
-        git(["cat-file", "blob", `${ref}:${filePath}`], cwd, { preserveOutput: true }).includes("\u0000"));
-    if (
-      isBinaryBlob(blobRecord(records[2 * i] ?? ""), headRef) ||
-      (baseRef !== headRef && isBinaryBlob(blobRecord(records[2 * i + 1] ?? ""), baseRef))
-    ) {
-      binary.push(filePath);
+  const records = new Map<string, readonly [BlobRecord | null, BlobRecord | null]>();
+  const batched = paths.filter((filePath) => !filePath.includes("\n"));
+  if (batched.length > 0) {
+    const refs = batched.flatMap((filePath) => [`${headRef}:${filePath}`, `${baseRef}:${filePath}`]);
+    const lines = runText("git", ["cat-file", "--batch-check"], {
+      cwd,
+      input: `${refs.join("\n")}\n`,
+      preserveOutput: true,
+    }).split("\n");
+    batched.forEach((filePath, i) =>
+      records.set(filePath, [blobRecord(lines[2 * i] ?? ""), blobRecord(lines[2 * i + 1] ?? "")])
+    );
+  }
+  for (const filePath of paths) {
+    if (filePath.includes("\n")) {
+      records.set(filePath, [
+        blobRecordOf(cwd, `${headRef}:${filePath}`),
+        blobRecordOf(cwd, `${baseRef}:${filePath}`),
+      ]);
     }
   }
-  return binary;
+  const isBinaryBlob = (record: BlobRecord | null, ref: string, filePath: string): boolean =>
+    record !== null &&
+    record.type === "blob" &&
+    (record.size > BLOB_SNIFF_MAX_BYTES ||
+      git(["cat-file", "blob", `${ref}:${filePath}`], cwd, { preserveOutput: true }).includes("\u0000"));
+  return paths.filter((filePath) => {
+    const [head, base] = records.get(filePath)!;
+    return isBinaryBlob(head, headRef, filePath) || (baseRef !== headRef && isBinaryBlob(base, baseRef, filePath));
+  });
 }
 
 export function binarySkippedSuffix(binarySkipped: readonly string[]): string {

@@ -8,12 +8,14 @@ import {
 	type PriorFateCounts,
 } from "../shared/render.js";
 import {
+	changedFiles,
+	contentBinaryPaths,
 	ghText,
 	git,
 	makeBundle,
 	prDiffFromShas,
 	readAgentsAt,
-	reviewDiffArgs,
+	reviewDiff,
 } from "../shared/repo.js";
 import { normalizeBodyList } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
@@ -691,7 +693,7 @@ export function classifyUnmatched(
 
 // null means the previous head is not available locally, even after one
 // fetch; every unmatched key is then undetermined rather than guessed.
-function touchesSincePrevHead(
+export function touchesSincePrevHead(
 	repoPath: string,
 	prevHead: string,
 	headSha: string,
@@ -706,14 +708,18 @@ function touchesSincePrevHead(
 				timeoutMs: 120000,
 			});
 		}
+		// Binary paths are excluded as in the review patch: --text would
+		// inline their bytes, and a large one overflows the output cap.
+		const paths = changedFiles(repoPath, prevHead, headSha).map(
+			(file) => file.path,
+		);
 		return oldSideTouches(
-			git(
-				reviewDiffArgs(
-					["--no-color", "--no-renames", "-U0"],
-					[prevHead, headSha],
-				),
+			reviewDiff(
 				repoPath,
-				{ preserveOutput: true },
+				["--no-color", "--no-renames", "-U0"],
+				[prevHead, headSha],
+				contentBinaryPaths(repoPath, headSha, prevHead, paths),
+				paths,
 			),
 		);
 	} catch {
