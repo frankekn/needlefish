@@ -2764,7 +2764,7 @@ test("review reports a binary-only change as coverage gaps without calling the m
 	assert.ok(!existsSync(calls), "runner must not be invoked for a binary-only bundle");
 });
 
-test("review surfaces bundle.binarySkipped on the result", async (t) => {
+test("review omits binary-skipped files from small and large coverage", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
 	const repo = initRepo(tmp);
 	const bin = path.join(tmp, "codex-bin.js");
@@ -2787,16 +2787,17 @@ test("review surfaces bundle.binarySkipped on the result", async (t) => {
 	writeFileSync(bin, [
 		"#!/usr/bin/env node",
 		"const fs = require('node:fs');",
-		"fs.readFileSync(0, 'utf8');",
+		"const input = fs.readFileSync(0, 'utf8');",
 		"const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-		"fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+		"const result = input.includes('review-MAP pass') ? { summary: 'mapped', hotspots: [{ name: 'app', files: ['src/app.ts', 'data/blob.bin'], why: 'changed files', risk: 'high', edges: [] }] } : { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+		"fs.writeFileSync(out, JSON.stringify(result));",
 	].join("\n"));
 	chmodSync(bin, 0o755);
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
 	process.env.NEEDLEFISH_NO_FAST_PATH = "1";
 
-	const result = await review({
+	const bundle: Bundle = {
 		repoPath: repo,
 		baseSha: "base",
 		headSha: headSha(repo),
@@ -2808,8 +2809,26 @@ test("review surfaces bundle.binarySkipped on the result", async (t) => {
 		prMeta: null,
 		deep: false,
 		focus: null,
-	});
-	assert.equal(result.verdict, "pass");
-	assert.equal(result.coverageGaps, undefined);
-	assert.deepEqual(result.binarySkipped, ["data/blob.bin"]);
+	};
+	for (const includeBinary of [false, true]) {
+		for (const deep of [false, true]) {
+			const result = await review({
+				...bundle,
+				deep,
+				changedFiles: [
+					...bundle.changedFiles,
+					...(includeBinary ? [{ path: "data/blob.bin", surface: classifySurface("data/blob.bin") }] : []),
+				],
+			});
+			assert.equal(result.verdict, "pass");
+			assert.equal(result.coverageGaps, undefined);
+			assert.deepEqual(result.binarySkipped, ["data/blob.bin"]);
+			assert.equal(
+				result.coverage,
+				deep
+					? `1/${includeBinary ? 2 : 1} changed files deep-reviewed across 1 hotspot`
+					: "full diff reviewed in one pass (1 file)",
+			);
+		}
+	}
 });

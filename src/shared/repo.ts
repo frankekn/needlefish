@@ -142,8 +142,14 @@ export function reviewDiff(
     ancestorDirs(filePath).find((dir) => excluded.has(dir));
   const shadowed = included.filter((filePath) => excludedAncestor(filePath) !== undefined);
   const shadowing = [...new Set(shadowed.map((filePath) => excludedAncestor(filePath)!))];
+  const includedSet = new Set(included);
+  const blockingBinaries = [
+    ...shadowing,
+    ...excludedPaths.filter((filePath) => ancestorDirs(filePath).some((dir) => includedSet.has(dir))),
+  ];
   const stubs =
-    shadowing.length > 0 && !extraArgs.includes("--stat") ? binaryDeletionStubs(cwd, rangeArgs, shadowing) : "";
+    blockingBinaries.length > 0 && !extraArgs.includes("--stat")
+      ? binaryDeletionStubs(cwd, rangeArgs, blockingBinaries) : "";
   // Too many exclusions for one argv: name the included files instead.
   if (excludedPaths.reduce((sum, filePath) => sum + pathspecBytes(filePath), 0) > PATHSPEC_ARGV_BUDGET) {
     return stubs + gitExactPaths(cwd, reviewDiffArgs(extraArgs, rangeArgs), included);
@@ -155,8 +161,8 @@ export function reviewDiff(
   );
 }
 
-// `git apply` (the WORKING sandbox) cannot put a directory where a file still
-// is, so a binary swapped for a directory keeps a content-free deletion record:
+// `git apply` needs binary deletions on either side of a file/directory swap,
+// so binaries blocking the new path keep a content-free deletion record:
 // git's header with the full preimage id, then the binary marker apply expects.
 function binaryDeletionStubs(cwd: string, rangeArgs: readonly string[], binaryPaths: readonly string[]): string {
   const headers = gitExactPaths(

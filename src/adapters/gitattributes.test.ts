@@ -274,24 +274,35 @@ for (const [staged, movedInside] of [[true, false], [false, false], [true, true]
   });
 }
 
-test("a text file that replaced a binary-holding directory is still reviewed (issue #213)", (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-dir-to-file-"));
-  const repo = makeRepo(tmp);
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+for (const staged of [false, true]) {
+  test(`a text file that replaced a binary-holding directory yields a patch git apply accepts (staged=${staged}, issue #213)`, (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-dir-to-file-"));
+    const repo = makeRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-  mkdirSync(path.join(repo, "app.ts"));
-  writeFileSync(path.join(repo, "app.ts", "asset.bin"), NUL_BYTES);
-  writeFileSync(path.join(repo, "README.md"), "# a\n");
-  commitAll(repo, "binary under app.ts/");
-  rmSync(path.join(repo, "app.ts"), { recursive: true });
-  writeFileSync(path.join(repo, "app.ts"), "export const run = eval;\n");
-  writeFileSync(path.join(repo, "README.md"), "# b\n");
-  gitText(["add", "-A"], repo);
+    writeFileSync(path.join(repo, ".gitattributes"), "*.bin diff\n");
+    mkdirSync(path.join(repo, "app.ts"));
+    writeFileSync(path.join(repo, "app.ts", "asset.bin"), NUL_BYTES);
+    writeFileSync(path.join(repo, "README.md"), "# a\n");
+    commitAll(repo, "binary under app.ts/");
+    rmSync(path.join(repo, "app.ts"), { recursive: true });
+    writeFileSync(path.join(repo, "app.ts"), "export const run = eval;\n");
+    writeFileSync(path.join(repo, "README.md"), "# b\n");
+    if (staged) gitText(["add", "-A"], repo);
 
-  const { bundle } = diffBundle(repo, {});
-  assert.deepEqual(bundle.binarySkipped, ["app.ts/asset.bin"]);
-  assert.match(bundle.patch, /^\+export const run = eval;$/m);
-});
+    const { bundle } = diffBundle(repo, {});
+    assert.deepEqual(bundle.binarySkipped, ["app.ts/asset.bin"]);
+    assert.match(bundle.patch, /^\+export const run = eval;$/m);
+    assert.equal(bundle.patch.includes("\u0000"), false);
+
+    const clone = path.join(tmp, "clone");
+    gitText(["clone", "--quiet", repo, clone], tmp);
+    const patchFile = path.join(tmp, "working.patch");
+    writeFileSync(patchFile, bundle.patch);
+    gitText(["apply", "--whitespace=nowarn", patchFile], clone);
+    assert.equal(readFileSync(path.join(clone, "app.ts"), "utf8"), "export const run = eval;\n");
+  });
+}
 
 test("a binary file that replaced a text directory yields a patch git apply accepts (issue #213)", (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-gitattr-dir-to-binary-"));

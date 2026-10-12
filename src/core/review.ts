@@ -824,7 +824,9 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 		review: candidate.value,
 		provenance: candidate,
 	});
-	const coverage = `full diff reviewed in one pass (${bundle.changedFiles.length} file${bundle.changedFiles.length === 1 ? "" : "s"})`;
+	const binarySkipped = new Set(bundle.binarySkipped ?? []);
+	const reviewedFileCount = bundle.changedFiles.filter((file) => !binarySkipped.has(file.path)).length;
+	const coverage = `full diff reviewed in one pass (${reviewedFileCount} file${reviewedFileCount === 1 ? "" : "s"})`;
 	const critic = await runCritic(candidate.value, bundle.patch, run);
 	await observeFinalReviewTrace({
 		observer: run.onTrace,
@@ -1030,7 +1032,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// counting them (or their hotspot) would make the coverage line overstate
 	// exactly when it matters most; the failure itself is a blocking residual.
 	const okHotspots = hotspots.filter((_, i) => passes[i].ok);
-	const coveredFileCount = new Set(okHotspots.flatMap((h) => h.files)).size;
+	const binarySkipped = new Set(bundle.binarySkipped ?? []);
+	const coveredFileCount = new Set(okHotspots.flatMap((h) => h.files).filter((file) => !binarySkipped.has(file))).size;
 	const tailOk = tailAdded && passes[passes.length - 1].ok;
 	const coverage = `${coveredFileCount}/${bundle.changedFiles.length} changed files deep-reviewed across ${okHotspots.length} hotspot${okHotspots.length === 1 ? "" : "s"}${tailOk ? ", incl. tail-coverage" : ""}`;
 	const summary = `${mapResult.value.summary} — ${pruned.value.summary}`;
