@@ -125,6 +125,54 @@ SHA-256：`bridge.py`
 [額度失敗首輪](results/2026-10-13-muse-code-wonder-1.0-high-x1.json) ·
 [較早的三項 x3](results/2026-10-13-muse-code-wonder-1.0-high-confirm-x3.json)
 
+### 2026-10-13 補齊 87 項 x1，離線重算
+
+另取已發布 benchmark commit `a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92`
+的新增三項 specs，在原本 `aaf48b1` pipeline 補跑各 x1、concurrency 1。
+實際新增 4 次 review／critic 呼叫，無 harness retry、無程序錯誤，
+structured adoption 與 escape 均為 0。未重跑或替換原本 84 draws。
+
+| 新增 fixture | 實際模型呼叫 | 模型／pipeline 結果 | 排行榜 scorer recall |
+| --- | ---: | --- | --- |
+| `holdout-pagination-round-down` | 2 | 指出 ceiling division、partial page 遺失並給出 11/10 與 1/10 例子 | 0/1，歷史 facts regex 未匹配 |
+| `rename-source-into-docs` | 0 | 舊 docs fast path 直接 pass，未交給 Muse | 0/1，pipeline 漏審 |
+| `t3-neighbor-defects` | 2 | 找到空陣列 NaN 與原陣列被排序兩項缺陷 | 2/2 |
+
+補跑原始報告使用舊 scorer。其分頁 fixture 顯示 recall=true，但該舊版
+尚不支援新 specs 的 structured facts，不能用這個值判定命中。
+下列 aggregate 全部使用已發布的 `a5a0c68` scorer 重算保存的 findings。
+
+| 指標 | 87 項混合批次 x1 重算 |
+| --- | ---: |
+| Anchored recall | 86.9%，53/61 |
+| Tier-1 / Tier-2 / Tier-3 | 85.7%，6/7 / 88.9%，32/36 / 83.3%，15/18 |
+| FP / invalid | 0/24 / 0/87 |
+| Verdict match | 83/87，95.4% |
+| 有效行號率 | 77/87，88.5% |
+| Mean noise per positive | 5/61，0.082 |
+| 平均時間 | 35.0 秒，含零模型呼叫的 fast path |
+
+三項改過判定規則的舊 fixture 也已重算；`t1-inverted-guard` 在較嚴格
+的 facts matcher 下由 hit 變為 miss，另兩項 outcome 未變。
+重算報告的 prompt `e62d0889fc704541`、fixture `e9923bbc7753a04a`、
+scorer `8bbc6152d8b45a43` 與 anti-cheat v2 對齊已發布排行榜。
+
+更正先前「只補三項便能同基準比較」的說法：scoring 身分可以對齊，
+但兩個 commit 的 review pipeline 與 normalize 也不同。新增 rename
+fixture 的零呼叫 fast path 已直接證明執行差異。此報告是歷史 pipeline
+的重算結果，不是排行榜 pipeline 的 Muse lane，仍只有 x1、不排名。
+
+保存的 JSON 沒有完整候選 findings 或 raw transcripts，不能重新認證
+anti-cheat 或改過 oracle 的 critic pruning。保留原 anti-cheat 與
+criticPruneError 診斷；改過 oracle 與新增 fixture 的 candidate match
+evidence 不放入衍生報告。沒有補造 gateClass 或新模型執行 gitSha。
+所有原始報告保持不變，額度失敗與成功重測仍各自保留。
+
+[87 項離線重算 x1](results/2026-10-13-muse-code-wonder-1.0-high-87-rescored-x1.json) ·
+[分頁補跑](results/2026-10-13-muse-code-wonder-1.0-high-supplement-holdout-pagination-round-down-x1.json) ·
+[改名補跑](results/2026-10-13-muse-code-wonder-1.0-high-supplement-rename-source-into-docs-x1.json) ·
+[相鄰缺陷補跑](results/2026-10-13-muse-code-wonder-1.0-high-supplement-t3-neighbor-defects-x1.json)
+
 ## Current decision
 
 **Deployed lane: Codex `gpt-5.6-terra` at `high` effort** (selected
