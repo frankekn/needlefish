@@ -150,7 +150,7 @@ Criteria were written before the model run (`gate-criteria.md`).
 - Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
   holdouts included). After normalizing commit SHAs and temp paths, the prompt
   multiset equals origin/main's (180/180) at `8773a84`, `b6376c7`, `d732443`,
-  `c9bcc81`, `28bd8ce`, and `e48e255`. The x1 and x3 results below therefore hold for those
+  `c9bcc81`, `28bd8ce`, `e48e255`, and `2cf2b3c`. The x1 and x3 results below therefore hold for those
   heads.
   No fixture has a `.gitattributes` file, so model runs here measure lane noise.
 - Full set x1, holdouts included (base origin/main `a9bcc6c`, candidate `b6376c7`;
