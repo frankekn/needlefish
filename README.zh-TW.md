@@ -145,6 +145,15 @@ hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failur
 1 條 lane 因 provider 或基礎設施故障而不計分；詳見 benchmark 頁面與 eval/RESULTS.md。
 <!-- benchmark:end -->
 
+**最新探索結果，2026-10-13：**本機 Muse Code 1.4.7，`muse-wonder-1.0`
+使用 `high`，完成歷史 84-fixture 集 x1。Anchored recall 91.4%、Tier-1
+100%、誤報 0%、無效輸出 0%，平均 35.6 秒。針對性 x3 確認了部分缺陷
+漏抓、誤報與行號問題。已發布的 87-fixture 集包含全部 84 項，但其中三項
+判定規則與 scorer 已改變，因此不加入可比較排行榜，也不升為正式模型。
+額度失敗與恢復後報告各自保留。詳見
+[Wonder 報告與確認結果](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high)。
+本次發布未增加模型呼叫。
+
 解讀：Grok 4.6 在準確度與 noise 上領先，但每次審查慢 3.7 倍，且需要
 runner 上已登入的 Grok CLI，因此仍維持 candidate。Terra high 與 Sol 在
 統計上無法分出高下；Terra high 更快，在乾淨 fixture 上也更乾淨。

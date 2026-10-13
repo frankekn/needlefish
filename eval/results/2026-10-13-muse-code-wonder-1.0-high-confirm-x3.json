@@ -1,0 +1,549 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "acp",
+  "model": "muse-wonder-1.0",
+  "effort": "high",
+  "draws": 3,
+  "createdAt": "2026-10-13T05:44:51.377Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 0,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "critic",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 51853,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/logger.go",
+          "lineStart": 3,
+          "lineEnd": 4,
+          "title": "Implement the new Log tag parameter instead of discarding it",
+          "whyItBreaks": "Log is exported and its new signature accepts tag ...string, promising callers that tags are part of the log record, but the body only executes println(message). Substituting Log(\"msg\", \"auth\") therefore prints only \"msg\" and silently drops \"auth\", so any caller relying on tags for filtering, routing, or identification receives log data without the tag. The public signature itself is the contract even though this repo has no in-repo caller passing a tag yet."
+        }
+      ],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 1,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 40841,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/logger.go",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Use or remove the silently ignored tag parameter",
+          "whyItBreaks": "Log is exported and its new `tag ...string` parameter promises callers can tag a message, but the body at src/logger.go:4 only executes println(message) and never reads tag. A caller such as Log(\"hello\", \"audit\") compiles and runs yet receives exactly the untagged output Log(\"hello\"), so log consumers filtering or grouping by tag silently miss the record. Existing single-argument calls remain source-compatible, but every tagged call loses caller-supplied data with no error."
+        }
+      ],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "go-harmless-variadic",
+      "draw": 2,
+      "score": {
+        "fixtureId": "go-harmless-variadic",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 35437,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-hard-refactor-move",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 43971,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "contract",
+          "file": "src/orders.ts",
+          "lineStart": 1,
+          "lineEnd": 3,
+          "title": "Restore shippingQuote export removed from orders module",
+          "whyItBreaks": "Base src/orders.ts exported shippingQuote(order), but head only imports quoteShipping internally and exports Order and orderTotal. Any existing consumer doing import { shippingQuote } from './orders' (or src/orders) now fails TypeScript compilation ('has no exported member shippingQuote') and gets undefined at runtime in JS, even though the identical pricing logic exists as quoteShipping in src/pricing/shipping.ts. Preserving Order as a type alias shows orders was intended to remain compatible, but the function export was not preserved."
+        }
+      ],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "draw": 1,
+      "score": {
+        "fixtureId": "neg-hard-refactor-move",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 56429,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "contract",
+          "file": "src/orders.ts",
+          "lineStart": 1,
+          "lineEnd": 3,
+          "title": "Restore removed `shippingQuote` export from orders module",
+          "whyItBreaks": "At base, `src/orders.ts` exported `shippingQuote(order)`, so external code could `import { shippingQuote } from \"./orders\"`. Head replaces it with `quoteShipping` only under `src/pricing/shipping.ts` and exports only `Order` and `orderTotal` from orders; any existing `shippingQuote` import from orders now fails to compile / resolves to undefined, even though the pricing arithmetic is unchanged."
+        }
+      ],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "draw": 2,
+      "score": {
+        "fixtureId": "neg-hard-refactor-move",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 36593,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": []
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 0,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 28485,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 15,
+          "title": "Restore admin check so non-admins cannot purge archived projects",
+          "whyItBreaks": "Substituting the four isAdmin x archived combinations against the base logic: base only purged (admin=true, archived=true) and forbade all others. Head returns 'forbidden' when user.isAdmin is true, so an admin purging an archived project is now rejected; and for (admin=false, archived=true) it falls through to db.delete(project.id) and returns 'purged', letting any non-admin irreversibly delete an archived project. This is an authorization bypass plus data loss on the exported purge path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 1,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 29474,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Fix inverted admin check that lets non-admins purge projects",
+          "whyItBreaks": "Substituting the new values: non-admin + archived passes line 12 (isAdmin is false) and line 13 (archived is true), reaching db.delete(project.id) at line 14 and returning \"purged\" — an unauthorized destructive delete that the base code (isAdmin && archived) forbade. Conversely admin + archived, the only legitimately purgeable case under the base guard, now returns \"forbidden\" at line 12 (TRIGGER A over-block)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "t1-inverted-guard",
+      "draw": 2,
+      "score": {
+        "fixtureId": "t1-inverted-guard",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 24546,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P0",
+          "category": "security",
+          "file": "src/projects.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Invert admin check to stop unauthorized project purge",
+          "whyItBreaks": "Substitution proves both regressions: admin+archived previously purged but now returns 'forbidden' at src/projects.ts:12; non-admin+archived previously returned 'forbidden' but now passes src/projects.ts:12-13, reaches db.delete(project.id) at src/projects.ts:14, and returns 'purged'. This is a privilege-escalation/data-loss path on the exported purgeProject API."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "invert|revers|flip|non.?admin|admin.{0,32}(forbidden|reject|blocked|cannot)|without.{0,12}admin|opposite",
+          "file": "src/projects.ts",
+          "findingIndex": 0
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 1,
+    "falsePositiveRate": 0.6666666666666666,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.5555555555555556,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 38625.444444444445,
+    "recallByFixture": {
+      "go-harmless-variadic": 1,
+      "neg-hard-refactor-move": 1,
+      "t1-inverted-guard": 1
+    },
+    "mustFindHitRateByFixture": {
+      "t1-inverted-guard": 1
+    },
+    "mustFindHitRate": 1,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t1": 1
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 2,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "aaf48b11c01f62d4a23c01a550f5c68c0aba9f87",
+  "fixtureSetHash": "571085741e498b6e",
+  "scorerHash": "a424d3bb59a40443",
+  "fixtureTiers": {
+    "t1-inverted-guard": 1
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "go-harmless-variadic",
+    "neg-hard-refactor-move",
+    "t1-inverted-guard"
+  ],
+  "fixtureKinds": {
+    "go-harmless-variadic": "negative",
+    "neg-hard-refactor-move": "negative",
+    "t1-inverted-guard": "positive"
+  }
+}

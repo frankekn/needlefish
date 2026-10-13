@@ -159,6 +159,16 @@ author gets.
 1 lane(s) had provider or infrastructure failures and are excluded from scoring; see the benchmark page and eval/RESULTS.md.
 <!-- benchmark:end -->
 
+**Latest exploratory result, 2026-10-13:** native Muse Code 1.4.7,
+`muse-wonder-1.0` at `high`, completed the historical 84-fixture set once:
+91.4% anchored recall, 100% Tier-1, 0% FP, 0% invalid output, and 35.6s mean.
+Targeted x3 confirmed partial misses, false positives, and invalid anchors.
+All 84 fixtures are present in the published 87-fixture set, but three scoring
+specs and the scorer changed. This is not a comparable leaderboard row or a
+promotion result. Quota failures and recovery reports stay separate.
+See the [Wonder report and confirmations](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high).
+No additional model calls were made to publish these results.
+
 Reading: Grok 4.6 leads on accuracy and noise but is 3.7× slower per review
 and needs the Grok CLI authenticated on the runner, so it stays a candidate.
 Terra high and Sol are statistically unresolved against each other; Terra
