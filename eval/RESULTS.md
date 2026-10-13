@@ -5,6 +5,126 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-13 Muse Code Wonder 1.0 high
+
+本機 Muse Code 1.4.7，模型 `muse-wonder-1.0`，effort `high`。
+透過既有 ACP runner 與臨時 Python 橋接呼叫 `muse exec`，未修改 prompts、
+review pipeline 或正式模型設定。完整集為 84 項，含 holdout，concurrency 4。
+
+此為歷史 checkout `aaf48b11c01f62d4a23c01a550f5c68c0aba9f87`、Needlefish
+0.4.1 的探索結果，不是目前 main pipeline 的效能證據。已發布 benchmark
+使用 87 fixtures 與 scorer `8bbc6152d8b45a43`，本輪使用 84 fixtures 與
+scorer `a424d3bb59a40443`，不能跨版本比較或加入目前排名。
+87-fixture 集包含全部 84 項，其中 81 個 spec 完全相同，三項判定規則有
+修改；新增三項為 `holdout-pagination-round-down`、`rename-source-into-docs`
+與 `t3-neighbor-defects`。目前 main 的 fixture 原始目錄已有 93 項，不應
+與已發布的 87-fixture benchmark 混稱。
+
+此 checkout 未在遠端公開。隨附 [原始碼快照](results/2026-10-13-muse-code-source-aaf48b1.tar.gz)
+保留全部 84 個 fixture specs、scorer、harness、產品原始碼與 prompts，
+165 個檔案逐 byte 與該 commit 相同。SHA-256：
+`7034b68a9575c121a39458c194ce5111de265c681d5ccd4d722a737409a48b1b`。
+快照不含憑證或臨時橋接，不能單獨重現 Muse invocation。
+當時的 `Report` 型別沒有 `gateClass`。五份 JSON 保留原樣，依現有
+工具屬 legacy R，不代表本輪曾宣告或通過 R promotion gate。
+
+首輪因使用者額度耗盡而有 45 項程序失敗。使用者加值後，另跑新的完整
+x1，不覆蓋首輪，也不把成功重測混入首輪結果。
+
+| 指標 | 加值後 Wonder high x1 | 2026-07-19 Terra high x3 baseline |
+| --- | ---: | ---: |
+| Recall | 91.4%，53/58 | 87.4% |
+| Tier-1 recall | 100%，7/7 | 100% |
+| Tier-2 recall | 94.1%，32/34 | 91.2% |
+| Tier-3 recall | 82.4%，14/17 | 74.5% |
+| 誤報率 | 0%，0/24 | 5.6% |
+| 無效結果率 | 0%，0/84 | 1.2% |
+| Verdict match | 96.4%，81/84 | 94.4% |
+| 有效行號率 | 91.7%，77/84 | 88.1% |
+| Mean noise per positive | 0.052 | 0.092 |
+| 平均時間 | 35.6 秒 | 56.8 秒 |
+
+完整 x1 共 164 次 pipeline 呼叫，無 harness retry。完整性與比較檢查通過。
+兩份報告的 prompt `e62d0889fc704541`、fixture set `1968a9d2fabe2a56`、
+scorer `a424d3bb59a40443` 與 anti-cheat v2 相同。不同 runner 加上 x1 對
+x3，仍不能據此宣稱穩定排名或切換正式模型。
+此表的 Terra 是歷史 [84-fixture baseline](baselines/2026-07-19-terra-high-x3.json)，
+不是目前排行榜的 87-fixture Terra report。
+
+完整 x1 的五個漏抓為 `go-backend-slop-swallow`、
+`real-pr1-lenient-candidate-parse`、`real-pr1-neutral-conclusion`、
+`real-pr10` 與 `real-pr4-hotspot-truncation`。
+
+另對 19 個漏抓、行號異常或與 baseline 不一致的 fixture 做 x3，共 57 draws。
+49 項有效，8 項無效。失敗發生於最後三個 fixture，診斷記錄確認 provider
+回傳 HTTP 429、`tier_limit` 與 `Subscription quota exhausted`。
+其中一項由橋接拒絕空白 final text。此確認報告保留原樣，不用它的子集
+aggregate 取代完整 x1。
+
+- `real-pr1-lenient-candidate-parse` 在三個有效 draws 都漏抓。
+- `go-backend-slop-swallow` 在三個確認 draws 都抓到，首輪 miss 未重現。
+- `neg-hard-refactor-move` 三次中誤報兩次。完整 x1 的零誤報並不穩定。
+- 較早的獨立 x3 也記錄 `go-harmless-variadic` 三次中誤報兩次。
+- `holdout-authorization-guard` 與 `pos-over-block-shared` 的行號三次都無效。
+  `ts-data-duplicate` 三次中兩次行號無效。
+- `real-pr1-neutral-conclusion`、`real-pr10` 與 `real-pr4-hotspot-truncation`
+  的有效 x3 確認當時受額度阻擋，後續另存下列恢復後報告。
+
+額度恢復後，只對這三項另跑單工 x3，共 9 draws。9 項皆有效，18 次
+review 或 critic 呼叫，無 harness retry。這個呼叫數不含 Muse 內部 API
+請求與工具步驟，報告無法據此換算額度成本。跑完即停止，未重跑完整集。
+
+| Fixture | 完整 recall | 每次命中的缺陷數 |
+| --- | ---: | --- |
+| `real-pr1-neutral-conclusion` | 0/3 | 1/2、1/2、1/2 |
+| `real-pr10` | 3/3 | 1/1、1/1、1/1 |
+| `real-pr4-hotspot-truncation` | 0/3 | 2/3、2/3、1/3 |
+
+`real-pr1-neutral-conclusion` 每次抓到 neutral conclusion 問題，但 scorer 未匹配
+stale-head 缺陷。`real-pr4-hotspot-truncation` 每次抓到 hotspot 上限問題，
+兩次也抓到 residual risk 遺失，但三次皆未匹配 critic context 缺陷。
+兩項是部分命中，不是完全未抓到問題。九項 verdict 與行號皆有效。
+`real-pr10` 的首輪 miss 未在此次 x3 重現。
+
+恢復後子集的 positive noise 為 7/9，`meanNoisePerPositive=0.778`，
+高於 0.12 envelope。這是針對困難案例選取的子集，不當作全體 noise。
+另有 matcher 邊界：`real-pr1-neutral-conclusion` draw 2 的 P2 finding
+位於 `src/adapters/github.ts:143–144`，明確指出 checkout `HEAD` 與
+`pr.head.sha` 不同，但未命中歷史 regex，因而被計為 noise。
+「scorer 未匹配」不等於模型完全未看到該問題；原始分數未修改。
+
+恢復後報告的 structured adoption 與 escape 均為 0，raw bait exposure
+為 2 項。原始完整集與額度失敗報告均保留，不用成功重測覆蓋失敗結果，
+也不合併成新的完整集分數。原先阻擋的三項已完成有效 x3 確認。
+
+完整 x1 有 10 項 raw bait exposure，19-fixture x3 有 8 項，兩者的 structured
+adoption 與 escape 均為 0，`cheatDetectedCount=0`。依現有規則，報告未作廢。
+橋接保留所有原始 Muse events 與 stderr 給 canary scanner，只以 completed
+terminal 的 final text 作為模型答案。模型 ID 不符、程序失敗或空答案均拒絕。
+橋接的成功與失敗 transcript 測試，以及真實 review 加 critic preflight 均通過。
+
+每次呼叫使用隔離 HOME 與 throwaway clone，保留固定 HEAD、GitHub token
+stripping 與 post-run worktree 檢查。macOS Keychain 憑證僅在記憶體內透過
+明確授權的 `META_API_KEY` passthrough 傳遞，未寫入報告。Muse 使用
+`--no-session-log`、`--no-foreign-personal-context`、`--disable-reminders`、
+`--yolo` 與 `--contributor-mode on`。這是原生 Muse CLI lane，並非 OpenCode
+Muse lane。橋接與 driver 位於本次 OpenCode 暫存目錄
+`needlefish-muse-wonder-high`，不屬於產品程式。
+SHA-256：`bridge.py`
+`3230a4b88c7d6b6c1f44037f323386b0e1dafd9c660948b49a5c9de7a94f3faa`；
+`run.py` `e02c7cd0ba24d2060a9f0153f90e7851a900ac4455ae96a352f46135a51e3372`。
+這些 hash 只識別本機檔案，不提供可下載橋接。若未來要 promotion，
+需先提供可審查、可重現的 Muse runner，再宣告正式 gate。
+
+結論：完整 x1 表現有競爭力，但 x3 已確認部分缺陷漏抓、誤報與行號問題。
+完整集仍只有 x1。不宣稱 Wonder 已通過 production promotion，既有部署設定未變更。
+
+[加值後完整 x1](results/2026-10-13-muse-code-wonder-1.0-high-funded-x1.json) ·
+[19-fixture x3 確認](results/2026-10-13-muse-code-wonder-1.0-high-funded-confirm-x3.json) ·
+[額度恢復後三項 x3](results/2026-10-13-muse-code-wonder-1.0-high-quota-recovery-x3.json) ·
+[額度失敗首輪](results/2026-10-13-muse-code-wonder-1.0-high-x1.json) ·
+[較早的三項 x3](results/2026-10-13-muse-code-wonder-1.0-high-confirm-x3.json)
+
 ## Current decision
 
 **Deployed lane: Codex `gpt-5.6-terra` at `high` effort** (selected

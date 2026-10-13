@@ -141,6 +141,13 @@
   ],
   "excluded": [
     {
+      "name": "Muse Code Wonder 1.0 high exploratory run (2026-10-13)",
+      "model": "muse-wonder-1.0",
+      "provider": "Native Muse Code 1.4.7 via ACP bridge, Meta account, high effort",
+      "reason": "Historical 84-fixture x1, not comparable to the 87-fixture leaderboard: fixture and scorer hashes differ. Recall 91.4%, Tier-1 100%, FP 0%, invalid 0%, mean 35.6s. Targeted x3 confirmed partial misses, false positives and invalid anchors; quota-recovery runs remain separate evidence. No promotion or full-set x3. Details: eval/RESULTS.md.",
+      "report": "results/2026-10-13-muse-code-wonder-1.0-high-funded-x1.json"
+    },
+    {
       "name": "Qwen3.8 Max incomplete run",
       "model": "opencode-go/qwen3.8-max",
       "provider": "OpenCode Go subscription",
