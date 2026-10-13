@@ -27,8 +27,9 @@ export function git(
 // Real binary content is still detected by git itself. Never GIT_ATTR_SOURCE:
 // an older git ignores the variable and the bypass returns silently.
 // Without attributes, a large asset whose first 8000 bytes hold no NUL is
-// diffed as text. If the diff output exceeds runText's capture limit,
-// collection throws before review; truncated output is never reviewed.
+// diffed as text. If a review patch exceeds runText's capture limit,
+// collection throws before review; truncated output is never reviewed. The
+// re-review history diff (touchesSincePrevHead) catches it as undetermined.
 export function reviewDiff(cwd: string): string[] {
   const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], cwd);
   return [
