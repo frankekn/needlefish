@@ -22,6 +22,7 @@ environment = dict(json.loads(public['runnerEnvironment']))
 assert 'META_API_KEY' not in environment
 assert '<required>' not in environment.values()
 assert environment['NEEDLEFISH_ACP_AUTH_ENV_VARS'] == 'META_API_KEY'
+assert environment['NEEDLEFISH_RUNNER_ENV_PASSTHROUGH'] == 'META_API_KEY'
 assert public['reproductionCommand'] == original['reproductionCommand'].replace(
     'NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY --draws',
     'NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY,NEEDLEFISH_MUSE_BIN --draws')

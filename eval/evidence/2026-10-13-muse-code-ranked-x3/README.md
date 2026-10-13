@@ -19,6 +19,11 @@ placeholder, records the credential binding, names the auth variable and
 identifies the executed bridge by SHA-256. `privateEnvironment: false` applies
 to this public description, not to the untouched original report.
 No credential value or credential digest is published.
+`runnerEnvironment` describes the original run's public settings. It is not a
+portable reproduction environment. For reproduction, follow `reproductionCommand`
+and the steps below, including the additional `NEEDLEFISH_MUSE_BIN` passthrough.
+The original run did not use that executable override, so its environment pairs
+retain `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY`.
 Run `python3 eval/evidence/2026-10-13-muse-code-ranked-x3/verify.py` to verify
 the original bytes, unchanged experimental data and public identity metadata.
 
