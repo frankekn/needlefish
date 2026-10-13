@@ -45,6 +45,41 @@ test("runCodex classifies invalid timeout configuration as operational", async (
 	);
 });
 
+test("runCodex classifies a runner that exits before reading stdin by its exit status, not EPIPE", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "claude-exit-1.sh");
+	const previous = {
+		bin: process.env.CLAUDE_BIN,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+		else process.env.CLAUDE_BIN = previous.bin;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(bin, ["#!/bin/sh", "echo 'auth error code: expired_token' >&2", "exit 1"].join("\n"));
+	chmodSync(bin, 0o755);
+	process.env.CLAUDE_BIN = bin;
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+
+	// Larger than any pipe buffer, so the write fails with EPIPE once the child exits.
+	const prompt = "x".repeat(10_000_000);
+	await assert.rejects(
+		() => runCodex(prompt, { runner: "claude", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000 }),
+		(error: unknown) => {
+			assert.ok(error instanceof RunnerOperationalError);
+			assert.equal(
+				error.message,
+				"claude runner exited 1; likely cause: auth error (expired_token); stderr withheld because it may contain the review prompt. Run `claude auth login`, then retry.",
+			);
+			return true;
+		},
+	);
+});
+
 test("runCodex invokes claude without permission restrictions", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
