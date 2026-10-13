@@ -318,6 +318,8 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 			consumerFile: "optional",
 			consumerLine: "optional",
 			replacement: "optional",
+			quote: "optional",
+			quoteCheck: "optional",
 		},
 		"$defs",
 		"finding",
@@ -328,6 +330,13 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		"finding",
 		"properties",
 		"replacement",
+	);
+	assertFields<NonNullable<Finding["quoteCheck"]>>(
+		{ status: "required", from: "optional" },
+		"$defs",
+		"finding",
+		"properties",
+		"quoteCheck",
 	);
 	assertFields<ResidualRisk>({ text: "required", blocks: "required" }, "$defs", "residualRisk");
 	assertFields<ScopeCallout>({ surface: "required", files: "required" }, "$defs", "scopeCallout");

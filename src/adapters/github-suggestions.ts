@@ -1,3 +1,4 @@
+import { quoteNote } from "../shared/render.js";
 import type { Finding } from "../shared/schema.js";
 
 export type DiffLineRange = readonly [number, number];
@@ -50,6 +51,8 @@ function formatCommentBody(finding: Finding, replacementLines: readonly string[]
     `**Fix:** ${finding.suggestedFix}`,
   ];
   if (finding.validation) lines.push("", `**Validate:** ${finding.validation}`);
+  const note = quoteNote(finding);
+  if (note) lines.push("", note);
   if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
   // Recognized by normalize.ts isNeedlefishPost when the comment is read back.
   lines.push("", "<!-- needlefish-finding -->");

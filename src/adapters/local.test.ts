@@ -783,3 +783,83 @@ test("runLocalPr from a nested directory resolves root refs and the root cache s
     "the nested directory name must not become the cache slug"
   );
 });
+
+// Issue #240: branch and PR modes read AGENTS.md at the merge base, so a
+// change cannot rewrite the policy it is reviewed under. Its own AGENTS.md
+// edit reaches the model only as diff content.
+test("branch and PR modes read AGENTS.md at the merge base, not the head", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-local-policy-test-"));
+  const repo = initRepo(tmp);
+  const fakeBin = path.join(tmp, "bin");
+  const promptLog = path.join(tmp, "prompts.txt");
+  const previous = {
+    path: process.env.PATH,
+    bin: process.env.CLAUDE_BIN,
+    runner: process.env.NEEDLEFISH_RUNNER,
+    noFastPath: process.env.NEEDLEFISH_NO_FAST_PATH,
+  };
+  t.after(() => {
+    if (previous.path === undefined) delete process.env.PATH;
+    else process.env.PATH = previous.path;
+    if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+    else process.env.CLAUDE_BIN = previous.bin;
+    if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
+    else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.noFastPath === undefined) delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    else process.env.NEEDLEFISH_NO_FAST_PATH = previous.noFastPath;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  gitText(["branch", "-M", "main"], repo);
+  writeFileSync(path.join(repo, "AGENTS.md"), "BASE-POLICY-SENTINEL\n");
+  commitAll(repo, "base policy");
+  const base = headSha(repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "AGENTS.md"), "HEAD-POLICY-SENTINEL\n");
+  writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  commitAll(repo, "feature");
+  const head = headSha(repo);
+
+  mkdirSync(fakeBin);
+  const prView = {
+    number: 7, title: "PR", body: null, comments: [], reviews: [], statusCheckRollup: [],
+    baseRefOid: base, headRefOid: head, baseRefName: "main", headRefName: "feature",
+  };
+  writeFileSync(
+    path.join(fakeBin, "gh"),
+    [
+      "#!/usr/bin/env node",
+      "if (process.argv[2] === 'pr' && process.argv[3] === 'view') {",
+      `  process.stdout.write(${JSON.stringify(JSON.stringify(prView))});`,
+      "  process.exit(0);",
+      "}",
+      "process.stderr.write('unexpected gh call');",
+      "process.exit(1);",
+    ].join("\n")
+  );
+  writeFileSync(
+    path.join(fakeBin, "claude"),
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+    ].join("\n")
+  );
+  chmodSync(path.join(fakeBin, "gh"), 0o755);
+  chmodSync(path.join(fakeBin, "claude"), 0o755);
+  process.env.PATH = `${fakeBin}:${previous.path ?? ""}`;
+  process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
+  process.env.NEEDLEFISH_RUNNER = "claude";
+  process.env.NEEDLEFISH_NO_FAST_PATH = "1";
+
+  const agentsMdSent = async (run: () => Promise<unknown>): Promise<string> => {
+    rmSync(promptLog, { force: true });
+    await run();
+    const match = /"agentsMd":\s*"((?:[^"\\]|\\.)*)"/.exec(readFileSync(promptLog, "utf8"));
+    assert.ok(match, "no agentsMd value reached the model prompt");
+    return JSON.parse(`"${match[1]}"`) as string;
+  };
+  assert.equal(await agentsMdSent(() => runLocal(repo, { cacheDir: path.join(tmp, "cache-branch") })), "BASE-POLICY-SENTINEL");
+  assert.equal(await agentsMdSent(() => runLocalPr(repo, 7, { cacheDir: path.join(tmp, "cache-pr") })), "BASE-POLICY-SENTINEL");
+});

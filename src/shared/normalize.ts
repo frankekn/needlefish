@@ -197,6 +197,14 @@ function parseReplacement(raw: unknown): Finding["replacement"] | undefined {
   return { lines };
 }
 
+// Optional and never a reason to reject a review: a missing or unusable quote
+// only means the location is not checked (issue #240).
+function parseQuote(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || raw.includes("\n") || raw.includes("\r")) return undefined;
+  const quote = raw.trim();
+  return quote && quote.length <= 500 ? quote : undefined;
+}
+
 export function normalizeFinding(raw: unknown): Finding {
   const record = requireRecord(raw, "malformed finding");
   const severity = parseSeverity(record.severity);
@@ -229,6 +237,7 @@ export function normalizeFinding(raw: unknown): Finding {
     throw new Error("malformed finding: blocking finding has low confidence");
   }
   const replacement = parseReplacement(record.replacement);
+  const quote = parseQuote(record.quote);
   return {
     severity,
     category,
@@ -243,6 +252,7 @@ export function normalizeFinding(raw: unknown): Finding {
     consumerFile: record.consumerFile ? asString(record.consumerFile) || undefined : undefined,
     consumerLine: record.consumerLine ? Number(record.consumerLine) || undefined : undefined,
     ...(replacement ? { replacement } : {}),
+    ...(quote ? { quote } : {}),
   };
 }
 

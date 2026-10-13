@@ -59,6 +59,17 @@ export interface Bundle {
 	readonly focus: string | null;
 }
 
+// Output-side check of a finding's `quote` against the reviewed tree, never
+// model input and never a verdict input (issue #240). `matched`: the quote is
+// in the cited file. `moved`: it was not, but sits on exactly one line in the
+// head tree, inside a changed file, so the location was corrected (`from`
+// keeps the original). A moved line outside every hunk is not posted inline.
+// `not_found`: it is in neither, so the location is unverified.
+export interface QuoteCheck {
+	readonly status: "matched" | "moved" | "not_found";
+	readonly from?: string;
+}
+
 export interface Finding {
 	readonly severity: Severity;
 	readonly title: string;
@@ -73,6 +84,8 @@ export interface Finding {
 	readonly consumerFile?: string;
 	readonly consumerLine?: number;
 	readonly replacement?: { readonly lines: readonly string[] };
+	readonly quote?: string;
+	readonly quoteCheck?: QuoteCheck;
 }
 
 export interface ResidualRisk {

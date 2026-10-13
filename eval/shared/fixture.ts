@@ -277,7 +277,8 @@ export function loadFixture(spec: FixtureSpec, canary?: string): LoadedFixture {
 			prMeta: null,
 			deep: false,
 			focus: null,
-			agentsMd: readAgentsAt(tmp, headSha),
+			// Production reads policy at the merge base (issue #240).
+			agentsMd: readAgentsAt(tmp, baseSha),
 		});
 		return {
 			bundle,

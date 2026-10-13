@@ -684,3 +684,25 @@ test("normalizeReview drops malformed findings in loose mode", () => {
   assert.equal(review.findings.length, 1);
   assert.deepEqual(review.checked, ["diff"]);
 });
+
+test("normalizeFinding keeps a one-line quote trimmed and drops a malformed one", () => {
+  const base = {
+    severity: "P2",
+    title: "Wrong branch",
+    category: "bug",
+    file: "src/app.ts",
+    lineStart: 3,
+    confidence: 0.9,
+    whyItBreaks: "The branch returns the wrong value.",
+    suggestedFix: "Replace the branch.",
+  };
+
+  assert.equal(normalizeFinding({ ...base, quote: "  return wrong;  " }).quote, "return wrong;");
+  for (const quote of ["a\nb", "a\rb", "   ", "x".repeat(501), 42, undefined]) {
+    const finding = normalizeFinding({ ...base, quote });
+
+    assert.equal(finding.title, "Wrong branch");
+    assert.equal(finding.quote, undefined);
+    assert.equal("quote" in finding, false);
+  }
+});

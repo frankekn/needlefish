@@ -1638,7 +1638,7 @@ export async function runGithub(
 		prMeta,
 		deep: false,
 		focus: null,
-		agentsMd: readAgentsAt(repoPath, headSha),
+		agentsMd: readAgentsAt(repoPath, mergeBase),
 	});
 
 	const pendingCheckId = createPendingCheck(repo, headSha);

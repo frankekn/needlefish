@@ -8,6 +8,15 @@ const SEV_ORDER: Record<Severity, number> = {
 	P3: 3,
 };
 
+// Shared by the review body and inline comments so a reader sees the same
+// location caveat wherever the finding appears (issue #240).
+export function quoteNote(finding: Finding): string | null {
+	const check = finding.quoteCheck;
+	if (check?.status === "moved") return `_Location corrected from \`${check.from ?? "?"}\`: the quoted source was found here._`;
+	if (check?.status === "not_found") return `_Location unverified: the quoted source was not found in \`${finding.file}\`._`;
+	return null;
+}
+
 const SEVERITY_LABEL: Record<Severity, string> = {
 	P0: "🔴 P0",
 	P1: "🟠 P1",
@@ -207,6 +216,11 @@ export function renderMarkdown(
 				if (finding.validation) {
 					lines.push("");
 					lines.push(`**Validation:** ${finding.validation}`);
+				}
+				const note = quoteNote(finding);
+				if (note) {
+					lines.push("");
+					lines.push(note);
 				}
 			});
 			lines.push("");

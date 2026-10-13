@@ -93,3 +93,15 @@ test("formatSuggestionComment drops a suggestion that would exceed GitHub's body
   assert.equal(formatted.startLine, undefined);
   assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
 });
+
+test("formatSuggestionComment shows the quote-check location note and stays silent on a match", () => {
+  const context = { ranges: new Map([["README.md", [[1, 1]] as const]]), headLineCount: () => 1 };
+
+  const moved = formatSuggestionComment(mkFinding({ quoteCheck: { status: "moved", from: "src/a.ts:9" } }), context);
+  const missing = formatSuggestionComment(mkFinding({ quoteCheck: { status: "not_found" } }), context);
+  const matched = formatSuggestionComment(mkFinding({ quoteCheck: { status: "matched" } }), context);
+
+  assert.match(moved.body, /\*\*Validate:\*\* test\n\n_Location corrected from `src\/a\.ts:9`: the quoted source was found here\._\n/);
+  assert.match(missing.body, /_Location unverified: the quoted source was not found in `README\.md`\._/);
+  assert.equal(matched.body, formatSuggestionComment(mkFinding(), context).body);
+});
