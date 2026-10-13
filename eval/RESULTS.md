@@ -128,6 +128,37 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-10-13 — Review diff attributes from a fixed tree (PR #234, Class R)
+
+Scope: committed-range review diffs (GitHub PR, `pr` subcommand, local branch
+mode, re-review history diff) run `git --attr-source=<empty tree> diff
+--no-textconv --no-ext-diff`, so a PR's own `.gitattributes` cannot hide hunks
+(issue #213). Uncommitted mode is unchanged. Classified **R** because the patch
+fed to the model changes for repositories with `-diff`, `binary`, or textconv
+attributes.
+
+Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flash`,
+**high**. This is not the production lane (Codex `gpt-5.6-terra` high).
+Criteria were written before the model run (`gate-criteria.md`).
+
+- Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
+  holdouts included). After normalizing commit SHAs and temp paths, the prompt
+  multiset equals origin/main's (180/180) at `8773a84`, `b6376c7`, and `d732443`.
+  No fixture has a `.gitattributes` file, so model runs here measure lane noise.
+- Full set x1, holdouts included (base origin/main `a9bcc6c`, candidate `b6376c7`;
+  prompt hash `c59d803f0d0dc476`, fixture hash `74c7943ce025fbb6`): Tier-1 **1 / 1**,
+  Tier-2 **0.89 / 0.95**, Tier-3 **0.83 / 0.83**, false positives **2 / 1**,
+  invalid **0 / 0**, cheat **0 / 0**, runner errors **0 / 0**.
+- x3 on the 7 divergent fixtures, both sides (base origin/main `82aa1da`,
+  candidate `d732443`): base 3/3 fixtures stay 3/3 (`pos-over-block-shared`,
+  `rs-ownership-use-after-move`, `sql-safe-index`); `real-pr4-options-not-forwarded`
+  2/3 → 3/3, `rename-source-into-docs` 2/3 → 3/3, `holdout-pagination-round-down`
+  2/3 → 2/3, `real-pr1-fallback-missing-commit-pin` 2/3 → 1/3 (not anchored: base
+  below 3/3). False positives **1 / 0**, invalid **0 / 0**, cheat **0 / 0**.
+
+**Gate passed** on all six pre-declared criteria. Evidence:
+`eval/evidence/2026-10-13-attr-source/`.
+
 ### 2026-10-06 — Six implementation repairs (Class R)
 
 Scope: executable captured-baseline `WORKING`/unborn `EMPTY` refs, fail-closed

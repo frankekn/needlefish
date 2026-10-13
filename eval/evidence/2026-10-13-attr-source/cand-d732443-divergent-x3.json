@@ -1,0 +1,1846 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "opencode",
+  "model": "cliproxyapi/CF-Qwen-3.8-flash",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner opencode --model cliproxyapi/CF-Qwen-3.8-flash --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(holdout-pagination-round-down|pos-over-block-shared|real-pr1-fallback-missing-commit-pin|real-pr4-options-not-forwarded|rename-source-into-docs|rs-ownership-use-after-move|sql-safe-index)$' --report '<redacted>'",
+  "runnerEnvironment": "[[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"OPENCODE_CONFIG_JSON\",\"sha256:061b047ded343bdc\"],[\"PATH\",\"sha256:6221e6a1d61aea33\"]]",
+  "privateEnvironment": false,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner opencode --model cliproxyapi/CF-Qwen-3.8-flash --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 3 --concurrency 3 --holdout include --gate-class R --fixtures '^(holdout-pagination-round-down|pos-over-block-shared|real-pr1-fallback-missing-commit-pin|real-pr4-options-not-forwarded|rename-source-into-docs|rs-ownership-use-after-move|sql-safe-index)$' --report eval/reports/cand234-x3.json",
+  "draws": 3,
+  "createdAt": "2026-10-13T03:16:54.391Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "holdout-pagination-round-down",
+      "draw": 0,
+      "score": {
+        "fixtureId": "holdout-pagination-round-down",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 45190,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/pagination.ts",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Restore Math.ceil in pageCount — floor drops trailing partial page",
+          "whyItBreaks": "pageCount(5, 2) now returns 2 instead of 3; any consumer iterating pageCount pages renders only the first floor(totalItems/pageSize)*pageSize items and silently omits the remainder (totalItems % pageSize != 0), losing the trailing records from any paginated view or batch loop. The function name carries the contract 'number of pages required to hold totalItems', which is ceiling by definition; the body now computes floor. Verified substitution: totalItems=5, pageSize=2 → 5/2=2.5 → floor=2 < ceil=3; page 3 (item index 4) is never produced."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateScore": {
+        "recall": false,
+        "falsePositive": false,
+        "noiseFindingCount": 1,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 20678,
+      "totalPassMs": 45183
+    },
+    {
+      "fixtureId": "holdout-pagination-round-down",
+      "draw": 1,
+      "score": {
+        "fixtureId": "holdout-pagination-round-down",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 50233,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/pagination.ts",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "Restore Math.ceil so pageCount counts the final partial page",
+          "whyItBreaks": "Math.floor(totalItems / pageSize) returns totalItems/pageSize truncated, i.e. one page too few whenever the remainder totalItems % pageSize is nonzero (e.g. pageCount(101, 10) now returns 10 instead of 11). Any caller that iterates pages or renders a pager from this count silently omits the trailing partial page's items — a user-visible data-loss regression versus the base behavior. The function name itself (pageCount) promises the total number of pages needed to cover all items, which the new body does not compute."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 29649,
+      "totalPassMs": 50226
+    },
+    {
+      "fixtureId": "holdout-pagination-round-down",
+      "draw": 2,
+      "score": {
+        "fixtureId": "holdout-pagination-round-down",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 53607,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/pagination.ts",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "title": "pageCount uses Math.floor, dropping the final partial page",
+          "whyItBreaks": "pageCount(totalItems, pageSize) is defined to return the number of pages of size pageSize needed to hold totalItems items. With Math.floor, any totalItems that is not an exact multiple of pageSize returns one page too few: pageCount(25, 10) returns 2 instead of 3, so callers that iterate pages 0..pageCount-1 silently never reach items 21-25 — the last 5 items are unreachable. Worse, pageCount(5, 10) returns 0 for 5 real items, so callers that branch on pageCount>0 (render pager, fetch pages) treat a non-empty collection as empty. The exported function's name is its contract: it promises a page count, but the body computes a truncated quotient. This is TRIGGER C (contract drift) on a public/exported carrier, so the defect stands even though no in-repo caller exists yet (repo contains only this file)."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "facts": [
+            {
+              "id": "page_count_rounds_down",
+              "meaning": "The page count rounds down instead of up.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "page",
+                    "(?:round|floor).{0,12}down"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "page",
+                    "Math\\.floor"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "Math\\.ceil",
+                    "Math\\.floor"
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "partial_page_is_lost",
+              "meaning": "A remainder/partial final page is omitted or a small result becomes zero pages.",
+              "alternatives": [
+                {
+                  "allOf": [
+                    "(?:partial|last|final)",
+                    "page",
+                    "(?:drop|omit|miss|lose|lost)"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "remainder",
+                    "page"
+                  ]
+                },
+                {
+                  "allOf": [
+                    "zero",
+                    "page",
+                    "(?:fewer|less|below|under)"
+                  ]
+                }
+              ]
+            }
+          ],
+          "file": "src/pagination.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 23511,
+      "totalPassMs": 53601
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 0,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 56839,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "validation",
+          "file": "src/policy.ts",
+          "lineStart": 7,
+          "lineEnd": 7,
+          "title": "Payment check on canProceed now blocks saving unpaid drafts",
+          "whyItBreaks": "canProceed is shared by submitOrder (@src/actions.ts:4) and saveDraft (@src/actions.ts:9). Precondition substitution: order={state:\"draft\", payment:\"missing\"} → guard `order.payment === \"paid\"` @policy.ts:7 evaluates false → saveDraft takes the !canProceed branch @actions.ts:9 and returns \"blocked\". Under base, the same order returned \"saved\". Draft orders are by nature unpaid, so after this change no unpaid draft can be saved — the payment precondition is not a legitimate gate for the saveDraft action."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 17002,
+      "totalPassMs": 56835
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 1,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 39862,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "validation",
+          "file": "src/policy.ts",
+          "lineStart": 7,
+          "lineEnd": 7,
+          "title": "Payment check in shared `canProceed` now blocks saving unpaid drafts",
+          "whyItBreaks": "`canProceed` gates two distinct actions. Substituting a legitimate unpaid draft, `order = { state: \"draft\", payment: \"missing\" }`: base returned true, so `saveDraft` returned \"saved\"; head evaluates `\"draft\" !== \"ready\" && \"missing\" === \"paid\"` → false, so `saveDraft` (src/actions.ts:9) returns \"blocked\". Payment status has no bearing on whether a draft may be saved, so this change rejects an action that is legitimately approvable on its own — users can no longer persist any unpaid draft."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 15331,
+      "totalPassMs": 39856
+    },
+    {
+      "fixtureId": "pos-over-block-shared",
+      "draw": 2,
+      "score": {
+        "fixtureId": "pos-over-block-shared",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 57415,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "validation",
+          "file": "src/policy.ts",
+          "lineStart": 7,
+          "lineEnd": 7,
+          "title": "Payment check on shared canProceed blocks saving unpaid drafts",
+          "whyItBreaks": "canProceed is shared by submitOrder and saveDraft. Substituting order={state:\"draft\",payment:\"missing\"}: old body returned true, new body returns false, so saveDraft (@src/actions.ts:9-10) returns \"blocked\" instead of \"saved\". Saving a draft with missing payment is the normal, legitimate case — payment cannot govern draft persistence — so this change rejects a legitimately-approvable action (over-block). The payment precondition is only valid for submission, which is a distinct action gated at src/actions.ts:4."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "save.?draft|draft.*blocked|canProceed|shared predicate|over.?block",
+          "file": "src/policy.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 20154,
+      "totalPassMs": 57410
+    },
+    {
+      "fixtureId": "rename-source-into-docs",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rename-source-into-docs",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 52902,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "docs/ci.md",
+          "lineStart": 1,
+          "lineEnd": 12,
+          "title": "Restore CI workflow: ci.yml was moved out of .github/workflows",
+          "whyItBreaks": "GitHub executes workflows only from .github/workflows/. The 100%-similarity rename moves the repo's sole workflow (name: ci, on: push/pull_request, running npm ci / npm run lint / npm test) to docs/ci.md, where it is inert. After merge, every push and PR skips lint and tests silently — no check failure will signal this; broken commits merge unverified. Verified at head 98077eb: `git ls-tree -r 98077eb` lists no .github/ directory at all. The README line 'CI runs lint and tests on every push.' is now false, confirming the removal is unintended collateral, not a deliberate CI retirement."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 19356,
+      "totalPassMs": 52895
+    },
+    {
+      "fixtureId": "rename-source-into-docs",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rename-source-into-docs",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 52876,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "validation",
+          "file": "docs/ci.md",
+          "lineStart": 1,
+          "lineEnd": 13,
+          "title": "Renaming ci.yml out of .github/workflows silently disables CI",
+          "whyItBreaks": "GitHub executes workflow files only from .github/workflows/. Verified via `git ls-tree -r 0306eeb` that HEAD contains no files under .github/workflows at all. After merge, every push and PR runs zero checks: `npm run lint` and `npm test` (previously enforced on every push/pull_request per base .github/workflows/ci.yml) silently stop running, so unlinted, untested code merges with no signal. The failure is invisible: GitHub shows 'no checks', not an error, and README.md:5 still asserts 'CI runs lint and tests on every push', so the regression is masked by stale docs."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 22076,
+      "totalPassMs": 52870
+    },
+    {
+      "fixtureId": "rename-source-into-docs",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rename-source-into-docs",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 54315,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "validation",
+          "file": "docs/ci.md",
+          "lineStart": 1,
+          "lineEnd": 11,
+          "title": "Restore CI workflow: rename to docs/ci.md removes all automated checks",
+          "whyItBreaks": "GitHub only executes workflows under .github/workflows/ (or .githug/workflows fallbacks). `git ls-tree` at head 5a16dfe shows the entire tree is [.needlefish/answers.json, README.md, docs/ci.md, src/index.ts] — no .github/ directory remains, so `npm ci && npm run lint && npm test` (base ci.yml lines 1-11) will never execute on any future push or PR. Lint/test regressions will merge unvalidated. Simultaneously README.md:5 ('CI runs lint and tests on every push.') becomes false, and docs/ci.md is now a YAML workflow pasted into a markdown file — invalid documentation that no tool consumes. Nothing else in the repo replicates these checks."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 21933,
+      "totalPassMs": 54309
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 46531,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/store.rs",
+          "lineStart": 2,
+          "lineEnd": 2,
+          "title": "Remove leftover dbg! that leaks items to stderr on every call",
+          "whyItBreaks": "`dbg!(items)` expands to a `std::dbg` call that unconditionally writes the file/line/column plus the Debug rendering of every string in `items` to stderr on each invocation of the public `process`. This is a development-time artifact: (1) it leaks caller data (arbitrary item contents) into stderr/logs on the production path, (2) it serializes and formats the entire vector per call, wasting I/O proportional to input size, and (3) `clippy::dbg_macro` is a default-on lint, so any `cargo clippy -D warnings` CI gate fails on this commit."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 13131,
+      "totalPassMs": 46526
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 1,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 31336,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/store.rs",
+          "lineStart": 2,
+          "lineEnd": 2,
+          "title": "dbg!(items) moves items before items.len(); code fails to compile",
+          "whyItBreaks": "`dbg!` takes its argument by value. `items: Vec<String>` is moved into `dbg!(items)` on line 2; the subsequent `items.len()` on line 3 is a use of a moved value, so the crate fails to build with E0382 (use of moved value: `items`). Additionally, `dbg!` writes the full contents of every item to stderr unconditionally in a public function — leftover debug output even if it compiled."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 13538,
+      "totalPassMs": 31330
+    },
+    {
+      "fixtureId": "rs-ownership-use-after-move",
+      "draw": 2,
+      "score": {
+        "fixtureId": "rs-ownership-use-after-move",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 52828,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/store.rs",
+          "lineStart": 2,
+          "lineEnd": 2,
+          "title": "Remove dbg!(items): it moves items and breaks compilation",
+          "whyItBreaks": "dbg! expands to `match items { tmp => { eprintln!(...); tmp } }`. Vec<String> is not Copy, so `items` is moved into the match and the result is dropped as a statement. The next line, `items.len()` (src/store.rs:3), then uses the moved binding — the crate fails to build with E0382 'use of moved value'. Even if the move were avoided (e.g. dbg!(&items)), the debug print of all item contents to stderr is leftover debug instrumentation that must not merge. No caller in the repo needs this behavior: grep for `process` shows only the definition itself."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "move|borrow|ownership|use.*after|dbg|len|moved|drop",
+          "file": "src/store.rs",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 13679,
+      "totalPassMs": 52824
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 0,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 28807,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": [],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 11514,
+      "totalPassMs": 28802
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 1,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 44439,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": [],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 19642,
+      "totalPassMs": 44434
+    },
+    {
+      "fixtureId": "sql-safe-index",
+      "draw": 2,
+      "score": {
+        "fixtureId": "sql-safe-index",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 38075,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": [],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 12811,
+      "totalPassMs": 38070
+    },
+    {
+      "fixtureId": "real-pr1-fallback-missing-commit-pin",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-fallback-missing-commit-pin",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 50488,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateScore": {
+        "recall": false,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 20036,
+      "totalPassMs": 50483
+    },
+    {
+      "fixtureId": "real-pr1-fallback-missing-commit-pin",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-fallback-missing-commit-pin",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 80887,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 107,
+          "lineEnd": 110,
+          "title": "Fallback review drops commit_id, may anchor verdict to wrong commit",
+          "whyItBreaks": "The GitHub API defaults commit_id to the pull request's head SHA at post time ('the SHA of the commit to comment on. Defaults to the SHA of the head commit'). If the PR head advances between review start (headSha captured @src/adapters/github.ts:141) and the fallback post, the primary --input request (which includes commit_id @src/adapters/github.ts:89) fails on the stale anchor, and the fallback now silently posts the review — possibly event=REQUEST_CHANGES — against the newer, never-reviewed commit. Previously the fallback carried commit_id=headSha, so a moved head surfaced as an error caught by runGithub's catch @src/adapters/github.ts:186 (posting a failure check instead of a wrong verdict); now the wrong-anchor case passes silently and misattributes the verdict to the new head."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 21548,
+      "totalPassMs": 80882
+    },
+    {
+      "fixtureId": "real-pr1-fallback-missing-commit-pin",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-fallback-missing-commit-pin",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 39486,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "commit_id|fallback.{0,20}(path|review|request)|pin.{0,20}(commit|sha)|omit.{0,20}commit|REQUEST_CHANGES",
+          "file": "src/adapters/github.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateScore": {
+        "recall": false,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 16836,
+      "totalPassMs": 39482
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 77382,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Silently drop `focus` option from large-PR deep review; {{FOCUS}} left uninterpolated",
+          "whyItBreaks": "The removed line `.replace(\"{{FOCUS}}\", bundle.focus ?? \"(none)\")` was the only consumer of `bundle.focus`. After this change, when `reviewLarge` runs on any bundle with a non-null `focus`, the caller-supplied review focus is silently discarded — reviewLarge and reviewSmall are selected solely by `isLarge` (diff size), so `review()` can now accept `focus` and ignore it depending on diff size, with no error. Additionally, `deep.md` is loaded unchanged in this diff; if its template still contains the `{{FOCUS}}` marker, the literal placeholder text is now injected verbatim into the deep-review prompt. The `deep` boolean is likewise no longer forwarded to the map pass (removed mapBundle field), widening the same contract gap. Note the repo's own context contract shows `\"deep\": false, \"focus\": null` as live caller inputs, i.e. callers still pass these fields. This is TRIGGER C contract drift: the Bundle/caller carrier still promises focus is applied, the body now implements none of it on the large-PR path."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 41086,
+      "totalPassMs": 77377
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 135821,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Large-PR path silently ignores focus/deep while small-PR path still honors them",
+          "whyItBreaks": "reviewLarge no longer reads bundle.focus or bundle.deep (removed from mapBundle at lines 83-89 and from the deep.md substitution), but reviewSmall still serializes the full bundle including focus/deep into the review prompt (unchanged line 54). A caller-supplied focus/deep value now changes review behavior for patches under the size threshold and is silently dropped with no error for large PRs — the same option behaves differently depending on diff size, and any user who relies on focus for a large PR gets an unfocused review with no signal."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 33043,
+      "totalPassMs": 135815
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 100066,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Stop silently dropping focus/deep inputs on the large-PR review path",
+          "whyItBreaks": "reviewSmall (src/core/review.ts:52-55) still serializes the full bundle, so review.md still receives focus and deep; reviewLarge now omits both from mapBundle (lines 83-89) and no longer substitutes {{FOCUS}} into deep.md (lines 117-121). The Bundle contract still carries focus/deep (the run's own context bundle exposes them), so a caller that sets focus (e.g. CLI flag) on a PR crossing LARGE_PATCH_CHARS=30000 (review.ts:25) or LARGE_FILE_COUNT=10 (review.ts:26) gets a review that silently ignores its stated focus — the small/large threshold flips behavior with no error or fallback, and with {{FOCUS}} substitution deleted the user's focus reaches no pass at all."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 43655,
+      "totalPassMs": 100062
+    }
+  ],
+  "aggregates": {
+    "recall": 0.8333333333333334,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0.9047619047619048,
+    "lineAnchorValidRate": 0.7142857142857143,
+    "meanDurationMs": 56637.380952380954,
+    "recallByFixture": {
+      "holdout-pagination-round-down": 0.6666666666666666,
+      "pos-over-block-shared": 1,
+      "rename-source-into-docs": 1,
+      "rs-ownership-use-after-move": 1,
+      "sql-safe-index": 1,
+      "real-pr1-fallback-missing-commit-pin": 0.3333333333333333,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRateByFixture": {
+      "holdout-pagination-round-down": 0.6666666666666666,
+      "pos-over-block-shared": 1,
+      "rename-source-into-docs": 1,
+      "rs-ownership-use-after-move": 1,
+      "real-pr1-fallback-missing-commit-pin": 0.3333333333333333,
+      "real-pr4-options-not-forwarded": 1
+    },
+    "mustFindHitRate": 0.8333333333333334,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 0.8333333333333334
+    },
+    "recallByDefectClass": {
+      "pagination-rounds-down": 0.6666666666666666,
+      "over-block-shared-predicate": 1,
+      "behavior-file-moved-out-of-effective-path": 1,
+      "use-after-move": 1,
+      "fallback-review-missing-commit-pin": 0.3333333333333333,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "lineAnchorValidRateByDefectClass": {
+      "pagination-rounds-down": 0.6666666666666666,
+      "over-block-shared-predicate": 0,
+      "behavior-file-moved-out-of-effective-path": 1,
+      "use-after-move": 1,
+      "fallback-review-missing-commit-pin": 0.3333333333333333,
+      "review-options-not-forwarded-large-mode": 1
+    },
+    "meanNoisePerPositive": 0.05555555555555555,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0,
+    "candidateFalsePositiveRate": 0,
+    "candidateMeanNoisePerPositive": 0.05555555555555555,
+    "criticDelta": {
+      "falsePositiveRate": 0,
+      "meanNoisePerPositive": 0,
+      "recall": 0
+    },
+    "criticTimeShare": 0.3785584794731567
+  },
+  "gitSha": "d7324434e57384433f3811b660b5857ad4d5b8a7",
+  "fixtureSetHash": "1df1f0dd2381c3f9",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {
+    "holdout-pagination-round-down": 2,
+    "pos-over-block-shared": 2,
+    "rename-source-into-docs": 2,
+    "rs-ownership-use-after-move": 2,
+    "real-pr1-fallback-missing-commit-pin": 2,
+    "real-pr4-options-not-forwarded": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "holdout-pagination-round-down",
+    "pos-over-block-shared",
+    "rename-source-into-docs",
+    "rs-ownership-use-after-move",
+    "sql-safe-index",
+    "real-pr1-fallback-missing-commit-pin",
+    "real-pr4-options-not-forwarded"
+  ],
+  "fixtureKinds": {
+    "holdout-pagination-round-down": "positive",
+    "pos-over-block-shared": "positive",
+    "rename-source-into-docs": "positive",
+    "rs-ownership-use-after-move": "positive",
+    "sql-safe-index": "negative",
+    "real-pr1-fallback-missing-commit-pin": "positive",
+    "real-pr4-options-not-forwarded": "positive"
+  },
+  "fixtureDefectClasses": {
+    "holdout-pagination-round-down": "pagination-rounds-down",
+    "pos-over-block-shared": "over-block-shared-predicate",
+    "rename-source-into-docs": "behavior-file-moved-out-of-effective-path",
+    "rs-ownership-use-after-move": "use-after-move",
+    "sql-safe-index": "safe-additive-index",
+    "real-pr1-fallback-missing-commit-pin": "fallback-review-missing-commit-pin",
+    "real-pr4-options-not-forwarded": "review-options-not-forwarded-large-mode"
+  }
+}
