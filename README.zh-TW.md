@@ -146,11 +146,12 @@ hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failur
 <!-- benchmark:end -->
 
 **最新探索結果，2026-10-13：**本機 Muse Code 1.4.7，`muse-wonder-1.0`
-使用 `high`，完成歷史 84-fixture 集 x1。Anchored recall 91.4%、Tier-1
-100%、誤報 0%、無效輸出 0%，平均 35.6 秒。針對性 x3 確認了部分缺陷
-漏抓、誤報與行號問題。已發布的 87-fixture 集包含全部 84 項，但其中三項
-判定規則與 scorer 已改變，因此不加入可比較排行榜，也不升為正式模型。
-額度失敗與恢復後報告各自保留。詳見
+使用 `high`，已補齊 87 項混合批次 x1：原本 84 draws 使用排行榜 scorer
+重算，再加三項補跑。Anchored recall 86.9%（53/61）、Tier-1 85.7%（6/7）、
+誤報 0/24、無效輸出 0/87、positive noise 0.082，平均 35.0 秒。
+補跑只用了四次模型呼叫；改名 fixture 被舊 docs fast path 略過，未呼叫 Muse。
+Scoring hashes 已對齊，但歷史執行 pipeline 不同、完整集仍只有 x1，
+因此保持不排名。原始 84 項結果、額度失敗與確認報告分開保留。詳見
 [Wonder 報告與確認結果](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high)。
 本次發布未增加模型呼叫。
 

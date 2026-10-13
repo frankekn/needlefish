@@ -141,11 +141,11 @@
   ],
   "excluded": [
     {
-      "name": "Muse Code Wonder 1.0 high exploratory run (2026-10-13)",
+      "name": "Muse Code Wonder 1.0 high, 87-fixture x1 rescore (2026-10-13)",
       "model": "muse-wonder-1.0",
-      "provider": "Native Muse Code 1.4.7 via ACP bridge, Meta account, high effort",
-      "reason": "Historical 84-fixture x1, not comparable to the 87-fixture leaderboard: fixture and scorer hashes differ. Recall 91.4%, Tier-1 100%, FP 0%, invalid 0%, mean 35.6s. Targeted x3 confirmed partial misses, false positives and invalid anchors; quota-recovery runs remain separate evidence. No promotion or full-set x3. Details: eval/RESULTS.md.",
-      "report": "results/2026-10-13-muse-code-wonder-1.0-high-funded-x1.json"
+      "provider": "Meta via native Muse Code 1.4.7 and ACP bridge, high effort",
+      "reason": "Updated 87-fixture mixed-batch x1: 84 saved draws rescored plus 3 supplemental draws. Anchored recall 86.9% (53/61), Tier-1 85.7% (6/7), Tier-2 88.9% (32/36), Tier-3 83.3% (15/18), FP 0/24, invalid 0/87, verdict match 95.4% (83/87), valid anchors 88.5% (77/87), positive noise 0.082, mean 35.0s. Prompt/fixture/scorer hashes now match the published benchmark, but the historical execution pipeline differs and the set is x1 only, so no rank or promotion. The rename fixture used zero model calls because the old docs fast path skipped it; pagination was identified but not matched by the published regex. Original reports and anti-cheat diagnostics are preserved, not freshly certified. Details: eval/RESULTS.md.",
+      "report": "results/2026-10-13-muse-code-wonder-1.0-high-87-rescored-x1.json"
     },
     {
       "name": "Qwen3.8 Max incomplete run",

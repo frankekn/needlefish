@@ -160,12 +160,14 @@ author gets.
 <!-- benchmark:end -->
 
 **Latest exploratory result, 2026-10-13:** native Muse Code 1.4.7,
-`muse-wonder-1.0` at `high`, completed the historical 84-fixture set once:
-91.4% anchored recall, 100% Tier-1, 0% FP, 0% invalid output, and 35.6s mean.
-Targeted x3 confirmed partial misses, false positives, and invalid anchors.
-All 84 fixtures are present in the published 87-fixture set, but three scoring
-specs and the scorer changed. This is not a comparable leaderboard row or a
-promotion result. Quota failures and recovery reports stay separate.
+`muse-wonder-1.0` at `high`, now covers 87 fixtures in a mixed-batch x1:
+84 saved draws rescored with the published scorer plus three supplemental draws.
+Anchored recall is 86.9% (53/61), Tier-1 85.7% (6/7), FP 0/24, invalid 0/87,
+positive noise 0.082, and mean 35.0s. The supplement used four model calls;
+the old docs fast path skipped the rename fixture without calling Muse.
+Scoring hashes match the benchmark, but the historical execution pipeline
+differs and the full set remains x1, so this result stays unranked.
+Original 84-fixture results, quota failures, and confirmations remain separate.
 See the [Wonder report and confirmations](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high).
 No additional model calls were made to publish these results.
 
