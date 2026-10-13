@@ -148,8 +148,10 @@ Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flas
 Criteria were written before the model run (`gate-criteria.md`). All four
 reports record the same runner, model, effort, prompt hash, and `runnerEnvironment`
 hashes (`OPENCODE_CONFIG_JSON sha256:061b047ded343bdc`, `PATH sha256:6221e6a1d61aea33`),
-so base and candidate ran on one lane. Only the base x1 run passed the free-text
-`--provider/--route/--runner-version` labels.
+so base and candidate used the same opencode config and PATH. The runner version
+(`opencode v2.0.26`) is attested only on the base x1 run, the one run that passed
+`--provider/--route/--runner-version`; a PATH hash cannot detect an in-place runner
+upgrade (`eval/run.ts`), so the other three reports do not pin the binary.
 
 - Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
   holdouts included). After normalizing commit SHAs and temp paths, the prompt
