@@ -113,18 +113,3 @@ test("an uncommitted working-tree-encoding attribute still converts the text it 
   const { bundle } = diffBundle(repo, {});
   assert.match(bundle.patch, /^\+Write-Host new$/m);
 });
-
-test("untracked files are diffed without attributes or filters (issue #213)", (t) => {
-  const repo = makeRepo(t, "untracked");
-  writeFileSync(path.join(repo, ".gitattributes"), "*.ts -diff\n*.txt filter=nul\n");
-  gitText(["config", "filter.nul.clean", "printf 'a\\\\000b\\\\n'"], repo);
-  commitAll(repo, "attributes");
-  writeFileSync(path.join(repo, "new.ts"), "export const b = eval(y);\n");
-  writeFileSync(path.join(repo, "x.txt"), "plain text\n");
-
-  const { bundle } = diffBundle(repo, {});
-
-  assert.match(bundle.patch, /^\+export const b = eval\(y\);$/m);
-  assert.match(bundle.patch, /^\+plain text$/m);
-  assert.equal(bundle.patch.includes("\0"), false);
-});

@@ -119,10 +119,10 @@ export function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-// Uncommitted tracked changes keep the repository's own attributes: the
+// Uncommitted changes (tracked here, untracked in buildUntrackedPatch) keep
+// the repository's own attributes, unlike committed ranges (reviewDiff): the
 // work tree side needs its eol, working-tree-encoding and clean-filter
-// conversions, including ones the uncommitted change itself adds. A path
-// those attributes mark binary is listed in the skipped files, not hidden.
+// conversions, including ones the uncommitted change itself adds.
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
   const args = ["diff", ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
