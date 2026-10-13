@@ -10,7 +10,8 @@ public = json.loads((root.parent.parent / 'results' /
     '2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json').read_text())
 attestation = public['publicEnvironmentAttestation']
 assert hashlib.sha256(original_bytes).hexdigest() == attestation['sourceSha256']
-changed = {'invocation', 'runnerEnvironment', 'privateEnvironment', 'publicEnvironmentAttestation'}
+changed = {'invocation', 'runnerEnvironment', 'privateEnvironment', 'publicEnvironmentAttestation',
+           'reproductionCommand'}
 assert {k: v for k, v in original.items() if k not in changed} == {
     k: v for k, v in public.items() if k not in changed}
 assert len(public['results']) == 261
@@ -21,6 +22,9 @@ environment = dict(json.loads(public['runnerEnvironment']))
 assert 'META_API_KEY' not in environment
 assert '<required>' not in environment.values()
 assert environment['NEEDLEFISH_ACP_AUTH_ENV_VARS'] == 'META_API_KEY'
+assert public['reproductionCommand'] == original['reproductionCommand'].replace(
+    'NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY --draws',
+    'NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY,NEEDLEFISH_MUSE_BIN --draws')
 for file, field in [('bridge-native.py', 'nativeBridgeSha256'),
                     ('bridge-recording.py', 'recordingBridgeSha256'), ('run.py', 'driverSha256')]:
     assert hashlib.sha256((root / file).read_bytes()).hexdigest() == attestation[field]

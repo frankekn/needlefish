@@ -9,7 +9,7 @@
   "invocation": "node --import tsx eval/run.ts --runner acp --model muse-wonder-1.0 --effort high --provider Meta --route 'Native Muse Code via ACP bridge, Meta account' --runner-version 'Muse Code 1.4.7 (1.4.7-R6101.1)' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_NO_RETRY=1 --env NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY --draws 3 --concurrency 1 --holdout include --gate-class R --report eval/results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json",
   "runnerEnvironment": "[[\"META_AUTH_SOURCE\",\"Keychain ai.meta.dev.credentials/meta -> META_API_KEY in memory\"],[\"NEEDLEFISH_ACP_AUTH_ENV_VARS\",\"META_API_KEY\"],[\"NEEDLEFISH_ACP_BIN\",\"sha256:68f5724ebad7b28d375eac787261068f1c661870daeaa8c4e6ece45bba464e6a\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"NEEDLEFISH_NO_RETRY\",\"1\"],[\"NEEDLEFISH_RUNNER_ENV_PASSTHROUGH\",\"META_API_KEY\"],[\"PATH\",\"sha256:233ac918155f9610\"]]",
   "privateEnvironment": false,
-  "reproductionCommand": "node --import tsx eval/run.ts --runner acp --model muse-wonder-1.0 --effort high --provider Meta --route 'Native Muse Code via ACP bridge, Meta account' --runner-version 'Muse Code 1.4.7 (1.4.7-R6101.1)' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_NO_RETRY=1 --env NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY --draws 3 --concurrency 1 --holdout include --gate-class R --report eval/reports/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json",
+  "reproductionCommand": "node --import tsx eval/run.ts --runner acp --model muse-wonder-1.0 --effort high --provider Meta --route 'Native Muse Code via ACP bridge, Meta account' --runner-version 'Muse Code 1.4.7 (1.4.7-R6101.1)' --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --env NEEDLEFISH_NO_RETRY=1 --env NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=META_API_KEY,NEEDLEFISH_MUSE_BIN --draws 3 --concurrency 1 --holdout include --gate-class R --report eval/reports/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json",
   "draws": 3,
   "createdAt": "2026-10-13T15:15:23.168Z",
   "baseline": false,
@@ -18233,7 +18233,8 @@
       "Replaced redacted ACP executable path with SHA-256 of the executed recording bridge.",
       "Removed the credential value placeholder from public environment pairs. Its required binding is documented here; no secret value or secret digest is published.",
       "Set privateEnvironment=false for this separately attested public environment description, not for the untouched original report.",
-      "Resolved the redacted report output path for the published invocation. Results, aggregates, execution SHA, scoring identities, model and effort are unchanged."
+      "Resolved the redacted report output path for the published invocation. Results, aggregates, execution SHA, scoring identities, model and effort are unchanged.",
+      "Portable reproduction requires NEEDLEFISH_MUSE_BIN and forwards that path explicitly. This reproduction-only override does not describe a change to the original executed invocation."
     ],
     "limitations": [
       "Public environment attestation added after execution. Original pre-run attestation retained separately.",

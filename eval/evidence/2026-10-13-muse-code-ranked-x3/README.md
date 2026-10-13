@@ -51,6 +51,11 @@ dependencies. Install and authenticate Muse Code 1.4.7 separately.
 Set `META_API_KEY` in memory. Do not place it in command arguments or report files.
 Set `NEEDLEFISH_ACP_BIN` to the absolute path of `bridge-native.py` and set
 `NEEDLEFISH_ACP_AUTH_ENV_VARS=META_API_KEY`.
+Set `NEEDLEFISH_MUSE_BIN` to the absolute installed Muse executable path,
+for example `export NEEDLEFISH_MUSE_BIN="$(command -v muse)"`.
+The reproduction command forwards this variable through the isolated runner.
+The original run used the bridge's `/Users/termtek/.local/bin/muse` default.
+This explicit override makes reproduction portable without rewriting evidence.
 Run the public report's `reproductionCommand` from the frozen checkout.
 The command requires 510 model CLI calls in this completed run. Internal API
 requests and quota charges are not measured by that count.
