@@ -131,7 +131,7 @@ author gets.
 
 **Updated 2026-10-13** — measured 2026-09-06 to 2026-09-23; all 16 published lanes at 87 scenarios × 3 draws, sealed holdouts included, Class R gate, anti-cheat v2; baseline commit `a5a0c68`, prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`; every report has `cheatDetectedCount: 0`.
 
-**Ranked lanes.** **Deployed lane: DeepSeek V4.1 Flash (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** (selected 2026-09-23) — the lane selected and recorded in the leaderboard for this release; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.
+**Ranked lanes.** **Deployed lane: DeepSeek V4.1 Flash (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.
 
 | Rank | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |
 | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
