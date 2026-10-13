@@ -30,6 +30,11 @@ the original bytes, unchanged experimental data and public identity metadata.
 ## Execution records
 
 - `bridge-native.py` is the exact native bridge executed by the recording bridge.
+  It is archived evidence, not a supported production runner. If it rejects an
+  unexpected model event or malformed event, it does not explicitly terminate
+  and reap the Muse child. Use only under an external process supervisor for
+  reproduction. No such rejection appears in this run's completed transcripts.
+  Editing this archive would invalidate its executed-source identity.
 - `bridge-recording.py` and `run.py` preserve the executed temporary scripts.
   Their absolute paths describe the original run, not a portable installation.
 - `PLAN.md` preserves the predeclared scope, limits and ranking criteria.

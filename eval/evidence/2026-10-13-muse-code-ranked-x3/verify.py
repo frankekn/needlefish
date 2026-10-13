@@ -3,6 +3,9 @@ import hashlib
 import json
 from pathlib import Path
 
+if not __debug__:
+    raise RuntimeError('Verification requires Python assertions. Run without -O or PYTHONOPTIMIZE.')
+
 root = Path(__file__).parent
 original_bytes = (root / 'original-report.json').read_bytes()
 original = json.loads(original_bytes)
