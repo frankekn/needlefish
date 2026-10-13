@@ -129,6 +129,14 @@
       "model": "gpt-6-sol",
       "effort": "medium",
       "status": "Candidate"
+    },
+    {
+      "report": "results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json",
+      "name": "Muse Wonder 1.0",
+      "runner": "acp",
+      "model": "muse-wonder-1.0",
+      "effort": "high",
+      "status": "Candidate"
     }
   ],
   "blocked": [

@@ -5,6 +5,56 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-13 Muse Code Wonder 1.0 high ranked x3
+
+已完成排行榜同版 87 項 × 3 draws，含 sealed holdouts，Class R。
+實際 harness 為 Muse Code 1.4.7，build `1.4.7-R6101.1`。`acp` 是
+Needlefish runner ID 與橋接協定，不是模型 harness。模型 `muse-wonder-1.0`，
+effort `high`，provider Meta，使用本機 `muse exec`，沒有改用 OpenCode。
+
+本輪獨立重跑全部 261 draws，不抵用歷史 x1。執行 commit
+`a5a0c6874a5f2a6e3c47b41ee39ca6af5e8e2d92`，prompt `e62d0889fc704541`、
+fixture `e9923bbc7753a04a`、scorer `8bbc6152d8b45a43`、anti-cheat v2
+均與已發布排行榜對齊。Pipeline、prompt、fixture、normalization 與 scorer
+保持原樣。Concurrency 1，runner 失敗重試關閉，pipeline 內建格式重問保留。
+本輪 510 次 native Muse CLI 呼叫，全部有 completed response。
+此計數不含 Muse 內部 API 與工具請求，也不能換算額度成本。
+
+| 指標 | Muse Code Wonder high x3 | Terra high x3 |
+| --- | ---: | ---: |
+| Balanced score | 90.47% | 89.95% |
+| Anchored recall | 93.44%，171/183 | 89.62% |
+| Tier-1 recall | 100%，21/21 | 100% |
+| Tier-2 recall | 97.22%，105/108 | 93.52% |
+| Tier-3 recall | 83.33%，45/54 | 77.78% |
+| 乾淨情境誤報率 | 12.50%，9/72 | 9.72% |
+| 無效輸出 | 0%，0/261 | 0% |
+| Positive noise | 0.060，11/183 | 0.077 |
+| 平均審查時間 | 35.8 秒 | 63.1 秒 |
+
+排名條件預先宣告為完整 x3、Tier-1 全中、positive noise ≤ 0.12，
+以及公開報告完整性、scoring comparability 與 anti-cheat 檢查通過。
+本輪達標，依現有統計排名為並列第 7，狀態 Candidate。
+Recall 較 Terra high 高，但乾淨情境誤報較多，Balanced score 差距不能
+據此宣稱統計上勝出。沒有切換部署模型，也沒有重跑 miss 來取代結果。
+
+Structured cheatDetected 0，raw bait exposure 41，兩者不混稱。
+舊 harness 把 ACP auth 名稱與執行檔路徑也標成 private，因此公開版本補上
+operator-attested environment metadata。保留原始 JSON，沒有改 findings、
+scores、aggregates 或實驗 identities，也不公開 credential 值或其 digest。
+Harness 欄保持 Muse Code。公開 attestation 是執行後補述，不是假稱預跑資料。
+
+Supervisor heartbeat 與 per-call exit metadata 在半途停止更新，但 eval
+子程序完成全部 draws。510 個保存的 ACP responses 都完成，無失敗 response。
+不能宣稱整場 supervisor stop 機制持續有效，完成判定以最終報告與 transcripts
+為準。High effort 依固定 bridge argv 作 operator attestation，configured-model
+events 沒有 effort 欄。Raw transcripts 私下保留，只公開 hashes 與摘要。
+
+- [完整 x3 公開報告](results/2026-10-13-muse-code-wonder-1.0-high-ranked-x3.json)
+- [原始報告與執行證據](evidence/2026-10-13-muse-code-ranked-x3/README.md)
+
+以下 x1、額度失敗與針對性確認報告保持歷史紀錄，不取代此獨立 x3。
+
 ## 2026-10-13 Muse Code Wonder 1.0 high
 
 本機 Muse Code 1.4.7，模型 `muse-wonder-1.0`，effort `high`。
