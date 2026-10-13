@@ -20,12 +20,22 @@ export function git(
 // Issue #213: the reviewed commit's own .gitattributes must not shape the
 // review patch; `* -diff` or `* binary` turns every source hunk into
 // "Binary files differ". --attr-source (git >= 2.41; older git rejects the
-// flag) reads attributes from the given tree, and the empty tree means none.
+// flag) reads in-tree attributes from the given tree, and the empty tree has
+// none. core.attributesFile=/dev/null drops the user's global attributes file.
+// $GIT_DIR/info/attributes and the system file still apply: git has no switch
+// for info/attributes, and a PR cannot write either file.
 // Real binary content is still detected by git itself. Never GIT_ATTR_SOURCE:
 // an older git ignores the variable and the bypass returns silently.
 export function reviewDiff(cwd: string): string[] {
   const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], cwd);
-  return [`--attr-source=${emptyTree}`, "diff", "--no-textconv", "--no-ext-diff"];
+  return [
+    "-c",
+    "core.attributesFile=/dev/null",
+    `--attr-source=${emptyTree}`,
+    "diff",
+    "--no-textconv",
+    "--no-ext-diff",
+  ];
 }
 
 // For `needlefish doctor`: reviewDiff needs --attr-source, added in git 2.41.

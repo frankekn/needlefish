@@ -88,6 +88,23 @@ test("re-review history diff keeps source touches through `* -diff` (issue #213)
   assert.ok(touches?.get("app.ts"));
 });
 
+test("committed-range diffs ignore the user's core.attributesFile (issue #213)", (t) => {
+  const repo = makeRepo(t, "attrfile");
+  const attrFile = path.join(path.dirname(repo), "user-attributes");
+  writeFileSync(attrFile, "*.ts -diff\n");
+  gitText(["config", "core.attributesFile", attrFile], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  commitAll(repo, "prev");
+  const prevHead = headSha(repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+  commitAll(repo, "head");
+
+  const { bundle } = diffBundle(repo, { localMode: "branch", base: prevHead });
+  assert.match(bundle.patch, /^\+export const a = 2;$/m);
+  assert.match(prDiffFromShas(repo, prevHead, headSha(repo)).patch, /^\+export const a = 2;$/m);
+  assert.ok(touchesSincePrevHead(repo, prevHead, headSha(repo))?.get("app.ts"));
+});
+
 test("a binary with a non-UTF-8 name never puts raw bytes in the patch (issue #213)", (t) => {
   const repo = makeRepo(t, "badname");
   const baseSha = headSha(repo);
