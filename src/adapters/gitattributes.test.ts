@@ -95,7 +95,7 @@ test("a binary with a non-UTF-8 name never puts raw bytes in the patch (issue #2
   const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: repo, input: NUL_BYTES, encoding: "utf8" }).stdout.trim();
   const entry = Buffer.concat([Buffer.from(`100644 ${blob}\t`), Buffer.from("bad-\xff.bin", "latin1"), Buffer.from("\0")]);
   assert.equal(spawnSync("git", ["update-index", "-z", "--index-info"], { cwd: repo, input: entry }).status, 0);
-  gitText(["commit", "-qm", "binary with a non-UTF-8 name"], repo);
+  gitText(["-c", "user.name=Needlefish Test", "-c", "user.email=needlefish-test@example.invalid", "commit", "-qm", "binary with a non-UTF-8 name"], repo);
 
   const diff = prDiffFromShas(repo, baseSha, headSha(repo));
 
