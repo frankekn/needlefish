@@ -103,11 +103,11 @@ test("a binary with a non-UTF-8 name never puts raw bytes in the patch (issue #2
   assert.equal(diff.patch.includes("\0"), false);
 });
 
-test("uncommitted working-tree-encoding text is reviewed as text (issue #213)", (t) => {
+test("an uncommitted working-tree-encoding attribute still converts the text it adds (issue #213)", (t) => {
   const repo = makeRepo(t, "wte");
   writeFileSync(path.join(repo, ".gitattributes"), "*.ps1 working-tree-encoding=UTF-16LE\n");
   writeFileSync(path.join(repo, "script.ps1"), Buffer.from("Write-Host old\n", "utf16le"));
-  commitAll(repo, "utf-16 script");
+  gitText(["add", ".gitattributes", "script.ps1"], repo);
   writeFileSync(path.join(repo, "script.ps1"), Buffer.from("Write-Host new\n", "utf16le"));
 
   const { bundle } = diffBundle(repo, {});

@@ -23,12 +23,9 @@ export function git(
 // flag) reads attributes from the given tree, and the empty tree means none.
 // Real binary content is still detected by git itself. Never GIT_ATTR_SOURCE:
 // an older git ignores the variable and the bypass returns silently.
-export function reviewDiff(cwd: string, attrSource = emptyTree(cwd)): string[] {
-  return [`--attr-source=${attrSource}`, "diff", "--no-textconv", "--no-ext-diff"];
-}
-
-function emptyTree(cwd: string): string {
-  return git(["hash-object", "-t", "tree", "/dev/null"], cwd);
+export function reviewDiff(cwd: string): string[] {
+  const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], cwd);
+  return [`--attr-source=${emptyTree}`, "diff", "--no-textconv", "--no-ext-diff"];
 }
 
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {

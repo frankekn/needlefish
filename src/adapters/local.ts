@@ -119,11 +119,12 @@ export function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-// Uncommitted mode reads attributes from HEAD, not the empty tree: the work
-// tree side goes through eol, working-tree-encoding and clean-filter
-// conversions, and without them a UTF-16 text change diffs as binary.
-function trackedDiffArgs(cwd: string, extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = [...reviewDiff(cwd, "HEAD"), ...extraArgs, "HEAD"];
+// Uncommitted tracked changes keep the repository's own attributes: the
+// work tree side needs its eol, working-tree-encoding and clean-filter
+// conversions, including ones the uncommitted change itself adds. A path
+// those attributes mark binary is listed in the skipped files, not hidden.
+function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
+  const args = ["diff", ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -212,19 +213,19 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git([...reviewDiff(cwd, "HEAD"), "--numstat", "-z", "HEAD"], cwd))
+    ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs(cwd, [], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
   const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(cwd, ["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
     : "";
   // Rename detection off for the name list only: a `git mv` into a docs path
   // must keep its removed source path, or classification sees docs alone and
   // the fast path skips the review. The patch above keeps its rename headers.
   const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(cwd, ["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
+    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
     : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
