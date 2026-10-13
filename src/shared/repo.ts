@@ -26,17 +26,14 @@ export function git(
 // for info/attributes, and a PR cannot write either file.
 // Real binary content is still detected by git itself. Never GIT_ATTR_SOURCE:
 // an older git ignores the variable and the bypass returns silently.
-// Without attributes, a large asset whose first 8000 bytes hold no NUL would
-// expand into text and overflow runText's 64 MiB buffer, aborting the review.
-// core.bigFileThreshold makes git treat any blob over 16 MiB as binary; both
-// sides of a modified file must fit the buffer with room to spare.
+// Without attributes, a large asset whose first 8000 bytes hold no NUL is
+// diffed as text. If the diff output exceeds runText's capture limit,
+// collection throws before review; truncated output is never reviewed.
 export function reviewDiff(cwd: string): string[] {
   const emptyTree = git(["hash-object", "-t", "tree", "/dev/null"], cwd);
   return [
     "-c",
     "core.attributesFile=/dev/null",
-    "-c",
-    "core.bigFileThreshold=16m",
     `--attr-source=${emptyTree}`,
     "diff",
     "--no-textconv",

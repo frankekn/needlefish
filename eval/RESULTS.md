@@ -132,11 +132,12 @@ change both output quality and reliability.
 
 Scope: committed-range review diffs (GitHub PR, `pr` subcommand, local branch
 mode, re-review history diff) run `git -c core.attributesFile=/dev/null
--c core.bigFileThreshold=16m --attr-source=<empty tree> diff --no-textconv
---no-ext-diff`, so a PR's own
+--attr-source=<empty tree> diff --no-textconv --no-ext-diff`, so a PR's own
 `.gitattributes` and the user's global attributes file cannot hide hunks
 (issue #213). `$GIT_DIR/info/attributes` and the system attributes file still
-apply. Blobs over 16 MiB are shown as binary. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
+apply. A NUL-free asset the repository marked binary is now diffed as text; if
+the patch exceeds the 64 MiB capture limit, collection fails and the run fails
+instead of reviewing. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
 textconv and external diff drivers are off there, and an untracked file that
 attributes mark binary is listed as skipped. No eval fixture runs uncommitted
 mode. Classified **R** because the patch fed to the model changes for

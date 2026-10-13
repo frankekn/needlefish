@@ -105,20 +105,19 @@ test("committed-range diffs ignore the user's core.attributesFile (issue #213)",
   assert.ok(touchesSincePrevHead(repo, prevHead, headSha(repo))?.get("app.ts"));
 });
 
-test("a blob over 16 MiB stays binary even when attributes no longer say so (issue #213)", (t) => {
+test("a large NUL-free blob is diffed as text, not collapsed to binary by size (issue #213)", (t) => {
   const repo = makeRepo(t, "bigfile");
   writeFileSync(path.join(repo, ".gitattributes"), "*.dat binary\n");
-  writeFileSync(path.join(repo, "app.ts"), "export const a = 1;\n");
+  writeFileSync(path.join(repo, "asset.dat"), "a\n".repeat(9 * 1024 * 1024));
   commitAll(repo, "base2");
   const baseSha = headSha(repo);
-  // No NUL in the first 8000 bytes, so only the size marks it binary.
-  writeFileSync(path.join(repo, "asset.dat"), Buffer.alloc(17 * 1024 * 1024, "a\n"));
-  writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
-  commitAll(repo, "add asset");
+  // 18 MiB, no NUL: only a size threshold could hide this hunk.
+  writeFileSync(path.join(repo, "asset.dat"), "a\n".repeat(9 * 1024 * 1024) + "export const leak = 1;\n");
+  commitAll(repo, "edit asset");
 
   const diff = prDiffFromShas(repo, baseSha, headSha(repo));
-  assert.match(diff.patch, /^Binary files \/dev\/null and b\/asset\.dat differ$/m);
-  assert.match(diff.patch, /^\+export const a = 2;$/m);
+  assert.match(diff.patch, /^\+export const leak = 1;$/m);
+  assert.equal(diff.patch.includes("Binary files"), false);
 });
 
 test("a binary with a non-UTF-8 name never puts raw bytes in the patch (issue #213)", (t) => {
