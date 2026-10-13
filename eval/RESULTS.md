@@ -132,10 +132,11 @@ change both output quality and reliability.
 
 Scope: committed-range review diffs (GitHub PR, `pr` subcommand, local branch
 mode, re-review history diff) run `git -c core.attributesFile=/dev/null
---attr-source=<empty tree> diff --no-textconv --no-ext-diff`, so a PR's own
+-c core.bigFileThreshold=16m --attr-source=<empty tree> diff --no-textconv
+--no-ext-diff`, so a PR's own
 `.gitattributes` and the user's global attributes file cannot hide hunks
 (issue #213). `$GIT_DIR/info/attributes` and the system attributes file still
-apply. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
+apply. Blobs over 16 MiB are shown as binary. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
 textconv and external diff drivers are off there, and an untracked file that
 attributes mark binary is listed as skipped. No eval fixture runs uncommitted
 mode. Classified **R** because the patch fed to the model changes for
@@ -148,7 +149,7 @@ Criteria were written before the model run (`gate-criteria.md`).
 - Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
   holdouts included). After normalizing commit SHAs and temp paths, the prompt
   multiset equals origin/main's (180/180) at `8773a84`, `b6376c7`, `d732443`,
-  `c9bcc81`, and `28bd8ce`. The x1 and x3 results below therefore hold for those
+  `c9bcc81`, `28bd8ce`, and `e48e255`. The x1 and x3 results below therefore hold for those
   heads.
   No fixture has a `.gitattributes` file, so model runs here measure lane noise.
 - Full set x1, holdouts included (base origin/main `a9bcc6c`, candidate `b6376c7`;
