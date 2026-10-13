@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
-import { prDiffFromShas } from "../shared/repo.js";
+import { gitSupportsAttrSource, prDiffFromShas } from "../shared/repo.js";
 import { touchesSincePrevHead } from "./github.js";
 import { diffBundle } from "./local.js";
 
@@ -112,4 +112,52 @@ test("an uncommitted working-tree-encoding attribute still converts the text it 
 
   const { bundle } = diffBundle(repo, {});
   assert.match(bundle.patch, /^\+Write-Host new$/m);
+});
+
+test("uncommitted diffs ignore textconv and external diff drivers (issue #213)", (t) => {
+  const repo = makeRepo(t, "uncommitted-drivers");
+  writeFileSync(path.join(repo, ".gitattributes"), "*.txt diff=tr\n");
+  writeFileSync(path.join(repo, "notes.txt"), "old txt\n");
+  commitAll(repo, "attributes");
+  gitText(["config", "diff.tr.textconv", "tr a-z A-Z"], repo);
+  gitText(["config", "diff.external", "false"], repo);
+  writeFileSync(path.join(repo, "notes.txt"), "new txt\n");
+  writeFileSync(path.join(repo, "added.txt"), "added txt\n");
+
+  const { bundle } = diffBundle(repo, {});
+
+  assert.match(bundle.patch, /^\+new txt$/m);
+  assert.match(bundle.patch, /^\+added txt$/m);
+});
+
+test("an untracked file the attributes mark binary is listed as skipped (issue #213)", (t) => {
+  const repo = makeRepo(t, "untracked-nodiff");
+  writeFileSync(path.join(repo, ".gitattributes"), "*.ts -diff\n");
+  commitAll(repo, "attributes");
+  writeFileSync(path.join(repo, "new.ts"), "export const b = eval(y);\n");
+  writeFileSync(path.join(repo, "keep.md"), "kept\n");
+
+  const { bundle } = diffBundle(repo, {});
+
+  assert.equal(bundle.patch.includes("new.ts"), false);
+  assert.match(bundle.reviewTarget ?? "", /new\.ts \(binary\)/);
+});
+
+test("an untracked file keeps its working-tree-encoding conversion (issue #213)", (t) => {
+  const repo = makeRepo(t, "untracked-latin1");
+  writeFileSync(path.join(repo, ".gitattributes"), "*.txt working-tree-encoding=ISO-8859-1\n");
+  commitAll(repo, "attributes");
+  writeFileSync(path.join(repo, "menu.txt"), Buffer.from("café\n", "latin1"));
+
+  const { bundle } = diffBundle(repo, {});
+
+  assert.match(bundle.patch, /^\+café$/m);
+});
+
+test("doctor's git version gate matches --attr-source availability", () => {
+  assert.equal(gitSupportsAttrSource("git version 2.40.1"), false);
+  assert.equal(gitSupportsAttrSource("git version 2.41.0"), true);
+  assert.equal(gitSupportsAttrSource("git version 2.54.0 (Apple Git-157)"), true);
+  assert.equal(gitSupportsAttrSource("git version 3.0.0"), true);
+  assert.equal(gitSupportsAttrSource("not git"), false);
 });

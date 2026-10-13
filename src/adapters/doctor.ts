@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
-import { git } from "../shared/repo.js";
+import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
@@ -278,9 +278,17 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
+  const worktree = { headExists, dirty: changed > 0 };
+  const version = git(["--version"], repo);
+  if (!gitSupportsAttrSource(version)) {
+    return {
+      check: { name: "git", status: "fail", detail: `${version}; needlefish needs git 2.41 or later`, fix: "Upgrade git to 2.41 or later." },
+      worktree,
+    };
+  }
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { headExists, dirty: changed > 0 },
+    worktree,
   };
 }
 

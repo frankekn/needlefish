@@ -28,6 +28,14 @@ export function reviewDiff(cwd: string): string[] {
   return [`--attr-source=${emptyTree}`, "diff", "--no-textconv", "--no-ext-diff"];
 }
 
+// For `needlefish doctor`: reviewDiff needs --attr-source, added in git 2.41.
+export function gitSupportsAttrSource(version: string): boolean {
+  const match = /(\d+)\.(\d+)/.exec(version);
+  if (match === null) return false;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major > 2 || (major === 2 && minor >= 41);
+}
+
 export function ghText(args: readonly string[], cwd?: string, input?: string): string {
   return runText("gh", args, { cwd, input });
 }
