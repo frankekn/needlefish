@@ -147,7 +147,7 @@ test("extractJson rejects unfenced output that is not a single JSON document", (
   );
 });
 
-test("runCodex invokes Codex without approval or sandbox restrictions", async (t) => {
+test("runCodex invokes Codex without approval or sandbox restrictions or repo instructions", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
@@ -181,6 +181,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
+  assert.equal(args[args.indexOf("project_doc_max_bytes=0") - 1], "-c");
   assert.equal(args.includes("-s"), false);
   assert.equal(args.includes("--sandbox"), false);
   assert.equal(args.some((arg) => arg.startsWith("--sandbox=")), false);

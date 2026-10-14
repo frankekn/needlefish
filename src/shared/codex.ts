@@ -1197,6 +1197,11 @@ async function runCodexCli(
 		"--ignore-user-config",
 		"-c",
 		`model_reasoning_effort="${reasoningEffort}"`,
+		// The sandbox is checked out at the PR head, so its AGENTS.md (and
+		// AGENTS.override.md) is author-controlled. Review policy comes only from
+		// the bundle's merge-base agentsMd (issue #240); 0 skips project docs.
+		"-c",
+		"project_doc_max_bytes=0",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--ignore-rules",
 		"--skip-git-repo-check",

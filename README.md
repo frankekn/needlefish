@@ -581,6 +581,9 @@ blank (values are trimmed):
 - **Codex:** `--ignore-user-config --ignore-rules
   --dangerously-bypass-approvals-and-sandbox`, so its inspection commands are
   not blocked by execpolicy rules, approval prompts, or the host sandbox.
+  `-c project_doc_max_bytes=0` stops Codex from loading the PR head's
+  `AGENTS.md` as instructions; review policy comes only from the merge-base
+  copy in the bundle.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
