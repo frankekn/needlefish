@@ -1408,6 +1408,11 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const args = [
 		"-p",
 		"--no-session",
+		// The sandbox is the PR head: its AGENTS.md, CLAUDE.md and project-local
+		// skills are author-controlled. Policy comes only from the bundle's
+		// merge-base agentsMd (issue #240).
+		"--no-context-files",
+		"--no-approve",
 		"--mode",
 		"text",
 		"--provider",

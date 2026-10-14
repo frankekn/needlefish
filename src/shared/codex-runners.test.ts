@@ -853,6 +853,8 @@ test("runCodex invokes pi with default provider/model/thinking flags and the pro
 		assert.deepEqual(args, [
 			"-p",
 			"--no-session",
+			"--no-context-files",
+			"--no-approve",
 			"--mode",
 			"text",
 			"--provider",

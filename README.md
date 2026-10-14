@@ -592,8 +592,10 @@ blank (values are trimmed):
   --sandbox off`.
 - **opencode:** `--auto` in headless mode, with an inline `permission:
   "allow"` override for its global and build-agent permissions.
-- **pi:** `--no-session --mode text --provider openai-codex --thinking
-  <level>` and its default full toolset.
+- **pi:** `--no-session --no-context-files --no-approve --mode text
+  --provider openai-codex --thinking <level>` and its default full toolset.
+  `--no-context-files --no-approve` keep the PR head's `AGENTS.md`,
+  `CLAUDE.md`, and project-local skills out of its instructions.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
   applies the same process-group kill path as the CLI runners. When the prompt
