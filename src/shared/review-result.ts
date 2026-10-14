@@ -135,6 +135,18 @@ function requireReplacement(raw: unknown): Finding["replacement"] {
 	return { lines };
 }
 
+function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
+	if (!isRecord(raw)) throw new Error("quoteCheck not an object");
+	const { status, from } = raw;
+	if (status !== "matched" && status !== "moved" && status !== "not_found") {
+		throw new Error("quoteCheck.status not matched, moved, or not_found");
+	}
+	if (from !== undefined && (typeof from !== "string" || from === "")) {
+		throw new Error("quoteCheck.from not a non-empty string");
+	}
+	return { status, ...(from !== undefined ? { from } : {}) };
+}
+
 function requireFinding(raw: unknown): Finding {
 	if (!isRecord(raw)) throw new Error("not an object");
 	const severity = requireSeverity(raw.severity);
@@ -183,6 +195,14 @@ function requireFinding(raw: unknown): Finding {
 	}
 	const replacement =
 		raw.replacement === undefined ? undefined : requireReplacement(raw.replacement);
+	const quote = raw.quote;
+	if (
+		quote !== undefined &&
+		(typeof quote !== "string" || quote === "" || quote.length > 500 || /[\r\n]/.test(quote))
+	) {
+		throw new Error("quote not a non-empty one-line string of at most 500 characters");
+	}
+	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
 	return {
 		severity,
 		title,
@@ -197,6 +217,8 @@ function requireFinding(raw: unknown): Finding {
 		...(consumerFile !== undefined ? { consumerFile } : {}),
 		...(consumerLine !== undefined ? { consumerLine } : {}),
 		...(replacement !== undefined ? { replacement } : {}),
+		...(quote !== undefined ? { quote } : {}),
+		...(quoteCheck !== undefined ? { quoteCheck } : {}),
 	};
 }
 

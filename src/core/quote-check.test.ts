@@ -122,3 +122,21 @@ test("checkQuotes treats the cited file as a literal path, not a glob", (t) => {
 
 	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
 });
+
+test("checkQuotes does not move a finding onto a line that only mentions the quote", (t) => {
+	const bundle = makeRepo(t);
+	// "onlyInOther();" appears once at head, inside the longer line in src/other.ts.
+	const [finding] = checkQuotes([{ ...FINDING, quote: "onlyInOther();" }], bundle);
+
+	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
+	assert.equal(finding.file, "src/app.ts");
+});
+
+test("checkQuotes leaves a finding unchecked when the quote or file holds a NUL", (t) => {
+	const bundle = makeRepo(t);
+	const quoted = { ...FINDING, quote: "const total = price * quantity;\0" };
+	const filed = { ...FINDING, file: "src/app.ts\0", quote: "const removedLine = legacyCall();" };
+
+	assert.deepEqual(checkQuotes([quoted], bundle), [quoted]);
+	assert.deepEqual(checkQuotes([filed], bundle)[0].quoteCheck, { status: "not_found" });
+});

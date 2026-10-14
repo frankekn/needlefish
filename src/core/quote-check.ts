@@ -8,12 +8,15 @@ const MIN_QUOTE_CHARS = 8;
 interface Hit {
 	readonly file: string;
 	readonly line: number;
+	readonly text: string;
 }
 
 // Fixed-string search of one tree. null means git failed (unknown ref, such as
 // the uncommitted-mode WORKING sentinel), which leaves the finding unchecked;
 // exit 1 is git grep's "no match".
 function grepAt(repoPath: string, ref: string, quote: string, file?: string): Hit[] | null {
+	// spawnSync throws, rather than fails, on a NUL in argv; file is model output.
+	if (quote.includes("\0") || file?.includes("\0")) return null;
 	const res = spawnSync(
 		"git",
 		// The cited file is model output: match it as a literal path, never a
@@ -36,7 +39,11 @@ function grepAt(repoPath: string, ref: string, quote: string, file?: string): Hi
 		if (textEnd < 0) return null;
 		const rawPath = out.slice(at, pathEnd);
 		if (!rawPath.startsWith(prefix)) return null;
-		hits.push({ file: rawPath.slice(prefix.length), line: Number(out.slice(pathEnd + 1, lineEnd)) });
+		hits.push({
+			file: rawPath.slice(prefix.length),
+			line: Number(out.slice(pathEnd + 1, lineEnd)),
+			text: out.slice(lineEnd + 1, textEnd),
+		});
 		at = textEnd + 1;
 	}
 	return hits;
@@ -55,9 +62,10 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 	if (baseHits && baseHits.length > 0) {
 		return { ...finding, quoteCheck: { status: "matched" } };
 	}
-	const elsewhere = headHits.filter((hit) => changed.has(hit.file));
-	if (elsewhere.length === 1 && headHits.length === 1) {
-		const [hit] = elsewhere;
+	// -F matches substrings; a move needs the whole line to be the quote, or a
+	// comment or string that mentions the quoted code would become the anchor.
+	const [hit] = headHits;
+	if (headHits.length === 1 && changed.has(hit.file) && hit.text.trim() === quote) {
 		// The old replacement targets the old lines; applied at the new
 		// location it would be a wrong GitHub suggestion.
 		return {

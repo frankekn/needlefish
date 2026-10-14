@@ -698,7 +698,7 @@ test("normalizeFinding keeps a one-line quote trimmed and drops a malformed one"
   };
 
   assert.equal(normalizeFinding({ ...base, quote: "  return wrong;  " }).quote, "return wrong;");
-  for (const quote of ["a\nb", "a\rb", "   ", "x".repeat(501), 42, undefined]) {
+  for (const quote of ["a\nb", "a\rb", "return x;\0", "   ", "x".repeat(501), 42, undefined]) {
     const finding = normalizeFinding({ ...base, quote });
 
     assert.equal(finding.title, "Wrong branch");

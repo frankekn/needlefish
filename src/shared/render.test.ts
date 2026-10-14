@@ -528,3 +528,10 @@ test("renderMarkdown adds the quote-check location note to finding details", () 
 	assert.match(missing, /_Location unverified: the quoted source was not found in `c\.ts`\._/);
 	assert.equal(matched, renderMarkdown(baseResult([finding("P2", "same", "d.ts")])));
 });
+
+test("renderMarkdown keeps a hostile path inside one inert code span in the location note", () => {
+	const from = "a`b\n\n[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "moved", "b.ts", { quoteCheck: { status: "moved", from } })]));
+
+	assert.match(out, /_Location corrected from `` a`b \[notice\]\(https:\/\/example\.invalid\) ``: the quoted source/);
+});

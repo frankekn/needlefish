@@ -200,7 +200,7 @@ function parseReplacement(raw: unknown): Finding["replacement"] | undefined {
 // Optional and never a reason to reject a review: a missing or unusable quote
 // only means the location is not checked (issue #240).
 function parseQuote(raw: unknown): string | undefined {
-  if (typeof raw !== "string" || raw.includes("\n") || raw.includes("\r")) return undefined;
+  if (typeof raw !== "string" || /[\r\n\0]/.test(raw)) return undefined;
   const quote = raw.trim();
   return quote && quote.length <= 500 ? quote : undefined;
 }

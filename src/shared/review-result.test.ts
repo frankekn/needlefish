@@ -239,6 +239,8 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 					consumerFile: "src/app.ts",
 					consumerLine: 33,
 					replacement: { lines: ["export fn(a, b) {", "  return a;"] },
+					quote: "export fn(a) {",
+					quoteCheck: { status: "moved", from: "src/old.ts:3" },
 				},
 			],
 		}),
@@ -247,6 +249,25 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 	assert.equal(finding.consumerFile, "src/app.ts");
 	assert.equal(finding.consumerLine, 33);
 	assert.deepEqual(finding.replacement, { lines: ["export fn(a, b) {", "  return a;"] });
+	assert.equal(finding.quote, "export fn(a) {");
+	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/old.ts:3" });
+});
+
+test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
+	const finding = {
+		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v",
+	};
+	for (const extra of [
+		{ quote: "a\nb" },
+		{ quote: "" },
+		{ quote: 7 },
+		{ quoteCheck: { status: "maybe" } },
+		{ quoteCheck: { status: "moved", from: "" } },
+		{ quoteCheck: "matched" },
+	]) {
+		assert.throws(() => parseReviewResult(serialized({ findings: [{ ...finding, ...extra }] })), /quote/);
+	}
 });
 
 test("parseReviewResult rejects mistyped optional fields", () => {
