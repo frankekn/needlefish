@@ -583,7 +583,9 @@ blank (values are trimmed):
   not blocked by execpolicy rules, approval prompts, or the host sandbox.
   `-c project_doc_max_bytes=0` stops Codex from loading the PR head's
   `AGENTS.md` as instructions; review policy comes only from the merge-base
-  copy in the bundle.
+  copy in the bundle. Every `SKILL.md` under the sandbox's `.agents/skills`
+  is disabled by path through `-c skills.config=...`; a skills symlink that
+  leaves the sandbox, or a tree over 2000 directories, fails the run.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and

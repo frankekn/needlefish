@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { extractJson, runCodex, RunnerOperationalError } from "./codex";
-import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import { codexRepoSkillPaths, extractJson, runCodex, RunnerOperationalError } from "./codex";
+import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { RunnerTimeoutError } from "./runner-process";
 
 test("extractJson parses fenced JSON output", () => {
@@ -185,6 +185,102 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
   assert.equal(args.includes("-s"), false);
   assert.equal(args.includes("--sandbox"), false);
   assert.equal(args.some((arg) => arg.startsWith("--sandbox=")), false);
+  assert.equal(args.some((arg) => arg.startsWith("skills.config=")), false);
+});
+
+test("runCodex disables every repo skill in the sandbox by canonical path", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const argsPath = path.join(tmp, "args.json");
+  const cwdPath = path.join(tmp, "cwd.txt");
+  const previous = process.env.CODEX_BIN;
+  t.after(() => {
+    if (previous === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  const skill = (rel: string) => {
+    mkdirSync(path.join(repo, rel), { recursive: true });
+    writeFileSync(path.join(repo, rel, "SKILL.md"), "---\nname: x\ndescription: x\n---\n");
+  };
+  skill(".agents/skills/top");
+  skill(".agents/skills/group/nested");
+  skill(".agents/skills/.hidden");
+  skill("elsewhere/linked");
+  symlinkSync("../../elsewhere", path.join(repo, ".agents/skills/link"));
+  commitAll(repo, "skills");
+  writeFileSync(
+    bin,
+    [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+      `fs.writeFileSync(${JSON.stringify(cwdPath)}, fs.realpathSync(process.cwd()));`,
+      "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+      "fs.writeFileSync(out, '{\"ok\":true}');",
+    ].join("\n")
+  );
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+
+  await runCodex("prompt", {
+    repoPath: repo,
+    runner: "codex",
+    targetHeadSha: headSha(repo),
+    timeoutMs: 1000,
+  });
+
+  const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+  const sandbox = readFileSync(cwdPath, "utf8");
+  const config = args.filter((arg) => arg.startsWith("skills.config="));
+  assert.equal(config.length, 1);
+  assert.equal(args[args.indexOf(config[0]) - 1], "-c");
+  const paths = [...config[0].matchAll(/path=("[^"]*")/g)].map((m) => JSON.parse(m[1]) as string);
+  assert.deepEqual(
+    paths.sort(),
+    [
+      ".agents/skills/.hidden/SKILL.md",
+      ".agents/skills/group/nested/SKILL.md",
+      ".agents/skills/top/SKILL.md",
+      "elsewhere/linked/SKILL.md",
+    ].map((rel) => path.join(sandbox, rel)).sort()
+  );
+  assert.equal(config[0].match(/enabled=false/g)?.length, 4);
+});
+
+test("codexRepoSkillPaths returns nothing without a repo skills root", (t) => {
+  const tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "needlefish-test-")));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  assert.deepEqual(codexRepoSkillPaths(tmp), []);
+  writeFileSync(path.join(tmp, ".agents"), "not a directory");
+  assert.deepEqual(codexRepoSkillPaths(tmp), []);
+});
+
+test("codexRepoSkillPaths refuses skills it cannot account for", (t) => {
+  const tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "needlefish-test-")));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const outside = path.join(tmp, "outside");
+  mkdirSync(outside);
+
+  const escaping = path.join(tmp, "escaping");
+  mkdirSync(path.join(escaping, ".agents", "skills"), { recursive: true });
+  symlinkSync(outside, path.join(escaping, ".agents", "skills", "out"));
+  assert.throws(() => codexRepoSkillPaths(escaping), /outside the review sandbox/);
+
+  const rootEscape = path.join(tmp, "root-escape");
+  mkdirSync(path.join(rootEscape, ".agents"), { recursive: true });
+  symlinkSync(outside, path.join(rootEscape, ".agents", "skills"));
+  assert.throws(() => codexRepoSkillPaths(rootEscape), /outside the review sandbox/);
+
+  const dangling = path.join(tmp, "dangling");
+  mkdirSync(path.join(dangling, ".agents", "skills"), { recursive: true });
+  symlinkSync("missing", path.join(dangling, ".agents", "skills", "gone"));
+  assert.throws(() => codexRepoSkillPaths(dangling), /ENOENT/);
+
+  const wide = path.join(tmp, "wide");
+  for (let i = 0; i < 2000; i++) mkdirSync(path.join(wide, ".agents", "skills", `d${i}`), { recursive: true });
+  assert.throws(() => codexRepoSkillPaths(wide), /exceeds 2000 directories/);
 });
 
 test("runCodex retry backoff yields the event loop", async (t) => {
