@@ -207,6 +207,7 @@ test("runCodex disables every repo skill in the sandbox by canonical path", asyn
   skill(".agents/skills/top");
   skill(".agents/skills/group/nested");
   skill(".agents/skills/.hidden");
+  skill(".codex/skills/project");
   skill("elsewhere/linked");
   symlinkSync("../../elsewhere", path.join(repo, ".agents/skills/link"));
   commitAll(repo, "skills");
@@ -243,10 +244,11 @@ test("runCodex disables every repo skill in the sandbox by canonical path", asyn
       ".agents/skills/.hidden/SKILL.md",
       ".agents/skills/group/nested/SKILL.md",
       ".agents/skills/top/SKILL.md",
+      ".codex/skills/project/SKILL.md",
       "elsewhere/linked/SKILL.md",
     ].map((rel) => path.join(sandbox, rel)).sort()
   );
-  assert.equal(config[0].match(/enabled=false/g)?.length, 4);
+  assert.equal(config[0].match(/enabled=false/g)?.length, 5);
 });
 
 test("codexRepoSkillPaths returns nothing without a repo skills root", (t) => {
@@ -254,6 +256,7 @@ test("codexRepoSkillPaths returns nothing without a repo skills root", (t) => {
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   assert.deepEqual(codexRepoSkillPaths(tmp), []);
   writeFileSync(path.join(tmp, ".agents"), "not a directory");
+  mkdirSync(path.join(tmp, ".codex"));
   assert.deepEqual(codexRepoSkillPaths(tmp), []);
 });
 

@@ -1187,10 +1187,12 @@ async function runRunner(
 	}
 }
 
-// codex 0.162.1 always loads repo skills from <cwd>/.agents/skills
-// (ext/skills host_roots.rs): it walks the tree following directory
-// symlinks, takes every SKILL.md, and keys each skill by canonical path. No
-// setting turns that root off, and a `$name` anywhere in the prompt, which
+// codex 0.162.1 always loads repo skills from <cwd>/.agents/skills and, via
+// the project config layer it builds for any existing <cwd>/.codex even when
+// untrusted, <cwd>/.codex/skills (ext/skills host_roots.rs). It walks each
+// tree following directory symlinks, takes every SKILL.md, and keys each
+// skill by canonical path. No setting turns these roots off, and a `$name`
+// anywhere in the prompt, which
 // carries the PR diff, loads the whole skill as instructions. So every
 // SKILL.md is disabled by canonical path. A path that misses leaves its skill
 // enabled with no error, so anything the walk cannot account for throws.
@@ -1200,20 +1202,24 @@ const MAX_CODEX_SKILL_DIRS = 2000;
 export function codexRepoSkillPaths(repoPath: string): string[] {
 	const sandbox = realpathSync(repoPath);
 	const inside = (p: string) => p === sandbox || p.startsWith(`${sandbox}${path.sep}`);
-	let root: string;
-	try {
-		root = realpathSync(path.join(sandbox, ".agents", "skills"));
-	} catch (error) {
-		if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) return [];
-		throw error;
-	}
-	if (!inside(root)) {
-		throw new RunnerOperationalError("codex repo skills root resolves outside the review sandbox");
-	}
-	if (!statSync(root).isDirectory()) return [];
 	const skills = new Set<string>();
-	const seen = new Set<string>([root]);
-	const queue = [root];
+	const seen = new Set<string>();
+	const queue: string[] = [];
+	for (const rel of [".agents/skills", ".codex/skills"]) {
+		let root: string;
+		try {
+			root = realpathSync(path.join(sandbox, rel));
+		} catch (error) {
+			if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) continue;
+			throw error;
+		}
+		if (!inside(root)) {
+			throw new RunnerOperationalError("codex repo skills root resolves outside the review sandbox");
+		}
+		if (!statSync(root).isDirectory() || seen.has(root)) continue;
+		seen.add(root);
+		queue.push(root);
+	}
 	for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
 			let entryPath = path.join(dir, entry.name);
