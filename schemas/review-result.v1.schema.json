@@ -147,7 +147,7 @@
           }
         },
         "quote": {
-          "description": "One source line the finding describes, copied verbatim by the reviewer.",
+          "description": "One source line the finding describes, copied by the reviewer, with leading and trailing whitespace trimmed.",
           "type": "string",
           "minLength": 1,
           "maxLength": 500,
