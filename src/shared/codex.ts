@@ -2,10 +2,7 @@ import {
 	existsSync,
 	copyFileSync,
 	mkdirSync,
-	readdirSync,
 	readFileSync,
-	realpathSync,
-	statSync,
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -1187,76 +1184,6 @@ async function runRunner(
 	}
 }
 
-// codex 0.162.1 always loads repo skills from <cwd>/.agents/skills and, via
-// the project config layer it builds for any existing <cwd>/.codex even when
-// untrusted, <cwd>/.codex/skills (ext/skills host_roots.rs). It walks each
-// tree following directory symlinks, takes every SKILL.md, and keys each
-// skill by canonical path. No setting turns these roots off, and a `$name`
-// anywhere in the prompt, which
-// carries the PR diff, loads the whole skill as instructions. So every
-// SKILL.md is disabled by canonical path. A path that misses leaves its skill
-// enabled with no error, so anything the walk cannot account for throws.
-// Recheck these facts on a codex upgrade.
-const MAX_CODEX_SKILL_DIRS = 2000;
-
-// A raw fs error message names a PR-controlled path, and runner errors are
-// posted to the PR, so only our fixed text and the error code pass through.
-export function codexRepoSkillPaths(repoPath: string): string[] {
-	try {
-		return walkCodexRepoSkills(repoPath);
-	} catch (error) {
-		if (error instanceof RunnerOperationalError) throw error;
-		const code = isRecord(error) && typeof error.code === "string" ? error.code : "unknown";
-		throw new RunnerOperationalError(`codex repo skills walk failed (${code})`);
-	}
-}
-
-function walkCodexRepoSkills(repoPath: string): string[] {
-	const sandbox = realpathSync.native(repoPath);
-	const inside = (p: string) => p === sandbox || p.startsWith(`${sandbox}${path.sep}`);
-	const skills = new Set<string>();
-	const seen = new Set<string>();
-	const queue: string[] = [];
-	for (const rel of [".agents/skills", ".codex/skills"]) {
-		let root: string;
-		try {
-			root = realpathSync.native(path.join(sandbox, rel));
-		} catch (error) {
-			if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) continue;
-			throw error;
-		}
-		if (!inside(root)) {
-			throw new RunnerOperationalError("codex repo skills root resolves outside the review sandbox");
-		}
-		if (!statSync(root).isDirectory() || seen.has(root)) continue;
-		seen.add(root);
-		queue.push(root);
-	}
-	for (let dir = queue.shift(); dir !== undefined; dir = queue.shift()) {
-		for (const entry of readdirSync(dir, { withFileTypes: true })) {
-			let entryPath = path.join(dir, entry.name);
-			if (entry.isSymbolicLink()) {
-				entryPath = realpathSync.native(entryPath);
-				if (!inside(entryPath)) {
-					throw new RunnerOperationalError("codex repo skills symlink resolves outside the review sandbox");
-				}
-			}
-			const stat = statSync(entryPath);
-			if (stat.isDirectory()) {
-				if (seen.has(entryPath)) continue;
-				if (seen.size >= MAX_CODEX_SKILL_DIRS) {
-					throw new RunnerOperationalError(`codex repo skills tree exceeds ${MAX_CODEX_SKILL_DIRS} directories`);
-				}
-				seen.add(entryPath);
-				queue.push(entryPath);
-			} else if (entry.name === "SKILL.md" && stat.isFile()) {
-				skills.add(entryPath);
-			}
-		}
-	}
-	return [...skills];
-}
-
 async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
@@ -1281,11 +1208,6 @@ async function runCodexCli(
 		"--output-last-message",
 		lastMsg,
 	];
-	const skillPaths = codexRepoSkillPaths(invocation.repoPath);
-	if (skillPaths.length > 0) {
-		const rules = skillPaths.map((p) => `{path=${JSON.stringify(p)},enabled=false}`);
-		args.push("-c", `skills.config=[${rules.join(",")}]`);
-	}
 	if (invocation.codexProxy) {
 		const provider = "model_providers.cliproxyapi";
 		args.push(
