@@ -584,8 +584,10 @@ blank (values are trimmed):
   `-c project_doc_max_bytes=0` stops Codex from loading the PR head's
   `AGENTS.md` as instructions; review policy comes only from the merge-base
   copy in the bundle. Every `SKILL.md` under the sandbox's `.agents/skills`
-  and `.codex/skills` is disabled by path through `-c skills.config=...`; a skills symlink that
-  leaves the sandbox, or a tree over 2000 directories, fails the run.
+  and `.codex/skills` is disabled by path through `-c skills.config=...`; a
+  skills symlink that leaves the sandbox or cannot be resolved, or a tree over
+  2000 directories, fails the run. Tested with codex-cli 0.162.1; an older
+  Codex may ignore `skills.config`, so do not pin `runner_version` below it.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
@@ -597,7 +599,8 @@ blank (values are trimmed):
 - **pi:** `--no-session --no-context-files --no-approve --mode text
   --provider openai-codex --thinking <level>` and its default full toolset.
   `--no-context-files --no-approve` keep the PR head's `AGENTS.md`,
-  `CLAUDE.md`, and project-local skills out of its instructions.
+  `CLAUDE.md`, and project-local skills out of its instructions. Tested with
+  pi 1.2.0.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
   applies the same process-group kill path as the CLI runners. When the prompt

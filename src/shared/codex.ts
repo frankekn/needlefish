@@ -1199,8 +1199,20 @@ async function runRunner(
 // Recheck these facts on a codex upgrade.
 const MAX_CODEX_SKILL_DIRS = 2000;
 
+// A raw fs error message names a PR-controlled path, and runner errors are
+// posted to the PR, so only our fixed text and the error code pass through.
 export function codexRepoSkillPaths(repoPath: string): string[] {
-	const sandbox = realpathSync(repoPath);
+	try {
+		return walkCodexRepoSkills(repoPath);
+	} catch (error) {
+		if (error instanceof RunnerOperationalError) throw error;
+		const code = isRecord(error) && typeof error.code === "string" ? error.code : "unknown";
+		throw new RunnerOperationalError(`codex repo skills walk failed (${code})`);
+	}
+}
+
+function walkCodexRepoSkills(repoPath: string): string[] {
+	const sandbox = realpathSync.native(repoPath);
 	const inside = (p: string) => p === sandbox || p.startsWith(`${sandbox}${path.sep}`);
 	const skills = new Set<string>();
 	const seen = new Set<string>();
@@ -1208,7 +1220,7 @@ export function codexRepoSkillPaths(repoPath: string): string[] {
 	for (const rel of [".agents/skills", ".codex/skills"]) {
 		let root: string;
 		try {
-			root = realpathSync(path.join(sandbox, rel));
+			root = realpathSync.native(path.join(sandbox, rel));
 		} catch (error) {
 			if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTDIR")) continue;
 			throw error;
@@ -1224,7 +1236,7 @@ export function codexRepoSkillPaths(repoPath: string): string[] {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
 			let entryPath = path.join(dir, entry.name);
 			if (entry.isSymbolicLink()) {
-				entryPath = realpathSync(entryPath);
+				entryPath = realpathSync.native(entryPath);
 				if (!inside(entryPath)) {
 					throw new RunnerOperationalError("codex repo skills symlink resolves outside the review sandbox");
 				}

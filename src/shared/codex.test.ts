@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -251,6 +251,39 @@ test("runCodex disables every repo skill in the sandbox by canonical path", asyn
   assert.equal(config[0].match(/enabled=false/g)?.length, 5);
 });
 
+test("runCodex fails before codex starts when a repo skill path cannot be resolved", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex-bin.js");
+  const ran = path.join(tmp, "ran");
+  const previous = { bin: process.env.CODEX_BIN, noRetry: process.env.NEEDLEFISH_NO_RETRY };
+  t.after(() => {
+    if (previous.bin === undefined) delete process.env.CODEX_BIN;
+    else process.env.CODEX_BIN = previous.bin;
+    if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+    else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  mkdirSync(path.join(repo, ".agents", "skills"), { recursive: true });
+  symlinkSync("missing", path.join(repo, ".agents", "skills", "pr-chosen-name"));
+  commitAll(repo, "dangling skill link");
+  writeFileSync(bin, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(ran)}, '');\n`);
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  process.env.NEEDLEFISH_NO_RETRY = "1";
+
+  await assert.rejects(
+    runCodex("prompt", { repoPath: repo, runner: "codex", targetHeadSha: headSha(repo), timeoutMs: 1000 }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /codex repo skills walk failed \(ENOENT\)/);
+      assert.doesNotMatch(error.message, /pr-chosen-name/);
+      return true;
+    },
+  );
+  assert.equal(existsSync(ran), false);
+});
+
 test("codexRepoSkillPaths returns nothing without a repo skills root", (t) => {
   const tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "needlefish-test-")));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -279,7 +312,7 @@ test("codexRepoSkillPaths refuses skills it cannot account for", (t) => {
   const dangling = path.join(tmp, "dangling");
   mkdirSync(path.join(dangling, ".agents", "skills"), { recursive: true });
   symlinkSync("missing", path.join(dangling, ".agents", "skills", "gone"));
-  assert.throws(() => codexRepoSkillPaths(dangling), /ENOENT/);
+  assert.throws(() => codexRepoSkillPaths(dangling), /^RunnerOperationalError: codex repo skills walk failed \(ENOENT\)$/);
 
   const wide = path.join(tmp, "wide");
   for (let i = 0; i < 2000; i++) mkdirSync(path.join(wide, ".agents", "skills", `d${i}`), { recursive: true });
