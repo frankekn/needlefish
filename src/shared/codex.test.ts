@@ -293,6 +293,21 @@ test("codexRepoSkillPaths returns nothing without a repo skills root", (t) => {
   assert.deepEqual(codexRepoSkillPaths(tmp), []);
 });
 
+test("codexRepoSkillPaths returns the on-disk case through a case-different symlink", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  mkdirSync(path.join(tmp, "elsewhere", "x"), { recursive: true });
+  writeFileSync(path.join(tmp, "elsewhere", "x", "SKILL.md"), "");
+  if (!existsSync(path.join(tmp, "ELSEWHERE"))) {
+    t.skip("case-sensitive filesystem");
+    return;
+  }
+  mkdirSync(path.join(tmp, ".agents", "skills"), { recursive: true });
+  symlinkSync("../../ELSEWHERE", path.join(tmp, ".agents", "skills", "link"));
+  // codex keys skills by the libc realpath, which returns the on-disk case.
+  assert.deepEqual(codexRepoSkillPaths(tmp), [realpathSync.native(path.join(tmp, "elsewhere", "x", "SKILL.md"))]);
+});
+
 test("codexRepoSkillPaths refuses skills it cannot account for", (t) => {
   const tmp = realpathSync(mkdtempSync(path.join(os.tmpdir(), "needlefish-test-")));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
