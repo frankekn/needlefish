@@ -535,3 +535,11 @@ test("renderMarkdown keeps a hostile path inside one inert code span in the loca
 
 	assert.match(out, /_Location corrected from `` a`b \[notice\]\(https:\/\/example\.invalid\) ``: the quoted source/);
 });
+
+test("renderMarkdown folds a bare CR in a hostile path so the note stays one paragraph", () => {
+	const file = "a`b\r\r[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "missing", file, { quoteCheck: { status: "not_found" } })]));
+	const note = out.split("\n").find((line) => line.startsWith("_Location unverified"));
+
+	assert.equal(note, "_Location unverified: the quoted source was not found in `` a`b [notice](https://example.invalid) ``._");
+});

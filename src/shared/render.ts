@@ -20,7 +20,8 @@ export function quoteNote(finding: Finding): string | null {
 // A path is model output: a fence longer than any backtick run inside keeps
 // it one inert code span, so it cannot open a link or a new paragraph.
 function codeSpan(text: string): string {
-	const flat = oneLine(text);
+	// Every whitespace run, bare CR included, so no line break can end the span.
+	const flat = text.replace(/\s+/g, " ");
 	const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length));
 	const fence = "`".repeat(longest + 1);
 	return longest > 0 ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
