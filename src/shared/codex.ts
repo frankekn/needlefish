@@ -99,17 +99,6 @@ export function buildRunnerEnv(
 		const value = process.env[name];
 		if (value !== undefined) env[name] = value;
 	}
-	// Git config outside the sandbox must not reach the runner's git commands.
-	// severSourceRemote strips the clone-local origin, but a remote.<name>.url
-	// in the runner's global or system gitconfig would resurrect a push route
-	// to the source repository that the post-run check never inspects. Git
-	// has no "ignore local config" switch and no per-remote deny, so the whole
-	// global and system layers are dropped, the same way runner-sandbox.ts
-	// runs its own git. Set after the allowlist loop so passthrough cannot
-	// override them.
-	env.GIT_CONFIG_GLOBAL = "/dev/null";
-	env.GIT_CONFIG_SYSTEM = "/dev/null";
-	env.GIT_CONFIG_NOSYSTEM = "1";
 	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
 	// runner requested isolation, point HOME/USERPROFILE at a per-invocation
 	// throwaway dir inside the rmSync'd tmp. Every session/cache/log the CLI
@@ -122,7 +111,21 @@ export function buildRunnerEnv(
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
 	}
+	sealRunnerGitConfig(env);
 	return env;
+}
+
+// Git config outside the sandbox must not reach the runner's git commands.
+// severSourceRemote strips the clone-local origin, but a remote.<name>.url
+// in the runner's global or system gitconfig would resurrect a push route
+// to the source repository that the post-run check never inspects. Git
+// has no "ignore local config" switch and no per-remote deny, so the whole
+// global and system layers are dropped, the same way runner-sandbox.ts
+// runs its own git.
+function sealRunnerGitConfig(env: NodeJS.ProcessEnv): void {
+	env.GIT_CONFIG_GLOBAL = "/dev/null";
+	env.GIT_CONFIG_SYSTEM = "/dev/null";
+	env.GIT_CONFIG_NOSYSTEM = "1";
 }
 
 // Minimal auth material each runner needs to authenticate from an isolated
