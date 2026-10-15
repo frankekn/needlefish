@@ -766,7 +766,6 @@ test("persist-credentials must be a literal true or false", () => {
 		);
 	}
 
-	// Both literal spellings of the compliant value keep working.
 	for (const value of ["false", '"false"']) {
 		const yaml = [
 			"jobs:",
@@ -800,7 +799,6 @@ test("a local reusable workflow call is scanned as a workflow, not as an action 
 
 		const { checkouts, scanned } = scanRepository(root);
 		assert.ok(scanned.includes(join(root, ".github", "workflows", "build.yml")));
-		// The called workflow's unprotected checkout is still policed.
 		assert.throws(
 			() => assertCheckoutPolicy(checkouts, []),
 			/build\.yml:4 .*must set persist-credentials: false or be allowlisted/,
