@@ -1126,18 +1126,22 @@ function postRoundComment(
 	postIssueComment(repo, prNumber, body);
 }
 
-// COSMETIC ONLY — not a trust boundary. `includes("github-actions")` is a
-// substring test, and `z-github-actions-z` is a registrable GitHub username,
-// so an attacker can satisfy this at will. It is tolerated here because the
-// only thing it gates is minimizePreviousRoundComments: worst case a stranger
-// who copied `<!-- needlefish-round -->` into their own comment gets that
-// comment collapsed as OUTDATED — visible, reversible, and it decides nothing
-// about whether a review happens. Anything that gates review behaviour must
-// use isTrustedStateAuthor instead; that split is deliberate, do not merge
-// them back together.
-function isLooselyBotShaped(item: JsonRecord): boolean {
+// GitHub usernames may contain the substring "github-actions";
+// z-github-actions-z is registrable (letters, digits, and single hyphens).
+export class CosmeticAuthor {
+	readonly #match = true;
+	private constructor() {}
+	static match(): CosmeticAuthor {
+		const author = new CosmeticAuthor();
+		void author.#match;
+		return author;
+	}
+}
+
+export function isLooselyBotShaped(item: JsonRecord): CosmeticAuthor | null {
 	const login = nestedString(item, "user", "login");
-	return login.includes("github-actions") || /\[bot\]$/.test(login);
+	if (!(login.includes("github-actions") || /\[bot\]$/.test(login))) return null;
+	return CosmeticAuthor.match();
 }
 
 // The identity a GITHUB_TOKEN-authenticated run posts under. Not a target-repo
@@ -1177,7 +1181,7 @@ const ACTIONS_BOT_LOGIN = "github-actions[bot]";
 // re-reviews and posts a new review instead of updating. That is noisy but it
 // is the safe direction — an unrecognized author costs an extra review, never
 // a suppressed one.
-function isTrustedStateAuthor(item: JsonRecord, selfLogin: string): boolean {
+export function isTrustedStateAuthor(item: JsonRecord, selfLogin: string): boolean {
 	const login = nestedString(item, "user", "login");
 	if (login === "") return false;
 	if (selfLogin !== "" && login === selfLogin) return true;
@@ -1232,7 +1236,7 @@ function minimizePreviousRoundComments(
 		// isLooselyBotShaped) and erring wide only over-collapses a comment,
 		// whereas the state-marker path erring wide suppresses a review.
 		const author = nestedString(item, "user", "login");
-		if (!isLooselyBotShaped(item) && !(selfLogin && author === selfLogin))
+		if (isLooselyBotShaped(item) === null && !(selfLogin && author === selfLogin))
 			continue;
 		const nodeId = stringField(item, "node_id");
 		if (!nodeId) continue;
