@@ -111,13 +111,11 @@ test("isDocsFastPathEligible fails closed on unrecognized ALL-CAPS Markdown unde
   assert.equal(isDocsFastPathEligible("docs", "docs/RULES.md"), false);
   assert.equal(isDocsFastPathEligible("docs", "doc/NEWAGENT.md"), false);
   assert.equal(isDocsFastPathEligible("docs", "packages/app/docs/CURSOR.local.md"), false);
-  // Recognized human-facing conventions still ride the fast path.
   assert.equal(isDocsFastPathEligible("docs", "docs/README.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/CHANGELOG.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/CODE_OF_CONDUCT.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/LICENSE.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/README.zh-TW.md"), true);
-  // Descriptively named prose is unaffected -- this is not an uppercase ban.
   assert.equal(isDocsFastPathEligible("docs", "docs/api-reference.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/Getting-Started.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "docs/qwen.md"), true);
@@ -131,7 +129,6 @@ test("isDocsFastPathEligible excludes GEMINI.md policy files anywhere in the tre
   assert.equal(isDocsFastPathEligible("docs", "src/shared/GEMINI.md"), false);
   assert.equal(isDocsFastPathEligible("docs", "docs/gemini.md"), false);
   assert.equal(isDocsFastPathEligible("docs", "GEMINI.local.md"), false);
-  // Prose that merely mentions the vendor is not an instruction file.
   assert.equal(isDocsFastPathEligible("docs", "docs/gemini-setup.md"), true);
 });
 
@@ -155,7 +152,6 @@ test("isDocsFastPathEligible excludes dot-directory agent-config Markdown", () =
   assert.equal(isDocsFastPathEligible("docs", ".aider/README.md"), false);
   assert.equal(isDocsFastPathEligible("docs", ".github/copilot-instructions.md"), false);
   assert.equal(isDocsFastPathEligible("docs", "packages/app/.codex/docs/guide.md"), false);
-  // A normal directory that merely starts with the same letters is still docs.
   assert.equal(isDocsFastPathEligible("docs", "claude/docs/guide.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "gemini/docs/guide.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "codex/docs/guide.md"), true);
