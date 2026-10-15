@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+	exitFailureNextStep,
 	extractJson,
 	runCodex,
 	RunnerOperationalError,
@@ -25,6 +26,7 @@ import {
 	initRepo,
 	readStringArray,
 } from "./codex-runner-test-fixtures";
+import { RUNNERS } from "./runner";
 
 test("runCodex classifies invalid timeout configuration as operational", async (t) => {
 	const previous = {
@@ -1172,4 +1174,35 @@ test("per-call timeout defaults to 20 minutes and env overrides win", (t) => {
 	assert.equal(timeoutMsFor("claude"), 1_200_000);
 	process.env.NEEDLEFISH_TIMEOUT_MS = "5000";
 	assert.equal(timeoutMsFor("codex"), 5000);
+});
+
+test("exitFailureNextStep auth text omits review.yml provider-fallback keywords", () => {
+	const keywords = [
+		"timeout",
+		"unreachable",
+		"etimedout",
+		"econnrefused",
+		"enotfound",
+		"bad gateway",
+		"gateway time",
+		"overloaded",
+		"usage limit",
+		"rate limited",
+		"network error",
+		"empty output",
+		"truncated output",
+		"html error page",
+	];
+	for (const runner of RUNNERS) {
+		for (const cause of ["auth rejected", "auth error (expired_token)"]) {
+			const step = exitFailureNextStep(runner, cause);
+			for (const keyword of keywords) {
+				assert.equal(
+					step.toLowerCase().includes(keyword),
+					false,
+					`${runner} ${cause} contains ${keyword}: ${step}`,
+				);
+			}
+		}
+	}
 });

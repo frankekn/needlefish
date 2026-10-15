@@ -878,11 +878,7 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	return undefined;
 }
 
-// One concrete next step per exit-failure class. Only catalog commands and
-// canned phrases reach the message; review.yml advances its provider fallback
-// on the `likely cause:` token, so an auth step must never contain a fallback
-// keyword (timeout, unreachable, ...).
-function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
+export function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
 	if (cause === undefined) {
 		return "Run `needlefish doctor` to check the runner setup, then retry.";
 	}
