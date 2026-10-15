@@ -330,7 +330,6 @@ test("renderMarkdown red-reason headline names the top blocking finding and its 
 	// The most severe (P1) finding is the top after the severity sort.
 	assert.match(firstLine, /Top blocking bug/);
 	assert.match(firstLine, /src\/auth\.ts:88/);
-	// Multiple blocking findings get the (+N more) suffix.
 	assert.match(firstLine, /\(\+1 more\)/);
 });
 
@@ -349,7 +348,6 @@ test("renderMarkdown needs_human headline carries the blocking residual and a vi
 		firstLine,
 		/NEEDS HUMAN 👀 — deep review of the auth hotspot failed/,
 	);
-	// A non-collapsed ⛔ line must appear before the first <details>.
 	const detailsIdx = markdown.indexOf("<details>");
 	assert.ok(detailsIdx > 0, "expected a collapsed details section");
 	const beforeDetails = markdown.slice(0, detailsIdx);
