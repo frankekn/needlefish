@@ -155,6 +155,7 @@ test("isDocsFastPathEligible excludes dot-directory agent-config Markdown", () =
   assert.equal(isDocsFastPathEligible("docs", "claude/docs/guide.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "gemini/docs/guide.md"), true);
   assert.equal(isDocsFastPathEligible("docs", "codex/docs/guide.md"), true);
+  // A dotted *file* is not a dot-directory; this rule needs a path segment.
   assert.equal(isDocsFastPathEligible("docs", "docs/.hidden-notes.md"), true);
 });
 
