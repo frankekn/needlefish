@@ -423,8 +423,6 @@ export function terminalProgress(
   };
 }
 
-// --- --dry-run: collect the bundle, report what a real run would do ---
-
 export type DryRunMode = LocalDiffMode | "pr";
 
 export interface DryRunReport {
