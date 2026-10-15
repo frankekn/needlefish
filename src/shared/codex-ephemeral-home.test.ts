@@ -167,7 +167,6 @@ test("prepareEphemeralHome copies only the minimal auth files, never symlinks", 
 			`${rel} content must match the source`,
 		);
 	}
-	// Session/history dirs/files must NOT exist in the ephemeral HOME.
 	assert.equal(
 		existsSync(path.join(home, ".codex", "sessions")),
 		false,
@@ -1404,7 +1403,6 @@ test("prepareEphemeralHome: acp stages operator-declared credentials", (t) => {
 		readFileSync(path.join(home!, ".myagent", "cred.json"), "utf8"),
 		'{"k":"v"}',
 	);
-	// Copy, not symlink.
 	assert.equal(
 		lstatSync(path.join(home!, ".myagent", "cred.json")).isSymbolicLink(),
 		false,
