@@ -27,7 +27,7 @@ function shq(value) {
 }
 
 // primary/fallback: { out, err, code } the stub emits on that lane.
-function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0 }) {
+function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "pi", tier = "" }) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-fallback-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const write = (name, content) => {
@@ -54,7 +54,7 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
     bin,
     [
       "#!/bin/sh",
-      `printf '%s\\n' "$CODEX_REASONING_EFFORT $*" >> ${shq(log)}`,
+      `printf '%s\\n' "$CODEX_REASONING_EFFORT $* tier:\${CODEX_SERVICE_TIER:-standard}" >> ${shq(log)}`,
       `case "$*" in`,
       `  *"--model ${FALLBACK}"*)`,
       `    cat ${shq(fallbackErr)} >&2`,
@@ -81,7 +81,8 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
       GITHUB_STEP_SUMMARY: summary,
       NEEDLEFISH_BIN: bin,
       PR_NUM: "7",
-      NEEDLEFISH_RUNNER_INPUT: "pi",
+      NEEDLEFISH_RUNNER_INPUT: runner,
+      CODEX_SERVICE_TIER: tier,
       NEEDLEFISH_MODEL_INPUT: MODEL,
       NEEDLEFISH_MODEL_FALLBACKS: FALLBACK,
       CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1",
@@ -317,4 +318,19 @@ test("failed check API cannot authorize fallback even with a valid body", t => {
   const result = runReviewScript(t, { primary: { out: "", err: "", code: 1 }, fallback: { out: "", err: "", code: 0 }, checks: [runnerCheck()], checkExit: 1 });
   assert.equal(result.status, 1);
   assert.equal(result.invocations.length, 1);
+});
+
+test("Sol fallback is disabled for incompatible runners", t => {
+  for (const runner of ["claude", "opencode", "grok"]) {
+    const result = runReviewScript(t, { runner, primary: { out: outcome({ outcome: "failure", operational: true }), err: "", code: 1 }, fallback: { out: "", err: "", code: 0 } });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.invocations.length, 1, runner);
+  }
+});
+
+test("fallback does not inherit primary fast tier", t => {
+  const result = runReviewScript(t, { tier: "fast", primary: { out: outcome({ outcome: "failure", operational: true }), err: "", code: 1 }, fallback: { out: "PASS", err: "", code: 0 } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.invocations[0], /tier:fast$/);
+  assert.match(result.invocations[1], /^medium .*tier:standard$/);
 });

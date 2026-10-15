@@ -310,7 +310,7 @@ jobs:
           # Self-hosted default lane comes from repo variables; qualified by eval/results/2026-09-20-codex-cpa-*-x1.json (#172):
           # deepseek-v4.1-flash via CLIProxyAPI recall 87% / FP 4% / noise 0.016, mean 51 s. Hosted runs still pass explicit inputs.
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model || vars.NEEDLEFISH_MODEL }}
-          # Comma-separated model ids on OTHER providers behind the proxy, tried in order on infra failures.
+          # Operator-selected fallback behind the same proxy; primary model stays configurable.
           NEEDLEFISH_MODEL_FALLBACKS: gpt-6.1-sol
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
@@ -387,7 +387,7 @@ jobs:
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           # The operator-selected fallback uses the same proxy; completed verdicts never switch models.
           chain=()
-          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
+          if { [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] || [ "$NEEDLEFISH_RUNNER_INPUT" = "pi" ]; } && [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
             IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
           fi
           out=""; err_out=""
@@ -397,6 +397,7 @@ jobs:
             args=("${base_args[@]}")
             if [ -n "$model" ]; then
               export CODEX_REASONING_EFFORT="medium"
+              unset CODEX_SERVICE_TIER
               for i in "${!args[@]}"; do if [ "${args[$i]}" = "--model" ]; then args[$((i+1))]="$model"; fi; done
             fi
             local err_file
@@ -409,8 +410,8 @@ jobs:
             [ -n "$err_out" ] && printf '%s\n' "$err_out" >&2
             return $rc
           }
-          # Installed releases may omit outcomes or misclassify upstream faults as auth failures.
-          # This check also permits one fallback on a real runner auth failure, then stays red if unresolved.
+          # shortcut: legacy releases misclassify upstream faults; remove this check fallback after reliable outcomes ship.
+          # Run IDs span retry attempts; missing check evidence preserves the original failure.
           runner_check_failed() {
             local checks_json
             checks_json=$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&per_page=100") || return 1
