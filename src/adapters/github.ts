@@ -1043,9 +1043,6 @@ function firstBlockingResidual(
 	return result.residualRisks.find((r) => r.blocks)?.text;
 }
 
-// Check-run title carries the reason on red verdicts: the top blocking finding
-// title (changes_requested) or the first blocking residual (needs_human).
-// pass keeps the plain `Needlefish: pass` title.
 function checkRunTitle(result: ReviewResult): string {
 	const base = `Needlefish: ${result.verdict}`;
 	if (result.verdict === "changes_requested") {
