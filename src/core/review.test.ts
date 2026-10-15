@@ -328,8 +328,6 @@ test("review aborts deep fallback when a non-codex runner dirties the sandbox", 
 		rejection.message,
 		/claude runner changed the review sandbox worktree/,
 	);
-	// Emit-then-dirty is not an escape hatch: the output produced before the
-	// violation rides the safety error into the eval canary scan.
 	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
 		.rawOutputs;
 	assert.ok(
@@ -563,8 +561,6 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
 		result.stats?.every((s) => s.ok && s.attempts === 1 && s.durationMs > 0),
 	);
 	assert.ok((result.totalDurationMs ?? 0) > 0);
-	// A successful retry is not an escape hatch: the malformed FIRST attempt
-	// (carrying the canary) must still surface for the eval scan.
 	assert.equal(result.failedRawOutputs?.length, 1);
 	assert.ok(
 		result.failedRawOutputs?.[0]?.includes("CANARY-TOKEN-XYZ"),
@@ -637,9 +633,6 @@ test("review fails after a second malformed response", async (t) => {
 		"second malformed response must reject",
 	);
 	assert.match(rejection.message, /no JSON object found/);
-	// EVERY failed attempt's raw output rides along on the error so the eval
-	// canary scan can inspect them — a contaminated first attempt followed by
-	// a cleaner malformed retry is not an escape hatch.
 	const raws = (rejection as Error & { rawOutputs?: readonly string[] })
 		.rawOutputs;
 	// Both failed attempts must be preserved (the run-level accumulators also
@@ -780,8 +773,6 @@ test("a status-0 runner's stdout and stderr reach the canary scan alongside its 
 			"process.stdin.resume();",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			// Success is not an escape hatch: the model output is clean, the
-			// bait rides only the raw process streams of a status-0 attempt.
 			"  process.stdout.write('stream noise CANARY-STDOUT-OK');",
 			"  process.stderr.write('stream noise CANARY-STDERR-OK');",
 			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
@@ -1886,7 +1877,6 @@ test("review records candidateFindings when NEEDLEFISH_EVAL_TRACE is set (small 
 	assert.equal(result.candidateFindings![0].title, "Echo bug");
 	assert.equal(result.findings.length, 1);
 	assert.equal(result.findings[0].title, "Echo bug");
-	// S2: the small path states its coverage guarantee.
 	assert.match(
 		result.coverage ?? "",
 		/^full diff reviewed in one pass \(\d+ files?\)$/,
@@ -2519,8 +2509,6 @@ test("review attaches scope callouts without touching verdict or prompt", async 
 		{ surface: "workflow", files: [".github/workflows/ci.yml"] },
 	]);
 
-	// Callouts are output-only: the runner's stdin must not carry them.
-	// Positive control: the prompt did reach the stub (headSha is in it).
 	const prompts = readFileSync(promptLog, "utf8");
 	assert.ok(prompts.includes(bundle.headSha));
 	assert.ok(
@@ -2612,9 +2600,6 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 	assert.equal(result.stats?.length, 2, "review and critic passes each prepared a sandbox");
 	assert.deepEqual(result.coverageGaps, [{ kind: "lfs_pointer_only", file: "asset.bin" }]);
 
-	// Model input is unchanged: every pass still gets the sandbox's own LFS
-	// notice (positive control, listing the unrelated pointer too), and none
-	// gets the human-facing notice or the result field.
 	const prompts = readFileSync(promptLog, "utf8");
 	assert.equal(prompts.split("<<<PROMPT-END>>>").length - 1, 2);
 	assert.equal(prompts.split("GIT LFS NOTICE").length - 1, 2);
@@ -2623,7 +2608,6 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
 	}
 
-	// A pointer outside the diff is not a gap in this review's coverage.
 	const unrelated = await review({
 		...bundle,
 		patch: "diff --git a/src/app.ts b/src/app.ts\n+export const app = 1;\n",

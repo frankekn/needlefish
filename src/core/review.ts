@@ -145,8 +145,6 @@ function evalTraceOn(): boolean {
 	return process.env.NEEDLEFISH_EVAL_TRACE === "1";
 }
 
-// Worker pool over a shared index; results land at their item's index so
-// output order never depends on completion order.
 async function mapLimit<T, R>(
 	items: readonly T[],
 	limit: number,
