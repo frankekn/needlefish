@@ -414,7 +414,6 @@ test("matchEvidence names a complete finding before a partial contributor", () =
 		finding({ title: "alpha and beta", whyItBreaks: "", file: "x.ts", lineStart: 2 }),
 	];
 	assert.equal(matchEvidence(partialFirst, expected)[0]?.findingIndex, 1);
-	// A hit that is necessarily split still names its first contributor.
 	const split = [
 		finding({ title: "beta", whyItBreaks: "", file: "x.ts", lineStart: 1 }),
 		finding({ title: "alpha", whyItBreaks: "", file: "x.ts", lineStart: 2 }),

@@ -1017,7 +1017,6 @@ test("score: mayFind exempts sibling-defect findings from noise but never grants
   assert.equal(miss.recall, false, "mayFind hit must not satisfy recall");
   assert.equal(miss.noiseFindingCount, 1, "sibling is exempt; unrelated spray still counts");
 
-  // Sibling + real hit: recall true, zero noise.
   const hit = score(
     { verdict: "changes_requested" as Verdict, findings: [sibling, finding({ title: "viewer branch unreachable", whyItBreaks: "blocked", file: "src/handler.ts", lineStart: 18 })] },
     expected,
@@ -2450,10 +2449,8 @@ test("compare: refuses cross-gate-class reports", () => {
   const spec = holdoutSpec("gate-class-compare", false);
   const current = resumeReport(spec, { anticheatVersion: 2 });
   try {
-    // D baseline vs R candidate.
     writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, gateClass: "D" }));
     assert.throws(() => compare(baselinePath, current), /gate class mismatch: baseline is D, candidate is R/);
-    // Explicit R baseline vs D candidate.
     writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, gateClass: "R" }));
     assert.throws(() => compare(baselinePath, { ...current, gateClass: "D" }), /gate class mismatch: baseline is R, candidate is D/);
     // Legacy reports without the field compare as R.
