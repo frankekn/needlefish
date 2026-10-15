@@ -1053,7 +1053,7 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
-			(f) => f.surface === "docs" && isDocsFastPathEligible(f.path),
+			(f) => isDocsFastPathEligible(f.surface, f.path),
 		) &&
 		!envFlagOn("NEEDLEFISH_NO_FAST_PATH")
 	);

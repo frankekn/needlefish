@@ -1600,6 +1600,9 @@ test("review does not fast-path policy markdown or executable files under docs p
 		// Markdown under docs/ fails closed. This is the case that stays fixed
 		// when the next agent CLI invents a filename.
 		"docs/CURSOR.md",
+		// Basename is user-facing, but classifySurface returns "test", so the
+		// docs fast path must reject it.
+		"test/README.md",
 	];
 	for (const filePath of cases) {
 		if (existsSync(calls)) rmSync(calls);
