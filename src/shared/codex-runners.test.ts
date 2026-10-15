@@ -912,7 +912,6 @@ test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
 		'429: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: Your token-plan 1-week quota has been exhausted. The quota will reset at 09-23 13:59:00 UTC."}';
 	assert.equal(safeRunnerCause(cpaCooldown), "usage limit");
 
-	// A bare 429 with no quota wording still classifies as rate limited.
 	assert.equal(safeRunnerCause("429 Too Many Requests"), "rate limited");
 	assert.equal(safeRunnerCause('{"code":"model_cooldown"}'), "rate limited");
 
@@ -958,7 +957,6 @@ test("safeOutputCause classifies only upstream-caused unparseable output", () =>
 	assert.equal(safeOutputCause(""), "empty output");
 	assert.equal(safeOutputCause("\n \t\n"), "empty output");
 
-	// The stream stopped inside a fence: the opening delimiter has no partner.
 	assert.equal(
 		safeOutputCause('```json\n{"summary":"partial'),
 		"truncated output",
@@ -985,7 +983,6 @@ test("safeOutputCause classifies only upstream-caused unparseable output", () =>
 	assert.equal(safeOutputCause("I cannot review this diff."), undefined);
 	assert.equal(safeOutputCause('```ts\n{"wrong":true}\n```'), undefined);
 	assert.equal(safeOutputCause("```\nnot json at all\n```"), undefined);
-	// Prose that merely mentions HTML does not qualify; only a document does.
 	assert.equal(
 		safeOutputCause("the handler returns <html> on error"),
 		undefined,
@@ -997,7 +994,6 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 	// so review.yml classified a provider that returned nothing as non-infra and
 	// failed the whole review instead of advancing the fallback chain.
 
-	// Empty runner output, and a fence whose body holds nothing to parse.
 	assert.throws(
 		() => extractJson(""),
 		/no JSON object found in codex output; likely cause: empty output/,
@@ -1019,8 +1015,6 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 		/no JSON object found in codex output; likely cause: html error page/,
 	);
 
-	// Complete-but-wrong output keeps the bare message: a wrong fence tag, a
-	// fenced non-JSON body, and plain prose are all model-side contract failures.
 	for (const whole of [
 		'```ts\n{"wrong":true}\n```',
 		"```json\nno object here\n```",

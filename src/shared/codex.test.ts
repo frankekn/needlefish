@@ -77,7 +77,6 @@ test("extractJson rejects duplicated JSON keys instead of silently keeping the l
     () => extractJson('{"residual_risks":[{"blocks":true}],"residual_risks":[]}'),
     /duplicate JSON key "residual_risks" in codex output/,
   );
-  // Same inside a fence body and inside nested finding objects.
   assert.throws(
     () => extractJson('```json\n{"findings":[{"severity":"P1","severity":"P0"}]}\n```'),
     /duplicate JSON key "severity" in codex output/,
@@ -87,12 +86,10 @@ test("extractJson rejects duplicated JSON keys instead of silently keeping the l
     () => extractJson('{"a":1,"\\u0061":2}'),
     /duplicate JSON key "a" in codex output/,
   );
-  // The same key in sibling objects is not a duplicate.
   assert.deepEqual(extractJson('{"a":{"k":1},"b":{"k":2}}'), {
     a: { k: 1 },
     b: { k: 2 },
   });
-  // Braces and quotes inside string values must not confuse the scanner.
   assert.deepEqual(extractJson('{"a":"{ \\"k\\":1, \\"k\\":2 }","b":[["x,y"],"z"]}'), {
     a: '{ "k":1, "k":2 }',
     b: [["x,y"], "z"],
