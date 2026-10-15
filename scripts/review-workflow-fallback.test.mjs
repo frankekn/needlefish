@@ -27,7 +27,7 @@ function shq(value) {
 }
 
 // primary/fallback: { out, err, code } the stub emits on that lane.
-function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "pi", tier = "" }) {
+function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "codex", tier = "", previousCheckId = 0, snapshotExit = 0 }) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-fallback-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const write = (name, content) => {
@@ -47,8 +47,10 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
   writeFileSync(log, "");
   const summary = join(root, "step-summary");
   writeFileSync(summary, "");
-  const gh = write("gh", `#!/bin/sh\nprintf '%s' "$CHECK_RESPONSE"\nexit "$CHECK_EXIT"\n`);
+  const gh = write("gh", `#!/bin/sh\ncase "$*" in *--jq*) printf '%s' "$PREVIOUS_CHECK_ID"; exit "$SNAPSHOT_EXIT";; esac\nprintf '%s' "$CHECK_RESPONSE"\nexit "$CHECK_EXIT"\n`);
   chmodSync(gh, 0o755);
+  const codex = write("codex", "#!/bin/sh\necho codex-cli-test\n");
+  chmodSync(codex, 0o755);
   const bin = join(root, "needlefish");
   writeFileSync(
     bin,
@@ -79,6 +81,9 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
       HOME: root,
       PATH: `${root}:${process.env.PATH ?? ""}`,
       GITHUB_STEP_SUMMARY: summary,
+      CODEX_BIN: codex,
+      PREVIOUS_CHECK_ID: String(previousCheckId),
+      SNAPSHOT_EXIT: String(snapshotExit),
       NEEDLEFISH_BIN: bin,
       PR_NUM: "7",
       NEEDLEFISH_RUNNER_INPUT: runner,
@@ -86,6 +91,7 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
       NEEDLEFISH_MODEL_INPUT: MODEL,
       NEEDLEFISH_MODEL_FALLBACKS: FALLBACK,
       CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1",
+      CODEX_PROXY_API_KEY_INPUT: "controlled-test-key",
       CODEX_REASONING_EFFORT: "high",
       GITHUB_RUN_ID: "123",
       GITHUB_REPOSITORY: "owner/repo",
@@ -321,7 +327,7 @@ test("failed check API cannot authorize fallback even with a valid body", t => {
 });
 
 test("Sol fallback is disabled for incompatible runners", t => {
-  for (const runner of ["claude", "opencode", "grok"]) {
+  for (const runner of ["claude", "opencode", "grok", "pi"]) {
     const result = runReviewScript(t, { runner, primary: { out: outcome({ outcome: "failure", operational: true }), err: "", code: 1 }, fallback: { out: "", err: "", code: 0 } });
     assert.equal(result.status, 1, result.stderr);
     assert.equal(result.invocations.length, 1, runner);
@@ -333,4 +339,19 @@ test("fallback does not inherit primary fast tier", t => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.invocations[0], /tier:fast$/);
   assert.match(result.invocations[1], /^medium .*tier:standard$/);
+});
+
+test("an exhausted shared review deadline never starts a fresh fallback budget", t => {
+  const checks = [runnerCheck({ output: { title: "Needlefish: review failed", summary: "Review errored and did NOT pass this PR.\n\n```\nNeedlefish review deadline exceeded\n```" } })];
+  const result = runReviewScript(t, { primary: { out: outcome({ outcome: "failure", operational: false }), err: "", code: 1 }, fallback: { out: "PASS", err: "", code: 0 }, checks });
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.invocations.length, 1);
+});
+
+test("compatibility fallback requires a check created after this invocation snapshot", t => {
+  for (const [previousCheckId, id, snapshotExit, expected] of [[1, 1, 0, 1], [1, 2, 0, 2], [0, 2, 1, 1]]) {
+    const result = runReviewScript(t, { previousCheckId, snapshotExit, primary: { out: "", err: "", code: 1 }, fallback: { out: "PASS", err: "", code: 0 }, checks: [runnerCheck({ id })] });
+    assert.equal(result.invocations.length, expected, result.stderr);
+    assert.equal(result.status, expected === 2 ? 0 : 1, result.stderr);
+  }
 });

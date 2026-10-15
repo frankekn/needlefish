@@ -387,7 +387,7 @@ jobs:
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
           # The operator-selected fallback uses the same proxy; completed verdicts never switch models.
           chain=()
-          if { [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] || [ "$NEEDLEFISH_RUNNER_INPUT" = "pi" ]; } && [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
             IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
           fi
           out=""; err_out=""
@@ -400,6 +400,8 @@ jobs:
               unset CODEX_SERVICE_TIER
               for i in "${!args[@]}"; do if [ "${args[$i]}" = "--model" ]; then args[$((i+1))]="$model"; fi; done
             fi
+            export NEEDLEFISH_PREVIOUS_CHECK_ID
+            NEEDLEFISH_PREVIOUS_CHECK_ID=$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&per_page=100" --jq '[.check_runs[].id] | max // 0') || NEEDLEFISH_PREVIOUS_CHECK_ID=""
             local err_file
             err_file=$(mktemp)
             set +e
@@ -411,7 +413,7 @@ jobs:
             return $rc
           }
           # shortcut: legacy releases misclassify upstream faults; remove this check fallback after reliable outcomes ship.
-          # Run IDs span retry attempts; missing check evidence preserves the original failure.
+          # A check must be newer than the invocation snapshot; missing evidence preserves the failure.
           runner_check_failed() {
             local checks_json
             checks_json=$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&per_page=100") || return 1
@@ -421,12 +423,14 @@ jobs:
               process.stdin.on("end", () => {
                 try {
                   const checks = JSON.parse(input).check_runs;
-                  const check = checks.filter(c => c.name === "Needlefish" && c.external_id === process.env.GITHUB_RUN_ID && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];
+                  const previous = process.env.NEEDLEFISH_PREVIOUS_CHECK_ID ?? "";
+                  if (!/^[0-9]+$/.test(previous)) process.exit(1);
+                  const check = checks.filter(c => c.id > Number(previous) && c.name === "Needlefish" && c.external_id === process.env.GITHUB_RUN_ID && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];
                   const prefix = "Review errored and did NOT pass this PR.\n\n```\n";
                   const error = check?.output?.summary?.startsWith(prefix) ? check.output.summary.slice(prefix.length).split("\n")[0] : "";
                   const failed = check?.status === "completed" && check.conclusion === "failure" && check.output.title === "Needlefish: review failed";
                   const runnerExit = /^(?:codex|claude|opencode|grok|pi|acp|openai) runner exited [1-9][0-9]*;/.test(error);
-                  const timeout = /^(?:spawn .+ E(?:IDLE)?TIMEDOUT|Needlefish review deadline exceeded)(?:[.;]|$)/.test(error);
+                  const timeout = /^spawn .+ E(?:IDLE)?TIMEDOUT(?:[.;]|$)/.test(error);
                   const outputFailure = error.startsWith("no JSON object found in codex output") && /likely cause: (empty output|truncated output|html error page)(?:[;.]|$)/.test(error);
                   process.exit(failed && (runnerExit || timeout || outputFailure) ? 0 : 1);
                 } catch { process.exit(1); }
