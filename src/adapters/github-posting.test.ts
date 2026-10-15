@@ -32,6 +32,7 @@ import {
 } from "./github";
 import type { Finding } from "../shared/schema";
 import { WITHHELD_MESSAGE } from "../shared/outbound-screen";
+import { OWN_POST_FINDING_MARKER } from "../shared/normalize";
 
 type Post = {
 	readonly args: readonly string[];
@@ -793,6 +794,7 @@ test("runGithub caps an oversized inline comment body", async (t) => {
 		"<!-- needlefish-finding -->",
 		"the own-post marker must survive as the last line (normalize.ts read-back)",
 	);
+	assert.equal(lastLine, OWN_POST_FINDING_MARKER);
 });
 
 test("capOutboundBody shrinks an oversized state marker rather than dropping it", () => {

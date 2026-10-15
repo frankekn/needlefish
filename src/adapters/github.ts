@@ -9,7 +9,7 @@ import {
 	type PriorFateCounts,
 } from "../shared/render.js";
 import { changedFiles, ghText, git, makeBundle, readAgentsAt } from "../shared/repo.js";
-import { normalizeBodyList } from "../shared/normalize.js";
+import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
 import {
@@ -429,11 +429,6 @@ function renderStateKeys(
 
 const STATE_PREFIX = "<!-- needlefish-state:";
 
-// The same literal github-suggestions.ts writes as the body's final line;
-// normalize.ts recognizes it on read-back. Truncation keeps it as the last
-// line so a truncated inline finding is still recognized as Needlefish's own.
-const OWN_INLINE_POST_MARKER = "<!-- needlefish-finding -->";
-
 export function parseState(body: string): RoundState | null {
 	const start = body.lastIndexOf(STATE_PREFIX);
 	if (start < 0) return null;
@@ -515,11 +510,13 @@ export function capOutboundBody(body: string): string {
 	let suffix = "";
 	if (state) {
 		content = body.slice(0, markerStart);
-	} else if (body.endsWith(OWN_INLINE_POST_MARKER)) {
+	} else if (body.endsWith(OWN_POST_FINDING_MARKER)) {
+		// Truncation keeps the marker as the last line so a truncated inline
+		// finding is still recognized as Needlefish's own.
 		content = body
-			.slice(0, -OWN_INLINE_POST_MARKER.length)
+			.slice(0, -OWN_POST_FINDING_MARKER.length)
 			.replace(/\n+$/, "");
-		suffix = `\n\n${OWN_INLINE_POST_MARKER}`;
+		suffix = `\n\n${OWN_POST_FINDING_MARKER}`;
 	}
 	let notice = truncatedNotice(1);
 	for (let round = 0; ; round++) {
