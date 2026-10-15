@@ -110,7 +110,7 @@ export function fixtureClassifications(
           changed.size > 0 &&
           [...changed].every(
             (file) =>
-              classifySurface(file) === "docs" && isDocsFastPathEligible(file),
+              isDocsFastPathEligible(classifySurface(file), file),
           )
         );
       })
