@@ -1012,7 +1012,6 @@ test("score: mayFind exempts sibling-defect findings from noise but never grants
   const sibling = finding({ title: "buffer cap removed", whyItBreaks: "large diff aborts", file: "src/handler.ts", lineStart: 3, severity: "P1" });
   const noise = finding({ title: "spray", whyItBreaks: "guess", file: "src/a.ts", lineStart: 1, severity: "P1" });
 
-  // Sibling alone: no noise charged, but the mustFind is still unmet.
   const miss = score({ verdict: "changes_requested" as Verdict, findings: [sibling, noise] }, expected, "mayfind-miss");
   assert.equal(miss.recall, false, "mayFind hit must not satisfy recall");
   assert.equal(miss.noiseFindingCount, 1, "sibling is exempt; unrelated spray still counts");
