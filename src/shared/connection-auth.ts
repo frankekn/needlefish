@@ -2,12 +2,15 @@ import { ConnectionCredentialLeakError } from "./runner-failure.js";
 import type { RunnerName } from "./runner.js";
 import { screenPayload, screenText } from "./outbound-screen.js";
 
-function containsCredential(text: string, values: readonly string[]): boolean {
-  const decoded = text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
+function decodeJsonEscapes(text: string): string {
+  return text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
     const value: unknown = JSON.parse(`"${escape}"`);
     return typeof value === "string" ? value : escape;
   });
-  return screenText(text, values).kind === "withheld" || screenText(decoded, values).kind === "withheld";
+}
+
+function containsCredential(text: string, values: readonly string[]): boolean {
+  return screenText(text, values).kind === "withheld" || screenText(decodeJsonEscapes(text), values).kind === "withheld";
 }
 
 export type AuthEnvironmentReferences = Readonly<Record<string, string>>;
@@ -115,6 +118,16 @@ export function parseCodexAuthEnvironment(raw: unknown, route: CodexAuthRoute): 
   return refs;
 }
 
+function* codexCredentialViews(text: string): Generator<string> {
+  yield text;
+  for (let pass = 0; pass < 2; pass++) {
+    text = decodeJsonEscapes(text);
+    yield text;
+    text = text.replace(/(?:%[0-9a-f]{2})+/gi, bytes => Buffer.from(bytes.replaceAll("%", ""), "hex").toString("utf8"));
+    yield text;
+  }
+}
+
 export class CodexEnvironmentAuth {
   readonly #auth: AcpEnvironmentAuth;
   readonly #route: CodexAuthRoute;
@@ -155,6 +168,15 @@ export class CodexEnvironmentAuth {
     this.#auth.applyTo(env);
   }
 
-  screenDiagnostic(message: string): string { return this.#auth.screenDiagnostic(message); }
-  assertOutputSafe(output: string): void { this.#auth.assertOutputSafe(output); }
+  screenDiagnostic(message: string): string {
+    for (const view of codexCredentialViews(message)) {
+      const screened = this.#auth.screenDiagnostic(view);
+      if (screened !== view) return screened;
+    }
+    return message;
+  }
+
+  assertOutputSafe(output: string): void {
+    for (const view of codexCredentialViews(output)) this.#auth.assertOutputSafe(view);
+  }
 }
