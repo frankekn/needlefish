@@ -35,7 +35,7 @@ struct Runtime: Codable, Sendable {
 }
 
 enum DesktopError: Error, LocalizedError {
-    case runtime, invalidOutput, cancelled, timeout, outputLimit, cleanup, command, quota, network, auth, installationBusy
+    case runtime, invalidOutput, cancelled, timeout, outputLimit, cleanup, command, scopeCollection, quota, network, auth, installationBusy
     var errorDescription: String? {
         switch self {
         case .installationBusy: "另一個 Needlefish 正在安裝或移除。請稍後重試。 / Another Needlefish is installing or removing a version. Retry shortly."
@@ -49,6 +49,7 @@ enum DesktopError: Error, LocalizedError {
         case .outputLimit: "輸出超過安全上限。未完成，請縮小變更後重試。 / Output limit exceeded."
         case .cleanup: "本次暫存資料未能清除，可能仍含專案副本。檢查未完成。 / Temporary cleanup failed; a project copy may remain. Review incomplete."
         case .command: "未完成。請重新診斷環境，確認登入、網路與帳戶額度後重試。 / Incomplete. Check login, connection and quota."
+        case .scopeCollection: "無法整理變更範圍。請重新診斷專案，或縮小本機變更後重試。 / Could not collect changes. Check the project again or reduce local changes and retry."
         }
     }
 }
@@ -59,12 +60,14 @@ struct Doctor: Decodable, Sendable {
         let name: String
         let status: Status
         let detail: String
+        let fix: String?
         var id: String { name }
         var explanation: String {
             switch (name, status) {
             case ("auth", .ok): "已登入。 / Signed in."
             case ("auth", _): "需要登入，或目前無法確認登入。請使用 OpenAI 登入。 / Sign in with OpenAI."
             case ("git", .ok): "已找到 Git 專案。 / Git project found."
+            case ("git", _) where fix == "Upgrade git to 2.41 or later.": "Git 版本過舊。請升級至 Git 2.41 以上，再重新診斷。 / Upgrade Git to 2.41 or later, then check again."
             case ("git", _): "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project."
             case ("runner", .ok): "已找到 Codex。版本與能力仍需正式發行驗證。 / Codex found. Release qualification required."
             case ("runner", _): "Codex 不可用。請重新安裝正式 Needlefish 安裝包。 / Reinstall the supported package."
