@@ -1651,7 +1651,7 @@ export async function runGithub(
 		return;
 	}
 	const currentHeadSha = nestedString(pr, "head", "sha");
-	if (!currentHeadSha) throw new Error("Could not resolve PR head SHA");
+	if (!currentHeadSha) throw new Error("PR API returned no head.sha; cannot resolve or verify PR head");
 	const headSha = process.env.PR_HEAD_SHA || currentHeadSha;
 	const entrySkipReason = skipReasonForPr(pr, prNumber, headSha);
 	if (entrySkipReason) {

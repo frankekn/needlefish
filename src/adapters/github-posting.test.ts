@@ -61,7 +61,7 @@ type FixtureOptions = {
 	readonly collectionGitFailure?: "merge-base" | "diff" | "stat" | "changed";
 	readonly missingBase?: boolean;
 	readonly missingHead?: boolean;
-	readonly failCollectionMetadata?: boolean;
+	readonly failCollectionMetadata?: "comments" | "reviews";
 	readonly failPullReadsFrom?: number;
 	readonly prNumber: number;
 	readonly rawReview: string;
@@ -502,8 +502,9 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			// comments_url and review_comments_url serve what earlier rounds and
 			// seeded humans posted, as the live API does; their bodies are what
 			// reaches the model as prMeta.
-			`if (args[1] === 'https://example.invalid/comments' && ${opts.failCollectionMetadata === true}) { process.stderr.write("collection metadata unavailable"); process.exit(1); }`,
+			`if (args[1] === 'https://example.invalid/comments' && ${opts.failCollectionMetadata === "comments"}) { process.stderr.write("collection metadata unavailable"); process.exit(1); }`,
 			`if (args[1] === 'https://example.invalid/comments') { const p = ${JSON.stringify(issueCommentsState)}; process.stdout.write(fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '[]'); process.exit(0); }`,
+			`if (args[1] === 'https://example.invalid/reviews' && ${opts.failCollectionMetadata === "reviews"}) { process.stderr.write("collection review metadata unavailable"); process.exit(1); }`,
 			`if (args[1] === 'https://example.invalid/reviews') { const p = ${JSON.stringify(reviewCommentsState)}; process.stdout.write(fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '[]'); process.exit(0); }`,
 			// Paginated GET must come with --slurp (page-wrapped array of arrays);
 			// the stub emulates the slurped shape to pin the flat(1) handling.
@@ -4768,12 +4769,12 @@ test("failure-comment pre-read and ambiguous POST failure never resend the comme
 	assert.equal(runnerInvocationCount(fixture), 2);
 });
 
-for (const stage of ["merge-base", "diff", "stat", "changed", "metadata", "missing-base", "empty-diff"] as const) {
+for (const stage of ["merge-base", "diff", "stat", "changed", "comments", "reviews", "missing-base", "empty-diff"] as const) {
 	test(`early collection failure ${stage} completes its owned check without a model`, (t) => {
 		const fixture = setupFixture(t, {
 			prNumber: 240,
 			rawReview: defaultRawReview(),
-			...(stage === "metadata" ? { failCollectionMetadata: true } :
+			...(stage === "comments" || stage === "reviews" ? { failCollectionMetadata: stage } :
 				stage === "missing-base" ? { missingBase: true } :
 				stage === "empty-diff" ? {} : { collectionGitFailure: stage }),
 		});
@@ -4805,7 +4806,7 @@ test("early collection cannot infer an unknown PR head from the checkout", (t) =
 	delete process.env.PR_HEAD_SHA;
 	const run = spawnGithubCli(fixture, 241);
 	assert.equal(run.status, 1);
-	assert.match(run.stderr, /Could not resolve PR head SHA/);
+	assert.match(run.stderr, /PR API returned no head.sha; cannot resolve or verify PR head/);
 	assert.deepEqual(readPosts(fixture.postLog), []);
 	assert.equal(runnerInvocationCount(fixture), 0);
 });
