@@ -39,11 +39,17 @@ function packageIdentity(): Pick<ReviewRuntime, "coreVersion" | "sourceSha"> {
   } catch { /* Optional identity must not reject an otherwise valid review. */ }
   try {
     const release: unknown = JSON.parse(readFileSync(new URL("../../release.json", import.meta.url), "utf8"));
-    if (isRecord(release) && typeof release.sha === "string" && /^[a-f0-9]{40}$/.test(release.sha)) {
-      sourceSha = runtimeLabel(release.sha, "operator_attested");
-    }
+    sourceSha = sourceShaFromRelease(release);
   } catch { /* Source installs may have no release manifest. */ }
   return { coreVersion, sourceSha };
+}
+
+export function sourceShaFromRelease(release: unknown): RuntimeValue {
+  if (!isRecord(release)) return runtimeLabel(undefined);
+  const sha = typeof release.sha === "string" && /^[a-f0-9]{40}$/.test(release.sha)
+    ? release.sha : release.base_sha;
+  return typeof sha === "string" && /^[a-f0-9]{40}$/.test(sha)
+    ? runtimeLabel(sha, "operator_attested") : runtimeLabel(undefined);
 }
 
 export function reviewRuntime(config: EffectiveRunnerConfig, reviewBudgetMs: number | null): ReviewRuntime {

@@ -17,6 +17,7 @@ export interface AcpRunnerInvocation {
   readonly prompt: string;
   readonly repoPath: string;
   readonly timeoutMs: number;
+  readonly initializeTimeoutMs?: number;
   readonly env: NodeJS.ProcessEnv;
 }
 
@@ -62,7 +63,7 @@ export async function runAcp(
     throw new RunnerFailure("startup_failed",
       "NEEDLEFISH_ACP_BIN is required for the acp runner; review not started. Configure the ACP launcher.");
   }
-  const initializeTimeoutMs = initializeTimeout(invocation.timeoutMs);
+  const initializeTimeoutMs = Math.min(invocation.initializeTimeoutMs ?? resolveAcpInitializeTimeoutMs(invocation.timeoutMs), invocation.timeoutMs);
   const startedAt = performance.now();
   let initializeTimer: ReturnType<typeof setTimeout> | undefined;
   const clearInitializeTimer = (): void => {
@@ -178,7 +179,7 @@ export async function runAcp(
 }
 
 // This is a protocol-startup budget, not a shorter model review timeout.
-function initializeTimeout(totalTimeoutMs: number): number {
+export function resolveAcpInitializeTimeoutMs(totalTimeoutMs: number): number {
   const raw = process.env.NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS?.trim();
   const configured = raw ? Number(raw) : 30_000;
   if (!Number.isSafeInteger(configured) || configured <= 0 || configured > 2_147_483_647) {

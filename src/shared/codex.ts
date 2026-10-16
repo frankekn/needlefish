@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { runtimeLabel } from "./runtime.js";
-import { runAcp } from "./acp.js";
+import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
 import { findRunnerFailure } from "./runner-failure.js";
 import {
@@ -571,6 +571,8 @@ interface RunnerAttemptResult {
 
 interface RunnerInvocation {
 	readonly acpLaunch?: AcpLaunchSpec;
+	readonly initializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
 	readonly prompt: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
@@ -616,6 +618,8 @@ const GROK_DEFAULT_MODEL = "grok-build";
 export interface EffectiveRunnerConfig {
 	readonly runner: RunnerName;
 	readonly acpLaunch: AcpLaunchSpec | undefined;
+	readonly acpInitializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
 	readonly effectiveEffort: string | undefined;
@@ -638,13 +642,19 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			runner === "codex" ? effort ?? resolveCodexReasoningEffort() :
 			runner === "pi" ? resolvePiThinking(effort) :
 			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
+		if (opts.timeoutMs !== undefined && (!Number.isSafeInteger(opts.timeoutMs) || opts.timeoutMs <= 0)) {
+			throw new Error("timeoutMs requires a positive safe integer");
+		}
+		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
 		return Object.freeze({
 			runner,
 			acpLaunch: opts.acpLaunch,
+			acpInitializeTimeoutMs: runner === "acp" ? resolveAcpInitializeTimeoutMs(timeoutMs) : timeoutMs,
+			openCodeIdleTimeoutMs: runner === "opencode" ? openCodeIdleTimeoutMs(timeoutMs) : timeoutMs,
 			model,
 			reasoningEffort: runner === "codex" ? effectiveEffort : opts.reasoningEffort,
 			effectiveEffort,
-			timeoutMs: opts.timeoutMs ?? timeoutMsFor(runner),
+			timeoutMs,
 			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
 			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
 			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
@@ -782,6 +792,8 @@ async function runCodexOnce(
 					sandbox,
 					invocation: {
 						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
+						initializeTimeoutMs: config.acpInitializeTimeoutMs,
+						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
 						model,
@@ -1379,7 +1391,7 @@ async function runOpenCode(
 		stdin: "",
 		repoPath: invocation.repoPath,
 		timeoutMs: invocation.timeoutMs,
-		idleTimeoutMs: openCodeIdleTimeoutMs(invocation.timeoutMs),
+		idleTimeoutMs: Math.min(invocation.openCodeIdleTimeoutMs, invocation.timeoutMs),
 		env: {
 			...invocation.env,
 			OPENCODE_CONFIG_CONTENT: unrestrictedConfig,

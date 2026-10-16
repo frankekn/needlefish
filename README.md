@@ -639,7 +639,9 @@ Docs-only fast-path reviews omit it because no model runner is selected or calle
 It records the runner, public model selector, effort, prompt hash and timeout
 resolved for that review. `known` describes an observed invocation value, not a
 provider's resolved model identity. Release manifest source SHAs are
-`operator_attested`. Unavailable versions and launcher identities stay `unknown`.
+`operator_attested`. For self-managed releases, this is the base commit before
+the operator's patch, not an exact identifier for the installed code.
+Unavailable versions and launcher identities stay `unknown`.
 ACP model and effort stay unknown because the protocol does not select them.
 The metadata contains no environment dump, private endpoint or launcher path.
 

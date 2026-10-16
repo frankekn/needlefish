@@ -9,7 +9,8 @@ import { resolveRunnerConfig } from "./codex";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { renderMarkdown } from "./render";
 import { parseReviewResult } from "./review-result";
-import { parseReviewRuntime, reviewRuntime } from "./runtime";
+import { parseReviewRuntime, reviewRuntime, sourceShaFromRelease } from "./runtime";
+import { parsePositiveInteger } from "./runner";
 import { serializeReviewResult, type Bundle } from "./schema";
 
 function environment(t: TestContext, values: Readonly<Record<string, string | undefined>>): void {
@@ -44,6 +45,23 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.deepEqual(reviewRuntime(resolveRunnerConfig({ runner: "opencode", model: "provider/model#low", reasoningEffort: "high" }), null).model, { status: "known", value: "provider/model#high" });
   assert.throws(() => parseReviewRuntime({ ...acp, qualification: { matchStatus: "tested" } }), /qualification/);
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
+});
+
+test("timeout configuration rejects values the runtime cache cannot read", (t) => {
+  assert.equal(parsePositiveInteger(String(Number.MAX_SAFE_INTEGER), "NEEDLEFISH_TIMEOUT_MS"), Number.MAX_SAFE_INTEGER);
+  assert.throws(() => parsePositiveInteger("9007199254740992", "NEEDLEFISH_TIMEOUT_MS"), /NEEDLEFISH_TIMEOUT_MS.*safe integer/);
+  assert.throws(() => parsePositiveInteger("9007199254740992", "NEEDLEFISH_REVIEW_TIMEOUT_MS"), /NEEDLEFISH_REVIEW_TIMEOUT_MS.*safe integer/);
+  environment(t, { NEEDLEFISH_TIMEOUT_MS: "9007199254740992" });
+  assert.throws(() => resolveRunnerConfig({ runner: "codex" }), /NEEDLEFISH_TIMEOUT_MS.*safe integer/);
+  assert.throws(() => resolveRunnerConfig({ runner: "codex", timeoutMs: 9007199254740992 }), /timeoutMs.*safe integer/);
+});
+
+test("source identity accepts both operator release formats", () => {
+  const sha = "a".repeat(40);
+  assert.deepEqual(sourceShaFromRelease({ sha }), { status: "operator_attested", value: sha });
+  assert.deepEqual(sourceShaFromRelease({ base_sha: sha, self_version: "self", patch_sha256: "b".repeat(64), dependency_lock_sha256: "c".repeat(64) }),
+    { status: "operator_attested", value: sha });
+  assert.deepEqual(sourceShaFromRelease({ base_sha: "invalid" }), { status: "unknown" });
 });
 
 test("runtime never publishes endpoints, home paths or passthrough environment", (t) => {
@@ -155,6 +173,28 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   assert.equal(nextCodex.callTimeoutMs, 45000);
 });
 
+test("OpenCode review retains its initial idle timeout across both passes", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-opencode-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "opencode.cjs");
+  const calls = path.join(tmp, "calls.txt");
+  writeFileSync(bin, [
+    "#!/usr/bin/env node",
+    "const fs = require('node:fs');",
+    `fs.appendFileSync(${JSON.stringify(calls)}, 'called\\n');`,
+    "setTimeout(() => process.stdout.write(JSON.stringify({ type: 'text', part: { text: JSON.stringify({ summary: 'ok', findings: [], checked: ['source checked'], residual_risks: [] }) } }) + '\\n'), 150);",
+  ].join("\n"));
+  chmodSync(bin, 0o755);
+  environment(t, { OPENCODE_BIN: bin, OPENCODE_IDLE_TIMEOUT_MS: "1500", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
+  const result = await review({
+    repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
+    changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
+  }, { runner: "opencode", timeoutMs: 5000 }, undefined, () => { process.env.OPENCODE_IDLE_TIMEOUT_MS = "1"; });
+  assert.equal(result.verdict, "pass");
+  assert.equal(readFileSync(calls, "utf8"), "called\ncalled\n");
+});
+
 for (const namedLaunch of [false, true]) {
   test(`ACP review runtime stays unknown with named launch=${namedLaunch}`, async (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-acp-"));
@@ -180,17 +220,18 @@ for (const namedLaunch of [false, true]) {
       "    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
       "    result = { stopReason: 'end_turn' };",
       "  }",
-      "  send({ jsonrpc: '2.0', id: request.id, result });",
+      "  if (request.method === 'initialize') setTimeout(() => send({ jsonrpc: '2.0', id: request.id, result }), 150);",
+      "  else send({ jsonrpc: '2.0', id: request.id, result });",
       "});",
     ].join("\n"));
     chmodSync(bin, 0o755);
-    environment(t, { NEEDLEFISH_ACP_BIN: namedLaunch ? path.join(tmp, "wrong-agent") : bin, NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
+    environment(t, { NEEDLEFISH_ACP_BIN: namedLaunch ? path.join(tmp, "wrong-agent") : bin, NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS: "1500", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
     const result = await review({
       repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
       changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
     }, { runner: "acp", model: namedLaunch ? "selected-model" : "caller-guess", reasoningEffort: "high", timeoutMs: 5000,
       ...(namedLaunch ? { acpLaunch: { command: bin, args: ["--model", "selected-model"] } } : {}),
-    });
+    }, undefined, () => { process.env.NEEDLEFISH_ACP_INITIALIZE_TIMEOUT_MS = "1"; });
     assert.equal(result.verdict, "pass");
     assert.equal(result.runtime?.runner, "acp");
     assert.deepEqual(result.runtime?.model, { status: "unknown" });
