@@ -389,7 +389,9 @@ read-only `--connection` resolver.
 Apply locks the canonical configuration path with an exclusive `.lock` file.
 It compares the exact original byte revision, writes a same-directory exclusive
 0600 temporary file, syncs the file, checks the revision again, renames it, and
-syncs the directory. `revision_conflict` requires a reload and an explicit draft
+syncs the directory. It then removes its lock and syncs the directory chain,
+including parents of new directories, before reporting success. `revision_conflict`
+requires a reload and an explicit draft
 reapply. `config_busy` never removes an existing lock, even if it appears stale.
 A failure before rename preserves the original file. `save_state_unknown` means
 rename completed but durability or cleanup failed. Reload before any retry.

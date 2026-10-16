@@ -267,3 +267,61 @@ test("configuration paths reject non-sticky writable ancestors and permit truste
   error(await runConnections("edit", f.repo, undefined, env), "unsafe_configuration");
   assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
 });
+
+
+test("first save syncs new directory entries and successful lock removal before returning", async t => {
+  const f = await fixture(t);
+  const parent = path.join(f.config, "new", "needlefish");
+  const file = path.join(parent, "connections.json"), env = { NEEDLEFISH_CONNECTIONS_FILE: file };
+  const synced: string[] = [];
+  let lockRemoved = false;
+  const open = fs.open, unlink = fs.unlink;
+  t.mock.method(fs, "unlink", async (...args: Parameters<typeof fs.unlink>) => {
+    await unlink(...args);
+    if (String(args[0]) === `${file}.lock`) lockRemoved = true;
+  });
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await open(...args);
+    if ((await handle.stat()).isDirectory()) {
+      const sync = handle.sync.bind(handle);
+      t.mock.method(handle, "sync", async () => { await sync(); if (lockRemoved) synced.push(path.relative(f.root, String(args[0]))); });
+    }
+    return handle;
+  });
+  success(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env));
+  assert.deepEqual(synced.slice(0, 3), ["config/new/needlefish", "config/new", "config"]);
+  assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
+  assert.deepEqual(await fs.readdir(parent), ["connections.json"]);
+});
+
+test("directory sync failure after lock removal or in a created ancestor reports unknown", async t => {
+  const f = await fixture(t);
+  const open = fs.open, unlink = fs.unlink;
+  let lockRemoved = false;
+  t.mock.method(fs, "unlink", async (...args: Parameters<typeof fs.unlink>) => {
+    await unlink(...args);
+    if (String(args[0]).endsWith(".lock")) lockRemoved = true;
+  });
+  const mocked = t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await open(...args);
+    if (String(args[0]) === f.config) {
+      const sync = handle.sync.bind(handle);
+      t.mock.method(handle, "sync", async () => { if (lockRemoved) throw new Error("fake post-lock sync fault"); await sync(); });
+    }
+    return handle;
+  });
+  error(await f.run("apply", { expectedRevision: "missing", document }), "save_state_unknown");
+  assert.equal(await fs.readFile(f.file, "utf8"), JSON.stringify(document) + "\n");
+  assert.deepEqual(await fs.readdir(f.config), ["connections.json"]);
+  mocked.mock.restore();
+  lockRemoved = false;
+  const parent = path.join(f.config, "new", "needlefish"), file = path.join(parent, "connections.json");
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await open(...args);
+    if (String(args[0]) === path.join(f.config, "new")) t.mock.method(handle, "sync", async () => { throw new Error("fake ancestor sync fault"); });
+    return handle;
+  });
+  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "save_state_unknown");
+  assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
+  assert.deepEqual(await fs.readdir(parent), ["connections.json"]);
+});

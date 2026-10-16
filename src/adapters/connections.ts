@@ -39,6 +39,11 @@ function descriptors(connections: readonly Connection[]) {
 const revision = (bytes: Buffer): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 function cancelled(signal?: AbortSignal): void { if (signal?.aborted) fail("cancelled"); }
 
+async function syncDirectory(directory: string): Promise<void> {
+  const handle = await fs.open(directory, constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0));
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
 async function safeAncestors(directory: string): Promise<void> {
   for (let current = directory; ; current = path.dirname(current)) {
     const stat = await fs.lstat(current);
@@ -153,8 +158,7 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
     await fs.rename(temporary, loc.file);
     committed = true;
     temporary = undefined;
-    const directory = await fs.open(loc.parent, constants.O_RDONLY);
-    try { await directory.sync(); } finally { await directory.close(); }
+    await syncDirectory(loc.parent);
     return { schemaVersion: 1, ok: true, revision: revision(bytes), connections: descriptors(parsed.connections) };
   } catch (error) {
     if (committed) return fail("save_state_unknown");
@@ -169,6 +173,11 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
             const currentLock = await fs.lstat(lockPath);
             if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail(committed ? "save_state_unknown" : "save_failed");
             await fs.unlink(lockPath);
+            // A prior interrupted save may have created an unsynced ancestor.
+            for (let directory = loc.parent; ; directory = path.dirname(directory)) {
+              await syncDirectory(directory);
+              if (path.dirname(directory) === directory) break;
+            }
           }
         }
       }
