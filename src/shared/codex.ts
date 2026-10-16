@@ -1400,7 +1400,11 @@ async function runOpenCode(
 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const promptPath = path.join(invocation.tmp, "prompt.txt");
-	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+	writeFileSync(
+		promptPath,
+		`The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		{ mode: 0o600 },
+	);
 	const args = [
 		"-m",
 		invocation.model ?? "grok-build",
@@ -1421,7 +1425,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
-		repoPath: invocation.repoPath,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});

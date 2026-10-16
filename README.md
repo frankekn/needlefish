@@ -568,8 +568,8 @@ blank (values are trimmed):
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
 All `*_BIN` executables must come from trusted operator-controlled paths.
-Codex resolves a path-like relative `CODEX_BIN` against Needlefish's caller
-working directory. Detection and doctor use that same directory. The caller
+Codex and Grok resolve path-like relative `CODEX_BIN` and `GROK_BIN`
+against Needlefish's caller working directory. Detection and doctor use that same directory. The caller
 directory must be trusted; launching Needlefish from a PR-controlled checkout
 does not make its relative executable safe. Other CLI runners still resolve
 relative commands from the target clone at launch. Use absolute trusted paths
@@ -600,8 +600,14 @@ for those runners. Bare executable names continue to use `PATH`.
   loaded during file reads, and project skill catalogs while retaining the
   built-in Read tool. The control run without safe mode loaded all three.
 - **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
-  --sandbox off`. Automatic project-instruction isolation has not been
-  verified for this runner.
+  --sandbox off`. Grok starts in the same managed empty sibling directory
+  as Codex. Its prompt file names the throwaway clone's absolute path for
+  `git -C` and file inspection. Local API probes with Grok 1.0.60 excluded
+  full target `AGENTS.md`, `CLAUDE.md`, and native rule bodies at startup and
+  after bounded ordinary-file reads and shell inspection. The trusted target
+  control loaded those bodies. Ordinary-file `read_file` still added target
+  skill catalogs in a later request. This is a startup boundary, not complete
+  loader isolation or a model-quality qualification.
 - **opencode:** `--auto` in headless mode, with an inline `permission:
   "allow"` override for its global and build-agent permissions. Project
   instruction and plugin isolation is not established by those flags.
@@ -633,8 +639,8 @@ this conservative policy.
 
 Every CLI runner inspects a **throwaway clean clone** at the review head
 commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex
-starts in its empty sibling directory; other CLI runners start in the clone. After
-each successful model call, Needlefish re-checks the clone with `git status
+and Grok start in their empty sibling directory. Other CLI runners start in
+the clone. After each successful model call, Needlefish re-checks the clone with `git status
 --porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
 not move, and rejects any worktree mutation. The clone carries no remote: its
 `origin` (which would point at the original repository on the same

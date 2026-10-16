@@ -41,10 +41,10 @@ export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
   const command = process.env[bin.env]?.trim() || bin.fallback;
-  return runner === "codex" && command !== undefined ? resolveCodexCommand(command) : command;
+  return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
 }
 
-export function resolveCodexCommand(command: string, cwd = process.cwd(), pathApi = path): string {
+export function resolveCallerCommand(command: string, cwd = process.cwd(), pathApi = path): string {
   return !pathApi.isAbsolute(command) && (command.includes("/") || command.includes(pathApi.sep))
     ? pathApi.resolve(cwd, command)
     : command;
