@@ -7,6 +7,43 @@ import { setTimeout as delay } from "node:timers/promises";
 import { readRunnerDurationMs, runManagedRunnerProcess, spawnRunnerProcess } from "./runner-process";
 import { isMissingProcess, killProcessIfRunning } from "./runner-test-fixtures";
 
+for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+  test(`managed controller ${signal} stops its owned descendant group`, { skip: process.platform === "win32", timeout: 5000 }, async () => {
+    let pgid: number | undefined;
+    const started = performance.now();
+    try {
+      const result = await runManagedRunnerProcess({
+        command: process.execPath,
+        args: ["-e", `
+          const { spawn } = require('node:child_process');
+          const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000)']);
+          child.stdout.on('data', () => process.stdout.write('ready'));
+          setInterval(() => {}, 1000);
+        `],
+        repoPath: process.cwd(), timeoutMs: 3000, env: process.env,
+        onSpawn: (controller) => { pgid = controller.child.pid; controller.endStdin(); },
+        onStdout: (_chunk, controller) => signal === "SIGTERM" ? controller.stop() : controller.stop("SIGKILL"),
+      });
+      assert.equal(result.signal, signal);
+      assert.equal(result.error, undefined);
+      assert.ok(performance.now() - started < 2500, "explicit SIGKILL does not wait for SIGTERM grace");
+      assert.equal(typeof pgid, "number");
+      if (pgid === undefined) throw new Error("missing process group");
+      const deadline = performance.now() + 1000;
+      while (performance.now() < deadline) {
+        try { process.kill(-pgid, 0); } catch (error) {
+          if (isMissingProcess(error)) break;
+          throw error;
+        }
+        await delay(25);
+      }
+      assert.throws(() => process.kill(-(pgid ?? 0), 0), isMissingProcess);
+    } finally {
+      if (pgid !== undefined) killProcessIfRunning(-pgid);
+    }
+  });
+}
+
 test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", async () => {
   const result = await spawnRunnerProcess({
     command: process.execPath,

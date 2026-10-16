@@ -28,7 +28,7 @@ export interface ManagedRunnerProcessController {
   readonly child: ChildProcessWithoutNullStreams;
   writeStdin(chunk: string): void;
   endStdin(): void;
-  stop(): void;
+  stop(signal?: "SIGTERM" | "SIGKILL"): void;
 }
 
 type RunnerChunkHandler = (chunk: string, controller: ManagedRunnerProcessController) => void;
@@ -214,8 +214,8 @@ export async function runManagedRunnerProcess(
       endStdin(): void {
         child.stdin.end();
       },
-      stop(): void {
-        beginKillSequence("SIGTERM");
+      stop(signal = "SIGTERM"): void {
+        beginKillSequence(signal);
       },
     };
     const unregisterProcessGroup =
