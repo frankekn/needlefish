@@ -1,22 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import spec from "../fixtures/neg-hard-dead-code-delete/spec";
+import spec, { applicationContract } from "../fixtures/neg-hard-dead-code-delete/spec";
 import { git } from "../../src/shared/repo";
 import { loadFixture } from "./fixture";
 
 test("dead-code fixture bundles the unchanged application contract from both commits", () => {
   const loaded = loadFixture(spec, "policy-contract-canary");
   try {
-    const policy = `# Application contract
-
-This repository contains a closed application. All packages are used only by this application.
-There are no package consumers outside this repository.
-Exported Go identifiers carry no public API or compatibility promise.
-`;
     const { bundle } = loaded;
-    assert.equal(bundle.agentsMd, policy.trim());
+    assert.match(bundle.agentsMd ?? "", /closed application/);
+    assert.equal(bundle.agentsMd, applicationContract.trim());
     for (const ref of [bundle.baseSha, bundle.headSha]) {
-      assert.equal(git(["show", `${ref}:AGENTS.md`], bundle.repoPath), policy.trim());
+      assert.equal(git(["show", `${ref}:AGENTS.md`], bundle.repoPath), applicationContract.trim());
     }
     assert.deepEqual(bundle.changedFiles.map((file) => file.path), [
       "ids/format.go",

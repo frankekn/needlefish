@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { loadFixtures } from "./run";
 import {
-  fixtureClassifications,
   readLane,
   readManifest,
   validateExcludedReportFiles,
@@ -13,6 +11,7 @@ import {
   BENCHMARK_BEGIN,
   BENCHMARK_END,
   gateMissedSummary,
+  publishedReadmeClassifications,
   renderBenchmarkBlock,
   spliceBenchmarkBlock,
 } from "./gen-readme";
@@ -20,20 +19,12 @@ import {
 const manifest = readManifest();
 validateExcludedReportFiles(manifest);
 const lanes = manifest.lanes.map(readLane);
-// These READMEs publish a dated benchmark, not the next release's gate.
-// New sealed fixtures must not make the historical snapshot untestable.
-// validateComparability still validates every published lane against exactly
-// this fixture set; the live eval/publisher keeps its full-catalog check.
-const publishedBaseline = lanes.find(({ config }) => config.report === manifest.baseline);
-assert.ok(publishedBaseline, "published baseline is configured");
-const publishedIds = new Set(publishedBaseline.report.fixtures);
-const canonical = {
-  ...fixtureClassifications(
-    (await loadFixtures(null)).filter((spec) => publishedIds.has(spec.id)),
-  ),
-  // Historical results describe their published prompt, not the candidate.
-  promptHash: publishedBaseline.report.promptHash,
-};
+const canonical = await publishedReadmeClassifications(manifest, lanes);
+
+test("README uses the archived 87-fixture benchmark identity", () => {
+  assert.equal(canonical.fixtureIds.length, 87);
+  assert.equal(canonical.fixtureSetHash, "e9923bbc7753a04a");
+});
 
 for (const [file, locale] of [
   ["README.md", "en"],

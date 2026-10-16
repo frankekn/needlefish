@@ -1,6 +1,6 @@
 import type { FixtureSpec } from "../../shared/types";
 
-const applicationContract = `# Application contract
+export const applicationContract = `# Application contract
 
 This repository contains a closed application. All packages are used only by this application.
 There are no package consumers outside this repository.
