@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Doctor: hard-stop runner status probes at their 10-second timeout and
-  clean up their remaining POSIX process group.
+  clean up their remaining POSIX process group. Interrupted diagnostics use
+  the shared runner lifecycle to stop probes and remove their temporary directory.
 
 - Local: resolve nested invocations to the repository root for diffs, policy,
   sandbox cloning, and cache placement.
