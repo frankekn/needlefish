@@ -205,7 +205,7 @@ struct DesktopCLI: Sendable {
     }
     func scope(repo: URL, command: Command) async throws -> Scope {
         let output = try await call(["--repo", repo.path, "--runner", "codex", "--uncommitted", "--dry-run", "--json"], command: command)
-        guard output.status == 0 else { throw DesktopError.command }
+        guard output.status == 0 else { throw DesktopError.scopeCollection }
         return try JSONDecoder().decode(Scope.self, from: output.stdout)
     }
     func review(repo: URL, command: Command) async throws -> Result {
