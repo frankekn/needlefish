@@ -1,0 +1,12 @@
+{
+  "epoch": 1792143840.84875,
+  "action": "SIGCONT eval parent after unauthorized capacity-controller pause",
+  "status": "INVALID_OFFLINE_D_GATE",
+  "reason": "Controller paused eval parent during sampled memory pressure; violates frozen timing semantics; preserve nine planned samples but cannot certify pass",
+  "firstPausedSampleEpoch": 1792143800.477044,
+  "resumeEpoch": 1792143840.84875,
+  "observedPauseSeconds": 40.37170600891113,
+  "sampleCount": 66,
+  "pausedSamples": 54,
+  "peakFullAvg10": 0.16
+}
