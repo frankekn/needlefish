@@ -1,0 +1,12 @@
+[
+  {
+    "path": "/tmp/nf-closure-gates/baseline-main38a84d7-x1.json",
+    "sha256": "1d5b05df8b08a8c725e8d299f0061d544402758d789e6ad9bba97c77d870c4e9",
+    "matchesPriorGateRecord": true
+  },
+  {
+    "path": "/tmp/nf-closure-gates/r257-a16ffde-x1.json",
+    "sha256": "7ed1146b9b41592c0a3fa1b8314fe01f6aaaa8385b1a06d4f3198a855ffc7615",
+    "matchesPriorGateRecord": true
+  }
+]
