@@ -4718,11 +4718,12 @@ test("a pinned App mismatch on successful create never authorizes model work or 
 	assert.equal(runnerInvocationCount(fixture), 0);
 });
 
-test("changing the configured App reviews an existing same-head receipt again", (t) => {
-	const fixture = setupFixture(t, { prNumber: 145, rawReview: defaultRawReview(), customCheckAppId: 4812 });
-	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+for (const priorHead of ["same", "previous"]) {
+test(`changing the configured App creates a fresh review for ${priorHead} head receipt`, (t) => {
+	const fixture = setupFixture(t, { prNumber: 145, rawReview: defaultRawReview(), customCheckAppId: 4812, authorLogin: "private-review-app[bot]", failUserApi: true });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(priorHead === "same" ? fixture.headSha : fixture.baseTipSha),
 		user: { login: "github-actions[bot]", type: "Bot" } }]);
-	seedCompletedVerdictCheck(fixture);
+	seedCompletedVerdictCheck(fixture, priorHead === "same" ? fixture.headSha : fixture.baseTipSha);
 	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
 	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
 	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
@@ -4730,11 +4731,15 @@ test("changing the configured App reviews an existing same-head receipt again", 
 	assert.equal(result.status, 1, result.stderr);
 	assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
 	assert.equal(runnerInvocationCount(fixture), 2);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/145/reviews")).length, 1);
+	assert.equal(posts.filter(p => p.args.includes("PUT") && p.args.includes("repos/frankekn/needlefish/pulls/145/reviews/1")).length, 0);
 	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
 	const marker = parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "");
 	assert.ok(marker?.v === 2);
 	assert.equal(marker.delivery.appId, 4812);
 });
+}
 
 test("an unpinned custom App check cannot start model work", (t) => {
 	const fixture = setupFixture(t, { prNumber: 146, rawReview: defaultRawReview(), customCheckAppId: 4812 });

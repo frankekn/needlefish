@@ -1689,12 +1689,12 @@ export async function runGithub(
 		catch { previousChecks = null; }
 	}
 	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks, prNumber) : null;
-	const prev = previousVerdict !== null ? previous : null;
-	const priorReceipt = prev?.state.v === 2 ? prev.state.delivery : null;
-	const previousCheckOwned = priorReceipt && checks?.some((check) =>
+	const priorReceipt = previous?.state.v === 2 ? previous.state.delivery : null;
+	const previousCheckOwned = priorReceipt && previousChecks?.some((check) =>
 		check.id === priorReceipt.checkId && ownedCheckAppId(check.app, expectedAppId) === priorReceipt.appId);
+	const prev = previousVerdict !== null && previousCheckOwned ? previous : null;
 	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck &&
-		checks && previousCheckOwned && !hasNewerRound(prev.state, checks, prNumber)) {
+		checks && !hasNewerRound(prev.state, checks, prNumber)) {
 		process.exitCode = reviewExitCode(previousVerdict);
 		process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
 		emitSkip("same_head", prNumber, headSha);
