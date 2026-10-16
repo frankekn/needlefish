@@ -12,3 +12,7 @@ export function deriveVerdict(
   if (hasBlockingRisk) return "needs_human";
   return "pass";
 }
+
+export function reviewExitCode(verdict: Verdict): 0 | 1 {
+  return verdict === "pass" ? 0 : 1;
+}

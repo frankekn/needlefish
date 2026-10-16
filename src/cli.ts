@@ -12,6 +12,7 @@ import {
   printDryRun,
   terminalProgress,
 } from "./adapters/local.js";
+import { reviewExitCode } from "./core/verdict.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
@@ -130,6 +131,7 @@ async function main() {
         command.kind === "pr"
           ? await runLocalPr(cwd, command.pr, opts, progress)
           : await runLocal(cwd, opts, progress);
+      process.exitCode = reviewExitCode(result.verdict);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {
