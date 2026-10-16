@@ -108,7 +108,10 @@ Runner output is screened against the selected snapshot before admission, includ
 decoded JSON in Markdown fences. A complete selected credential value, including
 its JSON-escaped form, stops the review with a safe diagnostic. Partial values,
 other encodings and transformations are not covered. Raw agent transcripts remain
-sensitive and can contain credentials.
+sensitive and can contain credentials. Matching uses case-insensitive complete-value
+substrings. Short or common credential values may match ordinary protocol or
+review text and stop a run even without an echo. This conservative check does not
+impose a cross-agent minimum length or entropy rule.
 `--dry-run` and docs-only zero-model reviews validate the configuration schema
 and source names but do not require or bind credentials. They do not validate
 compatibility with unused runtime environment passthrough. Other reviews bind
