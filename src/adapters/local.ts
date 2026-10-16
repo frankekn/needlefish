@@ -493,6 +493,10 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
+  if (report.capability?.capability === "promptOnly") {
+    process.stderr.write(`needlefish: ${report.capability.detail}\n`);
+    process.exitCode = 1;
+  }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
     return;
@@ -536,6 +540,8 @@ export function printDryRun(
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
-  if (summary.capability) lines.push(`capability: ${summary.capability.detail}`);
+  if (summary.capability) {
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
+  }
   process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -3923,15 +3923,14 @@ test("a malformed severity cannot inject an operational outcome or a trusted cau
 
 // --- Typed transport signals (no model text involved) ---
 
-// A real local endpoint the direct-HTTP runner can reach, answering with the
-// given status so the runner produces its typed `openai runner HTTP <nnn>`
-// failure. OPENAI_BASE_URL points at the returned URL.
-async function stubUpstreamBaseUrl(
+async function stubUpstream(
 	t: TestContext,
 	status: number,
 	body: string,
-): Promise<string> {
+): Promise<{ readonly baseUrl: string; readonly requests: number }> {
+	let requests = 0;
 	const server = createServer((req, res) => {
+		requests++;
 		// Drain the whole request body before answering: responding while the
 		// client is still writing can surface as a write error instead of the
 		// status we want the runner to classify.
@@ -3957,7 +3956,10 @@ async function stubUpstreamBaseUrl(
 	if (address === null || typeof address === "string") {
 		throw new Error("stub upstream did not bind a port");
 	}
-	return `http://127.0.0.1:${address.port}/v1`;
+	return {
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		get requests() { return requests; },
+	};
 }
 
 test("a real runner timeout emits operational:true with the network-error cause", (t) => {
@@ -3982,45 +3984,36 @@ test("a real runner timeout emits operational:true with the network-error cause"
 	);
 });
 
-test("a direct-HTTP upstream 5xx emits operational:true with the network-error cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 111, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 502, "Bad Gateway");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
+for (const [status, body, prNumber] of [[502, "Bad Gateway", 111], [429, "Too Many Requests", 112]] as const) {
+	test(`an unsupported HTTP review fails before reaching an upstream ${status}`, async (t) => {
+		const fixture = setupFixture(t, { prNumber, rawReview: defaultRawReview() });
+		const upstream = await stubUpstream(t, status, body);
+		process.env.NEEDLEFISH_RUNNER = "openai";
+		process.env.NEEDLEFISH_MODEL = "stub-model";
+		process.env.OPENAI_API_KEY = "stub-key";
+		process.env.OPENAI_BASE_URL = upstream.baseUrl;
+		process.env.NEEDLEFISH_NO_RETRY = "1";
 
-	const run = await spawnGithubCliAsync(fixture, 111);
+		const run = await spawnGithubCliAsync(fixture, prNumber);
 
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error","prNumber":111,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
-
-test("a direct-HTTP upstream 429 emits operational:true with the rate-limited cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 112, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 429, "Too Many Requests");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
-
-	const run = await spawnGithubCliAsync(fixture, 112);
-
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"rate limited","prNumber":112,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
+		assert.equal(run.status, 1, run.stderr);
+		assert.equal(
+			run.stdout.trim(),
+			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":${prNumber},"headSha":"${fixture.headSha}"}`,
+		);
+		assert.match(run.stderr, /unsupported-capability.*repositoryRead/);
+		assert.doesNotMatch(run.stdout + run.stderr, /"operational":true|"outcome":"pass"|network error|rate limited|openai runner HTTP/);
+		assert.equal(upstream.requests, 0);
+		assert.equal(runnerInvocationCount(fixture), 0);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(postedReview(posts, prNumber), undefined);
+		const completed = posts.filter((post) => post.args.some((arg) => arg.includes("check-runs"))).at(-1);
+		assert.ok(completed);
+		const payload = parseJson(completed.payload);
+		assert.ok(typeof payload === "object" && payload !== null);
+		assert.equal(Reflect.get(payload, "conclusion"), "failure");
+	});
+}
 
 test("a CLI runner 5xx on stderr emits operational:true with the network-error cause", (t) => {
 	const fixture = setupFixture(t, {

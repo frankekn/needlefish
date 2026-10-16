@@ -12,7 +12,7 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
-import { resolveRunner, runnerReviewCapability } from "../shared/runner-detection.js";
+import { resolveRunner, runnerReviewCapability, RunnerSelectionError } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -1061,14 +1061,25 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
 // only threshold owners.
-export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
-	readonly capability: ReturnType<typeof runnerReviewCapability> | null;
+	readonly capability: ReturnType<typeof runnerReviewCapability> | {
+		readonly runner: null;
+		readonly capability: "unresolved";
+		readonly detail: string;
+	} | null;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
-	const capability = docsOnlyFastPath ? null : runnerReviewCapability(resolveRunner(runnerOptions));
-	if (capability?.capability === "promptOnly") throw new Error(capability.detail);
+	let capability: ReturnType<typeof reviewPlan>["capability"] = null;
+	if (!docsOnlyFastPath) {
+		try {
+			capability = runnerReviewCapability(resolveRunner(runnerOptions));
+		} catch (error) {
+			if (!(error instanceof RunnerSelectionError)) throw error;
+			capability = { runner: null, capability: "unresolved", detail: error.message };
+		}
+	}
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1109,6 +1120,9 @@ export async function review(
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
+	}
+	if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") {
+		throw new Error(plan.capability.detail);
 	}
 
 	// Read only past the docs-only short-circuit, for the same reason

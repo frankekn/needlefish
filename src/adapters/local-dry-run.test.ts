@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -271,17 +272,65 @@ test("--dry-run with a nested --repo collects root-relative tracked and untracke
   assert.deepEqual(paths, ["app.ts", "newroot.ts", "pkg/deep/mod.ts", "pkg/deep/newmod.ts"]);
 });
 
+for (const runner of [undefined, "invalid-runner"]) {
+  test(`dry-run prints its bundle when runner selection is unresolved (${runner ?? "auto"})`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
+    const git = spawnSync("which", ["git"], { encoding: "utf8" });
+    assert.equal(git.status, 0, git.stderr);
+    const gitOnlyBin = path.join(fixture.tmp, "git-only-bin");
+    mkdirSync(gitOnlyBin);
+    symlinkSync(git.stdout.trim(), path.join(gitOnlyBin, "git"));
+    const env = {
+      PATH: gitOnlyBin,
+      NEEDLEFISH_RUNNER: runner,
+      CODEX_BIN: "codex",
+      CLAUDE_BIN: "claude",
+      OPENCODE_BIN: "opencode",
+    };
+    const args = ["--repo", fixture.repo];
+    const dry = runCli(fixture, [...args, "--dry-run", "--json"], env);
+    assert.equal(dry.status, 0, dry.stderr);
+    const summary = parseJsonObject(dry.stdout);
+    assert.deepEqual(summary.changedFiles, [{ path: "app.ts", surface: "source" }]);
+    const capability = summary.capability;
+    assert.ok(isJsonObject(capability));
+    assert.equal(capability.capability, "unresolved");
+    const plain = runCli(fixture, [...args, "--dry-run"], env);
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(plain.stdout, /capability: unresolved;/);
+    const actual = runCli(fixture, args, env);
+    assert.equal(actual.status, 1, actual.stderr);
+    assert.equal(actual.stderr.trim(), `needlefish: ${capability.detail}`);
+    assert.equal(existsSync(fixture.marker), false);
+    assert.equal(existsSync(cacheFile(fixture)), false);
+  });
+}
 
-test("HTTP dry-run and actual review reject the same unsupported small critic before any model call", (t) => {
+test("HTTP dry-run renders its unsupported decision before rejecting the same small critic as actual review", (t) => {
   const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
   const args = ["--repo", fixture.repo, "--runner", "openai"];
   const env = { OPENAI_API_KEY: "local-test-placeholder", OPENAI_BASE_URL: "http://127.0.0.1:1/v1" };
-  const dry = runCli(fixture, [...args, "--dry-run"], env);
   const actual = runCli(fixture, args, env);
-  assert.equal(dry.status, 1, dry.stderr);
   assert.equal(actual.status, 1, actual.stderr);
-  assert.equal(dry.stderr, actual.stderr);
-  assert.match(dry.stderr, /unsupported-capability.*repositoryRead/);
+  for (const format of [[], ["--json"], ["--print-bundle"]]) {
+    const dry = runCli(fixture, [...args, "--dry-run", ...format], env);
+    assert.equal(dry.status, 1, dry.stderr);
+    assert.equal(dry.stderr, actual.stderr);
+    assert.match(dry.stderr, /unsupported-capability.*repositoryRead/);
+    if (format.includes("--json")) {
+      const summary = parseJsonObject(dry.stdout);
+      const capability = summary.capability;
+      assert.ok(isJsonObject(capability));
+      assert.equal(capability.capability, "promptOnly");
+      assert.equal(`needlefish: ${capability.detail}`, dry.stderr.trim());
+      assert.deepEqual(summary.changedFiles, [{ path: "app.ts", surface: "source" }]);
+    } else if (format.includes("--print-bundle")) {
+      assert.match(String(parseJsonObject(dry.stdout).patch), /export const value = 1/);
+    } else {
+      assert.match(dry.stdout, /app\.ts \(source\)/);
+      assert.match(dry.stdout, /capability: unsupported-capability/);
+    }
+  }
   assert.equal(existsSync(fixture.marker), false);
   assert.equal(existsSync(cacheFile(fixture)), false);
 });

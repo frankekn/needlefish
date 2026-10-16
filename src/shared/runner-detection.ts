@@ -17,10 +17,19 @@ export interface ResolvedRunnerBinary {
   readonly path: string | undefined;
 }
 
+export class RunnerSelectionError extends Error {}
+
 export function resolveRunner(opts: RunnerOptions): RunnerName {
   if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+  if (envRunner) {
+    try {
+      return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      throw new RunnerSelectionError(error.message, { cause: error });
+    }
+  }
   return autoDetectRunner();
 }
 
@@ -28,7 +37,7 @@ function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
   }
-  throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
+  throw new RunnerSelectionError(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 
 /**
