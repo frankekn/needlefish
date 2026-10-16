@@ -99,9 +99,10 @@ process.stdin.on('end', () => {
   const name = /"name": "([^"\\n]+)"/.exec(input)[1];
   log({kind:'start', name});
   const expected = Number(fs.readFileSync(${JSON.stringify(path.join(tmp, "limit"))}, 'utf8'));
+  const releaseDeadline = Number(fs.readFileSync(${JSON.stringify(path.join(tmp, "release-deadline"))}, 'utf8'));
   const release = () => {
    const starts = fs.readFileSync(${JSON.stringify(barrier)}, 'utf8').trim().split('\\n').map(JSON.parse).filter(e => e.kind === 'start').length;
-   if (starts < expected) { setTimeout(release, 10); return; }
+   if (starts < expected && Date.now() < releaseDeadline) { setTimeout(release, 10); return; }
    log({kind:'end', name});
    answer({summary:'checked', findings:[], checked:['checked '+name], residual_risks:[]});
   };
@@ -123,6 +124,7 @@ process.stdin.on('end', () => {
 	for (const arm of [3, 7]) {
 		writeFileSync(barrier, "");
 		writeFileSync(path.join(tmp, "limit"), String(arm));
+		writeFileSync(path.join(tmp, "release-deadline"), String(Date.now() + 5000));
 		process.env.NEEDLEFISH_DEEP_CONCURRENCY = String(arm);
 		const result = await review(loaded.bundle, { runner: "codex", model: "fake-offline" });
 		const events: unknown[] = readFileSync(barrier, "utf8").trim().split("\n").map((line) => JSON.parse(line));

@@ -31,7 +31,16 @@ export const study = {
 		NEEDLEFISH_EVAL_TRACE: "1",
 	},
 	capacity: { minimumCores: 8, maximumLoadFraction: 0.5, maximumWaitMs: 1800000 },
-	stopping: { maximumCampaignMs: 86400000, replacementDraws: 0 },
+	stopping: {
+		maximumCampaignMs: 86400000,
+		replacementDraws: 0,
+		underfilledWorkload: {
+			observeAfter: "whole-review-completed", deepCountBelow: 7,
+			outcome: "WORKLOAD_UNDERFILLED", action: "stop-campaign",
+			remainingSlots: "NOT_STARTED_EARLY_STOP", retainDrawAndAllAttempts: true,
+		},
+	},
+	denominators: { plannedWholeReviewsPerArm: 12, notStartedLatency: "unavailable", equalWorkSpeedupOnUnderfill: false },
 };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");

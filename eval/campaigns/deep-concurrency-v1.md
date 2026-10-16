@@ -7,10 +7,32 @@ A successful timing study still needs that full gate before a production change.
 
 ## Freeze the plan
 
-Run `pnpm exec tsx eval/tools/deep-concurrency.ts --plan > plan.json`.
+The committed comparator is `eval/campaigns/deep-concurrency-v1.plan.json`.
+It is the complete `--plan` output, including source, protocol, and generator
+hashes. The plan does not hash itself, which avoids a hash cycle.
+
+On the final study commit, generate two distinct output files before the first
+model call. Both outputs must match the committed
+comparator byte for byte. Record the final commit, comparator SHA-256, both
+comparison receipts, and execution identity in the new private campaign directory.
+A mismatch blocks execution. This replay is an execution admission check, not a
+resident CI requirement that future `main` source files remain at the study pin.
+The resident test checks the committed protocol and generator hashes only.
+
+```sh
+study_plan_dir=$(mktemp -d)
+pnpm exec tsx eval/tools/deep-concurrency.ts --plan > "$study_plan_dir/plan-a.json"
+pnpm exec tsx eval/tools/deep-concurrency.ts --plan > "$study_plan_dir/plan-b.json"
+cmp eval/campaigns/deep-concurrency-v1.plan.json "$study_plan_dir/plan-a.json"
+cmp eval/campaigns/deep-concurrency-v1.plan.json "$study_plan_dir/plan-b.json"
+```
+
 The command only checks local files and creates temporary fixture Git repos.
 It cannot execute a model. Every other argument, including `--run`, fails.
-Commit the plan digest and execution identity before the first study call.
+This PR commits the first plan before any study execution. After registration,
+protocol or generator changes require an explicit new preregistration with a
+new study ID and plan artifact. Preserve this comparator and all existing study
+data. Never silently regenerate this artifact to admit changed study rules.
 Use a new output directory. Never overwrite prior attempts or resume a report
 from another campaign. A changed source, lane, protocol, or dependency requires
 a new study ID and prior approval to use model resources.
@@ -95,7 +117,22 @@ Record the selected ordered hotspots, file membership, tail coverage, and every
 attempt for both arms. A valid equal-work timing comparison requires exactly
 seven deep slots in each review and identical ordered hotspot/file membership
 within every pair. Map and critic must each complete once, with no skipped
-changed file. If any pair differs, report `WORKLOAD_MISMATCH` and no 7-versus-3
+changed file.
+
+The future execution adapter must inspect the retained topology only after each
+whole review completes and all its owned processes drain. On the first completed
+whole review with fewer than seven selected deep slots, record
+`WORKLOAD_UNDERFILLED` and stop the entire remaining campaign. Preserve that draw,
+its terminal artifact, every attempt, and all earlier draws. Mark every remaining
+slot `NOT_STARTED_EARLY_STOP`. Do not stop during map or claim a map result is a
+completed whole review. The current core has no early observer that implements
+this rule. Adapter fake integration must prove the whole-review completion
+boundary, the immediate campaign stop before the next slot, and retained attempts
+before live execution is allowed. A failed or timed-out review without a complete
+topology remains an error or timeout, not a synthetic zero-deep underfill.
+
+Seven-slot reviews with different ordered hotspot/file membership retain the
+`WORKLOAD_MISMATCH` rule. If any pair differs, report `WORKLOAD_MISMATCH` and no 7-versus-3
 speed conclusion. Do not discard that pair and summarize the remaining ones.
 Do not force maps, change prompts, or add calls to repair a mismatch.
 
@@ -115,7 +152,11 @@ cleanup, and capacity waits. Record both and never substitute summed per-call
 durations for wall time. Report all 12 slots per arm in schedule order, with
 completed, timeout, error, and not-started states. Report timeout as censored
 at its elapsed deadline and not-started latency as unavailable. Never assign
-zero latency to either. The completion denominator stays 12.
+zero latency to either. The completion denominator stays 12. An underfilled
+campaign also retains all 12 planned slots per arm, including `NOT_STARTED_EARLY_STOP`. Report its observed
+underfilled draw and its actual latency separately. Unstarted slots have unavailable
+latency and are not successes. Never reduce the denominator to the executed
+prefix, impute zero duration, or claim an equal-work speedup after underfill.
 
 For a complete equal-work campaign, report all paired differences `T7-T3`,
 median difference, and min/max. Also report success-only latency, explicitly
@@ -141,6 +182,9 @@ Run `node --test --import tsx eval/tools/deep-concurrency.test.ts`.
 The test calls the real production `review()` using a local fake Codex process.
 Its map creates six distinct hotspots and leaves a tail. A barrier proves that
 three and seven deep jobs can be in flight respectively, all seven drain,
-and each arm runs nine successful calls before the critic finishes. These
-fake events prove scheduling and call accounting only. Their durations,
+and each arm runs nine successful calls before the critic finishes. The fake
+barrier releases after a shared local five-second deadline if the expected
+concurrency never appears. The observed maximum then fails the arm assertion
+instead of waiting for production runner timeouts. These fake events prove
+scheduling and call accounting only. Their durations,
 verdicts, and absence of provider errors are not model performance evidence.
