@@ -98,7 +98,7 @@ export function parseCodexRoute(raw: unknown): CodexAuthRoute {
     && raw.baseUrl === raw.baseUrl.trim() && !/[\\\s?#]/.test(raw.baseUrl) && !Array.from(raw.baseUrl).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) && !/^https?:\/\/[^/]*@/i.test(raw.baseUrl)
     && Object.keys(raw).every(key => key === "kind" || key === "baseUrl")) {
     let url: URL;
-    try { url = new URL(raw.baseUrl); } catch { throw new Error("Codex proxy route requires a valid non-secret HTTP(S) baseUrl."); }
+    try { url = new URL(raw.baseUrl); decodeURIComponent(raw.baseUrl); } catch { throw new Error("Codex proxy route requires a valid non-secret HTTP(S) baseUrl."); }
     if ((url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.search && !url.hash) {
       return Object.freeze({ kind: "cliproxyapi", baseUrl: raw.baseUrl });
     }
@@ -134,7 +134,10 @@ export class CodexEnvironmentAuth {
     if (Object.values(bound).some(value => value !== undefined && /\s/.test(value))) {
       throw new Error("Selected Codex connection credential contains whitespace. No default account was used.");
     }
-    if (this.#route.kind === "cliproxyapi") this.#auth.assertOutputSafe(this.#route.baseUrl);
+    if (this.#route.kind === "cliproxyapi") {
+      this.#auth.assertOutputSafe(this.#route.baseUrl);
+      this.#auth.assertOutputSafe(decodeURIComponent(this.#route.baseUrl));
+    }
     Object.freeze(this);
   }
 

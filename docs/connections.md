@@ -255,7 +255,8 @@ Each route accepts exactly the target variable shown above. The source is an
 environment variable name, never the key value. Supply the source through your
 trusted launch environment. The proxy URL must use HTTP or HTTPS and must not
 contain credentials, userinfo, a query, or a fragment. Do not put secrets in its
-path or hostname.
+path or hostname. Selected credentials in raw or percent-decoded URLs are rejected
+before launch. Malformed percent encoding is also rejected.
 
 Direct mode rejects an ambient `CODEX_PROXY_BASE_URL`, `CODEX_PROXY_API_KEY`, or
 `NEEDLEFISH_CODEX_PROXY_REQUIRED=1`. Remove those settings or select an explicit

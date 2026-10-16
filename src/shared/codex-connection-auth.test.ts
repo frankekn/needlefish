@@ -22,6 +22,9 @@ const entry = (id = "a", route: unknown = direct, target = "CODEX_API_KEY", sour
   id, adapter: "codex", model: "selected-model", auth: { env: { [target]: source }, route },
 });
 const config = (connections: unknown[]) => ({ version: 1, connections });
+const userinfoUrl = new URL("https://proxy.invalid/v1");
+userinfoUrl.username = "user";
+userinfoUrl.password = "secret";
 
 function fixture(t: TestContext, mode = "success", entries = [entry()]) {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-codex-account-"));
@@ -119,7 +122,7 @@ for (const ambient of [{ CODEX_PROXY_BASE_URL: "http://localhost:1" }, { CODEX_P
   });
 }
 
-for (const [route, target] of [[undefined, "CODEX_API_KEY"], [direct, "CODEX_PROXY_API_KEY"], [proxy, "CODEX_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://@proxy.invalid/v1" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1?" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1#" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://user:secret@proxy.invalid/v1" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1?key=secret" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1#secret" }, "CODEX_PROXY_API_KEY"]] as const) {
+for (const [route, target] of [[undefined, "CODEX_API_KEY"], [direct, "CODEX_PROXY_API_KEY"], [proxy, "CODEX_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1/%zz" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://@proxy.invalid/v1" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1?" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1#" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: userinfoUrl.href }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1?key=secret" }, "CODEX_PROXY_API_KEY"], [{ kind: "cliproxyapi", baseUrl: "https://proxy.invalid/v1#secret" }, "CODEX_PROXY_API_KEY"]] as const) {
   test(`Codex route contract rejects ${JSON.stringify(route)} / ${target}`, () => assert.throws(() => parseConnections(config([{ ...entry("a", route, target), auth: { env: { [target]: "ACCOUNT_A_KEY" }, route } }]))));
 }
 
@@ -200,4 +203,22 @@ test("Codex credential output remains in private trace but absent from public re
   });
   assert.ok(trace.join("\n").includes(keyA));
   assert.equal(f.calls().length, 1);
+});
+
+
+test("Codex refuses a percent-encoded selected credential in the route before spawn", (t) => {
+  const encoded = Array.from(Buffer.from(keyA)).map(byte => `%${byte.toString(16).padStart(2, "0")}`).join("");
+  const route = { kind: "cliproxyapi", baseUrl: `https://proxy.invalid/v1/${encoded}` };
+  const f = fixture(t, "success", [entry("a", route, "CODEX_PROXY_API_KEY")]);
+  assert.throws(() => f.select(), ConnectionCredentialLeakError);
+  assert.deepEqual(f.calls(), []);
+});
+
+
+test("Codex preserves a safe encoded proxy route in the actual child argv", async (t) => {
+  const route = { kind: "cliproxyapi", baseUrl: "https://proxy.invalid/api%2Fv1" };
+  const f = fixture(t, "success", [entry("a", route, "CODEX_PROXY_API_KEY")]);
+  assert.equal(await f.run(), "{}");
+  assert.ok(f.calls()[0].args.includes('model_providers.cliproxyapi.base_url="https://proxy.invalid/api%2Fv1"'));
+  assert.equal(f.calls()[0].env.CODEX_PROXY_API_KEY, keyA);
 });
