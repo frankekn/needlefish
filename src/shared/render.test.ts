@@ -523,7 +523,7 @@ test("renderMarkdown adds the quote-check location note to finding details", () 
 	const matched = renderMarkdown(baseResult([finding("P2", "same", "d.ts", { quoteCheck: { status: "matched" } })]));
 
 	assert.match(moved, /_Location corrected from `a\.ts:9`: the quoted source was found here\._/);
-	assert.match(missing, /_Location unverified: the quoted source was not found in `c\.ts`\._/);
+	assert.match(missing, /_Location unverified: the quoted source could not verify the cited location in `c\.ts`\._/);
 	assert.equal(matched, renderMarkdown(baseResult([finding("P2", "same", "d.ts")])));
 });
 
@@ -539,7 +539,7 @@ test("renderMarkdown folds a bare CR in a hostile path so the note stays one par
 	const out = renderMarkdown(baseResult([finding("P2", "missing", file, { quoteCheck: { status: "not_found" } })]));
 	const note = out.split("\n").find((line) => line.startsWith("_Location unverified"));
 
-	assert.equal(note, "_Location unverified: the quoted source was not found in `` a`b [notice](https://example.invalid) ``._");
+	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
 });
 
 test("renderMarkdown warns when source quotes could not be checked", () => {

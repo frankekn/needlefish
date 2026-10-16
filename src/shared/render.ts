@@ -13,7 +13,7 @@ const SEV_ORDER: Record<Severity, number> = {
 export function quoteNote(finding: Finding): string | null {
 	const check = finding.quoteCheck;
 	if (check?.status === "moved") return `_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`;
-	if (check?.status === "not_found") return `_Location unverified: the quoted source was not found in ${codeSpan(finding.file)}._`;
+	if (check?.status === "not_found") return `_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`;
 	if (check?.status === "unchecked") return "_Location unverified: the quoted source could not be checked._";
 	return null;
 }
