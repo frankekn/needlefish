@@ -373,8 +373,6 @@ review can outlive a fixed head. The check-run is the merge gate — a failed
 review never passes a PR because the check goes `failure`. When a finding
 includes a validated exact replacement, its inline comment carries a native
 GitHub suggestion block; failed validation falls back to a plain comment.
-Inline titles use `**P2 (category): title**`. The adoption tool also reads
-historical `**P2** title` comments and their v1 round-state category metadata.
 
 Skipped reviews — a closed PR, an untrusted author, a head that moved
 mid-review, or an already-reviewed head — still print a machine-readable
