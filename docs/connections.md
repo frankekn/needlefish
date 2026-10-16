@@ -90,8 +90,9 @@ configuration or command arguments. Targets must be `API_KEY`/`TOKEN` or end in
 `_API_KEY`/`_TOKEN`. GitHub/Git orchestration variables cannot be sources or
 targets; process, HOME, executable and routing overrides are not auth bindings.
 
-Selection snapshots only the chosen sources. Missing, empty or invalid values
-stop before launch: no default account, login probe or automatic fallback.
+Selection snapshots only the chosen sources. Missing, empty, invalid or
+whitespace-wrapped values stop before launch: no default account, login probe or
+automatic fallback.
 Retries and all review passes retain the snapshot without changing `process.env`.
 The bound values are private and absent from serialized options, result and cache.
 Runner output is screened against the selected snapshot before admission, including

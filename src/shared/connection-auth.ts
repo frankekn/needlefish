@@ -38,7 +38,7 @@ export class AcpEnvironmentAuth {
     const checked = parseAuthEnvironment(refs);
     this.#values = Object.freeze(Object.fromEntries(Object.entries(checked).map(([target, source]) => {
       const value = Object.hasOwn(env, source) ? env[source] : undefined;
-      if (value === undefined || value.trim() === "" || value.includes("\0")) {
+      if (value === undefined || value === "" || value !== value.trim() || value.includes("\0")) {
         throw new Error("Selected connection credential is missing, empty or invalid. Set its auth.env source variable before retrying; no default account was used.");
       }
       return [target, value];

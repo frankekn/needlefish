@@ -47,7 +47,7 @@ for (const source of [
 ]) {
   test(`auth cannot forward reserved source ${source}`, () => assert.throws(() => parseAuthEnvironment({ AGENT_API_KEY: source })));
 }
-for (const value of [undefined, "", " \n ", "TEST-SECRET\0TAIL"]) {
+for (const value of [undefined, "", " \n ", "TEST-SECRET\0TAIL", " TEST-SECRET", "TEST-SECRET ", "TEST-SECRET\n"]) {
   test(`missing/invalid credential fails without exposing its value (${typeof value}:${value?.length ?? 0})`, () => {
     assert.throws(() => new AcpEnvironmentAuth({ AGENT_API_KEY: "ACCOUNT_A_KEY" }, { ACCOUNT_A_KEY: value }), (error: unknown) => {
       assert.ok(error instanceof Error);

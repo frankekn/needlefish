@@ -318,6 +318,7 @@ test("dry-run validates auth configuration without requiring its credential", (t
 
 for (const [name, overrides, expected] of [
   ["missing account", { ACCOUNT_A_KEY: "" }, /no default account/],
+  ["whitespace-wrapped account", { ACCOUNT_A_KEY: `${keyA}\n` }, /no default account/],
   ["legacy routing passthrough", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "OPENAI_BASE_URL" }, /routing settings/],
 ] as const) {
   test(`CLI ${name} stops before any agent starts`, (t) => {
@@ -325,6 +326,7 @@ for (const [name, overrides, expected] of [
     const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a"], overrides);
     assert.equal(result.status, 1);
     assert.match(result.stderr, expected);
+    assert.doesNotMatch(result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY/);
     assert.equal(f.records().length, 0);
     f.clean();
   });
