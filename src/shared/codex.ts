@@ -297,11 +297,26 @@ function requireAcpEnvCredentials(): void {
 	}
 }
 
+interface PiAuthSelection {
+	readonly provider: string;
+	readonly authMode: "oauth" | "proxy";
+}
+
+function resolvePiAuthSelection(): PiAuthSelection {
+	const provider = process.env.PI_PROVIDER ?? "openai-codex";
+	const authMode = process.env.PI_AUTH_MODE ??
+		(provider === "openai-codex" ? "oauth" : "proxy");
+	if (authMode !== "oauth" && authMode !== "proxy") {
+		throw new Error("PI_AUTH_MODE must be oauth or proxy");
+	}
+	return Object.freeze({ provider, authMode });
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
 // would reject supported configurations that never read it.
-function ephemeralAuthFiles(runner: RunnerName): {
+function ephemeralAuthFiles(runner: RunnerName, piAuth: PiAuthSelection | undefined): {
 	readonly required: readonly string[];
 	readonly optional: readonly string[];
 } {
@@ -368,14 +383,8 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	}
 	// pi: proxy routes keep credentials outside HOME. Every explicit non-default
 	// provider also needs its registry; OAuth routes require Pi's auth store.
-	if (runner === "pi") {
-		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		const authMode =
-			process.env.PI_AUTH_MODE ??
-			(provider === "openai-codex" ? "oauth" : "proxy");
-		if (authMode !== "oauth" && authMode !== "proxy") {
-			throw new Error("PI_AUTH_MODE must be oauth or proxy");
-		}
+	if (piAuth) {
+		const { provider, authMode } = piAuth;
 		if (authMode === "proxy" || hasPiProviderEnvCredential(provider)) {
 			return {
 				required: [".pi/agent/models.json"],
@@ -401,6 +410,7 @@ function ephemeralAuthFiles(runner: RunnerName): {
 export function prepareEphemeralHome(
 	runner: RunnerName,
 	tmp: string,
+	selectedPiAuth?: PiAuthSelection,
 ): string | undefined {
 	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
 	// claude exemption: its credential lookup goes through the macOS Keychain
@@ -417,7 +427,8 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
-	const { required, optional } = ephemeralAuthFiles(runner);
+	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
+	const { required, optional } = ephemeralAuthFiles(runner, piAuth);
 	if (!realHome) {
 		// No source HOME is only a problem when something must be staged from
 		// it: an env-authenticated mode (required empty) is independently valid,
@@ -486,8 +497,8 @@ export function prepareEphemeralHome(
 		// this only stops default-path resolution; a same-uid child that
 		// hunts absolute paths can still read the real HOME. Detection of
 		// that behavior is G3's job (bait + canary), not G1's.
-		if (runner === "pi" && rel === ".pi/agent/auth.json") {
-			const provider = process.env.PI_PROVIDER ?? "openai-codex";
+		if (piAuth && rel === ".pi/agent/auth.json") {
+			const { provider } = piAuth;
 			let auth: unknown;
 			try {
 				auth = JSON.parse(readFileSync(src, "utf8"));
@@ -562,7 +573,6 @@ interface RunnerInvocation {
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
-	readonly codexEffort: CodexReasoningEffort | undefined;
 	readonly codexServiceTier: string | undefined;
 	readonly piProvider: string | undefined;
 	readonly timeoutMs: number;
@@ -607,10 +617,9 @@ export interface EffectiveRunnerConfig {
 	readonly reasoningEffort: string | undefined;
 	readonly effectiveEffort: string | undefined;
 	readonly timeoutMs: number;
-	readonly codexEffort: CodexReasoningEffort | undefined;
 	readonly codexServiceTier: string | undefined;
 	readonly codexProxy: CodexProxyConfig | undefined;
-	readonly piProvider: string | undefined;
+	readonly piAuth: PiAuthSelection | undefined;
 }
 
 export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig {
@@ -622,21 +631,19 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 		const model = runner === "acp" ? undefined :
 			runner === "opencode" && configuredModel && effort && effort !== "default"
 				? `${configuredModel.split("#")[0]}#${effort}` : configuredModel;
-		const codexEffort = runner === "codex" ? resolveCodexReasoningEffort() : undefined;
 		const effectiveEffort = runner === "acp" || runner === "openai" ? undefined :
-			runner === "codex" ? effort ?? codexEffort :
+			runner === "codex" ? effort ?? resolveCodexReasoningEffort() :
 			runner === "pi" ? resolvePiThinking(effort) :
 			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
 		return Object.freeze({
 			runner,
 			model,
-			reasoningEffort: opts.reasoningEffort,
+			reasoningEffort: runner === "codex" ? effectiveEffort : opts.reasoningEffort,
 			effectiveEffort,
 			timeoutMs: opts.timeoutMs ?? timeoutMsFor(runner),
-			codexEffort,
 			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
 			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
-			piProvider: runner === "pi" ? process.env.PI_PROVIDER ?? "openai-codex" : undefined,
+			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
 		});
 	} catch (error) {
 		throw asRunnerOperationalError(error);
@@ -755,7 +762,7 @@ async function runCodexOnce(
 		const { invocation, sandbox } = (() => {
 			try {
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp);
+				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.piAuth);
 				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
@@ -774,9 +781,8 @@ async function runCodexOnce(
 						repoPath: sandbox.repoPath,
 						model,
 						reasoningEffort: config.reasoningEffort,
-						codexEffort: config.codexEffort,
 						codexServiceTier: config.codexServiceTier,
-						piProvider: config.piProvider,
+						piProvider: config.piAuth?.provider,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
@@ -1229,7 +1235,7 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const reasoningEffort = invocation.codexEffort;
+	const reasoningEffort = invocation.reasoningEffort;
 	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
@@ -1263,8 +1269,6 @@ async function runCodexCli(
 	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
-	if (invocation.reasoningEffort)
-		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
 		command: requireRunnerCommand("codex"),

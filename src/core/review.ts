@@ -1125,9 +1125,11 @@ export async function review(
 	// never consumes reviewDeadlineMs, so an invalid NEEDLEFISH_REVIEW_TIMEOUT_MS
 	// must not turn a docs-only review that would have passed into a throw.
 	const reviewTimeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
-	const reviewDeadlineMs = reviewTimeout
-		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
-		: undefined;
+	const reviewBudgetMs = reviewTimeout
+		? parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
+		: null;
+	const reviewDeadlineMs = reviewBudgetMs === null
+		? undefined : performance.now() + reviewBudgetMs;
 
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace
 		? { failed: false, pending: new Set() }
@@ -1135,7 +1137,7 @@ export async function review(
 	const run: ReviewRun = {
 		bundle,
 		runnerConfig,
-		runtime: reviewRuntime(runnerConfig, reviewTimeout ? Number(reviewTimeout) : null),
+		runtime: reviewRuntime(runnerConfig, reviewBudgetMs),
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],

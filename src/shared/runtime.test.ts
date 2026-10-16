@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -103,7 +103,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   chmodSync(bin, 0o755);
   environment(t, {
     CODEX_BIN: bin, NEEDLEFISH_RUNNER: "codex", NEEDLEFISH_MODEL: "first-model",
-    CODEX_REASONING_EFFORT: "high", NEEDLEFISH_TIMEOUT_MS: "30000", NEEDLEFISH_REVIEW_TIMEOUT_MS: "60000",
+    CODEX_REASONING_EFFORT: "medium", NEEDLEFISH_TIMEOUT_MS: "30000", NEEDLEFISH_REVIEW_TIMEOUT_MS: "60000",
     CODEX_PROXY_BASE_URL: undefined, CODEX_PROXY_API_KEY: undefined, NEEDLEFISH_CODEX_PROXY_REQUIRED: undefined,
     NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1",
   });
@@ -112,7 +112,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
     patchStat: "app.ts | 1 +", changedFiles: [{ path: "app.ts", surface: "source" }],
     agentsMd: "(none)", prMeta: null, deep: false, focus: null,
   };
-  const result = await review(bundle, {}, undefined, () => {
+  const result = await review(bundle, { reasoningEffort: "high" }, undefined, () => {
     process.env.NEEDLEFISH_RUNNER = "acp";
     process.env.NEEDLEFISH_MODEL = "next-model";
     process.env.CODEX_REASONING_EFFORT = "xhigh";
@@ -135,7 +135,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
     assert.ok(typeof call === "object" && call !== null && "args" in call && "prompt" in call);
     assert.ok(Array.isArray(call.args));
     assert.equal(call.args[call.args.indexOf("-m") + 1], "first-model");
-    assert.ok(call.args.includes('model_reasoning_effort="high"'));
+    assert.deepEqual(call.args.filter((arg: unknown) => typeof arg === "string" && arg.startsWith("model_reasoning_effort=")), ['model_reasoning_effort="high"']);
     assert.equal(typeof call.prompt, "string");
     assert.equal(String(call.prompt).includes('"runtime"'), false);
     assert.equal(String(call.prompt).includes("launcherDigest"), false);
@@ -195,3 +195,63 @@ test("ACP review runtime stays unknown even when a caller supplies model and eff
   assert.equal(requests.includes("launcherDigest"), false);
   assert.deepEqual(result.stats?.map((stat) => stat.model), [undefined, undefined]);
 });
+
+for (const scenario of [
+  { name: "provider", provider: "next-provider", authMode: "oauth", initialAuthMode: "oauth", stagedAuth: true },
+  { name: "OAuth mode", provider: "initial-provider", authMode: "proxy", initialAuthMode: "oauth", stagedAuth: true },
+  { name: "proxy mode", provider: "initial-provider", authMode: "oauth", initialAuthMode: "proxy", stagedAuth: false },
+]) {
+  test(`Pi review freezes ${scenario.name} before progress callbacks`, async (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-pi-"));
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const repo = initRepo(tmp);
+    const fakeHome = path.join(tmp, "source-home");
+    const authDir = path.join(fakeHome, ".pi", "agent");
+    mkdirSync(authDir, { recursive: true });
+    writeFileSync(path.join(authDir, "models.json"), "{}");
+    writeFileSync(path.join(authDir, "auth.json"), JSON.stringify({
+      "initial-provider": { type: "oauth", access: "initial-sentinel" },
+      "next-provider": { type: "oauth", access: "next-sentinel" },
+    }));
+    const bin = path.join(tmp, "pi.cjs");
+    const capture = path.join(tmp, "calls.jsonl");
+    writeFileSync(bin, [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "fs.readFileSync(0, 'utf8');",
+      "const authFile = path.join(process.env.HOME, '.pi', 'agent', 'auth.json');",
+      "const auth = fs.existsSync(authFile) ? JSON.parse(fs.readFileSync(authFile, 'utf8')) : null;",
+      `fs.appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ args: process.argv.slice(2), auth }) + '\\n');`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['Pi checked'], residual_risks: [] }));",
+    ].join("\n"));
+    chmodSync(bin, 0o755);
+    environment(t, {
+      PI_BIN: bin, PI_PROVIDER: "initial-provider", PI_AUTH_MODE: scenario.initialAuthMode,
+      HOME: fakeHome, NEEDLEFISH_EPHEMERAL_HOME: "1", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1",
+      NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: undefined,
+    });
+    const result = await review({
+      repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
+      changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
+    }, { runner: "pi", timeoutMs: 5000 }, undefined, () => {
+      process.env.PI_PROVIDER = scenario.provider;
+      process.env.PI_AUTH_MODE = scenario.authMode;
+    });
+    assert.equal(result.verdict, "pass");
+    assert.equal(result.runtime?.runner, "pi");
+    const calls: unknown = readFileSync(capture, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.ok(Array.isArray(calls));
+    assert.equal(calls.length, 2);
+    for (const call of calls) {
+      assert.ok(typeof call === "object" && call !== null && "args" in call && "auth" in call);
+      assert.ok(Array.isArray(call.args));
+      assert.equal(call.args[call.args.indexOf("--provider") + 1], "initial-provider");
+      assert.deepEqual(call.auth, scenario.stagedAuth ? { "initial-provider": { type: "oauth", access: "initial-sentinel" } } : null);
+    }
+    const published = serializeReviewResult(result) + renderMarkdown(result);
+    for (const privateValue of ["initial-provider", "next-provider", "initial-sentinel", "next-sentinel", fakeHome]) {
+      assert.equal(published.includes(privateValue), false);
+    }
+  });
+}

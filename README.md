@@ -635,6 +635,7 @@ files; Needlefish copies only those files into the disposable runner HOME.
 ## Runtime metadata
 
 Review JSON and cached results include optional, output-only `runtime` metadata.
+Docs-only fast-path reviews omit it because no model runner is selected or called.
 It records the runner, public model selector, effort, prompt hash and timeout
 resolved for that review. `known` describes an observed invocation value, not a
 provider's resolved model identity. Release manifest source SHAs are
