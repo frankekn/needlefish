@@ -14,7 +14,7 @@ on:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         required: false
         default: codex
       model:
@@ -24,7 +24,7 @@ on:
         description: Optional per-call timeout in milliseconds
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
@@ -52,7 +52,7 @@ on:
         type: string
         required: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         type: string
         required: false
         default: codex
@@ -65,7 +65,7 @@ on:
         type: string
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         type: string
         required: false
       codex_reasoning_effort:

@@ -42,8 +42,8 @@ validation, duplicate behavior — never style.
 
 Small PRs get a review pass plus an adversarial critic; large PRs add map and
 deep passes before the same critic. Codex is the default runner — Claude
-Code, opencode, OpenAI-compatible HTTP, Grok, pi, and ACP agents are
-supported too.
+Code, OpenAI-compatible HTTP, Grok, pi, and ACP agents are supported too.
+OpenCode reviews are temporarily unavailable as explained below.
 
 <p align="center">
   <img src="assets/demo.png" alt="A real needlefish inline review comment: a P0 authorization bug caught on the diff" width="880">
@@ -65,6 +65,8 @@ isolation verification before this lane can be enabled. See [issue #207](https:/
 To reproduce the integration check with an already installed CLI, run
 `NEEDLEFISH_OPENCODE_INTEGRATION_BIN=/path/to/opencode node --test --import tsx src/shared/opencode-isolation.test.ts`.
 The test uses no provider credentials and writes only inside its temporary fixture.
+Default CI skips this optional integration. The nonexistent provider is expected
+to fail after plugin startup.
 
 ## Quick start
 
@@ -256,7 +258,6 @@ needlefish pr 123 --repo /path/to/some-repo    # review the PR ref itself
 
 ```bash
 needlefish --repo /path/to/some-repo --runner claude
-needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
 ```
 
@@ -403,16 +404,16 @@ composite action on GitHub-hosted `ubuntu-latest`.
 | -------- | --------- |
 | codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY` |
-| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
+| opencode | unavailable until startup isolation is verified (#207) |
 | pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
 
-The hosted install step only accepts `codex`, `claude`, `opencode`, or `pi`.
+The hosted install step only accepts `codex`, `claude`, or `pi`.
+Selecting `opencode` fails before its CLI is installed or authenticated (#207).
 `grok` and `acp` are CLI runners and `openai` is HTTP — the hosted action
 installs none of them, and passing `runner: grok` (or `openai` / `acp`) fails
 that install step; use the self-hosted workflow below for Grok 4.5. Claude's
-auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and opencode's
-`OPENAI_API_KEY` are allowlisted through to the runner subprocess; other
-providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
+auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) are allowlisted
+through to the runner subprocess. Other providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 [subprocess environment](#subprocess-environment)).
 
 **Inputs** (all optional): `pr_number` (defaults to the event PR), `runner`
@@ -423,7 +424,7 @@ providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 
 **Runner versions:** when `runner_version` is omitted, the action installs
 the latest release of the selected runner's CLI (`@openai/codex`,
-`@anthropic-ai/claude-code`, `@opencode/cli`, or
+`@anthropic-ai/claude-code`, or
 `@earendil-works/pi-coding-agent`). Pass an explicit version to pin one.
 
 **Cost and behavior:**
@@ -517,9 +518,10 @@ mode; `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1` is its override.
 
 ## Runners
 
-`--runner` / `NEEDLEFISH_RUNNER` accepts `codex`, `claude`, `opencode`,
-`openai`, `grok`, `pi`, or `acp`; `src/shared/codex.ts` invokes the selected
-runner. Common options:
+`--runner` / `NEEDLEFISH_RUNNER` accepts `codex`, `claude`, `openai`,
+`grok`, `pi`, or `acp`. The `opencode` name remains recognized but unavailable,
+including explicit docs-only reviews and dry runs. `src/shared/codex.ts` invokes
+the selected available runner. Common options:
 
 | option | env | default |
 | --- | --- | --- |
@@ -530,7 +532,7 @@ runner. Common options:
 | shared review deadline | `NEEDLEFISH_REVIEW_TIMEOUT_MS` | unset |
 | single attempt per call | `NEEDLEFISH_NO_RETRY` | unset (`1` = on) |
 | termination grace | `NEEDLEFISH_TERMINATION_GRACE_MS` | `5000` |
-| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | the smaller of the per-call timeout and `600000` |
+| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | inactive while OpenCode reviews are disabled |
 
 `NEEDLEFISH_REVIEW_TIMEOUT_MS` sets one monotonic deadline for the model pipeline.
 Every map/review, deep, critic, JSON repair and process retry shares it; each
@@ -558,15 +560,13 @@ at the grace so a hung `gh` cannot hold the process. Keep the grace below the
 caller's forced kill: GitHub Actions sends SIGINT, SIGTERM 7.5 s later, then
 kills 2.5 s after that.
 
-The opencode idle deadline resets whenever the CLI emits stdout or stderr. If
-a provider stream stops producing output, Needlefish terminates that attempt
-and uses the normal runner retry instead of waiting for an extended per-call
-timeout. An attempt that runs out its whole per-attempt timeout is not retried:
-a second attempt would wait out the same stuck upstream and double the pass.
+An attempt that exhausts its per-attempt timeout is not retried. A second
+attempt would wait out the same stuck upstream and double the pass.
 
-When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
-`claude`, or `opencode` can be found, Needlefish exits with install commands
-for those three CLIs instead of a stack trace. Auto-detect does not look for
+When neither `--runner` nor `NEEDLEFISH_RUNNER` is set, automatic selection
+looks for `codex`, then `claude`. If only OpenCode is found, Needlefish explains
+its temporary restriction and issue #207. If none is found, it prints install
+commands for Codex and Claude Code. Automatic selection does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
 The `openai` HTTP runner has no repository-reading tools. It supports small
@@ -583,7 +583,7 @@ blank (values are trimmed):
 | --- | --- | --- |
 | `codex` | `CODEX_BIN` (`codex`) | `CODEX_MODEL`, `CODEX_TIMEOUT_MS`, `CODEX_RETRY_MS`, `CODEX_REASONING_EFFORT`; proxy `CODEX_PROXY_BASE_URL`, `CODEX_PROXY_API_KEY`, `NEEDLEFISH_CODEX_PROXY_REQUIRED=1` |
 | `claude` | `CLAUDE_BIN` (`claude`) | `CLAUDE_MODEL`; auth `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` |
-| `opencode` | `OPENCODE_BIN` (`opencode`) | `OPENCODE_MODEL`; auth `OPENAI_API_KEY` |
+| `opencode` | unavailable (#207) | existing binary, model, timeout and auth settings are inactive |
 | `grok` | `GROK_BIN` (`grok`) | `GROK_MODEL` |
 | `pi` | `PI_BIN` (`pi`) | `PI_MODEL`, `PI_PROVIDER` (default `openai-codex`), `PI_AUTH_MODE` (`oauth` or `proxy`; defaults to OAuth for `openai-codex`, proxy for an explicit provider) |
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
@@ -627,7 +627,7 @@ labels; both are executable Git refs inside the disposable clone.
 
 ### Subprocess environment
 
-Runner CLIs (`codex`, `claude`, `opencode`, `grok`, `pi`, `acp`) are spawned
+Available runner CLIs (`codex`, `claude`, `grok`, `pi`, `acp`) are spawned
 with an allowlisted environment, not the full parent `process.env` — only
 locale/proxy/path basics plus each runner's own `_BIN`/`_MODEL`-style
 variables are passed through. To pass an additional variable to the runner
@@ -648,8 +648,7 @@ files; Needlefish copies only those files into the disposable runner HOME.
 ## Development
 
 Requires Node 20+, Corepack (recommended) or the pinned pnpm from
-`packageManager`, one supported model CLI authed locally (Codex, Claude Code,
-or opencode), and the GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action
+`packageManager`, one supported model CLI authed locally (Codex or Claude Code), and the GitHub CLI (`gh`) for `--pr`, `pr`, and GitHub Action
 mode.
 
 ```bash

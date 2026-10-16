@@ -7,7 +7,7 @@ inputs:
     description: PR number to review (defaults to the pull_request event PR)
     required: false
   runner:
-    description: "Model runner: codex, claude, opencode, or pi"
+    description: "Model runner: codex, claude, or pi. OpenCode is temporarily disabled (#207)."
     required: false
     default: codex
   model:
@@ -122,7 +122,7 @@ runs:
         case "$NF_RUNNER" in
           codex) pkg="@openai/codex" ;;
           claude) pkg="@anthropic-ai/claude-code" ;;
-          opencode) pkg="@opencode/cli" ;;
+          opencode) echo "OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose codex, claude, or pi; see issue #207." >&2; exit 1 ;;
           # @mariozechner/pi ships its bin as `pi-pods`, not `pi`; the successor package
           # from the same author installs a `pi` bin, which this action expects.
           pi) pkg="@earendil-works/pi-coding-agent" ;;

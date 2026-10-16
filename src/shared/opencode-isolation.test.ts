@@ -4,6 +4,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { review } from "../core/review.js";
+import type { Bundle } from "./schema.js";
 import { localDryRun, localPrDryRun } from "../adapters/local.js";
 import { runCodex, RunnerOperationalError } from "./codex.js";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures.js";
@@ -61,7 +63,7 @@ test("real OpenCode committed target plugin cannot write outside the review clon
   assert.equal(version.status, 0);
   assert.match(version.stdout, /opencode v2\./);
   t.diagnostic(version.stdout.trim());
-  await spawnRunnerProcess({
+  const startup = await spawnRunnerProcess({
     command: integrationBin,
     args: ["run", "--standalone", "--format", "json", "--model", "needlefish-nonexistent-provider/nonexistent-model", "Read-only review. Do not load project plugins."],
     stdin: "",
@@ -69,6 +71,7 @@ test("real OpenCode committed target plugin cannot write outside the review clon
     timeoutMs: 20000,
     env,
   });
+  assert.notEqual(startup.status, 0, "the intentionally nonexistent provider must fail");
   assert.equal(existsSync(marker), true, "the real CLI must reproduce plugin startup without model credentials");
   rmSync(marker);
   Object.assign(process.env, { OPENCODE_BIN: integrationBin, HOME: home, USERPROFILE: home, NEEDLEFISH_EPHEMERAL_HOME: "1", OPENAI_API_KEY: "dummy-local-proof-not-a-credential" });
@@ -76,4 +79,23 @@ test("real OpenCode committed target plugin cannot write outside the review clon
   await assert.rejects(() => runCodex("Read-only review. Do not load project plugins.", { runner: "opencode", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 20000, model: "needlefish-nonexistent-provider/nonexistent-model" }), /OpenCode reviews are temporarily disabled/);
   assert.equal(existsSync(marker), false);
   t.diagnostic("unprotected startup marker: true; Needlefish startup marker: false");
+});
+
+test("docs-only validates explicit unavailable runners while preserving runner-free review", async (t) => {
+  const previous = captureEnv(["NEEDLEFISH_RUNNER", "NEEDLEFISH_NO_FAST_PATH", "PATH"]);
+  t.after(() => restoreEnv(previous));
+  delete process.env.NEEDLEFISH_RUNNER;
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  process.env.PATH = "";
+  const bundle: Bundle = {
+    repoPath: "/unused/docs-only", baseSha: "base", headSha: "head",
+    patch: "diff --git a/README.md b/README.md\n+docs\n", patchStat: "README.md | 1 +",
+    changedFiles: [{ path: "README.md", surface: "docs" }], agentsMd: "(none)",
+    prMeta: null, deep: false, focus: null,
+  };
+  assert.equal((await review(bundle)).verdict, "pass");
+  await assert.rejects(() => review(bundle, { runner: "opencode" }), /OpenCode reviews are temporarily disabled/);
+  process.env.NEEDLEFISH_RUNNER = "opencode";
+  await assert.rejects(() => review(bundle), /OpenCode reviews are temporarily disabled/);
+  assert.equal((await review(bundle, { runner: "codex" })).verdict, "pass");
 });

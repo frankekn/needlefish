@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { parse } from "yaml";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -129,7 +131,6 @@ test("hosted action installs the latest runner CLI unless runner_version pins on
     {
       codex: "@openai/codex",
       claude: "@anthropic-ai/claude-code",
-      opencode: "@opencode/cli",
       // @mariozechner/pi installs its bin as `pi-pods`, so the action's `pi` invocation could
       // never resolve. The successor package from the same author is what ships a `pi` bin.
       pi: "@earendil-works/pi-coding-agent",
@@ -152,4 +153,17 @@ test("hosted action defaults Codex reviews to Terra high", () => {
   assert.match(action, /RUNNER_INPUT" = "codex" \]; then MODEL_INPUT="gpt-5\.6-terra"/);
   assert.match(action, /gpt-5\.6-terra\) CODEX_REASONING_EFFORT="high"/);
   assert.match(action, /gpt-5\.6-sol\) CODEX_REASONING_EFFORT="medium"/);
+});
+
+test("hosted action refuses OpenCode before it can install a model CLI", () => {
+  const action = parse(readFileSync("action.yml", "utf8"));
+  const install = action.runs.steps.find((step) => step.name === "Install model runner CLI");
+  assert.ok(install);
+  const result = spawnSync("bash", ["-c", `npm() { echo "unexpected npm invocation"; }
+${install.run}`], {
+    encoding: "utf8", timeout: 1000, env: { PATH: process.env.PATH, NF_RUNNER: "opencode" },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /OpenCode reviews are temporarily disabled.*issue #207/);
+  assert.equal(result.stdout, "");
 });

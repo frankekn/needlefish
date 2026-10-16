@@ -180,6 +180,13 @@ test("doctor refuses suspended opencode without probing its executable or creden
   assert.equal(report.ok, false);
   assert.match(check(report, "runner").detail, /OpenCode reviews are temporarily disabled/);
   assert.equal(check(report, "auth").status, "unknown");
+  assert.equal(check(report, "runner").fix, "Set --runner or NEEDLEFISH_RUNNER to codex or claude; see issue #207.");
+  delete process.env.NEEDLEFISH_RUNNER;
+  const detected = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.equal(detected.ok, false);
+  assert.match(check(detected, "runner").detail, /OpenCode reviews are temporarily disabled/);
+  assert.equal(check(detected, "runner").fix, check(report, "runner").fix);
+  assert.equal(check(detected, "auth").status, "unknown");
   assert.equal(existsSync(marker), false);
 });
 

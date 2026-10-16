@@ -87,7 +87,7 @@ test("auto-detection preserves codex then claude priority and skips suspended op
     assert.equal(resolveRunner({}), expected);
     rmSync(path.join(dir, expected));
   }
-  assert.throws(() => resolveRunner({}), { message: EXPECTED_INSTALL_MESSAGE });
+  assert.throws(() => resolveRunner({}), /OpenCode reviews are temporarily disabled/);
 });
 
 for (const [name, env] of [

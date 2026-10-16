@@ -122,6 +122,8 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
       const binary = resolveRunnerBinary(candidate.name);
       if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected", probeCwd);
     }
+    const unavailable = RUNNER_CATALOG.find((candidate) => "reviewUnavailableReason" in candidate && resolveRunnerBinary(candidate.name)?.path !== undefined);
+    if (unavailable !== undefined) return selectRunner(unavailable.name, probeCwd);
     const [summary, ...installLines] = NO_AUTO_DETECTED_RUNNER_MESSAGE.split("\n");
     return {
       check: { name: "runner", status: "fail", detail: summary, fix: installLines.join("\n") },
@@ -131,7 +133,7 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
   const definition = RUNNER_DEFINITIONS[runner];
   if (definition.reviewUnavailableReason !== undefined) {
     return {
-      check: { name: "runner", status: "fail", detail: definition.reviewUnavailableReason },
+      check: { name: "runner", status: "fail", detail: definition.reviewUnavailableReason, fix: "Set --runner or NEEDLEFISH_RUNNER to codex or claude; see issue #207." },
       selection: { kind: "unavailable" },
     };
   }

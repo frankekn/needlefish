@@ -29,6 +29,10 @@ function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
   }
+  for (const runner of RUNNER_CATALOG) {
+    if (!("reviewUnavailableReason" in runner)) continue;
+    if (resolveRunnerBinary(runner.name)?.path !== undefined) throw new Error(runner.reviewUnavailableReason);
+  }
   throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 

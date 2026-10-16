@@ -41,7 +41,8 @@ Needlefish 會在 merge 前審查你的 diff，只回報真正的缺陷——錯
 
 小型 PR 會執行審查加對抗式 critic；大型 PR 會先加上 map 與 deep 階段，
 再交給相同的 critic。Codex 是預設 runner——也支援 Claude Code、
-opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
+OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
+OpenCode 暫停審查，原因如下。
 
 <p align="center">
   <img src="assets/demo.png" alt="needlefish 真實的 inline review comment：在 diff 上抓到 P0 授權缺陷" width="880">
@@ -51,10 +52,17 @@ opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
   <sub>目前部署 lane（GPT-5.6 Terra，high effort）在植入缺陷的 eval fixture 上的真實 finding——<a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>。</sub>
 </p>
 
+OpenCode 審查目前停用，包括自動選擇、明確指定的純文件審查與 dry-run。
+已驗證 v2.0.22 與 v2.0.30 會在啟動時執行目標 repo 的外掛。
+v2.0.30 雖可停用專案設定探索，仍會載入系統外掛與管理設定。
+`--standalone` 和臨時 HOME 無法提供完整隔離。既有認證檔案保留。
+請用 `--runner` 明確選擇其他 runner。Needlefish 不會自動切換 provider。
+未來版本須重新驗證隔離契約，才能恢復此 runner。詳見 [issue #207](https://github.com/frankekn/needlefish/issues/207)。
+
 ## 快速開始
 
 **本機**——在要審查的 git repo 內執行。需要 Node 20 以上，以及一個已登
-入的 runner CLI（`codex`、`claude` 或 `opencode`）位於 `PATH`：
+入的 runner CLI（`codex` 或 `claude`）位於 `PATH`：
 
 ```bash
 npx needlefish
@@ -224,7 +232,6 @@ needlefish pr 123 --repo /path/to/some-repo    # review the PR ref itself
 
 ```bash
 needlefish --repo /path/to/some-repo --runner claude
-needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
 NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
 ```
 
@@ -311,14 +318,15 @@ review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶�
 | -------- | ------ |
 | codex    | `CODEX_AUTH_JSON`（已登入的 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY` |
-| opencode | 所選模型的 provider key（例如 `OPENAI_API_KEY`） |
+| opencode | 隔離契約未驗證前停用（#207） |
 | pi       | `PI_AUTH_JSON`（已登入的 `~/.pi/agent/auth.json` 內容） |
 
-hosted 安裝步驟只接受 `codex`、`claude`、`opencode` 或 `pi`。`grok` 與
+hosted 安裝步驟只接受 `codex`、`claude` 或 `pi`。
+指定 `opencode` 會在安裝或認證該 CLI 前拒絕（#207）。`grok` 與
 `acp` 是 CLI runner，`openai` 是 HTTP——hosted action 都不會安裝，傳入
 `runner: grok`（或 `openai`／`acp`）會在該安裝步驟失敗；Grok 4.5 請使
 用下方的 self-hosted workflow。Claude 的認證變數（`ANTHROPIC_API_KEY`、
-`CLAUDE_CODE_OAUTH_TOKEN`）與 opencode 的 `OPENAI_API_KEY` 在 runner
+`CLAUDE_CODE_OAUTH_TOKEN`）在 runner
 subprocess 的 allowlist 內；其他 provider 的 key 需要
 `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見
 [Runner subprocess 環境](#runner-subprocess-環境)）。
@@ -330,7 +338,7 @@ subprocess 的 allowlist 內；其他 provider 的 key 需要
 （預設 `false`）。
 
 **Runner 版本：** 未設定 `runner_version` 時，action 會安裝所選 runner
-CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cli`
+CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`
 或 `@earendil-works/pi-coding-agent`）。要固定版本時，傳入明確版本即可。
 
 **成本與行為：**
@@ -418,31 +426,29 @@ dispatch `review.yml` 即可審查。Reconciliation 永遠不會設定這個 inp
 
 ## Runners
 
-`--runner`／`NEEDLEFISH_RUNNER` 可為 `codex`、`claude`、`opencode`、
-`openai`、`grok`、`pi` 或 `acp`；`src/shared/codex.ts` 負責呼叫所選
+`--runner`／`NEEDLEFISH_RUNNER` 可為 `codex`、`claude`、
+`openai`、`grok`、`pi` 或 `acp`。`opencode` 名稱保留，但目前不可用。`src/shared/codex.ts` 負責呼叫所選
 runner。共通選項：
 
 | 選項 | 環境變數 | 預設 |
 | --- | --- | --- |
-| runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude`、`opencode` |
+| runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude` |
 | model | `NEEDLEFISH_MODEL` | runner 預設值 |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `high`） |
 | timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000`（20 分鐘） |
-| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
+| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | OpenCode 停用期間不生效 |
 
-opencode 的 idle deadline 在 CLI 每次產生 stdout 或 stderr 時重設。若
-provider stream 停止產生輸出，Needlefish 會終止該 attempt 並使用既有的
-runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt timeout
-用完的 attempt 不會重試：第二次只會再等同一個卡住的上游，把單次 pass 拉長一倍。
+整個 per-attempt timeout 用完的 attempt 不會重試。第二次只會再等同一個
+卡住的上游，把單次 pass 拉長一倍。
 
-當 `--runner` 與 `NEEDLEFISH_RUNNER` 都未設定，且找不到 `codex`、
-`claude` 或 `opencode` 時，Needlefish 會輸出這三個 CLI 的安裝指令後結
-束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
-`acp`。
+當 `--runner` 與 `NEEDLEFISH_RUNNER` 都未設定，會依序尋找 `codex`、
+`claude`。若只有 OpenCode，會說明停用原因與 issue #207。
+兩者皆找不到時，會輸出 Codex 與 Claude Code 的安裝指令。
+自動偵測不會尋找 `grok`、`pi`、`openai` 或 `acp`。
 
 `openai` HTTP runner 沒有讀取 repo 的工具，只支援小型完整 diff 審查。
 `--deep` 與自動判定的大型審查會在 HTTP request 前拒絕；請改用具工具
-能力的 CLI runner。純文件 fast path 仍可搭配任何 runner。
+能力的 CLI runner。純文件 fast path 仍支援可用的 runner。
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
@@ -453,7 +459,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 | --- | --- | --- |
 | `codex` | `CODEX_BIN`（`codex`） | `CODEX_MODEL`、`CODEX_TIMEOUT_MS`、`CODEX_RETRY_MS`、`CODEX_REASONING_EFFORT`；proxy `CODEX_PROXY_BASE_URL`、`CODEX_PROXY_API_KEY`、`NEEDLEFISH_CODEX_PROXY_REQUIRED=1` |
 | `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
-| `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
+| `opencode` | 停用（#207） | 既有 binary、model、timeout 與認證設定不生效 |
 | `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
 | `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`）、`PI_AUTH_MODE`（`oauth` 或 `proxy`；`openai-codex` 預設 OAuth，明確指定 provider 時預設 proxy） |
 | `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
@@ -470,8 +476,7 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
   `--no-session-persistence`。
 - **Grok：** `--always-approve --permission-mode bypassPermissions
   --no-plan --sandbox off`。
-- **opencode：** headless 模式的 `--auto`，並以 inline `permission:
-  "allow"` override 其 global 與 build-agent 權限。
+- **opencode：** 啟動前拒絕，待完整設定隔離重新驗證後才恢復（#207）。
 - **pi：** `--no-session --mode text --provider openai-codex --thinking
   <level>` 與預設完整 toolset。
 - **ACP：** 從 `NEEDLEFISH_ACP_BIN` 以 stdio 執行的 JSON-RPC 2.0 Agent
@@ -496,7 +501,7 @@ commit 時，`EMPTY` 指向空白基準 commit。結果 JSON 保留這些標記�
 
 ### Runner subprocess 環境
 
-Runner CLI（`codex`、`claude`、`opencode`、`grok`、`pi`、`acp`）以
+可用的 Runner CLI（`codex`、`claude`、`grok`、`pi`、`acp`）以
 allowlist 環境啟動，而非完整的 parent `process.env`——只有
 locale／proxy／path 基礎變數加上各 runner 自己的 `_BIN`／`_MODEL` 類變
 數會被傳入。若要額外傳遞變數給 runner subprocess，設定
@@ -516,7 +521,7 @@ disposable runner HOME。
 ## 開發環境安裝
 
 需要 Node 20 以上、Corepack（建議）或 `packageManager` 指定的 pnpm、一
-個本機已登入的支援模型 CLI（Codex、Claude Code 或 opencode），以及
+個本機已登入的支援模型 CLI（Codex 或 Claude Code），以及
 GitHub CLI（`gh`，供 `--pr`、`pr` 與 GitHub Action 模式使用）。
 
 ```bash
