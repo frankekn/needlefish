@@ -29,11 +29,12 @@ const step = workflow.match(
 assert.ok(step, "Needlefish review step must exist");
 const script = workflowRun(workflow, "review", "Needlefish review");
 
-function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false, codexBinValue, recheck = "" } = {}) {
+function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false, codexBinValue, recheck = "", appId = "" } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
 	const codexBinLog = join(root, "codex-bin.log");
+	const appIdLog = join(root, "app-id.log");
 	const needlefishBin = join(fakeBin, "needlefish");
 	const pathCodex = join(fakeBin, "codex");
 	mkdirSync(fakeBin);
@@ -56,6 +57,7 @@ function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "
 set -euo pipefail
 for arg in "$@"; do printf '<%s>\\n' "$arg" >> "$ARGV_LOG"; done
 printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
+printf '%s' "\${NEEDLEFISH_CHECK_APP_ID:-}" > "$APP_ID_LOG"
 `,
 	);
 	chmodSync(needlefishBin, 0o755);
@@ -66,6 +68,8 @@ printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
 		env: {
 			...process.env,
 			ARGV_LOG: argvLog,
+			APP_ID_LOG: appIdLog,
+			NEEDLEFISH_CHECK_APP_ID: parse(workflow).jobs.review.steps.find(s => s.name === "Needlefish review").env.NEEDLEFISH_CHECK_APP_ID === "" ? "" : appId,
 			CODEX_BIN: codexBinValue === undefined ? (configuredCodex ? expectedConfiguredCodex : "") : codexBinValue(expectedConfiguredCodex),
 			CODEX_BIN_LOG: codexBinLog,
 			CODEX_REASONING_EFFORT: "",
@@ -82,6 +86,7 @@ printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
 	});
 	const output = {
 		...result,
+		appId: existsSync(appIdLog) ? readFileSync(appIdLog, "utf8") : null,
 		argvLog: existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "",
 		codexBin: existsSync(codexBinLog) ? readFileSync(codexBinLog, "utf8") : "",
 		expectedHomeCodex,
@@ -276,3 +281,12 @@ test("both dispatch entry points forward an opt-in manual recheck", () => {
  assert.equal(hosted.on.workflow_dispatch.inputs.recheck.default, false);
  assert.equal(hosted.jobs.review.with.recheck, "${{ inputs.recheck || false }}");
 });
+
+for (const appId of ["4812", "15368", "invalid", ""]) {
+ test(`bundled review clears the repository or host App pin ${JSON.stringify(appId)}`, () => {
+  const result = runReview("42", { appId });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.argvLog, /<--github>\n<--pr>\n<42>\n/);
+  assert.equal(result.appId, "");
+ });
+}

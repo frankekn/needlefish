@@ -187,6 +187,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$GITHUB_RUN_ID" --arg round "skip-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi
@@ -337,7 +340,7 @@ jobs:
           PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
-          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
+          NEEDLEFISH_CHECK_APP_ID: ""
           NEEDLEFISH_RECHECK_INPUT: ${{ inputs.recheck && '1' || '' }}
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
@@ -504,7 +507,7 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
-          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
+          NEEDLEFISH_CHECK_APP_ID: ""
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -533,6 +536,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$RUN_ID" --arg round "retry-required-$RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: caller retry required" \
               -f "output[summary]=$summary" >/dev/null
           }
@@ -552,8 +558,10 @@ jobs:
             | select(.name == \"Needlefish\" and ($app_filter))
             | ((.external_id // \"\" | fromjson?) // null) as \$round
             | select(if (\$round | type) == \"object\" then
-                (\$round.v != 2 or \$round.prNumber == $PR_NUM)
-              else true end)
+                (\$round.v == 2 and \$round.prNumber == $PR_NUM
+                  and (\$round.roundId | type) == \"string\" and (\$round.roundId | length) > 0
+                  and (\$round.runId | type) == \"string\")
+              else ((.external_id // \"\") | test(\"^[1-9][0-9]*$\")) end)
           ]")
           valid=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then

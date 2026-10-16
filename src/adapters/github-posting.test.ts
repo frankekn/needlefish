@@ -104,6 +104,8 @@ type FixtureOptions = {
  readonly duplicateStoredCheck?: boolean;
  readonly storedIssuePost5xx?: boolean;
  readonly failReviewReconcileReads?: boolean;
+ readonly failReviewPreRead?: boolean;
+ readonly failPreviousHeadCheckReads?: boolean;
  readonly storedInlineLimit?: number;
 	// Fail the first N PUTs to a review id with a 502, then succeed.
 	readonly flakyReviewPuts?: number;
@@ -489,6 +491,8 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/pulls/${opts.prNumber}/reviews`)}) {`,
 			`  const reviewsPath = ${JSON.stringify(reviewsState)};`,
 			"  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
+			`  const reads = (fs.existsSync(reviewsPath + ".reads") ? Number(fs.readFileSync(reviewsPath + ".reads", "utf8")) : 0) + 1; fs.writeFileSync(reviewsPath + ".reads", String(reads));`,
+			`  if (${opts.failReviewPreRead === true} && reads === 2) { process.stderr.write("simulated review pre-read failure"); process.exit(1); }`,
    `  if (${JSON.stringify(opts.failReviewReconcileReads === true)} && reviews.length > 0) { process.stderr.write("simulated review read failure"); process.exit(1); }`,
    `  if (${JSON.stringify(opts.lagStoredReviewRead === true)} && fs.existsSync(reviewsPath + ".stored-5xx") && !fs.existsSync(reviewsPath + ".lagged-read")) { fs.writeFileSync(reviewsPath + ".lagged-read", "1"); process.stdout.write("[[]]"); process.exit(0); }`,
 			`  const pages = ${JSON.stringify(opts.paginateEachReviewAsOwnPage === true)} ? reviews.map((r) => [r]) : ${JSON.stringify(opts.paginatePreviousReviewOnSecondPage === true)} ? [[], reviews] : [reviews];`,
@@ -528,6 +532,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`if (args.some(a => a.startsWith('repos/frankekn/needlefish/commits/') && a.includes('/check-runs'))) {`,
 			   `  const readCountPath = checksStatePath + ".reads"; const readCount = (fs.existsSync(readCountPath) ? Number(fs.readFileSync(readCountPath, 'utf8')) : 0) + 1; fs.writeFileSync(readCountPath, String(readCount));`,
    `  if (${JSON.stringify(opts.failCheckRunReads === true)} === true || ${JSON.stringify(opts.failCheckRunReadsOn ?? [])}.includes(readCount)) { process.stderr.write('simulated check-run read failure'); process.exit(1); }`,
+			`  if (${opts.failPreviousHeadCheckReads === true} && args.some(a => a.includes(${JSON.stringify(`/commits/${baseTipSha}/check-runs`)}))) { process.stderr.write("simulated prior-head check read failure"); process.exit(1); }`,
 			`  const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
    `  if (${JSON.stringify(opts.lagStoredCheckRead === true)} && fs.existsSync(checksStatePath + ".stored-5xx") && !fs.existsSync(checksStatePath + ".lagged-read")) { fs.writeFileSync(checksStatePath + ".lagged-read", "1"); process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }`,
 			`  process.stdout.write(JSON.stringify(args.includes("--slurp") ? [{ total_count: checks.length, check_runs: checks }] : { total_count: checks.length, check_runs: checks }));`,
@@ -4442,7 +4447,18 @@ test("recovery stops after one failed full re-review and recheck remains explici
  assert.equal(runnerInvocationCount(fixture), 4);
  await runGithub(fixture.repo, 124, { timeoutMs: 1000 });
  assert.equal(runnerInvocationCount(fixture), 4);
- assert.match(String(lastCheckCompletion(readPosts(fixture.postLog)).output?.summary), /recovery limit reached/);
+ const posts = readPosts(fixture.postLog);
+ assert.match(String(lastCheckCompletion(posts).output?.summary), /plain rerun stops here again/);
+ const advicePost = posts.filter(p => p.args.includes("POST") && p.args.some(a => /\/issues\/\d+\/comments$/.test(a))).at(-1);
+ assert.ok(advicePost);
+ const advicePayload = parseJson(advicePost.payload);
+ assert.ok(isRecordLike(advicePayload));
+ const advice = String(advicePayload.body).split("```\n\n").at(-1);
+ assert.equal(advice, "A plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`.\n<!-- needlefish-error -->");
+ const failureComment = posts.filter(p => p.args.includes("repos/frankekn/needlefish/issues/124/comments")).at(-1);
+ assert.ok(failureComment);
+ assert.match(failureComment.payload, /@needlefish recheck/);
+ assert.doesNotMatch(failureComment.payload, /Review did not complete\. Re-run the review\./);
  await runGithub(fixture.repo, 124, { timeoutMs: 1000 }, true);
  assert.equal(runnerInvocationCount(fixture), 6);
 });
@@ -4725,11 +4741,12 @@ test("a pinned App mismatch on successful create never authorizes model work or 
 	assert.equal(runnerInvocationCount(fixture), 0);
 });
 
-test("changing the configured App reviews an existing same-head receipt again", (t) => {
-	const fixture = setupFixture(t, { prNumber: 145, rawReview: defaultRawReview(), customCheckAppId: 4812 });
-	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+for (const priorHead of ["same", "previous"]) {
+test(`changing the configured App creates a fresh review for ${priorHead} head receipt`, (t) => {
+	const fixture = setupFixture(t, { prNumber: 145, rawReview: defaultRawReview(), customCheckAppId: 4812, authorLogin: "private-review-app[bot]", failUserApi: true });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(priorHead === "same" ? fixture.headSha : fixture.baseTipSha),
 		user: { login: "github-actions[bot]", type: "Bot" } }]);
-	seedCompletedVerdictCheck(fixture);
+	seedCompletedVerdictCheck(fixture, priorHead === "same" ? fixture.headSha : fixture.baseTipSha);
 	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
 	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
 	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
@@ -4737,11 +4754,15 @@ test("changing the configured App reviews an existing same-head receipt again", 
 	assert.equal(result.status, 1, result.stderr);
 	assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
 	assert.equal(runnerInvocationCount(fixture), 2);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/145/reviews")).length, 1);
+	assert.equal(posts.filter(p => p.args.includes("PUT") && p.args.includes("repos/frankekn/needlefish/pulls/145/reviews/1")).length, 0);
 	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
 	const marker = parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "");
 	assert.ok(marker?.v === 2);
 	assert.equal(marker.delivery.appId, 4812);
 });
+}
 
 test("an unpinned custom App check cannot start model work", (t) => {
 	const fixture = setupFixture(t, { prNumber: 146, rawReview: defaultRawReview(), customCheckAppId: 4812 });
@@ -4890,4 +4911,115 @@ test("early collection failures do not bypass the automatic recovery limit", (t)
 	assert.deepEqual(posts.filter((post) => post.args.includes("PATCH")).map((post) => post.args[3]), [
 		"repos/frankekn/needlefish/check-runs/1", "repos/frankekn/needlefish/check-runs/2", "repos/frankekn/needlefish/check-runs/3",
 	]);
+});
+
+for (const postFailure of ["none", "stored", "not-stored"] as const) {
+	test(`review pre-read failure attempts one POST with ${postFailure} failure`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 147, rawReview: defaultRawReview(), failReviewPreRead: true,
+			storedReviewPost5xx: postFailure === "stored", flakyReviewPosts: postFailure === "not-stored" ? 1 : 0 });
+		const result = spawnGithubCli(fixture, 147);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(result.status, 1, result.stderr);
+		const reviews = posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/147/reviews"));
+		assert.equal(reviews.length, 1);
+		assert.equal(parseReviewPayload(reviews[0].payload).comments.length, 1);
+		assert.equal(runnerInvocationCount(fixture), 2);
+		assert.equal(readFileSync(fixture.reviewsState + ".reads", "utf8"), "2");
+		assert.equal(lastCheckCompletion(posts).conclusion, "failure");
+		assert.equal(lastCheckCompletion(posts).output?.title, postFailure === "none" ? "Needlefish: changes_requested — bug" : "Needlefish: review failed");
+		if (postFailure === "none") {
+			assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
+			assert.match(result.stdout, /"outcome":"verdict"/);
+		} else {
+			assert.match(result.stdout, /"outcome":"failure","operational":false/);
+		}
+	});
+}
+
+for (const unreadable of [false, true]) {
+	test(`cross-head receipt history ${unreadable ? "unreadable" : "available"} preserves prior inline delivery`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 148, rawReview: defaultRawReview(), failPreviousHeadCheckReads: unreadable });
+		seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.baseTipSha), user: { login: "github-actions[bot]", type: "Bot" } }]);
+		seedCompletedVerdictCheck(fixture, fixture.baseTipSha);
+		const result = spawnGithubCli(fixture, 148);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(result.status, 1, result.stderr);
+		assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/148/reviews")).length, 0);
+		assert.equal(runnerInvocationCount(fixture), unreadable ? 0 : 2);
+		assert.equal(lastCheckCompletion(posts).conclusion, "failure");
+		assert.equal(lastCheckCompletion(posts).output?.title, unreadable ? "Needlefish: review failed" : "Needlefish: changes_requested — bug");
+		if (unreadable) {
+			assert.match(String(lastCheckCompletion(posts).output?.summary), /prior review delivery history is unreadable/i);
+			assert.match(result.stdout, /"outcome":"failure","operational":false/);
+			const comments = posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/issues/148/comments"));
+			assert.equal(comments.length, 1);
+			assert.match(comments[0].payload, /needlefish-error/);
+			assert.equal(posts.filter(p => p.args.includes("PUT")).length, 0);
+		} else {
+			assert.equal(posts.filter(p => p.args.includes("PUT") && p.args.includes("repos/frankekn/needlefish/pulls/148/reviews/1")).length, 2);
+		}
+	});
+}
+
+for (const storedReviewPost5xx of [false, true]) {
+	test(`pinned custom App preserves its receipt with stored POST failure ${storedReviewPost5xx}`, (t) => {
+		const fixture = setupFixture(t, {
+			prNumber: 150, rawReview: defaultRawReview(), customCheckAppId: 4812,
+			authorLogin: "private-review-app[bot]", failUserApi: true, storedReviewPost5xx,
+		});
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		const first = spawnGithubCli(fixture, 150);
+		assert.equal(first.status, 1, first.stderr);
+		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+		const second = spawnGithubCli(fixture, 150);
+		assert.equal(second.status, 1, second.stderr);
+		assert.match(second.stdout, /"reason":"same_head"/);
+		assert.equal(runnerInvocationCount(fixture), 2);
+		assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/150/reviews")).length, 1);
+	});
+}
+
+for (const mutation of ["other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round"]) {
+	test(`pinned custom App rejects receipt identity ${mutation}`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 151, rawReview: defaultRawReview(), customCheckAppId: 4812,
+			authorLogin: "private-review-app[bot]", failUserApi: true });
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		assert.equal(spawnGithubCli(fixture, 151).status, 1);
+		const reviews: unknown = parseJson(readFileSync(fixture.reviewsState, "utf8"));
+		const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+		assert.ok(Array.isArray(reviews) && isRecordLike(reviews[0]));
+		assert.ok(Array.isArray(checks) && isRecordLike(checks[0]));
+		if (mutation === "other-bot") reviews[0].user = { login: "other-app[bot]", type: "Bot" };
+		if (mutation === "user-type") reviews[0].user = { login: "private-review-app[bot]", type: "User" };
+		if (mutation === "wrong-app") checks[0].app = { id: 9999, slug: "private-review-app" };
+		if (mutation === "missing-slug") checks[0].app = { id: 4812 };
+		if (mutation === "invalid-slug") checks[0].app = { id: 4812, slug: "private-review-app[bot]" };
+		if (mutation === "wrong-round") checks[0].external_id = JSON.stringify({ v: 2, prNumber: 151, roundId: "other", runId: "" });
+		writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
+		writeFileSync(fixture.checksState, JSON.stringify(checks));
+		const result = spawnGithubCli(fixture, 151);
+		assert.equal(result.status, 1, result.stderr);
+		assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
+		assert.equal(runnerInvocationCount(fixture), 4);
+		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+	});
+}
+
+test("pinned custom App unreadable receipt history fails with an owned terminal check", (t) => {
+	const fixture = setupFixture(t, { prNumber: 152, rawReview: defaultRawReview(), customCheckAppId: 4812,
+		authorLogin: "private-review-app[bot]", failUserApi: true, failCheckRunReadsOn: [2] });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	assert.equal(spawnGithubCli(fixture, 152).status, 1);
+	const result = spawnGithubCli(fixture, 152);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /Prior review identity is unreadable/);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/152/reviews")).length, 1);
+	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: review failed");
 });

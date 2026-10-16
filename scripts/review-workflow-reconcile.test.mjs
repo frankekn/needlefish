@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { parse } from "yaml";
 import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
@@ -34,7 +35,7 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const SELF_RUN_ID = "777";
 
 function checkRun(title, conclusion = "failure") {
-	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42 }), conclusion, output: { title } };
+	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "fixture-round", runId: SELF_RUN_ID }), conclusion, output: { title } };
 }
 
 function activeRun(id, title) {
@@ -120,10 +121,11 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			GH_TOKEN: "test-token",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_NUM: prNum,
-   NEEDLEFISH_CHECK_APP_ID: appId,
+   NEEDLEFISH_CHECK_APP_ID: parse(workflow).jobs.reconcile.steps[0].env.NEEDLEFISH_CHECK_APP_ID === "" ? "" : appId,
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
+			GITHUB_RUN_ATTEMPT: "1",
 			WORKFLOW_REF: workflowRef,
 			WORKFLOW_MISSING: workflowMissing ? "1" : "0",
 		},
@@ -247,6 +249,27 @@ test("reconcile reports a missing caller workflow before querying its runs", () 
 	assert.equal(posts.length, 1);
 	assert.match(posts[0], /check-runs .*output\[title\]=Needlefish: caller retry required/);
 	assert.doesNotMatch(r.log, /actions\/workflows\/review.yml\/runs\?/);
+	const fields = Object.fromEntries(
+		[...posts[0].matchAll(/-f (output\[\w+\]|\w+)=(.*?)(?= -f |$)/g)]
+			.map((match) => [match[1], match[2]]),
+	);
+	assert.deepEqual(JSON.parse(fields.external_id), {
+		v: 2, prNumber: 42, roundId: "retry-required-777-1", runId: "777",
+	});
+	const repeated = runReconcile({
+		workflowMissing: true,
+		checkRunsAll: [{
+			name: fields.name,
+			app: { id: 15368, slug: "github-actions" },
+			external_id: fields.external_id,
+			conclusion: fields.conclusion,
+			output: { title: fields["output[title]"] },
+		}],
+	});
+	assert.equal(repeated.status, 0, repeated.stderr);
+	assert.equal(repeated.dispatched, 0);
+	assert.match(repeated.stdout, /already has a terminal Needlefish verdict/);
+	assert.doesNotMatch(repeated.log, /api -X POST/);
 });
 
 test("reconcile rejects a PR number containing regex syntax before any API call", () => {
@@ -304,6 +327,41 @@ for (const mode of ["foreign-app", "other-pr", "custom-pinned", "custom-mismatch
   if (mode === "legacy-actions") terminal.external_id = "123456";
   const r = runReconcile({ checkRunsAll: [terminal], appId: mode === "custom-pinned" ? "4812" : mode === "custom-mismatch" ? "9999" : "" });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.dispatched, ["custom-pinned", "legacy-actions"].includes(mode) ? 0 : 1, r.stdout);
+  assert.equal(r.dispatched, mode === "legacy-actions" ? 0 : 1, r.stdout);
  });
 }
+
+test("bundled reconcile sees the Actions verdict despite a repository or host custom App pin", () => {
+ const r = runReconcile({ appId: "4812", checkRunsAll: [checkRun("Needlefish: pass", "success")] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+ assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+for (const externalId of [
+ JSON.stringify({ v: 2, prNumber: 42 }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "", runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: 5, runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: 777 }),
+ JSON.stringify({ v: 2, unrelated: true }),
+ JSON.stringify({ v: 1, prNumber: 42 }),
+ "[]", "true", "null", "unrelated", "",
+]) {
+ test(`reconcile rejects incomplete or unrelated receipt ${externalId}`, () => {
+  const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: externalId };
+  const r = runReconcile({ checkRunsAll: [terminal] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.dispatched, 1, r.stdout);
+  assert.match(r.log, /workflow run review.yml .*pr_number=42/);
+ });
+}
+
+test("reconcile accepts a complete v2 receipt with an empty run ID", () => {
+ const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: "" }) };
+ const r = runReconcile({ checkRunsAll: [terminal] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+});

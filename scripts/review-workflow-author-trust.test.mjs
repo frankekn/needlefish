@@ -100,6 +100,8 @@ esac
 			...process.env,
 			GH_LOG: ghLog,
 			GH_TOKEN: "test-token",
+			GITHUB_RUN_ID: "777",
+			GITHUB_RUN_ATTEMPT: "1",
 			GITHUB_OUTPUT: output,
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			REPO,
@@ -308,26 +310,34 @@ test("reconcile treats the posted skip check as terminal and never dispatches th
 		undefined,
 	);
 
-	const skipped = runStep(resolveScript, eventEnv({ association: "NONE" }));
-	assert.equal(skipped.posts.length, 1, skipped.log);
-	const posted = postedCheck(skipped.posts[0]);
-	const r = runStep(
-		reconcileScript,
-		{
-			PR_NUM: "42",
-			WORKFLOW_REF: `${REPO}/.github/workflows/review.yml@refs/heads/main`,
-			RUN_ID: "777",
-		},
-		{
-			pr: pull({ association: "NONE" }),
-			checkRuns: [
-				{ name: posted.name, app: { id: 15368, slug: "github-actions" }, conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
-			],
-		},
-	);
-	assert.equal(r.status, 0, r.stderr);
-	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
-	assert.doesNotMatch(r.log, /^workflow run/m);
+	for (const [producer, env] of [
+		[resolveScript, eventEnv({ association: "NONE" })],
+		[trustStep.run, actionEnv({ association: "NONE" })],
+	]) {
+		const skipped = runStep(producer, env);
+		assert.equal(skipped.posts.length, 1, skipped.log);
+		const posted = postedCheck(skipped.posts[0]);
+		assert.deepEqual(JSON.parse(posted.external_id), {
+			v: 2, prNumber: 42, roundId: "skip-777-1", runId: "777",
+		});
+		const r = runStep(
+			reconcileScript,
+			{
+				PR_NUM: "42",
+				WORKFLOW_REF: `${REPO}/.github/workflows/review.yml@refs/heads/main`,
+				RUN_ID: "777",
+			},
+			{
+				pr: pull({ association: "NONE" }),
+				checkRuns: [
+					{ name: posted.name, app: { id: 15368, slug: "github-actions" }, external_id: posted.external_id, conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
+				],
+			},
+		);
+		assert.equal(r.status, 0, r.stderr);
+		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+		assert.doesNotMatch(r.log, /^workflow run/m);
+	}
 });
 
 function actionEnv({ association, userType = "User", allow = "false", eventHead = HEAD }) {
