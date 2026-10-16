@@ -7,6 +7,11 @@ on:
       pr:
         description: PR number to review
         required: false
+      recheck:
+        description: Force a full review and reset the automatic recovery limit
+        type: boolean
+        required: false
+        default: false
       pr_number:
         description: PR number supplied by reconciliation
         required: false
@@ -20,6 +25,7 @@ jobs:
     uses: ./.github/workflows/review.yml
     with:
       pr_number: ${{ inputs.pr_number || inputs.pr }}
+      recheck: ${{ inputs.recheck || false }}
       runner: codex
       # Self-hosted lane via CLIProxyAPI (frank_infra x64-review pool); eval #172.
       model: deepseek-v4.1-flash

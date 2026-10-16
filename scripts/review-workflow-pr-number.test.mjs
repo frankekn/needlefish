@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { workflowRun } from "./workflow-test-helpers.mjs";
+import { parse } from "yaml";
 
 // GitHub Actions interpolates ${{ }} into the run script before bash parses it.
 // Double quotes do not stop command substitution: $(...) and backticks in a
@@ -28,7 +29,7 @@ const step = workflow.match(
 assert.ok(step, "Needlefish review step must exist");
 const script = workflowRun(workflow, "review", "Needlefish review");
 
-function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false, codexBinValue } = {}) {
+function runReview(prNum, { runner = "", homeCodex = false, homeCodexVersion = "0.155.0", configuredCodex = false, codexBinValue, recheck = "" } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-pr-"));
 	const fakeBin = join(root, "fake bin");
 	const argvLog = join(root, "argv.log");
@@ -71,7 +72,7 @@ printf '%s' "\${CODEX_BIN:-}" > "$CODEX_BIN_LOG"
 			HOME: root,
 			NEEDLEFISH_BIN: needlefishBin,
 			NEEDLEFISH_MODEL_INPUT: "",
-			NEEDLEFISH_RECHECK_INPUT: "",
+			NEEDLEFISH_RECHECK_INPUT: recheck,
 			NEEDLEFISH_RUNNER_INPUT: runner,
 			NEEDLEFISH_TIMEOUT_MS_INPUT: "",
 			OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
@@ -249,4 +250,29 @@ test("review rejects a quote-breaking PR number before invoking needlefish", () 
 	assert.notEqual(result.status, 0);
 	assert.equal(result.argvLog, "");
 	assert.equal(result.pwned, false);
+});
+
+
+test("automatic dispatch stays bounded and only explicit recheck adds the flag", () => {
+ assert.match(step[1], /NEEDLEFISH_RECHECK_INPUT: \$\{\{ inputs\.recheck && '1' \|\| '' \}\}/);
+ const automatic = runReview("42");
+ assert.equal(automatic.status, 0, automatic.stderr);
+ assert.doesNotMatch(automatic.argvLog, /<--recheck>/);
+ const manual = runReview("42", { recheck: "1" });
+ assert.equal(manual.status, 0, manual.stderr);
+ assert.match(manual.argvLog, /<--recheck>/);
+});
+
+
+test("both dispatch entry points forward an opt-in manual recheck", () => {
+ const reusable = parse(workflow);
+ const hosted = parse(readFileSync(".github/workflows/hosted-review.yml", "utf8"));
+ for (const trigger of ["workflow_dispatch", "workflow_call"]) {
+  assert.deepEqual(reusable.on[trigger].inputs.recheck, {
+   description: "Force a full review even when this head was already reviewed",
+   type: "boolean", required: false, default: false,
+  });
+ }
+ assert.equal(hosted.on.workflow_dispatch.inputs.recheck.default, false);
+ assert.equal(hosted.jobs.review.with.recheck, "${{ inputs.recheck || false }}");
 });

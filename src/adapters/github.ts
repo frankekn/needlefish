@@ -410,7 +410,6 @@ interface CheckRound {
 	readonly prNumber: number;
 	readonly roundId: string;
 	readonly runId: string;
-	readonly recoveryAttempt: number;
 	readonly recheck: boolean;
 }
 
@@ -424,9 +423,8 @@ function parseCheckRound(raw: unknown): CheckRound | null {
 	}
 	if (!isRecord(parsed) || parsed.v !== 2 || typeof parsed.prNumber !== "number" || !Number.isSafeInteger(parsed.prNumber) || parsed.prNumber < 1 || typeof parsed.roundId !== "string" ||
 		!parsed.roundId || typeof parsed.runId !== "string" ||
-		typeof parsed.recoveryAttempt !== "number" || !Number.isSafeInteger(parsed.recoveryAttempt) ||
-		parsed.recoveryAttempt < 0 || (parsed.recheck !== undefined && typeof parsed.recheck !== "boolean")) return null;
-	return { v: 2, prNumber: parsed.prNumber, roundId: parsed.roundId, runId: parsed.runId, recoveryAttempt: parsed.recoveryAttempt, recheck: parsed.recheck === true };
+		(parsed.recheck !== undefined && typeof parsed.recheck !== "boolean")) return null;
+	return { v: 2, prNumber: parsed.prNumber, roundId: parsed.roundId, runId: parsed.runId, recheck: parsed.recheck === true };
 }
 
 function findingKey(f: Finding): FindingKey {
@@ -441,23 +439,13 @@ function findingKey(f: Finding): FindingKey {
 export function renderState(
 	headSha: string,
 	findings: readonly Finding[],
-	delivery?: DeliveryReceipt,
+	delivery: DeliveryReceipt,
 ): string {
-	return renderStateKeys(
-		headSha,
-		findings.map(findingKey),
-		delivery,
-	);
+	return serializeState({ v: 2, headSha, findings: findings.map(findingKey), delivery });
 }
 
-function renderStateKeys(
-	headSha: string,
-	findings: readonly FindingKey[],
-	delivery?: DeliveryReceipt,
-): string {
-	const state: RoundState = delivery ? { v: 2, headSha, findings, delivery } : { v: 1, headSha, findings };
-	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
-	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
+function serializeState(state: RoundState): string {
+	// Escape title text so it cannot terminate the HTML comment.
 	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
 	return `<!-- needlefish-state: ${payload} -->`;
 }
@@ -605,13 +593,13 @@ function fitStateMarker(state: RoundState, budget: number): string {
 	while (lo < hi) {
 		const mid = Math.ceil((lo + hi) / 2);
 		if (
-			renderStateKeys(state.headSha, state.findings.slice(0, mid), state.v === 2 ? state.delivery : undefined).length <=
+			serializeState({ ...state, findings: state.findings.slice(0, mid) }).length <=
 			budget
 		)
 			lo = mid;
 		else hi = mid - 1;
 	}
-	return renderStateKeys(state.headSha, state.findings.slice(0, lo), state.v === 2 ? state.delivery : undefined);
+	return serializeState({ ...state, findings: state.findings.slice(0, lo) });
 }
 
 export interface MatchResult {
@@ -876,7 +864,8 @@ function postReview(
 	return isRecord(created) && typeof created.id === "number" ? created.id : null;
 }
 
-// A receipt is written last and binds the trusted review to one completed check.
+// Marker writes fail soft because the review and verdict already reached GitHub.
+// Reconciliation and same-head skipping require this receipt and its completed check.
 function persistStateMarker(
 	repo: string,
 	prNumber: number,
@@ -953,7 +942,7 @@ export function findPreviousReview(
 // S5a: create the check as in_progress BEFORE any model work so a PR always
 // shows whether a review is running on its latest head. All completions update
 // this same check by id. An unknown id cannot authorize a completion.
-function createPendingCheck(repo: string, headSha: string, round: CheckRound): { id: number; appId: number } | null {
+function createPendingCheck(repo: string, headSha: string, round: CheckRound, expectedAppId: number | null): { id: number; appId: number } | null {
 	try {
 		const created = reconciledPost(
 			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
@@ -965,14 +954,16 @@ function createPendingCheck(repo: string, headSha: string, round: CheckRound): {
 			}),
 			() => {
 				const matching = readCheckRuns(repo, headSha).filter((run) => run.head_sha === headSha && run.external_id === JSON.stringify(round));
-				const owned = matching.find((run) => run.name === "Needlefish" && nestedString(run, "app", "slug") === "github-actions");
-				if (owned) return owned;
+				const owned = matching.filter((run) => run.name === "Needlefish" && isRecord(run.app) &&
+					(expectedAppId === null ? run.app.slug === "github-actions" : run.app.id === expectedAppId));
+				if (owned.length === 1 && matching.length === 1) return owned[0];
 				if (matching.length > 0) throw new Error("Cannot verify ownership of the stored check; not retrying its POST");
 				return null;
 			},
 		);
 		if (isRecord(created) && typeof created.id === "number" && Number.isSafeInteger(created.id) && created.id > 0 &&
-			isRecord(created.app) && typeof created.app.id === "number" && Number.isSafeInteger(created.app.id) && created.app.id > 0) {
+			isRecord(created.app) && typeof created.app.id === "number" && Number.isSafeInteger(created.app.id) && created.app.id > 0 &&
+			(expectedAppId === null || created.app.id === expectedAppId)) {
 			return { id: created.id, appId: created.app.id };
 		}
 		throw new Error("GitHub returned no owned check id/app identity");
@@ -1104,10 +1095,18 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 		if (!Array.isArray(raw)) throw new Error("GitHub returned no comment list");
 		return raw.flat(1).filter(isRecord);
 	};
-	const before = new Set(read().map((item) => item.id));
-	const selfLogin = authenticatedLogin();
 	const cappedBody = screenAndCapOutboundBody(body);
-	reconciledPost(["api", "-X", "POST", endpoint, "--input", "-"], JSON.stringify({ body: cappedBody }),
+	const args = ["api", "-X", "POST", endpoint, "--input", "-"];
+	const payload = JSON.stringify({ body: cappedBody });
+	let before: Set<unknown>;
+	try { before = new Set(read().map((item) => item.id)); }
+	catch {
+		// A failed pre-read must not suppress the failure explanation. POST remains single-shot.
+		ghPost(args, payload);
+		return;
+	}
+	const selfLogin = authenticatedLogin();
+	reconciledPost(args, payload,
 		() => {
 			const matching = read().filter((item) => !before.has(item.id) && item.body === cappedBody);
 			const owned = matching.find((item) => isTrustedStateAuthor(item, selfLogin));
@@ -1601,6 +1600,11 @@ export async function runGithub(
 	opts: RunnerOptions = {},
 	recheck = false,
 ): Promise<void> {
+	const appIdInput = process.env.NEEDLEFISH_CHECK_APP_ID || undefined;
+	const expectedAppId = appIdInput === undefined ? null : Number(appIdInput);
+	if (appIdInput !== undefined && (!/^[1-9]\d*$/.test(appIdInput) || !Number.isSafeInteger(expectedAppId))) {
+		throw new Error("NEEDLEFISH_CHECK_APP_ID must be a positive safe integer");
+	}
 	const repoPath = path.resolve(cwd);
 	const repo = process.env.GITHUB_REPOSITORY;
 	if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
@@ -1709,8 +1713,8 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
-	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recoveryAttempt: !recheck && previous?.state.headSha === headSha ? 1 : 0, recheck };
-	const pending = createPendingCheck(repo, headSha, round);
+	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
+	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
@@ -1748,8 +1752,7 @@ export async function runGithub(
 			priorRounds.push(prior);
 			if (prior.recheck) break;
 		}
-		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, (priorRounds[0]?.recoveryAttempt ?? -1) + 1,
-			previous?.state.headSha === headSha ? 1 : 0);
+		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, previous?.state.headSha === headSha ? 1 : 0);
 		if (recoveryAttempt > 1) throw new Error("Automatic review recovery limit reached. Delivery is incomplete; ask a maintainer to rerun the review.");
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface

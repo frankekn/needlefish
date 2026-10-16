@@ -71,7 +71,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
       suggestedFix: "fix",
       validation: "test",
     },
-  ]);
+  ], { checkId: 1, appId: 15368, roundId: "explain-fixture", runId: "fixture" });
   const reviewBody = `CHANGES REQUESTED ⚠️ — 1 blocking\n\nCoverage: full diff reviewed in one pass (1 file)\n\n## Findings\n\n| 1 | P2 | Doctor base check fails on a dirty worktree | app.ts:1 |\n\n${state}\n`;
   const prView = {
     number: 9,

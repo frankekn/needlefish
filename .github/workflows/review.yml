@@ -13,6 +13,11 @@ on:
       pr_number:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
+      recheck:
+        description: Force a full review even when this head was already reviewed
+        type: boolean
+        required: false
+        default: false
       runner:
         description: "Model runner: codex, claude, opencode, grok, or pi"
         required: false
@@ -51,6 +56,11 @@ on:
         description: PR number (optional; defaults to the event PR)
         type: string
         required: false
+      recheck:
+        description: Force a full review even when this head was already reviewed
+        type: boolean
+        required: false
+        default: false
       runner:
         description: "Model runner: codex, claude, opencode, grok, or pi"
         type: string
@@ -327,7 +337,8 @@ jobs:
           PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
-          NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
+          NEEDLEFISH_RECHECK_INPUT: ${{ inputs.recheck && '1' || '' }}
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
@@ -485,6 +496,7 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
+          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -520,7 +532,22 @@ jobs:
           # every review check is named "Needlefish", so the retry cap below would
           # otherwise never see more than one failure and could never trip.
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100&filter=all"
-          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
+          app_id="${NEEDLEFISH_CHECK_APP_ID:-}"
+          if [ -n "$app_id" ] && { [[ ! "$app_id" =~ ^[1-9][0-9]*$ ]] || [ "${#app_id}" -gt 16 ] || [ "$app_id" -gt 9007199254740991 ]; }; then
+            echo "::error::NEEDLEFISH_CHECK_APP_ID must be a positive safe integer"
+            exit 1
+          fi
+          app_filter='.app.slug == "github-actions"'
+          if [ -n "$app_id" ]; then app_filter=".app.id == $app_id"; fi
+          owned_checks=$(gh api "$runs_url" --jq "[
+            .check_runs[]
+            | select(.name == \"Needlefish\" and ($app_filter))
+            | ((.external_id // \"\" | fromjson?) // null) as \$round
+            | select(if (\$round | type) == \"object\" then
+                (\$round.v != 2 or \$round.prNumber == $PR_NUM)
+              else true end)
+          ]")
+          valid=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
             exit 0
@@ -553,7 +580,7 @@ jobs:
             echo "a $workflow_file run for PR #$PR_NUM is still active or queued; letting it finish"
             exit 0
           fi
-          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
+          infra_fails=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0

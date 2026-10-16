@@ -73,6 +73,7 @@ type FixtureOptions = {
 	// Make POSTs to the issue-comments endpoint exit 1 (after logging the
 	// attempt) to exercise the fail-soft paths around cosmetic comments.
 	readonly failIssueCommentPosts?: boolean;
+	readonly failIssueCommentReads?: boolean;
 	// Make POSTs to the check-runs endpoint exit 1 (after logging the attempt)
 	// to exercise independence of the failure check and the error comment.
 	readonly failCheckRunPosts?: boolean;
@@ -94,6 +95,8 @@ type FixtureOptions = {
 	readonly storedReviewPost5xx?: boolean;
 	readonly storedCheckPost5xx?: boolean;
  readonly foreignStoredCheck?: boolean;
+ readonly customCheckAppId?: number;
+ readonly duplicateStoredCheck?: boolean;
  readonly storedIssuePost5xx?: boolean;
  readonly failReviewReconcileReads?: boolean;
  readonly storedInlineLimit?: number;
@@ -407,10 +410,11 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
 			`    const parsedCheck = JSON.parse(payload);`,
 			`    const nextId = checks.length + 1;`,
-			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: ${JSON.stringify(opts.foreignStoredCheck ? { id: 999, slug: 'foreign-app' } : { id: 15368, slug: 'github-actions' })}, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: ${JSON.stringify(opts.foreignStoredCheck ? { id: 999, slug: 'foreign-app' } : opts.customCheckAppId ? { id: opts.customCheckAppId, slug: 'private-review-app' } : { id: 15368, slug: 'github-actions' })}, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    if (${opts.duplicateStoredCheck === true}) checks.push({ ...checks.at(-1), id: nextId + 1 });`,
 			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
 			`    if (${JSON.stringify(opts.storedCheckPost5xx === true)} && !fs.existsSync(checksStatePath + ".stored-5xx")) { fs.writeFileSync(checksStatePath + ".stored-5xx", "1"); process.stderr.write("gh: Server Error (HTTP 502)"); process.exit(1); }`,
-			`    process.stdout.write(JSON.stringify({ id: nextId, app: { id: 15368 } }));`,
+			`    process.stdout.write(JSON.stringify({ id: nextId, app: { id: ${opts.customCheckAppId ?? 15368} } }));`,
 			`    process.exit(0);`,
 			`  }`,
 			`  if (apiPath && apiPath.startsWith('repos/frankekn/needlefish/check-runs/') && method === 'PATCH') {`,
@@ -479,6 +483,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			// Paginated GET must come with --slurp (page-wrapped array of arrays);
 			// the stub emulates the slurped shape to pin the flat(1) handling.
 			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
+			`  if (${opts.failIssueCommentReads === true}) { process.stderr.write("simulated comment-list outage"); process.exit(1); }`,
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
    `  if (${JSON.stringify(opts.lagStoredIssueRead === true)} && fs.existsSync(issueCommentsPath + ".stored-5xx") && !fs.existsSync(issueCommentsPath + ".lagged-read")) { fs.writeFileSync(issueCommentsPath + ".lagged-read", "1"); process.stdout.write("[[]]"); process.exit(0); }`,
@@ -831,7 +836,7 @@ test("capOutboundBody shrinks an oversized state marker rather than dropping it"
 	const findings = Array.from({ length: 3000 }, (_, i) =>
 		mkFinding({ title: `finding ${i}`, lineStart: i + 1 }),
 	);
-	const body = `Review\n\n${renderState("a".repeat(40), findings)}\n`;
+	const body = `Review\n\n${renderState("a".repeat(40), findings, FIXTURE_RECEIPT)}\n`;
 	assert.ok(body.length > 65_536);
 	const capped = capOutboundBody(body);
 	assert.ok(capped.length <= 65_536, `got ${capped.length}`);
@@ -852,7 +857,7 @@ test("capOutboundBody shrinks an oversized state marker rather than dropping it"
 test("capOutboundBody keeps a quoted state marker as body text", () => {
 	const quoted = renderState("b".repeat(40), [
 		mkFinding({ title: "quoted prior" }),
-	]);
+	], FIXTURE_RECEIPT);
 	const body = [
 		"**P2** bug",
 		"",
@@ -1297,10 +1302,10 @@ test("runGithub inlines only P0/P1/P2 when more than 20 findings are anchorable"
 test("renderState produces an HTML comment with versioned JSON", () => {
 	const marker = renderState("abc123", [
 		mkFinding({ title: "Bug", lineStart: 5 }),
-	]);
+	], FIXTURE_RECEIPT);
 	assert.match(marker, /^<!-- needlefish-state: /);
 	assert.match(marker, /-->$/);
-	assert.match(marker, /"v":1/);
+	assert.match(marker, /"v":2/);
 	assert.match(marker, /"headSha":"abc123"/);
 	assert.match(marker, /"title":"bug"/);
 });
@@ -1310,10 +1315,10 @@ test("parseState round-trips through renderState", () => {
 		mkFinding({ title: "Null deref", lineStart: 42 }),
 		mkFinding({ title: "Race", lineStart: 100, file: "other.ts" }),
 	];
-	const marker = renderState("dead", findings);
+	const marker = renderState("dead", findings, FIXTURE_RECEIPT);
 	const parsed = parseState(`# Review\n\nbody text\n\n${marker}\n`);
 	assert.ok(parsed);
-	assert.equal(parsed!.v, 1);
+	assert.equal(parsed!.v, 2);
 	assert.equal(parsed!.headSha, "dead");
 	assert.equal(parsed!.findings.length, 2);
 	assert.equal(parsed!.findings[0].file, "README.md");
@@ -1326,7 +1331,7 @@ test("state marker round-trips a title containing -->", () => {
 	const findings: Finding[] = [
 		mkFinding({ title: "stale comment x --> y kept", lineStart: 42 }),
 	];
-	const marker = renderState("abc123", findings);
+	const marker = renderState("abc123", findings, FIXTURE_RECEIPT);
 	// The JSON payload must not contain "-->", only the comment terminator may.
 	assert.equal(marker.split("-->").length - 1, 1);
 	const parsed = parseState(`# Review\n\nbody text\n\n${marker}\n`);
@@ -2093,7 +2098,7 @@ test("runGithub ignores an untrusted review that quotes a trusted state marker",
 		prNumber: 54,
 		rawReview: defaultRawReview(),
 	});
-	const quoted = `Looks correct.\n\n> ${renderState(fixture.headSha, [mkFinding({ title: "bug", lineStart: 1 })])}\n`;
+	const quoted = `Looks correct.\n\n> ${renderState(fixture.headSha, [mkFinding({ title: "bug", lineStart: 1 })], FIXTURE_RECEIPT)}\n`;
 	seedReviews(fixture.reviewsState, [
 		{
 			id: 1,
@@ -4350,7 +4355,7 @@ for (const artifact of ["review", "check"] as const) {
 
 test("legacy state and unrelated same-name check cannot prove delivery", async (t) => {
  const fixture = setupFixture(t, { prNumber: 121, rawReview: defaultRawReview() });
- seedReviews(fixture.reviewsState, [{ id: 1, body: renderState(fixture.headSha, [mkFinding({ title: "bug" })]), user: { login: "github-actions[bot]", type: "Bot" } }]);
+ seedReviews(fixture.reviewsState, [{ id: 1, body: `<!-- needlefish-state: ${JSON.stringify({ v: 1, headSha: fixture.headSha, findings: [{ file: "README.md", lineStart: 1, category: "bug", title: "bug" }] })} -->`, user: { login: "github-actions[bot]", type: "Bot" } }]);
  seedCompletedVerdictCheck(fixture);
  await runGithub(fixture.repo, 121, { timeoutMs: 1000 });
  assert.ok(runnerInvocationCount(fixture) > 0);
@@ -4597,4 +4602,113 @@ test("a trusted review quoting a v2 receipt in model prose cannot skip", async (
  assert.ok(posted);
  assert.equal(parseReviewPayload(posted.payload).comments.length, 1);
  assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
+});
+
+
+test("failure comments still post once when the comment-list pre-read fails", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 137, rawReview: defaultRawReview(), reviewPost404: true, failIssueCommentReads: true });
+	const result = spawnGithubCli(fixture, 137);
+	assert.equal(result.status, 1, result.stderr);
+	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: review failed");
+	const comments = readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/issues/137/comments"));
+	assert.equal(comments.length, 1);
+	assert.match(comments[0].payload, /needlefish-error/);
+	assert.equal(runnerInvocationCount(fixture), 2);
+});
+
+test("round history bounds recovery without a redundant counter", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 138, rawReview: defaultRawReview(), flakyCheckRunPatches: 99 });
+	await runGithub(fixture.repo, 138, { timeoutMs: 1000 });
+	await runGithub(fixture.repo, 138, { timeoutMs: 1000 });
+	const created = readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs"));
+	const metadata = created.map(p => { const payload: unknown = parseJson(p.payload); assert.ok(isRecordLike(payload)); return parseJson(String(payload.external_id)); });
+	assert.ok(isRecordLike(metadata[1]));
+	assert.equal(metadata[1].recoveryAttempt, undefined);
+	assert.equal(runnerInvocationCount(fixture), 4);
+});
+
+test("a newer incomplete old-head round preserves the completed cross-head baseline", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 139, rawReview: defaultRawReview() });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.baseTipSha), user: { login: "github-actions[bot]", type: "Bot" } }]);
+	seedCompletedVerdictCheck(fixture, fixture.baseTipSha);
+	const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+	assert.ok(Array.isArray(checks) && isRecordLike(checks[0]));
+	checks.push({ ...checks[0], id: 2, status: "in_progress", conclusion: null,
+		external_id: JSON.stringify({ v: 2, prNumber: 139, roundId: "interrupted", runId: "later", recoveryAttempt: 0, recheck: true }) });
+	writeFileSync(fixture.checksState, JSON.stringify(checks));
+	await runGithub(fixture.repo, 139, { timeoutMs: 1000 });
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/139/reviews")).length, 0);
+	assert.equal(posts.filter(p => p.args.includes("PUT") && p.args.includes("repos/frankekn/needlefish/pulls/139/reviews/1")).length, 2);
+	assert.equal(runnerInvocationCount(fixture), 2);
+});
+
+
+for (const pin of ["4812", "9999", "", "bad", "0", "1.5", "9007199254740992"]) {
+	test(`custom App stored check recovery validates App ID pin ${pin}`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 140, rawReview: defaultRawReview(), storedCheckPost5xx: true, customCheckAppId: 4812 });
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = pin;
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		const result = spawnGithubCli(fixture, 140);
+		const posts = readPosts(fixture.postLog);
+		const creates = posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs"));
+		assert.equal(result.status, 1, result.stderr);
+		if (pin === "4812") {
+			assert.equal(creates.length, 1);
+			assert.equal(runnerInvocationCount(fixture), 2);
+			assert.equal(lastCheckCompletion(posts).output?.title, "Needlefish: changes_requested — bug");
+			const marker = parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "");
+			assert.ok(marker?.v === 2);
+			assert.equal(marker.delivery.appId, 4812);
+		} else if (pin === "9999" || pin === "") {
+			assert.equal(creates.length, 1);
+			assert.equal(runnerInvocationCount(fixture), 0);
+			assert.match(result.stderr, /ownership/);
+		} else {
+			assert.equal(creates.length, 0);
+			assert.equal(runnerInvocationCount(fixture), 0);
+			assert.match(result.stderr, /NEEDLEFISH_CHECK_APP_ID/);
+		}
+	});
+}
+
+
+test("ambiguous duplicate check candidates never authorize completion", (t) => {
+	const fixture = setupFixture(t, { prNumber: 141, rawReview: defaultRawReview(), storedCheckPost5xx: true, duplicateStoredCheck: true });
+	const result = spawnGithubCli(fixture, 141);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /ownership/);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs")).length, 1);
+	assert.equal(posts.filter(p => p.args.includes("PATCH")).length, 0);
+	assert.equal(runnerInvocationCount(fixture), 0);
+});
+
+test("a pinned App mismatch on successful create never authorizes model work or completion", (t) => {
+	const fixture = setupFixture(t, { prNumber: 142, rawReview: defaultRawReview(), customCheckAppId: 4812 });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "9999";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	const result = spawnGithubCli(fixture, 142);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /no owned check id/);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs")).length, 1);
+	assert.equal(posts.filter(p => p.args.includes("PATCH")).length, 0);
+	assert.equal(runnerInvocationCount(fixture), 0);
+});
+
+test("failure-comment pre-read and ambiguous POST failure never resend the comment", (t) => {
+	const fixture = setupFixture(t, { prNumber: 143, rawReview: defaultRawReview(), reviewPost404: true, failIssueCommentReads: true, storedIssuePost5xx: true });
+	const result = spawnGithubCli(fixture, 143);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(result.status, 1, result.stderr);
+	assert.equal(lastCheckCompletion(posts).output?.title, "Needlefish: review failed");
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/issues/143/comments")).length, 1);
+	const comments: unknown = parseJson(readFileSync(fixture.issueCommentsState, "utf8"));
+	assert.ok(Array.isArray(comments) && isRecordLike(comments[0]));
+	assert.equal(comments.length, 1);
+	assert.match(String(comments[0].body), /needlefish-error/);
+	assert.equal(runnerInvocationCount(fixture), 2);
 });
