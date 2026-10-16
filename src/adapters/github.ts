@@ -1617,17 +1617,22 @@ async function completeTerminatedCheck(
 	await ghJsonWhileTerminating(termination, write.args, input);
 }
 
+export function configuredCheckAppId(): number | null {
+	const appIdInput = process.env.NEEDLEFISH_CHECK_APP_ID || undefined;
+	const expectedAppId = appIdInput === undefined ? null : Number(appIdInput);
+	if (appIdInput !== undefined && (!/^[1-9]\d*$/.test(appIdInput) || !Number.isSafeInteger(expectedAppId))) {
+		throw new Error("NEEDLEFISH_CHECK_APP_ID must be a positive safe integer");
+	}
+	return expectedAppId;
+}
+
 export async function runGithub(
 	cwd: string,
 	prNumber: number,
 	opts: RunnerOptions = {},
 	recheck = false,
 ): Promise<void> {
-	const appIdInput = process.env.NEEDLEFISH_CHECK_APP_ID || undefined;
-	const expectedAppId = appIdInput === undefined ? null : Number(appIdInput);
-	if (appIdInput !== undefined && (!/^[1-9]\d*$/.test(appIdInput) || !Number.isSafeInteger(expectedAppId))) {
-		throw new Error("NEEDLEFISH_CHECK_APP_ID must be a positive safe integer");
-	}
+	const expectedAppId = configuredCheckAppId();
 	const repoPath = path.resolve(cwd);
 	const repo = process.env.GITHUB_REPOSITORY;
 	if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
