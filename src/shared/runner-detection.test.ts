@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { runCodex } from "./codex";
-import { resolveRunnerBinary, runnerCommand } from "./runner-detection";
+import { resolveCodexCommand, resolveRunnerBinary, runnerCommand } from "./runner-detection";
 import { RUNNER_DEFINITIONS, RUNNERS } from "./runner";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { captureEnv, restoreEnv } from "./runner-test-fixtures";
@@ -188,4 +188,15 @@ test("runCodex resolves a relative executable from the caller, never the PR clon
   assert.equal(source, "trusted-caller");
   assert.equal(path.basename(cwd ?? ""), "runner-launch");
   assert.equal(existsSync(attackMarker), false);
+});
+
+test("Codex command resolution accepts Windows separators and preserves PATH commands", () => {
+  for (const command of ["./tools/codex", "tools/codex", String.raw`.\tools\codex`]) {
+    assert.equal(resolveCodexCommand(command, String.raw`C:\trusted`, path.win32), String.raw`C:\trusted\tools\codex`);
+  }
+  for (const command of [String.raw`C:\tools\codex.exe`, "C:/tools/codex.exe", String.raw`\\server\tools\codex.exe`, "codex"]) {
+    assert.equal(resolveCodexCommand(command, String.raw`C:\trusted`, path.win32), command);
+  }
+  assert.equal(resolveCodexCommand("./tools/codex", "/trusted", path.posix), "/trusted/tools/codex");
+  assert.equal(resolveCodexCommand("codex", "/trusted", path.posix), "codex");
 });

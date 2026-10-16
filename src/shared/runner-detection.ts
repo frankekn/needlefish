@@ -40,7 +40,14 @@ function autoDetectRunner(): RunnerName {
 export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  return process.env[bin.env]?.trim() || bin.fallback;
+  const command = process.env[bin.env]?.trim() || bin.fallback;
+  return runner === "codex" && command !== undefined ? resolveCodexCommand(command) : command;
+}
+
+export function resolveCodexCommand(command: string, cwd = process.cwd(), pathApi = path): string {
+  return !pathApi.isAbsolute(command) && (command.includes("/") || command.includes(pathApi.sep))
+    ? pathApi.resolve(cwd, command)
+    : command;
 }
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
@@ -58,8 +65,7 @@ export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | 
   const command = runnerCommand(runner);
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
-    const resolved = runner === "codex" ? path.resolve(command) : command;
-    return { command, path: executableExists(resolved) ? resolved : undefined };
+    return { command, path: executableExists(command) ? command : undefined };
   }
   return { command, path: findOnPath(command) };
 }
