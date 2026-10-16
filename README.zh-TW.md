@@ -84,7 +84,8 @@ effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR �
 變更的 head 會完全跳過模型。
 
 桌面引導設定遇到自訂 Needlefish workflow 或無法辨識的設定分支時會回報衝突。
-無關的自訂 workflow 會保留，不會阻擋設定。操作說明見
+可檢查內容的無關自訂 workflow 會保留，不會阻擋設定。無法檢查 workflow
+內容時，設定會停止，不寫入變更。請 repo 管理員檢查該 workflow 後再重試。操作說明見
 [桌面 GitHub 設定](desktop/macos/README.md#enable-github-review)。
 
 ## Benchmarks
