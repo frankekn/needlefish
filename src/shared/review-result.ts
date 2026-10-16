@@ -1,3 +1,4 @@
+import { parseReviewRuntime } from "./runtime.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -372,6 +373,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
 	coverageGaps: coverageGapListField,
+	runtime: parseReviewRuntime,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

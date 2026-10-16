@@ -6,7 +6,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { runAcp } from "./acp.js";
+import { runtimeLabel } from "./runtime.js";
+import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
 import { findRunnerFailure } from "./runner-failure.js";
 import {
@@ -304,11 +305,26 @@ function requireAcpEnvCredentials(): void {
 	}
 }
 
+interface PiAuthSelection {
+	readonly provider: string;
+	readonly authMode: "oauth" | "proxy";
+}
+
+function resolvePiAuthSelection(): PiAuthSelection {
+	const provider = process.env.PI_PROVIDER ?? "openai-codex";
+	const authMode = process.env.PI_AUTH_MODE ??
+		(provider === "openai-codex" ? "oauth" : "proxy");
+	if (authMode !== "oauth" && authMode !== "proxy") {
+		throw new Error("PI_AUTH_MODE must be oauth or proxy");
+	}
+	return Object.freeze({ provider, authMode });
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
 // would reject supported configurations that never read it.
-function ephemeralAuthFiles(runner: RunnerName): {
+function ephemeralAuthFiles(runner: RunnerName, piAuth: PiAuthSelection | undefined): {
 	readonly required: readonly string[];
 	readonly optional: readonly string[];
 } {
@@ -375,14 +391,8 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	}
 	// pi: proxy routes keep credentials outside HOME. Every explicit non-default
 	// provider also needs its registry; OAuth routes require Pi's auth store.
-	if (runner === "pi") {
-		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		const authMode =
-			process.env.PI_AUTH_MODE ??
-			(provider === "openai-codex" ? "oauth" : "proxy");
-		if (authMode !== "oauth" && authMode !== "proxy") {
-			throw new Error("PI_AUTH_MODE must be oauth or proxy");
-		}
+	if (piAuth) {
+		const { provider, authMode } = piAuth;
 		if (authMode === "proxy" || hasPiProviderEnvCredential(provider)) {
 			return {
 				required: [".pi/agent/models.json"],
@@ -409,6 +419,7 @@ export function prepareEphemeralHome(
 	runner: RunnerName,
 	tmp: string,
 	connectionAuth?: RunnerOptions["connectionAuth"],
+	selectedPiAuth?: PiAuthSelection,
 ): string | undefined {
 	connectionAuth?.assertCompatible(runner);
 	if (!connectionAuth && process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
@@ -426,10 +437,11 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
+	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
 	// Explicit env auth never stages a default account's files or config.
 	const { required, optional } = connectionAuth
 		? { required: [], optional: [] }
-		: ephemeralAuthFiles(runner);
+		: ephemeralAuthFiles(runner, piAuth);
 	if (!realHome) {
 		// No source HOME is only a problem when something must be staged from
 		// it: an env-authenticated mode (required empty) is independently valid,
@@ -498,8 +510,8 @@ export function prepareEphemeralHome(
 		// this only stops default-path resolution; a same-uid child that
 		// hunts absolute paths can still read the real HOME. Detection of
 		// that behavior is G3's job (bait + canary), not G1's.
-		if (runner === "pi" && rel === ".pi/agent/auth.json") {
-			const provider = process.env.PI_PROVIDER ?? "openai-codex";
+		if (piAuth && rel === ".pi/agent/auth.json") {
+			const { provider } = piAuth;
 			let auth: unknown;
 			try {
 				auth = JSON.parse(readFileSync(src, "utf8"));
@@ -520,6 +532,7 @@ export function prepareEphemeralHome(
 }
 
 export interface CodexOptions extends RunnerOptions {
+	readonly effectiveConfig?: EffectiveRunnerConfig;
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
@@ -570,10 +583,14 @@ interface RunnerAttemptResult {
 
 interface RunnerInvocation {
 	readonly acpLaunch?: AcpLaunchSpec;
+	readonly initializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
 	readonly prompt: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
+	readonly codexServiceTier: string | undefined;
+	readonly piProvider: string | undefined;
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
@@ -604,7 +621,62 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 			"CODEX_PROXY_API_KEY is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
 		);
 	}
-	return { baseUrl, apiKey };
+	return Object.freeze({ baseUrl, apiKey });
+}
+
+const PI_DEFAULT_MODEL = "gpt-5.6-sol";
+const GROK_DEFAULT_MODEL = "grok-build";
+
+export interface EffectiveRunnerConfig {
+	readonly connectionAuth: RunnerOptions["connectionAuth"];
+	readonly runner: RunnerName;
+	readonly acpLaunch: AcpLaunchSpec | undefined;
+	readonly acpInitializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
+	readonly model: string | undefined;
+	readonly reasoningEffort: string | undefined;
+	readonly effectiveEffort: string | undefined;
+	readonly timeoutMs: number;
+	readonly codexServiceTier: string | undefined;
+	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly piAuth: PiAuthSelection | undefined;
+}
+
+export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig {
+	try {
+		const runner = resolveRunner(opts);
+		opts.connectionAuth?.assertCompatible(runner);
+		const configuredModel = resolveModel(opts, runner) ??
+			(runner === "pi" ? PI_DEFAULT_MODEL : runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
+		const effort = opts.reasoningEffort || undefined;
+		const model = runner === "acp" ? opts.acpLaunch ? opts.model : undefined :
+			runner === "opencode" && configuredModel && effort && effort !== "default"
+				? `${configuredModel.split("#")[0]}#${effort}` : configuredModel;
+		const effectiveEffort = runner === "acp" || runner === "openai" ? undefined :
+			runner === "codex" ? effort ?? resolveCodexReasoningEffort() :
+			runner === "pi" ? resolvePiThinking(effort) :
+			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
+		if (opts.timeoutMs !== undefined && (!Number.isSafeInteger(opts.timeoutMs) || opts.timeoutMs <= 0)) {
+			throw new Error("timeoutMs requires a positive safe integer");
+		}
+		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+		return Object.freeze({
+			runner,
+			connectionAuth: opts.connectionAuth,
+			acpLaunch: opts.acpLaunch,
+			acpInitializeTimeoutMs: runner === "acp" ? resolveAcpInitializeTimeoutMs(timeoutMs) : timeoutMs,
+			openCodeIdleTimeoutMs: runner === "opencode" ? openCodeIdleTimeoutMs(timeoutMs) : timeoutMs,
+			model,
+			reasoningEffort: runner === "codex" ? effectiveEffort : opts.reasoningEffort,
+			effectiveEffort,
+			timeoutMs,
+			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
+			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
+			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
+		});
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 }
 
 function remainingReviewMs(deadline: number | undefined): number {
@@ -617,22 +689,16 @@ export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
 ): Promise<string> {
-	let runner: RunnerName;
-	let codexProxy: CodexProxyConfig | undefined;
-	try {
-		runner = resolveRunner(opts);
-		opts.connectionAuth?.assertCompatible(runner);
-		codexProxy = runner === "codex" ? resolveCodexProxyConfig() : undefined;
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const config = opts.effectiveConfig ?? resolveRunnerConfig(opts);
+	const { runner } = config;
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
 	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
-		const model = resolveModel(opts, runner);
+		const modelIdentity = runtimeLabel(config.model, "known", "model");
+		const model = modelIdentity.status === "unknown" ? undefined : modelIdentity.value;
 		opts.onStat({
 			label: opts.label ?? "(unlabeled)",
 			runner,
@@ -648,16 +714,16 @@ export async function runCodex(
 		attempts = attempt;
 		try {
 			remainingReviewMs(opts.reviewDeadlineMs);
-			const result = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			const result = await runCodexOnce(prompt, opts, config, attempt);
 			usage = result.usage;
 			emitStat(true);
 			return result.out;
 		} catch (err) {
-			if (err instanceof Error && opts.connectionAuth) {
+			if (err instanceof Error && config.connectionAuth) {
 				// Keep failure types and raw provenance while withholding public credentials.
 				err.message = err instanceof RunnerWorktreeChangedError
 					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
-					: opts.connectionAuth.screenDiagnostic(err.message);
+					: config.connectionAuth.screenDiagnostic(err.message);
 			}
 			const raw =
 				err instanceof Error
@@ -670,9 +736,9 @@ export async function runCodex(
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
 			}
-			if (raw && opts.connectionAuth && !isRunnerSafetyError(err)) {
+			if (raw && config.connectionAuth && !isRunnerSafetyError(err)) {
 				try {
-					opts.connectionAuth.assertOutputSafe(raw);
+					config.connectionAuth.assertOutputSafe(raw);
 				} catch (screeningError) {
 					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
 					emitStat(false);
@@ -714,17 +780,10 @@ export async function runCodex(
 async function runCodexOnce(
 	prompt: string,
 	opts: CodexOptions,
-	runner: RunnerName,
+	config: EffectiveRunnerConfig,
 	runnerAttempt: number,
-	codexProxy: CodexProxyConfig | undefined,
 ): Promise<RunnerAttemptResult> {
-	const model = resolveModel(opts, runner);
-	let timeoutMs: number;
-	try {
-		timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const { runner, model, timeoutMs, codexProxy } = config;
 	if (runner === "openai") {
 		return {
 			out: await runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
@@ -747,8 +806,8 @@ async function runCodexOnce(
 		const { invocation, sandbox } = (() => {
 			try {
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp, opts.connectionAuth);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, opts.connectionAuth);
+				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth);
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
@@ -762,11 +821,15 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
-						...(opts.acpLaunch ? { acpLaunch: opts.acpLaunch } : {}),
+						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
+						initializeTimeoutMs: config.acpInitializeTimeoutMs,
+						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
 						model,
-						reasoningEffort: opts.reasoningEffort,
+						reasoningEffort: config.reasoningEffort,
+						codexServiceTier: config.codexServiceTier,
+						piProvider: config.piAuth?.provider,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
@@ -848,8 +911,8 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
-			if (opts.connectionAuth) {
-				opts.connectionAuth.assertOutputSafe(out);
+			if (config.connectionAuth) {
+				config.connectionAuth.assertOutputSafe(out);
 				let decoded: unknown;
 				try {
 					decoded = extractJson(out);
@@ -857,7 +920,7 @@ async function runCodexOnce(
 					// Explain output can be plain text; raw screening still applies.
 					if (!(error instanceof Error)) throw error;
 				}
-				if (decoded !== undefined) opts.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+				if (decoded !== undefined) config.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
 			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
@@ -867,7 +930,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			opts.connectionAuth?.assertOutputSafe(raw);
+			config.connectionAuth?.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
@@ -1158,7 +1221,7 @@ export function extractJson(text: string): unknown {
 }
 
 function resolveModel(
-	opts: CodexOptions,
+	opts: RunnerOptions,
 	runner: RunnerName,
 ): string | undefined {
 	// Named connections never borrow a model from another ambient lane.
@@ -1233,8 +1296,8 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const reasoningEffort = resolveCodexReasoningEffort();
-	const serviceTier = resolveCodexServiceTier();
+	const reasoningEffort = invocation.reasoningEffort;
+	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
 		"--color",
@@ -1267,8 +1330,6 @@ async function runCodexCli(
 	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
-	if (invocation.reasoningEffort)
-		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
 		command: requireRunnerCommand("codex"),
@@ -1358,16 +1419,7 @@ async function runOpenCode(
 	];
 	args.push("--file", promptPath);
 	if (invocation.model) {
-		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
-		// variant already in the model id rather than appending a second one.
-		const effort =
-			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
-				? invocation.reasoningEffort
-				: null;
-		args.push(
-			"--model",
-			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
-		);
+		args.push("--model", invocation.model);
 	} else if (invocation.reasoningEffort) {
 		throw new RunnerOperationalError(
 			"opencode reasoning effort requires a model to be specified",
@@ -1381,7 +1433,7 @@ async function runOpenCode(
 		stdin: "",
 		repoPath: invocation.repoPath,
 		timeoutMs: invocation.timeoutMs,
-		idleTimeoutMs: openCodeIdleTimeoutMs(invocation.timeoutMs),
+		idleTimeoutMs: Math.min(invocation.openCodeIdleTimeoutMs, invocation.timeoutMs),
 		env: {
 			...invocation.env,
 			OPENCODE_CONFIG_CONTENT: unrestrictedConfig,
@@ -1395,7 +1447,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
 	const args = [
 		"-m",
-		invocation.model ?? "grok-build",
+		invocation.model ?? GROK_DEFAULT_MODEL,
 		"--prompt-file",
 		promptPath,
 		"--output-format",
@@ -1455,9 +1507,9 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 		// provider registered in ~/.pi/agent/models.json instead of pi's own
 		// openai-codex OAuth (e.g. the ubuntu runner, where credentials live
 		// in the proxy).
-		process.env.PI_PROVIDER ?? "openai-codex",
+		invocation.piProvider ?? "openai-codex",
 		"--model",
-		invocation.model ?? "gpt-5.6-sol",
+		invocation.model ?? PI_DEFAULT_MODEL,
 		"--thinking",
 		thinking,
 	];

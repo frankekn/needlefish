@@ -53,8 +53,8 @@ export function parseRunnerName(value: string, label: string): RunnerName {
 
 export function parsePositiveInteger(value: string, label: string): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${label} requires a positive integer`);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} requires a positive integer within the safe integer range`);
   }
   return parsed;
 }

@@ -1,5 +1,7 @@
 import {
 	runCodex,
+	resolveRunnerConfig,
+	type EffectiveRunnerConfig,
 	extractJson,
 	isRunnerSafetyError,
 	MALFORMED_OUTPUT_NEXT_STEP,
@@ -13,7 +15,7 @@ import {
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
-import { resolveRunner } from "../shared/runner-detection.js";
+import { reviewRuntime } from "../shared/runtime.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -74,7 +76,8 @@ interface TraceDeliveryHealth {
 
 interface ReviewRun {
 	readonly bundle: Bundle;
-	readonly runnerOptions: RunnerOptions;
+	readonly runnerConfig: EffectiveRunnerConfig;
+	readonly runtime: NonNullable<ReviewResult["runtime"]>;
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
 	// a retry later succeeds — the eval canary scan must see emit-then-clean-up
@@ -253,20 +256,20 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn() && !run.runnerOptions.connectionAuth) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && !run.runnerConfig.connectionAuth) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		onLfsReport: (report) => {
 			for (const file of report.pointerFiles) run.lfs.pointerFiles.add(file);
 			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
 		},
-		...run.runnerOptions,
+		effectiveConfig: run.runnerConfig,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
 	};
 }
@@ -345,7 +348,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -743,6 +746,7 @@ function toReviewResult(
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
+		runtime: run.runtime,
 		summary,
 		findings: raw.findings,
 		checked: raw.checked,
@@ -1109,7 +1113,8 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
+	const runnerConfig = resolveRunnerConfig(runnerOptions);
+	if (plan.largePath && runnerConfig.runner === "openai") {
 		throw new Error(
 			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
 		);
@@ -1120,16 +1125,19 @@ export async function review(
 	// never consumes reviewDeadlineMs, so an invalid NEEDLEFISH_REVIEW_TIMEOUT_MS
 	// must not turn a docs-only review that would have passed into a throw.
 	const reviewTimeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
-	const reviewDeadlineMs = reviewTimeout
-		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
-		: undefined;
+	const reviewBudgetMs = reviewTimeout
+		? parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
+		: null;
+	const reviewDeadlineMs = reviewBudgetMs === null
+		? undefined : performance.now() + reviewBudgetMs;
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerOptions.connectionAuth !== undefined && evalTraceOn())
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerConfig.connectionAuth !== undefined && evalTraceOn())
 		? { failed: onTrace === undefined, pending: new Set() }
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
-		runnerOptions,
+		runnerConfig,
+		runtime: reviewRuntime(runnerConfig, reviewBudgetMs),
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],

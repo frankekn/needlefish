@@ -1,3 +1,4 @@
+import type { ReviewRuntime } from "./runtime.js";
 import type { RunStat } from "./runner.js";
 
 export const REVIEW_RESULT_SCHEMA_VERSION = 1;
@@ -134,6 +135,7 @@ export interface ReviewResult {
 	// one lfs_scan_incomplete entry when any pass could not finish the scan.
 	// Output-only.
 	readonly coverageGaps?: readonly CoverageGap[];
+	readonly runtime?: ReviewRuntime;
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;
 	// Preformatted one-line coverage summary rendered visibly below the counts

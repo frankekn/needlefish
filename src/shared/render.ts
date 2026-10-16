@@ -54,6 +54,7 @@ export function renderMarkdown(
 		// becomes model input on the next run. Check summaries are not read
 		// back (normalizePrMeta keeps only name/status/conclusion).
 		omitCoverageGaps?: boolean;
+		omitRuntime?: boolean;
 	},
 ): string {
 	const lines: string[] = [];
@@ -271,6 +272,14 @@ export function renderMarkdown(
 		}
 		lines.push("");
 		lines.push(`<sub>${parts.join(" · ")}</sub>`);
+	}
+
+	if (result.runtime && !opts?.omitRuntime) {
+		const runtime = result.runtime;
+		const version = runtime.coreVersion.status === "unknown" ? "unknown" : runtime.coreVersion.value;
+		lines.push("", `Tool ${version} · AI service ${runtime.runner} · Configuration not qualified against an evaluation report.`,
+			"", "<details>", "<summary>Runtime technical data</summary>", "", "```json",
+			JSON.stringify(runtime, null, 2), "```", "", "</details>");
 	}
 
 	let output = `${lines.join("\n").trim()}\n`;
