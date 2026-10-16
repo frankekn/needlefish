@@ -125,7 +125,7 @@ function percentCredentialPattern(value: string): RegExp {
     const literal = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const encoded = Array.from(Buffer.from(char)).map(byte => `%${byte.toString(16).padStart(2, "0")}`).join("");
     return `(?:${literal}|${encoded})`;
-  }).join(""), "iu");
+  }).join(""), "i");
 }
 
 function* codexCredentialViews(text: string): Generator<string> {
@@ -133,7 +133,7 @@ function* codexCredentialViews(text: string): Generator<string> {
   for (let pass = 0; pass < 2; pass++) {
     text = decodeJsonEscapes(text);
     yield text;
-    text = text.replace(/(?:%[0-9a-f]{2})+/gi, bytes => Buffer.from(bytes.replaceAll("%", ""), "hex").toString("utf8"));
+    text = text.replace(/%[0-7][0-9a-f]/gi, byte => String.fromCharCode(Number.parseInt(byte.slice(1), 16)));
     yield text;
   }
 }
