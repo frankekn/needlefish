@@ -138,16 +138,20 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
   const hook = join(f.repo, ".needlefish/shift-left/pre-push");
   const text = readFileSync(hook, "utf8").replace("review-gate.mjs origin/main", "review-gate.mjs HEAD");
   writeFileSync(hook, text);
-  for (const [ref, sha, expected] of [
-    ["refs/heads/topic", f.head, 0], ["refs/heads/topic", "0".repeat(40), 1],
-    ["refs/tags/topic", f.head, 1],
+  for (const [ref, sha, remoteRef, expected] of [
+    ["refs/heads/topic", f.head, "refs/heads/topic", 0],
+    ["refs/heads/topic", "0".repeat(40), "refs/heads/topic", 1],
+    ["refs/tags/topic", f.head, "refs/heads/topic", 1],
+    ["refs/heads/topic", f.head, "refs/tags/topic", 1],
+    ["(delete)", "0".repeat(40), "refs/heads/topic", 1],
   ]) {
     const r = spawnSync("sh", [hook, "origin", "unused"], {
-      cwd: f.repo, env: f.env, input: `${ref} ${sha} refs/heads/topic ${"0".repeat(40)}\n`, encoding: "utf8", timeout: 20000,
+      cwd: f.repo, env: f.env, input: `${ref} ${sha} ${remoteRef} ${"0".repeat(40)}\n`, encoding: "utf8", timeout: 20000,
     });
     assert.equal(r.status, expected, r.stderr);
     if (expected === 0) assert.match(r.stdout, /LGTM/);
     else assert.equal(r.stdout, "");
+    assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
   }
 });
 
@@ -197,4 +201,36 @@ test("SIGHUP stops the detached review group and removes its temporary result", 
   const pid = Number(readFileSync(pidFile, "utf8"));
   assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
   assert.deepEqual(readdirSync(f.dir).filter((name) => name.startsWith("needlefish-pre-pr-")), []);
+});
+
+
+test("real Git rejects non-branch endpoints before review and reviews valid pushes once", (t) => {
+  const f = setup(t);
+  writeFileSync(f.fixture, JSON.stringify(f.base));
+  const bare = join(f.dir, "remote.git");
+  execFileSync("git", ["init", "--bare", "-q", bare]);
+  f.git("remote", "add", "origin", bare);
+  f.git("update-ref", "refs/remotes/origin/main", f.head);
+  f.git("tag", "source-tag");
+  f.git("push", "origin", "HEAD:refs/heads/delete-me");
+  const hook = join(f.repo, ".git/hooks/pre-push");
+  cpSync(join(f.repo, ".needlefish/shift-left/pre-push"), hook);
+  chmodSync(hook, 0o755);
+  const branch = f.git("symbolic-ref", "HEAD");
+  for (const refspec of [`${branch}:refs/tags/v1`, "refs/tags/source-tag:refs/heads/from-tag", ":refs/heads/delete-me"]) {
+    const r = spawnSync("git", ["push", "origin", refspec], { cwd: f.repo, env: f.env, encoding: "utf8", timeout: 20000 });
+    t.diagnostic(JSON.stringify({ refspec, exit: r.status, stdout: r.stdout, stderr: r.stderr }));
+    assert.equal(r.status, 1, `${refspec}\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /Needlefish gate blocked: push a branch ref/);
+    assert.equal(existsSync(f.log), false);
+    assert.equal(execFileSync("git", ["--git-dir", bare, "for-each-ref", "--format=%(refname) %(objectname)"], { encoding: "utf8" }).trim(), `refs/heads/delete-me ${f.head}`);
+  }
+  for (const destinations of [["one"], ["two", "three"]]) {
+    const r = spawnSync("git", ["push", "origin", ...destinations.map((name) => `${branch}:refs/heads/${name}`)], { cwd: f.repo, env: f.env, encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /LGTM/);
+    const calls = readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(calls.map((args) => args[0]), destinations.length === 1 ? ["--repo", "verdict", "render"] : ["--repo", "verdict", "render", "--repo", "verdict", "render"]);
+    for (const name of destinations) assert.equal(execFileSync("git", ["--git-dir", bare, "rev-parse", `refs/heads/${name}`], { encoding: "utf8" }).trim(), f.head);
+  }
 });
