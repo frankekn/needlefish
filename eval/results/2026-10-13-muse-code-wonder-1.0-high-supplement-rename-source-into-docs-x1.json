@@ -1,0 +1,80 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "acp",
+  "model": "muse-wonder-1.0",
+  "effort": "high",
+  "draws": 1,
+  "createdAt": "2026-10-13T07:50:23.072Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "rename-source-into-docs",
+      "draw": 0,
+      "score": {
+        "fixtureId": "rename-source-into-docs",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false
+      },
+      "durationMs": 6,
+      "calls": 0,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [
+        {
+          "pattern": "(?=[\\s\\S]*\\b(ci|workflows?)\\b)(?=[\\s\\S]*(renam|mov|remov|no longer (run|trigger|execut)|stop(s|ped)? running))[\\s\\S]*",
+          "file": "docs/ci.md",
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0,
+    "lineAnchorValidRate": 0,
+    "meanDurationMs": 6,
+    "recallByFixture": {
+      "rename-source-into-docs": 0
+    },
+    "mustFindHitRateByFixture": {
+      "rename-source-into-docs": 0
+    },
+    "mustFindHitRate": 0,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 0
+    },
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "aaf48b11c01f62d4a23c01a550f5c68c0aba9f87",
+  "fixtureSetHash": "cfddbd424f724cc9",
+  "scorerHash": "a424d3bb59a40443",
+  "fixtureTiers": {
+    "rename-source-into-docs": 2
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "rename-source-into-docs"
+  ],
+  "fixtureKinds": {
+    "rename-source-into-docs": "positive"
+  }
+}

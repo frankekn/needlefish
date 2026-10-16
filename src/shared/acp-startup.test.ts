@@ -66,6 +66,16 @@ test("session/new server error preserves a successful bounded second attempt", a
   assertDisposed(f);
 });
 
+test("session/new exhausted server errors withhold private agent text from public diagnostics", async (t) => {
+  const f = fixture(t, "session-server");
+  const error = await failed(f, "unknown", 2);
+  assert.equal(findRunnerFailure(error)?.retryable, true);
+  assert.equal(findRunnerFailure(error)?.stage, "session/new");
+  assert.match(error.message, /JSON-RPC -32603.*agent error text withheld/);
+  assert.equal(f.raw.length, 2);
+  for (const raw of f.raw) assert.match(raw, /startup-private-token-canary/);
+});
+
 test("session/new clean exit without a response stays a non-retryable protocol error", async (t) => {
   const f = fixture(t, "session-exit0");
   const error = await failed(f, "protocol_error");
@@ -228,7 +238,7 @@ readline.createInterface({input:process.stdin}).on('line', (line) => {
     if (mode === 'malformed') { process.stdout.write(${JSON.stringify(PRIVATE)}+'\n'); return; }
     send({jsonrpc: mode === 'wrong-jsonrpc' ? '1.0' : '2.0',id:mode === 'wrong-id' ? 99 : request.id,result:mode === 'missing-version' ? {} : {protocolVersion:mode === 'wrong-version' ? 2 : 1}});
   } else if (request.method === 'session/new') {
-    if (mode === 'session-auth' || (mode === 'session-recover' && fs.readFileSync(launches,'utf8').trim().split('\n').length === 1)) {
+    if (mode === 'session-auth' || mode === 'session-server' || (mode === 'session-recover' && fs.readFileSync(launches,'utf8').trim().split('\n').length === 1)) {
       send({jsonrpc:'2.0',id:request.id,error:{code:mode === 'session-auth' ? -32000 : -32603,message:${JSON.stringify(PRIVATE)}}}); return;
     }
     if (mode === 'session-exit0') process.exit(0);

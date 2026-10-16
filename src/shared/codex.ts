@@ -18,7 +18,7 @@ import {
 	type RunStat,
 	type RunUsage,
 } from "./runner.js";
-import { resolveRunner } from "./runner-detection.js";
+import { requireRunnerCommand, resolveRunner } from "./runner-detection.js";
 import {
 	RunnerIdleTimeoutError,
 	RunnerTimeoutError,
@@ -101,17 +101,6 @@ export function buildRunnerEnv(
 		const value = process.env[name];
 		if (value !== undefined) env[name] = value;
 	}
-	// Git config outside the sandbox must not reach the runner's git commands.
-	// severSourceRemote strips the clone-local origin, but a remote.<name>.url
-	// in the runner's global or system gitconfig would resurrect a push route
-	// to the source repository that the post-run check never inspects. Git
-	// has no "ignore local config" switch and no per-remote deny, so the whole
-	// global and system layers are dropped, the same way runner-sandbox.ts
-	// runs its own git. Set after the allowlist loop so passthrough cannot
-	// override them.
-	env.GIT_CONFIG_GLOBAL = "/dev/null";
-	env.GIT_CONFIG_SYSTEM = "/dev/null";
-	env.GIT_CONFIG_NOSYSTEM = "1";
 	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
 	// runner requested isolation, point HOME/USERPROFILE at a per-invocation
 	// throwaway dir inside the rmSync'd tmp. Every session/cache/log the CLI
@@ -124,7 +113,21 @@ export function buildRunnerEnv(
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
 	}
+	sealRunnerGitConfig(env);
 	return env;
+}
+
+// Git config outside the sandbox must not reach the runner's git commands.
+// severSourceRemote strips the clone-local origin, but a remote.<name>.url
+// in the runner's global or system gitconfig would resurrect a push route
+// to the source repository that the post-run check never inspects. Git
+// has no "ignore local config" switch and no per-remote deny, so the whole
+// global and system layers are dropped, the same way runner-sandbox.ts
+// runs its own git.
+function sealRunnerGitConfig(env: NodeJS.ProcessEnv): void {
+	env.GIT_CONFIG_GLOBAL = "/dev/null";
+	env.GIT_CONFIG_SYSTEM = "/dev/null";
+	env.GIT_CONFIG_NOSYSTEM = "1";
 }
 
 // Minimal auth material each runner needs to authenticate from an isolated
@@ -879,11 +882,7 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	return undefined;
 }
 
-// One concrete next step per exit-failure class. Only catalog commands and
-// canned phrases reach the message; review.yml advances its provider fallback
-// on the `likely cause:` token, so an auth step must never contain a fallback
-// keyword (timeout, unreachable, ...).
-function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
+export function exitFailureNextStep(runner: RunnerName, cause: string | undefined): string {
 	if (cause === undefined) {
 		return "Run `needlefish doctor` to check the runner setup, then retry.";
 	}
@@ -974,6 +973,70 @@ function unparseableOutputError(text: string): Error {
 	);
 }
 
+// JSON.parse collapses a duplicated member key silently (last value wins), so
+// a response repeating `"findings"` (findings, then []) loses the findings and
+// normalizes to a pass. Reject duplicates anywhere instead of trusting the
+// collapsed object. The reviver cannot detect this (V8 calls it once per
+// collapsed key), so this scanner walks the text: in JSON that has already
+// parsed, the first token after `{` or `,` inside an object is a member name,
+// so a string in that position is a key and duplicate keys fail the set check.
+// Keys are compared decoded, matching what JSON.parse collided.
+function findDuplicateJsonKey(source: string): string | undefined {
+	type Scope = { isObject: true; keys: Set<string> } | { isObject: false };
+	const stack: Scope[] = [];
+	let nextIsKey = false;
+	for (let i = 0; i < source.length; ) {
+		const ch = source[i];
+		if (ch === '"') {
+			// Skip to the closing quote, stepping over escape pairs so `\"`
+			// and braces inside strings do not shift the structural scan.
+			let end = i + 1;
+			while (end < source.length) {
+				if (source[end] === "\\") end += 2;
+				else if (source[end] === '"') break;
+				else end += 1;
+			}
+			const top = stack[stack.length - 1];
+			if (top !== undefined && top.isObject && nextIsKey) {
+				const key = JSON.parse(source.slice(i, end + 1)) as string;
+				if (top.keys.has(key)) return key;
+				top.keys.add(key);
+			}
+			nextIsKey = false;
+			i = end + 1;
+			continue;
+		}
+		if (ch === "{") {
+			stack.push({ isObject: true, keys: new Set() });
+			nextIsKey = true;
+		} else if (ch === "[") {
+			stack.push({ isObject: false });
+			nextIsKey = false;
+		} else if (ch === "}" || ch === "]") {
+			stack.pop();
+			nextIsKey = false;
+		} else if (ch === ",") {
+			nextIsKey = stack[stack.length - 1]?.isObject === true;
+		} else if (ch === ":") {
+			nextIsKey = false;
+		}
+		i += 1;
+	}
+	return undefined;
+}
+
+// Complete response, duplicated member key: model-side contract failure, so
+// it stays unclassified like invalid JSON (no likely-cause token) and keeps
+// the shared malformed-output next step.
+function assertNoDuplicateJsonKeys(source: string): void {
+	const duplicate = findDuplicateJsonKey(source);
+	if (duplicate !== undefined) {
+		throw new Error(
+			`duplicate JSON key "${duplicate}" in codex output. ${MALFORMED_OUTPUT_NEXT_STEP}`,
+		);
+	}
+}
+
 function parseJsonObject(raw: string): unknown {
 	const start = raw.indexOf("{");
 	const end = raw.lastIndexOf("}");
@@ -983,8 +1046,10 @@ function parseJsonObject(raw: string): unknown {
 		// answered, just not in JSON.
 		throw unparseableOutputError(raw);
 	}
+	const source = raw.slice(start, end + 1);
+	let parsed: unknown;
 	try {
-		return JSON.parse(raw.slice(start, end + 1));
+		parsed = JSON.parse(source);
 	} catch (error) {
 		if (error instanceof SyntaxError) {
 			throw new Error(`invalid JSON in codex output: ${error.message}. ${MALFORMED_OUTPUT_NEXT_STEP}`, {
@@ -993,6 +1058,8 @@ function parseJsonObject(raw: string): unknown {
 		}
 		throw error;
 	}
+	assertNoDuplicateJsonKeys(source);
+	return parsed;
 }
 
 // Prompt contract: exactly one ```json fence. Prefer that tag so a leading
@@ -1005,7 +1072,10 @@ export function extractJson(text: string): unknown {
 	if (trimmed.startsWith("{")) {
 		try {
 			const parsed = JSON.parse(trimmed);
-			if (isRecord(parsed)) return parsed;
+			if (isRecord(parsed)) {
+				assertNoDuplicateJsonKeys(trimmed);
+				return parsed;
+			}
 		} catch (error) {
 			if (!(error instanceof SyntaxError)) throw error;
 			documentError = error;
@@ -1161,7 +1231,7 @@ async function runCodexCli(
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CODEX_BIN ?? "codex",
+		command: requireRunnerCommand("codex"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -1206,7 +1276,7 @@ async function runClaude(invocation: RunnerInvocation): Promise<RunnerResult> {
 		args.push("--effort", invocation.reasoningEffort);
 
 	const res = await spawnRunnerProcess({
-		command: process.env.CLAUDE_BIN ?? "claude",
+		command: requireRunnerCommand("claude"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,
@@ -1266,7 +1336,7 @@ async function runOpenCode(
 	args.push("Use the attached prompt file as your complete instruction.");
 
 	const res = await spawnRunnerProcess({
-		command: process.env.OPENCODE_BIN ?? "opencode",
+		command: requireRunnerCommand("opencode"),
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -1300,7 +1370,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	if (invocation.reasoningEffort)
 		args.push("--reasoning-effort", invocation.reasoningEffort);
 	const res = await spawnRunnerProcess({
-		command: process.env.GROK_BIN ?? "grok",
+		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
 		repoPath: invocation.repoPath,
@@ -1355,7 +1425,7 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	// positional arg. Verified 2026-07-10: `pi -p --no-session --mode text` with
 	// no positional message reads the full prompt from stdin.
 	const res = await spawnRunnerProcess({
-		command: process.env.PI_BIN ?? "pi",
+		command: requireRunnerCommand("pi"),
 		args,
 		stdin: invocation.prompt,
 		repoPath: invocation.repoPath,

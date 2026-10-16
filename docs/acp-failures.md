@@ -24,6 +24,11 @@ permission-required, cancelled/refused/limited turns, and malformed protocol
 failures are not retried. Unclassified/server errors keep the existing bounded
 retry policy. Other adapters' behavior is unchanged.
 
+The managed whole-call timeout is final and is not retried, matching the CLI
+runner policy. It retains `RunnerTimeoutError` and the `--timeout-ms` advice.
+After the timeout fires, a late `end_turn`, cancellation response, or valid
+review JSON cannot revive the timed-out call.
+
 Only standard ACP/JSON-RPC codes are interpreted: `-32000` means authentication
 required, `-32800` means request cancelled, and `-32700`/`-32600`/`-32601`/`-32602`
 identify protocol incompatibilities. Raw error messages/data, malformed stdout,

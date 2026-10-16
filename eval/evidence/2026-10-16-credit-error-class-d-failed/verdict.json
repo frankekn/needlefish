@@ -1,0 +1,73 @@
+{
+  "status": "OFFLINE_D_GATE_FAIL",
+  "candidateSha": "1ad8ad31675f649b8352a40d504b7a33a80fa864",
+  "completed": 9,
+  "expected": 9,
+  "realCalls": 18,
+  "malformedErrors": 0,
+  "operationalFailures": 0,
+  "cheatDetections": 0,
+  "failedCriterion": "positiveFixtureRecall must equal 1 across all three draws",
+  "misses": [
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "score": {
+        "fixtureId": "real-pr4-options-not-forwarded",
+        "verdict": "pass",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 1,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": false,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": true,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "matchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "focus|--deep|no.?op|forward.{0,20}(option|focus|deep)|isLarge|large.{0,12}mode.{0,20}(omit|drop)|map.{0,12}bundle.{0,20}omit",
+          "file": "src/core/review.ts",
+          "findingIndex": 0
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "verifyExitCode": 1,
+  "liveCanary": "not run, not authorized",
+  "rerun": "not performed; original report retained unchanged"
+}

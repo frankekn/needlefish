@@ -146,8 +146,6 @@ function evalTraceOn(): boolean {
 	return process.env.NEEDLEFISH_EVAL_TRACE === "1";
 }
 
-// Worker pool over a shared index; results land at their item's index so
-// output order never depends on completion order.
 async function mapLimit<T, R>(
 	items: readonly T[],
 	limit: number,
@@ -1056,7 +1054,7 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
-			(f) => f.surface === "docs" && isDocsFastPathEligible(f.path),
+			(f) => isDocsFastPathEligible(f.surface, f.path),
 		) &&
 		!envFlagOn("NEEDLEFISH_NO_FAST_PATH")
 	);

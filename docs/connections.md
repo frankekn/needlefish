@@ -18,9 +18,12 @@ accounts. Unsupported `authRef`, env, presets and fallback fields are rejected.
 Create `connections.json` under `$XDG_CONFIG_HOME/needlefish`, or
 `~/.config/needlefish` when XDG_CONFIG_HOME is unset. An explicit absolute
 `NEEDLEFISH_CONNECTIONS_FILE` may select another user/operator-owned file.
+An explicitly empty value is rejected as a non-absolute path.
 The file must be outside the reviewed repository, including symlink targets.
 Do not copy an untrusted project's configuration into this trusted location.
 The reader accepts only regular files and limits the actual read to 64 KiB.
+The path check is conservative. A concurrent change to a parent directory between
+path resolution and opening the file can still redirect the read.
 
 ```json
 {

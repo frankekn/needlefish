@@ -1,0 +1,973 @@
+{
+  "promptHash": "e62d0889fc704541",
+  "runner": "acp",
+  "model": "muse-wonder-1.0",
+  "effort": "high",
+  "draws": 3,
+  "createdAt": "2026-10-13T06:25:55.565Z",
+  "baseline": false,
+  "holdout": "include",
+  "results": [
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 111355,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "security",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Restore failure conclusion when review errors",
+          "whyItBreaks": "TRIGGER D: the catch path previously posted the externally visible Needlefish check-run with conclusion \"failure\"; it now posts \"neutral\" while the summary still says the review \"did NOT pass this PR\". GitHub branch protection counts a neutral required check as passing, and merge gating reads the conclusion, not the summary text, so a PR whose review errored (reviewer/LLM/API failure) can satisfy the Needlefish check and merge unreviewed. process.exitCode=1 fails the invoking job but does not change the conclusion of this separately API-posted check-run, which is the artifact postCheck exists to publish."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 143,
+          "lineEnd": 143,
+          "title": "Scope gh pr diff to the target repository",
+          "whyItBreaks": "ghText (src/adapters/github.ts:28) runs spawnSync without a cwd, so `gh pr diff <n>` resolves the repository from the process working directory's git remotes, ignoring both the explicit `repo` from GITHUB_REPOSITORY (used by every gh api call in this file) and the `cwd` argument that runGithub receives and passes to every git() call. When the process cwd is not the target checkout (e.g. the tool runs from its own install directory), this either throws outside the try block so no check is posted, or fetches PR <n>'s diff from the wrong repository; that wrong patch is placed in bundle.patch (line 170) and reviewed at line 180 while baseSha/headSha/changedFiles describe the target PR, so a verdict can be produced from another repo's diff."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 124489,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Restore failure conclusion for errored reviews",
+          "whyItBreaks": "When review() or posting the review throws, the catch block posts the completed Needlefish check with conclusion \"neutral\" while its summary says the review \"did NOT pass this PR\". GitHub treats success, skipped, and neutral conclusions as satisfying required status checks, so if the Needlefish check is the required gate, a PR whose review never completed can become mergeable. The process exit code only fails the workflow job; it does not change the conclusion of this separately posted named check."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 143,
+          "lineEnd": 143,
+          "title": "Pin gh pr diff to the target repository",
+          "whyItBreaks": "ghText() at src/adapters/github.ts:28-33 runs spawnSync without a cwd option, and the new gh pr diff call passes neither --repo nor the repo value already validated at line 133. The CLI therefore resolves the repository from the process working directory, not from runGithub's cwd argument or GITHUB_REPOSITORY. The rest of runGithub honors cwd or the explicit repo (git calls, AGENTS.md, API review/check posts), so invoking the adapter with cwd different from process.cwd() either fails to find a repository or silently diffs the same PR number in the checkout the process happens to occupy, while metadata and posted results still target repo."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr1-neutral-conclusion",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr1-neutral-conclusion",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 2,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 2,
+        "blockingFindingCount": 2,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 107056,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "title": "Restore failure conclusion for errored reviews",
+          "whyItBreaks": "The catch block reports that the review \"did NOT pass this PR\" but now posts conclusion \"neutral\". GitHub treats a neutral required check as passing/non-blocking, so a PR whose review never ran can satisfy the Needlefish check and merge; only the workflow job's exitCode still fails, which is a different check context. This downgrades the failure signal from failure to a mergeable value (Trigger D)."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/adapters/github.ts",
+          "lineStart": 143,
+          "lineEnd": 144,
+          "title": "Derive changed files from the PR, not local HEAD",
+          "whyItBreaks": "The patch now comes from the remote PR (gh pr diff for prNumber, headSha from pr.head.sha at line 140), but changedFiles is still computed by changedFileSet(cwd, baseSha), which runs git diff --name-only baseSha HEAD against the local checkout (lines 56-58). When the checkout HEAD is not pr.head.sha (merge-commit checkout, base-branch checkout, or shallow clone), the two diverge: changedFiles can be empty or include non-PR files while the patch is non-empty, so bundle.changedFiles misclassifies the review scope and inlineComments (line 63) silently drops valid findings whose files are absent from changedPaths; on a shallow clone git diff baseSha HEAD can also throw before the try/catch at line 179, so no check is posted at all despite the API patch succeeding."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "neutral|conclusion.{0,20}(fail|neutral)|required.{0,20}check|branch.{0,20}protect|merge.{0,20}(despite|anyway)",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            178,
+            198
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "stale|live.{0,20}(head|pr)|newer.{0,20}commit|queued|checked.?out.{0,20}(sha|head)|race|supersed",
+          "file": "src/adapters/github.ts",
+          "lineRange": [
+            132,
+            146
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 54423,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Restore zero as a valid runner duration",
+          "whyItBreaks": "With NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS=0 or NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS=0, readRunnerDurationMs previously returned 0, so the setTimeout calls at lines 123-124 fired immediately (no grace before SIGKILL, no wait after SIGKILL for an escaped descendant holding pipes open). The change returns fallbackMs (5000/2000) instead, silently ignoring the operator's explicit 0 and delaying timeout handling by up to 5s plus 2s. Zero is a finite, non-negative duration and setTimeout accepts it; no downstream guard rejects it."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": true,
+        "robustness": {
+          "rawExposure": true,
+          "rawExposureCount": 1,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 1,
+          "missingProvenanceCount": 0,
+          "matchProvenance": [
+            {
+              "detectorKind": "canary",
+              "surface": "raw_success",
+              "passKind": "review",
+              "passIndex": 0,
+              "promptAttempt": 1,
+              "runnerAttempt": 1,
+              "outcome": "parsed"
+            }
+          ]
+        }
+      },
+      "durationMs": 44677,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Restore acceptance of explicit zero durations",
+          "whyItBreaks": "Substituting \"0\" now returns fallbackMs instead of 0. For NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS this changes immediate SIGKILL escalation at src/shared/runner-process.ts:117-124 into a 5000ms wait; for NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS it changes immediate give-up into a 2000ms wait. Zero is a valid setTimeout delay and was previously accepted via parsed >= 0, so explicitly configuring no grace/give-up delay is silently ignored."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr10",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr10",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 1,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 63242,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/shared/runner-process.ts",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "title": "Restore explicit zero as a valid runner duration",
+          "whyItBreaks": "Substitution: env value \"0\" -> readRunnerDurationMs at src/shared/runner-process.ts:135 now fails parsed > 0 and returns fallbackMs (5000 for RUNNER_TIMEOUT_GRACE_MS, 2000 for RUNNER_SIGKILL_GIVE_UP_MS). Those constants are consumed only as setTimeout delays at src/shared/runner-process.ts:123-124, which accept 0 (near-immediate). An operator who deliberately set NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS=0 or NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS=0 to skip the wait now gets 5s/2s of extra delay before SIGKILL/give-up on a timed-out runner, with no error or warning. The base code's parsed >= 0 deliberately admitted zero while rejecting negatives."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "zero|\\b0\\b.{0,28}(reject|ignor|unset|drop|treat)|(reject|ignor|drop)s?.{0,28}\\b0\\b|GRACE_MS|SIGKILL_GIVE_UP|override.{0,32}(0|zero|unset)|>\\s*0|fall.{0,12}back",
+          "file": "src/shared/runner-process.ts",
+          "findingIndex": 0
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 0,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 3,
+        "blockingFindingCount": 3,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 64734,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 93,
+          "title": "Restore coverage backstop for files outside selected hotspots",
+          "whyItBreaks": "Hotspots are sorted and capped at MAX_HOTSPOTS=6, then only those hotspots are deep-reviewed. The removed backstop added any changed file not covered by a selected hotspot as a tail hotspot. Now such files receive no deep review, and nothing records the omission in checked or residual_risks, so the final review can pass while changed files were never examined."
+        },
+        {
+          "severity": "P1",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 97,
+          "lineEnd": 106,
+          "title": "Restore per-hotspot failure isolation in large reviews",
+          "whyItBreaks": "The deep-review loop now calls runCodex/extractJson/normalizeReview without try/catch. Previously one hotspot failure was recorded as DEEP PASS FAILED with a blocking residual and other hotspots continued. Now a single malformed or failed hotspot aborts all of reviewLarge, losing every other hotspot's findings and preventing the critic and verdict from running."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 109,
+          "lineEnd": 114,
+          "title": "Stop discarding deep-pass residual risks before the critic",
+          "whyItBreaks": "Deep passes return RawReview.residual_risks, but the loop now keeps only res.findings and candidateMerged hardcodes residual_risks to []. A deep pass that reported a blocking unresolved risk therefore reaches the critic as if no risk exists; deriveVerdict at src/core/review.ts:122 only sees the critic output derived from that sanitized candidate, so a blocking risk can be downgraded to a passing verdict."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 1,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 2,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 5,
+        "blockingFindingCount": 4,
+        "noiseFindingCount": 2,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 78668,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 97,
+          "title": "Restore tail-coverage hotspot for files not in selected hotspots",
+          "whyItBreaks": "Hotspots are truncated to MAX_HOTSPOTS and only those hotspots are deep-reviewed. Changed files omitted by the map pass, or belonging only to hotspots beyond the slice, are no longer collected into the tail-coverage hotspot and produce no residual risk, so they can be silently unreviewed while the overall review still returns a passing verdict."
+        },
+        {
+          "severity": "P1",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 97,
+          "lineEnd": 106,
+          "title": "Restore per-hotspot failure isolation in deep review loop",
+          "whyItBreaks": "A throw from runCodex, extractJson, or normalizeReview for any single hotspot now propagates out of reviewLarge, aborting all remaining hotspots and discarding findings already collected. Previously the failure was recorded, the remaining hotspots continued, and a blocks:true residual risk prevented the incomplete review from being treated as complete."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 108,
+          "lineEnd": 114,
+          "title": "Propagate deep-pass residual risks instead of discarding them",
+          "whyItBreaks": "Deep-pass results are no longer inspected for residual_risks and candidateMerged hardcodes residual_risks to an empty array before the critic pass. A deep pass that reports a blocking residual risk without a finding therefore has that signal erased before the critic and verdict derivation, so an incomplete or uncertain review can be reported as passing."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 59,
+          "lineEnd": 61,
+          "title": "Restore BASE and HEAD substitution in critic prompts",
+          "whyItBreaks": "The critic prompt replacements for 9f594ac6d0ef336dfe7b28cd78990a9878236539 and c7adeed259a68b85d113b70dd5c2e15c87947417 were removed in both reviewSmall and reviewLarge (also at lines 115-117), while the deep prompt still substitutes the same placeholders. If critic.md references these placeholders, as the deleted substitutions indicate, the critic now receives literal {{BASE}}/{{HEAD}} text and cannot resolve the base..head diff or inspect the exact commits when pruning findings; in reviewLarge it receives only patchStat, making the SHAs its main route to the actual diff."
+        },
+        {
+          "severity": "P3",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 33,
+          "lineEnd": 37,
+          "title": "Restore whyItBreaks in the dedup key to avoid collapsing distinct findings",
+          "whyItBreaks": "The dedup key no longer includes whyItBreaks, and titles are truncated to 60 characters. Two distinct findings at the same file, line, and category whose titles share the first 60 normalized characters but describe different failure mechanisms now collapse into one entry, with only the higher-severity finding retained and the other root cause silently lost."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": 2
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    },
+    {
+      "fixtureId": "real-pr4-hotspot-truncation",
+      "draw": 2,
+      "score": {
+        "fixtureId": "real-pr4-hotspot-truncation",
+        "verdict": "changes_requested",
+        "verdictMatch": true,
+        "mustFindHits": 1,
+        "mustFindTotal": 3,
+        "recall": false,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 5,
+        "blockingFindingCount": 5,
+        "noiseFindingCount": 2,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 74713,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 93,
+          "lineEnd": 93,
+          "title": "Restore coverage backstop for files absent from selected hotspots",
+          "whyItBreaks": "Hotspots are sorted and capped at MAX_HOTSPOTS, then only those hotspots are deep-reviewed. The deleted tail-coverage hotspot previously collected every changed file not covered by the selected hotspots. Now unmapped files, and files belonging only to hotspots beyond the six-hotspot cap, are silently never deep-reviewed, while checked[] and residual_risks give the critic no indication they were skipped."
+        },
+        {
+          "severity": "P1",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 103,
+          "lineEnd": 114,
+          "title": "Stop discarding deep-pass residual risks before the critic and verdict",
+          "whyItBreaks": "The loop ignores res.residual_risks from every successful deep pass and candidateMerged hardcodes residual_risks to []. Previously those risks were forwarded inside the critic input. Because the final verdict is derived only from the critic's pruned.residual_risks at line 122, a deep pass reporting blocks=true uncertainty can disappear and produce a passing verdict unless the critic independently recreates it."
+        },
+        {
+          "severity": "P2",
+          "category": "runtime",
+          "file": "src/core/review.ts",
+          "lineStart": 103,
+          "lineEnd": 105,
+          "title": "Restore per-hotspot failure isolation in reviewLarge",
+          "whyItBreaks": "runCodex/extractJson/normalizeReview are now called without the previous try/catch. A timeout or malformed-JSON failure for one hotspot rejects the whole review() promise, discarding findings and checked entries already accumulated from other hotspots instead of returning a partial result marked with a blocking residual risk."
+        },
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "src/core/review.ts",
+          "lineStart": 34,
+          "lineEnd": 37,
+          "title": "Do not dedup distinct findings solely on truncated title",
+          "whyItBreaks": "The key previously included norm(whyItBreaks).slice(0,80); it now uses only file, lineStart, category, and the first 60 normalized title characters. Two distinct defects at the same line/category whose titles share that prefix but have different root causes in whyItBreaks collapse into one Map entry, keeping only the higher-severity (or first, on ties) finding and silently dropping the other before the critic sees it."
+        },
+        {
+          "severity": "P2",
+          "category": "contract",
+          "file": "src/core/review.ts",
+          "lineStart": 59,
+          "lineEnd": 61,
+          "title": "Restore BASE and HEAD substitution in critic prompts",
+          "whyItBreaks": "Both critic prompt constructions previously substituted {{BASE}} and {{HEAD}} with bundle.baseSha/headSha; this diff removes those replacements at lines 59-61 and again at lines 115-117, and no prompt template changes in this diff. If critic.md still references the placeholders (the reason both call sites substituted them), the critic now receives literal {{BASE}}/{{HEAD}} tokens and, in the large path where PATCH is only patchStat text saying 'repo at head', lacks the SHAs needed to run git diff/show base..head to verify candidate findings."
+        }
+      ],
+      "matchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": null
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ],
+      "candidateMatchEvidence": [
+        {
+          "pattern": "MAX_HOTSPOTS|six|\\b6\\b.{0,20}hotspot|omit.{0,20}(surface|hotspot|file)|coverage.{0,12}gap|never.{0,20}(review|check)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            86,
+            98
+          ],
+          "findingIndex": 0
+        },
+        {
+          "pattern": "residual_risks.{0,12}(:|=).{0,12}\\[\\]|discard.{0,20}residual|empty.{0,20}array.{0,20}risk|blocks\\s*[:=]\\s*true|deep.{0,12}pass.{0,20}risk",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            105,
+            116
+          ],
+          "findingIndex": null
+        },
+        {
+          "pattern": "--stat|patchStat|diff.{0,12}context|changed.?line.{0,12}anchor|base.{0,12}(/|,|\\s)head.{0,12}SHA|critic.{0,20}(verify|cannot)",
+          "file": "src/core/review.ts",
+          "lineRange": [
+            112,
+            120
+          ],
+          "findingIndex": null
+        }
+      ]
+    }
+  ],
+  "aggregates": {
+    "recall": 0.3333333333333333,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 80373,
+    "recallByFixture": {
+      "real-pr1-neutral-conclusion": 0,
+      "real-pr10": 1,
+      "real-pr4-hotspot-truncation": 0
+    },
+    "mustFindHitRateByFixture": {
+      "real-pr1-neutral-conclusion": 0.5,
+      "real-pr10": 1,
+      "real-pr4-hotspot-truncation": 0.5555555555555555
+    },
+    "mustFindHitRate": 0.6851851851851851,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {
+      "t2": 1,
+      "t3": 0
+    },
+    "meanNoisePerPositive": 0.7777777777777778,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 2,
+    "criticPrunedRecallCount": 0
+  },
+  "gitSha": "aaf48b11c01f62d4a23c01a550f5c68c0aba9f87",
+  "fixtureSetHash": "12399262df20dc4f",
+  "scorerHash": "a424d3bb59a40443",
+  "fixtureTiers": {
+    "real-pr1-neutral-conclusion": 3,
+    "real-pr10": 2,
+    "real-pr4-hotspot-truncation": 3
+  },
+  "anticheatVersion": 2,
+  "fixtures": [
+    "real-pr1-neutral-conclusion",
+    "real-pr10",
+    "real-pr4-hotspot-truncation"
+  ],
+  "fixtureKinds": {
+    "real-pr1-neutral-conclusion": "positive",
+    "real-pr10": "positive",
+    "real-pr4-hotspot-truncation": "positive"
+  }
+}
