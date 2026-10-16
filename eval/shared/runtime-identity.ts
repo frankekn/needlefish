@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { runtimeLabel, type RuntimeValue } from "../../src/shared/runtime";
+import { executableNames } from "../../src/shared/runner-detection";
 import { screenText } from "../../src/shared/outbound-screen";
 
 export interface PublicRuntimeIdentity {
@@ -12,7 +13,11 @@ export interface PublicRuntimeIdentity {
 }
 
 export function isPublicAttestationLabel(value: string, environment: Readonly<Record<string, string | undefined>>): boolean {
-  const credentials = Object.entries(environment).flatMap(([name, secret]) => secret && /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i.test(name) && !/(_ENV_VARS|_FILES|_PASSTHROUGH)$/i.test(name) ? [secret, secret.trim()].filter(Boolean) : []);
+  const declaredNames = new Set([environment.NEEDLEFISH_ACP_AUTH_ENV_VARS ?? "", environment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? ""].flatMap((names) => names.split(",")).map((name) => name.trim().toLowerCase()).filter(Boolean));
+  const credentials = [
+    ...Object.entries(environment).flatMap(([name, secret]) => secret && (declaredNames.has(name.toLowerCase()) || /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i.test(name) && !/(_ENV_VARS|_FILES|_PASSTHROUGH)$/i.test(name)) ? [secret, secret.trim()].filter(Boolean) : []),
+    ...(environment.NEEDLEFISH_ACP_AUTH_FILES ?? "").split(",").map((file) => file.trim()).filter(Boolean),
+  ];
   return !path.posix.isAbsolute(value) && !path.win32.isAbsolute(value) && !/^~[/\\]/.test(value) && !/[:][/][/]|[?=&]/.test(value) && screenText(value, credentials).kind === "clean";
 }
 
@@ -33,7 +38,7 @@ export function acpRuntimeIdentity(
       if (command && !path.isAbsolute(command) && (command.includes(path.sep) || (environment.PATH ?? "").split(path.delimiter).some((dir) => !path.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
       const executable = command && (path.isAbsolute(command) || command.includes(path.sep)
         ? command
-        : (environment.PATH ?? "").split(path.delimiter).map((dir) => path.join(dir, command)).find((file) => {
+        : (environment.PATH ?? "").split(path.delimiter).flatMap((dir) => executableNames(command, process.platform, environment.PATHEXT).map((name) => path.join(dir, name))).find((file) => {
           try { accessSync(file, constants.X_OK); return statSync(file).isFile(); } catch { return false; }
         }));
       if (!executable || realpathSync(executable) !== realpathSync(publicArtifact)) {

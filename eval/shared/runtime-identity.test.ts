@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { inspect } from "node:util";
+import { executableNames } from "../../src/shared/runner-detection";
 import { acpRuntimeIdentity, matchRuntimeIdentity, parsePublicRuntimeIdentity } from "./runtime-identity";
 import { matchQualifiedConfiguration } from "./runtime-qualification";
 import { comparisonEnvironmentError, runnerEnvironmentAttestationError } from "./report-integrity";
@@ -211,4 +212,24 @@ test("nested unknown ACP metadata cannot authorize comparison, resume or a delta
   for (const key of ["launcherDigest", "harnessVersion", "authSource"]) {
     assert.equal(comparisonEnvironmentError({ runner: "acp", runnerEnvironment: environment({ ...complete, [key]: { status: "unknown" } }) }), "unknown runner environment identity");
   }
+});
+
+test("declared ACP and passthrough credentials are screened independently of variable spelling", () => {
+  for (const [declaration, name, value] of [["NEEDLEFISH_ACP_AUTH_ENV_VARS", "SESSION", "abc"], ["NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "PRIVATE_SETTING", "private-value"]]) {
+    for (const flag of ["--provider", "--route", "--runner-version"]) {
+      const labels = { "--provider": "Public provider", "--route": "public", "--runner-version": "Agent 1.2.3", [flag]: value };
+      assert.throws(() => parseArgs([...Object.entries(labels).flatMap(([key, label]) => [key, label]), "--env", `${declaration}=${name}`, "--env", `${name}=${value}`]), { message: `${flag} requires a public label, not a private endpoint or path` });
+    }
+  }
+  assert.throws(() => parseArgs(["--provider", ".agent/auth.json", "--route", "public", "--runner-version", "Agent 1.2.3", "--env", "NEEDLEFISH_ACP_AUTH_FILES=.agent/auth.json"]), { message: "--provider requires a public label, not a private endpoint or path" });
+});
+
+test("ACP artifact lookup shares platform executable names with runner detection", (t) => {
+  const previousPathExt = process.env.PATHEXT;
+  delete process.env.PATHEXT;
+  t.after(() => { if (previousPathExt === undefined) delete process.env.PATHEXT; else process.env.PATHEXT = previousPathExt; });
+  assert.deepEqual(executableNames("agent", "win32", ".EXE;.CMD"), ["agent", "agent.EXE", "agent.CMD"]);
+  assert.deepEqual(executableNames("agent", "win32", undefined), ["agent", "agent.COM", "agent.EXE", "agent.BAT", "agent.CMD"]);
+  assert.deepEqual(executableNames("agent.exe", "win32", ".EXE;.CMD"), ["agent.exe"]);
+  assert.deepEqual(executableNames("agent", "linux", ".EXE;.CMD"), ["agent"]);
 });
