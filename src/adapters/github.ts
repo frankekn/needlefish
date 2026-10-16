@@ -1605,6 +1605,7 @@ export async function runGithub(
 		patch,
 		patchStat,
 		changedFiles: changed,
+		binaryFiles,
 	} = prDiffFromShas(repoPath, baseSha, headSha);
 
 	const commentsUrl = stringField(pr, "comments_url");
@@ -1630,6 +1631,7 @@ export async function runGithub(
 		patch,
 		patchStat,
 		changedFiles: changed,
+		binaryFiles,
 		prMeta,
 		deep: false,
 		focus: null,

@@ -354,7 +354,7 @@ function coverageGapListField(value: unknown): CoverageGap[] {
 	return value.map((entry, index): CoverageGap => {
 		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
 		if (entry.kind === "lfs_scan_incomplete") return { kind: entry.kind };
-		if (entry.kind !== "lfs_pointer_only") {
+		if (entry.kind !== "lfs_pointer_only" && entry.kind !== "binary_not_reviewed") {
 			throw new Error(`entry ${index}: kind invalid ${String(entry.kind)}`);
 		}
 		if (typeof entry.file !== "string" || entry.file === "") {

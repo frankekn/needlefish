@@ -735,9 +735,13 @@ function toReviewResult(
 	// Only files in the diff: a pointer elsewhere in the repository is not a
 	// gap in this review's coverage. An unfinished scan is, since the diff may
 	// touch pointers the sandbox never probed.
-	const coverageGaps: CoverageGap[] = bundle.changedFiles
-		.filter((file) => run.lfs.pointerFiles.has(file.path))
-		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
+	const paths = new Set([...bundle.changedFiles.map((file) => file.path), ...(bundle.binaryFiles ?? [])]);
+	const coverageGaps: CoverageGap[] = [...paths]
+		.filter((file) => run.lfs.pointerFiles.has(file))
+		.map((file) => ({ kind: "lfs_pointer_only", file }));
+	for (const file of new Set(bundle.binaryFiles)) {
+		if (!run.lfs.pointerFiles.has(file)) coverageGaps.push({ kind: "binary_not_reviewed", file });
+	}
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -753,7 +757,7 @@ function toReviewResult(
 		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
-		...(coverage ? { coverage } : {}),
+		...(coverage ? { coverage: bundle.binaryFiles?.length ? `${coverage}; binary file contents excluded (see Not reviewed)` : coverage } : {}),
 		...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
 		...(evalTraceOn() && run.failedRawOutputs.length > 0
 			? { failedRawOutputs: [...run.failedRawOutputs] }
@@ -802,6 +806,7 @@ async function drainTraceDeliveries(
 async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const { bundle } = run;
 	const { patch, ...meta } = bundle;
+	delete meta.binaryFiles;
 	const reviewPrompt = loadPrompt("review.md")
 		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
 		.replace("{{PATCH}}", () => patch);
@@ -1092,6 +1097,7 @@ export async function review(
 		// Docs-only input produces no callouts today, but compute it the same
 		// way so the rule stays uniform if classification changes.
 		const callouts = scopeCallouts(bundle.changedFiles);
+		const coverageGaps: CoverageGap[] = [...new Set(bundle.binaryFiles)].map((file) => ({ kind: "binary_not_reviewed", file }));
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
@@ -1103,6 +1109,7 @@ export async function review(
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+			...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}

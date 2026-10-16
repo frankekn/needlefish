@@ -45,6 +45,8 @@ export interface UntrackedSkippedFile {
 }
 
 export interface Bundle {
+	// Collection diagnostics only. Omitted from all model prompts.
+	readonly binaryFiles?: readonly string[];
 	readonly repoPath: string;
 	readonly baseSha: string;
 	readonly headSha: string;
@@ -95,13 +97,15 @@ export interface ScopeCallout {
 	readonly files: readonly string[];
 }
 
-// Content the review could not read. Output-only: reported by the runner
-// sandbox, never derived from model text. lfs_pointer_only names a changed
+// Content the review could not read. Output-only, derived from Git collection
+// or runner sandbox diagnostics, never model text. binary_not_reviewed names
+// files skipped as binary. lfs_pointer_only names a changed
 // file checked out as a pointer stub; lfs_scan_incomplete means the sandbox
 // could not establish whether changed files are pointer stubs (LFS use or
 // the pointer list unknown), so more changed files may be unread than are
 // named.
 export type CoverageGap =
+	| { readonly kind: "binary_not_reviewed"; readonly file: string }
 	| { readonly kind: "lfs_pointer_only"; readonly file: string }
 	| { readonly kind: "lfs_scan_incomplete" };
 
@@ -129,9 +133,9 @@ export interface ReviewResult {
 	// Non-blocking, path-derived file-surface callouts. Output-only: computed
 	// from changedFiles at result assembly, never part of the model bundle.
 	readonly scopeCallouts?: readonly ScopeCallout[];
-	// Changed files the sandbox could only check out as Git LFS pointer stubs,
-	// in changed-file order, one entry per file across every pass, followed by
-	// one lfs_scan_incomplete entry when any pass could not finish the scan.
+	// Unreviewed binary files and changed Git LFS pointer stubs. Each path is
+	// named once; the more specific LFS reason takes precedence. An unfinished
+	// sandbox scan adds one lfs_scan_incomplete entry.
 	// Output-only.
 	readonly coverageGaps?: readonly CoverageGap[];
 	readonly stats?: readonly RunStat[];

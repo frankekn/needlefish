@@ -133,6 +133,12 @@ export function renderMarkdown(
 	}
 
 	const coverageGaps = opts?.omitCoverageGaps ? [] : (result.coverageGaps ?? []);
+	const binaryFiles = coverageGaps.flatMap((gap) => gap.kind === "binary_not_reviewed" ? [gap.file] : []);
+	if (binaryFiles.length > 0) {
+		lines.push("");
+		lines.push("**Not reviewed (non-blocking):** these changed files were skipped as binary. Their contents are not covered by this review. Ask a maintainer to check them.");
+		for (const file of binaryFiles) lines.push(`- ${oneLine(file)}`);
+	}
 	const pointerOnly = coverageGaps.flatMap((gap) =>
 		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
 	);

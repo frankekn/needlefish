@@ -3,14 +3,16 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { review } from "../core/review.js";
+import { prDiffFromShas } from "../shared/repo.js";
 import { runLocal } from "./local.js";
 import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures.js";
 import { renderMarkdown } from "../shared/render.js";
 import { parseReviewResult } from "../shared/review-result.js";
 import { serializeReviewResult } from "../shared/schema.js";
 
-for (const localMode of ["branch", "uncommitted"] as const) {
-  test(`${localMode} review reports binary contents without changing the verdict`, async (t) => {
+for (const [localMode, binaryOnly] of [["branch", false], ["uncommitted", false], ["branch", true]] as const) {
+  test(`${localMode}${binaryOnly ? " binary-only" : ""} review reports binary contents without changing the verdict`, async (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-binary-coverage-"));
     const repo = initRepo(tmp);
     const bin = path.join(tmp, "codex.cjs");
@@ -33,7 +35,7 @@ process.stdin.on('end', () => {
 `);
     chmodSync(bin, 0o755);
     process.env.CODEX_BIN = bin;
-    const binary = "new\n測試[1].bin";
+    const binary = "new\n測試[1].bin \t\n";
     writeFileSync(path.join(repo, binary), Buffer.from([0, 1]));
     writeFileSync(path.join(repo, "deleted.bin"), Buffer.from([0, 2]));
     writeFileSync(path.join(repo, "old.bin"), Buffer.from([0, 3]));
@@ -44,8 +46,13 @@ process.stdin.on('end', () => {
     rmSync(path.join(repo, "deleted.bin"));
     gitText(["mv", "old.bin", "renamed.bin"], repo);
     writeFileSync(path.join(repo, "renamed.bin"), Buffer.from([0, 5]));
-    writeFileSync(path.join(repo, "app.ts"), "export const n = 2;\n");
-    if (localMode === "branch") commitAll(repo, "binary changes");
+    if (!binaryOnly) writeFileSync(path.join(repo, "app.ts"), "export const n = 2;\n");
+    if (localMode === "branch") {
+      commitAll(repo, "binary changes");
+      const diff = prDiffFromShas(repo, base, gitText(["rev-parse", "HEAD"], repo));
+      assert.deepEqual(diff.binaryFiles, ["deleted.bin", binary, "old.bin", "renamed.bin"]);
+      assert.match(diff.patch, /Binary files/);
+    }
     else {
       writeFileSync(path.join(repo, "untracked.bin"), Buffer.from([0, 9]));
       writeFileSync(path.join(repo, ".gitattributes"), "*.opaque -diff\n");
@@ -60,11 +67,35 @@ process.stdin.on('end', () => {
     assert.deepEqual(result.findings, []);
     assert.deepEqual(result.residualRisks, []);
     assert.match(renderMarkdown(result), /Not reviewed \(non-blocking\).*binary/s);
-    assert.deepEqual(parseReviewResult(serializeReviewResult(result)), result);
-    assert.deepEqual(parseReviewResult(readFileSync(path.join(cacheDir, "last-review.json"), "utf8")), result);
+    assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(result))), result);
+    assert.deepEqual(parseReviewResult(JSON.parse(readFileSync(path.join(cacheDir, "last-review.json"), "utf8"))), result);
     const prompts = readFileSync(promptLog, "utf8");
-    assert.ok(prompts.includes("export const n = 2;"));
+    assert.ok(prompts.includes(binaryOnly ? "Binary files" : "export const n = 2;"));
     assert.ok(!prompts.includes("binaryFiles"));
     assert.ok(!prompts.includes("binary_not_reviewed"));
   });
 }
+
+
+test("docs fast path retains non-blocking binary coverage and old v1 results remain readable", async () => {
+  const result = await review({
+    repoPath: "/unused",
+    baseSha: "base",
+    headSha: "head",
+    patch: "Binary files a/docs/notes.md and b/docs/notes.md differ\n",
+    patchStat: "notes.md | Bin 1 -> 2 bytes",
+    changedFiles: [{ path: "docs/notes.md", surface: "docs" }],
+    binaryFiles: ["docs/notes.md", "docs/notes.md"],
+    agentsMd: "(none)",
+    prMeta: null,
+    deep: false,
+    focus: null,
+  });
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.coverageGaps, [{kind:"binary_not_reviewed",file:"docs/notes.md"}]);
+  const { coverageGaps, ...oldV1 } = result;
+  assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(oldV1))), oldV1);
+  assert.match(renderMarkdown(result), /- docs\/notes.md/);
+  assert.ok(!renderMarkdown(result, { omitCoverageGaps: true }).includes("Not reviewed"));
+  assert.deepEqual(coverageGaps, [{kind:"binary_not_reviewed",file:"docs/notes.md"}]);
+});

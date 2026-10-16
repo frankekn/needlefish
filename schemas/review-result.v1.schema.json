@@ -55,7 +55,7 @@
       "items": { "$ref": "#/$defs/scopeCallout" }
     },
     "coverageGaps": {
-      "description": "Changed files whose contents the review could not read. lfs_pointer_only names a file the sandbox could only check out as a Git LFS pointer stub; at most one lfs_scan_incomplete entry means the sandbox could not establish the full pointer list. Reported by the sandbox, never by the model; does not affect the verdict.",
+      "description": "Changed files whose contents the review could not read. binary_not_reviewed names files Git classified as binary; lfs_pointer_only names a file the sandbox could only check out as a Git LFS pointer stub; at most one lfs_scan_incomplete entry means the sandbox could not establish the full pointer list. Derived from Git collection or sandbox diagnostics, never model text; does not affect the verdict.",
       "type": "array",
       "items": { "$ref": "#/$defs/coverageGap" }
     },
@@ -169,8 +169,17 @@
     "coverageGap": {
       "oneOf": [
         { "$ref": "#/$defs/lfsPointerOnlyGap" },
+        { "$ref": "#/$defs/binaryNotReviewedGap" },
         { "$ref": "#/$defs/lfsScanIncompleteGap" }
       ]
+    },
+    "binaryNotReviewedGap": {
+      "type": "object",
+      "required": ["kind", "file"],
+      "properties": {
+        "kind": { "const": "binary_not_reviewed" },
+        "file": { "description": "Repo-relative path of a changed file.", "type": "string", "minLength": 1 }
+      }
     },
     "lfsPointerOnlyGap": {
       "type": "object",

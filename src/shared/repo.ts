@@ -1,4 +1,5 @@
 import path from "node:path";
+import { binaryPathsFromNumstat } from "./diff-numstat.js";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
 import { runText, type RunOptions } from "./process.js";
@@ -131,6 +132,7 @@ export function readAgentsAt(cwd: string, ref: string): string {
 }
 
 export interface BundleInput {
+  readonly binaryFiles?: readonly string[];
   readonly repoPath: string;
   readonly baseSha: string;
   readonly headSha: string;
@@ -147,6 +149,7 @@ export interface BundleInput {
 
 export function makeBundle(input: BundleInput): Bundle {
   return {
+    ...(input.binaryFiles?.length ? { binaryFiles: input.binaryFiles } : {}),
     repoPath: input.repoPath,
     baseSha: input.baseSha,
     headSha: input.headSha,
@@ -324,5 +327,6 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
     patch,
     patchStat: git([...reviewDiff(cwd), "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, mergeBase, headSha),
+    binaryFiles: binaryPathsFromNumstat(git([...reviewDiff(cwd), "--numstat", "-z", mergeBase, headSha], cwd, { preserveOutput: true })),
   };
 }
