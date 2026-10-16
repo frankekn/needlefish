@@ -83,3 +83,75 @@ export class AcpEnvironmentAuth {
     }
   }
 }
+
+
+export type CodexAuthRoute =
+  | { readonly kind: "openai" }
+  | { readonly kind: "cliproxyapi"; readonly baseUrl: string };
+
+export function parseCodexRoute(raw: unknown): CodexAuthRoute {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw) || !("kind" in raw)) {
+    throw new Error("Codex auth requires an explicit openai or cliproxyapi route.");
+  }
+  if (raw.kind === "openai" && Object.keys(raw).length === 1) return Object.freeze({ kind: "openai" });
+  if (raw.kind === "cliproxyapi" && "baseUrl" in raw && typeof raw.baseUrl === "string"
+    && raw.baseUrl === raw.baseUrl.trim() && !/[\\\s?#]/.test(raw.baseUrl) && !Array.from(raw.baseUrl).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) && !/^https?:\/\/[^/]*@/i.test(raw.baseUrl)
+    && Object.keys(raw).every(key => key === "kind" || key === "baseUrl")) {
+    let url: URL;
+    try { url = new URL(raw.baseUrl); } catch { throw new Error("Codex proxy route requires a valid non-secret HTTP(S) baseUrl."); }
+    if ((url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.search && !url.hash) {
+      return Object.freeze({ kind: "cliproxyapi", baseUrl: raw.baseUrl });
+    }
+  }
+  throw new Error("Codex route must be openai or cliproxyapi with a non-secret HTTP(S) baseUrl without userinfo, query or fragment.");
+}
+
+export function parseCodexAuthEnvironment(raw: unknown, route: CodexAuthRoute): AuthEnvironmentReferences {
+  const refs = parseAuthEnvironment(raw);
+  const target = route.kind === "openai" ? "CODEX_API_KEY" : "CODEX_PROXY_API_KEY";
+  if (Object.keys(refs).length !== 1 || !Object.hasOwn(refs, target)) {
+    throw new Error("Codex auth.env requires exactly CODEX_API_KEY for openai or CODEX_PROXY_API_KEY for cliproxyapi.");
+  }
+  return refs;
+}
+
+export class CodexEnvironmentAuth {
+  readonly #auth: AcpEnvironmentAuth;
+  readonly #route: CodexAuthRoute;
+
+  constructor(refs: AuthEnvironmentReferences, route: CodexAuthRoute, env: NodeJS.ProcessEnv = process.env) {
+    this.#route = parseCodexRoute(route);
+    const checked = parseCodexAuthEnvironment(refs, this.#route);
+    if (env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH?.trim()) {
+      throw new Error("Codex connection auth cannot be combined with legacy passthrough; explicitly reconcile routing before retrying.");
+    }
+    if (route.kind === "openai" && (env.CODEX_PROXY_BASE_URL?.trim() || env.CODEX_PROXY_API_KEY?.trim() || env.NEEDLEFISH_CODEX_PROXY_REQUIRED === "1")) {
+      throw new Error("Codex direct connection conflicts with ambient proxy routing. Remove the ambient proxy tuple or select an explicit cliproxyapi connection.");
+    }
+    this.#auth = new AcpEnvironmentAuth(checked, env);
+    const bound: NodeJS.ProcessEnv = {};
+    this.#auth.applyTo(bound);
+    if (Object.values(bound).some(value => value !== undefined && /\s/.test(value))) {
+      throw new Error("Selected Codex connection credential contains whitespace. No default account was used.");
+    }
+    if (this.#route.kind === "cliproxyapi") this.#auth.assertOutputSafe(this.#route.baseUrl);
+    Object.freeze(this);
+  }
+
+  assertCompatible(runner: RunnerName): void {
+    if (runner !== "codex") throw new Error("Codex connection authentication requires the codex adapter.");
+  }
+
+  proxyBaseUrl(): string | undefined {
+    return this.#route.kind === "cliproxyapi" ? this.#route.baseUrl : undefined;
+  }
+
+  applyTo(env: NodeJS.ProcessEnv): void {
+    delete env.CODEX_API_KEY;
+    delete env.CODEX_PROXY_API_KEY;
+    this.#auth.applyTo(env);
+  }
+
+  screenDiagnostic(message: string): string { return this.#auth.screenDiagnostic(message); }
+  assertOutputSafe(output: string): void { this.#auth.assertOutputSafe(output); }
+}

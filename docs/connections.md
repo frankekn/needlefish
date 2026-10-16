@@ -11,7 +11,7 @@ needlefish --connection my-agent --dry-run
 This increment selects **one** connection. It does not implement automatic
 fallback, OAuth account stores, login, installation or provider presets.
 Without `auth`, two names still use the existing adapter credentials, not independent
-accounts. ACP supports the explicit environment bindings below. Unsupported
+accounts. ACP and Codex support the explicit environment bindings below. Unsupported
 `authRef`, arbitrary env, presets and fallback fields are rejected.
 
 ## User-owned configuration
@@ -51,9 +51,10 @@ model, omit both model and placeholder; stats then omit the requested model
 rather than borrowing `NEEDLEFISH_MODEL`. There is no variable, tilde, shell or
 command-substitution expansion. An executable path containing spaces is one path.
 
-Native CLI connections require a model. Authentication, endpoint/proxy policy,
-reasoning settings and native executable selection keep the existing adapter's
-configuration. Explicit Codex proxy requirements are not bypassed. ACP identities
+Native CLI connections require a model. Without explicit auth, authentication and
+endpoint/proxy policy keep the existing adapter configuration. Reasoning settings
+and native executable selection also keep the existing configuration. Explicit
+Codex proxy requirements are not bypassed. ACP identities
 are open-ended; adding one does not add a `RunnerName`. `stats.runner` remains the
 adapter. A requested model name is not evidence of the delivered model.
 
@@ -129,13 +130,13 @@ HTTP(S) proxy variables from the existing base allowlist are retained. Before an
 authenticated model run, nonempty `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` is rejected,
 not silently dropped: reconcile
 any required endpoint/CA/routing settings before using this mode. Arbitrary
-per-connection environment and file-based routing are outside this increment.
+per-connection environment overrides and file-based routing are outside this increment.
 
 This isolates **default credential discovery**, not processes or provider identities.
 A same-UID executable can still seek host files; project hooks/skills/MCP are not
 made safe by an empty HOME. Use a trusted agent. This is not an OAuth/Keychain
 integration, token vault, refresh manager or proof that two sources are different
-accounts. Native CLI bindings and the nontechnical login UI remain separate work.
+accounts. Other native CLI bindings and the nontechnical login UI remain separate work.
 
 ## One selection, one runtime
 
@@ -186,6 +187,7 @@ live canary are required before merge/deployment; fake-agent CI is not a substit
 | Adapter identities/metadata | Existing `runner-definition.ts`; no connection-specific catalog |
 | ACP command/argv, startup/completion/usage | `acp.ts`; existing `acp*.test.ts` and named-launch integration below |
 | ACP credential references and private snapshot | `connection-auth.ts`; `connection-auth.test.ts` |
+| Codex credential references, explicit route, and metadata-only doctor | `connection-auth.ts`, `connections.ts`, `codex.ts`, `doctor.ts`; `codex-connection-auth.test.ts` |
 | Child credential/HOME isolation | Existing `codex.ts`; `connection-auth-integration.test.ts` |
 | Cross-pass launch/model plumbing | `src/cli.ts`, `codex.ts`; `connections-integration.test.ts` |
 
@@ -215,3 +217,76 @@ ACP 現可用 `auth.env` 將工具的密鑰變數綁到不同來源；設定檔�
 在重試與各審查階段保持固定，並沿用同一套握手、完成性、用量及清理流程。
 取消、拒絕或權限失敗不能靠合法 JSON／用量變成成功；預覽不登入、不送程式碼。
 工程測試通過仍不代表正式模型資格評估或受控 canary 已完成。
+
+
+## Select a Codex API credential and route
+
+This source-preview increment binds one environment credential reference to a
+Codex route. It does not select or verify an OAuth account. Two references do not
+prove two provider accounts. Formal Class R qualification remains required.
+
+```json
+{
+  "version": 1,
+  "connections": [
+    {
+      "id": "codex-direct",
+      "adapter": "codex",
+      "model": "your-selected-model",
+      "auth": {
+        "env": {"CODEX_API_KEY": "ACCOUNT_A_KEY"},
+        "route": {"kind": "openai"}
+      }
+    },
+    {
+      "id": "codex-proxy",
+      "adapter": "codex",
+      "model": "your-selected-model",
+      "auth": {
+        "env": {"CODEX_PROXY_API_KEY": "ACCOUNT_B_KEY"},
+        "route": {"kind": "cliproxyapi", "baseUrl": "http://127.0.0.1:8317/v1"}
+      }
+    }
+  ]
+}
+```
+
+Each route accepts exactly the target variable shown above. The source is an
+environment variable name, never the key value. Supply the source through your
+trusted launch environment. The proxy URL must use HTTP or HTTPS and must not
+contain credentials, userinfo, a query, or a fragment. Do not put secrets in its
+path or hostname.
+
+Direct mode rejects an ambient `CODEX_PROXY_BASE_URL`, `CODEX_PROXY_API_KEY`, or
+`NEEDLEFISH_CODEX_PROXY_REQUIRED=1`. Remove those settings or select an explicit
+proxy connection. Explicit auth also rejects legacy
+`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`. Proxy mode uses only its selected URL and key.
+Calls without explicit connection auth retain legacy routing.
+
+Selection fixes the model, key, and route for retries and all review passes.
+Changing the source environment affects only the next explicit selection. Each
+invocation uses a new empty `HOME`, `USERPROFILE`, and `CODEX_HOME` with file
+credential storage. It does not copy ambient auth, configuration, skills, or
+history. The selected credential uses the same output guards as ACP auth.
+Normal transport proxy environment variables retain their existing behavior.
+
+```sh
+needlefish --connection codex-direct
+needlefish --connection codex-proxy
+needlefish doctor --connection codex-direct --json
+```
+
+Doctor accepts named Codex connections. It checks local source selection and
+executable availability without invoking the CLI. The auth result is `unknown`
+and states that provider account identity is unknown. It does not publish login
+status text, credential fragments, profile paths, or credential digests.
+Missing or invalid selected credentials stop before any CLI probe or review.
+OAuth login, refresh persistence, provider identity verification, automatic
+fallback, and other native adapter auth variants are outside this increment.
+
+
+Codex 的 source preview 亦可用 `auth.env` 選定 API key 來源，並必須明確指定
+`auth.route.kind` 為 `openai` 或 `cliproxyapi`。設定檔只存變數名稱與非秘密 URL。
+重試與各 pass 共用同一份私有 snapshot。`doctor --connection 名稱` 只確認
+Codex 來源已選定，provider 帳號身分仍為 `unknown`，不執行登入狀態查詢。
+這不包含 OAuth 多帳號、refresh 或正式 Class R 資格。

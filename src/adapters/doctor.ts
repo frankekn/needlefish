@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveConnectionOptions } from "../shared/connections.js";
+import type { RunnerOptions } from "../shared/runner.js";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
 import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
@@ -39,6 +41,7 @@ export interface DoctorReport {
 }
 
 export interface DoctorOptions {
+  readonly connection?: string;
   readonly repo: string;
   readonly version: string;
   readonly runner?: RunnerName;
@@ -321,17 +324,26 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
+  const selected = opts.connection === undefined ? undefined
+    : resolveConnectionOptions<RunnerOptions>({ connection: opts.connection, runner: opts.runner }, repo);
+  if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   let checks: readonly DoctorCheck[];
   let repoRoot: string | undefined;
   try {
-    const runner = selectRunner(opts.runner, probeCwd);
+    const selectedBinary = selected ? resolveRunnerBinary("codex") : undefined;
+    const runner = selected ? {
+      check: { name: "runner", status: selectedBinary?.path ? "ok" : "fail", detail: selectedBinary?.path ? "codex: selected connection executable available; CLI not probed" : "codex: selected connection executable unavailable" } satisfies DoctorCheck,
+      selection: { kind: "unavailable" } satisfies RunnerSelection,
+    } : selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
     repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
-      authCheck(runner.selection, probeCwd),
+      selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
+        ? "codex: credential source chosen; provider account identity unknown; login state not probed"
+        : "codex: named connection chosen; provider account identity unknown; login state not probed" } : authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
     ];

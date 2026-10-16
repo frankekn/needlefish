@@ -229,9 +229,11 @@ test("parseArgs accepts the doctor command with its diagnostic options only", ()
     runner: "claude",
     base: "develop",
   });
+  assert.deepEqual(parseArgs(["doctor", "--connection", "account-a", "--json"]), { kind: "doctor", connection: "account-a", json: true });
+  assert.throws(() => parseArgs(["doctor", "--connection", "a", "--runner", "codex"]), /cannot be combined/);
   assert.deepEqual(parseArgs(["doctor", "--help"]), { kind: "help" });
   for (const flag of ["--deep", "--pr=1", "--github", "--dry-run", "--focus=x", "--model=m", "--uncommitted"]) {
-    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner, --base, and --json/, flag);
+    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner or --connection, --base, and --json/, flag);
   }
 });
 

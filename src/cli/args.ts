@@ -52,6 +52,7 @@ export type CliCommand =
     }
   | {
       readonly kind: "doctor";
+      readonly connection?: string;
       readonly repo?: string;
       readonly runner?: RunnerName;
       readonly base?: string;
@@ -348,13 +349,13 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus !== undefined ||
       opts.deep !== undefined ||
       opts.model !== undefined ||
-      opts.connection !== undefined ||
       opts.timeoutMs !== undefined ||
       opts.localMode !== undefined;
-    if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");
+    if (unsupported) throw new Error("doctor accepts only --repo, --runner or --connection, --base, and --json");
     return {
       kind: "doctor",
       json,
+      ...(opts.connection !== undefined ? { connection: opts.connection } : {}),
       ...(repo !== undefined ? { repo } : {}),
       ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
       ...(opts.base !== undefined ? { base: opts.base } : {}),

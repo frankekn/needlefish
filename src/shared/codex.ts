@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { CodexEnvironmentAuth } from "./connection-auth.js";
 import { runtimeLabel } from "./runtime.js";
 import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
@@ -115,6 +116,7 @@ export function buildRunnerEnv(
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
+		if (runner === "codex" && connectionAuth) env.CODEX_HOME = path.join(ephemeralHome, ".codex");
 		if (connectionAuth) {
 			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
 			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
@@ -437,6 +439,7 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
+	if (runner === "codex" && connectionAuth) mkdirSync(path.join(home, ".codex"), { mode: 0o700 });
 	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
 	// Explicit env auth never stages a default account's files or config.
 	const { required, optional } = connectionAuth
@@ -595,7 +598,7 @@ interface RunnerInvocation {
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
-	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly codexProxyBaseUrl: string | undefined;
 }
 
 interface CodexProxyConfig {
@@ -672,7 +675,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			effectiveEffort,
 			timeoutMs,
 			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
-			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
+			codexProxy: runner === "codex" && !(opts.connectionAuth instanceof CodexEnvironmentAuth) ? resolveCodexProxyConfig() : undefined,
 			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
 		});
 	} catch (error) {
@@ -835,7 +838,7 @@ async function runCodexOnce(
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
-						codexProxy,
+						codexProxyBaseUrl: config.connectionAuth instanceof CodexEnvironmentAuth ? config.connectionAuth.proxyBaseUrl() : codexProxy?.baseUrl,
 					},
 				};
 			} catch (error) {
@@ -1319,7 +1322,7 @@ async function runCodexCli(
 		"--output-last-message",
 		lastMsg,
 	];
-	if (invocation.codexProxy) {
+	if (invocation.codexProxyBaseUrl !== undefined) {
 		const provider = "model_providers.cliproxyapi";
 		args.push(
 			"-c",
@@ -1327,7 +1330,7 @@ async function runCodexCli(
 			"-c",
 			`${provider}.name="CLIProxyAPI"`,
 			"-c",
-			`${provider}.base_url=${JSON.stringify(invocation.codexProxy.baseUrl)}`,
+			`${provider}.base_url=${JSON.stringify(invocation.codexProxyBaseUrl)}`,
 			"-c",
 			`${provider}.env_key="CODEX_PROXY_API_KEY"`,
 			"-c",
@@ -1335,6 +1338,9 @@ async function runCodexCli(
 			"-c",
 			`${provider}.requires_openai_auth=false`,
 		);
+	}
+	if (invocation.env.CODEX_HOME && (invocation.env.CODEX_API_KEY || invocation.env.CODEX_PROXY_API_KEY)) {
+		args.push("-c", 'cli_auth_credentials_store="file"');
 	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);

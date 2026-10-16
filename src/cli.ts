@@ -50,6 +50,7 @@ async function main() {
       const report = runDoctor({
         repo: command.repo ?? process.cwd(),
         version: VERSION,
+        ...(command.connection !== undefined ? { connection: command.connection } : {}),
         ...(command.runner !== undefined ? { runner: command.runner } : {}),
         ...(command.base !== undefined ? { base: command.base } : {}),
       });
