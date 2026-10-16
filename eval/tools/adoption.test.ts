@@ -368,13 +368,15 @@ process.stdout.write(${JSON.stringify(JSON.stringify(page([pr], null)))});`);
   assert.equal(result.stdout, "");
 });
 
-test("CLI: known categories and excluded old threads do not fetch history", () => {
+test("CLI: known categories are checked against matching history", () => {
   const pr = prNode({ number: 7, reviews: [marker([{ title: "known", category: "bug" }])], threads: [
     thread("**P2** Known"), thread("**P1** Old", { created: "2026-08-01T00:00:00Z" }),
   ] });
-  const result = runCli(["o/a", "--since", "2026-09-01", "--json"], historyResponder([pr], editPage([])));
+  const result = runCli(["o/a", "--since", "2026-09-01", "--json"], historyResponder([pr], editPage([
+    { deletedAt: null, diff: marker([{ title: "known", category: "bug" }]) },
+  ])));
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.calls.trim().split("\n").length, 1);
+  assert.equal(result.calls.trim().split("\n").length, 2);
   const rows: AdoptionRow[] = JSON.parse(result.stdout);
   assert.deepEqual(rows.map((r) => r.category), ["bug"]);
 });
@@ -442,3 +444,33 @@ process.stdout.write(JSON.stringify(response));`);
   assert.deepEqual(rows.map((r) => r.category), ["unknown"]);
   assert.equal(result.calls.trim().split("\n").length, 3);
 });
+
+test("CLI: a known current category becomes unknown when history conflicts", () => {
+  const pr = prNode({ number: 7, reviews: [marker([{ title: "known", category: "bug" }])], threads: [
+    thread("**P2** Known"), thread("**P1 (security): Known**"),
+  ] });
+  const result = runCli(["o/a", "--json"], historyResponder([pr], editPage([
+    { deletedAt: null, diff: marker([{ title: "known", category: "contract" }]) },
+  ])));
+  assert.equal(result.status, 0, result.stderr);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["unknown", "security"]);
+  assert.equal(result.calls.trim().split("\n").length, 2);
+});
+
+for (const [name, threads, expected] of [
+  ["explicit categories", [thread("**P2 (security): Known**")], ["security"]],
+  ["non-finding comments", [thread("Thanks, fixed.")], []],
+  ["excluded old findings", [thread("**P2** Known", { created: "2026-08-01T00:00:00Z" })], []],
+] as const) {
+  test(`CLI: ${name} do not fetch older reviews or history`, () => {
+    const pr = prNode({ number: 7, reviewsTruncated: true, reviews: [marker([{ title: "known", category: "bug" }])], threads: [...threads] });
+    const result = runCli(["o/a", "--since", "2026-09-01", "--json"], historyResponder([pr], editPage([
+      { deletedAt: null, diff: marker([{ title: "known", category: "contract" }]) },
+    ])));
+    assert.equal(result.status, 0, result.stderr);
+    const rows: AdoptionRow[] = JSON.parse(result.stdout);
+    assert.deepEqual(rows.map((r) => r.category), expected);
+    assert.equal(result.calls.trim().split("\n").length, 1);
+  });
+}
