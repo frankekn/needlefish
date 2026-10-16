@@ -715,7 +715,7 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 					: [];
 	const privateIdentities: [string, string][] = [];
 	const identities = files.map(([key, file]): [string, string] => {
-		if (file === null) return [key, "missing"];
+		if (file === null || !existsSync(file)) return [key, "missing"];
 		try {
 			const digest = createHash("sha256")
 				.update(readFileSync(file))
@@ -723,9 +723,8 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 				.slice(0, 16);
 			privateIdentities.push([key, digest]);
 			return [key, "<required>"];
-		} catch (error) {
-			if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [key, "missing"];
-			throw error;
+		} catch {
+			throw new Error("private runner configuration identity is unreadable");
 		}
 	});
 	if (args.runner === "pi") {
@@ -734,14 +733,15 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 		if (usesAuthStore) {
 			identities.push(["PI_AUTH_JSON", "<required>"]);
 			let identity = "missing";
-			if (home) {
+			const authFile = home ? path.join(home, ".pi", "agent", "auth.json") : undefined;
+			if (authFile && existsSync(authFile)) {
 				try {
-					const auth: unknown = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "auth.json"), "utf8"));
+					const auth: unknown = JSON.parse(readFileSync(authFile, "utf8"));
 					const provider = args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
 					const entry: unknown = typeof auth === "object" && auth !== null && !Array.isArray(auth) ? Object.getOwnPropertyDescriptor(auth, provider)?.value : undefined;
 					if (entry !== undefined) identity = createHash("sha256").update(JSON.stringify(entry)).digest("hex");
-				} catch (error) {
-					if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) throw new Error("private runner authentication identity is unreadable");
+				} catch {
+					throw new Error("private runner authentication identity is unreadable");
 				}
 			}
 			privateIdentities.push(["PI_AUTH_JSON", identity]);

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { inspect } from "node:util";
 import { acpRuntimeIdentity, matchRuntimeIdentity, parsePublicRuntimeIdentity } from "./runtime-identity";
 import { matchQualifiedConfiguration } from "./runtime-qualification";
 import { comparisonEnvironmentError, runnerEnvironmentAttestationError } from "./report-integrity";
@@ -144,4 +145,28 @@ test("identical private placeholders cannot authorize cross-report comparison or
   assert.equal(comparisonEnvironmentError({ runnerEnvironment: '[["PRIVATE_CONFIG","<required>"]]', privateEnvironment: false }), "private runner environment identity");
   assert.equal(comparisonEnvironmentError({ runnerEnvironment: "malformed" }), "unknown runner environment identity");
   assert.equal(comparisonEnvironmentError({ runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"]]', privateEnvironment: false }), null);
+});
+
+test("private identity read failures never expose auth contents or HOME through causes", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-private-error-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const directory = path.join(root, ".pi", "agent");
+  mkdirSync(directory, { recursive: true });
+  const args = parseArgs(["--runner", "pi", "--env", `HOME=${root}`, "--env", "PI_PROVIDER=private-fixture", "--env", "PI_AUTH_MODE=oauth"]);
+  writeFileSync(path.join(directory, "auth.json"), '{"private-fixture":{"access":"SYNTHETIC-SECRET"');
+  assert.throws(() => runnerEnvironment(args), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "private runner authentication identity is unreadable");
+    assert.equal(inspect(error).includes("SYNTHETIC-SECRET"), false);
+    assert.equal(inspect(error).includes(root), false);
+    return true;
+  });
+  rmSync(path.join(directory, "auth.json"));
+  mkdirSync(path.join(directory, "models.json"));
+  assert.throws(() => runnerEnvironment(args), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, "private runner configuration identity is unreadable");
+    assert.equal(inspect(error).includes(root), false);
+    return true;
+  });
 });
