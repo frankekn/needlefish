@@ -81,9 +81,9 @@ Dry-run JSON 的格式不同。欄位與 outcome 詳見
 | GitHub 審查被跳過 | 閱讀 `needlefish-skip` 與 check。Closed、stale、same-head 與 untrusted-author skip 都不是新的審查。 |
 | 審查逾時 | 檢查故障與 runner log，確認原因後才調整 timeout。缺少輸出不能當成通過。 |
 
-`openai` HTTP runner 無法檢查 repo 檔案。大型或 deep 審查請改用有工具
-能力的 CLI runner。模型呼叫前拒絕執行是尚未發布的原始碼防護，不是
-v0.4.10 的保證。
+`openai` HTTP runner 無法檢查 repo 檔案。尚未發布的原始碼會在任何
+HTTP request 前拒絕所有需要模型的審查，包含小型 diff。純文件審查仍可
+使用不呼叫模型的 fast path。已發布的 v0.4.10 不保證事前拒絕。
 
 完整細節見 [timeout 與 runner 選項](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#runners) 及
 [GitHub 認證](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#hosted任何-repo)。

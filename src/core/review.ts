@@ -92,7 +92,7 @@ interface ReviewRun {
 	readonly bundle: Bundle;
 	readonly runnerConfig: EffectiveRunnerConfig;
 	readonly runtime: NonNullable<ReviewResult["runtime"]>;
-	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha" | "expectedBaseSha">;
 	readonly outputGuards: readonly ConnectionOutputGuard[];
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
@@ -760,6 +760,12 @@ function toReviewResult(
 	coverage?: string,
 ): ReviewResult {
 	const { bundle } = run;
+	const quoteBundle = run.snapshot ? {
+		...bundle,
+		repoPath: run.snapshot.repoPath,
+		headSha: run.snapshot.expectedHeadSha,
+		baseSha: run.snapshot.expectedBaseSha ?? bundle.baseSha,
+	} : bundle;
 	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
@@ -777,7 +783,7 @@ function toReviewResult(
 		summary,
 		// After the verdict on purpose: the quote check may relocate or
 		// annotate a finding, never decide pass/fail.
-		findings: checkQuotes(raw.findings, run.snapshot ? { ...bundle, repoPath: run.snapshot.repoPath } : bundle, run.reviewDeadlineMs),
+		findings: checkQuotes(raw.findings, quoteBundle, run.reviewDeadlineMs),
 		checked: raw.checked,
 		residualRisks: raw.residual_risks,
 		baseSha: bundle.baseSha,

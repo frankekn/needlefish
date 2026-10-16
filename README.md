@@ -88,9 +88,10 @@ Dry-run JSON has a different shape. See the
 | GitHub review is skipped | Read `needlefish-skip` and the check. Closed, stale, same-head, and untrusted-author skips are not new reviews. |
 | Review times out | Inspect the failure and runner logs. Set an appropriate timeout only after checking the cause. Do not treat missing output as a pass. |
 
-The `openai` HTTP runner cannot inspect repository files. Use a tool-capable
-CLI runner for large or deep reviews. Refusal before a model call is an
-unreleased source guard, not a v0.4.10 guarantee.
+The `openai` HTTP runner cannot inspect repository files. The unreleased
+source rejects every model-backed review, including small diffs, before any
+HTTP request. Docs-only reviews still use the fast path without a model call.
+Published v0.4.10 does not guarantee that refusal.
 
 [Timeouts and runner options](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners) and
 [GitHub authentication](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#hosted-any-repo) contain the full details.

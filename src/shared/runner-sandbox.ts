@@ -59,6 +59,7 @@ export interface RunnerSandbox {
   readonly launchPath: string;
   readonly prompt: string;
   readonly expectedHeadSha: string;
+  readonly expectedBaseSha?: string;
   // Repo-relative pathnames of tracked files that are Git LFS pointer stubs in
   // this checkout, as raw bytes (see sandboxChildPath). The same list the
   // prompt notice was rendered from; the caller filters and decodes it.
@@ -154,6 +155,7 @@ function prepareWorkingSandbox(
     );
     git(["update-ref", "refs/heads/EMPTY", "HEAD"], sandboxPath);
   }
+  const expectedBaseSha = git(["rev-parse", "HEAD"], sandboxPath);
   // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
   // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
   // git apply requires a terminator newline; add one only when missing. Diff
@@ -185,7 +187,7 @@ function prepareWorkingSandbox(
   git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
-  return finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha);
+  return { ...finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha), expectedBaseSha };
 }
 
 function finishSandbox(
