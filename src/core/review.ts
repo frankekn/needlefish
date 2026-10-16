@@ -22,6 +22,7 @@ import {
 	type RunnerSandbox,
 } from "../shared/runner-sandbox.js";
 import {
+	assertRunnerSchedulingAllowed,
 	createManagedTempDirectory,
 	disposeManagedTempDirectory,
 } from "../shared/temp-lifecycle.js";
@@ -90,6 +91,7 @@ interface ReviewRun {
 	readonly runnerConfig: EffectiveRunnerConfig;
 	readonly runtime: NonNullable<ReviewResult["runtime"]>;
 	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
+	readonly outputGuards: readonly NonNullable<RunnerOptions["connectionAuth"]>[];
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
 	// a retry later succeeds — the eval canary scan must see emit-then-clean-up
@@ -190,9 +192,10 @@ async function mapLimit<T, R>(
 			},
 		),
 	);
-	const rejection = settled.find(
-		(s): s is PromiseRejectedResult => s.status === "rejected",
-	);
+	const rejections = settled.filter((s): s is PromiseRejectedResult => s.status === "rejected");
+	const rejection = rejections.find((s) => isRunnerSafetyError(s.reason))
+		?? rejections.find((s) => findRunnerFailure(s.reason)?.kind !== "quota_exhausted")
+		?? rejections[0];
 	if (rejection) throw rejection.reason;
 	return results;
 }
@@ -269,13 +272,13 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && run.outputGuards.length === 0) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn() && !run.runnerConfig.connectionAuth) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && run.outputGuards.length === 0) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		onLfsReport: (report) => {
@@ -283,6 +286,7 @@ function codexOptions(
 			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
 		},
 		effectiveConfig: run.runnerConfig,
+		outputGuards: run.outputGuards,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
 	};
 }
@@ -361,7 +365,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && run.outputGuards.length === 0) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -763,7 +767,7 @@ function toReviewResult(
 		summary,
 		// After the verdict on purpose: the quote check may relocate or
 		// annotate a finding, never decide pass/fail.
-		findings: checkQuotes(raw.findings, bundle, run.reviewDeadlineMs),
+		findings: checkQuotes(raw.findings, run.snapshot ? { ...bundle, repoPath: run.snapshot.repoPath } : bundle, run.reviewDeadlineMs),
 		checked: raw.checked,
 		residualRisks: raw.residual_risks,
 		baseSha: bundle.baseSha,
@@ -943,6 +947,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// AFTER the first rejection — the per-pass snapshot attached inside
 	// runJsonPrompt is stale by then.
 	let passes;
+	const deepFailures: unknown[] = [];
 	try {
 		passes = await mapLimit(
 			hotspots,
@@ -989,9 +994,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						residuals: res.value.residual_risks,
 					};
 				} catch (e) {
+					deepFailures.push(e);
 					if (isRunnerSafetyError(e)) throw e;
 					const failure = findRunnerFailure(e);
-					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
+					if (failure?.kind === "quota_exhausted" || failure?.kind === "cancelled" || failure?.kind === "auth_required" || failure?.kind === "protocol_error" || failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).
@@ -1012,8 +1018,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			}),
 		);
 	} catch (err) {
-		attachRunRaws(err, run);
-		throw err;
+		const fatal = findRunnerFailure(err)?.kind === "quota_exhausted"
+			? deepFailures.find((failure) => findRunnerFailure(failure)?.kind !== "quota_exhausted") ?? err : err;
+		attachRunRaws(fatal, run);
+		throw fatal;
 	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
@@ -1143,79 +1151,80 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	const runnerConfig = resolveRunnerConfig(runnerOptions);
-	if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") {
-		throw new Error(plan.capability.detail);
-	}
+	return reviewRoutes(bundle, [runnerOptions], onTrace, onProgress, startedAt);
+}
 
-	// Read only past the docs-only short-circuit, for the same reason
-	// reviewPlan() defers isLarge(): the fast path runs no model pipeline and
-	// never consumes reviewDeadlineMs, so an invalid NEEDLEFISH_REVIEW_TIMEOUT_MS
-	// must not turn a docs-only review that would have passed into a throw.
-	const reviewTimeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
-	const reviewBudgetMs = reviewTimeout
-		? parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
-		: null;
-	const reviewDeadlineMs = reviewBudgetMs === null
-		? undefined : performance.now() + reviewBudgetMs;
+export async function reviewWithConnections(
+	bundle: Bundle,
+	routes: readonly [RunnerOptions, ...RunnerOptions[]],
+	onTrace?: ReviewTraceObserver,
+	onProgress?: ReviewProgressObserver,
+): Promise<ReviewResult> {
+	if (isDocsOnlyFastPath(bundle)) return review(bundle, {}, onTrace, onProgress);
+	return reviewRoutes(bundle, routes, onTrace, onProgress, Date.now());
+}
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerConfig.connectionAuth !== undefined && evalTraceOn())
-		? { failed: onTrace === undefined, pending: new Set() }
-		: undefined;
-	const snapshotTmp = bundle.headSha === "WORKING" && runnerConfig.runner !== "openai"
-		? await createManagedTempDirectory()
-		: undefined;
+async function reviewRoutes(
+	bundle: Bundle,
+	routes: readonly RunnerOptions[],
+	onTrace: ReviewTraceObserver | undefined,
+	onProgress: ReviewProgressObserver | undefined,
+	startedAt: number,
+): Promise<ReviewResult> {
+	const timeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
+	if (routes.length > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
+	const budget = timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
+	const deadline = budget === null ? undefined : performance.now() + budget;
+	const selections = routes.map((options) => {
+		const plan = reviewPlan(bundle, options);
+		if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") throw new Error(plan.capability.detail);
+		return { config: resolveRunnerConfig(options), plan };
+	});
+	const outputGuards = selections.flatMap(({config}) => config.connectionAuth ? [config.connectionAuth] : []);
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
+		? { failed: onTrace === undefined, pending: new Set() } : undefined;
+	const failedRawOutputs: string[] = [];
+	const rawOutputs: string[] = [];
+	const tmp = await createManagedTempDirectory();
 	let snapshot: RunnerSandbox | undefined;
 	try {
-		if (snapshotTmp) {
-			snapshot = prepareRunnerSandbox({
-				runner: runnerConfig.runner,
-				repoPath: bundle.repoPath,
-				prompt: "",
-				targetHeadSha: bundle.headSha,
-				targetBaseSha: bundle.baseSha,
-				targetPatch: bundle.patch,
-				tmp: snapshotTmp,
-			});
+		assertRunnerSchedulingAllowed();
+		if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
+		snapshot = prepareRunnerSandbox({ runner: "codex", repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, tmp });
+		for (const [routeIndex, {config, plan}] of selections.entries()) {
+			assertRunnerSchedulingAllowed();
+			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
+			const run: ReviewRun = {
+				bundle, snapshot, runnerConfig: config, runtime: reviewRuntime(config, budget), outputGuards,
+				stats: [], failedRawOutputs: [], rawOutputs: [], lfs: { pointerFiles: new Set(), scanIncomplete: false }, startedAt,
+				...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
+				...(traceHealth ? { traceHealth } : {}),
+				...(onTrace && traceHealth ? { onTrace: wrapTraceObserver((event) => onTrace(selections.length > 1 ? Object.freeze({ ...event, routeIndex }) : event), traceHealth) } : {}),
+				...(onProgress ? {onProgress} : {}),
+			};
+			try {
+				const result = await (plan.largePath ? reviewLarge(run) : reviewSmall(run));
+				await drainTraceDeliveries(traceHealth);
+				const final = { ...result,
+					...(failedRawOutputs.length ? {failedRawOutputs: [...failedRawOutputs, ...run.failedRawOutputs]} : {}),
+					...(rawOutputs.length ? {rawOutputs: [...rawOutputs, ...run.rawOutputs]} : {}),
+					...(traceHealth?.failed ? {traceDeliveryFailed: true} : {}),
+				};
+				for (const guard of outputGuards) guard.assertOutputSafe(JSON.stringify(final));
+				onProgress?.({stage:"done",durationMs:Date.now()-startedAt});
+				return final;
+			} catch (error) {
+				await drainTraceDeliveries(traceHealth);
+				failedRawOutputs.push(...run.failedRawOutputs);
+				rawOutputs.push(...run.rawOutputs);
+				attachRunRaws(error, {...run, failedRawOutputs, rawOutputs});
+				assertRunnerSandboxClean(config.runner, snapshot.repoPath, snapshot.expectedHeadSha);
+				if (findRunnerFailure(error)?.kind !== "quota_exhausted" || routeIndex === selections.length - 1) throw error;
+			}
 		}
-		const run: ReviewRun = {
-			bundle,
-			...(snapshot ? { snapshot } : {}),
-			runnerConfig,
-			runtime: reviewRuntime(runnerConfig, reviewBudgetMs),
-			stats: [],
-			failedRawOutputs: [],
-			rawOutputs: [],
-			lfs: { pointerFiles: new Set(), scanIncomplete: false },
-			...(onTrace && traceHealth
-				? {
-						onTrace: wrapTraceObserver(onTrace, traceHealth),
-					}
-				: {}),
-			...(traceHealth ? { traceHealth } : {}),
-			...(onProgress ? { onProgress } : {}),
-			startedAt,
-			...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
-		};
-		try {
-			const result = await (plan.largePath
-				? reviewLarge(run)
-				: reviewSmall(run));
-			await drainTraceDeliveries(traceHealth);
-			onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
-			return traceHealth?.failed
-				? { ...result, traceDeliveryFailed: true }
-				: result;
-		} catch (err) {
-			await drainTraceDeliveries(traceHealth);
-			attachRunRaws(err, run);
-			throw err;
-		}
+		throw new Error("No review connection selected.");
 	} finally {
-		try {
-			if (snapshot) assertRunnerSandboxClean(runnerConfig.runner, snapshot.repoPath, snapshot.expectedHeadSha);
-		} finally {
-			if (snapshotTmp) await disposeManagedTempDirectory(snapshotTmp);
-		}
+		try { if (snapshot) assertRunnerSandboxClean("codex", snapshot.repoPath, snapshot.expectedHeadSha); }
+		finally { await disposeManagedTempDirectory(tmp); }
 	}
 }

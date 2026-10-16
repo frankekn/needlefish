@@ -537,6 +537,7 @@ export function prepareEphemeralHome(
 
 export interface CodexOptions extends RunnerOptions {
 	readonly effectiveConfig?: EffectiveRunnerConfig;
+	readonly outputGuards?: readonly NonNullable<RunnerOptions["connectionAuth"]>[];
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
@@ -697,6 +698,7 @@ export async function runCodex(
 ): Promise<string> {
 	const config = opts.effectiveConfig ?? resolveRunnerConfig(opts);
 	const { runner } = config;
+	const guards = opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : []);
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
@@ -725,11 +727,11 @@ export async function runCodex(
 			emitStat(true);
 			return result.out;
 		} catch (err) {
-			if (err instanceof Error && config.connectionAuth) {
+			if (err instanceof Error && guards.length > 0) {
 				// Keep failure types and raw provenance while withholding public credentials.
 				err.message = err instanceof RunnerWorktreeChangedError
 					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
-					: config.connectionAuth.screenDiagnostic(err.message);
+					: guards.reduce((message, guard) => guard.screenDiagnostic(message), err.message);
 			}
 			const raw =
 				err instanceof Error
@@ -742,9 +744,9 @@ export async function runCodex(
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
 			}
-			if (raw && config.connectionAuth && !isRunnerSafetyError(err)) {
+			if (raw && guards.length > 0 && !isRunnerSafetyError(err)) {
 				try {
-					config.connectionAuth.assertOutputSafe(raw);
+					for (const guard of guards) guard.assertOutputSafe(raw);
 				} catch (screeningError) {
 					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
 					emitStat(false);
@@ -923,8 +925,8 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
-			if (config.connectionAuth) {
-				config.connectionAuth.assertOutputSafe(out);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) {
+				guard.assertOutputSafe(out);
 				let decoded: unknown;
 				try {
 					decoded = extractJson(out);
@@ -932,7 +934,7 @@ async function runCodexOnce(
 					// Explain output can be plain text; raw screening still applies.
 					if (!(error instanceof Error)) throw error;
 				}
-				if (decoded !== undefined) config.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+				if (decoded !== undefined) guard.assertOutputSafe(JSON.stringify(decoded));
 			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
@@ -942,7 +944,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			config.connectionAuth?.assertOutputSafe(raw);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) guard.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
@@ -1028,7 +1030,17 @@ function exhaustedCodexMessage(message: string): boolean {
 }
 
 export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
-	if (status === null || status === 0) return false;
+	if (status === null || !Number.isInteger(status) || status <= 0) return false;
+	for (const line of stdout.split(/\r?\n/).filter((line) => line.trim())) {
+		let envelope: unknown;
+		try { envelope = JSON.parse(line); } catch { return false; }
+		if (!isRecord(envelope)) return false;
+		const fields = envelope.type === "error" ? ["type", "message"] : envelope.type === "turn.failed" ? ["type", "error"]
+			: envelope.type === "thread.started" ? ["type", "thread_id"] : envelope.type === "turn.started" ? ["type"]
+			: envelope.type === "turn.completed" ? ["type", "usage"] : ["type", "item"];
+		if (Object.keys(envelope).some((key) => !fields.includes(key))) return false;
+		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
+	}
 	let terminal = false;
 	for (const event of codexEvents(stdout)) {
 		if (event === null) return false;

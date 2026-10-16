@@ -101,7 +101,7 @@ export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandb
   const sandboxPath = path.join(options.tmp, "runner-repo");
   const sourceRepoPath = path.resolve(options.repoPath);
   if (options.runner === "codex" || options.runner === "grok") {
-    const sourceRoot = git(["rev-parse", "--show-toplevel"], sourceRepoPath);
+    const sourceRoot = git(["rev-parse", "--show-toplevel"], options.snapshot?.repoPath ?? sourceRepoPath);
     const relative = path.relative(realpathSync(sourceRoot), realpathSync(options.tmp));
     if (relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
       throw new Error(`${options.runner} launch directory must be outside the target repository; move NEEDLEFISH_TMPDIR`);
