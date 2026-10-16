@@ -307,6 +307,7 @@ changelog entry.
 | `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
+| `unreviewedBinaryFiles` | Optional list of repo-relative paths Git classified as binary, including attribute-marked files skipped in uncommitted mode. Their contents were not reviewed. Paths also reported as LFS pointer gaps are omitted. Fast paths do not scan for LFS pointers and retain Git's binary classification. Output-only and non-blocking. |
 | `coverageGaps` | Optional list of `{ kind: "lfs_pointer_only", file }` entries (changed files the review sandbox could only check out as Git LFS pointer stubs, so their contents were not reviewed), followed by at most one `{ kind: "lfs_scan_incomplete" }` entry when the sandbox could not determine whether changed files are pointer stubs (Git LFS use or the pointer list could not be established). Reported by the sandbox, never by the model; does not affect the verdict. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |

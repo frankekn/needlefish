@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { binaryPathsFromNumstat } from "../shared/diff-numstat.js";
 import {
   review,
   reviewPlan,
@@ -38,7 +39,6 @@ import {
   EMPTY_BASE_SHA,
   formatUncommittedReviewTarget,
   joinSections,
-  parseTrackedBinaryPathsFromNumstat,
   WORKING_HEAD_SHA,
 } from "./local-uncommitted.js";
 
@@ -240,6 +240,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     patch,
     patchStat: git([...reviewDiff(cwd), "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, baseSha),
+    binaryFiles: binaryPathsFromNumstat(git([...reviewDiff(cwd), "--numstat", "-z", baseSha, "HEAD"], cwd, { preserveOutput: true })),
     ...(opts.pr
       ? {
           reviewTarget: `Review target: local ${baseSha}..${headSha}\nPR context: #${opts.pr} metadata only`,
@@ -255,7 +256,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd))
+    ? binaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd, { preserveOutput: true }))
     : [];
   const trackedPatch = headExists
     ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
@@ -276,7 +277,9 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  if (!patch.trim()) {
+  const binaryOnly = trackedBinaryPaths.length + untracked.binaryFiles.length > 0
+    && untracked.skipped.length === untracked.binaryFiles.length;
+  if (!patch.trim() && !binaryOnly) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);
@@ -291,6 +294,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
+    binaryFiles: [...trackedBinaryPaths, ...untracked.binaryFiles],
     prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
@@ -341,6 +345,7 @@ export function prDiffBundle(
     patch: diff.patch,
     patchStat: diff.patchStat,
     changedFiles: diff.changedFiles,
+    binaryFiles: diff.binaryFiles,
     reviewTarget: `Review target: PR #${pr.prMeta.number} ${diff.baseSha}..${diff.headSha}`,
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
@@ -437,6 +442,7 @@ export interface DryRunReport {
   readonly mode: DryRunMode;
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -465,6 +471,7 @@ interface DryRunSummary {
   readonly agentsMd: { readonly present: boolean; readonly bytes: number };
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -490,6 +497,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     },
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
+    binaryOnlyFastPath: report.binaryOnlyFastPath,
     largePath: report.largePath,
   };
 }
@@ -540,6 +548,7 @@ export function printDryRun(
     lines.push(`  ${skipped.path} (${skipped.reason}, ${skipped.bytes} bytes)`);
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
+  lines.push(`binaryOnlyFastPath: ${summary.binaryOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   process.stdout.write(`${lines.join("\n")}\n`);
 }

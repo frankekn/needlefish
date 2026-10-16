@@ -2628,6 +2628,7 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 		baseSha: "base",
 		headSha: headSha(repo),
 		patch: "diff --git a/asset.bin b/asset.bin\n+version https://git-lfs.github.com/spec/v1\n",
+		binaryFiles: ["asset.bin", "asset.bin"],
 		patchStat: " asset.bin | 3 +\n src/app.ts | 1 +",
 		changedFiles: [
 			{ path: "asset.bin", surface: classifySurface("asset.bin") },
@@ -2645,6 +2646,7 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 	assert.deepEqual(result.residualRisks, []);
 	assert.equal(result.stats?.length, 2, "review and critic passes each prepared a sandbox");
 	assert.deepEqual(result.coverageGaps, [{ kind: "lfs_pointer_only", file: "asset.bin" }]);
+	assert.equal(result.unreviewedBinaryFiles, undefined);
 
 	const prompts = readFileSync(promptLog, "utf8");
 	assert.equal(prompts.split("<<<PROMPT-END>>>").length - 1, 2);
@@ -2657,6 +2659,7 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 	const unrelated = await review({
 		...bundle,
 		patch: "diff --git a/src/app.ts b/src/app.ts\n+export const app = 1;\n",
+		binaryFiles: [],
 		patchStat: " src/app.ts | 1 +",
 		changedFiles: [{ path: "src/app.ts", surface: "source" }],
 	});

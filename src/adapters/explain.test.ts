@@ -55,6 +55,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
   const base = headSha(repo);
   gitText(["checkout", "-b", "feature"], repo);
   writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  writeFileSync(path.join(repo, "asset.bin"), Buffer.from([0, 1]));
   commitAll(repo, "feature");
   const head = headSha(repo);
 
@@ -145,6 +146,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
     [["app.ts", 1, "doctor base check fails on a dirty worktree"]]
   );
   assert.deepEqual(context.prMeta.reviews, ["LGTM from me, one nit inline."]);
+  assert.equal(bundle.includes('"binaryFiles"'), false);
   assert.equal(prompt.includes("needlefish-state"), false);
   assert.equal(prompt.includes("Coverage: full diff"), false);
 

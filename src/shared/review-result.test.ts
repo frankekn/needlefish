@@ -298,6 +298,17 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	assert.equal(parseReviewResult(serialized()).coverageGaps, undefined);
 });
 
+test("parseReviewResult preserves additive binary paths and rejects malformed paths", () => {
+	const unreviewedBinaryFiles = ["image.bin", "new\nline.bin"];
+	const result = parseReviewResult(serialized({ unreviewedBinaryFiles }));
+	assert.deepEqual(result.unreviewedBinaryFiles, unreviewedBinaryFiles);
+	assert.deepEqual(JSON.parse(serializeReviewResult(result)), serialized({ unreviewedBinaryFiles }));
+	assert.equal(parseReviewResult(serialized()).unreviewedBinaryFiles, undefined);
+	for (const value of ["image.bin", ["image.bin", 1], [""]]) {
+		assert.throws(() => parseReviewResult(serialized({ unreviewedBinaryFiles: value })), /unreviewedBinaryFiles/);
+	}
+});
+
 test("parseReviewResult rejects mistyped coverageGaps entries", () => {
 	for (const [value, pattern] of [
 		["assets/model.bin", /coverageGaps: not an array/],

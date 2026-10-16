@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { runLocal } from "./local";
+import { localDryRun, runLocal } from "./local";
 import { buildUntrackedPatch } from "./local-uncommitted";
 import { fakeClaudeEnv, installFakeClaude, writeFakeClaude } from "./local-uncommitted-test-fixtures";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
@@ -181,7 +181,7 @@ test("runLocal reports a skipped dangling symlink when no reviewable uncommitted
   );
 });
 
-test("runLocal reports skipped tracked binary files when no reviewable uncommitted patch remains", async (t) => {
+test("runLocal reports binary-only tracked changes as coverage gaps", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-only-"));
   const repo = initRepo(tmp);
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -191,13 +191,14 @@ test("runLocal reports skipped tracked binary files when no reviewable uncommitt
   commitAll(repo, "base");
   writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 9, 2, 3]));
 
-  await assert.rejects(
-    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-    /No uncommitted changes to review\. Skipped files: tracked image\.bin \(binary\)\./
-  );
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.unreviewedBinaryFiles, ["tracked image.bin"]);
+  assert.match(result.summary, /model review skipped/);
+  assert.deepEqual(JSON.parse(readFileSync(join(tmp, "cache", "last-review.json"), "utf8")).unreviewedBinaryFiles, ["tracked image.bin"]);
 });
 
-test("runLocal reports skipped tracked binary renames with spaces when no reviewable patch remains", async (t) => {
+test("runLocal reports binary-only tracked renames with spaces as coverage gaps", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-rename-"));
   const repo = initRepo(tmp);
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -208,11 +209,43 @@ test("runLocal reports skipped tracked binary renames with spaces when no review
   commitAll(repo, "base");
   gitText(["mv", "old image.bin", "new image.bin"], repo);
 
-  await assert.rejects(
-    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-    /No uncommitted changes to review\. Skipped files: old image\.bin \(binary\), new image\.bin \(binary\)\./
-  );
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.deepEqual(result.unreviewedBinaryFiles, ["old image.bin", "new image.bin"]);
 });
+
+test("runLocal reports binary-only untracked changes as coverage gaps", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-untracked-binary-only-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(join(repo, "new image.bin"), Buffer.from([0, 1, 2, 3]));
+
+  const dryRun = localDryRun(repo, { deep: true });
+  assert.equal(dryRun.bundle.patch, "");
+  assert.equal(dryRun.binaryOnlyFastPath, true);
+  assert.equal(dryRun.largePath, false);
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.unreviewedBinaryFiles, ["new image.bin"]);
+  assert.match(result.summary, /model review skipped/);
+});
+
+for (const omission of ["oversized", "dangling", "empty"] as const) {
+  test(`runLocal rejects binary-only review with a skipped ${omission} file`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-skipped-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+    if (omission === "dangling") symlinkSync("missing", join(repo, "source.ts"));
+    else writeFileSync(join(repo, "source.ts"), omission === "oversized" ? "x".repeat(201 * 1024) : "");
+
+    await assert.rejects(
+      () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
+      /No uncommitted changes to review\. Skipped files: .*source\.ts/s,
+    );
+  });
+}
 
 test("runLocal threads size-cap-skipped untracked files into large-path deep prompts", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-caps-"));
