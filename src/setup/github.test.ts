@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
@@ -127,10 +127,13 @@ test("the CLI previews without side effects and returns a nonzero status for con
   const root = repo(t, "repo;$(touch never)");
   const checkout = fileURLToPath(new URL("../../", import.meta.url));
   const cli = fileURLToPath(new URL("../cli.ts", import.meta.url));
+  const hook = join(dirname(root), "diff-hook");
+  const marker = join(root, "diff-executed");
+  writeFileSync(hook, '#!/bin/sh\nprintf called > "$NF_SETUP_DIFF_MARKER"\n', { mode: 0o755 });
   const run = () => spawnSync(process.execPath, ["--import", "tsx", cli, "setup", "github", "--repo", root], {
     cwd: checkout,
     encoding: "utf8",
-    env: { ...process.env, CODEX_API_KEY: "secret-sentinel" },
+    env: { ...process.env, CODEX_API_KEY: "secret-sentinel", GIT_EXTERNAL_DIFF: hook, NF_SETUP_DIFF_MARKER: marker },
   });
   const first = run();
   assert.equal(first.status, 0, first.stderr);
@@ -138,6 +141,13 @@ test("the CLI previews without side effects and returns a nonzero status for con
   assert.doesNotMatch(first.stdout, /secret-sentinel/);
   assert.throws(() => readFileSync(workflowPath(root)), /ENOENT/);
   mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  const edited = GITHUB_WORKFLOW.replace("timeout-minutes: 35", "timeout-minutes: 50");
+  writeFileSync(workflowPath(root), edited);
+  const update = run();
+  assert.equal(update.status, 0, update.stderr);
+  assert.match(update.stdout, /- {4}timeout-minutes: 50\n\+ {4}timeout-minutes: 35/);
+  assert.throws(() => readFileSync(marker), /ENOENT/);
+  assert.equal(readFileSync(workflowPath(root), "utf8"), edited);
   writeFileSync(workflowPath(root), "name: custom\n");
   const conflict = run();
   assert.equal(conflict.status, 1, conflict.stderr);

@@ -131,7 +131,7 @@ export function renderGithubSetup(plan: GithubSetupPlan): string {
   if (plan.kind === "conflict") return `${lines.join("\n")}\nConflict: ${plan.reason}\n`;
   if (plan.kind === "unchanged") return `${lines.join("\n")}\nThe managed workflow already matches this template.\n`;
   if (plan.kind === "create") return `${lines.join("\n")}\nProposed workflow:\n${plan.proposed}`;
-  const diff = spawnSync("git", ["diff", "--no-index", "--", plan.path, "-"], { input: plan.proposed, encoding: "utf8" });
+  const diff = spawnSync("git", ["diff", "--no-index", "--no-ext-diff", "--no-textconv", "--", plan.path, "-"], { input: plan.proposed, encoding: "utf8" });
   if (diff.error || diff.status !== 1) throw new Error(`could not preview workflow diff: ${diff.error?.message ?? diff.stderr}`);
   return `${lines.join("\n")}\nProposed changes:\n${diff.stdout}`;
 }
