@@ -527,6 +527,33 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
   assert.equal(cwds[0], cwds[1]);
 });
 
+test("doctor probes a relative CODEX_BIN from the caller directory", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const previousCwd = process.cwd();
+  t.after(() => process.chdir(previousCwd));
+  process.chdir(f.tmp);
+  process.env.CODEX_BIN = "./bin/codex";
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(check(report, "runner").detail, `codex (auto-detected; ${path.resolve("bin/codex")}, codex-cli 9.9.9-stub)`);
+  assert.equal(check(report, "auth").detail, "codex: Logged in using ChatGPT");
+});
+
+test("doctor preserves non-Codex relative executable probe behavior", (t) => {
+  const f = setup(t);
+  stub(f.bin, "claude", 'echo "claude 9.9.9-stub"');
+  const previousCwd = process.cwd();
+  t.after(() => process.chdir(previousCwd));
+  process.chdir(f.tmp);
+  process.env.CLAUDE_BIN = "./bin/claude";
+
+  const report = runDoctor({ repo: f.repo, runner: "claude", version: "0.0.0-test" });
+
+  assert.equal(check(report, "runner").detail, "claude (--runner; ./bin/claude, version unknown)");
+});
+
 test("doctor reports the canonical selected repository root from nested and linked folders", (t) => {
   const f = setup(t);
   codexStub(f.bin, 0, "Logged in using ChatGPT");

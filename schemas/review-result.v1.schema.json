@@ -145,6 +145,28 @@
               "items": { "type": "string", "pattern": "^[^\\r\\n]*$" }
             }
           }
+        },
+        "quote": {
+          "description": "One source line the finding describes, copied by the reviewer, with leading and trailing whitespace trimmed.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "quoteCheck": {
+          "description": "Needlefish's check of quote against the reviewed tree. Never affects the verdict.",
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["matched", "moved", "not_found", "unchecked"] },
+            "from": {
+              "description": "Original file:line when status is moved.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
+          "then": { "required": ["from"], "properties": { "from": {} } }
         }
       },
       "if": {

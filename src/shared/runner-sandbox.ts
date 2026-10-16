@@ -10,6 +10,7 @@ import {
   opendirSync,
   openSync,
   readSync,
+  realpathSync,
   rmSync,
   type Stats,
   writeFileSync,
@@ -55,6 +56,7 @@ const sandboxGitMetadata = new Map<string, string>();
 
 export interface RunnerSandbox {
   readonly repoPath: string;
+  readonly launchPath: string;
   readonly prompt: string;
   readonly expectedHeadSha: string;
   // Repo-relative pathnames of tracked files that are Git LFS pointer stubs in
@@ -97,6 +99,13 @@ export function isRunnerSafetyError(error: unknown): boolean {
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {
   const sandboxPath = path.join(options.tmp, "runner-repo");
   const sourceRepoPath = path.resolve(options.repoPath);
+  if (options.runner === "codex" || options.runner === "grok") {
+    const sourceRoot = git(["rev-parse", "--show-toplevel"], sourceRepoPath);
+    const relative = path.relative(realpathSync(sourceRoot), realpathSync(options.tmp));
+    if (relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
+      throw new Error(`${options.runner} launch directory must be outside the target repository; move NEEDLEFISH_TMPDIR`);
+    }
+  }
   if (options.targetHeadSha === "WORKING") {
     return prepareWorkingSandbox(options, sourceRepoPath, sandboxPath);
   }
@@ -174,10 +183,13 @@ function finishSandbox(
   sandboxPath: string,
   expectedHeadSha: string
 ): RunnerSandbox {
+  const launchPath = path.join(options.tmp, "runner-launch");
+  mkdirSync(launchPath);
   const prompt = options.prompt.split(sourceRepoPath).join(sandboxPath);
   const lfs = lfsDisclosure(sandboxPath);
   return {
     repoPath: sandboxPath,
+    launchPath,
     prompt: lfs.notice === "" ? prompt : `${prompt}\n\n${lfs.notice}`,
     expectedHeadSha,
     lfsPointerFiles: lfs.pointers,
