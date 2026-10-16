@@ -323,3 +323,15 @@ test("Codex partial encoding preserves literal percent triplets of the selected 
   assert.ok(raw.join("\n").includes(text));
   assert.equal(f.calls().length, 1);
 });
+
+
+test("Codex malformed UTF-8 cannot synthesize a replacement character credential", (t) => {
+  const f = fixture(t);
+  process.env.ACCOUNT_A_KEY = "tok�tail";
+  const auth = f.select().connectionAuth!;
+  const safe = "tok%fftail";
+  assert.equal(auth.screenDiagnostic(safe), safe);
+  auth.assertOutputSafe(safe);
+  assert.throws(() => auth.assertOutputSafe("tok%EF%BF%BDtail"), ConnectionCredentialLeakError);
+  assert.throws(() => auth.assertOutputSafe("bad%fftok%25ef%25bf%25bdtail"), ConnectionCredentialLeakError);
+});
