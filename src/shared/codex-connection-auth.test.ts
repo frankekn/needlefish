@@ -158,9 +158,9 @@ test("selected key rotations retain old and new diagnostic guards", (t) => {
 });
 
 
-test("doctor selects the credential source without invoking CLI or presenting identity", (t) => {
+test("doctor selects the credential source without invoking CLI or presenting identity", async (t) => {
   const f = fixture(t);
-  const report = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  const report = await runDoctor({ repo: f.repo, version: "test", connection: "a" });
   assert.deepEqual(report.checks.find(check => check.name === "auth"), {
     name: "auth", status: "unknown", detail: "codex: credential source chosen; provider account identity unknown; login state not probed",
   });
@@ -172,10 +172,10 @@ test("doctor selects the credential source without invoking CLI or presenting id
   assert.deepEqual(f.calls(), []);
 });
 
-test("doctor missing selected source never probes an ambient account", (t) => {
+test("doctor missing selected source never probes an ambient account", async (t) => {
   const f = fixture(t);
   delete process.env.ACCOUNT_A_KEY;
-  assert.throws(() => runDoctor({ repo: f.repo, version: "test", connection: "a" }), /credential/);
+  await assert.rejects(() => runDoctor({ repo: f.repo, version: "test", connection: "a" }), /credential/);
   assert.deepEqual(f.calls(), []);
 });
 

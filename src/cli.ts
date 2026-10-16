@@ -44,10 +44,8 @@ async function main() {
     case "verdict":
       runCachedVerdict(command.file);
       return;
-    // doctor spawns only runner status commands, never a review attempt, so
-    // it stays outside the runner temp lifecycle too.
     case "doctor": {
-      const report = runDoctor({
+      const report = await runDoctor({
         repo: command.repo ?? process.cwd(),
         version: VERSION,
         ...(command.connection !== undefined ? { connection: command.connection } : {}),

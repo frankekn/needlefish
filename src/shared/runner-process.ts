@@ -35,6 +35,8 @@ type RunnerChunkHandler = (chunk: string, controller: ManagedRunnerProcessContro
 type RunnerLifecycleHandler = (controller: ManagedRunnerProcessController) => void;
 
 export interface ManagedRunnerProcessInvocation {
+  readonly maxCombinedBufferBytes?: number;
+  readonly timeoutKillSignal?: "SIGKILL";
   readonly command: string;
   readonly args: readonly string[];
   readonly repoPath: string;
@@ -226,7 +228,9 @@ export async function runManagedRunnerProcess(
       if (bufferError !== undefined) return null;
       const text = String(chunk);
       bytes.count += Buffer.byteLength(text);
-      if (bytes.count > RUNNER_MAX_BUFFER_BYTES) {
+      if (bytes.count > RUNNER_MAX_BUFFER_BYTES ||
+          (invocation.maxCombinedBufferBytes !== undefined &&
+           stdoutBytes.count + stderrBytes.count > invocation.maxCombinedBufferBytes)) {
         bufferError = new RunnerMaxBufferError(invocation.command);
         beginKillSequence("SIGKILL");
         return null;
@@ -254,7 +258,7 @@ export async function runManagedRunnerProcess(
         }
       }
       const cancelBeatMs = invocation.onTimeout === undefined ? 0 : runnerTimeoutCancelMs();
-      cancelTimer = setTimeout(() => beginKillSequence("SIGTERM"), cancelBeatMs);
+      cancelTimer = setTimeout(() => beginKillSequence(invocation.timeoutKillSignal ?? "SIGTERM"), cancelBeatMs);
     };
 
     const refreshIdleTimer = (): void => {
