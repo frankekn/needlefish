@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,7 +20,7 @@ const fs = require('node:fs');
 const cp = require('node:child_process');
 const args = process.argv.slice(2);
 const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
-if (!fs.existsSync(${JSON.stringify(path.join(tmp, "changed"))}) && args[0] === 'diff' && ${change === "untracked" ? "args.includes('--no-index')" : "!args.some(arg => arg.startsWith('--'))"}) {
+if (!fs.existsSync(${JSON.stringify(path.join(tmp, "changed"))}) && args[0] === 'diff' && ${change === "untracked" ? "args.includes('--no-index')" : "!args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))"}) {
   fs.writeFileSync(${JSON.stringify(path.join(tmp, "changed"))}, 'changed');
   ${change === "HEAD" ? `cp.execFileSync('/usr/bin/git', ['-c','user.name=Test','-c','user.email=test@example.invalid','commit','--allow-empty','-m','concurrent HEAD'], {stdio:'ignore'});` : `fs.writeFileSync(${JSON.stringify(path.join(repo, change === "tracked" ? "README.md" : "app.ts"))}, 'changed during capture\\n');`}
 }
@@ -36,6 +36,7 @@ process.exit(result.status ?? 1);
       rmSync(tmp, { recursive: true, force: true });
     });
     assert.throws(() => diffBundle(repo, {}), /changed while capturing.*retry/i);
+    assert.equal(existsSync(path.join(tmp, "changed")), true, "the concurrent mutation must actually run");
     assert.equal(gitText(["status", "--porcelain"], repo).includes("app.ts"), true);
   });
 }

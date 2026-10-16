@@ -160,7 +160,10 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
     "const fs = require('node:fs');",
     "const prompt = fs.readFileSync(0, 'utf8');",
     `fs.appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ args: process.argv.slice(2), prompt }) + '\\n');`,
-    "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['source checked'], residual_risks: [] }));",
+    "console.log(JSON.stringify({type:'thread.started',thread_id:'frozen'}));",
+    "console.log(JSON.stringify({type:'turn.started'}));",
+    "console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_message',text:JSON.stringify({ summary: 'ok', findings: [], checked: ['source checked'], residual_risks: [] })}}));",
+    "console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1,reasoning_output_tokens:0}}));",
   ].join("\n"));
   chmodSync(bin, 0o755);
   environment(t, {
