@@ -23,7 +23,7 @@ export function isPublicAttestationLabel(value: string, environment: Readonly<Re
     ...Object.entries(environment).flatMap(([name, secret]) => secret && (declaredNames.has(name.toLowerCase()) || /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i.test(name) && !/(_ENV_VARS|_FILES|_PASSTHROUGH)$/i.test(name)) ? [secret, secret.trim()].filter(Boolean) : []),
     ...(environment.NEEDLEFISH_ACP_AUTH_FILES ?? "").split(",").map((file) => file.trim()).filter(Boolean),
   ];
-  return !path.posix.isAbsolute(value) && !path.win32.isAbsolute(value) && !/^~[/\\]/.test(value) && !/[:][/][/]|[?=&]/.test(value) && screenText(value, credentials).kind === "clean";
+  return !path.posix.isAbsolute(value) && !path.win32.isAbsolute(value) && !/(?:^|[^A-Za-z0-9._/@+-])[/\\]|[A-Za-z]:[/\\]|\\\\|~[/\\]/.test(value) && !/[:][/][/]|[?=&]/.test(value) && screenText(value, credentials).kind === "clean";
 }
 
 function publicVersion(value: string | undefined, status: "known" | "operator_attested", environment: NodeJS.ProcessEnv = process.env): RuntimeValue {

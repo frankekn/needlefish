@@ -1,6 +1,6 @@
 import { scorerHash } from "./scorer-hash";
 import type { Report } from "./types";
-import { publicRuntimeIdentityFromReport } from "./runtime-identity";
+import { isPublicAttestationLabel, publicRuntimeIdentityFromReport } from "./runtime-identity";
 
 export interface ReportAttestation {
   readonly provider?: string;
@@ -12,6 +12,7 @@ export interface ReportAttestation {
 }
 
 export function comparisonEnvironmentError(report: ReportAttestation & { readonly runner?: Report["runner"] }): string | null {
+  if ([report.provider, report.route, report.runnerVersion].some((value) => typeof value === "string" && !isPublicAttestationLabel(value, process.env))) return "private runner environment identity";
   if (report.privateEnvironment === true) return "private runner environment identity";
   if (report.runnerEnvironment === undefined) return report.runner === "acp" ? "unknown runner environment identity" : null;
   let pairs: unknown;
@@ -91,6 +92,7 @@ export function runnerEnvironmentAttestationError(
   ) {
     return "public lanes require attested provider, route, and runner version";
   }
+  if ([report.provider, report.route, report.runnerVersion].some((value) => typeof value === "string" && !isPublicAttestationLabel(value, process.env))) return "public lanes require public provider, route, and runner version labels";
   if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
     return "public lanes require a public runner-environment attestation";
   }

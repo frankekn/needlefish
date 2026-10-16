@@ -183,10 +183,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		env[raw.slice(0, eq)] = raw.slice(eq + 1);
 		i++;
 	}
-	for (const [flag, value] of [["--provider", provider], ["--route", route], ["--runner-version", runnerVersion]]) {
-		if (value !== null && !isPublicAttestationLabel(value, { ...process.env, ...env })) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
-	}
-	return {
+	const args: RunArgs = {
 		runner,
 		model,
 		effort,
@@ -207,6 +204,14 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		env,
 		environmentIdentity: null,
 	};
+	validatePublicAttestationLabels(args);
+	return args;
+}
+
+function validatePublicAttestationLabels(args: RunArgs): void {
+	for (const [flag, value] of [["--provider", args.provider], ["--route", args.route], ["--runner-version", args.runnerVersion]]) {
+		if (value !== null && !isPublicAttestationLabel(value, { ...process.env, ...args.env })) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
+	}
 }
 
 async function runOne(
@@ -1190,6 +1195,7 @@ export function writeReport(
 	readonly runnerEnvironment: string;
 	readonly privateEnvironment: boolean;
 } {
+	validatePublicAttestationLabels(args);
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
 	const fixtureDefectClasses: Record<string, string> = {};
