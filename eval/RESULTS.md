@@ -409,6 +409,68 @@ Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
 
+### 2026-10-13 — Review diff attributes from a fixed tree (PR #234, Class R)
+
+Scope: committed-range review diffs (GitHub PR, `pr` subcommand, local branch
+mode, re-review history diff) run `git -c core.attributesFile=/dev/null
+--attr-source=<empty tree> diff --no-textconv --no-ext-diff`, so a PR's own
+`.gitattributes` and the user's global attributes file cannot hide hunks
+(issue #213). `$GIT_DIR/info/attributes` and the system attributes file still
+apply. A NUL-free asset the repository marked binary is now diffed as text; if
+the patch exceeds the 64 MiB capture limit, collection fails and the run fails
+instead of reviewing. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
+textconv and external diff drivers are off there, and an untracked file that
+attributes mark binary is listed as skipped. No eval fixture runs uncommitted
+mode. Classified **R** because the patch fed to the model changes for
+repositories with `-diff`, `binary`, or textconv attributes.
+
+Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flash`,
+**high**. This is not the production lane (Codex `gpt-5.6-terra` high).
+The [owner waiver](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5499966324)
+accepts this substitute lane plus input identity for PR #234. The owner
+[confirmed that decision at `3f8cf6b`](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5543532605).
+This exception does not certify the production Class R gate or change the
+repository's Class R requirements for other changes.
+Criteria were written before the model run (`gate-criteria.md`). All four
+reports record the same runner, model, effort, prompt hash, and `runnerEnvironment`
+hashes (`OPENCODE_CONFIG_JSON sha256:061b047ded343bdc`, `PATH sha256:6221e6a1d61aea33`),
+so base and candidate used the same opencode config and PATH. The runner version
+(`opencode v2.0.26`) is attested only on the base x1 run, the one run that passed
+`--provider/--route/--runner-version`; a PATH hash cannot detect an in-place runner
+upgrade (`eval/run.ts`), so the other three reports do not pin the binary.
+
+- Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
+  holdouts included). After normalizing commit SHAs and temp paths, the prompt
+  multiset equals origin/main's (180/180) at `8773a84`, `b6376c7`, `d732443`,
+  `c9bcc81`, `28bd8ce`, `e48e255`, and `2cf2b3c`. The x1 and x3 results below therefore hold for those
+  heads.
+  No fixture has a `.gitattributes` file, so model runs here measure lane noise.
+- Full set x1, holdouts included (base origin/main `a9bcc6c`, candidate `b6376c7`;
+  prompt hash `c59d803f0d0dc476`, fixture hash `74c7943ce025fbb6`): Tier-1 **1 / 1**,
+  Tier-2 **0.89 / 0.95**, Tier-3 **0.83 / 0.83**, false positives **2 / 1**,
+  invalid **0 / 0**, cheat **0 / 0**, runner errors **0 / 0**.
+- x3 on the 7 divergent fixtures, both sides (base origin/main `82aa1da`,
+  candidate `d732443`): base 3/3 fixtures stay 3/3 (`pos-over-block-shared`,
+  `rs-ownership-use-after-move`, `sql-safe-index`); `real-pr4-options-not-forwarded`
+  2/3 → 3/3, `rename-source-into-docs` 2/3 → 3/3, `holdout-pagination-round-down`
+  2/3 → 2/3, `real-pr1-fallback-missing-commit-pin` 2/3 → 1/3 (not anchored: base
+  below 3/3). False positives **1 / 0**, invalid **0 / 0**, cheat **0 / 0**.
+
+**Substitute-lane criteria passed** on all six pre-declared criteria.
+**The production Class R gate was not run.** Historical model evidence:
+`eval/evidence/2026-10-13-attr-source/`.
+
+On 2026-10-16, a fresh stub capture at committed source `3f8cf6b2e8573fe547a0932417356d79eccc4db2`
+matched baseline main `ebcd2a0901f157f4de08cd140b2087fa7533c63c` on all 180 prompts,
+93 fixtures, holdouts included. Only commit SHAs and temporary directory prefixes
+were normalized. The [input identity receipt](evidence/2026-10-13-attr-source/integration-input-identity.json)
+records the exact source SHAs, hashes, normalization, and unchanged historical
+reports. This capture made no model-quality calls. It does not test attributes
+behavior or establish recall on the production lane. No fixture exercises
+`.gitattributes` or uncommitted mode. The 12 resident attributes regression tests
+cover those code paths. The exception remains limited to the accepted source
+behavior; later source or evaluation changes require a new scope assessment.
+
 ### 2026-10-06 — Six implementation repairs (Class R)
 
 Scope: executable captured-baseline `WORKING`/unborn `EMPTY` refs, fail-closed
