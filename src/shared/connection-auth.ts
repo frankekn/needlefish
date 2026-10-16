@@ -133,7 +133,12 @@ function* codexCredentialViews(text: string): Generator<string> {
   for (let pass = 0; pass < 2; pass++) {
     text = decodeJsonEscapes(text);
     yield text;
-    text = text.replace(/%[0-7][0-9a-f]/gi, byte => String.fromCharCode(Number.parseInt(byte.slice(1), 16)));
+    text = text.replace(/(?:%[0-9a-f]{2})+/gi, bytes => {
+      try { return decodeURIComponent(bytes); }
+      catch {
+        return bytes.replace(/%[0-7][0-9a-f]/gi, byte => String.fromCharCode(Number.parseInt(byte.slice(1), 16)));
+      }
+    });
     yield text;
   }
 }
