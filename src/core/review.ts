@@ -208,10 +208,27 @@ function dedup(findings: readonly Finding[]): Finding[] {
 	const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 	const out = new Map<string, Finding>();
 	for (const f of findings) {
-		const key = `${f.file}|${f.lineStart}|${f.category}|${norm(f.title).slice(0, 60)}|${norm(f.whyItBreaks).slice(0, 80)}`;
+		const key = JSON.stringify([f.file, f.lineStart, f.category, norm(f.title), norm(f.whyItBreaks)]);
 		const prev = out.get(key);
-		if (!prev || SEV_RANK[f.severity] < SEV_RANK[prev.severity])
+		if (!prev) {
 			out.set(key, f);
+			continue;
+		}
+		const strongest = SEV_RANK[f.severity] < SEV_RANK[prev.severity] ? f : prev;
+		if (![prev, f].some((finding) => finding.externalClaims?.some((claim) => claim.necessary))) {
+			out.set(key, strongest);
+			continue;
+		}
+		const independent = [prev, f].find((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+		if (independent) {
+			out.set(key, independent);
+			continue;
+		}
+		const claims = [...(prev.externalClaims ?? []), ...(f.externalClaims ?? [])];
+		out.set(key, {
+			...strongest,
+			externalClaims: [...new Map(claims.map((claim) => [JSON.stringify(claim), claim])).values()],
+		});
 	}
 	return [...out.values()];
 }
@@ -723,12 +740,13 @@ async function runCritic(
 }
 
 function externalPremiseRisks(findings: readonly Finding[]): ResidualRisk[] {
-	return findings.flatMap((finding) =>
+	const risks = findings.flatMap((finding) =>
 		(finding.externalClaims ?? []).filter((claim) => claim.necessary).map((claim) => ({
 			text: `Unverified external premise for ${finding.file}:${finding.lineStart} (${finding.title}): ${claim.claim} [${claim.source.url}]`,
 			blocks: true,
 		})),
 	);
+	return [...new Map(risks.map((risk) => [risk.text, risk])).values()];
 }
 
 function toReviewResult(
@@ -1010,9 +1028,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
-	const residuals = [...passes.flatMap((p) => p.residuals), ...externalPremiseRisks(all)];
-
 	const merged = dedup(all);
+	const residuals = [...passes.flatMap((p) => p.residuals), ...externalPremiseRisks(merged)];
 	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
 	const candidateMerged: RawReview = {
 		summary: mapResult.value.summary,

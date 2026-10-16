@@ -2757,10 +2757,10 @@ test("review preserves human risk for required external premises after critic pr
 	commitAll(repo, "negative limit");
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
-	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-pruned"]) {
+	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-external-first", "deep-pruned", "deep-duplicate-premises", "deep-code-first", "deep-external-first-pruned", "deep-code-first-pruned", "deep-distinct-premises", "deep-independent-p1", "deep-external-p1", "deep-fuzzy-pruned", "deep-pipe-pruned"]) {
 		const candidate = {
-			severity: "P2", category: "bug", title: "Restore positive limit", file: "src/app.ts", lineStart: 1, lineEnd: 1,
-			quote: "export const limit = -1;", confidence: 0.9, whyItBreaks: "Negative limit makes total negative in src/consumer.ts:2",
+			severity: "P2", category: "bug", title: scenario === "deep-fuzzy-pruned" ? "Shared diagnostic for changed allocation arithmetic and limit: vendor" : scenario === "deep-pipe-pruned" ? "Shared diagnostic|allocation" : "Restore positive limit", file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			quote: "export const limit = -1;", confidence: 0.9, whyItBreaks: scenario === "deep-fuzzy-pruned" ? "The changed allocation path has a behavior change when this value reaches the downstream consumer: vendor requirement" : scenario === "deep-pipe-pruned" ? "consumer arithmetic changed" : "Negative limit makes total negative in src/consumer.ts:2",
 			suggestedFix: "Restore positive limit", validation: "Inspect consumer arithmetic", consumerFile: "src/consumer.ts", consumerLine: 2,
 			...(scenario === "code-only" ? {} : { externalClaims: [{ claim: "Vendor specification forbids negative limits", necessary: scenario !== "independent",
 				source: { type: "external", url: "https://spec.example.invalid/reference" } }] }),
@@ -2768,22 +2768,36 @@ test("review preserves human risk for required external premises after critic pr
 		writeFileSync(bin, ["#!/usr/bin/env node", "const fs = require('node:fs');", "let input = '';",
 			"process.stdin.setEncoding('utf8');", "process.stdin.on('data', chunk => { input += chunk; });", "process.stdin.on('end', () => {",
 			`const candidate = ${JSON.stringify(candidate)};`,
-			"if (input.includes('review-MAP pass')) { fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: ['codepass', 'externalpass'].map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
+			`const scenario = ${JSON.stringify(scenario)};`,
+			"if (input.includes('review-MAP pass')) { const names = ['deep-pruned', 'deep-duplicate-premises', 'deep-distinct-premises'].includes(scenario) ? ['externalpass', 'externalpass2'] : scenario.startsWith('deep-external-first') || scenario === 'deep-external-p1' ? ['externalpass', 'codepass'] : ['codepass', 'externalpass']; fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: names.map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
 			"if (input.includes('doing a DEEP review') && input.includes('codepass')) delete candidate.externalClaims;",
+			"if (input.includes('doing a DEEP review') && input.includes('externalpass2') && scenario === 'deep-distinct-premises') candidate.externalClaims[0].claim = 'Vendor specification requires positive totals';",
+			"if (input.includes('doing a DEEP review') && ((input.includes('externalpass') && scenario === 'deep-external-p1') || (input.includes('codepass') && scenario === 'deep-independent-p1'))) candidate.severity = 'P1';",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass') && scenario === 'deep-fuzzy-pruned') { candidate.title = candidate.title.replace('vendor', 'local'); candidate.whyItBreaks = candidate.whyItBreaks.replace('vendor requirement', 'local arithmetic'); }",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass') && scenario === 'deep-pipe-pruned') { candidate.title = 'Shared diagnostic'; candidate.whyItBreaks = 'allocation|consumer arithmetic changed'; }",
 			"const critic = input.includes('adversarial critic');",
+			"if (critic && scenario === 'deep-independent-p1') candidate.severity = 'P1';",
 			`const findings = critic && ${JSON.stringify(scenario)}.endsWith('pruned') ? [] : [critic ? { ...candidate, title: 'Keep the arithmetic positive' } : candidate];`,
 			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: [] };",
 			"fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(output));", "});"].join("\n"));
 		chmodSync(bin, 0o755);
 		const result = await review({ repoPath: repo, baseSha, headSha: headSha(repo), patch: "-export const limit = 10;\n+export const limit = -1;",
-			patchStat: "src/app.ts | 2 +-", changedFiles: [{ path: "src/app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: scenario === "deep-pruned", focus: null });
-		if (scenario.endsWith("pruned") || scenario === "kept") {
+			patchStat: "src/app.ts | 2 +-", changedFiles: [{ path: "src/app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: scenario.startsWith("deep-"), focus: null });
+		if (scenario.endsWith("first-pruned")) {
+			assert.equal(result.verdict, "pass", scenario);
+			assert.deepEqual(result.findings, []);
+			assert.deepEqual(result.residualRisks, []);
+		} else if (scenario.endsWith("pruned") || scenario === "kept" || scenario === "deep-duplicate-premises" || scenario === "deep-distinct-premises") {
 			assert.equal(result.verdict, "needs_human", scenario);
 			assert.deepEqual(result.findings, []);
-			assert.deepEqual(result.residualRisks, [{ text: "Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]", blocks: true }]);
+			assert.deepEqual(result.residualRisks, [
+				{ text: `Unverified external premise for src/app.ts:1 (${candidate.title}): Vendor specification forbids negative limits [https://spec.example.invalid/reference]`, blocks: true },
+				...(scenario === "deep-distinct-premises" ? [{ text: "Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification requires positive totals [https://spec.example.invalid/reference]", blocks: true }] : []),
+			]);
 		} else {
 			assert.equal(result.verdict, "changes_requested", scenario);
 			assert.equal(result.findings[0].title, "Restore positive limit");
+			assert.equal(result.findings[0].severity, scenario === "deep-independent-p1" ? "P1" : "P2");
 			assert.equal(result.findings[0].consumerFile, "src/consumer.ts");
 			assert.equal(result.findings[0].evidence?.toolRead, "unknown");
 			assert.equal(result.findings[0].evidence?.sources[0].status, "source_present");
