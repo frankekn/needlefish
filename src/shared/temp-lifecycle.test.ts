@@ -306,6 +306,9 @@ const directory = await createManagedTempDirectory();
 const healthy = await createManagedTempDirectory();
 const owner = fs.readFileSync(path.join(directory, ".needlefish-owner.json"));
 fs.writeFileSync(path.join(directory, "owned"), "original payload");
+fs.writeFileSync(path.join(directory, "payload"), "owned payload");
+fs.mkdirSync(path.join(directory, "nested"));
+fs.writeFileSync(path.join(directory, "nested", "payload"), "owned nested payload");
 fs.writeFileSync(path.join(${JSON.stringify(sentinel)}, ".needlefish-owner.json"), owner);
 fs.symlinkSync(${JSON.stringify(sentinel)}, path.join(healthy, "child-link"));
 const replace = () => {
@@ -511,7 +514,7 @@ setInterval(() => {}, 1000);
   assert.equal(existsSync(directory), false, "restored ownership must permit startup reclamation");
 });
 
-for (const replacement of ["root", "owner marker"] as const) {
+for (const replacement of ["root", "owner marker", "empty directory"] as const) {
   test(`Linux termination does not follow a ${replacement} replaced during final removal`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
     const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
     const ready = path.join(root, "ready");
@@ -528,9 +531,10 @@ let directory;
 fs.rmdirSync = (target, options) => {
   if (target === directory) {
     fs.writeFileSync(${JSON.stringify(attempted)}, String(fs.existsSync(path.join(directory, ".needlefish-owner.json"))));
-    if (${JSON.stringify(replacement)} === "root") {
+    if (${JSON.stringify(replacement)} !== "owner marker") {
       fs.renameSync(directory, directory + ".displaced");
-      fs.symlinkSync(${JSON.stringify(sentinel)}, directory);
+      if (${JSON.stringify(replacement)} === "empty directory") fs.mkdirSync(directory);
+      else fs.symlinkSync(${JSON.stringify(sentinel)}, directory);
     } else fs.symlinkSync(${JSON.stringify(path.join(sentinel, "payload"))}, path.join(directory, ".needlefish-owner.json"));
   }
   return originalRmdir(target, options);
@@ -554,10 +558,11 @@ setInterval(() => {}, 1000);
     assert.equal(status, 143);
     assert.equal(readFileSync(attempted, "utf8"), "false");
     assert.equal(readFileSync(path.join(sentinel, "payload"), "utf8"), "external payload");
-    if (replacement === "root") {
+    if (replacement !== "owner marker") {
       assert.equal(existsSync(path.join(sentinel, ".needlefish-owner.json")), false);
       assert.equal(readFileSync(path.join(directory + ".displaced", ".needlefish-owner.json"), "utf8"), before);
-      rmSync(directory);
+      if (replacement === "empty directory") assert.equal(existsSync(directory), false, "path-based rmdir can remove an empty replacement, but must restore the original owner");
+      else rmSync(directory);
       renameSync(directory + ".displaced", directory);
     } else {
       assert.equal(lstatSync(path.join(directory, ".needlefish-owner.json")).isSymbolicLink(), true);
