@@ -52,20 +52,18 @@ const command = args[0] === 'verdict' || args[0] === 'render' ? args[0] : 'revie
 if (process.env.FAKE_DIAGNOSTIC_COMMAND === command) process.stderr.write(process.env.FAKE_STDERR ?? '');
 if (process.env.FAKE_FAIL_COMMAND === command) {
   process.stdout.write('PRIVATE_CONSUMER_STDOUT');
-  process.exit(2);
-}
-if (args[0] === 'verdict' || args[0] === 'render') {
-  const r = cp.spawnSync(${JSON.stringify(process.execPath)}, ['--import', ${JSON.stringify(tsx)}, ${JSON.stringify(cli)}, ...args], { encoding: 'utf8' });
-  process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);
-}
-if (process.env.FAKE_WAIT === '1') {
+  process.exitCode = 2;
+} else if (args[0] === 'verdict' || args[0] === 'render') {
+  const r = cp.spawnSync(${JSON.stringify(process.execPath)}, ['--import', ${JSON.stringify(tsx)}, ${JSON.stringify(cli)}, ...args], { encoding: 'utf8', maxBuffer: 8_000_000 });
+  process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exitCode = r.status ?? 1;
+} else if (process.env.FAKE_WAIT === '1') {
   fs.writeFileSync(${JSON.stringify(join(dir, "review.pid"))}, String(process.pid));
   const child = cp.spawn(${JSON.stringify(process.execPath)}, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   fs.writeFileSync(${JSON.stringify(join(dir, "child.pid"))}, String(child.pid));
   setInterval(() => {}, 1000);
 } else {
   process.stdout.write(fs.readFileSync(${JSON.stringify(fixture)}, 'utf8'));
-  process.exit(Number(process.env.FAKE_STATUS ?? '0'));
+  process.exitCode = Number(process.env.FAKE_STATUS ?? '0');
 }
 `);
   chmodSync(fake, 0o755);
@@ -74,7 +72,7 @@ if (process.env.FAKE_WAIT === '1') {
   function run(raw, status = 0, extra = {}) {
     writeFileSync(fixture, typeof raw === "string" ? raw : JSON.stringify(raw));
     return spawnSync(process.execPath, [join(repo, ".needlefish/shift-left/review-gate.mjs"), "HEAD"], {
-      cwd: repo, env: { ...env, FAKE_STATUS: String(status), ...extra }, encoding: "utf8", timeout: 20000,
+      cwd: repo, env: { ...env, FAKE_STATUS: String(status), ...extra }, encoding: "utf8", timeout: 20000, maxBuffer: 8_000_000,
     });
   }
   return { dir, repo, head, log, base, env, fixture, run, git };
@@ -297,4 +295,70 @@ test("real verdict validation diagnostics survive a schema failure", (t) => {
   assert.match(result.stderr, /^needlefish: invalid cached review /);
   assert.match(result.stderr, /\nNeedlefish gate blocked: review schema or derived verdict validation failed\n$/);
   assert.doesNotMatch(result.stderr, /PRIVATE_MODEL_JSON/);
+});
+
+
+for (const timeout of ["0", "-1", "NaN", "Infinity", "1.5", "2147483648", "4294967296", "9007199254740992"]) {
+  test(`gate rejects unschedulable timeout ${timeout} before the producer`, (t) => {
+    const f = setup(t);
+    const result = f.run(f.base, 0, { NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: timeout });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "Usage: node .needlefish/shift-left/review-gate.mjs <base-ref>\n");
+    assert.equal(existsSync(f.log), false);
+  });
+}
+
+for (const timeout of ["15000", "2147483647"]) {
+  test(`gate accepts schedulable timeout ${timeout} without clamping`, (t) => {
+    const f = setup(t);
+    const result = f.run(f.base, 0, { NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: timeout });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /LGTM/);
+    assert.equal(result.stderr, "");
+    assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+  });
+}
+
+test("minimum one-millisecond budget expires without a timer overflow", (t) => {
+  const f = setup(t);
+  const result = f.run(f.base, 0, { FAKE_WAIT: "1", NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: "1" });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "Needlefish gate blocked: review deadline expired\n");
+});
+
+for (const [name, checked] of [
+  ["cumulative review and render", "c".repeat(4_100_000)],
+  ["UTF-8 bytes rather than characters", "界".repeat(1_400_000)],
+]) {
+  test(`whole-gate output cap blocks ${name} with real consumers`, (t) => {
+    const f = setup(t);
+    const result = f.run({ ...f.base, checked: [checked] }, 0, {
+      FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "review diagnostic\n",
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "review diagnostic\nNeedlefish gate blocked: review output exceeds 8 MB\n");
+    assert.deepEqual(readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse).map((args) => args[0]), ["--repo", "verdict", "render"]);
+  });
+}
+
+test("whole-gate output cap includes stderr and permits the nearby lower total", (t) => {
+  const f = setup(t);
+  const raw = { ...f.base, checked: ["c".repeat(3_999_700)] };
+  const passed = f.run(raw);
+  assert.equal(passed.error, undefined);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.match(passed.stdout, /LGTM/);
+  assert.equal(passed.stderr, "");
+  const totalBytes = Buffer.byteLength(JSON.stringify(raw)) + Buffer.byteLength(passed.stdout) + Buffer.byteLength("stored:  pass\nderived: pass\n");
+  assert.ok(totalBytes <= 8_000_000);
+  assert.ok(totalBytes + 1000 > 8_000_000);
+  const blocked = f.run(raw, 0, { FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "d".repeat(1000) });
+  assert.equal(blocked.error, undefined);
+  assert.equal(blocked.status, 1);
+  assert.equal(blocked.stdout, "");
+  assert.equal(blocked.stderr, "d".repeat(1000) + "\nNeedlefish gate blocked: review output exceeds 8 MB\n");
 });
