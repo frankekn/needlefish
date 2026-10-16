@@ -491,11 +491,14 @@ Automatic dispatches use bounded recovery. To force a full manual review, declar
 an optional boolean `workflow_dispatch.inputs.recheck` with default `false` in
 the caller and forward it through `with.recheck` as shown above.
 
-For a custom GitHub App, set the repository variable `NEEDLEFISH_CHECK_APP_ID`
-(or that environment variable for direct CLI use) to the App's numeric ID.
-Use the ID from its GitHub App settings or the `app.id` field of a check created by that App. This pins both newly created
-checks and ambiguous-create recovery to that App. Without the pin, recovery
-accepts only GitHub Actions checks and fails closed for unknown custom Apps.
+For direct CLI use with a custom GitHub App, provide its installation token as
+`GH_TOKEN` and set `NEEDLEFISH_CHECK_APP_ID` to that App's numeric ID.
+Use the ID from its GitHub App settings or the `app.id` field of a check created
+by that App. The pin validates check ownership; it does not select or mint a token.
+The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
+custom App token. Leave its `NEEDLEFISH_CHECK_APP_ID` repository variable unset
+for the default GitHub Actions identity. A mismatched token and App pin fails closed.
+Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the
 workflow keeps the `self-hosted` default. Explicit `runs_on` inputs still win.
