@@ -1068,9 +1068,11 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // only threshold owners.
 export function reviewPlan(bundle: Bundle): {
 	readonly docsOnlyFastPath: boolean;
+	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	const binaryOnlyFastPath = !bundle.patch.trim() && Boolean(bundle.binaryFiles?.length);
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1079,7 +1081,8 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
-		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		binaryOnlyFastPath,
+		largePath: docsOnlyFastPath || binaryOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
 
@@ -1091,6 +1094,23 @@ export async function review(
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle);
+	if (plan.binaryOnlyFastPath) {
+		const files = [...new Set(bundle.binaryFiles)];
+		return {
+			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
+			verdict: "pass",
+			summary: "No text patch to review; model review skipped.",
+			findings: [],
+			checked: [],
+			residualRisks: [],
+			baseSha: bundle.baseSha,
+			headSha: bundle.headSha,
+			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+			coverageGaps: files.map((file) => ({ kind: "binary_not_reviewed", file })),
+			coverage: "No text patch reviewed; binary file contents excluded (see Not reviewed)",
+			totalDurationMs: Date.now() - startedAt,
+		};
+	}
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");

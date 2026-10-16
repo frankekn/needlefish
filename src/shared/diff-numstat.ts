@@ -49,4 +49,3 @@ export function binaryPathsFromNumstat(numstat: string): string[] {
 
   return paths;
 }
-

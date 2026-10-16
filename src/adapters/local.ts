@@ -277,7 +277,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  if (!patch.trim()) {
+  if (!patch.trim() && trackedBinaryPaths.length + untracked.binaryFiles.length === 0) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);
@@ -440,6 +440,7 @@ export interface DryRunReport {
   readonly mode: DryRunMode;
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -468,6 +469,7 @@ interface DryRunSummary {
   readonly agentsMd: { readonly present: boolean; readonly bytes: number };
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
 }
 
@@ -493,6 +495,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     },
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
+    binaryOnlyFastPath: report.binaryOnlyFastPath,
     largePath: report.largePath,
   };
 }
@@ -543,6 +546,7 @@ export function printDryRun(
     lines.push(`  ${skipped.path} (${skipped.reason}, ${skipped.bytes} bytes)`);
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
+  lines.push(`binaryOnlyFastPath: ${summary.binaryOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   process.stdout.write(`${lines.join("\n")}\n`);
 }

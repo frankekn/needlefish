@@ -33,6 +33,7 @@ export async function explainFinding(
   const key = sanitizeFindingKey(findingKey);
   if (!key) throw new Error("explain: finding key is empty after sanitizing");
   const { patch, ...meta } = bundle;
+  delete meta.binaryFiles;
   const context = latestReview ? { ...meta, latestReview } : meta;
   const prompt = loadPrompt("explain.md")
     .replace("{{FINDING_KEY}}", () => key)
