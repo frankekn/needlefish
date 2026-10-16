@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Needlefish" width="100%">
+  <img src="https://raw.githubusercontent.com/frankekn/needlefish/main/assets/banner.png" alt="Needlefish" width="100%">
 </p>
 
 # Needlefish
@@ -133,11 +133,11 @@ fixed `HEAD`, no origin remote, and post-call mutation checks. This clone is not
 an OS sandbox. A runner that learns another local path can still access it.
 Only review trusted projects on an appropriate machine.
 See [runner configuration and isolation](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners),
-[connections](docs/connections.md), and [ACP startup](docs/acp-startup.md).
+[connections](https://github.com/frankekn/needlefish/blob/main/docs/connections.md), and [ACP startup](https://github.com/frankekn/needlefish/blob/main/docs/acp-startup.md).
 
 ## macOS preview
 
-The [native app source preview](desktop/macos/README.md) supports macOS 14+
+The [native app source preview](https://github.com/frankekn/needlefish/blob/main/desktop/macos/README.md) supports macOS 14+
 on Apple silicon. It calls the existing CLI for a trusted local project.
 It is not a qualified end-user download. Signing, notarization, clean-machine
 tests, exact-lane qualification, and novice trials remain release gates.
@@ -146,8 +146,8 @@ tests, exact-lane qualification, and novice trials remain release gates.
 
 [Full CLI and GitHub reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md) contains all modes, result
 fields, auth variables, subprocess environment, self-managed installation,
-and development commands. [Methodology](eval/RESULTS.md),
-[experiment history](eval/RESULTS_HISTORY.md), and [raw reports](eval/results/)
+and development commands. [Methodology](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md),
+[experiment history](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md), and [raw reports](https://github.com/frankekn/needlefish/tree/main/eval/results)
 keep benchmark evidence separate from installation instructions.
 
 ## Benchmarks

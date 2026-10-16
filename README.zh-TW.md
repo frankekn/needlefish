@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Needlefish" width="100%">
+  <img src="https://raw.githubusercontent.com/frankekn/needlefish/main/assets/banner.png" alt="Needlefish" width="100%">
 </p>
 
 # Needlefish
@@ -125,11 +125,11 @@ CLI 模型不受程序權限限制，在 disposable clone 執行。GitHub token 
 這不是 OS sandbox。Runner 若得知其他本機路徑，仍可能存取該路徑。
 只在適當機器上審查可信任的專案。詳見
 [runner 設定與隔離](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#runners)、
-[connections](docs/connections.md) 與 [ACP 啟動](docs/acp-startup.md)。
+[connections](https://github.com/frankekn/needlefish/blob/main/docs/connections.md) 與 [ACP 啟動](https://github.com/frankekn/needlefish/blob/main/docs/acp-startup.md)。
 
 ## macOS 預覽
 
-[原生 app 原始碼預覽](desktop/macos/README.md) 支援 Apple silicon 的
+[原生 app 原始碼預覽](https://github.com/frankekn/needlefish/blob/main/desktop/macos/README.md) 支援 Apple silicon 的
 macOS 14 以上，透過既有 CLI 審查可信任的本機專案。
 這不是已通過資格驗證的終端使用者下載版。簽章、公證、clean-machine 測試、
 精確 lane 驗證與新手試用仍是 release gate。
@@ -138,8 +138,8 @@ macOS 14 以上，透過既有 CLI 審查可信任的本機專案。
 
 [完整 CLI 與 GitHub 參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md) 收錄所有模式、結果欄位、
 認證變數、subprocess 環境、自管安裝與開發指令。
-[方法](eval/RESULTS.md)、[實驗歷史](eval/RESULTS_HISTORY.md) 與
-[原始報告](eval/results/) 將 benchmark 證據與安裝指引分開。
+[方法](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)、[實驗歷史](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md) 與
+[原始報告](https://github.com/frankekn/needlefish/tree/main/eval/results) 將 benchmark 證據與安裝指引分開。
 
 ## Benchmarks
 
