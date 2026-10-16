@@ -10,6 +10,7 @@ struct InstallationStore {
     struct Receipt: Codable {
         var current: String?
         var previous: String?
+        var pendingRemoval: [String]?
     }
 
     private func directory() throws {
@@ -70,11 +71,22 @@ struct InstallationStore {
             try FileManager.default.copyItem(at: source, to: destination)
             try verify(destination)
             try await launch(destination)
-            let oldPrevious = record.previous
+            if let oldPrevious = record.previous {
+                record.pendingRemoval = (record.pendingRemoval ?? []) + [oldPrevious]
+            }
             record.previous = record.current
             record.current = id
             try save(record)
-            if let oldPrevious { try? FileManager.default.removeItem(at: app(oldPrevious)) }
+            if let pending = record.pendingRemoval, !pending.isEmpty {
+                record.pendingRemoval = pending.filter { retired in
+                    do {
+                        let url = try app(retired)
+                        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+                        return false
+                    } catch { return true }
+                }
+                if record.pendingRemoval != pending { try? save(record) }
+            }
             return destination
         } catch {
             try? FileManager.default.removeItem(at: destination)
@@ -101,7 +113,7 @@ struct InstallationStore {
         let descriptor = try lock()
         defer { close(descriptor) }
         let record = try receipt()
-        for id in Set([record.current, record.previous].compactMap { $0 }) {
+        for id in Set([record.current, record.previous].compactMap { $0 } + (record.pendingRemoval ?? [])) {
             let url = try app(id)
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         }

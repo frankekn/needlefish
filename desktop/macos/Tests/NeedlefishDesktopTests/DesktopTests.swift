@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import XCTest
 @testable import NeedlefishDesktop
@@ -282,6 +283,114 @@ final class DesktopTests: XCTestCase {
         XCTAssertEqual(fm.fileExists(atPath: first.path), false)
         XCTAssertEqual(fm.fileExists(atPath: second.path), false)
     }
+    struct SavedInstallationReceipt: Decodable {
+        let current: String?
+        let previous: String?
+        let pendingRemoval: [String]?
+    }
+    @MainActor
+    func testFailedRetirementKeepsOwnershipAndUninstallRetries() async throws {
+        let root = try temporary()
+        let source = root.appendingPathComponent("source.app")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        let managed = root.appendingPathComponent("managed")
+        let store = InstallationStore(root: managed)
+        let oldest = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let second = try await store.install(source, verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(chflags(oldest.path, UInt32(UF_IMMUTABLE)), 0)
+        defer { _ = chflags(oldest.path, 0) }
+        XCTAssertThrowsError(try fm.removeItem(at: oldest))
+        let third = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let receiptURL = managed.appendingPathComponent("receipt.json")
+        let saved = try Data(contentsOf: receiptURL)
+        let record = try JSONDecoder().decode(SavedInstallationReceipt.self, from: saved)
+        XCTAssertEqual(record.current, third.deletingPathExtension().lastPathComponent)
+        XCTAssertEqual(record.previous, second.deletingPathExtension().lastPathComponent)
+        XCTAssertEqual(record.pendingRemoval, [oldest.deletingPathExtension().lastPathComponent])
+        let unowned = managed.appendingPathComponent(UUID().uuidString + ".app")
+        try fm.createDirectory(at: unowned, withIntermediateDirectories: true)
+        let marker = unowned.appendingPathComponent("user.txt")
+        try "keep".write(to: marker, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try InstallationStore(root: managed).uninstall())
+        XCTAssertEqual(try Data(contentsOf: receiptURL), saved)
+        XCTAssertEqual(fm.fileExists(atPath: oldest.path), true)
+        XCTAssertEqual(chflags(oldest.path, 0), 0)
+        try InstallationStore(root: managed).uninstall()
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: managed.path), [unowned.lastPathComponent])
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "keep")
+        try store.uninstall()
+        XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "keep")
+    }
+    @MainActor
+    func testLaterInstallRetriesRetiredVersionsWithoutLosingRollback() async throws {
+        let root = try temporary()
+        let source = root.appendingPathComponent("source.app")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        let managed = root.appendingPathComponent("managed")
+        let store = InstallationStore(root: managed)
+        let oldest = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let second = try await store.install(source, verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(chflags(oldest.path, UInt32(UF_IMMUTABLE)), 0)
+        defer { _ = chflags(oldest.path, 0) }
+        let third = try await store.install(source, verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(chflags(oldest.path, 0), 0)
+        let fourth = try await InstallationStore(root: managed).install(source, verify: { _ in }, launch: { _ in })
+        let saved = try Data(contentsOf: managed.appendingPathComponent("receipt.json"))
+        let record = try JSONDecoder().decode(SavedInstallationReceipt.self, from: saved)
+        XCTAssertEqual(record.current, fourth.deletingPathExtension().lastPathComponent)
+        XCTAssertEqual(record.previous, third.deletingPathExtension().lastPathComponent)
+        XCTAssertEqual(record.pendingRemoval, [])
+        XCTAssertEqual(fm.fileExists(atPath: oldest.path), false)
+        XCTAssertEqual(fm.fileExists(atPath: second.path), false)
+        let restored = try await store.rollback(verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(restored.path, third.path)
+    }
+    @MainActor
+    func testFailedReceiptCommitKeepsRollbackAndCleansCandidate() async throws {
+        let root = try temporary()
+        let source = root.appendingPathComponent("source.app")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        let managed = root.appendingPathComponent("managed")
+        let store = InstallationStore(root: managed)
+        let first = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let second = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let receiptURL = managed.appendingPathComponent("receipt.json")
+        let saved = try Data(contentsOf: receiptURL)
+        XCTAssertEqual(chflags(receiptURL.path, UInt32(UF_IMMUTABLE)), 0)
+        defer { _ = chflags(receiptURL.path, 0) }
+        do {
+            _ = try await store.install(source, verify: { _ in }, launch: { _ in })
+            XCTFail("Must reject failed receipt commit")
+        } catch {
+            XCTAssertEqual(try Data(contentsOf: receiptURL), saved)
+        }
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: managed.path).sorted(),
+                       [first.lastPathComponent, second.lastPathComponent, "receipt.json"].sorted())
+        XCTAssertEqual(chflags(receiptURL.path, 0), 0)
+        let restored = try await store.rollback(verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(restored.path, first.path)
+    }
+    @MainActor
+    func testLegacyReceiptSupportsRollbackUpgradeAndUninstall() async throws {
+        let root = try temporary()
+        let firstID = "11111111-1111-4111-8111-111111111111"
+        let secondID = "22222222-2222-4222-8222-222222222222"
+        let first = root.appendingPathComponent(firstID + ".app")
+        let second = root.appendingPathComponent(secondID + ".app")
+        try fm.createDirectory(at: first, withIntermediateDirectories: true)
+        try fm.createDirectory(at: second, withIntermediateDirectories: true)
+        try Data("{\"current\":\"\(secondID)\",\"previous\":\"\(firstID)\"}".utf8)
+            .write(to: root.appendingPathComponent("receipt.json"))
+        let store = InstallationStore(root: root)
+        let restored = try await store.rollback(verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(restored.path, first.path)
+        let upgraded = try await store.install(first, verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(fm.fileExists(atPath: upgraded.path), true)
+        XCTAssertEqual(fm.fileExists(atPath: first.path), true)
+        XCTAssertEqual(fm.fileExists(atPath: second.path), false)
+        try store.uninstall()
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), [])
+    }
     @MainActor
     func testFailedLaunchDoesNotReplaceReceiptOnInstallOrRollback() async throws {
         let root = try temporary()
@@ -351,8 +460,10 @@ final class DesktopTests: XCTestCase {
     }
     func testUninstallRejectsTraversalAndSymlink() throws {
         let root = try temporary()
-        try Data(#"{"current":"../../user-project"}"#.utf8).write(to: root.appendingPathComponent("receipt.json"))
-        XCTAssertThrowsError(try InstallationStore(root: root).uninstall())
+        for json in [#"{"current":"../../user-project"}"#, #"{"pendingRemoval":["../../user-project"]}"#] {
+            try Data(json.utf8).write(to: root.appendingPathComponent("receipt.json"))
+            XCTAssertThrowsError(try InstallationStore(root: root).uninstall())
+        }
         let link = root.appendingPathComponent("link")
         try fm.createSymbolicLink(at: link, withDestinationURL: root)
         XCTAssertThrowsError(try InstallationStore(root: link).uninstall())
