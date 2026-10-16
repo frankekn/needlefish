@@ -298,13 +298,26 @@ test("real verdict validation diagnostics survive a schema failure", (t) => {
 });
 
 
-for (const timeout of ["0", "-1", "NaN", "Infinity", "1.5", "2147483648", "4294967296", "9007199254740992"]) {
+for (const args of [[], ["HEAD", "extra"]]) {
+  test(`gate reports usage for invalid positional arguments ${JSON.stringify(args)}`, (t) => {
+    const f = setup(t);
+    const result = spawnSync(process.execPath, [join(f.repo, ".needlefish/shift-left/review-gate.mjs"), ...args], {
+      cwd: f.repo, env: { ...f.env, NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: "PRIVATE_INVALID_TIMEOUT" }, encoding: "utf8", timeout: 20000,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "Usage: node .needlefish/shift-left/review-gate.mjs <base-ref>\n");
+    assert.equal(existsSync(f.log), false);
+  });
+}
+
+for (const timeout of ["0", "-1", "NaN", "Infinity", "1.5", "2147483648", "4294967296", "9007199254740992", "PRIVATE_INVALID_TIMEOUT"]) {
   test(`gate rejects unschedulable timeout ${timeout} before the producer`, (t) => {
     const f = setup(t);
     const result = f.run(f.base, 0, { NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: timeout });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");
-    assert.equal(result.stderr, "Usage: node .needlefish/shift-left/review-gate.mjs <base-ref>\n");
+    assert.equal(result.stderr, "Needlefish gate blocked: NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS must be an integer between 1 and 2147483647 milliseconds\n");
     assert.equal(existsSync(f.log), false);
   });
 }
