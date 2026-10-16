@@ -1,14 +1,18 @@
 import type { FixtureSpec } from "../../shared/types";
 
-// Hard negative: deleting an exported function plus its test looks dangerous,
-// but repo-wide there is no remaining caller — the export was legacy. The FP
-// bait is "removed public API without deprecation".
+const applicationContract = `# Application contract
+
+This repository contains a closed application. All packages are used only by this application.
+There are no package consumers outside this repository.
+Exported Go identifiers carry no public API or compatibility promise.
+`;
+
 const spec: FixtureSpec = {
   id: "neg-hard-dead-code-delete",
   kind: "negative",
   defectClass: "safe-dead-code-removal",
   description:
-    "Removes the legacy FormatLegacyID helper and its test. Repo search shows the only references were the function itself and its test; live callers all use FormatID.",
+    "Removes the legacy FormatLegacyID helper and its test. The committed application contract excludes external package consumers and public API promises. Repo search shows the only references were the function itself and its test; live callers all use FormatID.",
   baseFiles: {
     "ids/format.go": `package ids
 
@@ -46,6 +50,7 @@ func InvoiceRef(region string, seq int64) string {
 	return "INV:" + ids.FormatID(region, seq)
 }
 `,
+    "AGENTS.md": applicationContract,
   },
   headFiles: {
     "ids/format.go": `package ids
@@ -74,6 +79,7 @@ func InvoiceRef(region string, seq int64) string {
 	return "INV:" + ids.FormatID(region, seq)
 }
 `,
+    "AGENTS.md": applicationContract,
   },
   expected: {
     verdict: "pass",
