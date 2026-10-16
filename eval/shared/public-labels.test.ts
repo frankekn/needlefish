@@ -16,7 +16,7 @@ const labels = { "--provider": "Public provider", "--route": "public", "--runner
 
 test("public labels reject private paths embedded in prose and keep public model selectors", () => {
   for (const privatePath of privatePaths) {
-    for (const prefix of ["Public provider at ", "Public provider (", "Public provider:\n", "Public provider<", "Public provider]", "Public provider\t"]) {
+    for (const prefix of ["Public provider at ", "Public provider (", "Public provider:\n", "Public provider<", "Public provider]", "Public provider\t", "Public provider@", "Public provider-", "Public provider+", "Public provider.", "Public provider/", "Publicprovider@", "Publicprovider-"]) {
       assert.equal(isPublicAttestationLabel(prefix + privatePath, {}), false);
     }
   }
