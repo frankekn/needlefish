@@ -371,12 +371,55 @@ setInterval(() => {}, 1000);
       for (const [index, directory] of directories.entries()) {
         assert.equal(existsSync(directory), true, "unfinished tree must remain for the reaper");
         assert.equal(readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8"), before[index]);
-        await reapUntilGone(root, directory);
+      }
+      await reapUntilGone(root, directories[0] ?? "");
+      for (const directory of directories) {
         assert.equal(existsSync(directory), false, "startup reaper must reclaim the unfinished tree");
       }
     });
   }
 }
+
+test("Linux termination restores ownership when the empty root cannot be removed", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const ready = path.join(root, "ready");
+  const marker = path.join(root, "root-removal-attempted");
+  const owner = spawnModule(`
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
+const originalRmdir = fs.rmdirSync;
+let directory;
+fs.rmdirSync = (target, options) => {
+  if (target === directory) {
+    fs.writeFileSync(${JSON.stringify(marker)}, String(fs.existsSync(path.join(directory, ".needlefish-owner.json"))));
+    fs.writeFileSync(path.join(directory, "late-file"), "owned payload");
+  }
+  return originalRmdir(target, options);
+};
+syncBuiltinESMExports();
+const { createManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
+directory = await createManagedTempDirectory();
+fs.writeFileSync(${JSON.stringify(ready)}, directory);
+setInterval(() => {}, 1000);
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+  await waitForFile(ready);
+  const directory = readFileSync(ready, "utf8");
+  const before = readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8");
+  owner.kill("SIGTERM");
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 143);
+  assert.equal(readFileSync(marker, "utf8"), "false", "the empty-root failure must follow owner unlink");
+  assert.equal(readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8"), before);
+  assert.equal(readFileSync(path.join(directory, "late-file"), "utf8"), "owned payload");
+  await reapUntilGone(root, directory);
+  assert.equal(existsSync(directory), false, "restored ownership must permit startup reclamation");
+});
 
 test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
