@@ -542,7 +542,7 @@ test("renderMarkdown folds a bare CR in a hostile path so the note stays one par
 	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
 });
 
-test("renderMarkdown warns when source quotes could not be checked", () => {
+test("renderMarkdown warns when source quotes could not be verified at HEAD", () => {
 	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
-	assert.match(out, /_Location unverified: the quoted source could not be checked\._/);
+	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
 });
