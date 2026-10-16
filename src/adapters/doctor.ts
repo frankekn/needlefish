@@ -10,6 +10,7 @@ import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definitio
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
   resolveRunnerBinary,
+  runnerReviewCapability,
   type ResolvedRunnerBinary,
 } from "../shared/runner-detection.js";
 import { RUNNER_DEFINITIONS, RUNNERS, isRunnerName, type RunnerName } from "../shared/runner.js";
@@ -25,7 +26,7 @@ import {
 export type DoctorStatus = "ok" | "fail" | "unknown";
 
 export interface DoctorCheck {
-  readonly name: "node" | "runner" | "auth" | "git" | "base";
+  readonly name: "node" | "runner" | "capability" | "auth" | "git" | "base";
   readonly status: DoctorStatus;
   readonly detail: string;
   readonly fix?: string;
@@ -189,6 +190,18 @@ function cliRunnerCheck(
   };
 }
 
+function capabilityCheck(selection: RunnerSelection): DoctorCheck {
+  if (selection.kind === "unavailable") {
+    return { name: "capability", status: "unknown", detail: "skipped: no runner available" };
+  }
+  const { capability, detail } = runnerReviewCapability(selection.runner);
+  return {
+    name: "capability",
+    status: capability === "promptOnly" ? "fail" : capability === "unknown" ? "unknown" : "ok",
+    detail,
+  };
+}
+
 function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
@@ -341,6 +354,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
     checks = [
       nodeCheck(),
       runner.check,
+      capabilityCheck(runner.selection),
       selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
         ? "codex: credential source chosen; provider account identity unknown; login state not probed"
         : "codex: named connection chosen; provider account identity unknown; login state not probed" } : authCheck(runner.selection, probeCwd),
@@ -366,7 +380,7 @@ export function serializeDoctorReport(report: DoctorReport): string {
 export function renderDoctorReport(report: DoctorReport): string {
   const lines = [`needlefish ${report.needlefish}`];
   for (const check of report.checks) {
-    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(8)}${check.detail}`);
+    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(Math.max(8, check.name.length + 1))}${check.detail}`);
     if (check.fix !== undefined) {
       const [first, ...rest] = check.fix.split("\n");
       lines.push(`${"".padEnd(16)}fix: ${first}`);

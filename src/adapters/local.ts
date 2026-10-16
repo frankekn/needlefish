@@ -453,6 +453,7 @@ export interface DryRunReport {
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
@@ -460,12 +461,12 @@ export interface DryRunReport {
 // the repo AGENTS.md policy text verbatim.
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(cwd, opts);
-  return { mode, bundle, ...reviewPlan(bundle) };
+  return { mode, bundle, ...reviewPlan(bundle, opts) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle) };
+  return { mode: "pr", bundle, ...reviewPlan(bundle, opts) };
 }
 
 interface DryRunSummary {
@@ -481,6 +482,7 @@ interface DryRunSummary {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -506,6 +508,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
+    capability: report.capability,
   };
 }
 
@@ -513,6 +516,10 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
+  if (report.capability?.capability === "promptOnly") {
+    process.stderr.write(`needlefish: ${report.capability.detail}\n`);
+    process.exitCode = 1;
+  }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
     return;
@@ -556,5 +563,8 @@ export function printDryRun(
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
+  if (summary.capability) {
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
+  }
   process.stdout.write(`${lines.join("\n")}\n`);
 }
