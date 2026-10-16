@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -185,6 +186,33 @@ async function removeOwnedTempTree(directory: string): Promise<void> {
   }
   await restoreOwnerAccess(directory);
   await rm(directory, { recursive: true, force: true });
+}
+
+async function removeTerminatingTempTree(directory: string, deadlineMs: number): Promise<boolean> {
+  const ownerPath = path.join(directory, OWNER_FILE);
+  const owner = readFileSync(ownerPath);
+  let entries: string[];
+  try {
+    entries = await readdir(directory);
+  } catch (error) {
+    if (!isPermissionDenied(error)) throw error;
+    await restoreOwnerAccess(directory);
+    entries = await readdir(directory);
+  }
+  for (const entry of entries) {
+    if (Date.now() >= deadlineMs) return false;
+    if (entry !== OWNER_FILE) await removeOwnedTempTree(path.join(directory, entry));
+  }
+  if (Date.now() >= deadlineMs) return false;
+  // No async gap may leave a partially deleted tree without its reaper identity.
+  unlinkSync(ownerPath);
+  try {
+    rmdirSync(directory);
+  } catch (error) {
+    if (existsSync(directory)) writeFileSync(ownerPath, owner, { mode: 0o600 });
+    throw error;
+  }
+  return true;
 }
 
 const OWNER_ONLY_ACCESS = 0o700;
@@ -502,20 +530,28 @@ function isGoneProcessError(error: unknown): boolean {
   );
 }
 
-async function completeTermination({ signal, deadlineMs }: Termination): Promise<never> {
+async function completeTermination(current: Termination): Promise<never> {
+  const { signal, deadlineMs } = current;
   await waitUntil(() => runnersGone() && finalizersSettled, deadlineMs);
   if (!runnersGone()) signalRegisteredRunners("kill", signal);
 
   if (isLinux()) {
     // Unconfirmed runner exits still leave their trees to the startup reaper.
-    if (runnersGone() && finalizersSettled) {
-      for (const directory of [...activeTempDirectories]) {
-        try {
-          await removeOwnedTempTree(directory);
-          activeTempDirectories.delete(directory);
-        } catch (error) {
-          warnCleanupFailure(`temp directory ${directory}`, error);
+    if (runnersGone() && finalizersSettled && Date.now() < deadlineMs) {
+      const timeout = setTimeout(() => terminateImmediately(current), deadlineMs - Date.now());
+      try {
+        for (const directory of [...activeTempDirectories]) {
+          if (Date.now() >= deadlineMs) break;
+          try {
+            if (await removeTerminatingTempTree(directory, deadlineMs)) {
+              activeTempDirectories.delete(directory);
+            }
+          } catch (error) {
+            warnCleanupFailure(`temp directory ${directory}`, error);
+          }
         }
+      } finally {
+        clearTimeout(timeout);
       }
     }
     terminationCancel.abort();
