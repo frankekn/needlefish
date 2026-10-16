@@ -1087,6 +1087,7 @@ export async function review(
 	onTrace?: ReviewTraceObserver,
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
+	if (runnerOptions.runner || process.env.NEEDLEFISH_RUNNER) resolveRunner(runnerOptions);
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle);
 
@@ -1111,7 +1112,7 @@ export async function review(
 	}
 	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
 		throw new Error(
-			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
+			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, grok, pi, or acp).",
 		);
 	}
 

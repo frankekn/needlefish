@@ -140,132 +140,6 @@ test("runCodex invokes claude without permission restrictions", async (t) => {
 	assert.equal(readFileSync(readmePath, "utf8"), "fixture\n");
 });
 
-test("runCodex extracts opencode json text output", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "opencode-bin.js");
-	const argsPath = path.join(tmp, "args.json");
-	const inputPath = path.join(tmp, "prompt-copy.txt");
-	const stdinPath = path.join(tmp, "stdin.txt");
-	const configPath = path.join(tmp, "config.txt");
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			"const args = process.argv.slice(2);",
-			`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
-			`fs.writeFileSync(${JSON.stringify(configPath)}, process.env.OPENCODE_CONFIG_CONTENT || '');`,
-			`fs.writeFileSync(${JSON.stringify(stdinPath)}, fs.readFileSync(0, 'utf8'));`,
-			"const promptFile = args[args.indexOf('--file') + 1];",
-			`fs.writeFileSync(${JSON.stringify(inputPath)}, fs.readFileSync(promptFile, 'utf8'));`,
-			"process.stdout.write('warning: ignored noise\\n');",
-			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	const output = await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-	});
-	const args = readStringArray(argsPath);
-
-	assert.equal(output, '{"ok":true}');
-	assert.equal(args.includes("--auto"), true);
-	assert.deepEqual(args.slice(0, 6), [
-		"run",
-		"--format",
-		"json",
-		"--standalone",
-		"--auto",
-		"--file",
-	]);
-	assert.equal(args.includes(repo), false);
-	assert.equal(
-		args.at(-1),
-		"Use the attached prompt file as your complete instruction.",
-	);
-	assert.equal(args.includes("prompt"), false);
-	assert.equal(readFileSync(inputPath, "utf8"), "prompt");
-	assert.equal(readFileSync(stdinPath, "utf8"), "");
-	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
-		permission: "allow",
-		agent: { build: { permission: "allow" } },
-	});
-});
-
-test("runCodex retries an opencode attempt that stops producing output", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "opencode-bin.js");
-	const attemptsPath = path.join(tmp, "attempts.txt");
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		idleTimeout: process.env.OPENCODE_IDLE_TIMEOUT_MS,
-		noRetry: process.env.NEEDLEFISH_NO_RETRY,
-		retry: process.env.NEEDLEFISH_RETRY_MS,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.idleTimeout === undefined)
-			delete process.env.OPENCODE_IDLE_TIMEOUT_MS;
-		else process.env.OPENCODE_IDLE_TIMEOUT_MS = previous.idleTimeout;
-		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
-		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
-		if (previous.retry === undefined) delete process.env.NEEDLEFISH_RETRY_MS;
-		else process.env.NEEDLEFISH_RETRY_MS = previous.retry;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			`const attemptsPath = ${JSON.stringify(attemptsPath)};`,
-			"const attempt = fs.existsSync(attemptsPath) ? Number(fs.readFileSync(attemptsPath, 'utf8')) + 1 : 1;",
-			"fs.writeFileSync(attemptsPath, String(attempt));",
-			"if (attempt === 1) setInterval(() => {}, 1000);",
-			"else process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\\\"ok\\\":true}' } }) + '\\n');",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.OPENCODE_BIN = bin;
-	process.env.OPENCODE_IDLE_TIMEOUT_MS = "100";
-	delete process.env.NEEDLEFISH_NO_RETRY;
-	process.env.NEEDLEFISH_RETRY_MS = "1";
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	const startedAt = Date.now();
-	const output = await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 2000,
-	});
-
-	assert.ok(Date.now() - startedAt < 1000);
-	assert.equal(output, '{"ok":true}');
-	assert.equal(readFileSync(attemptsPath, "utf8"), "2");
-});
-
 test("runCodex rejects non-codex runners that dirty the target repo", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
@@ -524,60 +398,6 @@ test("runCodex keeps the generic withheld message when stderr has no allowlisted
 	assert.doesNotMatch((caught as Error).message, /likely cause/);
 });
 
-test("runCodex reports opencode exit errors before parsing stdout", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "opencode-bin.js");
-	const stderrMarker = "SECRET_REVIEW_PROMPT_MARKER_7f6a";
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"process.stdout.write('not json');",
-			`process.stderr.write(${JSON.stringify(stderrMarker)});`,
-			"process.exit(2);",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	let caught: unknown;
-	try {
-		await runCodex("prompt", {
-			repoPath: repo,
-			targetHeadSha: headSha(repo),
-			timeoutMs: 1000,
-		});
-		assert.fail("expected runCodex to reject");
-	} catch (err) {
-		caught = err;
-	}
-	assert.ok(caught instanceof Error);
-	const err = caught as Error & { rawOutput?: string };
-	assert.match(
-		err.message,
-		/opencode runner exited 2; stderr withheld because it may contain the review prompt\. Run `needlefish doctor` to check the runner setup, then retry\.$/,
-	);
-	assert.doesNotMatch(err.message, new RegExp(stderrMarker));
-	assert.match(
-		err.rawOutput ?? "",
-		new RegExp(stderrMarker),
-	);
-	assert.equal(Object.keys(err).includes("rawOutput"), false);
-});
-
 test("runCodex omits grok permission restrictions by default", async () => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
@@ -625,198 +445,6 @@ test("runCodex omits grok permission restrictions by default", async () => {
 		else process.env.NEEDLEFISH_RUNNER = previous.runner;
 		rmSync(tmp, { recursive: true, force: true });
 	}
-});
-
-test("runCodex invokes opencode without an opt-in gate", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "opencode-bin.js");
-	const argsPath = path.join(tmp, "args.json");
-	const inputPath = path.join(tmp, "prompt-copy.txt");
-	const stdinPath = path.join(tmp, "stdin.txt");
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			"const args = process.argv.slice(2);",
-			`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
-			`fs.writeFileSync(${JSON.stringify(stdinPath)}, fs.readFileSync(0, 'utf8'));`,
-			"const promptFile = args[args.indexOf('--file') + 1];",
-			`fs.writeFileSync(${JSON.stringify(inputPath)}, fs.readFileSync(promptFile, 'utf8'));`,
-			"process.stdout.write('warning: ignored noise\\n');",
-			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	const output = await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-	});
-	const args = readStringArray(argsPath);
-
-	assert.equal(output, '{"ok":true}');
-	assert.equal(args.includes("--auto"), true);
-	assert.deepEqual(args.slice(0, 6), [
-		"run",
-		"--format",
-		"json",
-		"--standalone",
-		"--auto",
-		"--file",
-	]);
-	assert.equal(args.includes(repo), false);
-	assert.equal(readFileSync(inputPath, "utf8"), "prompt");
-	assert.equal(readFileSync(stdinPath, "utf8"), "");
-});
-
-test("runCodex maps opencode effort into the model variant segment", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "opencode-bin.js");
-	const argsPath = path.join(tmp, "args.json");
-	const configPath = path.join(tmp, "config.txt");
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	writeFileSync(
-		bin,
-		[
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			"const args = process.argv.slice(2);",
-			`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(args));`,
-			`fs.writeFileSync(${JSON.stringify(configPath)}, process.env.OPENCODE_CONFIG_CONTENT || '');`,
-			"process.stdout.write(JSON.stringify({ type: 'text', part: { text: '{\"ok\":true}' } }) + '\\n');",
-		].join("\n"),
-	);
-	chmodSync(bin, 0o755);
-	process.env.OPENCODE_BIN = bin;
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	const output = await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-		model: "opencode/mimo-v2.6-flash-free",
-		reasoningEffort: "max",
-	});
-	const args = readStringArray(argsPath);
-
-	assert.equal(output, '{"ok":true}');
-	assert.equal(args.includes("--variant"), false);
-	assert.equal(
-		args[args.indexOf("--model") + 1],
-		"opencode/mimo-v2.6-flash-free#max",
-	);
-	assert.deepEqual(JSON.parse(readFileSync(configPath, "utf8")), {
-		permission: "allow",
-		agent: { build: { permission: "allow" } },
-		providers: { opencode: { models: { "mimo-v2.6-flash-free": {} } } },
-	});
-
-	const outputDefault = await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-		model: "opencode/mimo-v2.6-flash-free",
-		reasoningEffort: "default",
-	});
-	const argsDefault = readStringArray(argsPath);
-	assert.equal(outputDefault, '{"ok":true}');
-	assert.equal(
-		argsDefault[argsDefault.indexOf("--model") + 1],
-		"opencode/mimo-v2.6-flash-free",
-	);
-
-	await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-		model: "opencode/mimo-v2.6-flash-free#high",
-		reasoningEffort: "max",
-	});
-	const argsReplaced = readStringArray(argsPath);
-	assert.equal(
-		argsReplaced[argsReplaced.indexOf("--model") + 1],
-		"opencode/mimo-v2.6-flash-free#max",
-	);
-
-	await runCodex("prompt", {
-		repoPath: repo,
-		targetHeadSha: headSha(repo),
-		timeoutMs: 1000,
-		model: "opencode/mimo-v2.6-flash-free#high",
-		reasoningEffort: "default",
-	});
-	const argsKept = readStringArray(argsPath);
-	assert.equal(
-		argsKept[argsKept.indexOf("--model") + 1],
-		"opencode/mimo-v2.6-flash-free#high",
-	);
-});
-
-test("runCodex rejects opencode effort without a specified model", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const previous = {
-		bin: process.env.OPENCODE_BIN,
-		runner: process.env.NEEDLEFISH_RUNNER,
-		model: process.env.OPENCODE_MODEL,
-	};
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
-		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
-		else process.env.NEEDLEFISH_RUNNER = previous.runner;
-		if (previous.model === undefined) delete process.env.OPENCODE_MODEL;
-		else process.env.OPENCODE_MODEL = previous.model;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	delete process.env.OPENCODE_MODEL;
-	process.env.OPENCODE_BIN = "/bin/true";
-	process.env.NEEDLEFISH_RUNNER = "opencode";
-
-	await assert.rejects(
-		() =>
-			runCodex("prompt", {
-				repoPath: repo,
-				targetHeadSha: headSha(repo),
-				timeoutMs: 1000,
-				reasoningEffort: "max",
-			}),
-		(err) => {
-			assert.ok(err instanceof RunnerOperationalError);
-			assert.match(
-				err.message,
-				/opencode reasoning effort requires a model to be specified/,
-			);
-			return true;
-		},
-	);
 });
 
 test("runCodex invokes pi with default provider/model/thinking flags and the prompt on stdin", async () => {
@@ -1100,22 +728,22 @@ test("runCodex tells the user how to install an explicitly selected runner that 
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);
 	const previous = {
-		bin: process.env.OPENCODE_BIN,
+		bin: process.env.CLAUDE_BIN,
 		runner: process.env.NEEDLEFISH_RUNNER,
 	};
 	t.after(() => {
-		if (previous.bin === undefined) delete process.env.OPENCODE_BIN;
-		else process.env.OPENCODE_BIN = previous.bin;
+		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+		else process.env.CLAUDE_BIN = previous.bin;
 		if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
 		else process.env.NEEDLEFISH_RUNNER = previous.runner;
 		rmSync(tmp, { recursive: true, force: true });
 	});
-	process.env.OPENCODE_BIN = path.join(tmp, "missing-opencode");
-	process.env.NEEDLEFISH_RUNNER = "opencode";
+	process.env.CLAUDE_BIN = path.join(tmp, "missing-claude");
+	process.env.NEEDLEFISH_RUNNER = "claude";
 
 	await assert.rejects(
 		() => runCodex("prompt", { repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 }),
-		/spawn .*missing-opencode ENOENT\. The opencode CLI is not installed or not on PATH\. Install it with `npm install -g @opencode\/cli`, or set OPENCODE_BIN to its executable\.$/,
+		/spawn .*missing-claude ENOENT\. The claude CLI is not installed or not on PATH\. Install it with `npm install -g @anthropic-ai\/claude-code`, or set CLAUDE_BIN to its executable\.$/,
 	);
 });
 

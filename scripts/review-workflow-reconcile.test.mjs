@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { workflowRun } from "./workflow-test-helpers.mjs";
+import { parse } from "yaml";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
 // own, so an unbounded branch here is an unbounded model-call loop. On
@@ -45,6 +46,8 @@ function activeRun(id, title) {
 // endpoint. Order matters: first match wins.
 function runReconcile({
 	prNum = "42",
+	runner = "codex",
+	checkPostFails = false,
 	state = "open",
 	headRepo = REPO,
 	checkRunsAll = [],
@@ -96,7 +99,7 @@ done
 case "$path" in
   *"/check-runs?"*"filter=all"*) body=$(pick checkRunsAll) ;;
   *"/check-runs?"*) body=$(pick checkRunsLatest) ;;
-  repos/*/check-runs) body='{}' ;;
+  repos/*/check-runs) [ "$CHECK_POST_FAILS" != "1" ] || exit 1; body='{}' ;;
   *"/actions/workflows/"*"/runs?status=completed&per_page=100") body=$(pick completedRuns) ;;
   *"/actions/workflows/"*"/runs?"*) body=$(pick activeRuns) ;;
   *"/actions/runs?"*) body='{"workflow_runs": []}' ;;
@@ -119,6 +122,8 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			GH_TOKEN: "test-token",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_NUM: prNum,
+			NEEDLEFISH_RUNNER_INPUT: runner,
+			CHECK_POST_FAILS: checkPostFails ? "1" : "0",
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
@@ -185,11 +190,12 @@ test("reconcile counts a terminated review as an infra failure", () => {
 });
 
 test("reconcile treats a non-infra failure as a terminal verdict", () => {
-	const r = runReconcile({
-		checkRunsAll: [checkRun("Needlefish: changes_requested — Fix the thing", "failure")],
-	});
-	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+	for (const title of ["Needlefish: changes_requested — Fix the thing", "Needlefish: runner unavailable"]) {
+		const r = runReconcile({ checkRunsAll: [checkRun(title, "failure")] });
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.dispatched, 0);
+		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+	}
 });
 
 test("reconcile waits for an active run of the same workflow for the same PR", () => {
@@ -286,4 +292,26 @@ test("reconcile includes cancelled runs in the completed-run cap", () => {
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 0);
 	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
+});
+
+test("reconcile preserves unavailable OpenCode when the initial terminal check is missing", () => {
+  for (const checkPostFails of [false, true]) {
+    const r = runReconcile({ runner: "opencode", checkPostFails });
+    assert.equal(r.dispatched, 0, r.log);
+    assert.equal(r.status, checkPostFails ? 1 : 0, r.stderr);
+    assert.match(r.log, /api -X POST repos\/acme\/widgets\/check-runs/);
+    assert.ok(r.log.includes(`head_sha=${HEAD}`));
+    assert.match(r.log, /conclusion=failure/);
+    assert.match(r.log, /output\[title\]=Needlefish: runner unavailable/);
+    assert.match(r.log, /OpenCode reviews are temporarily disabled/);
+  }
+});
+
+test("review and reconcile retain the same original runner input", () => {
+  const jobs = parse(workflow).jobs;
+  const reviewStep = jobs.review.steps.find((step) => step.name === "Needlefish review");
+  const reconcileStep = jobs.reconcile.steps.find((step) => step.name === "Re-dispatch when the latest head lacks a terminal result");
+  const expected = "${{ inputs.runner || github.event.inputs.runner || 'codex' }}";
+  assert.equal(reviewStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
+  assert.equal(reconcileStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
 });
