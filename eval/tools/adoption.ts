@@ -453,11 +453,12 @@ function collect(repo: string, since: string | null): AdoptionRow[] {
       if (pr.threadsTruncated) {
         process.stderr.write(`adoption: ${repo}#${pr.number} has more than 100 review threads; only the first 100 are counted\n`);
       }
-      const current = rowsFromPr(repo, pr, since);
-      if (current.some((row) => row.category === "unknown")) {
+      const needsState = pr.threads.some((thread) =>
+        (since === null || thread.createdAt >= since) && parseFindingHeader(thread.body)?.category === null);
+      if (needsState) {
         rows.push(...recoverCategories(repo, pr, since));
       } else {
-        rows.push(...current);
+        rows.push(...rowsFromPr(repo, pr, since));
       }
     }
     if (page.endCursor === null) return rows;
