@@ -136,7 +136,7 @@ export async function runManagedRunnerProcess(
         clearTimeout(hardKillTimer);
         hardKillTimer = null;
       }
-      if (!processGroupReleased) signalRunnerProcessTree(child, "SIGKILL");
+      if (!processGroupReleased) processGroupReleased = !signalRunnerProcessTree(child, "SIGKILL");
       // Escaped descendants may still hold pipes after the owned group is gone.
       giveUpTimer = setTimeout(() => finish(null, "SIGKILL"), runnerSigkillGiveUpMs());
     };
@@ -160,7 +160,7 @@ export async function runManagedRunnerProcess(
         clearTimeout(cancelTimer);
         cancelTimer = null;
       }
-      if (!processGroupReleased) signalRunnerProcessTree(child, firstSignal);
+      if (!processGroupReleased) processGroupReleased = !signalRunnerProcessTree(child, firstSignal);
       hardKillTimer = setTimeout(forceKillSequence, runnerTimeoutGraceMs());
     };
 
@@ -299,10 +299,16 @@ export async function runManagedRunnerProcess(
       finish(null, null);
     });
     child.once("exit", () => {
-      if (killStarted) forceKillSequence();
-      processGroupReleased = true;
+      if (killStarted) {
+        forceKillSequence();
+        processGroupReleased = true;
+      } else {
+        processGroupReleased = !signalRunnerProcessTree(child, 0);
+      }
     });
     child.on("close", (status, signal) => {
+      if (!processGroupReleased) signalRunnerProcessTree(child, "SIGKILL");
+      processGroupReleased = true;
       unregisterProcessGroup();
       finish(status, signal);
     });
@@ -342,24 +348,38 @@ function runnerSigkillGiveUpMs(): number {
   return readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS, 2000);
 }
 
-function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals | 0): boolean {
   const pid = child.pid;
-  if (pid === undefined) return;
+  if (pid === undefined) return false;
+  const leaderExited = child.exitCode !== null || child.signalCode !== null;
   if (process.platform === "win32") {
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (leaderExited) return false;
+    if (signal === 0) return true;
     const args = ["/pid", String(pid), "/T"];
     if (signal === "SIGKILL") args.push("/F");
     spawnSync("taskkill", args, { stdio: "ignore" });
-    return;
+    return true;
+  }
+  if (leaderExited) {
+    try {
+      process.kill(pid, 0);
+      // A live PID after leader exit belongs to a different process.
+      return false;
+    } catch (error) {
+      if (!isGoneProcessError(error)) throw error;
+      if (error.code !== "ESRCH") return false;
+    }
   }
   try {
     process.kill(-pid, signal);
+    return true;
   } catch (error) {
     if (!isGoneProcessError(error)) throw error;
+    return false;
   }
 }
 
-function isGoneProcessError(error: unknown): boolean {
+function isGoneProcessError(error: unknown): error is Error & { code: "ESRCH" | "EPERM" } {
   return (
     error instanceof Error &&
     "code" in error &&
