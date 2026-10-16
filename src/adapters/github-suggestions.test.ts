@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatSuggestionComment } from "./github-suggestions";
+import { isNeedlefishPost, OWN_POST_FINDING_MARKER } from "../shared/normalize";
 import type { Finding } from "../shared/schema";
 
 function mkFinding(overrides: Partial<Finding> = {}): Finding {
@@ -92,4 +93,14 @@ test("formatSuggestionComment drops a suggestion that would exceed GitHub's body
   assert.equal(formatted.line, 1);
   assert.equal(formatted.startLine, undefined);
   assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
+});
+
+test("formatSuggestionComment and isNeedlefishPost share the finding marker", () => {
+  const formatted = formatSuggestionComment(mkFinding(), {
+    ranges: new Map(),
+    headLineCount: () => null,
+  });
+  const lastLine = formatted.body.split("\n").filter((line) => line.length > 0).at(-1);
+  assert.equal(lastLine, OWN_POST_FINDING_MARKER);
+  assert.equal(isNeedlefishPost(formatted.body, { bot: true, own: false }), true);
 });

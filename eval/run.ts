@@ -266,7 +266,7 @@ async function runOne(
 		loaded.bundle.changedFiles.length > 0 &&
 		loaded.bundle.changedFiles.every(
 			(file) =>
-				file.surface === "docs" && isDocsFastPathEligible(file.path),
+				isDocsFastPathEligible(file.surface, file.path),
 		);
 	const drawResult: DrawResult &
 		CriticDrawFields & {
