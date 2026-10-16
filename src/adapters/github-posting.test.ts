@@ -4809,3 +4809,66 @@ for (const unreadable of [false, true]) {
 		}
 	});
 }
+
+for (const storedReviewPost5xx of [false, true]) {
+	test(`pinned custom App preserves its receipt with stored POST failure ${storedReviewPost5xx}`, (t) => {
+		const fixture = setupFixture(t, {
+			prNumber: 150, rawReview: defaultRawReview(), customCheckAppId: 4812,
+			authorLogin: "private-review-app[bot]", failUserApi: true, storedReviewPost5xx,
+		});
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		const first = spawnGithubCli(fixture, 150);
+		assert.equal(first.status, 1, first.stderr);
+		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+		const second = spawnGithubCli(fixture, 150);
+		assert.equal(second.status, 1, second.stderr);
+		assert.match(second.stdout, /"reason":"same_head"/);
+		assert.equal(runnerInvocationCount(fixture), 2);
+		assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/150/reviews")).length, 1);
+	});
+}
+
+for (const mutation of ["other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round"]) {
+	test(`pinned custom App rejects receipt identity ${mutation}`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 151, rawReview: defaultRawReview(), customCheckAppId: 4812,
+			authorLogin: "private-review-app[bot]", failUserApi: true });
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		assert.equal(spawnGithubCli(fixture, 151).status, 1);
+		const reviews: unknown = parseJson(readFileSync(fixture.reviewsState, "utf8"));
+		const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+		assert.ok(Array.isArray(reviews) && isRecordLike(reviews[0]));
+		assert.ok(Array.isArray(checks) && isRecordLike(checks[0]));
+		if (mutation === "other-bot") reviews[0].user = { login: "other-app[bot]", type: "Bot" };
+		if (mutation === "user-type") reviews[0].user = { login: "private-review-app[bot]", type: "User" };
+		if (mutation === "wrong-app") checks[0].app = { id: 9999, slug: "private-review-app" };
+		if (mutation === "missing-slug") checks[0].app = { id: 4812 };
+		if (mutation === "invalid-slug") checks[0].app = { id: 4812, slug: "private-review-app[bot]" };
+		if (mutation === "wrong-round") checks[0].external_id = JSON.stringify({ v: 2, prNumber: 151, roundId: "other", runId: "" });
+		writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
+		writeFileSync(fixture.checksState, JSON.stringify(checks));
+		const result = spawnGithubCli(fixture, 151);
+		assert.equal(result.status, 1, result.stderr);
+		assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
+		assert.equal(runnerInvocationCount(fixture), 4);
+		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+	});
+}
+
+test("pinned custom App unreadable receipt history fails with an owned terminal check", (t) => {
+	const fixture = setupFixture(t, { prNumber: 152, rawReview: defaultRawReview(), customCheckAppId: 4812,
+		authorLogin: "private-review-app[bot]", failUserApi: true, failCheckRunReadsOn: [2] });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	assert.equal(spawnGithubCli(fixture, 152).status, 1);
+	const result = spawnGithubCli(fixture, 152);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /Prior review identity is unreadable/);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/152/reviews")).length, 1);
+	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: review failed");
+});

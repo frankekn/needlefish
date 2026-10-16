@@ -812,6 +812,7 @@ function postReview(
 	headSha: string,
 	body: string,
 	comments: readonly InlineComment[],
+	appBotLogin: string,
 ): number | null {
 	const payload = JSON.stringify({
 		commit_id: headSha,
@@ -838,7 +839,7 @@ function postReview(
 		() => {
 			const matching = readReviews(repo, prNumber).filter((item) => !before.has(item.id) &&
 				item.commit_id === headSha && item.body === screenAndCapOutboundBody(body));
-			const candidate = matching.find((item) => isTrustedStateAuthor(item, selfLogin));
+			const candidate = matching.find((item) => isTrustedStateAuthor(item, selfLogin, appBotLogin));
 			if (!candidate) {
 				if (matching.length > 0) throw new Error("Cannot verify ownership of the stored review; not retrying its POST");
 				return null;
@@ -850,7 +851,7 @@ function postReview(
 				if (stored.length !== comments.length || !comments.every((comment) => stored.some((item) =>
 					item.path === comment.path && item.line === comment.line && (item.start_line ?? undefined) === comment.start_line &&
 					item.side === comment.side &&
-					item.body === screenAndCapOutboundBody(comment.body) && isTrustedStateAuthor(item, selfLogin)))) {
+					item.body === screenAndCapOutboundBody(comment.body) && isTrustedStateAuthor(item, selfLogin, appBotLogin)))) {
 					throw new Error("Review was stored but inline delivery is incomplete; rerun the review");
 				}
 			}
@@ -909,6 +910,7 @@ function updateReviewBody(
 export function findPreviousReview(
 	repo: string,
 	prNumber: number,
+	expectedAppId: number | null = null,
 ): { id: number; state: RoundState } | null {
 	const reviews = readReviews(repo, prNumber);
 	// TRUST BOUNDARY. What this function returns decides two things in
@@ -932,7 +934,14 @@ export function findPreviousReview(
 		if (!state) continue;
 		const id = item.id;
 		if (typeof id !== "number") continue;
-		if (!isTrustedStateAuthor(item, selfLogin)) continue;
+		if (!isTrustedStateAuthor(item, selfLogin)) {
+			if (expectedAppId === null || state.v !== 2 || state.delivery.appId !== expectedAppId ||
+				nestedString(item, "user", "type") !== "Bot") continue;
+			const checks = readCheckRuns(repo, state.headSha);
+			if (completedCheckVerdict(state, checks, prNumber) === null) continue;
+			const check = checks.find((check) => check.id === state.delivery.checkId);
+			if (!isTrustedStateAuthor(item, selfLogin, customAppBotLogin(check?.app, expectedAppId))) continue;
+		}
 		return { id, state };
 	}
 	return null;
@@ -945,10 +954,16 @@ function ownedCheckAppId(app: unknown, expectedAppId: number | null): number | n
 	return app.id;
 }
 
+function customAppBotLogin(app: unknown, expectedAppId: number | null): string {
+	if (expectedAppId === null || ownedCheckAppId(app, expectedAppId) === null || !isRecord(app)) return "";
+	const slug = stringField(app, "slug");
+	return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug) ? `${slug}[bot]` : "";
+}
+
 // S5a: create the check as in_progress BEFORE any model work so a PR always
 // shows whether a review is running on its latest head. All completions update
 // this same check by id. An unknown id cannot authorize a completion.
-function createPendingCheck(repo: string, headSha: string, round: CheckRound, expectedAppId: number | null): { id: number; appId: number } | null {
+function createPendingCheck(repo: string, headSha: string, round: CheckRound, expectedAppId: number | null): { id: number; appId: number; botLogin: string } | null {
 	try {
 		const created = reconciledPost(
 			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
@@ -968,7 +983,7 @@ function createPendingCheck(repo: string, headSha: string, round: CheckRound, ex
 		);
 		const appId = isRecord(created) ? ownedCheckAppId(created.app, expectedAppId) : null;
 		if (isRecord(created) && typeof created.id === "number" && Number.isSafeInteger(created.id) && created.id > 0 && appId !== null) {
-			return { id: created.id, appId };
+			return { id: created.id, appId, botLogin: customAppBotLogin(created.app, expectedAppId) };
 		}
 		throw new Error("GitHub returned no owned check id/app identity");
 	} catch (err) {
@@ -1092,7 +1107,7 @@ function checkRunTitle(result: ReviewResult): string {
 	return base;
 }
 
-function postIssueComment(repo: string, prNumber: number, body: string): void {
+function postIssueComment(repo: string, prNumber: number, body: string, appBotLogin: string): void {
 	const endpoint = `repos/${repo}/issues/${prNumber}/comments`;
 	const read = (): JsonRecord[] => {
 		const raw = ghJson(["api", "--paginate", "--slurp", endpoint]);
@@ -1113,7 +1128,7 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 	reconciledPost(args, payload,
 		() => {
 			const matching = read().filter((item) => !before.has(item.id) && item.body === cappedBody);
-			const owned = matching.find((item) => isTrustedStateAuthor(item, selfLogin));
+			const owned = matching.find((item) => isTrustedStateAuthor(item, selfLogin, appBotLogin));
 			if (owned) return owned;
 			if (matching.length > 0) throw new Error("Cannot verify ownership of the stored comment; not retrying its POST");
 			return null;
@@ -1128,7 +1143,7 @@ class RecoveryLimitError extends Error {
 
 // S3: infra-failure comment posted alongside the red check so a red X always
 // has something to read in the PR timeline. Fail-soft: never blocks the check.
-function postErrorComment(repo: string, prNumber: number, msg: string, advice = "Review did not complete. Re-run the review."): void {
+function postErrorComment(repo: string, prNumber: number, msg: string, advice = "Review did not complete. Re-run the review.", appBotLogin = ""): void {
 	const body =
 		`⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n` +
 		"```\n" +
@@ -1137,7 +1152,7 @@ function postErrorComment(repo: string, prNumber: number, msg: string, advice = 
 		`${advice}\n` +
 		"<!-- needlefish-error -->";
 	try {
-		postIssueComment(repo, prNumber, body);
+		postIssueComment(repo, prNumber, body, appBotLogin);
 	} catch (commentErr) {
 		const cm = commentErr instanceof Error ? commentErr.message : String(commentErr);
 		process.stderr.write(`needlefish: could not post error comment: ${cm}\n`);
@@ -1176,8 +1191,9 @@ function postRoundComment(
 	repo: string,
 	prNumber: number,
 	body: string,
+	appBotLogin: string,
 ): void {
-	postIssueComment(repo, prNumber, body);
+	postIssueComment(repo, prNumber, body, appBotLogin);
 }
 
 // GitHub usernames may contain the substring "github-actions";
@@ -1208,8 +1224,8 @@ const ACTIONS_BOT_LOGIN = "github-actions[bot]";
 // boundary note in findPreviousReview for what rides on it.
 //
 // The rule is "the marker was written by the identity this run posts as",
-// never "the marker was written by something bot-shaped". Two ways to
-// establish that identity, both attested outside the author's control:
+// never "the marker was written by something bot-shaped". Three ways to
+// establish that identity, all attested outside the author's control:
 //
 //   1. login === selfLogin — the identity `gh api user` reports. Exact
 //      equality only, never a prefix/substring, and never when selfLogin is
@@ -1222,25 +1238,22 @@ const ACTIONS_BOT_LOGIN = "github-actions[bot]";
 //      cannot obtain type "Bot", and "[" / "]" are not legal in a human
 //      username, so neither half is forgeable from a normal account.
 //
+//   3. The pinned App's check API slug plus "[bot]", with user.type "Bot".
+//      Prior markers also need their matching completed check receipt.
+//
 // Deliberately NOT trusted:
 //   - a substring match on the login. That was the original bug:
 //     "github-actions" is a substring of the registrable username
 //     "z-github-actions-z", so any user could mint a trusted-looking marker.
-//   - any other Bot-typed "[bot]" account. A different GitHub App installed on
+//   - an unpinned Bot-typed "[bot]" account. A different GitHub App installed on
 //     the repo is not us, and trusting it lets it suppress our review.
 //
-// Consequence, accepted: a deployment that authenticates as a custom GitHub
-// App (login "<app>[bot]", and `GET /user` also unavailable to installation
-// tokens) matches neither branch, so its markers are not trusted and every run
-// re-reviews and posts a new review instead of updating. That is noisy but it
-// is the safe direction — an unrecognized author costs an extra review, never
-// a suppressed one.
-export function isTrustedStateAuthor(item: JsonRecord, selfLogin: string): boolean {
+export function isTrustedStateAuthor(item: JsonRecord, selfLogin: string, appBotLogin = ""): boolean {
 	const login = nestedString(item, "user", "login");
 	if (login === "") return false;
 	if (selfLogin !== "" && login === selfLogin) return true;
 	return (
-		login === ACTIONS_BOT_LOGIN &&
+		(login === ACTIONS_BOT_LOGIN || (appBotLogin !== "" && login === appBotLogin)) &&
 		nestedString(item, "user", "type") === "Bot"
 	);
 }
@@ -1660,7 +1673,11 @@ export async function runGithub(
 		nestedString(pr, "head", "sha") ||
 		git(["rev-parse", "HEAD"], repoPath);
 
-	const previous = findPreviousReview(repo, prNumber);
+	let previous: ReturnType<typeof findPreviousReview> | undefined;
+	try { previous = findPreviousReview(repo, prNumber, expectedAppId); }
+	catch (error) {
+		process.stderr.write(`needlefish: could not read prior review identity: ${error instanceof Error ? error.message : String(error)}\n`);
+	}
 	let checks: JsonRecord[] | null = null;
 	try { checks = readCheckRuns(repo, headSha); }
 	catch (error) {
@@ -1753,6 +1770,7 @@ export async function runGithub(
 
 	try {
 		if (!pending) throw new Error("Review delivery could not start; rerun the review");
+		if (previous === undefined) throw new Error("Prior review identity is unreadable; rerun the review");
 		if (!checks) throw new Error("Review delivery history is unreadable; rerun the review");
 		if (previous && !previousChecks) throw new Error("Prior review delivery history is unreadable; rerun the review");
 		const delivery: DeliveryReceipt = { checkId: pending.id, appId: pending.appId, roundId: round.roundId, runId: round.runId };
@@ -1858,6 +1876,7 @@ export async function runGithub(
 						open,
 						renderOpts.newCount,
 					),
+					pending.botLogin,
 				);
 			} catch (roundErr) {
 				const rm = roundErr instanceof Error ? roundErr.message : String(roundErr);
@@ -1866,7 +1885,7 @@ export async function runGithub(
 				);
 			}
 			if (freshComments.length > 0) {
-				postReview(repo, prNumber, headSha, "", freshComments);
+				postReview(repo, prNumber, headSha, "", freshComments, pending.botLogin);
 			}
 			await applyVerdictLabel(repo, prNumber, result.verdict);
 			const summary = renderMarkdown(freshResult, renderOpts);
@@ -1909,7 +1928,7 @@ export async function runGithub(
 				...renderOpts,
 				omitCoverageGaps: true,
 			});
-			const reviewId = postReview(repo, prNumber, headSha, body, comments);
+			const reviewId = postReview(repo, prNumber, headSha, body, comments, pending.botLogin);
 			await applyVerdictLabel(repo, prNumber, result.verdict);
 			const summary = renderMarkdown(result, renderOpts);
 			postCheck(
@@ -2012,7 +2031,7 @@ export async function runGithub(
 				);
 			}
 			// S3: post a PR comment so a red X always has something to read.
-			if (!staleUnknown) postErrorComment(repo, prNumber, msg, err instanceof RecoveryLimitError ? "A plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`." : undefined);
+			if (!staleUnknown) postErrorComment(repo, prNumber, msg, err instanceof RecoveryLimitError ? "A plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`." : undefined, pending?.botLogin);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
