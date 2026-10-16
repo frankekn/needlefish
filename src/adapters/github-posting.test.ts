@@ -112,6 +112,9 @@ type FixtureOptions = {
 	// Make GET commits/<sha>/check-runs fail, to exercise the fail-closed
 	// behaviour of the completion-aware same-head gate.
 	readonly failCheckRunReads?: boolean;
+ readonly failCheckRunReadsOn?: readonly number[];
+ readonly lagStoredReviewRead?: boolean;
+ readonly lagStoredCheckRead?: boolean;
 	// Make the runner stub wait this long before writing anything, so a low
 	// timeoutMs produces a real process timeout (ETIMEDOUT).
 	readonly runnerDelayMs?: number;
@@ -458,6 +461,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`  const reviewsPath = ${JSON.stringify(reviewsState)};`,
 			"  const reviews = fs.existsSync(reviewsPath) ? JSON.parse(fs.readFileSync(reviewsPath, 'utf8')) : [];",
    `  if (${JSON.stringify(opts.failReviewReconcileReads === true)} && reviews.length > 0) { process.stderr.write("simulated review read failure"); process.exit(1); }`,
+   `  if (${JSON.stringify(opts.lagStoredReviewRead === true)} && fs.existsSync(reviewsPath + ".stored-5xx") && !fs.existsSync(reviewsPath + ".lagged-read")) { fs.writeFileSync(reviewsPath + ".lagged-read", "1"); process.stdout.write("[[]]"); process.exit(0); }`,
 			`  const pages = ${JSON.stringify(opts.paginateEachReviewAsOwnPage === true)} ? reviews.map((r) => [r]) : ${JSON.stringify(opts.paginatePreviousReviewOnSecondPage === true)} ? [[], reviews] : [reviews];`,
 			"  process.stdout.write(JSON.stringify(pages));",
 			"  process.exit(0);",
@@ -489,8 +493,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			// checks verbatim so the completion-aware same-head gate can read
 			// status/conclusion/output.title. Reads are never logged as posts.
 			`if (args.some(a => a.startsWith('repos/frankekn/needlefish/commits/') && a.includes('/check-runs'))) {`,
-			`  if (${JSON.stringify(opts.failCheckRunReads === true)} === true) { process.stderr.write('simulated check-run read failure'); process.exit(1); }`,
+			   `  const readCountPath = checksStatePath + ".reads"; const readCount = (fs.existsSync(readCountPath) ? Number(fs.readFileSync(readCountPath, 'utf8')) : 0) + 1; fs.writeFileSync(readCountPath, String(readCount));`,
+   `  if (${JSON.stringify(opts.failCheckRunReads === true)} === true || ${JSON.stringify(opts.failCheckRunReadsOn ?? [])}.includes(readCount)) { process.stderr.write('simulated check-run read failure'); process.exit(1); }`,
 			`  const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
+   `  if (${JSON.stringify(opts.lagStoredCheckRead === true)} && fs.existsSync(checksStatePath + ".stored-5xx") && !fs.existsSync(checksStatePath + ".lagged-read")) { fs.writeFileSync(checksStatePath + ".lagged-read", "1"); process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }`,
 			`  process.stdout.write(JSON.stringify(args.includes("--slurp") ? [{ total_count: checks.length, check_runs: checks }] : { total_count: checks.length, check_runs: checks }));`,
 			`  process.exit(0);`,
 			`}`,
@@ -3082,7 +3088,7 @@ test("a transient 502 on the review PUT is retried once and the update lands", a
 	);
 });
 
-test("a 502 review POST retries only after confirming no stored review", async (t) => {
+test("a 502 review POST defers recovery when no artifact is visible", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 83,
 		rawReview: defaultRawReview(),
@@ -3094,8 +3100,8 @@ test("a 502 review POST retries only after confirming no stored review", async (
 	const posts = readPosts(fixture.postLog);
 	assert.equal(
 		reviewPostAttempts(posts, 83),
-		2,
-		"an absent artifact permits one bounded retry",
+		1,
+		"a negative read is not proof a POST was not stored",
 	);
 	const checkOps = posts.filter((p) =>
 		p.args.some((a) => a.includes("check-runs")),
@@ -3106,7 +3112,7 @@ test("a 502 review POST retries only after confirming no stored review", async (
 		output?: { title?: unknown };
 	};
 	assert.equal(payload.conclusion, "failure");
-	assert.match(String(payload.output?.title ?? ""), /changes_requested/);
+	assert.match(String(payload.output?.title ?? ""), /review failed/);
 	assert.equal(process.exitCode, 1);
 	process.exitCode = undefined;
 });
@@ -3774,7 +3780,7 @@ test("an inline-comment failure on a recheck leaves no marker for the next run t
 			checked: ["checked"],
 			residual_risks: [],
 		}),
-		flakyReviewPosts: 3,
+		flakyReviewPosts: 1,
 	});
 	// A completed prior delivery for this exact head: without the fix, the
 	// recheck would rewrite the marker before the inline POST and the failed
@@ -4534,4 +4540,49 @@ test("a newer round from another PR cannot invalidate this PR receipt", async (t
  assert.match(result.stdout, /"reason":"same_head"/);
  assert.equal(runnerInvocationCount(fixture), 2);
  assert.equal(readPosts(fixture.postLog).length, before);
+});
+
+test("a transient history read after completed delivery preserves one recovery", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 134, rawReview: JSON.stringify({ summary: "clean", findings: [], checked: ["checked"], residual_risks: [] }), failCheckRunReadsOn: [2] });
+ await runGithub(fixture.repo, 134, { timeoutMs: 1000 });
+ assert.equal(process.exitCode, 0);
+ await runGithub(fixture.repo, 134, { timeoutMs: 1000 });
+ assert.equal(process.exitCode, 1);
+ assert.equal(runnerInvocationCount(fixture), 2);
+ await runGithub(fixture.repo, 134, { timeoutMs: 1000 });
+ assert.equal(process.exitCode, 0);
+ assert.equal(runnerInvocationCount(fixture), 4);
+ assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "success");
+ const before = readPosts(fixture.postLog).length;
+ await runGithub(fixture.repo, 134, { timeoutMs: 1000 });
+ assert.equal(runnerInvocationCount(fixture), 4);
+ assert.equal(readPosts(fixture.postLog).length, before);
+});
+
+for (const artifact of ["review", "check"] as const) {
+ test(`a stored ${artifact} POST with delayed visibility is never resent`, async (t) => {
+  const fixture = setupFixture(t, { prNumber: 135, rawReview: defaultRawReview(), storedReviewPost5xx: artifact === "review", storedCheckPost5xx: artifact === "check",
+   lagStoredReviewRead: artifact === "review", lagStoredCheckRead: artifact === "check" });
+  await runGithub(fixture.repo, 135, { timeoutMs: 1000 });
+  const endpoint = artifact === "review" ? "repos/frankekn/needlefish/pulls/135/reviews" : "repos/frankekn/needlefish/check-runs";
+  const posts = readPosts(fixture.postLog);
+  assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes(endpoint)).length, 1);
+  const stored: unknown = parseJson(readFileSync(artifact === "review" ? fixture.reviewsState : fixture.checksState, "utf8"));
+  assert.ok(Array.isArray(stored));
+  assert.equal(stored.length, 1);
+  assert.equal(process.exitCode, 1);
+ });
+}
+
+test("a trusted review quoting a v2 receipt in model prose cannot skip", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 136, rawReview: defaultRawReview() });
+ seedCompletedVerdictCheck(fixture);
+ const quoted = renderState(fixture.headSha, [mkFinding({ title: "bug" })], FIXTURE_RECEIPT);
+ seedReviews(fixture.reviewsState, [{ id: 1, body: `# Needlefish review\n\nQuoted source ${quoted}\n\n</details>\n<sub>2 calls</sub>\n`, user: { login: "github-actions[bot]", type: "Bot" } }]);
+ await runGithub(fixture.repo, 136, { timeoutMs: 1000 });
+ assert.equal(runnerInvocationCount(fixture), 2);
+ const posted = postedReview(readPosts(fixture.postLog), 136);
+ assert.ok(posted);
+ assert.equal(parseReviewPayload(posted.payload).comments.length, 1);
+ assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
 });

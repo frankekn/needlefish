@@ -469,7 +469,7 @@ export function parseState(body: string): RoundState | null {
 	if (start < 0) return null;
 	const jsonStart = start + STATE_PREFIX.length;
 	const end = body.indexOf("-->", jsonStart);
-	if (end < 0) return null;
+	if (end < 0 || body.slice(end + 3).trim() !== "") return null;
 	let raw: unknown;
 	try {
 		raw = JSON.parse(body.slice(jsonStart, end));
@@ -1482,9 +1482,6 @@ function readCheckRuns(repo: string, headSha: string): JsonRecord[] {
 function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[], prNumber: number): Verdict | null {
 	if (state.v !== 2) return null;
 	const receipt = state.delivery;
-	if (checks.some((check) => typeof check.id === "number" && check.id > receipt.checkId &&
-		check.head_sha === state.headSha && isRecord(check.app) && check.app.id === receipt.appId &&
-		check.name === "Needlefish" && parseCheckRound(check.external_id)?.prNumber === prNumber)) return null;
 	const run = checks.find((check) => check.id === receipt.checkId);
 	if (!run || run.head_sha !== state.headSha || !isRecord(run.app) || run.app.id !== receipt.appId ||
 		run.name !== "Needlefish" || run.status !== "completed") return null;
@@ -1499,15 +1496,22 @@ function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[],
 	return null;
 }
 
+function hasNewerRound(state: RoundState, checks: readonly JsonRecord[], prNumber: number): boolean {
+	if (state.v !== 2) return false;
+	const receipt = state.delivery;
+	return checks.some((check) => typeof check.id === "number" && check.id > receipt.checkId &&
+		check.head_sha === state.headSha && isRecord(check.app) && check.app.id === receipt.appId &&
+		check.name === "Needlefish" && parseCheckRound(check.external_id)?.prNumber === prNumber);
+}
+
 function reconciledPost(args: readonly string[], input: string, read: () => unknown | null): unknown {
-	for (let attempt = 1; ; attempt++) {
-		try { return ghPost(args, input); }
-		catch (error) {
-			if (!isTransientGh5xx(error)) throw error;
-			const existing = read();
-			if (existing !== null) return existing;
-			if (attempt >= GH_POST_ATTEMPTS) throw error;
-		}
+	try {
+		return ghPost(args, input);
+	} catch (error) {
+		if (!isTransientGh5xx(error)) throw error;
+		const existing = read();
+		if (existing !== null) return existing;
+		throw error;
 	}
 }
 
@@ -1649,7 +1653,8 @@ export async function runGithub(
 	}
 	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks, prNumber) : null;
 	const prev = previousVerdict !== null ? previous : null;
-	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck) {
+	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck &&
+		checks && !hasNewerRound(prev.state, checks, prNumber)) {
 		process.exitCode = reviewExitCode(previousVerdict);
 		process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
 		emitSkip("same_head", prNumber, headSha);
@@ -1727,15 +1732,17 @@ export async function runGithub(
 		if (!pending) throw new Error("Review delivery could not start; rerun the review");
 		if (!checks) throw new Error("Review delivery history is unreadable; rerun the review");
 		const delivery: DeliveryReceipt = { checkId: pending.id, appId: pending.appId, roundId: round.roundId, runId: round.runId };
+		const deliveredCheckId = prev?.state.v === 2 && prev.state.headSha === headSha ? prev.state.delivery.checkId : null;
 		const priorRounds: CheckRound[] = [];
 		for (const check of checks) {
+			if (deliveredCheckId !== null && typeof check.id === "number" && check.id <= deliveredCheckId) continue;
 			if (!isRecord(check.app) || check.app.id !== pending.appId || check.head_sha !== headSha || check.name !== "Needlefish") continue;
 			const prior = parseCheckRound(check.external_id);
 			if (!prior || prior.prNumber !== prNumber) continue;
 			priorRounds.push(prior);
 			if (prior.recheck) break;
 		}
-		const recoveryAttempt = recheck ? 0 : Math.max(priorRounds.length, (priorRounds[0]?.recoveryAttempt ?? -1) + 1,
+		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, (priorRounds[0]?.recoveryAttempt ?? -1) + 1,
 			previous?.state.headSha === headSha ? 1 : 0);
 		if (recoveryAttempt > 1) throw new Error("Automatic review recovery limit reached. Delivery is incomplete; ask a maintainer to rerun the review.");
 		// Scope and base-tip fields are attached after review(): anything on
