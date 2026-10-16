@@ -111,9 +111,9 @@ function executableExists(file: string): boolean {
   }
 }
 
-function executableNames(command: string): readonly string[] {
-  if (process.platform !== "win32" || path.extname(command)) return [command];
-  const extensions = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+export function executableNames(command: string, platform: NodeJS.Platform = process.platform, pathExt = process.env.PATHEXT): readonly string[] {
+  if (platform !== "win32" || path.extname(command)) return [command];
+  const extensions = (pathExt ?? ".COM;.EXE;.BAT;.CMD")
     .split(";")
     .filter((ext: string) => ext);
   return [command, ...extensions.map((ext: string) => `${command}${ext}`)];

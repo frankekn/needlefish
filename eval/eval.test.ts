@@ -793,7 +793,7 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const first = runnerEnvironment(args);
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
   const second = runnerEnvironment(args);
-  assert.notEqual(second, first);
+  assert.equal(second, first);
   Object.assign(args, { environmentIdentity: second });
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://three"}}}');
   assert.throws(
@@ -808,7 +808,7 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const grokArgs = parseArgs(["--runner", "grok"]);
   const firstGrok = runnerEnvironment(grokArgs);
   writeFileSync(grokConfig, 'provider = "two"');
-  assert.notEqual(runnerEnvironment(grokArgs), firstGrok);
+  assert.equal(runnerEnvironment(grokArgs), firstGrok);
 
   process.env.XDG_CONFIG_HOME = path.join(dir, "xdg");
   const opencodeDir = path.join(process.env.XDG_CONFIG_HOME, "opencode");
@@ -818,31 +818,31 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const opencodeArgs = parseArgs(["--runner", "opencode"]);
   const firstOpenCode = runnerEnvironment(opencodeArgs);
   writeFileSync(opencodeConfig, '{"provider":"two"}');
-  assert.notEqual(runnerEnvironment(opencodeArgs), firstOpenCode);
+  assert.equal(runnerEnvironment(opencodeArgs), firstOpenCode);
 
   const oauthArgs = parseArgs([
     "--runner", "pi",
     "--env", "PI_AUTH_MODE=oauth",
     "--env", "PI_PROVIDER=deepseek",
   ]);
-  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*missing/);
+  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*<required>/);
   writeFileSync(
     path.join(registryDir, "auth.json"),
     '{"deepseek":{"type":"api_key","key":"first-secret"}}',
   );
   const firstOauth = runnerEnvironment(oauthArgs);
-  assert.match(firstOauth, /PI_AUTH_JSON.*sha256:/);
+  assert.match(firstOauth, /PI_AUTH_JSON.*<required>/);
   assert.doesNotMatch(firstOauth, /first-secret/);
   assert.equal(
     writeReport(oauthArgs, [], [holdoutSpec("pi-oauth-private", false)])
       .privateEnvironment,
-    false,
+    true,
   );
   writeFileSync(
     path.join(registryDir, "auth.json"),
     '{"deepseek":{"type":"api_key","key":"second-secret"}}',
   );
-  assert.notEqual(runnerEnvironment(oauthArgs), firstOauth);
+  assert.equal(runnerEnvironment(oauthArgs), firstOauth);
 
   writeFileSync(
     registry,

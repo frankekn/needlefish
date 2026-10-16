@@ -95,7 +95,11 @@ function setup(): { manifest: LeaderboardManifest; lanes: Lane[] } {
 test("renderSite publishes comparable lanes and blocked routes", () => {
   const { manifest, lanes } = setup();
   const html = renderSite(manifest, lanes, canonical);
+  const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, /Current leaderboard/);
+  assert.ok(html.includes(`<!-- runtime-publication:begin -->\n<p>Package ${releaseVersion} uses auto-detect.`));
+  assert.match(html, /Auto-detection tries codex, claude in order\. Codex defaults to medium effort\./);
+  assert.match(html, /Benchmark selection does not establish what any host has deployed\.<\/p>\n<!-- runtime-publication:end -->/);
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
   assert.match(html, /Test subscription/);
@@ -117,7 +121,6 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
   assert.match(html, /Scroll horizontally to see every column/);
   assert.match(html, /Below gate: Tier-1 miss/);
-  const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, new RegExp(`Release ${releaseVersion.replaceAll(".", "\\.")} is blocked`));
   assert.match(html, /Tier-2/);
   assert.match(html, /Tier-3/);

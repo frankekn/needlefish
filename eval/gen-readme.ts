@@ -188,8 +188,8 @@ export function renderBenchmarkBlock(
 
   const rankedIntro = deployment
     ? zh
-      ? `**排名 lane。** **目前部署 lane：${deployment.config.name}（\`${deployment.report.model}\` @ \`${deployment.report.effort}\`）**——leaderboard 記錄的部署 lane；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示目前部署的 lane 與每欄最佳值。`
-      : `**Ranked lanes.** **Deployed lane: ${deployment.config.name} (\`${deployment.report.model}\` at \`${deployment.report.effort}\` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.`
+      ? `**排名 lane。** **Benchmark 選用組態：${deployment.config.name}（\`${deployment.report.model}\` @ \`${deployment.report.effort}\`）**——leaderboard 選用的 benchmark 組態；實際執行哪一條，由 workflow input 與自管 runner bundle 決定。粗體標示 benchmark 選用的組態 與每欄最佳值。`
+      : `**Ranked lanes.** **Benchmark-selected configuration: ${deployment.config.name} (\`${deployment.report.model}\` at \`${deployment.report.effort}\` effort)** — the benchmark configuration selected in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the benchmark-selected configuration and the best value in each column.`
     : zh
       ? "**排名 lane。** 粗體標示每欄最佳值。"
       : "**Ranked lanes.** Bold marks the best value in each column.";
@@ -234,8 +234,8 @@ export function renderBenchmarkBlock(
       const laneCell =
         deployment !== undefined && config === deployment.config
           ? zh
-            ? `**[${config.name}](${url})（目前部署）**`
-            : `**[${config.name}](${url}) (deployed)**`
+            ? `**[${config.name}](${url})（benchmark 選用）**`
+            : `**[${config.name}](${url}) (benchmark-selected)**`
           : `[${config.name}](${url})`;
       const [lower, upper] = row.ci;
       const cells = [
