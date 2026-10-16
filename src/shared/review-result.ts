@@ -286,6 +286,12 @@ function stringListField(value: unknown): string[] {
 	return value;
 }
 
+function nonEmptyStringListField(value: unknown): string[] {
+	const files = stringListField(value);
+	if (files.some((file) => file.length === 0)) throw new Error("contains an empty path");
+	return files;
+}
+
 function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
 	if (!isRecord(value)) throw new Error("entry.usage not an object");
 	const fields = [value.totalTokens, value.inputTokens, value.outputTokens];
@@ -354,7 +360,7 @@ function coverageGapListField(value: unknown): CoverageGap[] {
 	return value.map((entry, index): CoverageGap => {
 		if (!isRecord(entry)) throw new Error(`entry ${index}: not an object`);
 		if (entry.kind === "lfs_scan_incomplete") return { kind: entry.kind };
-		if (entry.kind !== "lfs_pointer_only" && entry.kind !== "binary_not_reviewed") {
+		if (entry.kind !== "lfs_pointer_only") {
 			throw new Error(`entry ${index}: kind invalid ${String(entry.kind)}`);
 		}
 		if (typeof entry.file !== "string" || entry.file === "") {
@@ -371,6 +377,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
+	unreviewedBinaryFiles: nonEmptyStringListField,
 	coverageGaps: coverageGapListField,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,

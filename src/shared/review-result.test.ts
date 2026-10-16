@@ -287,7 +287,6 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	const coverageGaps = [
 		{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 		{ kind: "lfs_pointer_only", file: "data/train.parquet" },
-		{ kind: "binary_not_reviewed", file: "image.bin" },
 		{ kind: "lfs_scan_incomplete" },
 	];
 	const result = parseReviewResult(serialized({ coverageGaps }));
@@ -297,6 +296,17 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 		serialized({ coverageGaps }),
 	);
 	assert.equal(parseReviewResult(serialized()).coverageGaps, undefined);
+});
+
+test("parseReviewResult preserves additive binary paths and rejects malformed paths", () => {
+	const unreviewedBinaryFiles = ["image.bin", "new\nline.bin"];
+	const result = parseReviewResult(serialized({ unreviewedBinaryFiles }));
+	assert.deepEqual(result.unreviewedBinaryFiles, unreviewedBinaryFiles);
+	assert.deepEqual(JSON.parse(serializeReviewResult(result)), serialized({ unreviewedBinaryFiles }));
+	assert.equal(parseReviewResult(serialized()).unreviewedBinaryFiles, undefined);
+	for (const value of ["image.bin", ["image.bin", 1], [""]]) {
+		assert.throws(() => parseReviewResult(serialized({ unreviewedBinaryFiles: value })), /unreviewedBinaryFiles/);
+	}
 });
 
 test("parseReviewResult rejects mistyped coverageGaps entries", () => {

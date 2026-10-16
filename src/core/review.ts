@@ -739,9 +739,7 @@ function toReviewResult(
 	const coverageGaps: CoverageGap[] = [...paths]
 		.filter((file) => run.lfs.pointerFiles.has(file))
 		.map((file) => ({ kind: "lfs_pointer_only", file }));
-	for (const file of new Set(bundle.binaryFiles)) {
-		if (!run.lfs.pointerFiles.has(file)) coverageGaps.push({ kind: "binary_not_reviewed", file });
-	}
+	const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)].filter((file) => !run.lfs.pointerFiles.has(file));
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -754,6 +752,7 @@ function toReviewResult(
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
@@ -1106,7 +1105,7 @@ export async function review(
 			baseSha: bundle.baseSha,
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
-			coverageGaps: files.map((file) => ({ kind: "binary_not_reviewed", file })),
+			unreviewedBinaryFiles: files,
 			coverage: "No text patch reviewed; binary file contents excluded (see Not reviewed)",
 			totalDurationMs: Date.now() - startedAt,
 		};
@@ -1117,7 +1116,7 @@ export async function review(
 		// Docs-only input produces no callouts today, but compute it the same
 		// way so the rule stays uniform if classification changes.
 		const callouts = scopeCallouts(bundle.changedFiles);
-		const coverageGaps: CoverageGap[] = [...new Set(bundle.binaryFiles)].map((file) => ({ kind: "binary_not_reviewed", file }));
+		const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)];
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
@@ -1129,7 +1128,7 @@ export async function review(
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
-			...(coverageGaps.length > 0 ? { coverageGaps } : {}),
+			...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}

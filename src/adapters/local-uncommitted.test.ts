@@ -193,9 +193,9 @@ test("runLocal reports binary-only tracked changes as coverage gaps", async (t) 
 
   const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
   assert.equal(result.verdict, "pass");
-  assert.deepEqual(result.coverageGaps, [{ kind: "binary_not_reviewed", file: "tracked image.bin" }]);
+  assert.deepEqual(result.unreviewedBinaryFiles, ["tracked image.bin"]);
   assert.match(result.summary, /model review skipped/);
-  assert.match(readFileSync(join(tmp, "cache", "last-review.json"), "utf8"), /binary_not_reviewed/);
+  assert.deepEqual(JSON.parse(readFileSync(join(tmp, "cache", "last-review.json"), "utf8")).unreviewedBinaryFiles, ["tracked image.bin"]);
 });
 
 test("runLocal reports binary-only tracked renames with spaces as coverage gaps", async (t) => {
@@ -210,10 +210,7 @@ test("runLocal reports binary-only tracked renames with spaces as coverage gaps"
   gitText(["mv", "old image.bin", "new image.bin"], repo);
 
   const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
-  assert.deepEqual(result.coverageGaps, [
-    { kind: "binary_not_reviewed", file: "old image.bin" },
-    { kind: "binary_not_reviewed", file: "new image.bin" },
-  ]);
+  assert.deepEqual(result.unreviewedBinaryFiles, ["old image.bin", "new image.bin"]);
 });
 
 test("runLocal reports binary-only untracked changes as coverage gaps", async (t) => {
@@ -230,9 +227,7 @@ test("runLocal reports binary-only untracked changes as coverage gaps", async (t
 
   const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
   assert.equal(result.verdict, "pass");
-  assert.deepEqual(result.coverageGaps, [
-    { kind: "binary_not_reviewed", file: "new image.bin" },
-  ]);
+  assert.deepEqual(result.unreviewedBinaryFiles, ["new image.bin"]);
   assert.match(result.summary, /model review skipped/);
 });
 

@@ -242,8 +242,9 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		}],
 		["unknown callout surface", false, (r) => { r.scopeCallouts = [{ surface: "docs", files: ["a.md"] }]; }],
 		["callout without files", false, (r) => { r.scopeCallouts = [{ surface: "config", files: [] }]; }],
-		["binary coverage gap", true, (r) => { r.coverageGaps = [{ kind: "binary_not_reviewed", file: "assets/image.bin" }]; }],
-		["empty binary path", false, (r) => { r.coverageGaps = [{ kind: "binary_not_reviewed", file: "" }]; }],
+		["binary paths", true, (r) => { r.unreviewedBinaryFiles = ["assets/image.bin"]; }],
+		["empty binary path", false, (r) => { r.unreviewedBinaryFiles = [""]; }],
+		["non-string binary path", false, (r) => { r.unreviewedBinaryFiles = [1]; }],
 		["pointer-only coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "assets/model.bin" }]; }],
 		["incomplete-scan coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_scan_incomplete" }]; }],
 		["unknown coverage gap kind", false, (r) => { r.coverageGaps = [{ kind: "missing_file", file: "a.bin" }]; }],
@@ -296,6 +297,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		prNumber: "optional",
 		prBaseSha: "optional",
 		scopeCallouts: "optional",
+		unreviewedBinaryFiles: "optional",
 		coverageGaps: "optional",
 		stats: "optional",
 		totalDurationMs: "optional",
@@ -337,11 +339,6 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		{ kind: "required", file: "required" },
 		"$defs",
 		"lfsPointerOnlyGap",
-	);
-	assertFields<Extract<CoverageGap, { kind: "binary_not_reviewed" }>>(
-		{ kind: "required", file: "required" },
-		"$defs",
-		"binaryNotReviewedGap",
 	);
 	assertFields<Extract<CoverageGap, { kind: "lfs_scan_incomplete" }>>(
 		{ kind: "required" },
@@ -402,10 +399,9 @@ test("schema enums match the runtime value sets", (t) => {
 	// with const; the union of those consts must be the runtime kind set.
 	const gapKinds: Record<CoverageGap["kind"], true> = {
 		lfs_pointer_only: true,
-		binary_not_reviewed: true,
 		lfs_scan_incomplete: true,
 	};
-	const gapKindConsts = ["lfsPointerOnlyGap", "lfsScanIncompleteGap", "binaryNotReviewedGap"]
+	const gapKindConsts = ["lfsPointerOnlyGap", "lfsScanIncompleteGap"]
 		.map((def) => schemaAt("$defs", def, "properties", "kind").const)
 		.filter((value): value is string => typeof value === "string")
 		.sort();

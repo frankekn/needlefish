@@ -2646,6 +2646,7 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 	assert.deepEqual(result.residualRisks, []);
 	assert.equal(result.stats?.length, 2, "review and critic passes each prepared a sandbox");
 	assert.deepEqual(result.coverageGaps, [{ kind: "lfs_pointer_only", file: "asset.bin" }]);
+	assert.equal(result.unreviewedBinaryFiles, undefined);
 
 	const prompts = readFileSync(promptLog, "utf8");
 	assert.equal(prompts.split("<<<PROMPT-END>>>").length - 1, 2);

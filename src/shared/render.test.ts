@@ -462,10 +462,23 @@ test("renderMarkdown omits the coverage gap notice when there are no gaps", () =
 	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
 });
 
+test("renderMarkdown lists binary paths once and gives LFS pointers precedence", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		unreviewedBinaryFiles: ["asset.bin", "asset.bin", "model.bin"],
+		coverageGaps: [{ kind: "lfs_pointer_only", file: "model.bin" }],
+	});
+	assert.equal(markdown.split("- asset.bin").length - 1, 1);
+	assert.equal(markdown.split("- model.bin").length - 1, 1);
+	assert.match(markdown, /skipped as binary/);
+	assert.match(markdown, /available only as Git LFS pointers/);
+});
+
 test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
 	const result: ReviewResult = {
 		...baseResult([], "pass"),
 		coverage: "full diff reviewed in one pass (1 file)",
+		unreviewedBinaryFiles: ["asset.bin"],
 		coverageGaps: [
 			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 			{ kind: "lfs_scan_incomplete" },
@@ -475,6 +488,7 @@ test("renderMarkdown omits both coverage notices when asked, leaving the rest in
 	assert.ok(!omitted.includes("Not reviewed"));
 	assert.ok(!omitted.includes("Coverage uncertain"));
 	assert.ok(!omitted.includes("assets/model.bin"));
+	assert.ok(!omitted.includes("asset.bin"));
 	assert.ok(omitted.includes("Coverage: full diff reviewed in one pass (1 file)"));
 	assert.notEqual(omitted, renderMarkdown(result), "the option must change the output when gaps exist");
 	assert.equal(

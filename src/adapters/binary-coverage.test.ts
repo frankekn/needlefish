@@ -62,7 +62,7 @@ process.stdin.on('end', () => {
     const result = await runLocal(repo, { runner: "codex", base, localMode, cacheDir });
     const expected = ["deleted.bin", binary, "old.bin", "renamed.bin"];
     if (localMode === "uncommitted") expected.push("text.opaque", "untracked.bin");
-    assert.deepEqual(result.coverageGaps, expected.map(file => ({kind:"binary_not_reviewed", file})));
+    assert.deepEqual(result.unreviewedBinaryFiles, expected);
     assert.equal(result.verdict, "pass");
     assert.deepEqual(result.findings, []);
     assert.deepEqual(result.residualRisks, []);
@@ -72,7 +72,7 @@ process.stdin.on('end', () => {
     const prompts = readFileSync(promptLog, "utf8");
     assert.ok(prompts.includes(binaryOnly ? "Binary files" : "export const n = 2;"));
     assert.ok(!prompts.includes("binaryFiles"));
-    assert.ok(!prompts.includes("binary_not_reviewed"));
+    assert.ok(!prompts.includes("unreviewedBinaryFiles"));
   });
 }
 
@@ -92,10 +92,10 @@ test("docs fast path retains non-blocking binary coverage and old v1 results rem
     focus: null,
   });
   assert.equal(result.verdict, "pass");
-  assert.deepEqual(result.coverageGaps, [{kind:"binary_not_reviewed",file:"docs/notes.md"}]);
-  const { coverageGaps, ...oldV1 } = result;
+  assert.deepEqual(result.unreviewedBinaryFiles, ["docs/notes.md"]);
+  const { unreviewedBinaryFiles, ...oldV1 } = result;
   assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(oldV1))), oldV1);
   assert.match(renderMarkdown(result), /- docs\/notes.md/);
   assert.ok(!renderMarkdown(result, { omitCoverageGaps: true }).includes("Not reviewed"));
-  assert.deepEqual(coverageGaps, [{kind:"binary_not_reviewed",file:"docs/notes.md"}]);
+  assert.deepEqual(unreviewedBinaryFiles, ["docs/notes.md"]);
 });
