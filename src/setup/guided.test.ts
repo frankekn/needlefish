@@ -40,11 +40,14 @@ if(endpoint.startsWith('repos/frankekn/needlefish/contents/action.yml'))out({enc
 if(endpoint.includes('/actions/secrets/')){if(state.secret)out({name:'NEEDLEFISH_CODEX_API_KEY'});missing()}
 if(endpoint.includes('/contents/.github/workflows/needlefish.yml')){
   const branch=endpoint.includes('ref=needlefish')||endpoint.includes('ref=setup-sha');
-  const content=branch?(state.branch?(state.branchModified?'# human branch edits':template):null):(state.modified?'# human edits':state.previous?readFileSync(root+'/previous-template','utf8'):state.merged?template:null);
+  const parent=endpoint.endsWith('ref=base-sha');
+  const parentContent=state.parentWorkflow==='custom'?'# concurrent human edits':state.parentWorkflow==='previous'?readFileSync(root+'/previous-template','utf8'):state.parentWorkflow==='current'?template:null;
+  const content=branch?(state.branch?(state.branchModified?'# human branch edits':template):null):parent&&state.parentWorkflow?parentContent:(state.modified?'# human edits':state.previous?readFileSync(root+'/previous-template','utf8'):state.merged?template:null);
+  if(parent&&state.parentWorkflow==='unsupported')out({type:'file',encoding:'none',sha:'file-sha'});
   if(content===null)missing();
   out({type:'file',encoding:'base64',sha:'file-sha',content:Buffer.from(content).toString('base64')})
 }
-if(endpoint.includes('/contents/.github/workflows?'))out(state.workflows|| (state.duplicate?[{name:'custom.yml',type:'file'}]:[]));
+if(endpoint.includes('/contents/.github/workflows?'))out(endpoint.endsWith('ref=base-sha')&&state.parentDuplicate?[{name:'custom.yml',type:'file'}]:state.workflows|| (state.duplicate?[{name:'custom.yml',type:'file'}]:[]));
 if(endpoint.includes('/contents/.github/workflows/slow'))out({encoding:'base64',content:Buffer.from('name: unrelated CI').toString('base64')});
 if(endpoint.includes('/contents/.github/workflows/custom.yml'))out({encoding:'base64',content:Buffer.from('uses: frankekn/needlefish@custom').toString('base64')});
 if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main'},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}]:[]);
@@ -390,3 +393,35 @@ test("credential stdin waiting shares the operation deadline", { timeout: 10_000
   assert.ok(f.history().every(call => call.args[0] !== "secret"));
   assert.equal(f.state().secret, undefined);
 });
+
+for (const initial of [
+  { parentWorkflow: "custom" },
+  { parentWorkflow: "unsupported" },
+  { parentDuplicate: true },
+  { branch: true, parentWorkflow: "custom" },
+  { branch: true, pr: true, parentWorkflow: "custom" },
+]) {
+  test(`setup validates the immutable parent before writes ${JSON.stringify(initial)}`, t => {
+    const f = fixture(t, initial);
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, JSON.stringify({ stdout: result.stdout, calls: f.history() }));
+    const failure = JSON.parse(result.stdout);
+    assert.equal(failure.schemaVersion, 1);
+    assert.equal(failure.phase, "error");
+    assert.match(failure.message, /workflow|template/i);
+    assert.deepEqual(f.history().filter(call => call.args.includes("--method")), []);
+  });
+}
+
+for (const parentWorkflow of ["previous", "current"]) {
+  test(`setup preserves a known template at the immutable parent ${parentWorkflow}`, t => {
+    const f = fixture(t, { parentWorkflow });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+    const writes = f.history().filter(call => call.args.includes("--method"));
+    assert.equal(writes.length, 4);
+    assert.deepEqual(JSON.parse(writes[1]!.input).parents, ["base-sha"]);
+    assert.ok(f.history().some(call => call.args.some(arg => arg.endsWith("needlefish.yml?ref=base-sha"))));
+  });
+}
