@@ -1,6 +1,6 @@
 # Process ownership
 
-`Command.run` owns a process group only after `posix_spawn` succeeds. The Swift caller owns the direct child's `waitpid` and one group finalizer. A single deferred finalizer covers every subsequent return and throw. Cancellation is an intent flag; the process loop sends one SIGTERM and allows the existing CLI termination finalizer its grace period before force termination.
+`Command.run` owns a process group only after `posix_spawn` succeeds. The Swift caller owns the direct child's `waitpid` and one group finalizer. A single deferred finalizer covers every subsequent return and throw from the owned lifecycle block. That block ends before stdout and stderr are read. Cancellation is an intent flag; the process loop sends one SIGTERM and allows the existing CLI termination finalizer its grace period before force termination.
 
 | Exit path | Direct child owner | Attached child owner | Evidence |
 | --- | --- | --- | --- |

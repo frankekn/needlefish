@@ -60,45 +60,47 @@ final class Command: @unchecked Sendable {
                 }
             }
             guard spawned == 0 else { throw DesktopError.command }
-            defer { kill(-child, SIGKILL) }
-            let deadline = Date().addingTimeInterval(timeout)
-            var failure: DesktopError?
-            var stopDate: Date?
             var status: Int32 = 0
-            var previousCode: String?
-            while true {
-                let waited = waitpid(child, &status, WNOHANG)
-                if waited == child { break }
-                if waited < 0 {
-                    if errno == EINTR { continue }
-                    throw DesktopError.command
+            do {
+                defer { kill(-child, SIGKILL) }
+                let deadline = Date().addingTimeInterval(timeout)
+                var failure: DesktopError?
+                var stopDate: Date?
+                var previousCode: String?
+                while true {
+                    let waited = waitpid(child, &status, WNOHANG)
+                    if waited == child { break }
+                    if waited < 0 {
+                        if errno == EINTR { continue }
+                        throw DesktopError.command
+                    }
+                    let wasCancelled = lock.withLock { cancelled }
+                    if wasCancelled { failure = .cancelled }
+                    if Date() >= deadline && failure == nil { failure = .timeout }
+                    for url in [stdoutURL, stderrURL] {
+                        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                        if size > 8 * 1024 * 1024 { failure = .outputLimit }
+                    }
+                    if failure != nil {
+                        // The CLI owns detached runner cleanup. Allow its termination finalizer to finish.
+                        if let stopDate {
+                            if Date().timeIntervalSince(stopDate) > 12 { kill(-child, SIGKILL) }
+                        } else {
+                            kill(-child, SIGTERM)
+                            stopDate = Date()
+                        }
+                    }
+                    if let data = try? readBounded(stdoutURL, limit: 64 * 1024),
+                       let code = deviceCode(String(decoding: data, as: UTF8.self)), code != previousCode {
+                        previousCode = code
+                        await progress(code)
+                    }
+                    try? await Task.sleep(for: .milliseconds(100))
                 }
                 let wasCancelled = lock.withLock { cancelled }
                 if wasCancelled { failure = .cancelled }
-                if Date() >= deadline && failure == nil { failure = .timeout }
-                for url in [stdoutURL, stderrURL] {
-                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    if size > 8 * 1024 * 1024 { failure = .outputLimit }
-                }
-                if failure != nil {
-                    // The CLI owns detached runner cleanup. Allow its termination finalizer to finish.
-                    if let stopDate {
-                        if Date().timeIntervalSince(stopDate) > 12 { kill(-child, SIGKILL) }
-                    } else {
-                        kill(-child, SIGTERM)
-                        stopDate = Date()
-                    }
-                }
-                if let data = try? readBounded(stdoutURL, limit: 64 * 1024),
-                   let code = deviceCode(String(decoding: data, as: UTF8.self)), code != previousCode {
-                    previousCode = code
-                    await progress(code)
-                }
-                try? await Task.sleep(for: .milliseconds(100))
+                if let failure { throw failure }
             }
-            let wasCancelled = lock.withLock { cancelled }
-            if wasCancelled { failure = .cancelled }
-            if let failure { throw failure }
             let stdout = try readBounded(stdoutURL, limit: 8 * 1024 * 1024)
             let stderr = try readBounded(stderrURL, limit: 8 * 1024 * 1024)
             let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
