@@ -47,7 +47,12 @@ struct ConnectionsResponse: Decodable, Sendable {
     let connections: [ConnectionDescriptor]?
     func validated(status: Int32) throws -> Self {
         guard schemaVersion == 1 else { throw DesktopError.invalidOutput }
-        guard ok else { throw ConnectionsFailure(code: code ?? "invalid_output", issues: issues ?? []) }
+        if !ok {
+            guard let code, ["invalid_request", "input_too_large", "input_timeout", "invalid_configuration",
+                "unsafe_configuration", "configuration_unavailable", "revision_conflict", "config_busy",
+                "save_failed", "save_state_unknown", "cancelled"].contains(code) else { throw DesktopError.invalidOutput }
+            throw ConnectionsFailure(code: code, issues: issues ?? [])
+        }
         guard status == 0 else { throw DesktopError.invalidOutput }
         for descriptor in connections ?? [] { _ = try descriptor.validated() }
         return self
@@ -75,10 +80,16 @@ struct ConnectionsFailure: Error, LocalizedError {
 
 extension DesktopCLI {
     func connections(_ operation: String, repo: URL, command: Command, input: Data? = nil) async throws -> ConnectionsResponse {
-        let output = try await call(["connections", operation, "--json", "--repo", repo.path], command: command, input: input)
-        do { return try JSONDecoder().decode(ConnectionsResponse.self, from: output.stdout).validated(status: output.status) }
-        catch let error as ConnectionsFailure { throw error }
-        catch { throw DesktopError.invalidOutput }
+        do {
+            let output = try await call(["connections", operation, "--json", "--repo", repo.path], command: command, input: input)
+            let response = try JSONDecoder().decode(ConnectionsResponse.self, from: output.stdout).validated(status: output.status)
+            if operation == "apply", response.revision == nil || response.connections == nil { throw DesktopError.invalidOutput }
+            return response
+        } catch let error as ConnectionsFailure { throw error }
+        catch {
+            if operation == "apply" { throw ConnectionsFailure(code: "save_state_unknown") }
+            throw (error as? DesktopError) ?? .invalidOutput
+        }
     }
     func connectionReview(repo: URL, revision: String, ids: [String], budgetMs: Int,
                           mode: String, sources: [String: String], command: Command,
@@ -158,11 +169,13 @@ final class AdvancedConnections: ObservableObject {
         invalidate(); clearSecrets(); message = nil
     }
     func change(_ profile: RawConnection, replacing id: String?) {
+        guard draftState == .editing else { return }
         if let id, let index = document.connections.firstIndex(where: { $0.id == id }) { document.connections[index] = profile }
         else { document.connections.append(profile) }
         invalidate(); clearSecrets(); message = "草稿已修改，尚未保存。 / Draft changed, not saved."
     }
     func delete(_ id: String) {
+        guard draftState == .editing else { return }
         document.connections.removeAll { $0.id == id }; selection.removeAll { $0 == id }; invalidate(); clearSecrets(); message = "草稿已修改，尚未保存。 / Draft changed, not saved."
     }
     func select(_ id: String) { if !selection.contains(id) { selection.append(id) }; invalidate(); clearSecrets() }
@@ -289,7 +302,7 @@ struct AdvancedConnectionsView: View {
             Text("連線是本機設定名稱，不代表不同帳號。認證未知、資格未驗證、費用未知。 / Profiles do not prove independent accounts. Authentication unknown, unqualified, cost unknown.")
             HStack {
                 Button("載入連線 / Load connections") { owner.connectionOperation("edit") }.disabled(owner.repo == nil || owner.busy)
-                Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy)
+                Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy || model.draftState != .editing)
                 Button("保存全部草稿 / Save all drafts") { owner.connectionOperation("apply") }.disabled(owner.busy || model.draftState != .editing || !model.dirty)
                 if model.canReapply { Button("明確重套草稿 / Reapply retained draft", action: model.reapply).disabled(owner.busy) }
             }
@@ -301,7 +314,7 @@ struct AdvancedConnectionsView: View {
                     Button("編輯 / Edit " + profile.id) { originalID = profile.id; editing = profile }.focused($profileFocus, equals: "edit-" + profile.id)
                     Button("刪除 / Delete " + profile.id) { deleting = profile }
                     Button("加入順序 / Select " + profile.id) { model.select(profile.id) }.disabled(model.selection.contains(profile.id))
-                }.disabled(owner.busy)
+                }.disabled(owner.busy || model.draftState != .editing)
             }
             Text("本次順序 / This review's route order").font(.headline)
             ForEach(Array(model.selection.enumerated()), id: \.offset) { index, id in

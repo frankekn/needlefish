@@ -53,6 +53,8 @@ elif sys.argv[1] == "connections":
         document = request["document"]
         docfile.write_text(json.dumps(document))
         revision = "sha256:" + hashlib.sha256(docfile.read_bytes()).hexdigest()
+        if (root / "apply-invalid-output").exists():
+            print("truncated", flush=True); sys.exit(0)
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows()})
     elif operation == "inspect":
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows(request["ids"])})

@@ -1217,6 +1217,53 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
         }
     }
+    func testConflictFreezesProfileDraftUntilReload() throws {
+        let model = try AdvancedConnectionsTests().loaded()
+        model.change(.init(id: "retained", adapter: "codex", model: "requested"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "revision_conflict"))
+        model.change(.init(id: "lost-edit", adapter: "codex", model: "requested"), replacing: nil)
+        model.delete("agent")
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+        XCTAssertEqual(model.draftState, .conflict)
+    }
+    func testAmbiguousApplyRequiresReloadButValidationFailureDoesNot() async throws {
+        let fixture = DesktopTests()
+        for (scenario, tail) in [
+            ("malformed", "printf truncated"),
+            ("missing_fields", "printf '%s' '{\"schemaVersion\":1,\"ok\":true}'"),
+            ("unknown_code", "printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"unrecognized\"}'"),
+            ("nonzero", "exit 1"), ("cancelled", "sleep 30"),
+            ("validation", "printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"invalid_configuration\"}'; exit 1")
+        ] {
+            let root = try fixture.temporary()
+            addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+            let marker = root.appendingPathComponent("committed")
+            let body = "cat >/dev/null; " + (scenario == "validation" ? "" : "printf committed > '\(marker.path)'; ") + tail
+            let runtime = try fixture.fixture(body)
+            addTeardownBlock { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let command = Command()
+            let model = try AdvancedConnectionsTests().loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "requested"), replacing: nil)
+            let input = try model.request("apply")
+            let task = Task { try await DesktopCLI(runtime: runtime).connections("apply", repo: root, command: command, input: input) }
+            if scenario == "cancelled" {
+                for _ in 0..<100 {
+                    if FileManager.default.fileExists(atPath: marker.path) { break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "committed")
+                command.cancel()
+            }
+            do { _ = try await task.value; XCTFail("Must remain an incomplete save") }
+            catch {
+                model.failed(error)
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, scenario == "validation" ? "invalid_configuration" : "save_state_unknown")
+            }
+            XCTAssertEqual(model.draftState, scenario == "validation" ? .editing : .reloadRequired)
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+            if scenario != "validation" { XCTAssertThrowsError(try model.request("apply")) }
+        }
+    }
     func testUnicodeEscapedCredentialCannotReachDisplayedResult() async throws {
         let fixture = DesktopTests()
         let secret = "offline-only-value"
