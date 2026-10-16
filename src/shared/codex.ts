@@ -892,10 +892,10 @@ async function runCodexOnce(
 			);
 		}
 		if (result.res.status !== 0) {
-			// Surface only allowlisted, prompt-free cause tokens extracted from
-			// stderr (auth/quota/network classifications). Raw stderr stays
-			// withheld — it may contain the review prompt.
-			const cause = safeRunnerCause(result.res.stderr);
+			// Raw streams can contain the review prompt; expose only canned causes.
+			const cause = runner === "codex"
+				? safeCodexCause(result.res.stdout, result.res.stderr, invocation.prompt)
+				: safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
@@ -950,9 +950,100 @@ async function runCodexOnce(
 	}
 }
 
-// Allowlisted cause classification for withheld runner stderr. Only canned
-// phrases and regex-extracted codes ever reach the PR-visible message; raw
-// stderr text never does (it may contain the review prompt).
+type CodexEvent =
+	| { readonly kind: "failure"; readonly message: string }
+	| { readonly kind: "message"; readonly text: string }
+	| { readonly kind: "metadata" };
+
+function* codexEvents(stdout: string): Generator<CodexEvent | null> {
+	for (const line of stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		let event: unknown;
+		try {
+			event = JSON.parse(line);
+		} catch {
+			yield null;
+			continue;
+		}
+		if (!isRecord(event)) { yield null; continue; }
+		switch (event.type) {
+			case "error":
+			case "turn.failed": {
+				const message = event.type === "error" ? event.message : isRecord(event.error) ? event.error.message : undefined;
+				yield typeof message === "string" ? { kind: "failure", message } : null;
+				break;
+			}
+			case "thread.started":
+				yield typeof event.thread_id === "string" ? { kind: "metadata" } : null;
+				break;
+			case "turn.started":
+				yield { kind: "metadata" };
+				break;
+			case "turn.completed": {
+				const usage = event.usage;
+				yield isRecord(usage) && ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
+					.every((field) => Number.isInteger(usage[field])) ? { kind: "metadata" } : null;
+				break;
+			}
+			case "item.started":
+			case "item.updated":
+			case "item.completed": {
+				const item = event.item;
+				if (!isRecord(item) || typeof item.id !== "string" || typeof item.type !== "string") { yield null; break; }
+				if (item.type === "agent_message") {
+					yield typeof item.text !== "string" ? null : event.type === "item.completed"
+						? { kind: "message", text: item.text } : { kind: "metadata" };
+				} else {
+					yield ["reasoning", "command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "todo_list", "error"]
+						.includes(item.type) ? { kind: "metadata" } : null;
+				}
+				break;
+			}
+			default:
+				yield null;
+		}
+	}
+}
+
+function safeCodexCause(stdout: string, stderr: string, prompt: string): string | undefined {
+	let failure: { kind: "absent" } | { kind: "seen"; message: string | undefined } = { kind: "absent" };
+	for (const event of codexEvents(stdout)) {
+		if (event === null) return undefined;
+		if (event.kind === "failure") {
+			failure = { kind: "seen", message: event.message };
+		} else if (failure.kind === "seen") {
+			failure = { kind: "seen", message: undefined };
+		}
+	}
+	if (failure.kind === "absent") {
+		// JSON mode keeps model and tool text in stdout events, never stderr.
+		const promptStart = prompt ? stderr.lastIndexOf(prompt) : -1;
+		return safeRunnerCause(promptStart < 0 ? stderr : stderr.slice(promptStart + prompt.length));
+	}
+	if (typeof failure.message !== "string") return undefined;
+	let message = failure.message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	if (/^[{["]/.test(message)) {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(message);
+		} catch {
+			return undefined;
+		}
+		if (!isRecord(raw)) return undefined;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload)) return undefined;
+		const fields = [payload.code, payload.type, payload.message, payload.last_upstream_error];
+		if (fields.some((field) => field !== undefined && typeof field !== "string")) return undefined;
+		message = fields.filter((field) => typeof field === "string").join("\n");
+	}
+	const legacy = safeRunnerCause(message);
+	if (legacy?.startsWith("auth")) return legacy;
+	return /insufficient credits|insufficient account funds|usage balance exhausted/i.test(message)
+		? "usage limit"
+		: legacy;
+}
+
+// Only canned phrases and regex-extracted codes reach the public diagnostic.
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
 	// Order matters. Explicit, self-labelling signals are checked before the loose
@@ -1309,6 +1400,7 @@ async function runCodexCli(
 	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
+		"--json",
 		"--color",
 		"never",
 		"--ignore-user-config",
@@ -1361,7 +1453,11 @@ async function runCodexCli(
 	try {
 		out = readFileSync(lastMsg, "utf8");
 	} catch {
-		out = res.stdout;
+		out = "";
+		for (const event of codexEvents(res.stdout)) {
+			if (event === null) { out = ""; break; }
+			if (event.kind === "message") out = event.text;
+		}
 	}
 	return { res, out };
 }

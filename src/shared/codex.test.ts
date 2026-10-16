@@ -150,6 +150,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const argsPath = path.join(tmp, "args.json");
+  const promptPath = path.join(tmp, "prompt.txt");
   const previous = process.env.CODEX_BIN;
   t.after(() => {
     if (previous === undefined) delete process.env.CODEX_BIN;
@@ -167,19 +168,26 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
       "const repoPath = JSON.parse(input.slice('The repository to inspect is '.length, input.indexOf('. Your startup directory')));",
       "const head = require('node:child_process').execFileSync('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
       `fs.writeFileSync(${JSON.stringify(argsPath + ".inspection")}, JSON.stringify({ head, launchEntries: fs.readdirSync(process.cwd()), repoPath: fs.realpathSync(repoPath), input }));`,
+      `fs.writeFileSync(${JSON.stringify(promptPath)}, input);`,
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, '{\"ok\":true}');",
+      "process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
 
-  await runCodex("prompt", {
+  let rawOutput = "";
+  const output = await runCodex("prompt", {
     repoPath: repo,
     runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
+    onRaw: (raw) => { rawOutput = raw; },
   });
+  assert.equal(output, '{"ok":true}');
+  assert.match(readFileSync(promptPath, "utf8"), /prompt$/);
+  assert.match(rawOutput, /different stream output/);
 
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
   const launch = readFileSync(argsPath + ".cwd", "utf8");
@@ -193,6 +201,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
   assert.equal(path.basename(launch), "runner-launch");
   assert.equal(launch.startsWith(repo + path.sep), false);
   assert.equal(existsSync(launch), false, "launch directory must be removed with its managed parent");
+  assert.equal(args.includes("--json"), true);
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
   assert.equal(args[args.indexOf("project_doc_max_bytes=0") - 1], "-c");
