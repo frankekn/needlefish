@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { RunnerName } from "./runner.js";
-import { ConnectionCredentialLeakError } from "./connection-auth.js";
+import { ConnectionCredentialLeakError } from "./runner-failure.js";
 import { RunnerTerminatingError } from "./temp-lifecycle.js";
 
 // Git has no "ignore local config" switch. Global/system/parent env are dropped

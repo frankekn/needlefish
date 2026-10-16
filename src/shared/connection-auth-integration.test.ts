@@ -57,6 +57,11 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     else send({id:request.id,result:{sessionId:'test-session'}});
   }
   if (request.method === 'session/prompt') {
+    if (mode.startsWith('split-thought') && prior === 0) {
+      const key = process.env.AGENT_API_KEY;
+      for (const text of [key.slice(0,4),key.slice(4,8),key.slice(8)]) send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text}}}});
+      if (mode === 'split-thought-failure') { process.stdout.write('', () => process.exit(1)); return; }
+    }
     const map = JSON.stringify(request.params).includes('review-MAP pass');
     if (mode.startsWith('deep-') && !map && prior === 1) {
       if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
@@ -441,3 +446,48 @@ test("prefixed JSON credential log aborts trace-enabled output before retention"
   assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
   f.clean();
 });
+
+for (const mode of ["split-thought-success", "split-thought-failure"]) {
+  test(`${mode}: authenticated trace keeps transcripts out of public result and cache`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], {NEEDLEFISH_EVAL_TRACE:"1",NEEDLEFISH_NO_RETRY:"0"});
+    assert.equal(result.status,0,result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.verdict,"pass");
+    assert.equal(output.traceDeliveryFailed,true);
+    assert.equal(Object.hasOwn(output,"rawOutputs"),false);
+    assert.equal(Object.hasOwn(output,"failedRawOutputs"),false);
+    const cache = readFileSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json"),"utf8");
+    assert.deepEqual(JSON.parse(cache),output);
+    assert.doesNotMatch(result.stdout + cache,/agent_thought_chunk|TEST-|ACCOUNT|rawOutputs|failedRawOutputs/);
+    assert.equal(f.records().length,mode === "split-thought-failure" ? 3 : 2);
+    f.clean();
+  });
+}
+
+for (const mode of ["split-thought-success", "split-thought-failure"]) {
+  for (const observer of [false,true]) {
+    test(`${mode}: private observer=${observer} keeps auth trace delivery honest`, (t) => {
+      const f = fixture(t,mode);
+      const script = path.join(f.root,"trace.mjs");
+      writeFileSync(script, `
+import {review} from ${JSON.stringify(new URL("../core/review.ts",import.meta.url).href)};
+import {diffBundle} from ${JSON.stringify(new URL("../adapters/local.ts",import.meta.url).href)};
+import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.ts",import.meta.url).href)};
+import {score} from ${JSON.stringify(new URL("../../eval/shared/score.ts",import.meta.url).href)};
+const repo=${JSON.stringify(f.repo)};
+const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
+const opts=resolveConnectionOptions({connection:'a'},repo), events=[];
+const result=await review(bundle,opts,${observer ? "event=>events.push(event)" : "undefined"});
+const rawEvents=events.filter(e=>e.surface==='raw_success'||e.surface==='raw_failure');
+const fragments=rawEvents.map(e=>e.content.split('\\n').flatMap(line=>{try {const m=JSON.parse(line);return m.params?.update?.sessionUpdate==='agent_thought_chunk' ? [m.params.update.content.text] : [];}catch{return [];}}).join(''));
+const scored=score(result,{verdict:'pass',mustFind:[]},'private-auth-trace',undefined,'syntheticcanary',undefined,events);
+console.log(JSON.stringify({verdict:result.verdict,rawOutputs:Object.hasOwn(result,'rawOutputs'),failedRawOutputs:Object.hasOwn(result,'failedRawOutputs'),traceDeliveryFailed:result.traceDeliveryFailed,privateChunksVisible:fragments.includes(${JSON.stringify(keyA)}),robustnessAvailable:scored.robustness!==undefined}));
+`);
+      const result=f.run([script],{NEEDLEFISH_EVAL_TRACE:"1",NEEDLEFISH_NO_RETRY:"0"});
+      assert.equal(result.status,0,result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout),{verdict:"pass",rawOutputs:false,failedRawOutputs:false,traceDeliveryFailed:!observer,privateChunksVisible:observer,robustnessAvailable:observer});
+      f.clean();
+    });
+  }
+}

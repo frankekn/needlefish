@@ -1,13 +1,6 @@
-import { RunnerFailure } from "./runner-failure.js";
+import { ConnectionCredentialLeakError } from "./runner-failure.js";
 import type { RunnerName } from "./runner.js";
 import { screenPayload, screenText } from "./outbound-screen.js";
-
-export class ConnectionCredentialLeakError extends RunnerFailure {
-  constructor() {
-    super("protocol_error", "Needlefish withheld runner output: it contained a selected connection credential.");
-    this.name = "ConnectionCredentialLeakError";
-  }
-}
 
 function containsCredential(text: string, values: readonly string[]): boolean {
   const decoded = text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
