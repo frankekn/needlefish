@@ -7,8 +7,12 @@ import { StringDecoder } from "node:string_decoder";
 
 const [base, ...extra] = process.argv.slice(2);
 const timeoutMs = Number(process.env.NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS ?? 1_200_000);
-if (!base || extra.length || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
+if (!base || extra.length) {
   process.stderr.write("Usage: node .needlefish/shift-left/review-gate.mjs <base-ref>\n");
+  process.exit(1);
+}
+if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
+  process.stderr.write("Needlefish gate blocked: NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS must be an integer between 1 and 2147483647 milliseconds\n");
   process.exit(1);
 }
 
