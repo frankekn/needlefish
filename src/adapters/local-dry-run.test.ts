@@ -413,3 +413,18 @@ for (const docs of [false, true]) {
     });
   }
 }
+
+for (const docs of [false, true]) {
+  test(`auto-detected suspended OpenCode refuses ${docs ? "docs" : "source"} before output`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+    const env = { NEEDLEFISH_RUNNER: undefined, CODEX_BIN: path.join(fixture.tmp, "missing-codex"), CLAUDE_BIN: path.join(fixture.tmp, "missing-claude"), OPENCODE_BIN: path.join(fixture.fakeBin, "claude") };
+    for (const mode of [[], ["--dry-run", "--json"]]) {
+      const result = runCli(fixture, ["--repo", fixture.repo, ...mode], env);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+      assert.equal(result.stdout, "");
+      assert.equal(existsSync(fixture.marker), false);
+      assert.equal(existsSync(cacheFile(fixture)), false);
+    }
+  });
+}

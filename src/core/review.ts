@@ -1154,10 +1154,8 @@ export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
 		readonly detail: string;
 	} | null;
 } {
-	if (runnerOptions.runner || process.env.NEEDLEFISH_RUNNER) {
-		try { resolveRunner(runnerOptions); }
-		catch (error) { if (!(error instanceof RunnerSelectionError)) throw error; }
-	}
+	try { resolveRunner(runnerOptions); }
+	catch (error) { if (!(error instanceof RunnerSelectionError)) throw error; }
 	if (bundle.untrackedSkipped?.length) {
 		const omitted = bundle.untrackedSkipped.slice(0, 10)
 			.map((file) => `${JSON.stringify(file.path.slice(0, 240))} (${file.reason})`).join(", ");
