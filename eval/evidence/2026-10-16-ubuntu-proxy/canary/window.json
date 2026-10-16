@@ -1,0 +1,12 @@
+{
+  "status": "LIVE_INSTALLATION_CANARY_PASS",
+  "label": "pr258",
+  "started": 1792143757.6554022,
+  "finished": 1792145559.6592827,
+  "durationSeconds": 1802.0038805007935,
+  "acceptedReviews": 3,
+  "criteriaSha256": "c1aad2f28a851c532747ebedfa8dd1ef8eaec6705ba001558c150e86bc5b4244",
+  "sourceSha": "ee28669b5eb404730bc29cf5ffb7c450e013b0c8",
+  "githubDeliveryObserved": false,
+  "offlineQualification": "owned by parent"
+}
