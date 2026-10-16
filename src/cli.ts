@@ -16,6 +16,7 @@ import { parseArgs, USAGE } from "./cli/args.js";
 import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
+import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
 import { readFileSync } from "node:fs";
 
 // package.json sits one level above both src/ (dev) and dist/ (published).
@@ -54,6 +55,12 @@ async function main() {
       });
       process.stdout.write(command.json ? serializeDoctorReport(report) : renderDoctorReport(report));
       if (!report.ok) process.exitCode = 1;
+      return;
+    }
+    case "setup-github": {
+      const plan = planGithubSetup(command.repo ?? process.cwd());
+      process.stdout.write(renderGithubSetup(plan));
+      if (plan.kind === "conflict") process.exitCode = 1;
       return;
     }
   }
