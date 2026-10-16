@@ -429,7 +429,7 @@ jobs:
                     if (externalId === process.env.GITHUB_RUN_ID) return true;
                     try {
                       const round = JSON.parse(externalId);
-                      return round?.v === 2 && round.runId === process.env.GITHUB_RUN_ID;
+                      return round?.v === 2 && round.runId === process.env.GITHUB_RUN_ID && round.prNumber === Number(process.env.PR_NUM);
                     } catch { return false; }
                   };
                   const check = checks.filter(c => c.id > Number(previous) && c.name === "Needlefish" && currentRun(c.external_id) && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];

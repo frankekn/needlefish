@@ -307,8 +307,9 @@ test("installed runner auth misclassification uses this run check and Sol medium
 test("check lookup stays closed for old runs, other apps, nonterminal checks and verdicts", t => {
   for (const checks of [
     [runnerCheck({ external_id: "older-run" })],
-    [runnerCheck({ external_id: JSON.stringify({ v: 2, runId: "older-run", roundId: "round", recoveryAttempt: 0 }) })],
+    [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 7, runId: "older-run", roundId: "round", recoveryAttempt: 0 }) })],
     [runnerCheck({ external_id: JSON.stringify({ v: 1, runId: "123" }) })],
+    [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 8, runId: "123", roundId: "other", recoveryAttempt: 0 }) })],
     [runnerCheck({ app: { slug: "other-app" } })],
     [runnerCheck({ status: "in_progress" })],
     [runnerCheck({ output: { title: "Needlefish: changes requested", summary: "codex runner exited 1; 429" } })],
@@ -364,7 +365,7 @@ test("versioned delivery metadata preserves this workflow run fallback", t => {
  const result = runReviewScript(t, {
   primary: { out: "", err: "", code: 1 },
   fallback: { out: outcome({ outcome: "verdict", verdict: "pass" }), err: "", code: 0 },
-  checks: [runnerCheck({ external_id: JSON.stringify({ v: 2, runId: "123", roundId: "round", recoveryAttempt: 0 }) })],
+  checks: [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 7, runId: "123", roundId: "round", recoveryAttempt: 0 }) })],
  });
  assert.equal(result.status, 0, result.stderr);
  assert.equal(result.invocations.length, 2);

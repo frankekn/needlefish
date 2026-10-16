@@ -407,6 +407,7 @@ export type RoundState = {
 
 interface CheckRound {
 	readonly v: 2;
+	readonly prNumber: number;
 	readonly roundId: string;
 	readonly runId: string;
 	readonly recoveryAttempt: number;
@@ -421,11 +422,11 @@ function parseCheckRound(raw: unknown): CheckRound | null {
 	} catch {
 		return null;
 	}
-	if (!isRecord(parsed) || parsed.v !== 2 || typeof parsed.roundId !== "string" ||
+	if (!isRecord(parsed) || parsed.v !== 2 || typeof parsed.prNumber !== "number" || !Number.isSafeInteger(parsed.prNumber) || parsed.prNumber < 1 || typeof parsed.roundId !== "string" ||
 		!parsed.roundId || typeof parsed.runId !== "string" ||
 		typeof parsed.recoveryAttempt !== "number" || !Number.isSafeInteger(parsed.recoveryAttempt) ||
 		parsed.recoveryAttempt < 0 || (parsed.recheck !== undefined && typeof parsed.recheck !== "boolean")) return null;
-	return { v: 2, roundId: parsed.roundId, runId: parsed.runId, recoveryAttempt: parsed.recoveryAttempt, recheck: parsed.recheck === true };
+	return { v: 2, prNumber: parsed.prNumber, roundId: parsed.roundId, runId: parsed.runId, recoveryAttempt: parsed.recoveryAttempt, recheck: parsed.recheck === true };
 }
 
 function findingKey(f: Finding): FindingKey {
@@ -1478,17 +1479,17 @@ function readCheckRuns(repo: string, headSha: string): JsonRecord[] {
 	return runs.sort((a, b) => Number(b.id) - Number(a.id));
 }
 
-function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[]): Verdict | null {
+function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[], prNumber: number): Verdict | null {
 	if (state.v !== 2) return null;
 	const receipt = state.delivery;
 	if (checks.some((check) => typeof check.id === "number" && check.id > receipt.checkId &&
 		check.head_sha === state.headSha && isRecord(check.app) && check.app.id === receipt.appId &&
-		check.name === "Needlefish" && parseCheckRound(check.external_id) !== null)) return null;
+		check.name === "Needlefish" && parseCheckRound(check.external_id)?.prNumber === prNumber)) return null;
 	const run = checks.find((check) => check.id === receipt.checkId);
 	if (!run || run.head_sha !== state.headSha || !isRecord(run.app) || run.app.id !== receipt.appId ||
 		run.name !== "Needlefish" || run.status !== "completed") return null;
 	const round = parseCheckRound(run.external_id);
-	if (!round || round.roundId !== receipt.roundId || round.runId !== receipt.runId) return null;
+	if (!round || round.prNumber !== prNumber || round.roundId !== receipt.roundId || round.runId !== receipt.runId) return null;
 	const conclusion = stringField(run, "conclusion");
 	const title = nestedString(run, "output", "title");
 	if (conclusion === "success" && title === "Needlefish: pass") return "pass";
@@ -1646,7 +1647,7 @@ export async function runGithub(
 		try { previousChecks = readCheckRuns(repo, previous.state.headSha); }
 		catch { previousChecks = null; }
 	}
-	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks) : null;
+	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks, prNumber) : null;
 	const prev = previousVerdict !== null ? previous : null;
 	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck) {
 		process.exitCode = reviewExitCode(previousVerdict);
@@ -1697,7 +1698,7 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
-	const round: CheckRound = { v: 2, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recoveryAttempt: !recheck && previous?.state.headSha === headSha ? 1 : 0, recheck };
+	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recoveryAttempt: !recheck && previous?.state.headSha === headSha ? 1 : 0, recheck };
 	const pending = createPendingCheck(repo, headSha, round);
 	const pendingCheckId = pending?.id ?? null;
 	// The owned check reaches a terminal state exactly once, and whoever holds
@@ -1730,7 +1731,7 @@ export async function runGithub(
 		for (const check of checks) {
 			if (!isRecord(check.app) || check.app.id !== pending.appId || check.head_sha !== headSha || check.name !== "Needlefish") continue;
 			const prior = parseCheckRound(check.external_id);
-			if (!prior) continue;
+			if (!prior || prior.prNumber !== prNumber) continue;
 			priorRounds.push(prior);
 			if (prior.recheck) break;
 		}

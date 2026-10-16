@@ -43,6 +43,7 @@ type Post = {
 };
 
 type Fixture = {
+ readonly prNumber: number;
 	readonly postLog: string;
 	readonly repo: string;
 	readonly reviewOutput: string;
@@ -548,6 +549,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	process.env.NEEDLEFISH_RETRY_MS = "1";
 	delete process.env.NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR;
 	return {
+  prNumber: opts.prNumber,
 		postLog,
 		repo,
 		reviewOutput: reviewOutputFile,
@@ -660,7 +662,7 @@ function seedCompletedVerdictCheck(fixture: Fixture, head = fixture.headSha): vo
 		JSON.stringify([
 			{
     id: 1, name: "Needlefish", head_sha: head, app: { id: 15368 },
-    external_id: JSON.stringify({ v: 2, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
+    external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "success",
 				output: { title: "Needlefish: pass" },
@@ -4138,7 +4140,7 @@ test("a same-head marker with a completed blocking verdict check still skips", a
 		JSON.stringify([
 			{
 				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
-    external_id: JSON.stringify({ v: 2, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
+    external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "failure",
 				output: { title: "Needlefish: changes_requested — bug" },
@@ -4232,7 +4234,7 @@ test("a same-head marker with a failed needs_human check skips and exits 1", asy
 		JSON.stringify([
 			{
 				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
-    external_id: JSON.stringify({ v: 2, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
+    external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "failure",
 				output: { title: "Needlefish: needs_human — unverified migration" },
@@ -4302,7 +4304,7 @@ for (const scenario of [
       user: { login: "github-actions[bot]", type: "Bot" } }]);
     const check = (id: number, verdict: typeof scenario.previous | typeof scenario.latest) => ({
       id, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
-      external_id: JSON.stringify({ v: 2, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
+      external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
       status: "completed", conclusion: verdict === "pass" ? "success" : verdict === "neutral" ? "neutral" : "failure",
       output: { title: `Needlefish: ${verdict === "neutral" ? "needs_human" : verdict}` },
     });
@@ -4349,7 +4351,7 @@ test("legacy state and unrelated same-name check cannot prove delivery", async (
  assert.equal(parseReviewPayload(fresh.payload).comments.length, 1);
 });
 
-for (const mismatch of ["app", "head", "round", "run", "id", "author"] as const) {
+for (const mismatch of ["app", "head", "round", "run", "id", "author", "pr"] as const) {
  test(`receipt rejects an unrelated ${mismatch} before same-head skip`, async (t) => {
   const fixture = setupFixture(t, { prNumber: 122, rawReview: defaultRawReview() });
   await runGithub(fixture.repo, 122, { timeoutMs: 1000 });
@@ -4361,10 +4363,10 @@ for (const mismatch of ["app", "head", "round", "run", "id", "author"] as const)
   if (mismatch === "app") check.app = { id: 999 };
   if (mismatch === "head") check.head_sha = "a".repeat(40);
   if (mismatch === "id") check.id = 999;
-  if (mismatch === "round" || mismatch === "run") {
+  if (mismatch === "round" || mismatch === "run" || mismatch === "pr") {
    const external: unknown = parseJson(String(check.external_id));
    assert.ok(isRecordLike(external));
-   external[mismatch === "round" ? "roundId" : "runId"] = "other";
+   external[mismatch === "pr" ? "prNumber" : mismatch === "round" ? "roundId" : "runId"] = mismatch === "pr" ? 999 : "other";
    check.external_id = JSON.stringify(external);
   }
   if (mismatch === "author") reviews[0].user = { login: "other[bot]", type: "Bot" };
@@ -4503,4 +4505,33 @@ test("stale recovery finalizes only its owned check", async (t) => {
  assert.ok(Array.isArray(checks) && isRecordLike(checks[0]) && isRecordLike(checks[1]));
  assert.equal(checks[0].status, "in_progress");
  assert.equal(checks[1].status, "completed");
+});
+
+test("other PR rounds sharing the head cannot consume this PR recovery budget", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 132, rawReview: defaultRawReview() });
+ writeFileSync(fixture.checksState, JSON.stringify([1, 2].map(id => ({ id, name: "Needlefish", head_sha: fixture.headSha,
+  app: { id: 15368, slug: "github-actions" }, status: "completed", conclusion: "failure",
+  external_id: JSON.stringify({ v: 2, prNumber: 900, roundId: `other-${id}`, runId: "other-run", recoveryAttempt: 0, recheck: false }),
+  output: { title: "Needlefish: review failed" } }))));
+ await runGithub(fixture.repo, 132, { timeoutMs: 1000 });
+ assert.equal(runnerInvocationCount(fixture), 2);
+ assert.match(String(lastCheckCompletion(readPosts(fixture.postLog)).output?.title), /changes_requested/);
+ assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
+});
+
+test("a newer round from another PR cannot invalidate this PR receipt", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 133, rawReview: defaultRawReview() });
+ await runGithub(fixture.repo, 133, { timeoutMs: 1000 });
+ const raw: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+ assert.ok(Array.isArray(raw));
+ raw.push({ id: 2, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
+  status: "completed", conclusion: "failure", output: { title: "Needlefish: review failed" },
+  external_id: JSON.stringify({ v: 2, prNumber: 900, roundId: "other", runId: "other-run", recoveryAttempt: 0, recheck: false }) });
+ writeFileSync(fixture.checksState, JSON.stringify(raw));
+ const before = readPosts(fixture.postLog).length;
+ const result = spawnGithubCli(fixture, 133);
+ assert.equal(result.status, 1, result.stderr);
+ assert.match(result.stdout, /"reason":"same_head"/);
+ assert.equal(runnerInvocationCount(fixture), 2);
+ assert.equal(readPosts(fixture.postLog).length, before);
 });
