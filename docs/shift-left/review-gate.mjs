@@ -3,10 +3,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 const [base, ...extra] = process.argv.slice(2);
 const timeoutMs = Number(process.env.NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS ?? 1_200_000);
-if (!base || extra.length || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+if (!base || extra.length || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
   process.stderr.write("Usage: node .needlefish/shift-left/review-gate.mjs <base-ref>\n");
   process.exit(1);
 }
@@ -16,6 +17,7 @@ const file = join(dir, "result.json");
 const deadline = Date.now() + timeoutMs;
 let active;
 let diagnostics = "";
+let outputBytes = 0;
 function stop() {
   if (active?.pid) {
     try { process.kill(-active.pid, "SIGKILL"); } catch (error) {
@@ -51,14 +53,16 @@ async function run(args) {
         diagnostics += text.slice(0, Math.max(0, 16_384 - diagnostics.length));
       }],
     ]) {
-      stream.setEncoding("utf8");
-      stream.on("data", (text) => {
-        append(text);
-        if (stdout.length + stderr.length > 8_000_000) {
+      const decoder = new StringDecoder("utf8");
+      stream.on("data", (chunk) => {
+        outputBytes += chunk.length;
+        append(decoder.write(chunk));
+        if (outputBytes > 8_000_000 && !failure) {
           failure = new Error("review output exceeds 8 MB");
           stop();
         }
       });
+      stream.on("end", () => append(decoder.end()));
     }
     child.on("error", (error) => { failure = error; });
     child.on("close", (status) => {

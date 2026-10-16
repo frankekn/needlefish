@@ -52,9 +52,14 @@ cache. Only an exit 0 review with a validated, matching `pass` result permits
 delivery. Both `changes_requested` and `needs_human` exit 1. Other nonzero codes
 are failures, not additional verdict classes.
 
-The whole gate has a 20-minute deadline and an 8 MB output limit. To choose a
-longer explicit budget, set `NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS` to a positive
-integer in milliseconds. Timeout and interruption stop the gate's process group
+The whole gate has a 20-minute deadline and an 8,000,000-byte output limit.
+The limit counts the combined raw stdout and stderr bytes from review, verdict,
+and render. Each child has closed stdin. Reading the temporary result file does
+not add pipe output. The gate retains at most 16,384 characters of CLI stderr
+for diagnostics, within the same byte budget. To choose another deadline, set
+`NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS` to an integer from 1 through 2,147,483,647
+milliseconds. Values outside this range are rejected before review starts.
+Timeout and interruption stop the gate's process group
 and remove its temporary result. Runner resources created outside that process
 group remain the runner's responsibility. Review output contains repository
 content. Handle it under your repository's disclosure policy.
