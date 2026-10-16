@@ -556,6 +556,7 @@ interface RunnerAttemptResult {
 
 interface RunnerInvocation {
 	readonly prompt: string;
+	readonly launchPath: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
@@ -733,6 +734,7 @@ async function runCodexOnce(
 					invocation: {
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
+						launchPath: sandbox.launchPath,
 						model,
 						reasoningEffort: opts.reasoningEffort,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
@@ -1232,8 +1234,8 @@ async function runCodexCli(
 	const res = await spawnRunnerProcess({
 		command: requireRunnerCommand("codex"),
 		args,
-		stdin: invocation.prompt,
-		repoPath: invocation.repoPath,
+		stdin: `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});

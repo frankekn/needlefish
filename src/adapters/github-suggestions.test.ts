@@ -16,6 +16,7 @@ function mkFinding(overrides: Partial<Finding> = {}): Finding {
     whyItBreaks: "breaks",
     suggestedFix: "fix",
     validation: "test",
+    quoteCheck: { status: "matched" },
     ...overrides,
   };
 }
@@ -124,4 +125,11 @@ test("formatSuggestionComment suppresses replacements at unverified or relocated
   assert.equal(comment.body.includes("```suggestion"), false);
   assert.match(comment.body, /_Location /);
  }
+});
+
+ test("formatSuggestionComment omits suggestions without a verified quote", () => {
+  const formatted = formatSuggestionComment(mkFinding({ replacement: { lines: ["fixed"] }, quoteCheck: undefined }), {
+    ranges: new Map([["README.md", [[1, 1]]]]), headLineCount: () => 1,
+  });
+  assert.equal(formatted.body.includes("```suggestion"), false);
 });

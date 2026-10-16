@@ -30,7 +30,7 @@ function validatedReplacementLines(
 ): readonly string[] | null {
   const replacement = finding.replacement;
   if (!replacement) return null;
-  if (finding.quoteCheck && finding.quoteCheck.status !== "matched") return null;
+  if (finding.quoteCheck?.status !== "matched") return null;
   if (!rangeAnchorableIn(context.ranges, finding)) return null;
   const lineCount = context.headLineCount();
   if (

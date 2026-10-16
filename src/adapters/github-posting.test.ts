@@ -962,6 +962,7 @@ test("runGithub posts blocking findings as non-sticky review comments", async (t
 test("runGithub appends a suggestion block when replacement validates", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 14,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -976,6 +977,7 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ["fixed"] },
 				},
 			],
@@ -1000,9 +1002,9 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 });
 
 for (const { name, content, line } of [
-	{ name: "leading blank line", content: "\nfeature\n", line: 2 },
-	{ name: "trailing blank line", content: "feature\n\n", line: 2 },
-	{ name: "no final newline", content: "feature", line: 1 },
+	{ name: "leading blank line", content: "\nfeature content\n", line: 2 },
+	{ name: "trailing blank line", content: "feature content\n\n", line: 2 },
+	{ name: "no final newline", content: "feature content", line: 1 },
 	{ name: "empty file", content: "", line: 1 },
 ]) {
 	test(`runGithub uses committed line bounds for suggestions: ${name}`, async (t) => {
@@ -1014,6 +1016,7 @@ for (const { name, content, line } of [
 				findings: [mkFinding({
 					lineStart: line,
 					lineEnd: line,
+					quote: content.split("\n")[line - 1],
 					replacement: { lines: ["fixed"] },
 				})],
 				checked: ["checked"],
@@ -1033,7 +1036,11 @@ for (const { name, content, line } of [
 		} else {
 			assert.equal(payload.comments.length, 1);
 			assert.equal(payload.comments[0].line, line);
-			assert.match(String(payload.comments[0].body), /```suggestion\nfixed\n```/);
+			if (content.split("\n")[line - 1]) {
+				assert.match(String(payload.comments[0].body), /```suggestion\nfixed\n```/);
+			} else {
+				assert.doesNotMatch(String(payload.comments[0].body), /```suggestion/);
+			}
 		}
 	});
 }
@@ -1041,6 +1048,7 @@ for (const { name, content, line } of [
 test("runGithub omits fence-breaking suggestions but still posts inline comments", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 16,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -1055,6 +1063,7 @@ test("runGithub omits fence-breaking suggestions but still posts inline comments
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ['const fence = "```";'] },
 				},
 			],
@@ -1080,6 +1089,7 @@ test("runGithub omits fence-breaking suggestions but still posts inline comments
 test("runGithub omits invalid suggestions but still posts inline comments", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 15,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -1094,6 +1104,7 @@ test("runGithub omits invalid suggestions but still posts inline comments", asyn
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ["fixed", "second"] },
 				},
 			],

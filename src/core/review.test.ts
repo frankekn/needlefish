@@ -845,7 +845,7 @@ test("a deep pass crash waits for concurrent siblings before snapshotting transc
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			"    if (input.includes('\"dies\"')) {",
-			"      fs.writeFileSync('runner-wrote.txt', 'dirty');",
+			"      fs.writeFileSync(require('node:path').join(require('node:path').dirname(out), 'runner-repo', 'runner-wrote.txt'), 'dirty');",
 			"      fs.writeFileSync(out, JSON.stringify({ summary: 'dies done', findings: [], checked: ['dies checked'], residual_risks: [] }));",
 			"      process.exit(0);",
 			"    }",

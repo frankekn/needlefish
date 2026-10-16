@@ -581,28 +581,55 @@ blank (values are trimmed):
 - **Codex:** `--ignore-user-config --ignore-rules
   --dangerously-bypass-approvals-and-sandbox`, so its inspection commands are
   not blocked by execpolicy rules, approval prompts, or the host sandbox.
-  `-c project_doc_max_bytes=0` stops Codex from loading the PR head's
-  `AGENTS.md` as instructions; review policy comes only from the merge-base
-  copy in the bundle.
+  Codex starts in a managed empty directory beside the throwaway clone,
+  outside the target repository and its controlled ancestors. Its prompt
+  names the clone's absolute path for `git -C` and file inspection.
+  This keeps the target's `.agents/skills`, `.codex/skills`, project config
+  and hooks out of native startup discovery. `-c project_doc_max_bytes=0`
+  also disables `AGENTS.md` and `AGENTS.override.md` discovery. Review
+  policy comes only from the merge-base copy in the bundle. A configured
+  `NEEDLEFISH_TMPDIR` inside the target repository is rejected.
+  Verified with Codex CLI 0.163.0 using prompt input, native skills/config/hooks
+  introspection and a session shell command that reads the target Git history.
+  Explicitly reading an instruction file still exposes its text as untrusted
+  data; this is not an OS sandbox.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
-  `--no-session-persistence`.
+  `--no-session-persistence`. With Claude Code 2.1.301, a local API canary
+  verified that safe mode excludes root `CLAUDE.md`, nested `CLAUDE.md`
+  loaded during file reads, and project skill catalogs while retaining the
+  built-in Read tool. The control run without safe mode loaded all three.
 - **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
-  --sandbox off`.
+  --sandbox off`. Automatic project-instruction isolation has not been
+  verified for this runner.
 - **opencode:** `--auto` in headless mode, with an inline `permission:
-  "allow"` override for its global and build-agent permissions.
+  "allow"` override for its global and build-agent permissions. Project
+  instruction and plugin isolation is not established by those flags.
 - **pi:** `--no-session --no-context-files --no-approve --mode text
   --provider openai-codex --thinking <level>` and its default full toolset.
   `--no-context-files --no-approve` keep the PR head's `AGENTS.md`,
-  `CLAUDE.md`, and project-local skills out of its instructions.
+  `CLAUDE.md`, and project-local skills out of its instructions. Offline RPC
+  canaries on pi 1.3.0 also verified that `--no-approve` blocks project
+  extensions, settings-specified extensions and prompt templates. The older
+  pi 1.2.0 canary record covers context files and skills only; it does not
+  establish those extra resource boundaries for that version.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
   applies the same process-group kill path as the CLI runners. When the prompt
   response includes token usage, review stats retain its input/output totals.
+  Project-instruction discovery depends on the configured ACP server and has
+  not been verified here.
 
-Every CLI runner executes inside a **throwaway clean clone** at the review
-head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After
+Instruction-boundary Class R gates and policy holdouts must use a verified
+runner/version. Unverified runner boundaries are not accepted as equivalent.
+Quoted locations that cannot be checked, including uncommitted `WORKING`
+heads, are marked `unchecked`. GitHub suggestions require a matched quote;
+base-only matches and relocated findings also discard the replacement.
+
+Every CLI runner inspects a **throwaway clean clone** at the review head
+commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex
+starts in its empty sibling directory; other CLI runners start in the clone. After
 each successful model call, Needlefish re-checks the clone with `git status
 --porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
 not move, and rejects any worktree mutation. The clone carries no remote: its
