@@ -472,7 +472,7 @@ export interface DryRunReport {
 function dryRunPlans(bundle: Bundle, opts: LocalOptions) {
   const [first, ...rest] = resolveConnectionRoutes(opts, bundle.repoPath, process.env, false);
   const plan = reviewPlan(bundle, first);
-  if (rest.length && !plan.docsOnlyFastPath) reviewBudgetMs(rest.length + 1);
+  if (rest.length && !plan.docsOnlyFastPath && !plan.binaryOnlyFastPath) reviewBudgetMs(rest.length + 1);
   return { ...plan, ...(rest.length ? { capabilities: [plan.capability, ...rest.map(route => reviewPlan(bundle, route).capability)] } : {}) };
 }
 

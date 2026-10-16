@@ -177,7 +177,7 @@ test("doctor selects the credential source without invoking CLI or presenting id
   });
   assert.deepEqual(f.calls(), []);
   process.env.CODEX_BIN = path.join(f.root, "absent-codex");
-  const unavailable = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  const unavailable = await runDoctor({ repo: f.repo, version: "test", connection: "a" });
   assert.equal(unavailable.checks.find(check => check.name === "runner")?.status, "fail");
   assert.deepEqual(unavailable.checks.find(check => check.name === "capability"), {
     name: "capability", status: "unknown", detail: "skipped: no runner available",
