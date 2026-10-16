@@ -16,6 +16,7 @@ function mkFinding(overrides: Partial<Finding> = {}): Finding {
     whyItBreaks: "breaks",
     suggestedFix: "fix",
     validation: "test",
+    quoteCheck: { status: "matched" },
     ...overrides,
   };
 }
@@ -95,6 +96,18 @@ test("formatSuggestionComment drops a suggestion that would exceed GitHub's body
   assert.equal(formatted.body, "**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n<!-- needlefish-finding -->");
 });
 
+test("formatSuggestionComment shows the quote-check location note and stays silent on a match", () => {
+  const context = { ranges: new Map([["README.md", [[1, 1]] as const]]), headLineCount: () => 1 };
+
+  const moved = formatSuggestionComment(mkFinding({ quoteCheck: { status: "moved", from: "src/a.ts:9" } }), context);
+  const missing = formatSuggestionComment(mkFinding({ quoteCheck: { status: "not_found" } }), context);
+  const matched = formatSuggestionComment(mkFinding({ quoteCheck: { status: "matched" } }), context);
+
+  assert.match(moved.body, /\*\*Validate:\*\* test\n\n_Location corrected from `src\/a\.ts:9`: the quoted source was found here\._\n/);
+  assert.match(missing.body, /_Location unverified: the quoted source could not verify the cited location in `README\.md`\._/);
+  assert.equal(matched.body, formatSuggestionComment(mkFinding(), context).body);
+});
+
 test("formatSuggestionComment and isNeedlefishPost share the finding marker", () => {
   const formatted = formatSuggestionComment(mkFinding(), {
     ranges: new Map(),
@@ -103,4 +116,20 @@ test("formatSuggestionComment and isNeedlefishPost share the finding marker", ()
   const lastLine = formatted.body.split("\n").filter((line) => line.length > 0).at(-1);
   assert.equal(lastLine, OWN_POST_FINDING_MARKER);
   assert.equal(isNeedlefishPost(formatted.body, { bot: true, own: false }), true);
+});
+
+test("formatSuggestionComment suppresses replacements at unverified or relocated locations", () => {
+ const context = { ranges: new Map([["README.md", [[1, 1]] as const]]), headLineCount: () => 1 };
+ for (const quoteCheck of [{ status: "unchecked" }, { status: "not_found" }, { status: "moved", from: "old.ts:1" }] as const) {
+  const comment = formatSuggestionComment(mkFinding({ replacement: { lines: ["fixed"] }, quoteCheck }), context);
+  assert.equal(comment.body.includes("```suggestion"), false);
+  assert.match(comment.body, /_Location /);
+ }
+});
+
+ test("formatSuggestionComment omits suggestions without a verified quote", () => {
+  const formatted = formatSuggestionComment(mkFinding({ replacement: { lines: ["fixed"] }, quoteCheck: undefined }), {
+    ranges: new Map([["README.md", [[1, 1]]]]), headLineCount: () => 1,
+  });
+  assert.equal(formatted.body.includes("```suggestion"), false);
 });

@@ -749,7 +749,7 @@ function buildInlineComments(
 ): { comments: InlineComment[]; inlined: Set<Finding> } {
 	const ranges = headLinesInPatch(patch);
 	const anchorable = result.findings.filter(
-		(f) => f.file !== "" && anchorableIn(ranges, f.file, f.lineStart),
+		(f) => f.file !== "" && f.quoteCheck?.status !== "unchecked" && f.quoteCheck?.status !== "not_found" && anchorableIn(ranges, f.file, f.lineStart),
 	);
 	const selected =
 		anchorable.length > 20
@@ -1634,7 +1634,7 @@ export async function runGithub(
 		prMeta,
 		deep: false,
 		focus: null,
-		agentsMd: readAgentsAt(repoPath, headSha),
+		agentsMd: readAgentsAt(repoPath, mergeBase),
 	});
 
 	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
@@ -1736,6 +1736,7 @@ export async function runGithub(
 			const body = renderMarkdown(freshResult, {
 				...renderOpts,
 				omitCoverageGaps: true,
+				omitRuntime: true,
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
 			// Fail-soft: the round comment is cosmetic; a transient POST failure
@@ -1781,6 +1782,7 @@ export async function runGithub(
 					...renderOpts,
 					stateMarker: renderState(headSha, result.findings),
 					omitCoverageGaps: true,
+					omitRuntime: true,
 				}),
 			);
 			process.stdout.write(stdoutSummary(summary));
@@ -1802,6 +1804,7 @@ export async function runGithub(
 			const body = renderMarkdown(result, {
 				...renderOpts,
 				omitCoverageGaps: true,
+				omitRuntime: true,
 			});
 			const reviewId = postReview(repo, prNumber, headSha, body, comments);
 			await applyVerdictLabel(repo, prNumber, result.verdict);
@@ -1823,6 +1826,7 @@ export async function runGithub(
 					...renderOpts,
 					stateMarker: renderState(headSha, result.findings),
 					omitCoverageGaps: true,
+					omitRuntime: true,
 				}),
 			);
 			process.stdout.write(stdoutSummary(summary));

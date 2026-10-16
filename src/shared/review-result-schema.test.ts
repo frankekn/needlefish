@@ -226,6 +226,9 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["non-boolean residual blocks", false, (r) => { r.residualRisks = [{ text: "x", blocks: "yes" }]; }],
 		["zero prNumber", false, (r) => { r.prNumber = 0; }],
 		["fractional prNumber", false, (r) => { r.prNumber = 1.5; }],
+		["maximum safe runtime timeouts", true, (r) => { const runtime = asObject(r.runtime, "runtime"); runtime.callTimeoutMs = Number.MAX_SAFE_INTEGER; runtime.reviewBudgetMs = Number.MAX_SAFE_INTEGER; }],
+		["unsafe runtime call timeout", false, (r) => { asObject(r.runtime, "runtime").callTimeoutMs = 9007199254740992; }],
+		["unsafe runtime review budget", false, (r) => { asObject(r.runtime, "runtime").reviewBudgetMs = 9007199254740992; }],
 		["unknown severity", false, (_r, f) => { f.severity = "P4"; }],
 		["unknown category", false, (_r, f) => { f.category = "style"; }],
 		["blocking finding below 0.7 confidence", false, (_r, f) => { f.confidence = 0.5; }],
@@ -300,6 +303,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		prBaseSha: "optional",
 		scopeCallouts: "optional",
 		coverageGaps: "optional",
+		runtime: "optional",
 		stats: "optional",
 		totalDurationMs: "optional",
 		coverage: "optional",
@@ -323,6 +327,8 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 			consumerFile: "optional",
 			consumerLine: "optional",
 			replacement: "optional",
+			quote: "optional",
+			quoteCheck: "optional",
 		},
 		"$defs",
 		"finding",
@@ -333,6 +339,13 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		"finding",
 		"properties",
 		"replacement",
+	);
+	assertFields<{ status: NonNullable<Finding["quoteCheck"]>["status"]; from?: string }>(
+		{ status: "required", from: "optional" },
+		"$defs",
+		"finding",
+		"properties",
+		"quoteCheck",
 	);
 	assertFields<ResidualRisk>({ text: "required", blocks: "required" }, "$defs", "residualRisk");
 	assertFields<ScopeCallout>({ surface: "required", files: "required" }, "$defs", "scopeCallout");

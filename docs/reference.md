@@ -376,29 +376,80 @@ blank (values are trimmed):
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
+All `*_BIN` executables must come from trusted operator-controlled paths.
+Codex and Grok resolve path-like relative `CODEX_BIN` and `GROK_BIN`
+against Needlefish's caller working directory. Detection and doctor use that same directory. The caller
+directory must be trusted; launching Needlefish from a PR-controlled checkout
+does not make its relative executable safe. Other CLI runners still resolve
+relative commands from the target clone at launch. Use absolute trusted paths
+for those runners. Bare executable names continue to use `PATH`.
+
 ### How each runner is launched
 
 - **Codex:** `--ignore-user-config --ignore-rules
   --dangerously-bypass-approvals-and-sandbox`, so its inspection commands are
   not blocked by execpolicy rules, approval prompts, or the host sandbox.
+  Codex starts in a managed empty directory beside the throwaway clone,
+  outside the target repository and its controlled ancestors. Its prompt
+  names the clone's absolute path for `git -C` and file inspection.
+  This keeps the target's `.agents/skills`, `.codex/skills`, project config
+  and hooks out of native startup discovery. `-c project_doc_max_bytes=0`
+  also disables `AGENTS.md` and `AGENTS.override.md` discovery. Review
+  policy comes only from the merge-base copy in the bundle. A configured
+  `NEEDLEFISH_TMPDIR` inside the target repository is rejected.
+  Verified with Codex CLI 0.163.0 using prompt input, native skills/config/hooks
+  introspection and a session shell command that reads the target Git history.
+  Explicitly reading an instruction file still exposes its text as untrusted
+  data; this is not an OS sandbox.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
-  `--no-session-persistence`.
+  `--no-session-persistence`. With Claude Code 2.1.301, a local API canary
+  verified that safe mode excludes root `CLAUDE.md`, nested `CLAUDE.md`
+  loaded during file reads, and project skill catalogs while retaining the
+  built-in Read tool. The control run without safe mode loaded all three.
 - **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
-  --sandbox off`.
+  --sandbox off`. Grok starts in the same managed empty sibling directory
+  as Codex. Its prompt file names the throwaway clone's absolute path for
+  `git -C` and file inspection. Local API probes with Grok 1.0.60 excluded
+  full target `AGENTS.md`, `CLAUDE.md`, and native rule bodies at startup and
+  after bounded ordinary-file reads and shell inspection. The trusted target
+  control loaded those bodies. Ordinary-file `read_file` still added target
+  skill catalogs in a later request. This is a startup boundary, not complete
+  loader isolation or a model-quality qualification.
 - **opencode:** `--auto` in headless mode, with an inline `permission:
-  "allow"` override for its global and build-agent permissions.
-- **pi:** `--no-session --mode text --provider openai-codex --thinking
-  <level>` and its default full toolset.
+  "allow"` override for its global and build-agent permissions. Project
+  instruction and plugin isolation is not established by those flags.
+- **pi:** `--no-session --no-context-files --no-approve --mode text
+  --provider openai-codex --thinking <level>` and its default full toolset.
+  `--no-context-files --no-approve` keep the PR head's `AGENTS.md`,
+  `CLAUDE.md`, and project-local skills out of its instructions. Offline RPC
+  canaries on pi 1.3.0 also verified that `--no-approve` blocks project
+  extensions, settings-specified extensions and prompt templates. The older
+  pi 1.2.0 canary record covers context files and skills only; it does not
+  establish those extra resource boundaries for that version.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
   applies the same process-group kill path as the CLI runners. When the prompt
   response includes token usage, review stats retain its input/output totals.
+  Project-instruction discovery depends on the configured ACP server and has
+  not been verified here.
 
-Every CLI runner executes inside a **throwaway clean clone** at the review
-head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After
-each successful model call, Needlefish re-checks the clone with `git status
+Instruction-boundary Class R gates and policy holdouts must use a verified
+runner/version. Unverified runner boundaries are not accepted as equivalent.
+Quoted locations without verified HEAD evidence, including base-only matches
+and uncommitted `WORKING` heads, are marked `unchecked`. Findings marked
+`unchecked` or `not_found` appear in the review body with a location caveat,
+without a RIGHT-side inline comment. GitHub suggestions require a matched
+HEAD quote; base-only matches and relocated findings discard the replacement.
+Findings without a quote retain diff-based inline eligibility. The Class R gate
+must record the fraction of findings posted inline to check for a drop under
+this conservative policy.
+
+Every CLI runner inspects a **throwaway clean clone** at the review head
+commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex
+and Grok start in their empty sibling directory. Other CLI runners start in
+the clone. After each successful model call, Needlefish re-checks the clone with `git status
 --porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
 not move, and rejects any worktree mutation. The clone carries no remote: its
 `origin` (which would point at the original repository on the same
@@ -431,6 +482,25 @@ include those same names in `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` — for example
 configuration does not prove authentication. Alternatively, set
 `NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential
 files; Needlefish copies only those files into the disposable runner HOME.
+
+## Runtime metadata
+
+Review JSON and cached results include optional, output-only `runtime` metadata.
+Docs-only fast-path reviews omit it because no model runner is selected or called.
+It records the runner, public model selector, effort, prompt hash and timeout
+resolved for that review. `known` describes an observed invocation value, not a
+provider's resolved model identity. Release manifest source SHAs are
+`operator_attested`. For self-managed releases, this is the base commit before
+the operator's patch, not an exact identifier for the installed code.
+Unavailable versions and launcher identities stay `unknown`.
+ACP model and effort stay unknown because the protocol does not select them.
+The metadata contains no environment dump, private endpoint or launcher path.
+
+Runtime metadata currently reports `unqualified`. It does not establish an exact
+match with an evaluation report. Missing metadata does not block a review, and
+older cached results remain readable. Local Markdown and GitHub check summaries
+show the tool and service plus expandable technical data. GitHub review bodies
+omit runtime data because later reviews read those bodies as model input.
 
 ## Development
 

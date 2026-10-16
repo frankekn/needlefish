@@ -1,3 +1,4 @@
+import type { ReviewRuntime } from "./runtime.js";
 import type { RunStat } from "./runner.js";
 
 export const REVIEW_RESULT_SCHEMA_VERSION = 1;
@@ -59,6 +60,11 @@ export interface Bundle {
 	readonly focus: string | null;
 }
 
+// Output-only source-location validation; never a verdict input.
+export type QuoteCheck =
+	| { readonly status: "matched" | "not_found" | "unchecked" }
+	| { readonly status: "moved"; readonly from: string };
+
 export interface Finding {
 	readonly severity: Severity;
 	readonly title: string;
@@ -73,6 +79,8 @@ export interface Finding {
 	readonly consumerFile?: string;
 	readonly consumerLine?: number;
 	readonly replacement?: { readonly lines: readonly string[] };
+	readonly quote?: string;
+	readonly quoteCheck?: QuoteCheck;
 }
 
 export interface ResidualRisk {
@@ -134,6 +142,7 @@ export interface ReviewResult {
 	// one lfs_scan_incomplete entry when any pass could not finish the scan.
 	// Output-only.
 	readonly coverageGaps?: readonly CoverageGap[];
+	readonly runtime?: ReviewRuntime;
 	readonly stats?: readonly RunStat[];
 	readonly totalDurationMs?: number;
 	// Preformatted one-line coverage summary rendered visibly below the counts

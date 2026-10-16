@@ -25,9 +25,10 @@ test("missing or duplicate connection selectors fail", () => {
   assert.throws(() => parseArgs(["--connection=a", "--connection", "b"]), /only be supplied once/);
 });
 
-test("doctor rejects a connection selector instead of diagnosing the default runner", () => {
-  assert.throws(() => parseArgs(["doctor", "--connection", "a"]), /doctor accepts only/);
-  assert.throws(() => parseArgs(["doctor", "--connection=a"]), /doctor accepts only/);
+test("doctor retains its explicit connection instead of diagnosing the default runner", () => {
+  for (const selector of [["--connection", "a"], ["--connection=a"]]) {
+    assert.deepEqual(parseArgs(["doctor", ...selector]), { kind: "doctor", connection: "a", json: false });
+  }
 });
 
 test("help, version and legacy options do not select a connection", () => {

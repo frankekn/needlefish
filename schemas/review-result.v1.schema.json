@@ -59,6 +59,7 @@
       "type": "array",
       "items": { "$ref": "#/$defs/coverageGap" }
     },
+    "runtime": { "$ref": "#/$defs/runtime" },
     "stats": {
       "description": "Per-runner-call timing and attempt stats.",
       "type": "array",
@@ -90,6 +91,113 @@
     }
   },
   "$defs": {
+    "runtimeValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "value"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "known",
+                "operator_attested"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "coreVersion",
+        "sourceSha",
+        "runnerVersion",
+        "launcherDigest",
+        "model",
+        "effort",
+        "promptHash",
+        "runner",
+        "callTimeoutMs",
+        "reviewBudgetMs",
+        "qualification"
+      ],
+      "properties": {
+        "coreVersion": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "sourceSha": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "runnerVersion": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "launcherDigest": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "model": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "effort": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "promptHash": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "runner": {
+          "enum": [
+            "codex",
+            "claude",
+            "opencode",
+            "grok",
+            "pi",
+            "acp",
+            "openai"
+          ]
+        },
+        "callTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reviewBudgetMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "qualification": {
+          "type": "object",
+          "required": [
+            "matchStatus"
+          ],
+          "properties": {
+            "matchStatus": {
+              "const": "unqualified"
+            }
+          }
+        }
+      }
+    },
     "finding": {
       "type": "object",
       "required": [
@@ -145,6 +253,28 @@
               "items": { "type": "string", "pattern": "^[^\\r\\n]*$" }
             }
           }
+        },
+        "quote": {
+          "description": "One source line the finding describes, copied by the reviewer, with leading and trailing whitespace trimmed.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "quoteCheck": {
+          "description": "Needlefish's check of quote against the reviewed tree. Never affects the verdict.",
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["matched", "moved", "not_found", "unchecked"] },
+            "from": {
+              "description": "Original file:line when status is moved.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
+          "then": { "required": ["from"], "properties": { "from": {} } }
         }
       },
       "if": {

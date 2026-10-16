@@ -1,3 +1,4 @@
+import { parseReviewRuntime } from "./runtime.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -135,6 +136,22 @@ function requireReplacement(raw: unknown): Finding["replacement"] {
 	return { lines };
 }
 
+function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
+	if (!isRecord(raw)) throw new Error("quoteCheck not an object");
+	const { status, from } = raw;
+	if (status !== "matched" && status !== "moved" && status !== "not_found" && status !== "unchecked") {
+		throw new Error("quoteCheck.status not matched, moved, not_found, or unchecked");
+	}
+	if (from !== undefined && (typeof from !== "string" || from === "")) {
+		throw new Error("quoteCheck.from not a non-empty string");
+	}
+	if (status === "moved") {
+		if (typeof from !== "string") throw new Error("quoteCheck.from missing for moved location");
+		return { status, from };
+	}
+	return { status };
+}
+
 function requireFinding(raw: unknown): Finding {
 	if (!isRecord(raw)) throw new Error("not an object");
 	const severity = requireSeverity(raw.severity);
@@ -183,6 +200,14 @@ function requireFinding(raw: unknown): Finding {
 	}
 	const replacement =
 		raw.replacement === undefined ? undefined : requireReplacement(raw.replacement);
+	const quote = raw.quote;
+	if (
+		quote !== undefined &&
+		(typeof quote !== "string" || quote === "" || quote !== quote.trim() || quote.length > 500 || /[\r\n]/.test(quote))
+	) {
+		throw new Error("quote not a non-empty trimmed one-line string of at most 500 characters");
+	}
+	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
 	return {
 		severity,
 		title,
@@ -197,6 +222,8 @@ function requireFinding(raw: unknown): Finding {
 		...(consumerFile !== undefined ? { consumerFile } : {}),
 		...(consumerLine !== undefined ? { consumerLine } : {}),
 		...(replacement !== undefined ? { replacement } : {}),
+		...(quote !== undefined ? { quote } : {}),
+		...(quoteCheck !== undefined ? { quoteCheck } : {}),
 	};
 }
 
@@ -372,6 +399,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
 	coverageGaps: coverageGapListField,
+	runtime: parseReviewRuntime,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,
