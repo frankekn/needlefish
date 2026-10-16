@@ -140,7 +140,7 @@ function treeFiles(repo: GitObjects, tree: string): CodeFile[] {
     return { path: match[3], mode: match[1], content: utf8(bytes) };
   });
 }
-const diffArgs = ["diff", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3"];
+const diffArgs = ["diff", "--full-index", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3"];
 export function importManifest(manifest: ExternalManifest, repo?: string): ImportResult {
   if (manifest.snapshot.kind === "metadata-only") return { status: "excluded", reasons: manifest.snapshot.reasons };
   if (manifest.reviewText.kind === "unknown") return { status: "excluded", reasons: [manifest.reviewText.reason] };

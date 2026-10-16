@@ -11,7 +11,7 @@ import { main } from "./import.js";
 const samples = fileURLToPath(new URL("./samples/", import.meta.url));
 const clean = () => parseManifest(readFileSync(join(samples, "swrbench-pytest-3248.json"), "utf8"));
 const positive = () => parseManifest(readFileSync(join(samples, "martian-calcom-8087.json"), "utf8"));
-function fixture() {
+function fixture(headContent = "export const value = 2;\n") {
   const root = mkdtempSync(join(tmpdir(), "needlefish-external-"));
   const repo = join(root, "repo");
   const run = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" } }).trimEnd();
@@ -23,10 +23,10 @@ function fixture() {
   run("add", "."); run("commit", "-qm", "base");
   const base = run("rev-parse", "HEAD");
   const baseTree = run("rev-parse", "HEAD^{tree}");
-  writeFileSync(join(repo, "example.ts"), "export const value = 2;\n");
+  writeFileSync(join(repo, "example.ts"), headContent);
   run("commit", "-qam", "head");
   const head = run("rev-parse", "HEAD");
-  const diff = execFileSync("git", ["diff", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3", base, head, "--"], { cwd: repo, encoding: "utf8" });
+  const diff = execFileSync("git", ["diff", "--full-index", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3", base, head, "--"], { cwd: repo, encoding: "utf8" });
   const manifest: ExternalManifest = {
     ...clean(),
     snapshot: { kind: "frozen", sourceBaseSHA: base, reviewBaseSHA: base, reviewHeadSHA: head, observedFinalHeadSHA: "f".repeat(40), mergeBaseSHA: base, commitSHAs: [head], baseTreeSHA: baseTree, headTreeSHA: run("rev-parse", "HEAD^{tree}"), diffSHA256: sha256(diff) },
@@ -190,7 +190,7 @@ test("UTF-8 byte order marks remain part of exported source bytes", () => {
     if (f.manifest.snapshot.kind !== "frozen") assert.fail();
     const snapshot = f.manifest.snapshot;
     snapshot.commitSHAs.push(f.run("rev-parse", "HEAD")); snapshot.reviewHeadSHA = f.run("rev-parse", "HEAD"); snapshot.headTreeSHA = f.run("rev-parse", "HEAD^{tree}");
-    const patch = execFileSync("git", ["diff", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3", f.base, snapshot.reviewHeadSHA, "--"], { cwd: f.repo });
+    const patch = execFileSync("git", ["diff", "--full-index", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3", f.base, snapshot.reviewHeadSHA, "--"], { cwd: f.repo });
     snapshot.diffSHA256 = sha256(patch);
     const result = importManifest(f.manifest, f.repo);
     assert.equal(result.status, "source-ready");
@@ -226,4 +226,18 @@ test("CLI bounds manifest bytes before decode and rejects directories and FIFOs"
       assert.throws(() => main([fifo, rejected]), /manifest_not_regular_file/);
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test("unrelated objects sharing a blob prefix cannot change frozen diff bytes", () => {
+  const f = fixture("export const value = 11740;\n");
+  try {
+    const before = importManifest(f.manifest, f.repo);
+    assert.equal(before.status, "source-ready");
+    const unrelated = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: f.repo, input: "export const value = 18354;\n", encoding: "utf8" }).trim();
+    assert.equal(unrelated, "44b7bbdedfc8ef441f25ac39445696f872cc456b");
+    const after = importManifest(f.manifest, f.repo);
+    assert.deepEqual(after, before);
+    if (after.status === "source-ready") assert.match(after.reviewer.diff, /^index [a-f0-9]{40}\.\.44b7bbd77d9e79118961db2677e73a0eef12efa0 100644$/m);
+  } finally { f.cleanup(); }
 });

@@ -16,7 +16,7 @@ With a separately prepared local repository, add `--repo /path/to/local/repo`. T
 
 A frozen manifest must supply the source base, review base and head, expected source merge base, ordered commit SHAs, tree SHAs, exact patch SHA-256, and frozen title, description, and policy with hashes. The verifier requires a linear series in which every commit has exactly one expected parent. Merge commits, missing objects, incompatible lineage, empty or mismatched patches, binary or non-UTF-8 files, symlinks, submodules, and unsupported paths produce explicit exclusions. Paths currently accept ASCII letters, digits, `.`, `_`, `/`, `@`, `+`, and `-`. These limits exclude the whole snapshot; they never drop individual files.
 
-The patch hash covers git's two-point textual diff with three context lines, Myers algorithm, no indent heuristic, no renames, `a/` and `b/` prefixes, and no external diff or textconv. The verifier computes its hunk map from those same frozen endpoints. A truncated supplied patch hash cannot pass by omitting the unparsed tail.
+The patch hash covers git's two-point textual diff with full-width blob IDs, three context lines, Myers algorithm, no indent heuristic, no renames, `a/` and `b/` prefixes, and no external diff or textconv. The verifier computes its hunk map from those same frozen endpoints. A truncated supplied patch hash cannot pass by omitting the unparsed tail.
 
 ## Output ownership
 
@@ -52,4 +52,4 @@ pnpm check
 pnpm lint
 ```
 
-The tests use real temporary git repositories, inspect exported JSON bytes, change evaluator metadata without changing reviewer bytes, and reject wrong heads, parent DAGs, missing objects, tree mismatches, truncated-patch hashes, binary content, local diff configuration, target GPG helpers, UTF-8 byte order marks, oversized input, and non-regular input files. They do not execute upstream code or invoke a model.
+The tests use real temporary git repositories, inspect exported JSON bytes, change evaluator metadata without changing reviewer bytes, and reject wrong heads, parent DAGs, missing objects, tree mismatches, truncated-patch hashes, binary content, local diff configuration, target GPG helpers, UTF-8 byte order marks, oversized input, non-regular input files, and unrelated objects sharing a seven-hex blob prefix. They do not execute upstream code or invoke a model.
