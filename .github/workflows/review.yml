@@ -490,6 +490,7 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -528,6 +529,18 @@ jobs:
           valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
+            exit 0
+          fi
+          if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null
+            echo "$summary"
             exit 0
           fi
           workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"
