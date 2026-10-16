@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -751,6 +751,44 @@ for (const action of ["keep", "downgrade", "omit"]) {
 		assert.match(result.residualRisks[0].text, /deep review of "h1" failed/);
 	});
 }
+
+test("critic subset: a model residual cannot hide a same-text infrastructure failure", async (t) => {
+	const failureText = 'deep review of "h1" failed (malformed review output: summary missing or not a string); 1 file(s) not deep-reviewed';
+	const model = candidateReview({ findings: [], residual_risks: [{ text: failureText, blocks: false }] });
+	const { repo } = installStub(t, (log) => largePathBin(
+		log,
+		model,
+		"fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: parsed.residual_risks.map(risk => ({ ...risk, blocks: false })) }));",
+	).replace(
+		"hotspots: [{ name: 'h1', files: ['src/app.ts'], why: 'changed', risk: 'high', edges: [] }]",
+		"hotspots: ['h1', 'h2'].map(name => ({ name, files: ['src/app.ts'], why: 'changed', risk: 'high', edges: [] }))",
+	).replace(
+		`fs.writeFileSync(out, ${JSON.stringify(JSON.stringify(model))});`,
+		`if (input.includes('"name": "h1"')) { fs.writeFileSync(out, '{}'); return; } fs.writeFileSync(out, ${JSON.stringify(JSON.stringify(model))});`,
+	));
+	const result = await review(makeBundle(repo, true));
+	assert.equal(result.verdict, "needs_human");
+	assert.deepEqual(result.residualRisks, [{ text: failureText, blocks: true }]);
+});
+
+for (const deep of [false, true]) {
+	test(`critic subset: ${deep ? "large" : "small"} critic infrastructure failure rejects`, async (t) => {
+		const pipeline = deep ? largePathBin : smallPathBin;
+		const { repo } = installStub(t, (log) => pipeline(log, candidateReview({ findings: [] }),
+			"process.stderr.write('critic unavailable'); process.exit(3);",
+		));
+		await assert.rejects(() => review(makeBundle(repo, deep)), /codex runner exited 3/);
+	});
+}
+
+test("critic subset: map infrastructure failure rejects before critic", async (t) => {
+	const { repo, calls } = installStub(t, (log) => largePathBin(log, candidateReview(), ECHO).replace(
+		"if (input.includes('review-MAP pass')) {",
+		"if (input.includes('review-MAP pass')) { process.stderr.write('map unavailable'); process.exit(3);",
+	));
+	await assert.rejects(() => review(makeBundle(repo, true)), /codex runner exited 3/);
+	assert.equal(existsSync(calls), false);
+});
 
 test("critic subset: small path accepts residual case/whitespace drift and restores candidate text", async (t) => {
 	const { repo } = installStub(t, (log) =>
