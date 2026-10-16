@@ -86,7 +86,9 @@ function gitNewFileDiff(
   cwd: string,
   filePath: string
 ): { readonly patch: string; readonly insertions: number } {
-  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", filePath], {
+  // Repository attributes stay on for eol and encoding conversions; textconv
+  // and external diff drivers would rewrite or replace the patch.
+  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--no-textconv", "--no-ext-diff", "--", "/dev/null", filePath], {
     cwd,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 64,
@@ -163,6 +165,11 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
       continue;
     }
     const diff = gitNewFileDiff(cwd, file);
+    // NUL-free content that attributes (`-diff`, `binary`) mark binary.
+    if (diff.insertions === 0 && /^Binary files /m.test(diff.patch)) {
+      skipped.push(`${file} (binary)`);
+      continue;
+    }
     totalBytes += content.byteLength;
     patches.push(diff.patch);
     statLines.push(statLine(file, diff.insertions));

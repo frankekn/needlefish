@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
-import { git } from "../shared/repo.js";
+import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
@@ -288,9 +288,17 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
+  const worktree = { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 };
+  const version = git(["--version"], repo);
+  if (!gitSupportsAttrSource(version)) {
+    return {
+      check: { name: "git", status: "fail", detail: `${version}; needlefish needs git 2.41 or later`, fix: "Upgrade git to 2.41 or later." },
+      worktree,
+    };
+  }
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 },
+    worktree,
   };
 }
 
@@ -319,7 +327,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   try {
     const runner = selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
-    repoRoot = gitState.worktree?.repoRoot;
+    repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,

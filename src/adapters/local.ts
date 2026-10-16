@@ -21,6 +21,7 @@ import {
   NO_AGENTS,
   prDiffFromShas,
   readAgentsAt,
+  reviewDiff,
   type PrRefInfo,
 } from "../shared/repo.js";
 import { normalizePrMeta } from "../shared/normalize.js";
@@ -158,8 +159,15 @@ export function hasHeadCommit(cwd: string): boolean {
   }
 }
 
+// Uncommitted changes (tracked here, untracked in buildUntrackedPatch) keep
+// the repository's own attributes, unlike committed ranges (reviewDiff): the
+// work tree side needs its eol, working-tree-encoding and clean-filter
+// conversions, including ones the uncommitted change itself adds. Textconv
+// and external diff drivers stay off: they would rewrite or replace the patch.
+const UNCOMMITTED_DIFF = ["diff", "--no-textconv", "--no-ext-diff"];
+
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = ["diff", ...extraArgs, "HEAD"];
+  const args = [...UNCOMMITTED_DIFF, ...extraArgs, "HEAD"];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -220,7 +228,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   }
   const { baseRef, baseSha } = resolveReviewBase(cwd, opts.base);
   const headSha = git(["rev-parse", "HEAD"], cwd);
-  const patch = git(["diff", baseSha, "HEAD"], cwd, { preserveOutput: true });
+  const patch = git([...reviewDiff(cwd), baseSha, "HEAD"], cwd, { preserveOutput: true });
   if (!patch.trim()) {
     throw new Error(
       `No diff between ${baseSha} and HEAD (${baseRef}). Nothing to review. Commit changes on this branch first, or pass --base <ref> to compare against another branch.`
@@ -231,7 +239,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     baseSha,
     headSha,
     patch,
-    patchStat: git(["diff", "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
+    patchStat: git([...reviewDiff(cwd), "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, baseSha),
     ...(opts.pr
       ? {
@@ -248,7 +256,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git(["diff", "--numstat", "-z", "HEAD"], cwd))
+    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd))
     : [];
   const trackedPatch = headExists
     ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
