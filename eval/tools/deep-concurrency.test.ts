@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { pairedSchedule, assertDirectoryInventory } from "./deep-concurrency";
+import { pairedSchedule, assertDirectoryInventory, study } from "./deep-concurrency";
 import { loadFixture } from "../shared/fixture";
 import fixture from "../fixtures/large-clean-sweep/spec";
 import { review } from "../../src/core/review";
@@ -63,11 +63,71 @@ test("study CLI rejects execution flags before loading a fixture", () => {
 	assert.equal(child.stdout, "");
 });
 
-test("committed study plan freezes the current protocol and generator without freezing future main", () => {
-	const plan: unknown = JSON.parse(readFileSync("eval/campaigns/deep-concurrency-v1.plan.json", "utf8"));
-	assert.ok(plan && typeof plan === "object" && "protocolFiles" in plan);
-	assert.deepEqual(plan.protocolFiles, ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v1.md"]
+test("v1 keeps its original comparator, protocol, and archived generator bytes", () => {
+	const digest = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
+	assert.equal(digest("eval/campaigns/deep-concurrency-v1.plan.json"),
+		"c7f872f3293ebd7c94b8f9d51dc93ac30aac93b1d8f15e5544769d714f01a5fb");
+	assert.equal(digest("eval/campaigns/deep-concurrency-v1.md"),
+		"bf9db1343122abdd7e5e0956a5779bdbfc81ac610645e0820d45fc6f2f1e1d51");
+	assert.equal(digest("eval/campaigns/deep-concurrency-v1.generator.ts.txt"),
+		"b9e140fb8814b1d724b2e53b147a56ea519d5c8af7a978339955a13c9e854c19");
+});
+
+test("current v2 plan freezes its complete study, schedule, and protocol identity", () => {
+	const plan: unknown = JSON.parse(readFileSync("eval/campaigns/deep-concurrency-v2.plan.json", "utf8"));
+	assert.ok(plan && typeof plan === "object" && "protocolFiles" in plan && "schedule" in plan
+		&& "modelCallsEnabled" in plan && "selection" in plan);
+	assert.deepEqual(Object.fromEntries(Object.entries(plan).filter(([key]) => key in study)), study);
+	assert.equal(study.id, "issue193-deep-concurrency-v2");
+	assert.equal(study.source, "195db3e20baddf58c4206a98d12ae29f92084e3d");
+	assert.equal(plan.modelCallsEnabled, false);
+	assert.deepEqual(plan.schedule, pairedSchedule());
+	assert.ok(Array.isArray(plan.selection));
+	assert.deepEqual(plan.selection.map((entry: unknown) => {
+		assert.ok(entry && typeof entry === "object" && "id" in entry && "changedFiles" in entry);
+		return { id: entry.id, changedFiles: entry.changedFiles };
+	}), [{ id: "large-tail-boundary-bug", changedFiles: 27 }, { id: "large-clean-sweep", changedFiles: 27 }]);
+	assert.deepEqual(plan.protocolFiles, ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v2.md", "eval/campaigns/deep-concurrency-v1.md"]
 		.map((file) => ({ file, sha256: createHash("sha256").update(readFileSync(file)).digest("hex") })));
+});
+
+test("current CLI admits its pinned v2 plan and rejects version, protocol, config, and source drift", (t) => {
+	const tmp = mkdtempSync(path.join(tmpdir(), "needlefish-plan-version-proof-"));
+	t.after(() => rmSync(tmp, { recursive: true, force: true }));
+	execFileSync("git", ["clone", "--shared", "--no-checkout", "--quiet", process.cwd(), tmp]);
+	execFileSync("git", ["checkout", "--quiet", "--detach", study.source], { cwd: tmp });
+	for (const file of ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v2.md",
+		"eval/campaigns/deep-concurrency-v2.plan.json", "eval/campaigns/deep-concurrency-v1.md"]) {
+		copyFileSync(file, path.join(tmp, file));
+	}
+	symlinkSync(path.resolve("node_modules"), path.join(tmp, "node_modules"), "dir");
+	const run = () => spawnSync(process.execPath, ["--import", "tsx", "eval/tools/deep-concurrency.ts", "--plan"], {
+		cwd: tmp, encoding: "utf8", timeout: 60000,
+	});
+	const expected = readFileSync("eval/campaigns/deep-concurrency-v2.plan.json", "utf8");
+	for (let replay = 0; replay < 2; replay++) {
+		const result = run();
+		assert.equal(result.status, 0, result.stderr);
+		assert.ok(result.stdout === expected, "v2 output must match every committed comparator byte");
+		assert.notEqual(result.stdout, readFileSync("eval/campaigns/deep-concurrency-v1.plan.json", "utf8"));
+	}
+	for (const [file, replacement, error] of [
+		["eval/tools/deep-concurrency.ts", (value: string) => value.replace("issue193-deep-concurrency-v2", "issue193-deep-concurrency-v1"), /study plan drift/],
+		["eval/campaigns/deep-concurrency-v2.md", (value: string) => value + "\n", /study plan drift/],
+		["eval/campaigns/deep-concurrency-v1.md", (value: string) => value + "\n", /study plan drift/],
+		["tsconfig.json", (value: string) => value + "\n", /source drift: tsconfig.json/],
+		["src/core/review.ts", (value: string) => value + "\n", /source drift: src\/core\/review.ts/],
+	] satisfies [string, (value: string) => string, RegExp][]) {
+		const target = path.join(tmp, file);
+		const original = readFileSync(target, "utf8");
+		writeFileSync(target, replacement(original));
+		try {
+			const result = run();
+			assert.equal(result.status, 1, file);
+			assert.equal(result.stdout, "", file);
+			assert.match(result.stderr, error);
+		} finally { writeFileSync(target, original); }
+	}
 });
 
 test("production deep scheduler drains seven fake jobs at limits three and seven", async (t) => {
