@@ -281,7 +281,7 @@ for (const runner of [undefined, "invalid-runner"]) {
     mkdirSync(gitOnlyBin);
     symlinkSync(git.stdout.trim(), path.join(gitOnlyBin, "git"));
     const env = {
-      PATH: gitOnlyBin,
+      PATH: `${gitOnlyBin}:/usr/bin:/bin:/usr/sbin:/sbin`,
       NEEDLEFISH_RUNNER: runner,
       CODEX_BIN: "codex",
       CLAUDE_BIN: "claude",
