@@ -125,6 +125,7 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
+			GITHUB_RUN_ATTEMPT: "1",
 			WORKFLOW_REF: workflowRef,
 			WORKFLOW_MISSING: workflowMissing ? "1" : "0",
 		},
@@ -248,6 +249,27 @@ test("reconcile reports a missing caller workflow before querying its runs", () 
 	assert.equal(posts.length, 1);
 	assert.match(posts[0], /check-runs .*output\[title\]=Needlefish: caller retry required/);
 	assert.doesNotMatch(r.log, /actions\/workflows\/review.yml\/runs\?/);
+	const fields = Object.fromEntries(
+		[...posts[0].matchAll(/-f (output\[\w+\]|\w+)=(.*?)(?= -f |$)/g)]
+			.map((match) => [match[1], match[2]]),
+	);
+	assert.deepEqual(JSON.parse(fields.external_id), {
+		v: 2, prNumber: 42, roundId: "retry-required-777-1", runId: "777",
+	});
+	const repeated = runReconcile({
+		workflowMissing: true,
+		checkRunsAll: [{
+			name: fields.name,
+			app: { id: 15368, slug: "github-actions" },
+			external_id: fields.external_id,
+			conclusion: fields.conclusion,
+			output: { title: fields["output[title]"] },
+		}],
+	});
+	assert.equal(repeated.status, 0, repeated.stderr);
+	assert.equal(repeated.dispatched, 0);
+	assert.match(repeated.stdout, /already has a terminal Needlefish verdict/);
+	assert.doesNotMatch(repeated.log, /api -X POST/);
 });
 
 test("reconcile rejects a PR number containing regex syntax before any API call", () => {

@@ -187,6 +187,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$GITHUB_RUN_ID" --arg round "skip-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi
@@ -533,6 +536,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$RUN_ID" --arg round "retry-required-$RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: caller retry required" \
               -f "output[summary]=$summary" >/dev/null
           }

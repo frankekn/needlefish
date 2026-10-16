@@ -95,6 +95,9 @@ runs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
+              -f external_id="$(jq -cn --argjson pr "$pr" \
+                --arg run "$GITHUB_RUN_ID" --arg round "skip-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $reason. A maintainer who has read this PR can review it by running the workflow manually with allow_untrusted_author: true." >/dev/null
           fi
