@@ -36,6 +36,8 @@ anti-cheat checks does not override the failed recall criterion. This evidence
 does not establish that the diagnostic patch caused the stochastic critic miss.
 The declared acceptance contract still requires reverting the failed candidate.
 
-The historical candidate remains reachable at `1ad8ad3` for a future experiment
-with a meaningful new hypothesis. No critic prompt, fixture, scoring rule,
-threshold, or production setting was changed to quiet this failure.
+The historical candidate `1ad8ad3` is currently an ancestor of
+`refs/pull/259/head`. PR #259 is designated for an ordinary merge commit, which
+will retain that candidate history on main after merge. No critic prompt,
+fixture, scoring rule, threshold, or production setting was changed to quiet
+this failure.
