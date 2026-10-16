@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { reviewExitCode } from "../core/verdict.js";
 import { review } from "../core/review.js";
@@ -392,10 +393,38 @@ export interface FindingKey {
 	readonly title: string;
 }
 
-export interface RoundState {
-	readonly v: 1;
+interface DeliveryReceipt {
+	readonly checkId: number;
+	readonly appId: number;
+	readonly roundId: string;
+	readonly runId: string;
+}
+
+export type RoundState = {
 	readonly headSha: string;
 	readonly findings: readonly FindingKey[];
+} & ({ readonly v: 1 } | { readonly v: 2; readonly delivery: DeliveryReceipt });
+
+interface CheckRound {
+	readonly v: 2;
+	readonly roundId: string;
+	readonly runId: string;
+	readonly recoveryAttempt: number;
+}
+
+function parseCheckRound(raw: unknown): CheckRound | null {
+	if (typeof raw !== "string") return null;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (!isRecord(parsed) || parsed.v !== 2 || typeof parsed.roundId !== "string" ||
+		!parsed.roundId || typeof parsed.runId !== "string" ||
+		typeof parsed.recoveryAttempt !== "number" || !Number.isSafeInteger(parsed.recoveryAttempt) ||
+		parsed.recoveryAttempt < 0) return null;
+	return { v: 2, roundId: parsed.roundId, runId: parsed.runId, recoveryAttempt: parsed.recoveryAttempt };
 }
 
 function findingKey(f: Finding): FindingKey {
@@ -410,18 +439,21 @@ function findingKey(f: Finding): FindingKey {
 export function renderState(
 	headSha: string,
 	findings: readonly Finding[],
+	delivery?: DeliveryReceipt,
 ): string {
 	return renderStateKeys(
 		headSha,
 		findings.map(findingKey),
+		delivery,
 	);
 }
 
 function renderStateKeys(
 	headSha: string,
 	findings: readonly FindingKey[],
+	delivery?: DeliveryReceipt,
 ): string {
-	const state: RoundState = { v: 1, headSha, findings };
+	const state: RoundState = delivery ? { v: 2, headSha, findings, delivery } : { v: 1, headSha, findings };
 	// Escape ">" so a finding title like "x --> y" cannot terminate the HTML
 	// comment early and corrupt the marker (JSON.parse decodes \u003e back).
 	const payload = JSON.stringify(state).replace(/>/g, "\\u003e");
@@ -443,7 +475,7 @@ export function parseState(body: string): RoundState | null {
 		return null;
 	}
 	if (!isRecord(raw)) return null;
-	if (raw.v !== 1) return null;
+	if (raw.v !== 1 && raw.v !== 2) return null;
 	const headSha = raw.headSha;
 	if (typeof headSha !== "string") return null;
 	const findingsRaw = raw.findings;
@@ -462,7 +494,14 @@ export function parseState(body: string): RoundState | null {
 		}
 		keys.push({ file, lineStart, category, title });
 	}
-	return { v: 1, headSha, findings: keys };
+	if (raw.v === 1) return { v: 1, headSha, findings: keys };
+	const delivery = raw.delivery;
+	if (!isRecord(delivery) || typeof delivery.checkId !== "number" || !Number.isSafeInteger(delivery.checkId) || delivery.checkId < 1 ||
+		typeof delivery.appId !== "number" || !Number.isSafeInteger(delivery.appId) || delivery.appId < 1 ||
+		typeof delivery.roundId !== "string" || !delivery.roundId || typeof delivery.runId !== "string") return null;
+	return { v: 2, headSha, findings: keys, delivery: {
+		checkId: delivery.checkId, appId: delivery.appId, roundId: delivery.roundId, runId: delivery.runId,
+	} };
 }
 
 // GitHub rejects a review or comment body over 65,536 characters with a 422
@@ -564,13 +603,13 @@ function fitStateMarker(state: RoundState, budget: number): string {
 	while (lo < hi) {
 		const mid = Math.ceil((lo + hi) / 2);
 		if (
-			renderStateKeys(state.headSha, state.findings.slice(0, mid)).length <=
+			renderStateKeys(state.headSha, state.findings.slice(0, mid), state.v === 2 ? state.delivery : undefined).length <=
 			budget
 		)
 			lo = mid;
 		else hi = mid - 1;
 	}
-	return renderStateKeys(state.headSha, state.findings.slice(0, lo));
+	return renderStateKeys(state.headSha, state.findings.slice(0, lo), state.v === 2 ? state.delivery : undefined);
 }
 
 export interface MatchResult {
@@ -795,7 +834,9 @@ function postReview(
 		})),
 	});
 
-	const created = ghPost(
+	const before = new Set(readReviews(repo, prNumber).map((item) => item.id));
+	const selfLogin = authenticatedLogin();
+	const created = reconciledPost(
 		[
 			"api",
 			"-X",
@@ -805,6 +846,23 @@ function postReview(
 			"-",
 		],
 		payload,
+		() => {
+			const candidate = readReviews(repo, prNumber).find((item) => !before.has(item.id) &&
+				item.commit_id === headSha && item.body === screenAndCapOutboundBody(body) && isTrustedStateAuthor(item, selfLogin));
+			if (!candidate) return null;
+			if (comments.length > 0) {
+				const raw = ghJson(["api", "--paginate", "--slurp", `repos/${repo}/pulls/${prNumber}/reviews/${String(candidate.id)}/comments`]);
+				if (!Array.isArray(raw)) throw new Error("Could not verify stored inline comments");
+				const stored = raw.flat(1).filter(isRecord);
+				if (stored.length !== comments.length || !comments.every((comment) => stored.some((item) =>
+					item.path === comment.path && item.line === comment.line && (item.start_line ?? undefined) === comment.start_line &&
+					item.side === comment.side &&
+					item.body === screenAndCapOutboundBody(comment.body) && isTrustedStateAuthor(item, selfLogin)))) {
+					throw new Error("Review was stored but inline delivery is incomplete; rerun the review");
+				}
+			}
+			return candidate;
+		},
 	);
 	// The id is needed later to append the dedupe state marker once delivery
 	// has completed. A response without an id is tolerated: the body is
@@ -812,22 +870,7 @@ function postReview(
 	return isRecord(created) && typeof created.id === "number" ? created.id : null;
 }
 
-// The state marker is the dedupe receipt: a same-head run skips only when a
-// trusted review body carries it. It is written LAST — after the inline
-// comments, the verdict label and the check run have all landed — so a failure
-// anywhere in delivery can never leave a marker behind that makes the next run
-// silently skip a head whose review never completed.
-//
-// Fail-soft on purpose: the verdict check is already posted, so a failed marker
-// write must not turn a completed review red by falling through to the outer
-// catch. The cost is one duplicate re-review (the safe direction, since the
-// missing marker simply means "not delivered yet" to the next run).
-//
-// Legacy markers written before this ordering existed are still trusted and
-// still parse (no format change), but they may have been written before their
-// check run landed. The reconcile job covers exactly that: a head with no
-// terminal non-infra check is re-dispatched as a workflow_dispatch, which sets
-// NEEDLEFISH_RECHECK_INPUT=1 and so bypasses the same-head skip for one run.
+// A receipt is written last and binds the trusted review to one completed check.
 function persistStateMarker(
 	repo: string,
 	prNumber: number,
@@ -873,17 +916,7 @@ export function findPreviousReview(
 	repo: string,
 	prNumber: number,
 ): { id: number; state: RoundState } | null {
-	// --slurp: --paginate alone emits one JSON document PER PAGE (concatenated,
-	// unparseable); --slurp wraps the pages into a single outer array.
-	const raw = ghJson([
-		"api",
-		"--paginate",
-		"--slurp",
-		`repos/${repo}/pulls/${prNumber}/reviews`,
-	]);
-	if (!Array.isArray(raw)) return null;
-	// flat(1) also tolerates a plain review list from stubs or older gh versions.
-	const reviews = raw.flat(1);
+	const reviews = readReviews(repo, prNumber);
 	// TRUST BOUNDARY. What this function returns decides two things in
 	// runGithub: (a) the same-head dedupe, which returns *before* the model
 	// run, the review post and the check-run post; and (b) the review id whose
@@ -913,35 +946,29 @@ export function findPreviousReview(
 
 // S5a: create the check as in_progress BEFORE any model work so a PR always
 // shows whether a review is running on its latest head. All completions update
-// this same check by id; a null id (creation failed) makes completions fall
-// back to creating their own, preserving the old behavior.
-function createPendingCheck(repo: string, headSha: string): number | null {
+// this same check by id. An unknown id cannot authorize a completion.
+function createPendingCheck(repo: string, headSha: string, round: CheckRound): { id: number; appId: number } | null {
 	try {
-		const created = ghPost(
+		const created = reconciledPost(
 			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
 			JSON.stringify({
-				name: "Needlefish",
-				head_sha: headSha,
-				status: "in_progress",
-				external_id: process.env.GITHUB_RUN_ID || undefined,
-				details_url:
-					process.env.GITHUB_SERVER_URL &&
-					process.env.GITHUB_REPOSITORY &&
-					process.env.GITHUB_RUN_ID
-						? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-						: undefined,
+				name: "Needlefish", head_sha: headSha, status: "in_progress",
+				external_id: JSON.stringify(round),
+				details_url: process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+					? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : undefined,
 			}),
+			() => readCheckRuns(repo, headSha).find((run) => run.head_sha === headSha && run.external_id === JSON.stringify(round)) ?? null,
 		);
-		if (isRecord(created) && typeof created.id === "number") {
-			return created.id;
+		if (isRecord(created) && typeof created.id === "number" && Number.isSafeInteger(created.id) && created.id > 0 &&
+			isRecord(created.app) && typeof created.app.id === "number" && Number.isSafeInteger(created.app.id) && created.app.id > 0) {
+			return { id: created.id, appId: created.app.id };
 		}
+		throw new Error("GitHub returned no owned check id/app identity");
 	} catch (err) {
 		const em = err instanceof Error ? err.message : String(err);
-		process.stderr.write(
-			`needlefish: could not create pending check: ${em}\n`,
-		);
+		process.stderr.write(`needlefish: could not create pending check: ${em}\n`);
+		return null;
 	}
-	return null;
 }
 
 type GhWrite = { readonly args: readonly string[]; readonly input: string };
@@ -1059,17 +1086,17 @@ function checkRunTitle(result: ReviewResult): string {
 }
 
 function postIssueComment(repo: string, prNumber: number, body: string): void {
-	ghPost(
-		[
-			"api",
-			"-X",
-			"POST",
-			`repos/${repo}/issues/${prNumber}/comments`,
-			"--input",
-			"-",
-		],
-		JSON.stringify({ body: screenAndCapOutboundBody(body) }),
-	);
+	const endpoint = `repos/${repo}/issues/${prNumber}/comments`;
+	const read = (): JsonRecord[] => {
+		const raw = ghJson(["api", "--paginate", "--slurp", endpoint]);
+		if (!Array.isArray(raw)) throw new Error("GitHub returned no comment list");
+		return raw.flat(1).filter(isRecord);
+	};
+	const before = new Set(read().map((item) => item.id));
+	const selfLogin = authenticatedLogin();
+	const cappedBody = screenAndCapOutboundBody(body);
+	reconciledPost(["api", "-X", "POST", endpoint, "--input", "-"], JSON.stringify({ body: cappedBody }),
+		() => read().find((item) => !before.has(item.id) && item.body === cappedBody && isTrustedStateAuthor(item, selfLogin)) ?? null);
 }
 
 // S3: infra-failure comment posted alongside the red check so a red X always
@@ -1080,7 +1107,7 @@ function postErrorComment(repo: string, prNumber: number, msg: string): void {
 		"```\n" +
 		`${msg.slice(0, 2000)}\n` +
 		"```\n\n" +
-		"Re-trigger: push a new commit or re-run with --recheck.\n" +
+		"The result could not be delivered. Re-run the review.\n" +
 		"<!-- needlefish-error -->";
 	try {
 		postIssueComment(repo, prNumber, body);
@@ -1422,46 +1449,54 @@ function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipRe
 	return null;
 }
 
-// Dedupe is a delivery gate, not a "we tried" gate. A same-head marker alone
-// is not proof the head ever reached a verdict: any run that failed after
-// posting the review body — a check-run POST/PATCH error, an inline-comment
-// error, a crash — used to leave a marker behind. So the skip additionally
-// requires a completed, non-infra Needlefish check run for that exact head:
-// the same terminal state the reconcile job looks for. A marker with no such
-// check (or only an infra-failure check, or a check still in progress) reruns.
-//
-// Fail-closed on an unreadable check list: an extra review is the safe error,
-// a silently skipped one is not.
-function completedCheckVerdict(repo: string, headSha: string): Verdict | null {
-	let raw: unknown;
-	try {
-		raw = ghJson([
-			"api",
-			`repos/${repo}/commits/${headSha}/check-runs?check_name=Needlefish&filter=all&per_page=100`,
-		]);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		process.stderr.write(
-			`needlefish: could not read check runs for ${headSha}: ${msg}; re-reviewing instead of skipping.\n`,
-		);
-		return null;
+function readCheckRuns(repo: string, headSha: string): JsonRecord[] {
+	const raw = ghJson(["api", "--paginate", "--slurp",
+		`repos/${repo}/commits/${headSha}/check-runs?check_name=Needlefish&filter=all&per_page=100`]);
+	const pages = Array.isArray(raw) ? raw : [raw];
+	const runs: JsonRecord[] = [];
+	for (const page of pages) {
+		if (!isRecord(page) || !Array.isArray(page.check_runs)) throw new Error("GitHub returned no check runs");
+		runs.push(...page.check_runs.filter(isRecord));
 	}
-	if (!isRecord(raw)) return null;
-	const runs = raw.check_runs;
-	if (!Array.isArray(runs)) return null;
-	const runId = (run: JsonRecord): number => typeof run.id === "number" ? run.id : 0;
-	const entries = runs.filter(isRecord).sort((a, b) => runId(b) - runId(a));
-	for (const run of entries) {
-		if (stringField(run, "status") !== "completed") continue;
-		const conclusion = stringField(run, "conclusion");
-		const title = nestedString(run, "output", "title");
-		if (conclusion === "success" && title === "Needlefish: pass") return "pass";
-		if (conclusion === "neutral" && title.startsWith("Needlefish: needs_human")) return null;
-		if (conclusion !== "failure") continue;
-		if (title.startsWith("Needlefish: needs_human")) return "needs_human";
-		if (title.startsWith("Needlefish: changes_requested")) return "changes_requested";
-	}
+	return runs.sort((a, b) => Number(b.id) - Number(a.id));
+}
+
+function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[]): Verdict | null {
+	if (state.v !== 2) return null;
+	const receipt = state.delivery;
+	if (checks.some((check) => typeof check.id === "number" && check.id > receipt.checkId &&
+		check.head_sha === state.headSha && isRecord(check.app) && check.app.id === receipt.appId &&
+		check.name === "Needlefish" && parseCheckRound(check.external_id) !== null)) return null;
+	const run = checks.find((check) => check.id === receipt.checkId);
+	if (!run || run.head_sha !== state.headSha || !isRecord(run.app) || run.app.id !== receipt.appId ||
+		run.name !== "Needlefish" || run.status !== "completed") return null;
+	const round = parseCheckRound(run.external_id);
+	if (!round || round.roundId !== receipt.roundId || round.runId !== receipt.runId) return null;
+	const conclusion = stringField(run, "conclusion");
+	const title = nestedString(run, "output", "title");
+	if (conclusion === "success" && title === "Needlefish: pass") return "pass";
+	if (conclusion !== "failure") return null;
+	if (title.startsWith("Needlefish: needs_human")) return "needs_human";
+	if (title.startsWith("Needlefish: changes_requested")) return "changes_requested";
 	return null;
+}
+
+function reconciledPost(args: readonly string[], input: string, read: () => unknown | null): unknown {
+	for (let attempt = 1; ; attempt++) {
+		try { return ghPost(args, input); }
+		catch (error) {
+			if (!isTransientGh5xx(error)) throw error;
+			const existing = read();
+			if (existing !== null) return existing;
+			if (attempt >= GH_POST_ATTEMPTS) throw error;
+		}
+	}
+}
+
+function readReviews(repo: string, prNumber: number): JsonRecord[] {
+	const raw = ghJson(["api", "--paginate", "--slurp", `repos/${repo}/pulls/${prNumber}/reviews`]);
+	if (!Array.isArray(raw)) throw new Error("GitHub returned no review list");
+	return raw.flat(1).filter(isRecord);
 }
 
 // A job timeout or watchdog terminates the process while the owned check is
@@ -1583,24 +1618,24 @@ export async function runGithub(
 		nestedString(pr, "head", "sha") ||
 		git(["rev-parse", "HEAD"], repoPath);
 
-	// Same-head dedupe: fetch the previous review once, reuse for both the
-	// short-circuit and the post-review posting logic. A same-head marker only
-	// skips when the head also carries a completed Needlefish verdict check —
-	// the marker is the review-body receipt, the check is the delivery proof.
-	const prev = findPreviousReview(repo, prNumber);
-	if (prev && prev.state.headSha === headSha && !recheck) {
-		const verdict = completedCheckVerdict(repo, headSha);
-		if (verdict !== null) {
-			process.exitCode = reviewExitCode(verdict);
-			process.stderr.write(
-				`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
-			);
-			emitSkip("same_head", prNumber, headSha);
-			return;
-		}
-		process.stderr.write(
-			`needlefish: head ${headSha} has a state marker but no completed Needlefish verdict check; re-reviewing.\n`,
-		);
+	const previous = findPreviousReview(repo, prNumber);
+	let checks: JsonRecord[] | null = null;
+	try { checks = readCheckRuns(repo, headSha); }
+	catch (error) {
+		process.stderr.write(`needlefish: could not read delivery checks: ${error instanceof Error ? error.message : String(error)}\n`);
+	}
+	let previousChecks = previous?.state.headSha === headSha ? checks : null;
+	if (previous && previous.state.headSha !== headSha) {
+		try { previousChecks = readCheckRuns(repo, previous.state.headSha); }
+		catch { previousChecks = null; }
+	}
+	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks) : null;
+	const prev = previousVerdict !== null ? previous : null;
+	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck) {
+		process.exitCode = reviewExitCode(previousVerdict);
+		process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
+		emitSkip("same_head", prNumber, headSha);
+		return;
 	}
 
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
@@ -1645,7 +1680,9 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
-	const pendingCheckId = createPendingCheck(repo, headSha);
+	const round: CheckRound = { v: 2, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recoveryAttempt: 0 };
+	const pending = createPendingCheck(repo, headSha, round);
+	const pendingCheckId = pending?.id ?? null;
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
 	// and, if a post then throws, still completes the check from the catch.
@@ -1669,6 +1706,15 @@ export async function runGithub(
 				);
 
 	try {
+		if (!pending) throw new Error("Review delivery could not start; rerun the review");
+		if (!checks) throw new Error("Review delivery history is unreadable; rerun the review");
+		const delivery: DeliveryReceipt = { checkId: pending.id, appId: pending.appId, roundId: round.roundId, runId: round.runId };
+		const priorAttempt = checks.find((check) => isRecord(check.app) && check.app.id === pending.appId &&
+			check.head_sha === headSha && check.name === "Needlefish" && parseCheckRound(check.external_id) !== null);
+		const priorRound = priorAttempt ? parseCheckRound(priorAttempt.external_id) : null;
+		const recoveryAttempt = recheck ? 0 : priorRound ? priorRound.recoveryAttempt + 1 : previous?.state.headSha === headSha ? 1 : 0;
+		if (recoveryAttempt > 0) ghPost(["api", "-X", "PATCH", `repos/${repo}/check-runs/${pending.id}`, "--input", "-"], JSON.stringify({ external_id: JSON.stringify({ ...round, recoveryAttempt }) }));
+		if (recoveryAttempt > 1) throw new Error("Automatic review recovery limit reached. Delivery is incomplete; ask a maintainer to rerun the review.");
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
@@ -1786,7 +1832,7 @@ export async function runGithub(
 				prev.id,
 				renderMarkdown(freshResult, {
 					...renderOpts,
-					stateMarker: renderState(headSha, result.findings),
+					stateMarker: renderState(headSha, result.findings, delivery),
 					omitCoverageGaps: true,
 				}),
 			);
@@ -1828,7 +1874,7 @@ export async function runGithub(
 				reviewId,
 				renderMarkdown(result, {
 					...renderOpts,
-					stateMarker: renderState(headSha, result.findings),
+					stateMarker: renderState(headSha, result.findings, delivery),
 					omitCoverageGaps: true,
 				}),
 			);
@@ -1875,7 +1921,7 @@ export async function runGithub(
 			// the timeline — no verdict, no error comment — for a stale head.
 			emitSkip(skipReason, prNumber, headSha);
 			try {
-				postCheck(
+				if (pendingCheckId !== null) postCheck(
 					repo,
 					headSha,
 					null,
@@ -1896,7 +1942,7 @@ export async function runGithub(
 			// failure of either GitHub endpoint must not suppress the other, nor
 			// the stderr line and exit code below.
 			try {
-				postCheck(
+				if (pendingCheckId !== null) postCheck(
 					repo,
 					headSha,
 					null,
