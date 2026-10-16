@@ -166,7 +166,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
       `fs.writeFileSync(${JSON.stringify(promptPath)}, fs.readFileSync(0, 'utf8'));`,
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, '{\"ok\":true}');",
-			"process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
+      "process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
@@ -180,12 +180,12 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
     timeoutMs: 1000,
     onRaw: (raw) => { rawOutput = raw; },
   });
-	assert.equal(output, '{"ok":true}');
+  assert.equal(output, '{"ok":true}');
   assert.equal(readFileSync(promptPath, "utf8"), "prompt");
   assert.match(rawOutput, /different stream output/);
 
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
-	assert.equal(args.includes("--json"), true);
+  assert.equal(args.includes("--json"), true);
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
   assert.equal(args.includes("-s"), false);
