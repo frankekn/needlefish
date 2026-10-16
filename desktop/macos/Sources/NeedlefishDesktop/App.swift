@@ -128,7 +128,7 @@ final class Onboarding: ObservableObject {
         start("正在診斷。沒有模型呼叫。 / Checking environment. No model call.") { cli, command in
             let report = try await cli.doctor(repo: repo, command: command)
             self.diagnosis = report
-            if let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
+            if report.repoAvailable, let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
             return .diagnosis(report)
         }
     }
@@ -159,7 +159,7 @@ final class Onboarding: ObservableObject {
             guard let repo = self.repo else { return .welcome }
             let report = try await cli.doctor(repo: repo, command: command)
             self.diagnosis = report
-            if let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
+            if report.repoAvailable, let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
             return .diagnosis(report)
         }
     }
@@ -250,7 +250,7 @@ struct ContentView: View {
             if model.canCancel { Button("取消 / Cancel", action: model.cancel) }
         case .diagnosis(let report):
             Text("環境診斷 / Environment checks").font(.title2)
-            if let root = report.repoRoot {
+            if report.repoAvailable, let root = report.repoRoot {
                 Text("實際 Git 專案 / Actual Git project: " + root).textSelection(.enabled)
                 Text("包含此 Git 專案根目錄下的本機變更。 / Includes local changes under this Git project root.")
             }

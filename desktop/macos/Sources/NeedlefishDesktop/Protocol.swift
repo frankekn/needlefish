@@ -87,6 +87,8 @@ struct Doctor: Decodable, Sendable {
                   !repoRoot.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else {
                 throw DesktopError.invalidOutput
             }
+        } else if repoRoot != nil {
+            throw DesktopError.invalidOutput
         }
         return self
     }

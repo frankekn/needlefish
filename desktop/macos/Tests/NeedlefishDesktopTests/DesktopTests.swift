@@ -31,11 +31,24 @@ final class DesktopTests: XCTestCase {
     }
     func testNotRepoDoesNotInitializeProject() async throws {
         let json = doctorJSON.replacingOccurrences(of: #""git","status":"ok""#, with: #""git","status":"fail""#)
+            .replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "")
         let runtime = try fixture("printf '%s' '\(json)'\nexit 1")
         let report = try await DesktopCLI(runtime: runtime).doctor(repo: URL(fileURLWithPath: "/test/project"), command: Command())
         XCTAssertEqual(report.repoAvailable, false)
         XCTAssertEqual(report.ready, false)
         XCTAssertEqual(report.checks[3].explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
+    }
+    func testFailedOrUnknownGitCannotSupplyRepositoryRoot() throws {
+        for status in ["fail", "unknown"] {
+            for root in ["/test/project", "relative/project", "/project/../other"] {
+                let json = doctorJSON
+                    .replacingOccurrences(of: #""git","status":"ok""#, with: "\"git\",\"status\":\"\(status)\"")
+                    .replacingOccurrences(of: "/test/project", with: root)
+                XCTAssertThrowsError(try JSONDecoder().decode(Doctor.self, from: Data(json.utf8)).validated()) { error in
+                    XCTAssertEqual(error.localizedDescription, DesktopError.invalidOutput.localizedDescription)
+                }
+            }
+        }
     }
     func testMissingAuthAndUnknownCapabilityCannotBeReady() throws {
         for status in ["fail", "unknown"] {
@@ -298,7 +311,7 @@ final class DesktopTests: XCTestCase {
         }
         let privateRoot = doctorJSON.replacingOccurrences(of: "/test/project", with: "/private/tmp/project")
         XCTAssertEqual(try JSONDecoder().decode(Doctor.self, from: Data(privateRoot.utf8)).validated().repoRoot, "/private/tmp/project")
-        let missing = doctorJSON.replacingOccurrences(of: #""repoRoot":"/test/project",""#, with: "")
+        let missing = doctorJSON.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "")
         XCTAssertThrowsError(try JSONDecoder().decode(Doctor.self, from: Data(missing.utf8)).validated())
     }
     func testPassWithBlockingFindingOrRiskIsRejectedButP3PassIsValid() throws {
@@ -374,6 +387,31 @@ final class OnboardingTests: XCTestCase {
         try await waitForIdle(model)
         guard case .message(let text) = model.state else { return XCTFail("Expected no changes") }
         XCTAssertEqual(text, "沒有可檢查的變更。這不代表整個專案已驗證安全。 / No changes to review. Your project has not been verified safe.")
+    }
+    func testDiagnosisAndLoginPreserveSelectedFolderWhenGitIsUnavailable() async throws {
+        let fixture = DesktopTests()
+        for login in [false, true] {
+            for malformed in [false, true] {
+                var doctor = fixture.doctorJSON.replacingOccurrences(of: #""git","status":"ok""#, with: #""git","status":"fail""#)
+                if !malformed { doctor = doctor.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "") }
+                let runtime = try fixture.fixture("case \"$1\" in login) exit 0;; doctor) printf '%s' '\(doctor)'; exit 1;; *) exit 3;; esac")
+                defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+                let model = Onboarding(runtime: runtime)
+                model.repo = URL(fileURLWithPath: "/selected/folder")
+                if login { model.login() } else { model.diagnose() }
+                try await waitForIdle(model)
+                XCTAssertEqual(model.repo?.path, "/selected/folder")
+                XCTAssertEqual(model.canReview, false)
+                if malformed {
+                    guard case .message(let text) = model.state else { return XCTFail("Malformed doctor must be rejected") }
+                    XCTAssertEqual(text, DesktopError.invalidOutput.localizedDescription)
+                } else {
+                    guard case .diagnosis(let report) = model.state else { return XCTFail("Non-repository diagnosis must remain available") }
+                    XCTAssertEqual(report.scopeReady, false)
+                    XCTAssertEqual(report.checks[3].explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
+                }
+            }
+        }
     }
     func testUnsignedUserCanInspectScopeButCannotStartReview() async throws {
         let fixture = DesktopTests()
