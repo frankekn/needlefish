@@ -2,104 +2,150 @@
   <img src="assets/banner.png" alt="Needlefish" width="100%">
 </p>
 
-<p align="center">
-  <strong>嚴格、本機的 PR 審查，表現得像資深工程師。</strong><br>
-  只標記真正的缺陷，其餘一律保持沉默。
-</p>
+# Needlefish
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/needlefish"><img src="https://img.shields.io/npm/v/needlefish" alt="npm version"></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node >=20">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT"></a>
-</p>
+Needlefish 在 merge 前審查 Git 變更中的缺陷。審查與 critic 篩選 finding，
+最後由固定規則推導 verdict。
 
-<p align="center">
-  <a href="#快速開始">快速開始</a> ·
-  <a href="#benchmarks">Benchmarks</a> ·
-  <a href="#使用方式">使用方式</a> ·
-  <a href="#github-action">GitHub Action</a> ·
-  <a href="#runners">Runners</a> ·
-  <a href="https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md">方法</a> ·
-  <a href="README.md">English</a>
-</p>
-
----
-
-Needlefish 會在 merge 前審查你的 diff，只回報真正的缺陷——錯誤、回歸、
-安全性、資料遺失、遷移／升級風險、缺少驗證、重複行為——絕不回報風格
-問題。
-
-- **Prefer-zero findings。** 以嚴格資深 reviewer 的標準：不值得阻擋
-  merge 的就捨棄。沒有風格挑剔，沒有雜訊。
-- **確定性 verdict。** `pass`／`needs_human`／`changes_requested` 由保留
-  下來的 finding 依固定規則推導，絕不由模型文字決定。
-- **隔離的審查目標。** 審查在 throwaway clean clone 中執行，每次模型呼
-  叫後都檢查是否遭竄改。
-- **有防護的 evals。** 每次 prompt 或 pipeline 變更上線前，都在 87 個情
-  境的 harness（啟用 anti-cheat guard）上量測（見
-  [Benchmarks](#benchmarks)）。
-
-小型 PR 會執行審查加對抗式 critic；大型 PR 會先加上 map 與 deep 階段，
-再交給相同的 critic。Codex 是預設 runner——也支援 Claude Code、
-opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
-
-<p align="center">
-  <img src="assets/demo.png" alt="needlefish 真實的 inline review comment：在 diff 上抓到 P0 授權缺陷" width="880">
-</p>
-
-<p align="center">
-  <sub>目前部署 lane（GPT-5.6 Terra，high effort）在植入缺陷的 eval fixture 上的真實 finding——<a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>。</sub>
-</p>
+[English](README.md) · [快速開始](#快速開始) · [讀取結果](#讀取結果) ·
+[常見錯誤](#常見錯誤) · [Benchmark 頁面](https://frankekn.github.io/needlefish/) ·
+[完整參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md)
 
 ## 快速開始
 
-**本機**——在要審查的 git repo 內執行。需要 Node 20 以上，以及一個已登
-入的 runner CLI（`codex`、`claude` 或 `opencode`）位於 `PATH`：
+使用可信任的 Git repo。需要 Node 20 以上、Git 2.41 以上，以及已登入的
+`codex`、`claude` 或 `opencode` CLI，並讓 CLI 位於 `PATH`。
 
 ```bash
+npx needlefish doctor
+npx needlefish --dry-run
 npx needlefish
 ```
 
-**每個 PR**：從此版本原始碼預覽指定 Git repo 的 hosted workflow：
+`doctor` 不呼叫模型，只檢查環境，並為失敗項目列出修正方式。
+認證結果為 `unknown` 不代表模型可用。`--dry-run` 不呼叫模型、不寫快取，
+只顯示審查範圍。最後一個指令會把 diff 與檢查到的 repo 內容送到所選模型供應商。
+審查私有程式碼前，先閱讀供應商的資料與計費條款。
+
+Worktree 有變更時，會審查 staged、unstaged 與符合收集條件的 untracked
+變更。乾淨 branch 則審查 merge-base 到 `HEAD`。選擇子目錄仍會審查整個
+repo。使用 `--base <ref>` 可指定基準。
+
+```bash
+npx needlefish --uncommitted
+npx needlefish --branch --base main
+npx needlefish pr 123
+```
+
+`pr 123` 審查 PR ref，需要已登入的 `gh`。本機模式輸出 Markdown，並將
+JSON 快取於 `~/.cache/needlefish/<repo>/last-review.json`。
+本機模式不發布到 GitHub，也不套用修正。`--fix` 尚未實作。
+[`--pr` flag 與其他模式](docs/reference.zh-TW.md#使用方式) 另有完整說明。
+
+小型審查通常呼叫模型兩次，分別是 review 與 critic。大型審查使用一次 map、
+多次 deep 與一次 critic。修復輸出格式或重試可能增加費用。純文件變更會跳過
+模型，GitHub same-head dedupe 也可能省略呼叫。`--recheck` 會強制完整重審。
+
+## 讀取結果
+
+| Verdict | 意義 | 下一步 |
+| --- | --- | --- |
+| `changes_requested` | 至少保留一項 P0、P1 或 P2 finding。 | 檢查引用的程式碼與觸發條件，修正確認的缺陷，再審查新變更。 |
+| `needs_human` | 沒有阻擋 finding，但有 `blocks: true` 的殘餘風險。 | 由人工釐清風險。這不是通過。 |
+| `pass` | 沒有阻擋 finding 或阻擋殘餘風險。 | 閱讀覆蓋說明，完成原有檢查。 |
+
+P3 finding 仍會列出，但不阻擋。Severity 沿用既有 finding 契約。
+模型的 confidence 或文字不會覆寫 verdict。失敗或取消的審查不是通過。
+
+逐項檢查 finding 的檔案、行號、解釋、建議修正與 validation。
+也要閱讀 `checked`、`scopeCallouts` 與 `coverageGaps`。Scope callout 只列出
+變更檔案的類型，不證明缺陷或完整覆蓋。LFS pointer gap 代表檔案內容未被
+審查。Pass 只適用於擷取的變更，不保證程式沒有缺陷。
+
+自動化使用 `--json` 與帶版本的
+[`ReviewResult` schema](schemas/review-result.v1.schema.json)。
+Dry-run JSON 的格式不同。欄位與 outcome 詳見
+[機器介面](docs/reference.zh-TW.md#機器介面)。
+
+## 常見錯誤
+
+| 現象 | 處理方式 |
+| --- | --- |
+| Node 或 Git 檢查失敗 | 安裝 Node 20 以上或 Git 2.41 以上，再執行 `doctor`。 |
+| 找不到 runner | 安裝並登入 `codex`、`claude` 或 `opencode`，或明確指定已設定的 runner。 |
+| 登入、供應商、額度或網路錯誤 | 閱讀 runner 診斷，確認該供應商的登入與帳戶狀態。`doctor` 不證明額度或連線可用。 |
+| 資料夾不是 Git repo | 選擇 repo 根目錄。只有確定要建立新 repo 時才執行 `git init`。 |
+| 無法解析 base ref | Fetch 所需基準，再指定 `--base <ref>`。 |
+| `openai` runner 拒絕 deep 審查 | 改用有工具能力的 CLI runner。HTTP runner 只支援小型完整 diff 審查。 |
+| GitHub 審查被跳過 | 閱讀 `needlefish-skip` 與 check。Closed、stale、same-head 與 untrusted-author skip 都不是新的審查。 |
+| 審查逾時 | 檢查故障與 runner log，確認原因後才調整 timeout。缺少輸出不能當成通過。 |
+
+完整細節見 [timeout 與 runner 選項](docs/reference.zh-TW.md#runners) 及
+[GitHub 認證](docs/reference.zh-TW.md#hosted任何-repo)。
+
+## GitHub Action
+
+在安裝完成的原始碼 checkout 內，預覽目標 repo 的 hosted workflow。
+先完成[開發環境安裝](docs/reference.zh-TW.md#開發環境安裝)。
 
 ```bash
 pnpm review setup github --repo /path/to/repo
 ```
 
-本版本發布至 npm 後，也可用 `npx needlefish setup github --repo /path/to/repo`
-預覽同一份設定。
+此指令不寫入任何內容。Repo 管理員仍須透過經審查的 PR 加入 workflow，
+並另外設定 `NEEDLEFISH_CODEX_API_KEY`。它不建立 setup PR、不新增 secret、
+不設定 required check，也不變更 branch protection。此版本發布後，npm
+對應指令為 `npx needlefish setup github --repo /path/to/repo`。
 
-指令顯示預計新增的 `.github/workflows/needlefish.yml`，或既有自有檔案的
-差異；不寫入檔案，也不覆蓋自訂 Needlefish workflow。提案固定 action 與
-Codex CLI 版本。Fork、bot 與非信任作者的 PR 會在 checkout 前失敗，不能
-顯示成完成審查。這只是預覽。Repo 管理員仍須透過經審查的 PR 加入
-workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
-不設定憑證、不建立設定 PR、不設定 required check，也不執行審查。
-啟用後，finding 會
-以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
-份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
+提案會固定 action 與 Codex CLI 版本，並在 checkout 前拒絕 fork、bot 與
+非信任作者的 PR。不要搭配 `pull_request_target`。
+GitHub review 使用 `COMMENT`，不是正式 approval。權威的 `Needlefish`
+check 對 `pass` 顯示 success，對 `changes_requested` 或執行失敗顯示
+failure，對 `needs_human` 顯示 neutral。Neutral 不是通過。
 
-成本：小型 PR 每次審查 2 次模型呼叫（預設 `gpt-5.6-terra` @ `high`
-effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR 與未
-變更的 head 會完全跳過模型。
+Secret、hosted 支援的 runner、權限與操作者管理的 bundle 詳見
+[hosted 與 self-hosted 參考](docs/reference.zh-TW.md#github-action)。
+另一份[引導設定 Draft 預覽](https://github.com/frankekn/needlefish/pull/280)
+不屬於此處說明的已合併 CLI。
+
+## Runners
+
+CLI 接受 `codex`、`claude`、`opencode`、`openai`、`grok`、`pi` 與 `acp`。
+自動偵測只依序檢查 Codex、Claude Code 與 opencode。支援 adapter 不代表
+每個模型、供應商路徑、帳戶或 CLI 版本都已通過資格驗證。
+Hosted action 只安裝 Codex、Claude Code、opencode 或 pi。
+
+CLI 模型不受程序權限限制，在 disposable clone 執行。GitHub token 已移除，
+`HEAD` 固定，沒有 origin remote，每次呼叫後檢查是否變更。
+這不是 OS sandbox。Runner 若得知其他本機路徑，仍可能存取該路徑。
+只在適當機器上審查可信任的專案。詳見
+[runner 設定與隔離](docs/reference.zh-TW.md#runners)、
+[connections](docs/connections.md) 與 [ACP 啟動](docs/acp-startup.md)。
+
+## macOS 預覽
+
+[原生 app 原始碼預覽](desktop/macos/README.md) 支援 Apple silicon 的
+macOS 14 以上，透過既有 CLI 審查可信任的本機專案。
+這不是已通過資格驗證的終端使用者下載版。簽章、公證、clean-machine 測試、
+精確 lane 驗證與新手試用仍是 release gate。
+
+## 參考與開發
+
+[完整 CLI 與 GitHub 參考](docs/reference.zh-TW.md) 收錄所有模式、結果欄位、
+認證變數、subprocess 環境、自管安裝與開發指令。
+[方法](eval/RESULTS.md)、[實驗歷史](eval/RESULTS_HISTORY.md) 與
+[原始報告](eval/results/) 將 benchmark 證據與安裝指引分開。
 
 ## Benchmarks
 
-哪一組 model、agent harness、provider route 與 effort，能抓到真正的 PR
-缺陷，又不會阻擋乾淨的變更？下列表格由 `eval/gen-readme.ts` 從與
-benchmark 頁面相同的受防護 report JSON 產生；策展過的 chronology 與
-confirmation 重跑記錄在
-[eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)。
-[Benchmark 頁面](https://frankekn.github.io/needlefish/)
-由同樣的受防護 report 產生 leaderboard，絕不手動編輯。
+[Benchmark 頁面](https://frankekn.github.io/needlefish/) 與下表使用受防護的
+report。只有 prompt、fixture-set、scorer 與 anti-cheat identity 相同的列
+才能比較。Provider failure 屬於執行結果。歷史分數不代表目前安裝或 desktop
+預覽已通過資格驗證。[欄位定義與歷史解讀](docs/reference.zh-TW.md#歷史-benchmark-記錄)
+保留於參考文件。
 
-**欄位說明：** **Balanced** 是主要分數——anchored recall 與 usable
-specificity 的算術平均。**Tier-1** 是 must-find 缺陷的 recall，也是硬性
-資格門檻。**FP** 是被阻擋的乾淨 PR。**Noise/review** 是每次 positive 審
-查額外產出的 finding 數（門檻 0.12）。只有 prompt、fixture-set、scorer
-hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failure 與訂
-閱尚未提供的模型屬於 operational outcome，不是模型的零分。審查若用完單次呼叫的時限，
-會算成一次失敗的審查，因為 PR 作者實際上就是拿不到審查。
+Generator 目前會把完整表格寫入兩語 README。以下產生區塊維持原樣，讓後續
+發布沿用相同資料來源。
 
 <!-- benchmark:begin -->
 <!-- generated by eval/gen-readme.ts from eval/leaderboard.json and eval/results/*.json — do not hand-edit -->
@@ -134,416 +180,3 @@ hash 與 anti-cheat 版本全部相同的列才能互相比較；provider failur
 
 1 條 lane 因 provider 或基礎設施故障而不計分；詳見 benchmark 頁面與 eval/RESULTS.md。
 <!-- benchmark:end -->
-
-**最新排名結果，2026-10-13：**Muse Code 1.4.7 使用 `muse-wonder-1.0`
-與 `high`，在排行榜同版 pipeline 完成 87 項 × 3 draws。
-Balanced score 90.47%、recall 93.44%、Tier-1 100%、誤報 12.50%、
-無效輸出 0%、positive noise 0.060，平均 35.8 秒。
-達標列為 Candidate，統計排名並列第 7。Recall 高於 Terra high，但乾淨
-情境誤報也更多，不能宣稱統計上勝出。本輪用了 510 次本機 Muse CLI 呼叫。
-ACP 只是橋接協定，Harness 欄顯示 Muse Code。原始報告保留，公開版本補上
-執行後的 environment attestation，歷史 x1 與額度報告仍分開不排名。詳見
-[完整 x3 結果](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high-ranked-x3)。
-發布不新增 Muse 呼叫，也不切換部署 lane。
-
-解讀：Grok 4.6 在準確度與 noise 上領先，但每次審查慢 3.7 倍，且需要
-runner 上已登入的 Grok CLI，因此仍維持 candidate。Terra high 與 Sol 在
-統計上無法分出高下；Terra high 更快，在乾淨 fixture 上也更乾淨。
-
-**目前部署 lane 變更：Terra xhigh → Terra high**——同模型、同訂閱、同
-harness、同批次。粗體標示每列較佳值。
-
-| | xhigh（變更前） | high（目前） | Δ |
-| --- | ---: | ---: | ---: |
-| Balanced | **90.39%** | 89.95% | −0.4 pt |
-| Tier-1 recall | 90.48% | **100%** | +9.5 pt |
-| Anchored recall | 86.34% | **89.62%** | +3.3 pt |
-| Tier-3 recall | 72.22% | **77.78%** | +5.6 pt |
-| Usable specificity | **94.44%** | 90.28% | −4.2 pt |
-| 錯誤陽性（72 次 clean draw 中） | **4.17%（3）** | 9.72%（7） | +4 次 draw |
-| Positive noise / review | 0.1202 | **0.0765** | −0.0437 |
-| 無效輸出 | 0.38% | **0%** | −1 次 draw |
-| 平均審查時間 | 80s | **63s** | −21% |
-
-解讀：這次切換以多阻擋四次 clean draw 為代價，換來 Tier-1 完整性、
-recall 與速度。Sol medium 原本是名次 2 的替代方案；recall 較高，但
-false-positive rate 幾乎是 Terra high 的兩倍。
-
-完整方法、逐 fixture 矩陣與時間序實驗記錄見
-[eval/RESULTS.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS.md)
-與
-[RESULTS_HISTORY.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md)；
-raw report 在
-[eval/results/](https://github.com/frankekn/needlefish/tree/main/eval/results)。
-
-## 使用方式
-
-本機模式是唯讀的：Markdown 輸出到 stdout，不寫入 GitHub。
-
-從 repo 子目錄執行，或將子目錄傳給 `--repo`，仍會審查整個 repo。
-檔案路徑、根目錄 `AGENTS.md` 與快取位置皆以 Git work-tree 根目錄為準。
-
-**已提交的工作**——在目標 repo 內執行，或從任意位置用 `--repo` 指向
-它。預設範圍是 merge-base…`HEAD`（見[基準偵測](#基準偵測)）：
-
-```bash
-needlefish --repo /path/to/some-repo
-needlefish --repo /path/to/some-repo --focus security
-needlefish --repo /path/to/some-repo --deep
-needlefish --repo /path/to/some-repo --base develop
-needlefish --repo /path/to/some-repo --branch  # force merge-base..HEAD review
-```
-
-**未提交的工作**——如果 working tree 是 dirty 的，或 repo 尚無任何
-commit，`needlefish` 會審查你未提交的變更，包含 untracked 檔案。還不
-是 git repo？先執行 `git init`。
-
-```bash
-needlefish --repo /path/to/some-repo --uncommitted  # force working-tree review
-```
-
-**Pull request：**
-
-```bash
-needlefish --repo /path/to/some-repo --pr 123  # attach PR metadata to the local diff
-needlefish pr 123 --repo /path/to/some-repo    # review the PR ref itself
-```
-
-**Runner 與 model 選擇：**
-
-```bash
-needlefish --repo /path/to/some-repo --runner claude
-needlefish --repo /path/to/some-repo --runner opencode --model zai-coding-plan/glm-5.2
-NEEDLEFISH_ACP_BIN=/path/to/acp-agent needlefish --repo /path/to/some-repo --runner acp
-```
-
-輸出為 stdout 上的 Markdown，同一份 review 會以 JSON 快取在
-`~/.cache/needlefish/<repo>/last-review.json`。傳入 `--json` 可改為將
-`ReviewResult` JSON 輸出到 stdout：
-
-```bash
-needlefish --repo . --json | jq .verdict
-```
-
-### 機器介面
-
-`needlefish --repo <path> --json` 與 `needlefish pr <number> --json` 會將
-帶版本的 `ReviewResult` JSON 物件輸出到 stdout——與本機快取儲存的物件相
-同。在同一個 `schemaVersion` 內，欄位只會新增，絕不修改或移除；破壞性
-的 shape 變更需要新的 `schemaVersion` 與 changelog 條目。
-
-| 欄位 | 內容 |
-| --- | --- |
-| `schemaVersion` | 固定為 `1`。 |
-| `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
-| `reviewTarget` | 選用的審查目標字串。 |
-| `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
-| `findings[].consumerFile` | 選用的下游受影響檔案。 |
-| `findings[].consumerLine` | 選用的下游受影響行號。 |
-| `residualRisks[]` | 殘餘風險物件，含 `text` 與 `blocks`。 |
-| `checked[]` | 描述審查內容的證據字串。 |
-| `stats` | 選用的逐 runner 呼叫時間與嘗試次數統計。 |
-| `totalDurationMs` | 選用的總審查時間（毫秒）。 |
-
-GitHub 模式在診斷輸出後附上最終 `needlefish-outcome {json}`。
-備援流程只讀取此結果，不搜尋審查正文；只有辨識到 runner transport
-故障的 `outcome:"failure"` 才帶 `operational:true`。阻擋 verdict 維持
-exit 1，跳過仍使用 `needlefish-skip`。
-
-Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
-完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
-舊收據阻止恢復審查。
-
-### 基準偵測
-
-`--base` → `origin/HEAD` → `main`。用 `--base <ref>` 覆寫。
-
-## Verdict 推導（確定性）
-
-verdict 是確定性推導的——模型文字絕不決定 pass/fail：
-
-- 任何 P0／P1／P2 finding → `changes_requested`
-- 否則有 blocking residual risk → `needs_human`
-- 其他情況 → `pass`
-
-只有 P3 的 finding 仍會被報告，但不阻擋（check 維持綠燈）。
-
-## GitHub Action
-
-在每個 PR 上執行有兩種方式：**hosted composite action**（零設定，每次
-執行都冷啟動）或 **self-hosted reusable workflow**（低延遲，在你控制的
-機器上）。兩者發布相同的結果：非 sticky 的 `COMMENT` review（含完整渲
-染的審查本文），加上作為 merge gate 的權威 `Needlefish` check-run。
-
-| verdict              | review event        | check     |
-| -------------------- | ------------------- | --------- |
-| pass                 | COMMENT             | success   |
-| changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | neutral   |
-| run failed           | （無）                | failure   |
-
-所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
-event：`GITHUB_TOKEN` bot 無法正式 approve PR，而 sticky 的 blocking
-review 可能比已修復的 head 活得更久。check-run 才是 merge gate——失敗的
-review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶有驗證
-過的精確 replacement 時，其 inline comment 會附上原生 GitHub suggestion
-區塊；驗證失敗時退回一般 comment。
-
-### Hosted（任何 repo）
-
-上方的 setup 預覽使用本 repo 的 composite action，在 GitHub-hosted
-`ubuntu-latest` 執行。啟用仍需經審查的 workflow PR 與 repo secret。
-
-**Runner 認證**——repo secret，透過 action step 的 `env` 傳入：
-
-| runner   | secret |
-| -------- | ------ |
-| codex    | `CODEX_AUTH_JSON`（已登入的 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY` |
-| claude   | `ANTHROPIC_API_KEY` |
-| opencode | 所選模型的 provider key（例如 `OPENAI_API_KEY`） |
-| pi       | `PI_AUTH_JSON`（已登入的 `~/.pi/agent/auth.json` 內容） |
-
-hosted 安裝步驟只接受 `codex`、`claude`、`opencode` 或 `pi`。`grok` 與
-`acp` 是 CLI runner，`openai` 是 HTTP——hosted action 都不會安裝，傳入
-`runner: grok`（或 `openai`／`acp`）會在該安裝步驟失敗；Grok 4.5 請使
-用下方的 self-hosted workflow。Claude 的認證變數（`ANTHROPIC_API_KEY`、
-`CLAUDE_CODE_OAUTH_TOKEN`）與 opencode 的 `OPENAI_API_KEY` 在 runner
-subprocess 的 allowlist 內；其他 provider 的 key 需要
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見
-[Runner subprocess 環境](#runner-subprocess-環境)）。
-
-**輸入**（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設
-`codex`）、`model`、`timeout_ms`、`codex_reasoning_effort`、
-`runner_version`、`repo_path`（預設為 workspace checkout）、
-`github_token`（預設為 workflow token）、`allow_untrusted_author`
-（預設 `false`）。
-
-**Runner 版本：** 未設定 `runner_version` 時，action 會安裝所選 runner
-CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cli`
-或 `@earendil-works/pi-coding-agent`）。要固定版本時，傳入明確版本即可。
-
-**成本與行為：**
-
-- 小型 PR：2 次模型呼叫（審查 + critic），使用 workflow 預設值
-  `gpt-5.6-terra` @ `high` effort。大型 PR：1 次 map + N 次 deep（預設
-  並行數 3）+ 1 次 critic。
-- 純文件 PR 與 same-head 重跑花費 0 次模型呼叫（用 `--recheck` 強制重
-  新審查）。
-- hosted 路徑每次執行都冷啟動（pnpm install + runner CLI 安裝，約一分
-  鐘）。下方的 self-hosted 路徑仍是低延遲選項。
-- 產生的 workflow 對 fork、bot 與非信任作者 PR 在 checkout 前失敗，
-  不會顯示為已審查。不要將它改為 `pull_request_target`。
-- 只審查作者為 OWNER／MEMBER／COLLABORATOR 且不是 bot 的 PR；其他 PR
-  改為收到 neutral 的 `Needlefish` check。維護者讀過 PR 後，可用
-  `allow_untrusted_author: true` 審查。GitHub mode 本身就會執行這道 gate，
-  直接呼叫 `needlefish --github` 的自訂 workflow 也一樣；要放行時設
-  `NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`。
-
-**留言指令：** composite action 不會把 PR 留言指令加入 consumer repo。
-本 repo 的 `.github/workflows/commands.yml` 會監聽維護者（僅
-OWNER／MEMBER／COLLABORATOR）的 `@needlefish recheck` 與
-`@needlefish explain <finding>` 留言：recheck 會 dispatch 本 repo 的
-`review.yml`；explain 在已有 `~/.local/bin/needlefish` 的 self-hosted
-runner 上執行 `needlefish explain`。把該檔案複製到其他 repo 之前，必須
-先改寫這兩個 job 的目標。
-
-### Self-hosted runner
-
-本安裝使用自行管理的 Needlefish bundle。Review workflow 不抓上游原始碼、
-不解析上游 `main` SHA，也不部署 release。各消費專案保存僅有 `workflow_call`
-的 `.github/workflows/needlefish-review-local.yml`；原 caller 負責 PR 與手動
-觸發，避免同一事件啟動兩次 review。
-
-```yaml
-jobs:
-  review:
-    uses: ./.github/workflows/needlefish-review-local.yml
-    with:
-      pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
-      runner: codex
-      model: gpt-5.6-terra
-      codex_reasoning_effort: xhigh
-    secrets: inherit
-```
-
-Caller 保留 `workflow_dispatch.inputs.pr_number`、`actions: write`，以及以
-` PR #<編號>` 結尾的 run-name，供有次數上限的 reconciliation 使用。Reconcile
-維持在 GitHub-hosted Ubuntu 執行，不依賴 review runner 是否正常。
-若 direct PR trigger 要使用專用 fleet，設定 repository variable
-`NEEDLEFISH_RUNS_ON` 為操作者持有的 runner label；未設定時維持 `self-hosted`。
-明確傳入的 `runs_on` 仍優先。
-
-以 runner 的 service account 安裝已驗證 bundle 至
-`~/.local/share/needlefish-self/releases/<self_version>`，保留 `release.json`、
-`self-managed.patch` 與 frozen `pnpm-lock.yaml`，由操作者把獨立的
-`needlefish-self/current` 指向該版本。Review 每次只解析一次 current，驗證
-metadata 與 patch／lockfile digest，並固定使用該不可變版本。安裝缺漏或無效
-即拒絕執行。手動 `needlefish-deploy` 只驗證已安裝版本；source push 與上游
-release 不會自動覆蓋自用版。
-
-相同 service account 必須能執行目前的 Codex CLI。Review lane 為
-`gpt-5.6-terra / xhigh / fast`；bundle 包含 proxy tier 傳遞修復，因此 custom
-provider 也會收到 fast 設定。Provider 是否接受及實際提供哪種 tier，仍需
-provider 回應佐證。
-
-
-```bash
-npm install --global --prefix "$HOME/.local" @openai/codex@latest
-export CODEX_BIN="$HOME/.local/bin/codex"
-"$CODEX_BIN" --version
-```
-
-各 caller 保留原認證路徑。Proxy caller 使用 `codex_proxy_base_url`、
-`codex_proxy_required: true` 與 `codex_proxy_api_key`；本 repo 直接觸發可由
-repository variable `CODEX_PROXY_BASE_URL` 指定端點。Required 模式缺憑證即
-失敗，不退回 OAuth；憑證只進入子程序環境。Fork／closed／stale PR 防護、
-checkout 憑證隔離與獨立 hosted finalization 都保留。
-這些 runner 上的 model CLI 不受限制，因此非信任或 bot 作者的 PR 會以
-neutral check 跳過；讀過 PR 後，以 `allow_untrusted_author: true` 手動
-dispatch `review.yml` 即可審查。Reconciliation 永遠不會設定這個 input。
-已安裝的 binary 在 GitHub mode 也執行同一道 gate，放行用
-`NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1`。
-
-## Runners
-
-`--runner`／`NEEDLEFISH_RUNNER` 可為 `codex`、`claude`、`opencode`、
-`openai`、`grok`、`pi` 或 `acp`；`src/shared/codex.ts` 負責呼叫所選
-runner。共通選項：
-
-| 選項 | 環境變數 | 預設 |
-| --- | --- | --- |
-| runner | `NEEDLEFISH_RUNNER` | 依序自動偵測 `codex`、`claude`、`opencode` |
-| model | `NEEDLEFISH_MODEL` | runner 預設值 |
-| Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium`（composite action 與 reusable workflow：`gpt-5.6-terra` 時為 `high`） |
-| timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000`（20 分鐘） |
-| opencode idle timeout | `OPENCODE_IDLE_TIMEOUT_MS` | per-call timeout 與 `600000` 中較小者 |
-
-opencode 的 idle deadline 在 CLI 每次產生 stdout 或 stderr 時重設。若
-provider stream 停止產生輸出，Needlefish 會終止該 attempt 並使用既有的
-runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt timeout
-用完的 attempt 不會重試：第二次只會再等同一個卡住的上游，把單次 pass 拉長一倍。
-
-當 `--runner` 與 `NEEDLEFISH_RUNNER` 都未設定，且找不到 `codex`、
-`claude` 或 `opencode` 時，Needlefish 會輸出這三個 CLI 的安裝指令後結
-束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
-`acp`。
-
-`openai` HTTP runner 沒有讀取 repo 的工具，只支援小型完整 diff 審查。
-`--deep` 與自動判定的大型審查會在 HTTP request 前拒絕；請改用具工具
-能力的 CLI runner。純文件 fast path 仍可搭配任何 runner。
-
-各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
-runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
-內讀取環境變數（其 subprocess allowlist 為空）。括號內是 `*_BIN` 變數
-未設定或為空白時使用的執行檔名（值會去除前後空白）：
-
-| runner | binary | model／其他 |
-| --- | --- | --- |
-| `codex` | `CODEX_BIN`（`codex`） | `CODEX_MODEL`、`CODEX_TIMEOUT_MS`、`CODEX_RETRY_MS`、`CODEX_REASONING_EFFORT`；proxy `CODEX_PROXY_BASE_URL`、`CODEX_PROXY_API_KEY`、`NEEDLEFISH_CODEX_PROXY_REQUIRED=1` |
-| `claude` | `CLAUDE_BIN`（`claude`） | `CLAUDE_MODEL`；認證 `ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN` |
-| `opencode` | `OPENCODE_BIN`（`opencode`） | `OPENCODE_MODEL`；認證 `OPENAI_API_KEY` |
-| `grok` | `GROK_BIN`（`grok`） | `GROK_MODEL` |
-| `pi` | `PI_BIN`（`pi`） | `PI_MODEL`、`PI_PROVIDER`（預設 `openai-codex`）、`PI_AUTH_MODE`（`oauth` 或 `proxy`；`openai-codex` 預設 OAuth，明確指定 provider 時預設 proxy） |
-| `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
-| `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
-
-### 各 runner 的啟動方式
-
-- **Codex：** `--ignore-user-config --ignore-rules
-  --dangerously-bypass-approvals-and-sandbox`，使其檢查命令不會被
-  execpolicy rule、approval prompt 或 host sandbox 阻擋。Reasoning
-  effort 預設為 `medium`；設 `CODEX_REASONING_EFFORT=high` 可恢復舊預
-  設，`xhigh` 為最高 effort 模式。
-- **Claude Code：** `--dangerously-skip-permissions`、`--safe-mode` 與
-  `--no-session-persistence`。
-- **Grok：** `--always-approve --permission-mode bypassPermissions
-  --no-plan --sandbox off`。
-- **opencode：** headless 模式的 `--auto`，並以 inline `permission:
-  "allow"` override 其 global 與 build-agent 權限。
-- **pi：** `--no-session --mode text --provider openai-codex --thinking
-  <level>` 與預設完整 toolset。
-- **ACP：** 從 `NEEDLEFISH_ACP_BIN` 以 stdio 執行的 JSON-RPC 2.0 Agent
-  Client Protocol process。timeout 時 Needlefish 會先送
-  `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
-  prompt response 若包含 token usage，review stats 會保留 input／output 總量。
-
-每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
-行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
-Needlefish 會用 `git status
---porcelain --untracked-files=all --ignored=matching` 重新檢查 clone，驗
-證 `HEAD` 沒有移動，並拒絕任何 worktree 變更。clone 不帶 remote：其
-`origin`（本會指向同一檔案系統上的原始 repo）會在 runner 啟動前移除，
-因此從 sandbox 內執行一般的 `git push` 無法在原始 repo 建立、強制更新
-或刪除 branch。這只關閉現成的 push 路徑；它不是 OS 層級的邊界，知道
-原始路徑的 runner 仍可直接寫入該處。Closed PR 會在 diff 或模型呼叫前
-被跳過。
-
-未提交變更的 clone 以 `WORKING` 指向暫存審查 commit；原始 repo 尚無
-commit 時，`EMPTY` 指向空白基準 commit。結果 JSON 保留這些標記，
-兩者皆可在 disposable clone 中作為 Git ref 使用。
-
-### Runner subprocess 環境
-
-Runner CLI（`codex`、`claude`、`opencode`、`grok`、`pi`、`acp`）以
-allowlist 環境啟動，而非完整的 parent `process.env`——只有
-locale／proxy／path 基礎變數加上各 runner 自己的 `_BIN`／`_MODEL` 類變
-數會被傳入。若要額外傳遞變數給 runner subprocess，設定
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR1,VAR2`（逗號分隔的名稱）。在
-GitHub Actions 上，非機密的 `RUNNER_TRACKING_ID` job marker 會保留，讓
-self-hosted runner 在 job 被取消時能終止 detached model process。
-
-ACP 環境認證還需要明確的 credential 宣告：將
-`NEEDLEFISH_ACP_AUTH_ENV_VARS` 設為 credential 名稱，並把相同名稱列入
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`——例如
-`NEEDLEFISH_ACP_AUTH_ENV_VARS=MY_AGENT_TOKEN` 搭配
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=MY_AGENT_TOKEN`。任意 passthrough 設
-定本身不能證明已認證。或者，將 `NEEDLEFISH_ACP_AUTH_FILES` 設為逗號分
-隔的 HOME 相對 credential 檔案；Needlefish 只會把這些檔案複製到
-disposable runner HOME。
-
-## 開發環境安裝
-
-需要 Node 20 以上、Corepack（建議）或 `packageManager` 指定的 pnpm、一
-個本機已登入的支援模型 CLI（Codex、Claude Code 或 opencode），以及
-GitHub CLI（`gh`，供 `--pr`、`pr` 與 GitHub Action 模式使用）。
-
-```bash
-git clone https://github.com/frankekn/needlefish
-cd needlefish
-PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-corepack enable
-corepack prepare "$PNPM_VERSION" --activate
-pnpm install --frozen-lockfile
-```
-
-若沒有 Corepack，直接安裝指定的 package manager：
-
-```bash
-PNPM_VERSION=$(node -p "require('./package.json').packageManager")
-npm exec --yes --package "$PNPM_VERSION" -- pnpm install --frozen-lockfile
-```
-
-**PATH 上的開發 shim（選用）：** repo 內含 `bin/needlefish` 開發 shim。把
-它 symlink 到 PATH 內的目錄，就能從任何 cwd 呼叫 `needlefish`：
-
-```bash
-ln -sf "$PWD/bin/needlefish" ~/.local/bin/needlefish   # or any PATH dir
-needlefish --version
-```
-
-shim 會解析 symlink，並用 repo 內的 `tsx` 執行 `src/cli.ts`，因此即使
-repo 是從別處 link 過來的也能運作，也適用於非互動 shell（不像 shell
-alias）。不做此步驟時，請用完整路徑呼叫：
-`/path/to/needlefish/node_modules/.bin/tsx /path/to/needlefish/src/cli.ts`
-（cwd 為目標 repo）。
-
-## 狀態
-
-v0.4.10。唯讀。已提供:inline review comment、sticky 重審(跨 push 的
-fresh／open／未再回報）、純文件 fast path（不呼叫模型）、same-head
-dedupe、hosted-runner repo inspection（best-effort AppArmor sysctl）、本地
-`--dry-run` bundle 預覽、機器可讀的 skip reason、非阻塞 scope callouts，以及
-cached-result `render`／`verdict` 診斷。
-`--fix` 依設計維持未實作。維護者 `@needlefish recheck`／`@needlefish
-explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
-布的 composite action 不會安裝該 workflow。
