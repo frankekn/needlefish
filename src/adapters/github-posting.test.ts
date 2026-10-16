@@ -62,6 +62,7 @@ type FixtureOptions = {
 	readonly missingBase?: boolean;
 	readonly missingHead?: boolean;
 	readonly failCollectionMetadata?: boolean;
+	readonly failPullReadsFrom?: number;
 	readonly prNumber: number;
 	readonly rawReview: string;
 	readonly readmeContent?: string;
@@ -472,6 +473,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`  const countPath = ${JSON.stringify(countPath)};`,
 			"  const count = fs.existsSync(countPath) ? Number(fs.readFileSync(countPath, 'utf8')) : 0;",
 			"  fs.writeFileSync(countPath, String(count + 1));",
+			`  if (count + 1 >= ${opts.failPullReadsFrom ?? "Infinity"}) { process.stderr.write("PR metadata unavailable"); process.exit(1); }`,
 			`  const headSha = count === 0 ? ${JSON.stringify(targetHeadSha)} : ${JSON.stringify(latestHeadSha)};`,
 			`  const prState = ${prStateExpr};`,
 			"  process.stdout.write(JSON.stringify({",
@@ -4806,4 +4808,85 @@ test("early collection cannot infer an unknown PR head from the checkout", (t) =
 	assert.match(run.stderr, /Could not resolve PR head SHA/);
 	assert.deepEqual(readPosts(fixture.postLog), []);
 	assert.equal(runnerInvocationCount(fixture), 0);
+});
+
+for (const change of ["stale", "closed", "unknown"] as const) {
+	test(`early collection failure with ${change} PR state suppresses the timeline`, (t) => {
+		const fixture = setupFixture(t, {
+			prNumber: 242, rawReview: defaultRawReview(), collectionGitFailure: "diff",
+			staleHeadAfterReview: change === "stale", closePrAfterReview: change === "closed",
+			...(change === "unknown" ? { failPullReadsFrom: 2 } : {}),
+		});
+		const run = spawnGithubCliMerged(fixture, 242);
+		assert.equal(run.status, 1, run.output);
+		assert.equal(runnerInvocationCount(fixture), 0);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(posts.length, 2, JSON.stringify(posts));
+		assert.ok(posts[1]!.args.includes("repos/frankekn/needlefish/check-runs/1"));
+		const terminal = JSON.parse(posts[1]!.payload);
+		assert.equal(terminal.status, "completed");
+		assert.equal(terminal.conclusion, change === "unknown" ? "failure" : "neutral");
+		assert.equal(terminal.output.title, change === "unknown" ? "Needlefish: review failed" : "Needlefish: superseded");
+		assert.equal(run.output.trim().split("\n").at(-1),
+			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":242,"headSha":"${fixture.headSha}"}`);
+	});
+}
+
+for (const entry of ["closed", "stale", "unknown"] as const) {
+	test(`early collection does not create a check for ${entry} entry metadata`, (t) => {
+		const fixture = setupFixture(t, {
+			prNumber: 243, rawReview: defaultRawReview(), collectionGitFailure: "diff",
+			closedPr: entry === "closed", ...(entry === "unknown" ? { failPullReadsFrom: 1 } : {}),
+		});
+		if (entry === "stale") process.env.PR_HEAD_SHA = fixture.baseTipSha;
+		const run = spawnGithubCli(fixture, 243);
+		assert.equal(run.status, entry === "unknown" ? 1 : 0, run.stderr);
+		assert.deepEqual(readPosts(fixture.postLog), []);
+		assert.equal(runnerInvocationCount(fixture), 0);
+		if (entry === "unknown") assert.match(run.stderr, /PR metadata unavailable/);
+		else assert.match(run.stdout, new RegExp(`"reason":"${entry === "closed" ? "closed_pr" : "stale_head"}"`));
+	});
+}
+
+test("early collection check POST failure remains bounded and non-operational", (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 244, rawReview: defaultRawReview(), collectionGitFailure: "diff", failCheckRunPosts: true,
+	});
+	const run = spawnGithubCliMerged(fixture, 244);
+	assert.equal(run.status, 1, run.output);
+	assert.equal(runnerInvocationCount(fixture), 0);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.filter((post) => post.args.includes("repos/frankekn/needlefish/check-runs")).length, 1);
+	assert.equal(posts.filter((post) => post.args.includes("PATCH")).length, 0);
+	assert.equal(posts.filter((post) => post.args.includes("repos/frankekn/needlefish/issues/244/comments")).length, 1);
+	assert.match(run.output, /could not create pending check:.*simulated check POST failure/);
+	assert.equal(run.output.trim().split("\n").at(-1),
+		`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":244,"headSha":"${fixture.headSha}"}`);
+});
+
+test("early collection stays behind the completed same-head skip", (t) => {
+	const fixture = setupFixture(t, { prNumber: 245, rawReview: defaultRawReview(), collectionGitFailure: "diff" });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha), user: { login: "github-actions[bot]", type: "Bot" } }]);
+	seedCompletedVerdictCheck(fixture);
+	const run = spawnGithubCli(fixture, 245);
+	assert.equal(run.status, 0, run.stderr);
+	assert.match(run.stdout, /"reason":"same_head"/);
+	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.equal(runnerInvocationCount(fixture), 0);
+});
+
+test("early collection failures do not bypass the automatic recovery limit", (t) => {
+	const fixture = setupFixture(t, { prNumber: 246, rawReview: defaultRawReview(), collectionGitFailure: "diff" });
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const run = spawnGithubCliMerged(fixture, 246);
+		assert.equal(run.status, 1, run.output);
+		assert.match(run.output, attempt < 2 ? /ENOBUFS/ : /Automatic review recovery limit reached/);
+		assert.equal(run.output.trim().split("\n").at(-1),
+			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":246,"headSha":"${fixture.headSha}"}`);
+	}
+	assert.equal(runnerInvocationCount(fixture), 0);
+	const posts = readPosts(fixture.postLog);
+	assert.deepEqual(posts.filter((post) => post.args.includes("PATCH")).map((post) => post.args[3]), [
+		"repos/frankekn/needlefish/check-runs/1", "repos/frankekn/needlefish/check-runs/2", "repos/frankekn/needlefish/check-runs/3",
+	]);
 });
