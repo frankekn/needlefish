@@ -60,6 +60,7 @@ type FixtureOptions = {
 	readonly prNumber: number;
 	readonly rawReview: string;
 	readonly readmeContent?: string;
+	readonly baseReadmeContent?: string;
 	readonly staleHeadAfterReview?: boolean;
 	// Report the PR state as 'closed' from the first pull fetch (entry skip).
 	readonly closedPr?: boolean;
@@ -266,6 +267,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	});
 
 	gitText(["branch", "-M", "main"], repo);
+	if (opts.baseReadmeContent !== undefined) {
+		writeFileSync(path.join(repo, "README.md"), opts.baseReadmeContent);
+		commitAll(repo, "base content");
+	}
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
 	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
@@ -4247,4 +4252,26 @@ test("a same-head marker with a completed needs_human check still skips", async 
 		"a delivered needs_human verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+
+test("runGithub retains BASE-only quotes in the body instead of unrelated HEAD inline comments", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 242,
+		baseReadmeContent: "const removed = legacyCall();\n",
+		readmeContent: "const unrelated = newCall();\nconst added = currentCall();\n",
+		rawReview: JSON.stringify({ summary: "two findings", findings: [
+			mkFinding({ title: "removed source", quote: "const removed = legacyCall();" }),
+			mkFinding({ title: "current source", lineStart: 2, lineEnd: 2, quote: "const added = currentCall();" }),
+		], checked: ["checked"], residual_risks: [] }),
+	});
+	await runGithub(fixture.repo, 242, { timeoutMs: 1000 });
+	const posted = postedReview(readPosts(fixture.postLog), 242);
+	assert.ok(posted);
+	const payload = parseReviewPayload(posted.payload);
+	assert.equal(payload.comments.length, 1);
+	assert.equal(payload.comments[0].line, 2);
+	assert.match(String(payload.comments[0].body), /current source/);
+	assert.match(payload.body, /removed source/);
+	assert.match(payload.body, /Location unverified/);
 });

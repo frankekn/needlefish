@@ -6,7 +6,7 @@ import test from "node:test";
 import { runCodex } from "./codex";
 import { resolveRunnerBinary, runnerCommand } from "./runner-detection";
 import { RUNNER_DEFINITIONS, RUNNERS } from "./runner";
-import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { captureEnv, restoreEnv } from "./runner-test-fixtures";
 
 const RUNNER_ENV_KEYS = ["PATH", "CODEX_BIN", "CLAUDE_BIN", "OPENCODE_BIN", "NEEDLEFISH_RUNNER"] as const;
@@ -155,4 +155,20 @@ test("runnerCommand trims every *_BIN override and treats blank as unset", (t) =
     assert.equal(runnerCommand(name), "/opt/tools/agent", name);
     assert.equal(resolveRunnerBinary(name)?.command, "/opt/tools/agent", name);
   }
+});
+
+
+test("runCodex resolves a relative executable from the clone while starting outside it", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-relative-codex-"));
+  const repo = initRepo(tmp);
+  const previous = captureEnv(RUNNER_ENV_KEYS);
+  t.after(() => { restoreEnv(previous); rmSync(tmp, { recursive: true, force: true }); });
+  mkdirSync(path.join(repo, "tools"));
+  const bin = path.join(repo, "tools/codex");
+  writeFileSync(bin, ["#!/bin/sh", "cat > /dev/null", "pwd"].join("\n"));
+  chmodSync(bin, 0o755);
+  commitAll(repo, "tracked executable");
+  process.env.CODEX_BIN = "./tools/codex";
+  const output = await runCodex("prompt", { runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 });
+  assert.equal(path.basename(output.trim()), "runner-launch");
 });

@@ -14,7 +14,7 @@ interface Hit {
 function gitOutput(repoPath: string, args: readonly string[], deadlineMs?: number, allowNoMatch = false): string | null {
 	const timeout = Math.floor(Math.min(10_000, deadlineMs === undefined ? 10_000 : deadlineMs - performance.now()));
 	if (timeout <= 0) return null;
-	const res = spawnSync("git", args, { cwd: repoPath, encoding: "utf8", maxBuffer: 1024 * 1024 * 16, timeout });
+	const res = spawnSync("git", ["--no-replace-objects", ...args], { cwd: repoPath, encoding: "utf8", maxBuffer: 1024 * 1024 * 16, timeout });
 	if (res.error || (res.status !== 0 && !(allowNoMatch && res.status === 1))) return null;
 	if (deadlineMs !== undefined && performance.now() >= deadlineMs) return null;
 	return res.stdout;
@@ -79,21 +79,19 @@ function basePath(bundle: Bundle, file: string, deadlineMs?: number): string | n
 	return /^R\d+$/.test(fields[0]) && fields.length === 4 && fields[2] === file ? fields[1] : file;
 }
 
+function fixedRevision(revision: string): boolean {
+	return /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(revision);
+}
+
 function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>, deadlineMs?: number): Finding {
 	const quote = finding.quote?.trim();
 	if (!quote) return finding;
 	const unchecked: Finding = { ...finding, replacement: undefined, quoteCheck: { status: "unchecked" } };
-	if (bundle.headSha === "WORKING" || quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
+	if (!fixedRevision(bundle.headSha) || !fixedRevision(bundle.baseSha) || quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
 	const citedHits = grepAt(bundle.repoPath, bundle.headSha, quote, finding.file, deadlineMs);
 	if (!citedHits) return unchecked;
 	const atLocation = (hit: Hit) => hit.text.trim() === quote && hit.line === finding.lineStart;
 	if (citedHits.some(atLocation)) return { ...finding, quoteCheck: { status: "matched" } };
-	// Removed source can validate a finding, but never a replacement of head lines.
-	const oldPath = basePath(bundle, finding.file, deadlineMs);
-	if (oldPath === null) return unchecked;
-	const baseHits = grepAt(bundle.repoPath, bundle.baseSha, quote, oldPath, deadlineMs);
-	if (!baseHits) return unchecked;
-	if (baseHits.some(atLocation)) return { ...finding, replacement: undefined, quoteCheck: { status: "matched" } };
 	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote, undefined, deadlineMs);
 	if (!headHits) return unchecked;
 	const wholeHits = headHits.filter((hit) => hit.text.trim() === quote);
@@ -111,6 +109,12 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 			quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
 		};
 	}
+	// A BASE match cannot verify the finding's HEAD coordinates.
+	const oldPath = basePath(bundle, finding.file, deadlineMs);
+	if (oldPath === null) return unchecked;
+	const baseHits = grepAt(bundle.repoPath, bundle.baseSha, quote, oldPath, deadlineMs);
+	if (!baseHits) return unchecked;
+	if (baseHits.some(atLocation)) return unchecked;
 	return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
 }
 
@@ -118,5 +122,6 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 // never drops a finding or changes severity, so it cannot move the verdict.
 export function checkQuotes(findings: readonly Finding[], bundle: Bundle, deadlineMs?: number): Finding[] {
 	const changed = new Set(bundle.changedFiles.map((file) => file.path));
-	return findings.map((finding) => checkOne(finding, bundle, changed, deadlineMs));
+	const quoteDeadline = deadlineMs ?? performance.now() + 10_000;
+	return findings.map((finding) => checkOne(finding, bundle, changed, quoteDeadline));
 }
