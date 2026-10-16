@@ -10,7 +10,7 @@ parser.add_argument("output", type=Path)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=False)
 checks = [{"name": name, "status": "ok", "detail": "offline UI fixture"}
-          for name in ["node", "runner", "auth", "git", "base"]]
+          for name in ["node", "runner", "capability", "auth", "git", "base"]]
 doctor = json.dumps({"schemaVersion": 1, "repoRoot": str(args.output.resolve()), "checks": checks})
 scope = json.dumps({"mode": "uncommitted", "changedFiles": [{"path": "example.ts"}],
                     "patchBytes": 42, "untrackedSkipped": []})

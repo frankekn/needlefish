@@ -38,7 +38,7 @@ def rows(ids=None):
              "providerAccount": "unknown", "authentication": "unknown", "qualification": "unqualified",
              "readiness": "local-available"} for p in profiles]
 if sys.argv[1] == "doctor":
-    emit({"schemaVersion": 1, "repoRoot": str(root), "checks": [{"name": name, "status": "ok", "detail": "OFFLINE UI TEST"} for name in ["node", "runner", "auth", "git", "base"]]})
+    emit({"schemaVersion": 1, "repoRoot": str(root), "checks": [{"name": name, "status": "ok", "detail": "OFFLINE UI TEST"} for name in ["node", "runner", "capability", "auth", "git", "base"]]})
 elif sys.argv[1] == "connections":
     operation = sys.argv[2]
     request = json.load(sys.stdin) if operation in ["apply", "validate", "inspect", "review"] else None

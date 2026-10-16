@@ -107,8 +107,19 @@ extension DesktopCLI {
             }
         }
         guard output.status == 0 else { throw DesktopError.command }
-        do { return try JSONDecoder().decode(Result.self, from: output.stdout).validated() }
-        catch { throw DesktopError.invalidOutput }
+        do {
+            let result = try JSONDecoder().decode(Result.self, from: output.stdout).validated()
+            let displayed = [result.summary, result.coverage ?? ""] + result.findings.flatMap {
+                [$0.severity, $0.title, $0.file, $0.whyItBreaks, $0.suggestedFix]
+            } + result.residualRisks.map(\.text)
+            for value in sources.values where !value.isEmpty {
+                let percent = value.utf8.map { String(format: "%%%02X", $0) }.joined().lowercased()
+                guard displayed.allSatisfy({ !$0.contains(value) && !$0.lowercased().contains(percent) }) else {
+                    throw DesktopError.invalidOutput
+                }
+            }
+            return result
+        } catch { throw DesktopError.invalidOutput }
     }
 }
 

@@ -15,7 +15,14 @@ final class Onboarding: ObservableObject {
     @Published private(set) var diagnosis: Doctor?
     @Published var consentUsesConnections = false
     let connections = AdvancedConnections()
-    var canReview: Bool { trusted && accepted && (consentUsesConnections ? connections.ready && diagnosis?.scopeReady == true : diagnosis?.ready == true) }
+    var canReview: Bool { trusted && accepted && (consentUsesConnections ? connections.ready && diagnosis?.scopeReady == true && !knownMissingAmbientCodexAuth : diagnosis?.ready == true) }
+    var knownMissingAmbientCodexAuth: Bool {
+        guard consentUsesConnections, connections.credentialMode == "existing",
+              diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
+        return connections.selection.contains { id in
+            connections.document.connections.contains { $0.id == id && $0.adapter == "codex" && $0.auth == nil }
+        }
+    }
     lazy var githubSetup = GithubSetup(runtime: runtime)
     private var operation: Command?
     private var task: Task<Void, Never>?
@@ -358,6 +365,10 @@ struct ContentView: View {
             }
             Toggle("我信任並擁有此專案。 / I own and trust this project.", isOn: $model.trusted)
             Toggle("我同意傳送程式碼，並接受未知費用。 / I consent to sending code and unknown charges.", isOn: $model.accepted)
+            if model.knownMissingAmbientCodexAuth {
+                Text("選定的 Codex 既有登入不可用。請登入後重新檢查範圍。 / The selected ambient Codex sign-in is unavailable. Sign in, then inspect scope again.")
+                Button("登入 Codex / Sign in to Codex", action: model.login)
+            }
             if !model.consentUsesConnections && model.diagnosis?.ready != true {
                 Text("開始檢查前請先登入。 / Sign in before starting a review.")
                 Button("登入 OpenAI / Sign in", action: model.login)

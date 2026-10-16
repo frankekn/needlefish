@@ -71,6 +71,8 @@ struct Doctor: Decodable, Sendable {
             case ("git", _): "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project."
             case ("runner", .ok): "已找到 Codex。版本與能力仍需正式發行驗證。 / Codex found. Release qualification required."
             case ("runner", _): "Codex 不可用。請重新安裝正式 Needlefish 安裝包。 / Reinstall the supported package."
+            case ("capability", .ok): "執行器宣告可讀專案，正式資格仍未驗證。 / Runner declares repository access. Release qualification remains unverified."
+            case ("capability", _): "無法確認執行器可讀專案。請取得支援的正式版本。 / Repository capability unavailable. Get a supported release."
             case ("node", .ok): "執行環境可用。 / Runtime available."
             case ("node", _): "執行環境不相容。請重新安裝正式安裝包。 / Reinstall the supported package."
             case ("base", _): "此介面只檢查未提交變更，不需要分支基準。 / This view reviews uncommitted changes only; no branch base is required."
@@ -82,8 +84,8 @@ struct Doctor: Decodable, Sendable {
     let repoRoot: String?
     let checks: [Check]
     func validated() throws -> Doctor {
-        guard schemaVersion == 1, checks.count == 5,
-              Set(checks.map(\.name)) == Set(["node", "runner", "auth", "git", "base"]) else {
+        guard schemaVersion == 1, checks.count == 6,
+              Set(checks.map(\.name)) == Set(["node", "runner", "capability", "auth", "git", "base"]) else {
             throw DesktopError.invalidOutput
         }
         if repoAvailable {
