@@ -316,7 +316,7 @@ test("prepareRunnerSandbox leaves the prompt untouched when no LFS is configured
 function makeUnreadableAttributes(
   t: { after: (fn: () => void) => void },
   sandboxTmp: string,
-  failure?: "blob"
+  failure?: "blob" | "stage-separator"
 ): void {
   const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
   const bin = path.join(sandboxTmp, "bin");
@@ -336,7 +336,8 @@ if (args.includes("ls-files") && args.includes("*.gitattributes")) {
   try { readFileSync(file); process.exit(2); } catch {}
   writeFileSync(${JSON.stringify(path.join(sandboxTmp, "unreadable"))}, "EISDIR");
 }
-process.stdout.write(result.stdout);
+process.stdout.write(${JSON.stringify(failure)} === "stage-separator" && args.includes("ls-files") && args.includes("*.gitattributes")
+  ? "README.md\\0" : result.stdout);
 process.stderr.write(result.stderr);
 process.exit(result.status ?? 1);
 `);
@@ -348,12 +349,13 @@ process.exit(result.status ?? 1);
 for (const scenario of [
   { name: "plain attributes", attributes: "*.txt text eol=crlf\n", incomplete: false },
   { name: "LFS attributes", attributes: "*.bin filter=lfs -text\n", incomplete: true },
+  { name: "malformed stage entry", attributes: "*.bin filter=lfs -text\n", failure: "stage-separator", incomplete: true },
   { name: "failed blob read", attributes: "*.txt text\n", failure: "blob", incomplete: true },
   { name: "oversized blob", attributes: "#".repeat(256 * 1024 + 1), incomplete: true },
 ] satisfies readonly {
   name: string;
   attributes: string;
-  failure?: "blob";
+  failure?: "blob" | "stage-separator";
   incomplete: boolean;
 }[]) {
   test(`prepareRunnerSandbox handles unreadable ${scenario.name} from captured Git evidence`, (t) => {

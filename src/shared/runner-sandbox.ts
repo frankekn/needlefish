@@ -361,6 +361,10 @@ function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
   let unreadable = false;
   for (const entry of probed) {
     const separator = entry.indexOf(0x09);
+    if (separator < 0) {
+      unreadable = true;
+      continue;
+    }
     const header = entry.subarray(0, separator).toString("ascii");
     const blob = /^(?:100644|100755) ([a-f0-9]{40,64}) 0$/.exec(header)?.[1];
     const rel = entry.subarray(separator + 1);
