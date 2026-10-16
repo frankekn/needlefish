@@ -249,6 +249,19 @@ test("public launcher metadata rejects either Windows relative separator", () =>
   assert.throws(() => publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", Path: ".;C:\\Bin" }, "win32"), /depends on the target working directory/);
 });
 
+test("Windows public launcher metadata rejects paths that depend on the current drive", () => {
+  for (const command of ["/agent", "\\agent", "C:agent"]) {
+    assert.throws(() => publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: command, Path: "C:\\Bin" }, "win32"), /depends on the target working directory/);
+  }
+  for (const directory of ["/Bin", "\\Bin", "C:Bin"]) {
+    assert.throws(() => publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", Path: directory }, "win32"), /depends on the target working directory/);
+  }
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "C:\\Bin\\agent.exe" }, "win32"), ["C:\\Bin\\agent.exe"]);
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "C:/Bin/agent.exe" }, "win32"), ["C:/Bin/agent.exe"]);
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "\\\\server\\share\\agent.exe" }, "win32"), ["\\\\server\\share\\agent.exe"]);
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", Path: "\\\\server\\share", PathExt: ".EXE" }, "win32"), ["\\\\server\\share\\agent", "\\\\server\\share\\agent.EXE"]);
+});
+
 test("public launcher metadata preserves POSIX case sensitivity and candidate order", () => {
   assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", PATH: "/first:/second", Path: "/ignored", PATHEXT: ".EXE" }, "linux"), ["/first/agent", "/second/agent"]);
   assert.deepEqual(publicLauncherCandidates({ needlefish_acp_bin: "agent", PATH: "/first" }, "linux"), []);
