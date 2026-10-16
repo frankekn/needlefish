@@ -2,6 +2,7 @@
 """Create a fake CLI for native UI smoke checks. Never calls a model or reads credentials."""
 import argparse
 import json
+import shlex
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -23,11 +24,11 @@ result = json.dumps({"schemaVersion": 1, "verdict": "changes_requested",
                      "residualRisks": []})
 script = args.output / "fake-cli"
 script.write_text("#!/bin/sh\n" + f"""case "$1" in
- doctor) printf '%s' '{doctor}';;
+ doctor) printf '%s' {shlex.quote(doctor)};;
  login) printf '%s\\n' 'https://auth.openai.com/codex/device' 'Enter this one-time code' 'TEST-00000'; sleep 120;;
  *) case "$*" in
-      *--dry-run*) printf '%s' '{scope}';;
-      *) sleep 1; printf '%s' '{result}';;
+      *--dry-run*) printf '%s' {shlex.quote(scope)};;
+      *) sleep 1; printf '%s' {shlex.quote(result)};;
     esac;;
 esac
 """)

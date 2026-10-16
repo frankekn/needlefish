@@ -42,6 +42,7 @@ final class DesktopTests: XCTestCase {
             let json = doctorJSON.replacingOccurrences(of: #""auth","status":"ok""#, with: "\"auth\",\"status\":\"\(status)\"")
             let report = try JSONDecoder().decode(Doctor.self, from: Data(json.utf8)).validated()
             XCTAssertEqual(report.ready, false)
+            XCTAssertEqual(report.scopeReady, true)
         }
     }
     func testUncommittedReviewDoesNotRequireBranchBase() throws {
@@ -127,6 +128,12 @@ final class DesktopTests: XCTestCase {
         catch { XCTAssertEqual(error.localizedDescription, DesktopError.cancelled.localizedDescription) }
         XCTAssertEqual(try String(contentsOf: cleaned, encoding: .utf8), "finished")
     }
+    func testCommandCapturesBothStreamsThroughPipes() async throws {
+        let runtime = try fixture("if [ -p /dev/fd/1 ] && [ -p /dev/fd/2 ]; then printf pipes; printf diagnostic >&2; else printf regular-files; fi")
+        let output = try await DesktopCLI(runtime: runtime).call([], command: Command())
+        XCTAssertEqual(String(decoding: output.stdout, as: UTF8.self), "pipes")
+        XCTAssertEqual(String(decoding: output.stderr, as: UTF8.self), "diagnostic")
+    }
     func testOversizedOutputIsNotParsedAsAResult() async throws {
         let runtime = try fixture("head -c 9000000 /dev/zero")
         do {
@@ -173,13 +180,37 @@ final class DesktopTests: XCTestCase {
             XCTAssertEqual(kill(pid, 0), -1)
         }
     }
-    func testBoundedReadRejectsExtraBytesAndPreservesExactOutput() throws {
-        let root = try temporary()
-        let file = root.appendingPathComponent("output")
-        try Data("hello!".utf8).write(to: file)
-        XCTAssertEqual(try readBounded(file, limit: 6), Data("hello!".utf8))
-        XCTAssertThrowsError(try readBounded(file, limit: 5)) { error in
-            XCTAssertEqual(error.localizedDescription, DesktopError.outputLimit.localizedDescription)
+    func testBothStreamsPreserveExactLimitWithoutDeadlock() async throws {
+        let runtime = try fixture("head -c 8388608 /dev/zero >&2 &\nhead -c 8388608 /dev/zero\nwait")
+        let output = try await DesktopCLI(runtime: runtime).call([], command: Command(), timeout: 10)
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(output.stdout, Data(repeating: 0, count: 8 * 1024 * 1024))
+        XCTAssertEqual(output.stderr, Data(repeating: 0, count: 8 * 1024 * 1024))
+    }
+    func testBurstOnEitherStreamIsBoundedAndKillsProducer() async throws {
+        for redirect in ["", ">&2"] {
+            let root = try temporary()
+            let finished = root.appendingPathComponent("finished")
+            let runtime = try fixture("head -c 134217728 /dev/zero \(redirect)\nprintf escaped > '\(finished.path)'")
+            let work = root.appendingPathComponent("work")
+            do {
+                _ = try await Command().run(runtime.command([]), environment: ["PATH": "/bin:/usr/bin"], temporary: work, timeout: 10)
+                XCTFail("Burst must stop at capture boundary")
+            } catch { XCTAssertEqual(error.localizedDescription, DesktopError.outputLimit.localizedDescription) }
+            XCTAssertEqual(fm.fileExists(atPath: finished.path), false)
+            XCTAssertEqual(fm.fileExists(atPath: work.path), false)
+        }
+    }
+    func testCancelledAndTimedOutCompletePassJSONCannotSucceed() async throws {
+        for cancel in [true, false] {
+            let runtime = try fixture("printf '%s' '\(resultJSON("pass"))'\nsleep 120")
+            let root = try temporary()
+            let command = Command()
+            if cancel { command.cancel() }
+            do {
+                _ = try await command.run(runtime.command([]), environment: ["PATH": "/bin:/usr/bin"], temporary: root.appendingPathComponent("work"), timeout: 0.1)
+                XCTFail("Terminal failure must override valid JSON")
+            } catch { XCTAssertEqual(error.localizedDescription, (cancel ? DesktopError.cancelled : .timeout).localizedDescription) }
         }
     }
     func testSpawnFailureOwnsNoGroupAndRemovesTemporaryOutput() async throws {
@@ -343,6 +374,69 @@ final class OnboardingTests: XCTestCase {
         try await waitForIdle(model)
         guard case .message(let text) = model.state else { return XCTFail("Expected no changes") }
         XCTAssertEqual(text, "沒有可檢查的變更。這不代表整個專案已驗證安全。 / No changes to review. Your project has not been verified safe.")
+    }
+    func testUnsignedUserCanInspectScopeButCannotStartReview() async throws {
+        let fixture = DesktopTests()
+        let doctor = fixture.doctorJSON.replacingOccurrences(of: #""auth","status":"ok""#, with: #""auth","status":"fail""#)
+        let runtime = try fixture.fixture("case \"$1\" in doctor) printf '%s' '\(doctor)';; *) case \"$*\" in *--dry-run*) printf '%s' '\(fixture.scopeJSON)';; *) printf '%s' '\(fixture.resultJSON("pass"))';; esac;; esac")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let model = Onboarding(runtime: runtime)
+        model.repo = URL(fileURLWithPath: "/project")
+        model.diagnose()
+        try await waitForIdle(model)
+        model.prepare()
+        try await waitForIdle(model)
+        guard case .consent(let scope) = model.state else { return XCTFail("Scope inspection must work without auth") }
+        XCTAssertEqual(scope.changedFiles[0].path, "src/example.ts")
+        model.trusted = true
+        model.accepted = true
+        model.review()
+        try await waitForIdle(model)
+        guard case .consent = model.state else { return XCTFail("Unsigned review must remain at consent") }
+    }
+    func testSignedInUserCanReviewAfterBothConsents() async throws {
+        let fixture = DesktopTests()
+        let runtime = try fixture.fixture("case \"$1\" in doctor) printf '%s' '\(fixture.doctorJSON)';; *) case \"$*\" in *--dry-run*) printf '%s' '\(fixture.scopeJSON)';; *) printf '%s' '\(fixture.resultJSON("pass"))';; esac;; esac")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let model = Onboarding(runtime: runtime)
+        model.repo = URL(fileURLWithPath: "/project")
+        model.diagnose()
+        try await waitForIdle(model)
+        model.prepare()
+        try await waitForIdle(model)
+        model.trusted = true
+        XCTAssertEqual(model.canReview, false)
+        model.accepted = true
+        XCTAssertEqual(model.canReview, true)
+        model.review()
+        try await waitForIdle(model)
+        guard case .result(let result, let demo) = model.state else { return XCTFail("Expected signed-in review") }
+        XCTAssertEqual(result.summary, "Review complete")
+        XCTAssertEqual(demo, false)
+    }
+    func testDiagnosticExportCannotReplaceAnActiveOperation() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("needlefish-busy-export-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = Onboarding()
+        model.state = .busy("Review in progress")
+        model.saveDiagnostics("diagnostic preview", to: root)
+        guard case .busy(let label) = model.state else { return XCTFail("Export must preserve the active operation") }
+        XCTAssertEqual(label, "Review in progress")
+        XCTAssertEqual(FileManager.default.fileExists(atPath: root.path), false)
+    }
+    func testDiagnosticExportReportsFailureAndSuccess() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("needlefish-export-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = Onboarding()
+        model.saveDiagnostics("diagnostic preview", to: root.appendingPathComponent("missing/report.txt"))
+        guard case .message(let failure) = model.state else { return XCTFail("Expected export failure") }
+        XCTAssertEqual(failure, "無法儲存診斷。請選擇可寫入的位置並重試。 / Could not save diagnostics. Choose a writable location and retry.")
+        let destination = root.appendingPathComponent("report.txt")
+        model.saveDiagnostics("diagnostic preview", to: destination)
+        guard case .message(let success) = model.state else { return XCTFail("Expected export success") }
+        XCTAssertEqual(success, "已匯出診斷。 / Diagnostics exported.")
+        XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "diagnostic preview")
     }
     func testConsentIsRequiredBeforeReview() async throws {
         let fixture = DesktopTests()

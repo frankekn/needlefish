@@ -12,6 +12,8 @@ final class Onboarding: ObservableObject {
     @Published var trusted = false
     @Published var accepted = false
     private(set) var runtime: Runtime?
+    @Published private(set) var diagnosis: Doctor?
+    var canReview: Bool { trusted && accepted && diagnosis?.ready == true }
     private var operation: Command?
     private var task: Task<Void, Never>?
     var canCancel: Bool { operation != nil }
@@ -68,7 +70,7 @@ final class Onboarding: ObservableObject {
             } catch DesktopError.installationBusy {
                 state = .message(DesktopError.installationBusy.localizedDescription)
             } catch {
-                state = .message("安裝或回復失敗。上一個可用版本仍保留。請取得官方簽章安裝包。 / Install or rollback failed. The last usable version is retained. Get the official signed package.")
+                state = .message("安裝或回復失敗。上一個可用版本仍保留。請取得官方簽章安裝包。失敗副本僅盡力清理；若仍存在，請在 Application Support 的 Desktop 資料夾確認後移至垃圾桶。 / Install or rollback failed. The last usable version is retained. Get the official signed package. Failed-copy cleanup is best effort; inspect the Desktop folder in Application Support and move the failed copy to Trash if it remains.")
             }
             task = nil
         }
@@ -122,8 +124,10 @@ final class Onboarding: ObservableObject {
         guard let repo else { return }
         trusted = false
         accepted = false
+        diagnosis = nil
         start("正在診斷。沒有模型呼叫。 / Checking environment. No model call.") { cli, command in
             let report = try await cli.doctor(repo: repo, command: command)
+            self.diagnosis = report
             if let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
             return .diagnosis(report)
         }
@@ -154,13 +158,14 @@ final class Onboarding: ObservableObject {
             }
             guard let repo = self.repo else { return .welcome }
             let report = try await cli.doctor(repo: repo, command: command)
+            self.diagnosis = report
             if let root = report.repoRoot { self.repo = URL(fileURLWithPath: root) }
             return .diagnosis(report)
         }
     }
 
     func review() {
-        guard let repo, trusted, accepted, case .consent = state else { return }
+        guard let repo, canReview, case .consent = state else { return }
         start("正在檢查本機變更副本。可能產生費用。 / Reviewing a copy of local changes. Charges may apply.") { cli, command in
             .result(try await cli.review(repo: repo, command: command), demo: false)
         }
@@ -183,7 +188,17 @@ final class Onboarding: ObservableObject {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "needlefish-diagnostics.txt"
-        if panel.runModal() == .OK, let url = panel.url { try? content.write(to: url, atomically: true, encoding: .utf8) }
+        if panel.runModal() == .OK, let url = panel.url { saveDiagnostics(content, to: url) }
+    }
+
+    func saveDiagnostics(_ content: String, to url: URL) {
+        guard !busy else { return }
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            state = .message("已匯出診斷。 / Diagnostics exported.")
+        } catch {
+            state = .message("無法儲存診斷。請選擇可寫入的位置並重試。 / Could not save diagnostics. Choose a writable location and retry.")
+        }
     }
 }
 
@@ -212,7 +227,7 @@ struct ContentView: View {
                 Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(model.busy)
                 Button("離線範例 / Offline example", action: model.demo).disabled(model.busy)
                 Spacer()
-                Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics)
+                Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics).disabled(model.busy)
             }
         }
         .padding(24)
@@ -247,7 +262,7 @@ struct ContentView: View {
             HStack {
                 Button("重新診斷 / Check again", action: model.diagnose)
                 Button("登入 OpenAI / Sign in", action: model.login)
-                Button("查看檢查範圍 / Review scope", action: model.prepare).disabled(!report.ready)
+                Button("查看檢查範圍 / Review scope", action: model.prepare).disabled(!report.scopeReady)
             }
         case .consent(let scope):
             Text("開始前確認 / Before you start").font(.title2)
@@ -262,7 +277,11 @@ struct ContentView: View {
             }
             Toggle("我信任並擁有此專案。 / I own and trust this project.", isOn: $model.trusted)
             Toggle("我同意傳送程式碼，並接受未知費用。 / I consent to sending code and unknown charges.", isOn: $model.accepted)
-            Button("開始檢查 / Start review", action: model.review).disabled(!model.trusted || !model.accepted)
+            if model.diagnosis?.ready != true {
+                Text("開始檢查前請先登入。 / Sign in before starting a review.")
+                Button("登入 OpenAI / Sign in", action: model.login)
+            }
+            Button("開始檢查 / Start review", action: model.review).disabled(!model.canReview)
         case .result(let result, let demo):
             if demo { Text("離線範例。不是你的專案結果。 / OFFLINE EXAMPLE. Not your project result.").font(.title2).foregroundStyle(.orange) }
             Text(result.verdict.title).font(.title2).bold()

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import hashlib
 import importlib.util
+import json
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +14,14 @@ spec.loader.exec_module(package)
 
 
 class PackagingTests(unittest.TestCase):
+    def test_smoke_fixture_accepts_apostrophe_in_path(self):
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "o'hare"
+            subprocess.run([sys.executable, str(Path(__file__).with_name("smoke-fixture.py")), str(output)],
+                           check=True, capture_output=True, text=True)
+            result = subprocess.run([str(output / "fake-cli"), "doctor"], check=True, capture_output=True, text=True)
+            self.assertEqual(json.loads(result.stdout)["repoRoot"], str(output.resolve()))
+
     def test_unapproved_release_is_blocked_before_executing_artifacts(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaisesRegex(ValueError, "Release blocked"):

@@ -1,12 +1,31 @@
 import Darwin
 import Foundation
 
-func readBounded(_ url: URL, limit: Int) throws -> Data {
-    let handle = try FileHandle(forReadingFrom: url)
-    defer { try? handle.close() }
-    let data = try handle.read(upToCount: limit + 1) ?? Data()
-    guard data.count <= limit else { throw DesktopError.outputLimit }
-    return data
+private struct CapturedStream {
+    let pipe = Pipe()
+    private(set) var data = Data()
+    private(set) var finished = false
+    static let limit = 8 * 1024 * 1024
+
+    init() throws {
+        guard fcntl(pipe.fileHandleForReading.fileDescriptor, F_SETFL, O_NONBLOCK) == 0 else {
+            throw DesktopError.command
+        }
+    }
+
+    mutating func drain() throws -> Bool {
+        guard !finished else { return false }
+        var chunk = [UInt8](repeating: 0, count: 64 * 1024)
+        let count = read(pipe.fileHandleForReading.fileDescriptor, &chunk, chunk.count)
+        if count < 0 {
+            if errno == EAGAIN || errno == EINTR { return false }
+            throw DesktopError.command
+        }
+        if count == 0 { finished = true }
+        guard count <= Self.limit - data.count else { throw DesktopError.outputLimit }
+        data.append(contentsOf: chunk.prefix(count))
+        return count > 0
+    }
 }
 
 struct CommandOutput: Sendable {
@@ -26,8 +45,14 @@ final class Command: @unchecked Sendable {
             try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
             defer { try? FileManager.default.removeItem(at: temporary) }
-            let stdoutURL = temporary.appendingPathComponent("stdout")
-            let stderrURL = temporary.appendingPathComponent("stderr")
+            var stdout = try CapturedStream()
+            var stderr = try CapturedStream()
+            defer {
+                try? stdout.pipe.fileHandleForReading.close()
+                try? stdout.pipe.fileHandleForWriting.close()
+                try? stderr.pipe.fileHandleForReading.close()
+                try? stderr.pipe.fileHandleForWriting.close()
+            }
             var actions: posix_spawn_file_actions_t?
             var attributes: posix_spawnattr_t?
             posix_spawn_file_actions_init(&actions)
@@ -37,8 +62,8 @@ final class Command: @unchecked Sendable {
                 posix_spawnattr_destroy(&attributes)
             }
             posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
-            posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, stdoutURL.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-            posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, stderrURL.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+            posix_spawn_file_actions_adddup2(&actions, stdout.pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
+            posix_spawn_file_actions_adddup2(&actions, stderr.pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
             posix_spawn_file_actions_addchdir_np(&actions, temporary.path)
             posix_spawnattr_setpgroup(&attributes, 0)
             var defaults = sigset_t()
@@ -60,6 +85,8 @@ final class Command: @unchecked Sendable {
                 }
             }
             guard spawned == 0 else { throw DesktopError.command }
+            try? stdout.pipe.fileHandleForWriting.close()
+            try? stderr.pipe.fileHandleForWriting.close()
             var status: Int32 = 0
             do {
                 defer { kill(-child, SIGKILL) }
@@ -68,6 +95,13 @@ final class Command: @unchecked Sendable {
                 var stopDate: Date?
                 var previousCode: String?
                 while true {
+                    do {
+                        _ = try stdout.drain()
+                        _ = try stderr.drain()
+                    } catch {
+                        failure = error as? DesktopError ?? .command
+                        kill(-child, SIGKILL)
+                    }
                     let waited = waitpid(child, &status, WNOHANG)
                     if waited == child { break }
                     if waited < 0 {
@@ -77,10 +111,6 @@ final class Command: @unchecked Sendable {
                     let wasCancelled = lock.withLock { cancelled }
                     if wasCancelled { failure = .cancelled }
                     if Date() >= deadline && failure == nil { failure = .timeout }
-                    for url in [stdoutURL, stderrURL] {
-                        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                        if size > 8 * 1024 * 1024 { failure = .outputLimit }
-                    }
                     if failure != nil {
                         // The CLI owns detached runner cleanup. Allow its termination finalizer to finish.
                         if let stopDate {
@@ -90,21 +120,25 @@ final class Command: @unchecked Sendable {
                             stopDate = Date()
                         }
                     }
-                    if let data = try? readBounded(stdoutURL, limit: 64 * 1024),
-                       let code = deviceCode(String(decoding: data, as: UTF8.self)), code != previousCode {
+                    if stdout.data.count <= 64 * 1024,
+                       let code = deviceCode(String(decoding: stdout.data, as: UTF8.self)), code != previousCode {
                         previousCode = code
                         await progress(code)
                     }
-                    try? await Task.sleep(for: .milliseconds(100))
+                    var descriptors = [
+                        pollfd(fd: stdout.finished ? -1 : stdout.pipe.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0),
+                        pollfd(fd: stderr.finished ? -1 : stderr.pipe.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0),
+                    ]
+                    _ = poll(&descriptors, nfds_t(descriptors.count), 100)
                 }
                 let wasCancelled = lock.withLock { cancelled }
                 if wasCancelled { failure = .cancelled }
                 if let failure { throw failure }
             }
-            let stdout = try readBounded(stdoutURL, limit: 8 * 1024 * 1024)
-            let stderr = try readBounded(stderrURL, limit: 8 * 1024 * 1024)
+            while try stdout.drain() {}
+            while try stderr.drain() {}
             let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
-            return CommandOutput(status: code, stdout: stdout, stderr: stderr)
+            return CommandOutput(status: code, stdout: stdout.data, stderr: stderr.data)
         }.value
     }
 }
