@@ -381,3 +381,17 @@ for(const budget of [undefined,"invalid"]){
     assert.equal(run.status,1);assert.match(run.stderr,/NEEDLEFISH_REVIEW_TIMEOUT_MS/);assert.equal(existsSync(fixture.marker),false);
   });
 }
+
+for (const flags of [["--dry-run", "--json"], ["--json"], []]) {
+  test(`CLI refuses capped input without a result or cache (${flags.join(" ") || "markdown"})`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: "docs/guide.md", content: "guide\n" }]);
+    writeFileSync(path.join(fixture.repo, "README.md"), "Updated documentation\n");
+    writeFileSync(path.join(fixture.repo, "source.ts"), "x".repeat(201 * 1024));
+    const result = runCli(fixture, ["--repo", fixture.repo, ...flags]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Untracked file contents omitted: "source\.ts" \(per_file_cap\)/);
+    assert.equal(result.stdout, "");
+    assert.equal(existsSync(fixture.marker), false);
+    assert.equal(existsSync(cacheFile(fixture)), false);
+  });
+}

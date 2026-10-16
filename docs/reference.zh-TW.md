@@ -90,6 +90,10 @@ Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在�
 未完成或需要人工確認，不表示已證明程式有錯。重試或請維護者檢查未審範圍。
 Docs-only policy skip 會明確顯示未呼叫模型，除非設為 `NEEDLEFISH_NO_FAST_PATH=1`。
 
+未追蹤檔案若超過單檔 200 KiB 或合計 1 MiB 上限而未納入，審查會拒絕執行，
+包含 docs-only policy skip。指令回傳 exit 1，不寫入新的審查結果。
+請將省略的檔案加入暫存區以納入 Git diff，或縮小檔案後重試。
+
 ### 基準偵測
 
 `--base` → `origin/HEAD` → `main`。用 `--base <ref>` 覆寫。

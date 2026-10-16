@@ -1154,6 +1154,11 @@ export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
 		readonly detail: string;
 	} | null;
 } {
+	if (bundle.untrackedSkipped?.length) {
+		const omitted = bundle.untrackedSkipped.slice(0, 10)
+			.map((file) => `${JSON.stringify(file.path.slice(0, 240))} (${file.reason})`).join(", ");
+		throw new Error(`Untracked file contents omitted: ${omitted}${bundle.untrackedSkipped.length > 10 ? "; additional files omitted" : ""}. Stage these files or reduce their size before reviewing.`);
+	}
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
 	const binaryOnlyFastPath = !bundle.patch.trim() && Boolean(bundle.binaryFiles?.length);
 	let capability: ReturnType<typeof reviewPlan>["capability"] = null;

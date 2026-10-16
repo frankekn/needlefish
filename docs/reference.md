@@ -159,6 +159,11 @@ Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
 pass by policy with an explicit "Model review skipped
 by policy" notice. No model has reviewed that change.
 
+Untracked files omitted by the 200 KiB per-file or 1 MiB total content limit
+prevent review, including docs-only policy skips.
+The command exits 1 without writing a new review result. Stage the omitted
+files to include their Git diff, or reduce their size before reviewing.
+
 ### Base detection
 
 `--base` → `origin/HEAD` → `main`. Pass `--base <ref>` to override.
