@@ -812,7 +812,7 @@ function postReview(
 	headSha: string,
 	body: string,
 	comments: readonly InlineComment[],
-	appBotLogin: string,
+	appBotLogin: string | null,
 ): number | null {
 	const payload = JSON.stringify({
 		commit_id: headSha,
@@ -934,14 +934,14 @@ export function findPreviousReview(
 		if (!state) continue;
 		const id = item.id;
 		if (typeof id !== "number") continue;
-		if (!isTrustedStateAuthor(item, selfLogin)) {
-			if (expectedAppId === null || state.v !== 2 || state.delivery.appId !== expectedAppId ||
+		if (expectedAppId !== null) {
+			if (state.v !== 2 || state.delivery.appId !== expectedAppId ||
 				nestedString(item, "user", "type") !== "Bot") continue;
 			const checks = readCheckRuns(repo, state.headSha);
 			if (completedCheckVerdict(state, checks, prNumber) === null) continue;
 			const check = checks.find((check) => check.id === state.delivery.checkId);
 			if (!isTrustedStateAuthor(item, selfLogin, customAppBotLogin(check?.app, expectedAppId))) continue;
-		}
+		} else if (!isTrustedStateAuthor(item, selfLogin)) continue;
 		return { id, state };
 	}
 	return null;
@@ -954,8 +954,9 @@ function ownedCheckAppId(app: unknown, expectedAppId: number | null): number | n
 	return app.id;
 }
 
-function customAppBotLogin(app: unknown, expectedAppId: number | null): string {
-	if (expectedAppId === null || ownedCheckAppId(app, expectedAppId) === null || !isRecord(app)) return "";
+function customAppBotLogin(app: unknown, expectedAppId: number | null): string | null {
+	if (expectedAppId === null) return null;
+	if (ownedCheckAppId(app, expectedAppId) === null || !isRecord(app)) return "";
 	const slug = stringField(app, "slug");
 	return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(slug) ? `${slug}[bot]` : "";
 }
@@ -963,7 +964,7 @@ function customAppBotLogin(app: unknown, expectedAppId: number | null): string {
 // S5a: create the check as in_progress BEFORE any model work so a PR always
 // shows whether a review is running on its latest head. All completions update
 // this same check by id. An unknown id cannot authorize a completion.
-function createPendingCheck(repo: string, headSha: string, round: CheckRound, expectedAppId: number | null): { id: number; appId: number; botLogin: string } | null {
+function createPendingCheck(repo: string, headSha: string, round: CheckRound, expectedAppId: number | null): { id: number; appId: number; botLogin: string | null } | null {
 	try {
 		const created = reconciledPost(
 			["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
@@ -1107,7 +1108,7 @@ function checkRunTitle(result: ReviewResult): string {
 	return base;
 }
 
-function postIssueComment(repo: string, prNumber: number, body: string, appBotLogin: string): void {
+function postIssueComment(repo: string, prNumber: number, body: string, appBotLogin: string | null): void {
 	const endpoint = `repos/${repo}/issues/${prNumber}/comments`;
 	const read = (): JsonRecord[] => {
 		const raw = ghJson(["api", "--paginate", "--slurp", endpoint]);
@@ -1143,7 +1144,7 @@ class RecoveryLimitError extends Error {
 
 // S3: infra-failure comment posted alongside the red check so a red X always
 // has something to read in the PR timeline. Fail-soft: never blocks the check.
-function postErrorComment(repo: string, prNumber: number, msg: string, advice = "Review did not complete. Re-run the review.", appBotLogin = ""): void {
+function postErrorComment(repo: string, prNumber: number, msg: string, advice = "Review did not complete. Re-run the review.", appBotLogin: string | null = null): void {
 	const body =
 		`⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n` +
 		"```\n" +
@@ -1191,7 +1192,7 @@ function postRoundComment(
 	repo: string,
 	prNumber: number,
 	body: string,
-	appBotLogin: string,
+	appBotLogin: string | null,
 ): void {
 	postIssueComment(repo, prNumber, body, appBotLogin);
 }
@@ -1238,7 +1239,8 @@ const ACTIONS_BOT_LOGIN = "github-actions[bot]";
 //      cannot obtain type "Bot", and "[" / "]" are not legal in a human
 //      username, so neither half is forgeable from a normal account.
 //
-//   3. The pinned App's check API slug plus "[bot]", with user.type "Bot".
+//   3. An explicit App pin replaces both defaults with its check API slug
+//      plus "[bot]", with user.type "Bot". A missing slug trusts nobody.
 //      Prior markers also need their matching completed check receipt.
 //
 // Deliberately NOT trusted:
@@ -1248,14 +1250,12 @@ const ACTIONS_BOT_LOGIN = "github-actions[bot]";
 //   - an unpinned Bot-typed "[bot]" account. A different GitHub App installed on
 //     the repo is not us, and trusting it lets it suppress our review.
 //
-export function isTrustedStateAuthor(item: JsonRecord, selfLogin: string, appBotLogin = ""): boolean {
+export function isTrustedStateAuthor(item: JsonRecord, selfLogin: string, appBotLogin: string | null = null): boolean {
 	const login = nestedString(item, "user", "login");
 	if (login === "") return false;
+	if (appBotLogin !== null) return login === appBotLogin && nestedString(item, "user", "type") === "Bot";
 	if (selfLogin !== "" && login === selfLogin) return true;
-	return (
-		(login === ACTIONS_BOT_LOGIN || (appBotLogin !== "" && login === appBotLogin)) &&
-		nestedString(item, "user", "type") === "Bot"
-	);
+	return login === ACTIONS_BOT_LOGIN && nestedString(item, "user", "type") === "Bot";
 }
 
 // Self-hosted runners often authenticate gh with a PAT, so Needlefish's own

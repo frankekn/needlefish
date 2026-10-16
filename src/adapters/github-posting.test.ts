@@ -4835,10 +4835,10 @@ for (const storedReviewPost5xx of [false, true]) {
 	});
 }
 
-for (const mutation of ["other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round"]) {
+for (const mutation of ["actions-bot", "self-user", "other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round"]) {
 	test(`pinned custom App rejects receipt identity ${mutation}`, (t) => {
 		const fixture = setupFixture(t, { prNumber: 151, rawReview: defaultRawReview(), customCheckAppId: 4812,
-			authorLogin: "private-review-app[bot]", failUserApi: true });
+			authorLogin: mutation === "self-user" ? "review-pat" : "private-review-app[bot]", failUserApi: mutation !== "self-user" });
 		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
 		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
 		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
@@ -4847,6 +4847,8 @@ for (const mutation of ["other-bot", "user-type", "wrong-app", "missing-slug", "
 		const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
 		assert.ok(Array.isArray(reviews) && isRecordLike(reviews[0]));
 		assert.ok(Array.isArray(checks) && isRecordLike(checks[0]));
+		if (mutation === "actions-bot") reviews[0].user = { login: "github-actions[bot]", type: "Bot" };
+		if (mutation === "self-user") reviews[0].user = { login: "review-pat", type: "User" };
 		if (mutation === "other-bot") reviews[0].user = { login: "other-app[bot]", type: "Bot" };
 		if (mutation === "user-type") reviews[0].user = { login: "private-review-app[bot]", type: "User" };
 		if (mutation === "wrong-app") checks[0].app = { id: 9999, slug: "private-review-app" };
@@ -4876,4 +4878,18 @@ test("pinned custom App unreadable receipt history fails with an owned terminal 
 	assert.equal(runnerInvocationCount(fixture), 2);
 	assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/152/reviews")).length, 1);
 	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: review failed");
+});
+
+test("pinned custom App cannot reconcile an Actions-authored review POST", (t) => {
+	const fixture = setupFixture(t, { prNumber: 249, rawReview: defaultRawReview(), customCheckAppId: 4812,
+		authorLogin: "github-actions[bot]", failUserApi: true, storedReviewPost5xx: true });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	const result = spawnGithubCli(fixture, 249);
+	assert.equal(result.status, 1, result.stderr);
+	const posts = readPosts(fixture.postLog);
+	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/249/reviews")).length, 1);
+	assert.equal(lastCheckCompletion(posts).output?.title, "Needlefish: review failed");
+	assert.match(result.stderr, /Cannot verify ownership of the stored review/);
 });
