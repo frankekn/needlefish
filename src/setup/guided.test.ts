@@ -31,7 +31,7 @@ if(args[0]==='secret'){state.secret=true;save();process.exit(0)}
 const endpoint=args.find(arg=>arg.startsWith('repos/')||arg.startsWith('user/repos'));
 const body=input?JSON.parse(input):{};
 if(endpoint.startsWith('user/repos'))out([[{full_name:'owner/repo',archived:false,permissions:{admin:true},private:true},{full_name:'owner/read',archived:false,permissions:{admin:false}}]]);
-if(endpoint==='repos/owner/repo')out({default_branch:'main',permissions:{admin:state.admin}});
+if(endpoint.toLowerCase()==='repos/owner/repo')out({full_name:'owner/repo',default_branch:'main',permissions:{admin:state.admin}});
 if(endpoint.endsWith('/actions/permissions'))out({enabled:state.actions,allowed_actions:state.policy||'all'});
 if(endpoint.endsWith('/actions/permissions/selected-actions'))out({github_owned_allowed:state.githubOwned===true,verified_allowed:false,patterns_allowed:state.patterns||[]});
 if(endpoint.startsWith('repos/frankekn/needlefish/contents/action.yml'))out({encoding:'base64',content:Buffer.from('runs:\\n  steps:\\n    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1').toString('base64')});
@@ -48,7 +48,8 @@ if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual 
 if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch)out({object:{sha:'setup-sha'}});missing()}
 if(endpoint.endsWith('/git/ref/heads/main'))out({object:{sha:'base-sha'}});
 if(endpoint.endsWith('/git/commits/base-sha'))out({tree:{sha:'base-tree'}});
-if(endpoint.endsWith('/git/commits/setup-sha'))out({message:state.unowned?'human commit':'Needlefish setup template 1'});
+if(endpoint.endsWith('/git/commits/setup-sha'))out({message:state.unowned?'human commit':'Needlefish setup template 1',parents:[{sha:'base-sha'}]});
+if(state.merged&&endpoint.includes('/compare/main...'))out({total_commits:0,files:[]});
 if(endpoint.includes('/compare/'))out({total_commits:1,files:state.extra?[{filename:'.github/workflows/needlefish.yml'},{filename:'README.md'}]:[{filename:'.github/workflows/needlefish.yml'}]});
 if(endpoint.endsWith('/git/trees')){if(body.base_tree!=='base-tree'||body.tree.length!==1||body.tree[0].content!==template)throw Error('unexpected tree');out({sha:'setup-tree'})}
 if(endpoint.endsWith('/git/commits'))out({sha:'setup-sha'});
@@ -249,6 +250,42 @@ test("the exact previous generated workflow receives one update PR while manual 
     const result = f.run(["create-pr", ...remote, "--confirm"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+  }
+  assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
+});
+
+
+for (const state of [{ modified: true }, { duplicate: true }, { branch: true, unowned: true }, { branch: true, extra: true }, { branch: true, pr: true, wrongBase: true }]) {
+  test(`credential provisioning refuses conflicted setup before consuming stdin ${JSON.stringify(state)}`, t => {
+    const f = fixture(t, state);
+    const result = f.run(["set-secret", ...remote, "--confirm", "--replace-secret"], "controlled-never-sent-credential");
+    assert.equal(result.status, 1);
+    assert.match(JSON.parse(result.stdout).message, /Resolve the setup conflict/);
+    assert.ok(f.history().every(call => call.args[0] !== "secret"));
+    assert.ok(!result.stdout.includes("controlled-never-sent-credential"));
+  });
+}
+
+test("a normally merged setup keeps its owned head branch without becoming conflicted", t => {
+  const f = fixture(t, { merged: true, branch: true });
+  const refreshed = f.run(["status", ...remote]);
+  assert.equal(refreshed.status, 0, refreshed.stderr);
+  assert.equal(JSON.parse(refreshed.stdout).phase, "merged");
+  assert.equal(JSON.parse(refreshed.stdout).conflict, null);
+  assert.equal(f.run(["create-pr", ...remote, "--confirm"]).status, 0);
+  const secret = f.run(["set-secret", ...remote, "--confirm", "--replace-secret"], "controlled-placeholder");
+  assert.equal(secret.status, 0, secret.stderr);
+  assert.equal(JSON.parse(secret.stdout).phase, "merged");
+  assert.ok(f.history().every(call => !call.args.includes("--method")));
+});
+
+test("repository case variants converge to the canonical setup PR", t => {
+  const f = fixture(t);
+  for (const repository of ["Owner/Repo", "OWNER/REPO"]) {
+    const result = f.run(["create-pr", "--repository", repository, "--confirm", "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+    assert.equal(JSON.parse(result.stdout).repository, "owner/repo");
   }
   assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
 });

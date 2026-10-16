@@ -97,23 +97,31 @@ function actionsPolicy(repository: string, admin: boolean) {
     ? { allowed: true, reason: "The selected-actions policy permits the pinned workflow and composite dependencies. Hosted-runner capacity and AI quota remain unverified." }
     : { allowed: false, reason: `Ask a repository or organization administrator to permit these pinned actions: ${denied.join(", ")}. Verified-publisher policy alone is not assumed to allow these repositories.` };
 }
-function setupBranch(repository: string, defaultBranch: string) {
+function setupBranch(repository: string, defaultBranch: string, requireOpenDiff: boolean) {
   const value = api(`repos/${repository}/git/ref/heads/${BRANCH}`, undefined, undefined, true);
   if (value === undefined) return undefined;
   const head = string(object(object(value).object ?? null).sha);
   const commit = object(required(`repos/${repository}/git/commits/${head}`));
   const content = workflow(repository, head);
   if (commit.message !== OWNER || content?.content !== GITHUB_WORKFLOW) return { head, conflict: "The setup branch contains unrecognized changes. Preserve it and ask its owner to inspect it." };
-  const comparison = object(required(`repos/${repository}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(head)}`));
-  const files = array(comparison.files ?? null).map(object);
-  const conflict = files.length !== 1 || files[0]?.filename !== PATH || comparison.total_commits !== 1
-    ? "The setup branch has additional changes. Preserve it and ask its owner to inspect it." : null;
+  const parents = array(commit.parents ?? null).map(object);
+  if (parents.length !== 1) return { head, conflict: "The setup commit has unrecognized parentage. Preserve it and ask its owner to inspect it." };
+  const original = object(required(`repos/${repository}/compare/${encodeURIComponent(string(parents[0]?.sha))}...${encodeURIComponent(head)}`));
+  const originalFiles = array(original.files ?? null).map(object);
+  let conflict = originalFiles.length !== 1 || originalFiles[0]?.filename !== PATH || original.total_commits !== 1
+    ? "The setup commit has additional changes. Preserve it and ask its owner to inspect it." : null;
+  if (!conflict && requireOpenDiff) {
+    const comparison = object(required(`repos/${repository}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(head)}`));
+    const files = array(comparison.files ?? null).map(object);
+    if (files.length !== 1 || files[0]?.filename !== PATH || comparison.total_commits !== 1) conflict = "The setup branch has additional changes. Preserve it and ask its owner to inspect it.";
+  }
   return { head, conflict };
 }
 
-export function inspectGithubSetup(repository: string) {
-  repositoryName(repository);
-  const repo = object(required(`repos/${repository}`));
+export function inspectGithubSetup(requestedRepository: string) {
+  repositoryName(requestedRepository);
+  const repo = object(required(`repos/${requestedRepository}`));
+  const repository = repositoryName(string(repo.full_name));
   const defaultBranch = string(repo.default_branch);
   const admin = repo.permissions !== undefined && object(repo.permissions).admin === true;
   const policy = actionsPolicy(repository, admin);
@@ -140,7 +148,7 @@ export function inspectGithubSetup(repository: string) {
     secret = metadata === undefined ? "missing" : "present";
   }
   const pulls = array(required(`repos/${repository}/pulls?state=open&head=${encodeURIComponent(repository.split("/")[0] + ":" + BRANCH)}&per_page=100`));
-  const branch = setupBranch(repository, defaultBranch);
+  const branch = setupBranch(repository, defaultBranch, existing?.content !== GITHUB_WORKFLOW || pulls.length > 0);
   if (branch?.conflict) conflict = branch.conflict;
   let prUrl: string | null = null;
   if (pulls.length > 0) {
@@ -166,7 +174,7 @@ function createSetupPr(repository: string) {
   if (!status.actions) throw new Error(status.actionsReason);
   if (status.conflict) throw new Error(status.conflict);
   if (status.phase === "merged") return status;
-  const endpoint = `repos/${repository}`;
+  const endpoint = `repos/${status.repository}`;
   let branchHead = status.branchHead;
   if (branchHead === null) {
     const base = object(required(`${endpoint}/git/ref/heads/${encodeURIComponent(status.defaultBranch)}`));
@@ -209,6 +217,7 @@ export async function runGuidedGithubSetup(request: SetupRequest) {
   if (!request.confirm) throw new Error("This action changes the selected GitHub repository. Preview status first, then explicitly use --confirm.");
   if (request.action === "create-pr") return createSetupPr(repository);
   const status = inspectGithubSetup(repository);
+  if (status.conflict) throw new Error("Resolve the setup conflict before provisioning a credential. No secret was changed. " + status.conflict);
   if (!status.admin || !status.actions) throw new Error("A repository administrator must enable Actions before setting the secret.");
   if (!request.replaceSecret) throw new Error("GitHub secret writes can replace an existing value, including one created concurrently. Confirm this selected repository with --replace-secret after checking other users.");
   if (status.secret === "unknown") throw new Error("Could not establish whether the secret exists. Nothing was changed.");
@@ -223,6 +232,6 @@ export async function runGuidedGithubSetup(request: SetupRequest) {
   }
   const credential = Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
   if (!credential || /[\r\n\0]/.test(credential)) throw new Error("Provide one non-empty credential through stdin. Nothing was changed.");
-  gh(["secret", "set", SECRET, "--repo", repository], credential);
+  gh(["secret", "set", SECRET, "--repo", status.repository], credential);
   return { ...status, secret: "present", authentication: "unknown", firstReview: "not_verified" };
 }

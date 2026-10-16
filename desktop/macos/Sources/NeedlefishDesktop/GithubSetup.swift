@@ -149,7 +149,7 @@ final class GithubSetup: ObservableObject {
         }
     }
     func secret(_ status: GithubSetupStatus) {
-        guard consent, !credential.isEmpty, replace else { return }
+        guard consent, !credential.isEmpty, replace, status.phase != .conflict else { return }
         let input = Data(credential.utf8)
         credential = ""
         let replaceExisting = replace
@@ -200,10 +200,10 @@ struct GithubSetupView: View {
                 Button("建立或開啟設定 PR / Create or reuse setup PR") { model.create(status) }
                     .disabled(!model.consent || !status.admin || !status.actions || status.phase == .conflict || status.phase == .merged)
                 if let url = status.prUrl.flatMap(URL.init(string:)) { Link("在瀏覽器檢查並合併設定 PR / Inspect and merge setup PR", destination: url) }
-                SecureField("OpenAI API key，只用於此 repo secret / This repository secret only", text: $model.credential)
-                Toggle("我確認為此 repo 建立或覆蓋 NEEDLEFISH_CODEX_API_KEY，已確認其他使用者。 / I explicitly confirm creating or replacing this repository secret, including concurrent changes.", isOn: $model.replace)
+                SecureField("OpenAI API key，只用於此 repo secret / This repository secret only", text: $model.credential).disabled(status.phase == .conflict)
+                Toggle("我確認為此 repo 建立或覆蓋 NEEDLEFISH_CODEX_API_KEY，已確認其他使用者。 / I explicitly confirm creating or replacing this repository secret, including concurrent changes.", isOn: $model.replace).disabled(status.phase == .conflict)
                 Button("設定此 repo 的 secret / Set this repository secret") { model.secret(status) }
-                    .disabled(!model.consent || model.credential.isEmpty || !status.admin || !status.actions || status.secret == "unknown" || !model.replace)
+                    .disabled(!model.consent || model.credential.isEmpty || status.phase == .conflict || !status.admin || !status.actions || status.secret == "unknown" || !model.replace)
                 Button("重新檢查，不呼叫模型 / Refresh without a model call", action: model.inspect)
                 Link("Actions 設定 / Actions settings", destination: URL(string: status.settingsUrl)!)
                 Link("查看 workflow 執行與第一份結果 / View workflow runs and first result", destination: URL(string: "https://github.com/\(status.repository)/actions/workflows/needlefish.yml")!)

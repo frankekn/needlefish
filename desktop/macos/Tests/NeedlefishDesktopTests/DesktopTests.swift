@@ -883,3 +883,37 @@ private final class SignalObservations: @unchecked Sendable {
         lock.withLock { stored.append(Observation(pid: pid, signal: signal, observed: observed, error: error, exited: exited)) }
     }
 }
+
+@MainActor
+final class GithubCredentialBoundaryTests: XCTestCase {
+    func testConflictBlocksCredentialCommandAndKnownSetupAcceptsStdin() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-boundary-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let json = #"{"schemaVersion":1,"repository":"owner/repo","admin":true,"actions":true,"phase":"preview","conflict":null,"secret":"present","authentication":"unknown","firstReview":"not_verified","prUrl":null,"workflow":"test","disclosure":"test","settingsUrl":"https://github.com/owner/repo/settings/actions","removal":"test"}"#
+        let ready = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.utf8)).validated()
+        let conflicted = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.replacingOccurrences(of: "\"preview\"", with: "\"conflict\"").replacingOccurrences(of: "\"conflict\":null", with: "\"conflict\":\"Unrecognized workflow\"").utf8)).validated()
+        let script = root.appendingPathComponent("cli")
+        let input = root.appendingPathComponent("synthetic-input")
+        try "[ \"$*\" = 'setup github set-secret --repository owner/repo --json --confirm --replace-secret' ] || exit 3\ncat > '\(input.path)'\nprintf '%s' '\(json)'\n".write(to: script, atomically: true, encoding: .utf8)
+        let model = GithubSetup(runtime: Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true))
+        model.state = .status(conflicted)
+        model.consent = true
+        model.replace = true
+        model.credential = "controlled-test-input"
+        model.secret(conflicted)
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: input.path))
+        model.state = .status(ready)
+        model.secret(ready)
+        for _ in 0..<100 {
+            if !model.busy { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertEqual(try String(contentsOf: input, encoding: .utf8), "controlled-test-input")
+        XCTAssertEqual(model.credential, "")
+        guard case .status(let result) = model.state else { return XCTFail("Known setup must accept the separate secret action") }
+        XCTAssertEqual(result.secret, "present")
+        XCTAssertEqual(result.authentication, "unknown")
+    }
+}
