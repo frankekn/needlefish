@@ -211,13 +211,17 @@ function createSetupPr(deadline: number, repository: string) {
     branchHead = string(created.sha);
     required(deadline, `${endpoint}/git/refs`, { ref: `refs/heads/${BRANCH}`, sha: branchHead }, "POST");
   }
-  if (!status.prUrl) {
+  let prUrl = status.prUrl;
+  if (!prUrl) {
     const current = object(required(deadline, `${endpoint}/git/ref/heads/${BRANCH}`));
     if (object(current.object ?? null).sha !== branchHead) throw new Error("The setup branch changed during setup. No PR was created; inspect and retry.");
-    required(deadline, `${endpoint}/pulls`, { title: "Enable Needlefish hosted PR review", head: BRANCH, base: status.defaultBranch,
-      body: `<!-- ${OWNER} -->\nUses GitHub-hosted runners and the pinned Needlefish template.\n\n${status.disclosure}\n\nSet repository secret ${SECRET} separately. Review and merge this PR in your browser. The reserved setup branch fails before model calls. Its failed guard means not reviewed, not a passing required review. No credential validation or branch protection change has been performed.`, draft: false }, "POST");
+    const created = object(required(deadline, `${endpoint}/pulls`, { title: "Enable Needlefish hosted PR review", head: BRANCH, base: status.defaultBranch,
+      body: `<!-- ${OWNER} -->\nUses GitHub-hosted runners and the pinned Needlefish template.\n\n${status.disclosure}\n\nSet repository secret ${SECRET} separately. Review and merge this PR in your browser. The reserved setup branch fails before model calls. Its failed guard means not reviewed, not a passing required review. No credential validation or branch protection change has been performed.`, draft: false }, "POST"));
+    prUrl = string(created.html_url);
+    const prefix = `https://github.com/${status.repository}/pull/`;
+    if (!prUrl.startsWith(prefix) || !/^[1-9]\d*$/.test(prUrl.slice(prefix.length))) throw new Error("GitHub returned an invalid setup PR URL. Inspect status before retrying.");
   }
-  return inspectGithubSetup(repository, deadline);
+  return { ...status, phase: "pr_created", branchHead, prUrl };
 }
 
 export async function runGuidedGithubSetup(request: SetupRequest) {

@@ -406,6 +406,20 @@ test("a secret write that exhausts the budget cannot report success", t => {
   assert.ok(!result.stdout.includes("controlled-deadline-placeholder"));
 });
 
+test("a PR write that exhausts the budget reports incomplete and retry reuses it", t => {
+  const f = fixture(t, { clockSteps: { "repos/owner/repo/pulls": 105_000 } });
+  const failed = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(failed.status, 1);
+  assert.equal(JSON.parse(failed.stdout).phase, "error");
+  assert.match(JSON.parse(failed.stdout).message, /setup.*deadline.*not completed/i);
+  assert.equal(f.state().pr, true);
+  writeFileSync(join(f.root, "state.json"), JSON.stringify({ ...f.state(), clockSteps: {} }));
+  const retry = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.equal(JSON.parse(retry.stdout).prUrl, "https://github.com/owner/repo/pull/7");
+  assert.equal(f.history().filter(call => call.args.includes("--method") && call.args.includes("repos/owner/repo/pulls")).length, 1);
+});
+
 test("unrelated custom workflows are preserved and allow setup", t => {
   const f = fixture(t, { workflows: [{ name: "slow-ci.yml", type: "file" }] });
   const result = f.run(["create-pr", ...remote, "--confirm"]);
