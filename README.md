@@ -118,8 +118,34 @@ execution failure, and neutral for `needs_human`. Neutral is not a pass.
 
 Read the [hosted and self-hosted reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#github-action)
 for secrets, supported hosted runners, permissions, and operator-managed bundles.
-The separate [guided setup Draft preview](https://github.com/frankekn/needlefish/pull/280)
-is not part of the merged CLI described here.
+### Guided GitHub setup
+
+Guided setup is an unreleased source preview shared by the CLI and macOS app.
+Read [the desktop setup instructions](https://github.com/frankekn/needlefish/blob/main/desktop/macos/README.md#enable-github-review).
+From an installed source checkout, use the same setup owner:
+
+```bash
+pnpm review setup github login --confirm
+pnpm review setup github repositories --json
+pnpm review setup github status --repository owner/repo --json
+pnpm review setup github create-pr --repository owner/repo --confirm --json
+```
+
+`create-pr` creates or reuses one owned branch and PR. It never merges the PR,
+pushes the default branch, or edits branch protection. Customized Needlefish
+workflows and unrecognized setup branches cause a conflict. Unrelated custom
+workflows that setup can inspect are preserved and do not block setup.
+If setup cannot inspect a workflow's contents, it stops without writing changes.
+Ask a repository administrator to inspect that workflow before retrying.
+Read the workflow and OpenAI code-disclosure/cost notice from `status` before consent.
+
+`set-secret --repository owner/repo --confirm --replace-secret` accepts the
+credential only through stdin. Use the desktop secure field or a trusted secret
+manager that writes directly to the pipe. Never put the credential in shell
+arguments, history, a file, or a URL. GitHub secret writes are unconditional.
+`--replace-secret` accepts replacing a value another administrator may have created.
+A secret update leaves AI authentication and the first review unverified.
+Real first-review and novice-admin acceptance remain open in #151.
 
 ## Runners
 
