@@ -682,7 +682,7 @@ export async function runCodex(
 	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
-		const modelIdentity = runtimeLabel(config.model);
+		const modelIdentity = runtimeLabel(config.model, "known", "model");
 		const model = modelIdentity.status === "unknown" ? undefined : modelIdentity.value;
 		opts.onStat({
 			label: opts.label ?? "(unlabeled)",

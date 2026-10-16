@@ -23,8 +23,9 @@ export interface ReviewRuntime {
   readonly qualification: { readonly matchStatus: "unqualified" };
 }
 
-export function runtimeLabel(value: string | undefined, status: "known" | "operator_attested" = "known"): RuntimeValue {
-  if (!value || !/^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,159}$/.test(value) ||
+export function runtimeLabel(value: string | undefined, status: "known" | "operator_attested" = "known", kind: "identity" | "model" = "identity"): RuntimeValue {
+  const pattern = kind === "model" ? /^[A-Za-z0-9][A-Za-z0-9._:/#@-]{0,159}$/ : /^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,159}$/;
+  if (!value || !pattern.test(value) ||
       value.includes("://") || /(?:^|\/)(?:Users|home)\//.test(value) ||
       screenText(value, credentialValuesFromEnv(process.env)).kind !== "clean") return Object.freeze({ status: "unknown" });
   return Object.freeze({ status, value });
@@ -62,7 +63,7 @@ export function reviewRuntime(config: EffectiveRunnerConfig, reviewBudgetMs: num
     runner: config.runner,
     runnerVersion: runtimeLabel(undefined),
     launcherDigest: runtimeLabel(undefined),
-    model: runtimeLabel(config.runner === "acp" ? undefined : config.model),
+    model: runtimeLabel(config.runner === "acp" ? undefined : config.model, "known", "model"),
     effort: runtimeLabel(config.effectiveEffort),
     promptHash: promptIdentity,
     callTimeoutMs: config.timeoutMs,
@@ -75,11 +76,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseRuntimeValue(value: unknown): RuntimeValue {
+function parseRuntimeValue(value: unknown, kind: "identity" | "model" = "identity"): RuntimeValue {
   if (!isRecord(value)) throw new Error("identity is not an object");
   if (value.status === "unknown") return { status: "unknown" };
   if ((value.status === "known" || value.status === "operator_attested") && typeof value.value === "string") {
-    return runtimeLabel(value.value, value.status);
+    return runtimeLabel(value.value, value.status, kind);
   }
   throw new Error("invalid identity provenance");
 }
@@ -96,7 +97,7 @@ export function parseReviewRuntime(value: unknown): ReviewRuntime {
     runner: value.runner,
     runnerVersion: parseRuntimeValue(value.runnerVersion),
     launcherDigest: parseRuntimeValue(value.launcherDigest),
-    model: parseRuntimeValue(value.model),
+    model: parseRuntimeValue(value.model, "model"),
     effort: parseRuntimeValue(value.effort),
     promptHash: parseRuntimeValue(value.promptHash),
     callTimeoutMs: value.callTimeoutMs,
