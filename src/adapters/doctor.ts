@@ -32,6 +32,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly needlefish: string;
+  readonly repoRoot?: string;
   /** False when any check failed; an `unknown` check does not fail the report. */
   readonly ok: boolean;
   readonly checks: readonly DoctorCheck[];
@@ -251,6 +252,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
 
 /** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
 interface WorktreeState {
+  readonly repoRoot: string;
   readonly headExists: boolean;
   readonly dirty: boolean;
 }
@@ -282,10 +284,11 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
     if (!(error instanceof Error)) throw error;
     branch = "detached HEAD";
   }
+  const repoRoot = git(["rev-parse", "--show-toplevel"], repo, { preserveOutput: true }).replace(/\n$/, "");
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
-  const worktree = { headExists, dirty: changed > 0 };
+  const worktree = { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 };
   const version = git(["--version"], repo);
   if (!gitSupportsAttrSource(version)) {
     return {
@@ -320,9 +323,11 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   let checks: readonly DoctorCheck[];
+  let repoRoot: string | undefined;
   try {
     const runner = selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
+    repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
@@ -336,6 +341,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   return {
     schemaVersion: 1,
     needlefish: opts.version,
+    ...(repoRoot === undefined ? {} : { repoRoot }),
     ok: checks.every((check) => check.status !== "fail"),
     checks,
   };
