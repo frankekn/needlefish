@@ -139,7 +139,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
 			"if (args[1] === '--paginate') { process.stdout.write('[[]]'); process.exit(0); }",
 			"if (args[1] === 'user') { process.stdout.write(JSON.stringify({ login: 'dev', type: 'User' })); process.exit(0); }",
-			`if (apiPath === ${JSON.stringify(`repos/${REPO}/check-runs`)} && method === 'POST') { process.stdout.write(JSON.stringify({ id: ${CHECK_ID}, app: { id: 15368 } })); process.exit(0); }`,
+			`if (apiPath === ${JSON.stringify(`repos/${REPO}/check-runs`)} && method === 'POST') { process.stdout.write(JSON.stringify({ id: ${CHECK_ID}, app: { id: 15368, slug: "github-actions" } })); process.exit(0); }`,
 			"if (method === 'PATCH') {",
 			`  const count = fs.existsSync(${JSON.stringify(patchCount)}) ? Number(fs.readFileSync(${JSON.stringify(patchCount)}, 'utf8')) : 0;`,
 			`  fs.writeFileSync(${JSON.stringify(patchCount)}, String(count + 1));`,
