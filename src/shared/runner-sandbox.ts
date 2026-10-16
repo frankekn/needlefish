@@ -353,23 +353,42 @@ type LfsAttributeScan = "none" | "present" | "unknown";
 function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
   let attributeFiles: Buffer[];
   try {
-    attributeFiles = gitNulList(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath);
+    attributeFiles = gitNulList(["ls-files", "--stage", "-z", "--", "*.gitattributes"], sandboxPath);
   } catch {
     return "unknown";
   }
   const probed = attributeFiles.slice(0, MAX_LFS_PROBE_CANDIDATES);
   let unreadable = false;
-  for (const rel of probed) {
-    const text = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+  for (const entry of probed) {
+    const separator = entry.indexOf(0x09);
+    const header = entry.subarray(0, separator).toString("ascii");
+    const blob = /^(?:100644|100755) ([a-f0-9]{40,64}) 0$/.exec(header)?.[1];
+    const rel = entry.subarray(separator + 1);
+    const worktreeText = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+    const text = worktreeText ?? (blob === undefined ? undefined : readSmallGitBlobText(blob, sandboxPath));
     if (text === undefined) {
       unreadable = true;
       continue;
     }
-    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) return "present";
+    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) {
+      return worktreeText === undefined ? "unknown" : "present";
+    }
   }
   // An attributes file we could not read, or a list we could not finish, means
   // "no LFS here" is unproven — report the uncertainty rather than assert none.
   return unreadable || attributeFiles.length > probed.length ? "unknown" : "none";
+}
+
+// The sandbox index includes captured WORKING attributes. Read its exact blob
+// without filters or pathname decoding when checkout bytes are unavailable.
+function readSmallGitBlobText(oid: string, sandboxPath: string): string | undefined {
+  try {
+    const size = git(["cat-file", "-s", oid], sandboxPath);
+    if (!/^\d+$/.test(size) || Number(size) > MAX_GITATTRIBUTES_BYTES) return undefined;
+    return runGit(["cat-file", "blob", oid], sandboxPath);
+  } catch {
+    return undefined;
+  }
 }
 
 function isLfsPointerFile(filePath: Buffer): boolean {
