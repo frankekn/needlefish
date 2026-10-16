@@ -1,0 +1,26 @@
+name: desktop-macos
+on:
+  pull_request:
+    paths:
+      - desktop/macos/**
+      - .github/workflows/desktop-macos.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop-macos:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify native UI and process protocol with fake CLI
+        run: |
+          set -m
+          swift test --package-path desktop/macos -j 2 &
+          test_group=$!
+          trap 'kill -- -"$test_group" 2>/dev/null || true' EXIT
+          wait "$test_group"
+      - name: Verify package integrity gates without downloads
+        run: python3 desktop/macos/scripts/test-package.py
