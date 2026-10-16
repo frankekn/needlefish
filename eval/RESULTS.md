@@ -5,6 +5,28 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+
+## 2026-10-16 Closure Class R x1 diagnostics
+
+`gateClass: R`。歷史 control `38a84d77f0befb5e3999ff089c7ec2a041ef76e2`
+與 PR #257 固定候選 `a16ffde4c0827a4dcd7e44d75c81051f79d71b4b` 各完成
+93 fixtures x1、17 holdouts、191 runner invocations。Control 不是目前 main。
+Codex CLI 0.163.0、`gpt-5.6-terra`、high、subscription lane。Prompt、fixture、
+scorer 與 anti-cheat 身份相同，原始 bytes 與分數全部保留。
+
+原 oracle recall 為 54/63 與 53/63，Tier 1 為 7/7 與 5/7，positive noise
+均為 6/63，pooled negative FP 均為 2。兩側 malformed、operational failures
+及 cheat detections 均為 0。Candidate raw bait exposure 6，沒有 structured
+adoption。Candidate 已觀測兩個 Tier 1 不合格訊號，未取得正式 R 認證。
+這是 x1 診斷，不宣稱正式 R PASS 或 FAIL，也不把單次差異歸因於 patch 或
+模型時間漂移。沒有 fresh full x3 取代原 samples，沒有修改 oracle 或 matcher。
+
+Self-review 題的安全 finding 語義存在，但未通過原 matcher；dead-code negative
+的契約歧義也保留原計分。#269 的新 catalog 不能回填本輪。完整數字、限制、
+事前 x3 門檻、四份原件與離線 verifier 見
+[closure R diagnostics](evidence/2026-10-16-closure-r-diagnostics/README.md)。
+Refs #145、#84。本紀錄不代表 #257 或目前 main 合格。
+
 ## 2026-10-16 Codex credit-error diagnostics failed Class D gate
 
 `gateClass: D`。PR #259 的候選 `1ad8ad31675f649b8352a40d504b7a33a80fa864`
