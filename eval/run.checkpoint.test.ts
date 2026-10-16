@@ -253,8 +253,6 @@ test("writeReport: an equal-count but worse-coverage checkpoint does not overwri
 	const specs = [specA, specB];
 	const args = parseArgs(["--draws", "2", "--report", reportPath]);
 
-	// First checkpoint: draw 0 for both fixtures (2 results), covering
-	// {A:0, B:0}.
 	writeReport(args, [makeDraw(specA, 0), makeDraw(specB, 0)], specs);
 	assert.equal(readReport(reportPath).results.length, 2);
 

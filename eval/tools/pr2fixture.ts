@@ -232,7 +232,6 @@ function encodePath(filename: string): string {
   return filename.split("/").map(encodeURIComponent).join("/");
 }
 
-// Returns the file's decoded content, or null when it is binary (skipped).
 function fetchFileContent(repo: string, filename: string, ref: string): Buffer | null {
   const raw: unknown = JSON.parse(ghText(["api", `repos/${repo}/contents/${encodePath(filename)}?ref=${ref}`]));
   const obj = assertRecord(raw, "contents response");

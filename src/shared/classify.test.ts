@@ -57,24 +57,24 @@ test("classifySurface rule order is unchanged for non-docs surfaces", () => {
 });
 
 test("isDocsFastPathEligible is a generic user-facing-docs allowlist", () => {
-  assert.equal(isDocsFastPathEligible("docs/guide.md"), true);
-  assert.equal(isDocsFastPathEligible("doc/guide.md"), true);
-  assert.equal(isDocsFastPathEligible("packages/pkg/docs/api.md"), true);
-  assert.equal(isDocsFastPathEligible("README.md"), true);
-  assert.equal(isDocsFastPathEligible("README.zh-TW.md"), true);
-  assert.equal(isDocsFastPathEligible("CHANGELOG.md"), true);
-  assert.equal(isDocsFastPathEligible("CONTRIBUTING.md"), true);
-  assert.equal(isDocsFastPathEligible("src/api/docs/handler.ts"), false);
-  assert.equal(isDocsFastPathEligible("docs/build.ts"), false);
-  assert.equal(isDocsFastPathEligible("prompts/review.md"), false);
-  assert.equal(isDocsFastPathEligible("prompt/system.md"), false);
-  assert.equal(isDocsFastPathEligible("instructions/policy.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/prompts/review.md"), false);
-  assert.equal(isDocsFastPathEligible("AGENTS.md"), false);
-  assert.equal(isDocsFastPathEligible("src/AGENTS.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/AGENTS.md"), false);
-  assert.equal(isDocsFastPathEligible("DESIGN.md"), false);
-  assert.equal(isDocsFastPathEligible(".github/workflows/review.yml"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "doc/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "packages/pkg/docs/api.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "README.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "README.zh-TW.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "CHANGELOG.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "CONTRIBUTING.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "src/api/docs/handler.ts"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/build.ts"), false);
+  assert.equal(isDocsFastPathEligible("docs", "prompts/review.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "prompt/system.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "instructions/policy.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/prompts/review.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "AGENTS.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "src/AGENTS.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/AGENTS.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "DESIGN.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".github/workflows/review.yml"), false);
 });
 
 // An agent-instruction file is policy wherever it sits: agents read the nearest
@@ -84,17 +84,17 @@ test("isDocsFastPathEligible is a generic user-facing-docs allowlist", () => {
 // doc/ directory matched DOCS_DIR and took the deterministic pass with zero
 // model calls.
 test("isDocsFastPathEligible excludes CLAUDE.md policy files anywhere in the tree", () => {
-  assert.equal(isDocsFastPathEligible("CLAUDE.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/CLAUDE.md"), false);
-  assert.equal(isDocsFastPathEligible("doc/CLAUDE.md"), false);
-  assert.equal(isDocsFastPathEligible("packages/app/docs/guides/CLAUDE.md"), false);
-  assert.equal(isDocsFastPathEligible("src/shared/CLAUDE.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/claude.md"), false);
-  assert.equal(isDocsFastPathEligible("CLAUDE.local.md"), false);
-  assert.equal(isDocsFastPathEligible("docs\\nested\\CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "doc/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/docs/guides/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "src/shared/CLAUDE.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/claude.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "CLAUDE.local.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs\\nested\\CLAUDE.md"), false);
   // The AGENTS.md rule this mirrors, and ordinary docs, are unaffected.
-  assert.equal(isDocsFastPathEligible("packages/app/AGENTS.review.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/claude-setup.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/AGENTS.review.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/claude-setup.md"), true);
 });
 
 // The backstop that closes the class rather than one vendor at a time: under a
@@ -104,35 +104,32 @@ test("isDocsFastPathEligible excludes CLAUDE.md policy files anywhere in the tre
 // stand-ins for "a filename nobody has added a rule for yet" -- the point is
 // that no rule mentions them.
 test("isDocsFastPathEligible fails closed on unrecognized ALL-CAPS Markdown under docs/", () => {
-  assert.equal(isDocsFastPathEligible("docs/QWEN.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/CURSOR.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/WINDSURF.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/COPILOT.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/RULES.md"), false);
-  assert.equal(isDocsFastPathEligible("doc/NEWAGENT.md"), false);
-  assert.equal(isDocsFastPathEligible("packages/app/docs/CURSOR.local.md"), false);
-  // Recognized human-facing conventions still ride the fast path.
-  assert.equal(isDocsFastPathEligible("docs/README.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/CHANGELOG.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/CODE_OF_CONDUCT.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/LICENSE.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/README.zh-TW.md"), true);
-  // Descriptively named prose is unaffected -- this is not an uppercase ban.
-  assert.equal(isDocsFastPathEligible("docs/api-reference.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/Getting-Started.md"), true);
-  assert.equal(isDocsFastPathEligible("docs/qwen.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/QWEN.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/CURSOR.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/WINDSURF.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/COPILOT.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/RULES.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "doc/NEWAGENT.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/docs/CURSOR.local.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/README.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/CHANGELOG.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/CODE_OF_CONDUCT.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/LICENSE.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/README.zh-TW.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/api-reference.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/Getting-Started.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/qwen.md"), true);
 });
 
 test("isDocsFastPathEligible excludes GEMINI.md policy files anywhere in the tree", () => {
-  assert.equal(isDocsFastPathEligible("GEMINI.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/GEMINI.md"), false);
-  assert.equal(isDocsFastPathEligible("doc/GEMINI.md"), false);
-  assert.equal(isDocsFastPathEligible("packages/app/docs/guides/GEMINI.md"), false);
-  assert.equal(isDocsFastPathEligible("src/shared/GEMINI.md"), false);
-  assert.equal(isDocsFastPathEligible("docs/gemini.md"), false);
-  assert.equal(isDocsFastPathEligible("GEMINI.local.md"), false);
-  // Prose that merely mentions the vendor is not an instruction file.
-  assert.equal(isDocsFastPathEligible("docs/gemini-setup.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "doc/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/docs/guides/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "src/shared/GEMINI.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/gemini.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "GEMINI.local.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "docs/gemini-setup.md"), true);
 });
 
 // Dot-directories are tool/agent configuration trees: skills, commands, and
@@ -142,23 +139,29 @@ test("isDocsFastPathEligible excludes GEMINI.md policy files anywhere in the tre
 // `<dir>/docs/*.md` (DOCS_DIR). No rule names .codex, .cursor or .aider; they
 // are denied by shape, which is what keeps the next tool's directory covered.
 test("isDocsFastPathEligible excludes dot-directory agent-config Markdown", () => {
-  assert.equal(isDocsFastPathEligible(".claude/README.md"), false);
-  assert.equal(isDocsFastPathEligible(".claude/docs/guide.md"), false);
-  assert.equal(isDocsFastPathEligible(".claude/skills/review/SKILL.md"), false);
-  assert.equal(isDocsFastPathEligible(".claude/commands/ship.md"), false);
-  assert.equal(isDocsFastPathEligible("packages/app/.claude/README.md"), false);
-  assert.equal(isDocsFastPathEligible(".gemini/README.md"), false);
-  assert.equal(isDocsFastPathEligible(".gemini/docs/guide.md"), false);
-  assert.equal(isDocsFastPathEligible(".codex/README.md"), false);
-  assert.equal(isDocsFastPathEligible(".codex/docs/notes.md"), false);
-  assert.equal(isDocsFastPathEligible(".cursor/rules/style.md"), false);
-  assert.equal(isDocsFastPathEligible(".aider/README.md"), false);
-  assert.equal(isDocsFastPathEligible(".github/copilot-instructions.md"), false);
-  assert.equal(isDocsFastPathEligible("packages/app/.codex/docs/guide.md"), false);
-  // A normal directory that merely starts with the same letters is still docs.
-  assert.equal(isDocsFastPathEligible("claude/docs/guide.md"), true);
-  assert.equal(isDocsFastPathEligible("gemini/docs/guide.md"), true);
-  assert.equal(isDocsFastPathEligible("codex/docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", ".claude/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".claude/docs/guide.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".claude/skills/review/SKILL.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".claude/commands/ship.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/.claude/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".gemini/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".gemini/docs/guide.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".codex/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".codex/docs/notes.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".cursor/rules/style.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".aider/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", ".github/copilot-instructions.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "packages/app/.codex/docs/guide.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "claude/docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "gemini/docs/guide.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "codex/docs/guide.md"), true);
   // A dotted *file* is not a dot-directory; this rule needs a path segment.
-  assert.equal(isDocsFastPathEligible("docs/.hidden-notes.md"), true);
+  assert.equal(isDocsFastPathEligible("docs", "docs/.hidden-notes.md"), true);
+});
+
+test("isDocsFastPathEligible rejects a non-docs surface even when the path is eligible", () => {
+  assert.equal(classifySurface("test/README.md"), "test");
+  assert.equal(isDocsFastPathEligible("test", "test/README.md"), false);
+  assert.equal(isDocsFastPathEligible("docs", "test/README.md"), true);
+  assert.equal(isDocsFastPathEligible("source", "docs/guide.md"), false);
 });

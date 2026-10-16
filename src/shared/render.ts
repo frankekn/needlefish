@@ -78,9 +78,6 @@ export function renderMarkdown(
 		(finding) => finding.severity !== "P3",
 	).length;
 
-	// Red-reason headline: when the verdict is red, the first line states WHY
-	// (top blocking finding / first blocking residual) instead of the summary.
-	// Defensive: if the reason data is absent, fall back to the summary headline.
 	let headlineReplaced = false;
 	if (result.verdict === "changes_requested" && headlineBlockingCount > 0) {
 		const top = headlineFindings[0];

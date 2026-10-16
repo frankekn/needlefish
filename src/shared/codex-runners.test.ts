@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+	exitFailureNextStep,
 	extractJson,
 	runCodex,
 	RunnerOperationalError,
@@ -25,6 +26,7 @@ import {
 	initRepo,
 	readStringArray,
 } from "./codex-runner-test-fixtures";
+import { RUNNERS } from "./runner";
 
 test("runCodex classifies invalid timeout configuration as operational", async (t) => {
 	const previous = {
@@ -42,6 +44,41 @@ test("runCodex classifies invalid timeout configuration as operational", async (
 	await assert.rejects(
 		() => runCodex("prompt", { runner: "codex", repoPath: process.cwd(), targetHeadSha: "HEAD" }),
 		RunnerOperationalError,
+	);
+});
+
+test("runCodex classifies a runner that exits before reading stdin by its exit status, not EPIPE", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "claude-exit-1.sh");
+	const previous = {
+		bin: process.env.CLAUDE_BIN,
+		noRetry: process.env.NEEDLEFISH_NO_RETRY,
+	};
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CLAUDE_BIN;
+		else process.env.CLAUDE_BIN = previous.bin;
+		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	writeFileSync(bin, ["#!/bin/sh", "echo 'auth error code: expired_token' >&2", "exit 1"].join("\n"));
+	chmodSync(bin, 0o755);
+	process.env.CLAUDE_BIN = bin;
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+
+	// Larger than any pipe buffer, so the write fails with EPIPE once the child exits.
+	const prompt = "x".repeat(10_000_000);
+	await assert.rejects(
+		() => runCodex(prompt, { runner: "claude", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 5000 }),
+		(error: unknown) => {
+			assert.ok(error instanceof RunnerOperationalError);
+			assert.equal(
+				error.message,
+				"claude runner exited 1; likely cause: auth error (expired_token); stderr withheld because it may contain the review prompt. Run `claude auth login`, then retry.",
+			);
+			return true;
+		},
 	);
 });
 
@@ -875,7 +912,6 @@ test("safeRunnerCause classifies proxied quota and rate-limit failures", () => {
 		'429: {"code":"model_cooldown","last_upstream_error":"insufficient_quota: Your token-plan 1-week quota has been exhausted. The quota will reset at 09-23 13:59:00 UTC."}';
 	assert.equal(safeRunnerCause(cpaCooldown), "usage limit");
 
-	// A bare 429 with no quota wording still classifies as rate limited.
 	assert.equal(safeRunnerCause("429 Too Many Requests"), "rate limited");
 	assert.equal(safeRunnerCause('{"code":"model_cooldown"}'), "rate limited");
 
@@ -921,7 +957,6 @@ test("safeOutputCause classifies only upstream-caused unparseable output", () =>
 	assert.equal(safeOutputCause(""), "empty output");
 	assert.equal(safeOutputCause("\n \t\n"), "empty output");
 
-	// The stream stopped inside a fence: the opening delimiter has no partner.
 	assert.equal(
 		safeOutputCause('```json\n{"summary":"partial'),
 		"truncated output",
@@ -948,7 +983,6 @@ test("safeOutputCause classifies only upstream-caused unparseable output", () =>
 	assert.equal(safeOutputCause("I cannot review this diff."), undefined);
 	assert.equal(safeOutputCause('```ts\n{"wrong":true}\n```'), undefined);
 	assert.equal(safeOutputCause("```\nnot json at all\n```"), undefined);
-	// Prose that merely mentions HTML does not qualify; only a document does.
 	assert.equal(
 		safeOutputCause("the handler returns <html> on error"),
 		undefined,
@@ -960,7 +994,6 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 	// so review.yml classified a provider that returned nothing as non-infra and
 	// failed the whole review instead of advancing the fallback chain.
 
-	// Empty runner output, and a fence whose body holds nothing to parse.
 	assert.throws(
 		() => extractJson(""),
 		/no JSON object found in codex output; likely cause: empty output/,
@@ -982,8 +1015,6 @@ test("extractJson emits an infra token only for empty or truncated output", () =
 		/no JSON object found in codex output; likely cause: html error page/,
 	);
 
-	// Complete-but-wrong output keeps the bare message: a wrong fence tag, a
-	// fenced non-JSON body, and plain prose are all model-side contract failures.
 	for (const whole of [
 		'```ts\n{"wrong":true}\n```',
 		"```json\nno object here\n```",
@@ -1022,6 +1053,7 @@ test("extractJson ends every malformed-output message with the same next step", 
 		'```json\n{"a": 1,}\n```',
 		'```json\n{"a":1}\n```\n```json\n{"b":2}\n```',
 		'```\n{"a":1}\n```\n```\n{"b":2}\n```',
+		'{"a":1,"a":2}',
 	]) {
 		assert.throws(
 			() => extractJson(output),
@@ -1136,4 +1168,35 @@ test("per-call timeout defaults to 20 minutes and env overrides win", (t) => {
 	assert.equal(timeoutMsFor("claude"), 1_200_000);
 	process.env.NEEDLEFISH_TIMEOUT_MS = "5000";
 	assert.equal(timeoutMsFor("codex"), 5000);
+});
+
+test("exitFailureNextStep auth text omits review.yml provider-fallback keywords", () => {
+	const keywords = [
+		"timeout",
+		"unreachable",
+		"etimedout",
+		"econnrefused",
+		"enotfound",
+		"bad gateway",
+		"gateway time",
+		"overloaded",
+		"usage limit",
+		"rate limited",
+		"network error",
+		"empty output",
+		"truncated output",
+		"html error page",
+	];
+	for (const runner of RUNNERS) {
+		for (const cause of ["auth rejected", "auth error (expired_token)"]) {
+			const step = exitFailureNextStep(runner, cause);
+			for (const keyword of keywords) {
+				assert.equal(
+					step.toLowerCase().includes(keyword),
+					false,
+					`${runner} ${cause} contains ${keyword}: ${step}`,
+				);
+			}
+		}
+	}
 });

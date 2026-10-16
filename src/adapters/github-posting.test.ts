@@ -27,11 +27,15 @@ import {
 	oldSideTouches,
 	classifyUnmatched,
 	capOutboundBody,
+	isLooselyBotShaped,
+	isTrustedStateAuthor,
+	findPreviousReview,
 	type FindingKey,
 	runGithub,
 } from "./github";
 import type { Finding } from "../shared/schema";
 import { WITHHELD_MESSAGE } from "../shared/outbound-screen";
+import { OWN_POST_FINDING_MARKER } from "../shared/normalize";
 
 type Post = {
 	readonly args: readonly string[];
@@ -799,6 +803,7 @@ test("runGithub caps an oversized inline comment body", async (t) => {
 		"<!-- needlefish-finding -->",
 		"the own-post marker must survive as the last line (normalize.ts read-back)",
 	);
+	assert.equal(lastLine, OWN_POST_FINDING_MARKER);
 });
 
 test("capOutboundBody shrinks an oversized state marker rather than dropping it", () => {
@@ -1912,6 +1917,28 @@ test("runGithub still skips same-head review when the marker is from the authent
 		"PAT-authored marker must enable same-head dedupe",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+function assertNotParameter<F extends (...args: never[]) => unknown, A>(
+	fn: F,
+	value: [A] extends [Parameters<F>[number]] ? never : A,
+): void {
+	assert.equal(typeof fn, "function");
+	assert.notEqual(value, null);
+}
+
+test("z-github-actions-z is cosmetic and not a trusted state author", () => {
+	const item = { user: { login: "z-github-actions-z", type: "User" } };
+	const cosmetic = isLooselyBotShaped(item);
+	assert.notEqual(cosmetic, null);
+	if (cosmetic === null) return;
+	const notABoolean: [typeof cosmetic] extends [boolean] ? never : true = true;
+	assert.equal(notABoolean, true);
+	assertNotParameter(isTrustedStateAuthor, cosmetic);
+	assertNotParameter(findPreviousReview, cosmetic);
+	assert.equal(isTrustedStateAuthor(item, ""), false);
+	assert.equal(isTrustedStateAuthor(item, "github-actions[bot]"), false);
+	assert.equal(isLooselyBotShaped({ user: { login: "frankekn", type: "User" } }), null);
 });
 
 // THE BYPASS THIS PR EXISTS TO CLOSE. `z-github-actions-z` is a registrable
