@@ -48,6 +48,12 @@ const fs = require('node:fs');
 const cp = require('node:child_process');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+const command = args[0] === 'verdict' || args[0] === 'render' ? args[0] : 'review';
+if (process.env.FAKE_DIAGNOSTIC_COMMAND === command) process.stderr.write(process.env.FAKE_STDERR ?? '');
+if (process.env.FAKE_FAIL_COMMAND === command) {
+  process.stdout.write('PRIVATE_CONSUMER_STDOUT');
+  process.exit(2);
+}
 if (args[0] === 'verdict' || args[0] === 'render') {
   const r = cp.spawnSync(${JSON.stringify(process.execPath)}, ['--import', ${JSON.stringify(tsx)}, ${JSON.stringify(cli)}, ...args], { encoding: 'utf8' });
   process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);
@@ -145,13 +151,18 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
     ["refs/heads/topic", f.head, "refs/tags/topic", 1],
     ["(delete)", "0".repeat(40), "refs/heads/topic", 1],
   ]) {
+    rmSync(f.log, { force: true });
     const r = spawnSync("sh", [hook, "origin", "unused"], {
       cwd: f.repo, env: f.env, input: `${ref} ${sha} ${remoteRef} ${"0".repeat(40)}\n`, encoding: "utf8", timeout: 20000,
     });
     assert.equal(r.status, expected, r.stderr);
-    if (expected === 0) assert.match(r.stdout, /LGTM/);
-    else assert.equal(r.stdout, "");
-    assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+    if (expected === 0) {
+      assert.match(r.stdout, /LGTM/);
+      assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+    } else {
+      assert.equal(r.stdout, "");
+      assert.equal(existsSync(f.log), false);
+    }
   }
 });
 
@@ -233,4 +244,46 @@ test("real Git rejects non-branch endpoints before review and reviews valid push
     assert.deepEqual(calls.map((args) => args[0]), destinations.length === 1 ? ["--repo", "verdict", "render"] : ["--repo", "verdict", "render", "--repo", "verdict", "render"]);
     for (const name of destinations) assert.equal(execFileSync("git", ["--git-dir", bare, "rev-parse", `refs/heads/${name}`], { encoding: "utf8" }).trim(), f.head);
   }
+});
+
+
+for (const [name, raw, status, command, extra] of [
+  ["operational empty review", "", 2, "review", {}],
+  ["empty review", "", 0, "review", {}],
+  ["malformed review", "PRIVATE_RAW_MODEL_STDOUT", 0, "review", {}],
+  ["review exit mismatch", null, 2, "review", {}],
+  ["verdict failure", null, 0, "verdict", { FAKE_FAIL_COMMAND: "verdict" }],
+  ["render failure", null, 0, "render", { FAKE_FAIL_COMMAND: "render" }],
+  ["review timeout", null, 0, "review", { FAKE_WAIT: "1", NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: "500" }],
+]) {
+  test(`blocked ${name} preserves only CLI diagnostics`, (t) => {
+    const f = setup(t);
+    const result = f.run(raw ?? { ...f.base, summary: "PRIVATE_MODEL_JSON" }, status, {
+      FAKE_DIAGNOSTIC_COMMAND: command, FAKE_STDERR: `${command} diagnostic\n`,
+      PRIVATE_ENV_SENTINEL: "PRIVATE_ENV_SECRET", ...extra,
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, new RegExp(`^${command} diagnostic\\nNeedlefish gate blocked:`));
+    assert.doesNotMatch(result.stderr, /PRIVATE_RAW_MODEL_STDOUT|PRIVATE_CONSUMER_STDOUT|PRIVATE_MODEL_JSON|PRIVATE_ENV_SECRET/);
+    assert.equal(result.stderr.match(/diagnostic/g)?.length, 1);
+  });
+}
+
+test("successful gate emits CLI diagnostics once", (t) => {
+  const f = setup(t);
+  const result = f.run(f.base, 0, { FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "review diagnostic\n" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /LGTM/);
+  assert.equal(result.stderr, "review diagnostic\n");
+});
+
+test("blocked diagnostics stay bounded and separate from the gate error", (t) => {
+  const f = setup(t);
+  const result = f.run("", 2, { FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "x".repeat(20000) });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr.indexOf("\nNeedlefish gate blocked:"), 16384);
+  assert.equal(result.stderr.slice(0, 16384) === "x".repeat(16384), true);
+  assert.equal(result.stderr.includes("x".repeat(16385)), false);
 });
