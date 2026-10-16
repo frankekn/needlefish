@@ -286,6 +286,95 @@ setInterval(() => {}, 1000);
   assert.equal(existsSync(directory), false, "confirmed-idle owned tree must be deleted before exit");
 });
 
+for (const replacement of ["symlink", "directory", "foreign owner", "readdir swap"] as const) {
+  test(`Linux termination preserves foreign data after managed root ${replacement}`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+    const ready = path.join(root, "ready");
+    const closed = path.join(root, "closed");
+    const sentinel = path.join(root, "sentinel");
+    mkdirSync(path.join(sentinel, "nested"), { recursive: true });
+    writeFileSync(path.join(sentinel, "payload"), "external sentinel");
+    writeFileSync(path.join(sentinel, "nested", "payload"), "nested sentinel");
+    const owner = spawnModule(`
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
+const { createManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
+const { spawnRunnerProcess } = await import(${JSON.stringify(runnerProcessUrl)});
+const directory = await createManagedTempDirectory();
+const healthy = await createManagedTempDirectory();
+const owner = fs.readFileSync(path.join(directory, ".needlefish-owner.json"));
+fs.writeFileSync(path.join(directory, "owned"), "original payload");
+fs.writeFileSync(path.join(${JSON.stringify(sentinel)}, ".needlefish-owner.json"), owner);
+fs.symlinkSync(${JSON.stringify(sentinel)}, path.join(healthy, "child-link"));
+const replace = () => {
+  if (${JSON.stringify(replacement)} === "foreign owner") {
+    fs.writeFileSync(path.join(directory, ".needlefish-owner.json"), "foreign owner");
+  } else {
+    fs.renameSync(directory, directory + ".displaced");
+    if (${JSON.stringify(replacement)} === "directory") {
+      fs.mkdirSync(directory);
+      fs.copyFileSync(path.join(${JSON.stringify(sentinel)}, ".needlefish-owner.json"), path.join(directory, ".needlefish-owner.json"));
+      fs.writeFileSync(path.join(directory, "payload"), "replacement sentinel");
+    } else fs.symlinkSync(${JSON.stringify(sentinel)}, directory);
+  }
+};
+if (${JSON.stringify(replacement)} === "readdir swap") {
+  const originalReaddir = fsp.readdir;
+  let replaced = false;
+  fsp.readdir = async (...args) => {
+    const entries = await originalReaddir(...args);
+    if (!replaced && (String(args[0]) === directory || String(args[0]).startsWith("/proc/self/fd/"))) {
+      replaced = true;
+      replace();
+    }
+    return entries;
+  };
+  syncBuiltinESMExports();
+}
+const runner = path.join(${JSON.stringify(root)}, "runner.cjs");
+fs.writeFileSync(runner, 'const fs=require("node:fs");const path=require("node:path");const [directory,sentinel,ready,kind]=process.argv.slice(2);process.on("SIGTERM",()=>{if(kind!=="readdir swap"){if(kind==="foreign owner")fs.writeFileSync(path.join(directory,".needlefish-owner.json"),"foreign owner");else{fs.renameSync(directory,directory+".displaced");if(kind==="directory"){fs.mkdirSync(directory);fs.copyFileSync(path.join(sentinel,".needlefish-owner.json"),path.join(directory,".needlefish-owner.json"));fs.writeFileSync(path.join(directory,"payload"),"replacement sentinel");}else fs.symlinkSync(sentinel,directory);}}process.exit(0);});fs.writeFileSync(ready,JSON.stringify({directory,pid:process.pid}));setInterval(()=>{},1000);');
+setInterval(() => {}, 1000);
+const result = await spawnRunnerProcess({command:process.execPath,args:[runner,directory,${JSON.stringify(sentinel)},${JSON.stringify(ready)},${JSON.stringify(replacement)}],stdin:"",repoPath:directory,timeoutMs:60_000,env:process.env});
+fs.writeFileSync(${JSON.stringify(closed)}, JSON.stringify({result,healthy}));
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
+    let runnerPid: number | undefined;
+    t.after(() => {
+      killIfRunning(owner.pid);
+      if (runnerPid !== undefined) killIfRunning(-runnerPid);
+      rmSync(root, { recursive: true, force: true });
+    });
+    await waitForFile(ready);
+    const info: { directory: string; pid: number } = JSON.parse(readFileSync(ready, "utf8"));
+    runnerPid = info.pid;
+    const before = readFileSync(path.join(info.directory, ".needlefish-owner.json"), "utf8");
+    owner.kill("SIGTERM");
+    const [status, signal] = await waitForExit(owner);
+    assert.equal(signal, null);
+    assert.equal(status, 143);
+    const finished: { result: { status: number }; healthy: string } = JSON.parse(readFileSync(closed, "utf8"));
+    assert.equal(finished.result.status, 0, "the real runner must close before cleanup");
+    assert.equal(existsSync(finished.healthy), false, "an unsafe root must not prevent other roots cleanup");
+    assert.equal(readFileSync(path.join(sentinel, "payload"), "utf8"), "external sentinel");
+    assert.equal(readFileSync(path.join(sentinel, "nested", "payload"), "utf8"), "nested sentinel");
+    assert.equal(readFileSync(path.join(sentinel, ".needlefish-owner.json"), "utf8"), before);
+    if (replacement === "foreign owner") {
+      assert.equal(readFileSync(path.join(info.directory, "owned"), "utf8"), "original payload");
+      writeFileSync(path.join(info.directory, ".needlefish-owner.json"), before);
+    } else {
+      assert.equal(readFileSync(path.join(info.directory + ".displaced", "owned"), "utf8"), "original payload");
+      assert.equal(readFileSync(path.join(info.directory + ".displaced", ".needlefish-owner.json"), "utf8"), before);
+      if (replacement === "directory") assert.equal(readFileSync(path.join(info.directory, "payload"), "utf8"), "replacement sentinel");
+      else assert.equal(lstatSync(info.directory).isSymbolicLink(), true);
+      rmSync(info.directory, { recursive: true, force: true });
+      renameSync(info.directory + ".displaced", info.directory);
+    }
+    await reapUntilGone(root, info.directory);
+    assert.equal(existsSync(info.directory), false, "the retained original owner must remain reapable");
+  });
+}
+
 for (const [signal, expectedStatus] of [
   ["SIGINT", 130],
   ["SIGTERM", 143],
