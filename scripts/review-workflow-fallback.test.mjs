@@ -336,10 +336,10 @@ test("failed check API cannot authorize fallback even with a valid body", t => {
 });
 
 test("Sol fallback is disabled for incompatible runners", t => {
-  for (const runner of ["claude", "opencode", "grok", "pi"]) {
+  for (const [runner, expectedInvocations] of [["claude", 1], ["opencode", 0], ["grok", 1], ["pi", 1]]) {
     const result = runReviewScript(t, { runner, primary: { out: outcome({ outcome: "failure", operational: true }), err: "", code: 1 }, fallback: { out: "", err: "", code: 0 } });
     assert.equal(result.status, 1, result.stderr);
-    assert.equal(result.invocations.length, 1, runner);
+    assert.equal(result.invocations.length, expectedInvocations, runner);
   }
 });
 

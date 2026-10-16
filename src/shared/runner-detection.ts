@@ -3,7 +3,7 @@ import path from "node:path";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "./runner-definition.js";
 import { RUNNER_DEFINITIONS, parseRunnerName, type RunnerName, type RunnerOptions } from "./runner.js";
 
-const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner);
+const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner).filter((runner) => !("reviewUnavailableReason" in runner));
 
 export const NO_AUTO_DETECTED_RUNNER_MESSAGE = [
   "No supported model runner found on PATH.",
@@ -20,22 +20,29 @@ export interface ResolvedRunnerBinary {
 export class RunnerSelectionError extends Error {}
 
 export function resolveRunner(opts: RunnerOptions): RunnerName {
-  if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) {
+  let runner: RunnerName;
+  if (opts.runner) runner = opts.runner;
+  else if (envRunner) {
     try {
-      return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+      runner = parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
     } catch (error) {
       if (!(error instanceof Error)) throw error;
       throw new RunnerSelectionError(error.message, { cause: error });
     }
-  }
-  return autoDetectRunner();
+  } else runner = autoDetectRunner();
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
+  return runner;
 }
 
 function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
+  }
+  for (const runner of RUNNER_CATALOG) {
+    if (!("reviewUnavailableReason" in runner)) continue;
+    if (resolveRunnerBinary(runner.name)?.path !== undefined) throw new Error(runner.reviewUnavailableReason);
   }
   throw new RunnerSelectionError(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
@@ -61,6 +68,8 @@ export function resolveCallerCommand(command: string, cwd = process.cwd(), pathA
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
 export function requireRunnerCommand(runner: RunnerName): string {
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
   const command = runnerCommand(runner);
   if (command !== undefined) return command;
   const bin = RUNNER_DEFINITIONS[runner].bin;
@@ -117,7 +126,7 @@ export function runnerReviewCapability(runner: RunnerName): {
 } {
   const capability = RUNNER_DEFINITIONS[runner].reviewCapability;
   const detail = capability === "promptOnly"
-    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex, claude, or opencode).`
+    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex or claude).`
     : capability === "unknown"
       ? `${runner}: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.`
       : `${runner}: repositoryRead; the CLI adapter enables repository tools.`;

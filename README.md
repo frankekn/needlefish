@@ -12,10 +12,25 @@ critic filter the findings. Fixed rules derive the final verdict.
 [Benchmark page](https://frankekn.github.io/needlefish/) ·
 [Full reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md)
 
+OpenCode review execution is temporarily disabled, including automatic selection.
+OpenCode v2.0.22 and v2.0.30 load target plugins during startup. The verified
+v2.0.30 CLI can disable project discovery but still loads system plugins and
+managed configuration. `--standalone` and an ephemeral HOME do not provide
+complete configuration isolation. Existing OpenCode authentication files are
+preserved. Choose another runner explicitly with `--runner`; Needlefish does
+not switch providers automatically. A future OpenCode release needs renewed
+isolation verification before this lane can be enabled. See [issue #207](https://github.com/frankekn/needlefish/issues/207).
+
+To reproduce the integration check with an already installed CLI, run
+`NEEDLEFISH_OPENCODE_INTEGRATION_BIN=/path/to/opencode node --test --import tsx src/shared/opencode-isolation.test.ts`.
+The test uses no provider credentials and writes only inside its temporary fixture.
+Default CI skips this optional integration. The nonexistent provider is expected
+to fail after plugin startup.
+
 ## Quick start
 
 Use a trusted Git repository. You need Node 20+, Git 2.41+, and an authenticated
-`codex`, `claude`, or `opencode` CLI on `PATH`.
+`codex` or `claude` CLI on `PATH`.
 Run the published v0.4.10 CLI from the repository root.
 The full reference describes current source, including unreleased changes.
 
@@ -81,7 +96,7 @@ Dry-run JSON has a different shape. See the
 | Symptom | Action |
 | --- | --- |
 | Node or Git check fails | Install Node 20+ or Git 2.41+, then run `doctor` again. |
-| No runner is found | Install and authenticate `codex`, `claude`, or `opencode`, or explicitly select a configured runner. |
+| No runner is found | Install and authenticate `codex` or `claude`, or explicitly select a configured runner. |
 | Login, provider, quota, or network error | Read the runner diagnostic. Check that provider's login and account status. `doctor` does not prove quota or connectivity. |
 | Folder is not a Git repository | Select the repository root, or run `git init` only if you intend to create a repository. |
 | Base ref cannot be resolved | Fetch the intended base and pass `--base <ref>`. |

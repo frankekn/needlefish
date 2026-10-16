@@ -19,7 +19,7 @@ on:
         required: false
         default: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         required: false
         default: codex
       model:
@@ -29,7 +29,7 @@ on:
         description: Optional per-call timeout in milliseconds
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
@@ -62,7 +62,7 @@ on:
         required: false
         default: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         type: string
         required: false
         default: codex
@@ -75,7 +75,7 @@ on:
         type: string
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         type: string
         required: false
       codex_reasoning_effort:
@@ -344,6 +344,18 @@ jobs:
           NEEDLEFISH_RECHECK_INPUT: ${{ inputs.recheck && '1' || '' }}
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
+          if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$PR_HEAD_SHA" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null || true
+            echo "$summary" >&2
+            exit 1
+          fi
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
             echo "Selected self-managed Needlefish is unavailable. Reinstall the local bundle on this runner." >&2
             exit 1
@@ -508,6 +520,7 @@ jobs:
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
           NEEDLEFISH_CHECK_APP_ID: ""
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -566,6 +579,18 @@ jobs:
           valid=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
+            exit 0
+          fi
+          if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null
+            echo "$summary"
             exit 0
           fi
           workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"

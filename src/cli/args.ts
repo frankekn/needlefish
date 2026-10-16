@@ -96,7 +96,8 @@ Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
-  --runner <name>      codex | claude | opencode | openai | grok | pi | acp
+  --runner <name>      codex | claude | openai | grok | pi | acp
+                       opencode is temporarily disabled (issue #207)
   --connection <id>    select a connection; repeat in quota fallback order
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
@@ -114,15 +115,16 @@ Local diff options:
   --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
+  NEEDLEFISH_RUNNER       codex | claude | openai | grok | pi | acp (auto-detect codex, claude)
+                         opencode is temporarily disabled (issue #207)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 1200000)
   NEEDLEFISH_GH_POST_RETRY_MS  base delay between idempotent GitHub write retries on a 5xx (default: 250)
   NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR  1 = --github reviews PRs whose author is not OWNER/MEMBER/COLLABORATOR, or is a bot
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
-  OPENCODE_BIN            opencode executable (default: opencode)
-  OPENCODE_IDLE_TIMEOUT_MS opencode inactivity timeout (default: min of per-call timeout and 600000)
+  OPENCODE_BIN            reserved while opencode reviews are disabled (#207)
+  OPENCODE_IDLE_TIMEOUT_MS inactive while opencode reviews are disabled (#207)
   PI_BIN                  pi executable (default: pi)
   NEEDLEFISH_ACP_BIN      ACP agent executable (required for legacy --runner acp)
   NEEDLEFISH_CONNECTIONS_FILE  absolute user connections.json path (used only by --connection)

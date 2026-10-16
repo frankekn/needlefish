@@ -166,41 +166,29 @@ test("doctor fails the runner check with install commands when no runner is on P
       "Install one:",
       "  codex: npm install -g @openai/codex",
       "  claude: npm install -g @anthropic-ai/claude-code",
-      "  opencode: npm install -g @opencode/cli",
     ].join("\n"),
   });
   assert.deepEqual(check(report, "auth"), { name: "auth", status: "unknown", detail: "skipped: no runner available" });
 });
 
-test("doctor reads opencode's credential list and fails when it is empty", async (t) => {
+test("doctor refuses suspended opencode without probing its executable or credentials", async (t) => {
   const f = setup(t);
-  const script = (json: string) =>
-    [
-      'case "$1" in',
-      '  --version) echo "opencode v9.9.9-stub"; exit 0 ;;',
-      `  auth) [ "$2 $3 $4 $5" = "list --standalone --format json" ] && { echo '${json}'; exit 0; } ;;`,
-      "esac",
-      'echo "unexpected: $*" >&2; exit 99',
-    ].join("\n");
+  const marker = path.join(f.tmp, "opencode-launched");
+  stub(f.bin, "opencode", `touch ${JSON.stringify(marker)}`);
   process.env.NEEDLEFISH_RUNNER = "opencode";
-
-  stub(f.bin, "opencode", script("[]"));
-  const empty = await runDoctor({ repo: f.repo, version: "0.0.0-test" });
-  assert.deepEqual(check(empty, "auth"), {
-    name: "auth",
-    status: "fail",
-    detail: "opencode: no provider credentials stored",
-    fix: "Run `opencode auth login`.",
-  });
-
-  stub(f.bin, "opencode", script('[{"id":"openai","connections":[{}]}]'));
-  const stored = await runDoctor({ repo: f.repo, version: "0.0.0-test" });
-  assert.deepEqual(check(stored, "auth"), {
-    name: "auth",
-    status: "ok",
-    detail: "opencode: 1 provider credential(s) stored",
-  });
-  assert.equal(check(stored, "runner").detail, `opencode (NEEDLEFISH_RUNNER; ${path.join(f.bin, "opencode")}, opencode v9.9.9-stub)`);
+  process.env.OPENAI_API_KEY = "dummy-not-a-credential";
+  const report = await runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.equal(report.ok, false);
+  assert.match(check(report, "runner").detail, /OpenCode reviews are temporarily disabled/);
+  assert.equal(check(report, "auth").status, "unknown");
+  assert.equal(check(report, "runner").fix, "Set --runner or NEEDLEFISH_RUNNER to codex or claude; see issue #207.");
+  delete process.env.NEEDLEFISH_RUNNER;
+  const detected = await runDoctor({ repo: f.repo, version: "0.0.0-test" });
+  assert.equal(detected.ok, false);
+  assert.match(check(detected, "runner").detail, /OpenCode reviews are temporarily disabled/);
+  assert.equal(check(detected, "runner").fix, check(report, "runner").fix);
+  assert.equal(check(detected, "auth").status, "unknown");
+  assert.equal(existsSync(marker), false);
 });
 
 test("doctor reports unknown, not a guess, when a runner has no status command or the probe misbehaves", async (t) => {
@@ -216,13 +204,7 @@ test("doctor reports unknown, not a guess, when a runner has no status command o
   assert.match(renderDoctorReport(grok), /\n5 passed, 1 unknown, 0 failed\n$/);
   assert.doesNotMatch(renderDoctorReport(grok), /all checks passed/);
 
-  stub(f.bin, "opencode", 'echo "not json"; exit 0');
-  const garbled = await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "opencode" });
-  assert.deepEqual(check(garbled, "auth"), {
-    name: "auth",
-    status: "unknown",
-    detail: "opencode: `opencode auth list --standalone --format json` did not print JSON",
-  });
+
 });
 
 test("doctor names the env var when an explicitly selected runner binary is missing", async (t) => {
@@ -479,8 +461,6 @@ test("doctor accepts env-credential setups the review accepts, without printing 
     assert.equal(report.ok, true);
     assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
   };
-  await accepted("opencode", { OPENAI_API_KEY: secret });
-  await accepted("opencode", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "ZAI_API_KEY", ZAI_API_KEY: secret });
   await accepted("codex", { CODEX_PROXY_BASE_URL: "http://127.0.0.1:1", CODEX_PROXY_API_KEY: secret });
   await accepted("codex", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "CODEX_API_KEY", CODEX_API_KEY: secret });
   await accepted("claude", { ANTHROPIC_API_KEY: secret });
@@ -488,7 +468,7 @@ test("doctor accepts env-credential setups the review accepts, without printing 
   await accepted("grok", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "GROK_API_KEY", GROK_API_KEY: secret });
 
   // Without the env credential the same stubs are judged by their own status.
-  assert.equal(check(await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "opencode" }), "auth").status, "fail");
+  assert.equal(check(await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "opencode" }), "auth").status, "unknown");
   assert.equal(check(await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "codex" }), "auth").status, "fail");
   // A passthrough name alone is configuration, not a credential.
   process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "CODEX_API_KEY";

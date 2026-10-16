@@ -11,10 +11,17 @@ Needlefish 在 merge 前審查 Git 變更中的缺陷。審查與 critic 篩選 
 [常見錯誤](#常見錯誤) · [Benchmark 頁面](https://frankekn.github.io/needlefish/) ·
 [完整參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md)
 
+OpenCode 審查目前停用，包括自動選擇、明確指定的純文件審查與 dry-run。
+已驗證 v2.0.22 與 v2.0.30 會在啟動時執行目標 repo 的外掛。
+v2.0.30 雖可停用專案設定探索，仍會載入系統外掛與管理設定。
+`--standalone` 和臨時 HOME 無法提供完整隔離。既有認證檔案保留。
+請用 `--runner` 明確選擇其他 runner。Needlefish 不會自動切換 provider。
+未來版本須重新驗證隔離契約，才能恢復此 runner。詳見 [issue #207](https://github.com/frankekn/needlefish/issues/207)。
+
 ## 快速開始
 
 使用可信任的 Git repo。需要 Node 20 以上、Git 2.41 以上，以及已登入的
-`codex`、`claude` 或 `opencode` CLI，並讓 CLI 位於 `PATH`。
+`codex` 或 `claude` CLI，並讓 CLI 位於 `PATH`。
 已發布的 v0.4.10 CLI 請從 repo 根目錄執行。
 完整參考描述目前的原始碼，包含尚未發布的變更。
 

@@ -1190,6 +1190,7 @@ export async function review(
 	onTrace?: ReviewTraceObserver,
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
+	if (runnerOptions.runner || process.env.NEEDLEFISH_RUNNER) resolveRunner(runnerOptions);
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle, runnerOptions);
 	if (plan.binaryOnlyFastPath) {
