@@ -877,6 +877,58 @@ final class GithubSetupTests: XCTestCase {
 
 @MainActor
 final class GithubSetupOwnershipTests: XCTestCase {
+    func testGitHubOperationPreservesOfflineDemoAndDiagnosticExport() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-local-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("cli")
+        let ready = root.appendingPathComponent("ready")
+        let release = root.appendingPathComponent("release")
+        let calls = root.appendingPathComponent("calls")
+        try """
+        printf '%s\n' "$*" >> '\(calls.path)'
+        printf ready > '\(ready.path)'
+        while [ ! -f '\(release.path)' ]; do sleep 0.01; done
+        printf '%s' '{"schemaVersion":1,"repositories":[{"name":"owner/offline-fixture"}]}'
+        """.write(to: script, atomically: true, encoding: .utf8)
+        let model = Onboarding(runtime: Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true))
+        model.githubSetup.load()
+        defer { model.cancel() }
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: ready.path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(try String(contentsOf: ready, encoding: .utf8), "ready")
+        XCTAssertEqual(model.busy, true)
+        XCTAssertEqual(model.localBusy, false)
+        model.demo()
+        if case .result(let result, let demo) = model.state {
+            XCTAssertEqual(demo, true)
+            XCTAssertEqual(result.summary, "離線範例。沒有讀取你的專案，也沒有呼叫 AI。 / Offline example. Your project was not reviewed.")
+        } else { XCTFail("Offline demo must remain available during GitHub setup") }
+        let destination = root.appendingPathComponent("diagnostics.txt")
+        model.saveDiagnostics("diagnostic preview", to: destination)
+        XCTAssertEqual(try? String(contentsOf: destination, encoding: .utf8), "diagnostic preview")
+        if case .message(let message) = model.state {
+            XCTAssertEqual(message, "已匯出診斷。 / Diagnostics exported.")
+        } else { XCTFail("Diagnostic export must report its result during GitHub setup") }
+        model.login()
+        XCTAssertEqual(try String(contentsOf: calls, encoding: .utf8), "setup github repositories --json\n")
+        XCTAssertEqual(model.githubSetup.busy, true)
+        XCTAssertEqual(model.canCancel, true)
+        try "release".write(to: release, atomically: true, encoding: .utf8)
+        for _ in 0..<100 {
+            if !model.busy { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.busy, false)
+        if case .repositories(let repositories) = model.githubSetup.state {
+            XCTAssertEqual(repositories.map(\.name), ["owner/offline-fixture"])
+        } else { XCTFail("Local actions must not cancel or replace GitHub setup") }
+        if case .message(let message) = model.state {
+            XCTAssertEqual(message, "已匯出診斷。 / Diagnostics exported.")
+        } else { XCTFail("GitHub completion must preserve the independent local result") }
+    }
     func testGitHubCommandMakesParentBusyAndQuitCancelsItsOwnedGroup() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-owner-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
