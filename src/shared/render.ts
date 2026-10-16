@@ -22,7 +22,7 @@ export function quoteNote(finding: Finding): string | null {
 	if (summary) notes.push(`_${summary}_`);
 	const check = finding.quoteCheck;
 	if (check?.status === "moved") notes.push(`_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`);
-	if (check?.status === "not_found") notes.push(`_Location unverified: the quoted source was not found in ${codeSpan(finding.file)}._`);
+	if (check?.status === "not_found") notes.push(`_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`);
 	if (check?.status === "unchecked") notes.push("_Location unverified: the quoted source could not be checked._");
 	return notes.join("\n\n") || null;
 }
@@ -378,13 +378,14 @@ function tableLocation(
 	if (!finding.file) return "—";
 	const source = finding.evidence?.sources.find((entry) => entry.sourceType === "git_blob" && entry.status === "source_present");
 	if (source?.sourceType === "git_blob" && source.revision) headSha = source.revision;
+	const file = source?.sourceType === "git_blob" && source.revision ? source.file : finding.file;
 	const location = tableText(plainLocation(finding));
-	if (!repoSlug || !headSha || !isRepoRelativePath(finding.file)) {
+	if (!repoSlug || !headSha || !isRepoRelativePath(file)) {
 		return `\`${location}\``;
 	}
 	// encodeURIComponent leaves ( ) unescaped; an unescaped ) ends the
 	// markdown link early.
-	const encodedPath = finding.file
+	const encodedPath = file
 		.split("/")
 		.map(
 			(segment) =>

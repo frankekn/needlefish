@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -117,6 +117,7 @@ test("checkQuotes marks short and uncheckable quotes unchecked, and preserves ab
 	assert.equal(shortResult.replacement, undefined);
 	assert.equal(absent.title, "Bug");
 	assert.equal(absent.quoteCheck, undefined);
+	assert.equal(absent.replacement, undefined);
 	// Uncommitted mode reviews the WORKING sentinel, which is not a git ref.
 	assert.deepEqual(checkQuotes([quoted], { ...bundle, headSha: "WORKING" })[0].quoteCheck, { status: "unchecked" });
 });
@@ -320,4 +321,95 @@ test("source evidence ignores blob and commit replacement refs", (t) => {
 	const [captured] = checkQuotes([quoted], bundle);
 	assert.deepEqual(captured.evidence, original.evidence);
 	assert.deepEqual(captured.quoteCheck, { status: "matched" });
+});
+
+test("checkQuotes never resolves a WORKING branch as the uncommitted sentinel", (t) => {
+	const bundle = makeRepo(t);
+	gitText(["branch", "WORKING", bundle.headSha], bundle.repoPath);
+	const quoted = { ...FINDING, lineStart: 2, lineEnd: 2, quote: "const total = price * quantity;" };
+	const [finding] = checkQuotes([quoted], { ...bundle, headSha: "WORKING" });
+	assert.deepEqual(finding.quoteCheck, { status: "unchecked" });
+	assert.equal(finding.replacement, undefined);
+	assert.equal(finding.evidence?.sources[0].status, "source_unverified");
+});
+
+test("checkQuotes matches a removed base line across a quoted-path rename", (t) => {
+	const bundle = makeRepo(t);
+	const renamed = 'src/new ["名"].ts';
+	const retained = Array.from({ length: 10 }, (_, index) => `const retained${index} = stableCall();`).join("\n") + "\n";
+	writeFileSync(path.join(bundle.repoPath, "src/app.ts"), "const removedLine = legacyCall();\n" + retained);
+	commitAll(bundle.repoPath, "base before rename");
+	const baseSha = headSha(bundle.repoPath);
+	gitText(["mv", "src/app.ts", renamed], bundle.repoPath);
+	writeFileSync(path.join(bundle.repoPath, renamed), retained);
+	commitAll(bundle.repoPath, "rename after removing source");
+	const [finding] = checkQuotes([{ ...FINDING, file: renamed, quote: "const removedLine = legacyCall();" }], {
+		...bundle,
+		baseSha,
+		headSha: headSha(bundle.repoPath),
+		changedFiles: [{ path: renamed, surface: "source" }],
+	});
+	assert.deepEqual(finding.quoteCheck, { status: "matched" });
+	assert.equal(finding.file, renamed);
+	assert.equal(finding.lineStart, 1);
+	assert.equal(finding.replacement, undefined);
+	const source = finding.evidence?.sources[0];
+	assert.equal(source?.sourceType, "git_blob");
+	assert.equal(source?.status, "source_present");
+	assert.equal(source?.sourceType === "git_blob" ? source.file : undefined, "src/app.ts");
+	assert.equal(source?.sourceType === "git_blob" ? source.revision : undefined, baseSha);
+});
+
+for (const command of ["ls-tree", "cat-file", "grep", "diff"]) {
+	test(`checkQuotes shares its remaining deadline across findings and caps the first ${command} subprocess`, (t) => {
+		const bundle = makeRepo(t);
+		const bin = path.join(bundle.repoPath, "bin");
+		mkdirSync(bin);
+		const calls = path.join(bin, "calls");
+		const budgetMs = 1000;
+		const originalPath = process.env.PATH;
+		const realGit = gitText(["--exec-path"], bundle.repoPath).trim() + "/git";
+		const shim = path.join(bin, "git");
+		writeFileSync(shim, [
+			`#!${process.execPath}`,
+			"const fs = require('node:fs');",
+			"const { spawnSync } = require('node:child_process');",
+			`const command = ${JSON.stringify(command)};`,
+			"const args = process.argv.slice(2);",
+			"if (args.includes(command)) {",
+			`  fs.appendFileSync(${JSON.stringify(calls)}, ${JSON.stringify(command + "\n")});`,
+			`  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${budgetMs + 5_000});`,
+			"}",
+			`const result = spawnSync(${JSON.stringify(realGit)}, args, { encoding: 'utf8' });`,
+			"process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '');",
+			"process.exit(result.status ?? 2);",
+		].join("\n"));
+		chmodSync(shim, 0o755);
+		t.after(() => {
+			if (originalPath === undefined) delete process.env.PATH;
+			else process.env.PATH = originalPath;
+		});
+		process.env.PATH = bin + path.delimiter + originalPath;
+		const startedAt = performance.now();
+		const quoted = { ...FINDING, quote: "const unique = onlyInOther();" };
+		const findings = checkQuotes([quoted, quoted, quoted], bundle, startedAt + budgetMs);
+		assert.deepEqual(findings.map((finding) => finding.quoteCheck), Array(3).fill({ status: "unchecked" }));
+		assert.ok(findings.every((finding) => finding.replacement === undefined));
+		assert.ok(performance.now() - startedAt < budgetMs + 600, "quote checks exceeded one shared budget");
+		assert.equal(readFileSync(calls, "utf8"), command + "\n");
+	});
+}
+
+
+test("checkQuotes rejects option-shaped base revisions before Git can write files", (t) => {
+	const bundle = makeRepo(t);
+	const destination = path.join(bundle.repoPath, "must-survive.txt");
+	writeFileSync(destination, "preserve this file\n");
+	const [finding] = checkQuotes([{ ...FINDING, quote: "this quoted source does not exist" }], {
+		...bundle, baseSha: `--output=${destination}`,
+	});
+	assert.deepEqual(finding.quoteCheck, { status: "unchecked" });
+	assert.equal(finding.evidence?.sources[0].status, "source_unverified");
+	assert.equal(finding.replacement, undefined);
+	assert.equal(readFileSync(destination, "utf8"), "preserve this file\n");
 });

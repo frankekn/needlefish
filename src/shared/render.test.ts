@@ -523,7 +523,7 @@ test("renderMarkdown adds the quote-check location note to finding details", () 
 	const matched = renderMarkdown(baseResult([finding("P2", "same", "d.ts", { quoteCheck: { status: "matched" } })]));
 
 	assert.match(moved, /_Location corrected from `a\.ts:9`: the quoted source was found here\._/);
-	assert.match(missing, /_Location unverified: the quoted source was not found in `c\.ts`\._/);
+	assert.match(missing, /_Location unverified: the quoted source could not verify the cited location in `c\.ts`\._/);
 	assert.equal(matched, renderMarkdown(baseResult([finding("P2", "same", "d.ts")])));
 });
 
@@ -539,7 +539,7 @@ test("renderMarkdown folds a bare CR in a hostile path so the note stays one par
 	const out = renderMarkdown(baseResult([finding("P2", "missing", file, { quoteCheck: { status: "not_found" } })]));
 	const note = out.split("\n").find((line) => line.startsWith("_Location unverified"));
 
-	assert.equal(note, "_Location unverified: the quoted source was not found in `` a`b [notice](https://example.invalid) ``._");
+	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
 });
 
 test("renderMarkdown warns when source quotes could not be checked", () => {
@@ -560,4 +560,14 @@ test("renderMarkdown shows source caveats and keeps digest and tool limits in de
 	assert.match(markdown, new RegExp(`SHA-256 .${"c".repeat(64)}`));
 	assert.match(markdown, /blob\/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\/src\/app.ts#L1/);
 	assert.equal(markdown.includes("confidence"), false);
+});
+
+
+test("renderMarkdown links removed source to its original path at the captured base", () => {
+	const item = finding("P2", "Restore removed guard", "src/renamed.ts", { evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/original.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.ok(markdown.includes("[`src/renamed.ts:1`](https://github.com/owner/repo/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/original.ts#L1)"));
 });

@@ -104,7 +104,7 @@ test("formatSuggestionComment shows the quote-check location note and stays sile
   const matched = formatSuggestionComment(mkFinding({ quoteCheck: { status: "matched" } }), context);
 
   assert.match(moved.body, /\*\*Validate:\*\* test\n\n_Location corrected from `src\/a\.ts:9`: the quoted source was found here\._\n/);
-  assert.match(missing.body, /_Location unverified: the quoted source was not found in `README\.md`\._/);
+  assert.match(missing.body, /_Location unverified: the quoted source could not verify the cited location in `README\.md`\._/);
   assert.equal(matched.body, formatSuggestionComment(mkFinding(), context).body);
 });
 

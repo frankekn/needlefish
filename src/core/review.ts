@@ -776,7 +776,7 @@ function toReviewResult(
 		summary,
 		// After the verdict on purpose: the quote check may relocate or
 		// annotate a finding, never decide pass/fail.
-		findings: checkQuotes(findings, bundle),
+		findings: checkQuotes(findings, bundle, run.reviewDeadlineMs),
 		checked: raw.checked,
 		residualRisks,
 		baseSha: bundle.baseSha,
