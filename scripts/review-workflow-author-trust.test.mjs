@@ -321,7 +321,7 @@ test("reconcile treats the posted skip check as terminal and never dispatches th
 		{
 			pr: pull({ association: "NONE" }),
 			checkRuns: [
-				{ conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
+				{ name: posted.name, app: { id: 15368, slug: "github-actions" }, conclusion: posted.conclusion, output: { title: posted["output[title]"] } },
 			],
 		},
 	);
