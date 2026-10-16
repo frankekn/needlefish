@@ -27,6 +27,7 @@ import {
 	assertRunnerSchedulingAllowed,
 	createManagedTempDirectory,
 	disposeManagedTempDirectory,
+	registerTerminationFinalizer,
 } from "../shared/temp-lifecycle.js";
 import { resolveRunner, runnerReviewCapability, RunnerSelectionError } from "../shared/runner-detection.js";
 import {
@@ -43,6 +44,7 @@ import {
 import { normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
 import { checkQuotes } from "./quote-check.js";
+import { collectLargeLiteralContext, hotspotLiteralContext, type LargeLiteralContext } from "./large-literal-context.js";
 import { deriveVerdict } from "./verdict.js";
 import { loadPrompt } from "./prompts.js";
 import {
@@ -113,6 +115,7 @@ interface ReviewRun {
 	readonly onProgress?: ReviewProgressObserver;
 	readonly startedAt: number;
 	readonly reviewDeadlineMs?: number;
+	readonly literalContext: () => Promise<LargeLiteralContext>;
 }
 
 interface ReviewPass {
@@ -979,6 +982,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		throw new Error("map pass produced no changed-file hotspots");
 	}
 
+	const literalContext = await run.literalContext();
 	const agents = bundle.agentsMd;
 	let deepDone = 0;
 	let deepFailed = 0;
@@ -1015,6 +1019,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			countDeepPass(async (h, passIndex) => {
 				const hotspot = {
 					...h,
+					literalContext: hotspotLiteralContext(literalContext, h),
 					...(bundle.untrackedSkipped?.length
 						? { untrackedSkipped: bundle.untrackedSkipped }
 						: {}),
@@ -1277,6 +1282,9 @@ async function reviewRoutes(
 	const tmp = await createManagedTempDirectory();
 	let snapshot: RunnerSandbox | undefined;
 	let activeRun: ReviewRun | undefined;
+	let literalContext: Promise<LargeLiteralContext> | undefined;
+	const cancellation = new AbortController();
+	const detachCancellation = registerTerminationFinalizer(async () => { cancellation.abort(); });
 	const screenError = (error: unknown) => {
 		attachRunRaws(error, {
 			failedRawOutputs: [...failedRawOutputs, ...(activeRun?.failedRawOutputs ?? [])],
@@ -1296,10 +1304,16 @@ async function reviewRoutes(
 		assertRunnerSchedulingAllowed();
 		if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
 		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, tmp });
+		const capturedSnapshot = { ...snapshot, expectedBaseSha: snapshot.expectedBaseSha ?? bundle.baseSha };
 		for (const [routeIndex, {config, plan}] of selections.entries()) {
 			assertRunnerSchedulingAllowed();
 			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
 			const run: ReviewRun = {
+				literalContext: () => literalContext ??= collectLargeLiteralContext({
+					bundle, snapshot: capturedSnapshot,
+					abortSignal: cancellation.signal,
+					...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
+				}),
 				bundle, snapshot, runnerConfig: config, runtime: reviewRuntime(config, budget), outputGuards,
 				stats: [], failedRawOutputs: [], rawOutputs: [], lfs: { pointerFiles: new Set(), scanIncomplete: false }, startedAt,
 				...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
@@ -1333,6 +1347,7 @@ async function reviewRoutes(
 	} catch (error) {
 		throw screenError(error);
 	} finally {
+		detachCancellation();
 		try { assertSnapshotClean(); }
 		finally {
 			await disposeManagedTempDirectory(tmp).catch((error: unknown) => { throw screenError(error); });
