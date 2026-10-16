@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -6,7 +7,7 @@ import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import { GITHUB_WORKFLOW, planGithubSetup, renderGithubSetup } from "./github.js";
+import { GITHUB_WORKFLOW, PREVIOUS_GITHUB_WORKFLOW, planGithubSetup, renderGithubSetup } from "./github.js";
 
 function repo(t: TestContext, name = "target"): string {
   const parent = mkdtempSync(join(tmpdir(), "needlefish-setup-"));
@@ -154,4 +155,36 @@ test("the CLI previews without side effects and returns a nonzero status for con
   assert.equal(conflict.status, 1, conflict.stderr);
   assert.match(conflict.stdout, /Plan: conflict[\s\S]*not managed by Needlefish setup/);
   assert.equal(readFileSync(workflowPath(root), "utf8"), "name: custom\n");
+});
+
+
+test("local setup preserves repository roots with trailing whitespace", t => {
+  for (const name of ["space ", "tab\t", "newline\n", "carriage\r"]) {
+    const root = repo(t, name);
+    assert.equal(planGithubSetup(root).path, workflowPath(root));
+  }
+});
+
+
+test("the reserved setup branch fails before secret, checkout or model use", () => {
+  const document = YAML.parseDocument(GITHUB_WORKFLOW);
+  const guard = document.getIn(["jobs", "review", "steps", 0, "run"]);
+  assert.equal(typeof guard, "string");
+  const run = (branch: string) => spawnSync("bash", ["-e"], {
+    input: String(guard), encoding: "utf8", env: {
+      TARGET_REPO: "owner/repo", HEAD_REPO: "owner/repo", HEAD_BRANCH: branch,
+      AUTHOR_ASSOCIATION: "OWNER", AUTHOR_TYPE: "User",
+    },
+  });
+  const blocked = run("needlefish/setup-v1");
+  assert.equal(blocked.status, 1);
+  assert.match(blocked.stdout, /has not reviewed this setup PR/);
+  assert.equal(run("normal-feature").status, 0);
+  assert.equal(document.getIn(["jobs", "review", "steps", 0, "env", "HEAD_BRANCH"]), "${{ github.head_ref }}");
+});
+
+
+test("the accepted previous template retains the exact shipped generator bytes", () => {
+  assert.equal(createHash("sha256").update(PREVIOUS_GITHUB_WORKFLOW).digest("hex"),
+    "f4c9098ba5febfb564bfaa5644a7274b4b273a14ade98be24d9279e2178d3414");
 });
