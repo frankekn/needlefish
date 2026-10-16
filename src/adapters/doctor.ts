@@ -284,12 +284,13 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
     if (!(error instanceof Error)) throw error;
     branch = "detached HEAD";
   }
+  const repoRoot = git(["rev-parse", "--show-toplevel"], repo, { preserveOutput: true }).replace(/\n$/, "");
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { repoRoot: path.resolve(git(["rev-parse", "--show-toplevel"], repo)), headExists, dirty: changed > 0 },
+    worktree: { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 },
   };
 }
 

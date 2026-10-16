@@ -540,8 +540,14 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(FileManager.default.fileExists(atPath: cleaned.path), false)
         try await waitForIdle(delegate.model)
         XCTAssertEqual(try String(contentsOf: cleaned, encoding: .utf8), "cleaned")
-        XCTAssertEqual(kill(pid, 0), -1)
-        XCTAssertEqual(errno, ESRCH)
+        for _ in 0..<50 {
+            if kill(pid, 0) != 0 { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let status = kill(pid, 0)
+        let error = errno
+        XCTAssertEqual(status, -1)
+        XCTAssertEqual(error, ESRCH)
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 

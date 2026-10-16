@@ -543,3 +543,20 @@ test("doctor reports the canonical selected repository root from nested and link
   assert.equal(notRepo.repoRoot, undefined);
   assert.equal(check(notRepo, "git").status, "fail");
 });
+
+for (const suffix of [" ", "\t", "\n"]) {
+  test(`doctor preserves repository pathname suffix ${JSON.stringify(suffix)}`, (t) => {
+    const f = setup(t);
+    codexStub(f.bin, 0, "Logged in using ChatGPT");
+    const repo = path.join(f.tmp, `project${suffix}`);
+    mkdirSync(repo);
+    gitText(["init", "-q"], repo);
+    const nested = path.join(repo, "nested");
+    mkdirSync(nested);
+    for (const selected of [repo, nested]) {
+      const report = runDoctor({ repo: selected, version: "0.0.0-test" });
+      assert.equal(check(report, "git").status, "ok");
+      assert.equal(report.repoRoot, realpathSync(repo));
+    }
+  });
+}
