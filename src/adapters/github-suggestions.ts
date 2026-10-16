@@ -44,7 +44,7 @@ function validatedReplacementLines(
 
 function formatCommentBody(finding: Finding, replacementLines: readonly string[] | null): string {
   const lines = [
-    `**${finding.severity}** ${finding.title}`,
+    `**${finding.severity} (${finding.category}): ${finding.title}**`,
     "",
     finding.whyItBreaks,
     "",

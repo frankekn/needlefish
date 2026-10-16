@@ -70,8 +70,7 @@ export interface FindingHeader {
   readonly category: string | null;
 }
 
-// Two inline header shapes have shipped: `**P2** title` (current) and
-// `**P2 (category): title**` (the first releases).
+// Keep both shipped inline header shapes for historical adoption reports.
 export function parseFindingHeader(body: string): FindingHeader | null {
   const firstLine = body.split("\n", 1)[0] ?? "";
   const legacy = /^\*\*(P[0-3]) \(([^)]+)\): (.+)\*\*$/.exec(firstLine);

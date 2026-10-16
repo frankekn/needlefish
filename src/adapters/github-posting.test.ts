@@ -833,7 +833,7 @@ test("capOutboundBody keeps a quoted state marker as body text", () => {
 		mkFinding({ title: "quoted prior" }),
 	]);
 	const body = [
-		"**P2** bug",
+		"**P2 (bug): bug**",
 		"",
 		`the diff quotes the receipt: ${quoted}`,
 		"",
@@ -959,7 +959,7 @@ test("runGithub posts blocking findings as non-sticky review comments", async (t
 	assert.equal(comment.path, "README.md");
 	assert.equal(comment.line, 1);
 	assert.equal(comment.side, "RIGHT");
-	assert.match(String(comment.body), /\*\*P2\*\* bug/);
+	assert.match(String(comment.body), /\*\*P2 \(bug\): bug\*\*/);
 	assert.match(String(comment.body), /\*\*Fix:\*\* fix/);
 	assert.match(String(comment.body), /\*\*Validate:\*\* test/);
 	assert.equal(process.exitCode, 1);
@@ -1001,7 +1001,7 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 	const comment = payload.comments[0];
 	assert.equal(
 		String(comment.body),
-		"**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```\n\n<!-- needlefish-finding -->",
+		"**P2 (bug): bug**\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```\n\n<!-- needlefish-finding -->",
 	);
 });
 
@@ -1079,7 +1079,7 @@ test("runGithub omits fence-breaking suggestions but still posts inline comments
 	assert.equal(payload.comments.length, 1);
 	const comment = payload.comments[0];
 	assert.doesNotMatch(String(comment.body), /```suggestion/);
-	assert.match(String(comment.body), /\*\*P2\*\* bug/);
+	assert.match(String(comment.body), /\*\*P2 \(bug\): bug\*\*/);
 	assert.match(String(comment.body), /\*\*Fix:\*\* fix/);
 });
 
@@ -1264,7 +1264,7 @@ test("runGithub inlines only P0/P1/P2 when more than 20 findings are anchorable"
 	const payload = parseReviewPayload(reviewPost.payload);
 	assert.equal(payload.comments.length, 5);
 	for (const comment of payload.comments) {
-		assert.match(String(comment.body), /\*\*P2\*\*/);
+		assert.match(String(comment.body), /^\*\*P2 \(bug\): p2-\d\*\*/);
 		assert.equal(comment.side, "RIGHT");
 	}
 	assert.match(payload.body, /### ⚪ P3 F6: p3-0/);
@@ -2490,7 +2490,7 @@ test("re-review prompts keep human PR discussion and drop Needlefish's own posts
 		rawReview: defaultRawReview(),
 	});
 
-	// Round 1 posts the review (inline **P2** bug comment); round 2 posts a
+	// Round 1 posts the review (inline **P2 (bug): bug** comment); round 2 posts a
 	// round comment; round 3 fails and posts the infra-failure comment.
 	await runGithub(fixture.repo, 46, { timeoutMs: 1000 });
 	await runGithub(fixture.repo, 46, { timeoutMs: 1000 }, true);
@@ -2524,7 +2524,7 @@ test("re-review prompts keep human PR discussion and drop Needlefish's own posts
 		readFileSync(fixture.reviewCommentsState, "utf8"),
 	) as Record<string, unknown>[];
 	assert.ok(
-		reviewComments.some((c) => String(c.body).startsWith("**P2** bug")),
+		reviewComments.some((c) => String(c.body).startsWith("**P2 (bug): bug**")),
 		"round 1 should have posted the inline finding",
 	);
 	reviewComments.push({
@@ -2562,7 +2562,7 @@ test("re-review prompts keep human PR discussion and drop Needlefish's own posts
 	assert.equal(prompts.includes("FAILED TO RUN"), false);
 	assert.equal(prompts.includes("<!-- needlefish-error -->"), false);
 	assert.equal(
-		prompts.includes("**P2** bug"),
+		prompts.includes("**P2 (bug): bug**"),
 		false,
 		"Needlefish's own inline finding must not reach the model",
 	);

@@ -4,6 +4,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { formatSuggestionComment } from "../../src/adapters/github-suggestions";
+import { parseState, renderState } from "../../src/adapters/github";
+import { deriveVerdict } from "../../src/core/verdict";
+import type { Finding } from "../../src/shared/schema";
 import {
   adoptionRate,
   classifyFate,
@@ -79,6 +83,27 @@ test("parseFindingHeader: legacy header carries the category", () => {
     title: "Reject a negative count",
     category: "validation",
   });
+});
+
+test("posted category headers preserve semantic titles, state keys, and verdicts", () => {
+  const categories: Finding["category"][] = ["bug", "contract", "duplicate", "runtime", "security", "validation"];
+  const titles = ["Guard `value`", "Keep **bold** text", "Reject (nested): input", "Escape \\* literal", "Keep [label](url)", "Guard <input> & output"];
+  const keys = ["guard `value`", "keep **bold** text", "reject (nested): input", "escape \\* literal", "keep [label](url)", "guard <input> & output"];
+  for (const [index, category] of categories.entries()) {
+    const finding: Finding = {
+      severity: "P2", category, title: titles[index], file: "a.ts", lineStart: 1, lineEnd: 1,
+      confidence: 0.9, whyItBreaks: "breaks", suggestedFix: "fix", validation: "test",
+    };
+    const before = JSON.stringify({ findings: [finding], verdict: deriveVerdict([finding], []) });
+    const body = formatSuggestionComment(finding, { ranges: new Map(), headLineCount: () => null }).body;
+    assert.deepEqual(parseFindingHeader(body), { severity: "P2", category, title: titles[index] });
+    assert.deepEqual(parseFindingHeader(`**P2** ${titles[index]}`), { severity: "P2", category: null, title: titles[index] });
+    assert.deepEqual(parseState(renderState("abc", [finding]))?.findings, [
+      { file: "a.ts", lineStart: 1, category, title: keys[index] },
+    ]);
+    assert.equal(JSON.stringify({ findings: [finding], verdict: deriveVerdict([finding], []) }), before);
+    assert.equal(deriveVerdict([finding], []), "changes_requested");
+  }
 });
 
 test("parseFindingHeader: non-finding comments are not counted", () => {
