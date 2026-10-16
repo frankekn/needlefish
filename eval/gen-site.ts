@@ -1,3 +1,5 @@
+import { matchQualifiedConfiguration, type RuntimeConfigurationIdentity } from "./shared/runtime-qualification";
+import runtimePublication from "../runtime-publication.json";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -464,7 +466,10 @@ export function validateManifest(value: unknown): LeaderboardManifest {
 
 export function readManifest(): LeaderboardManifest {
   const parsed: unknown = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  return validateManifest(parsed);
+  const manifest = validateManifest(parsed);
+  const selected = manifest.lanes.filter((lane) => lane.status === "Deployed");
+  if (selected.length !== 1 || selected[0].report !== runtimePublication.benchmarkSelected.report) throw new Error("benchmark selection differs from runtime-publication.json");
+  return manifest;
 }
 
 export function validateExcludedReportFiles(
@@ -482,7 +487,9 @@ function readPackageVersion(): string {
   const parsed: unknown = JSON.parse(
     readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
   );
-  return requiredString(record(parsed, "package.json"), "version", "package.json");
+  const version = requiredString(record(parsed, "package.json"), "version", "package.json");
+  if (version !== runtimePublication.packageVersion) throw new Error("package version differs from runtime-publication.json");
+  return version;
 }
 
 export function readLane(config: LaneConfig): Lane {
@@ -876,7 +883,7 @@ function laneRows(lanes: readonly Lane[], ranked: boolean): string {
         ? "Below gate: Tier-1 miss"
         : noiseMiss
           ? "Below gate: positive noise"
-          : config.status;
+          : config.status === "Deployed" ? "Benchmark-selected" : config.status;
       const [lower, upper] = scoreConfidenceInterval(report);
       const legacyIdentity = config.legacyConfigIdentityException
         ? `<div><dt>Config identity</dt><dd>Legacy exception: ${escapeHtml(config.legacyConfigIdentityException)}</dd></div>`
@@ -933,6 +940,29 @@ export function qualifies(report: PublishedReport): boolean {
   );
 }
 
+export type RuntimeConfigurationQualification =
+  | { readonly matchStatus: "tested"; readonly policyVersion: "public-leaderboard-interim-v1"; readonly reportId: string }
+  | { readonly matchStatus: "unqualified"; readonly reason: "missing_report" | "report_not_admitted" | "quality_gate_failed" | "different_configuration" | "unknown_identity" };
+
+export function qualifyRuntimeConfiguration(
+  actual: RuntimeConfigurationIdentity,
+  qualification: Lane | undefined,
+  canonical: FixtureClassifications,
+): RuntimeConfigurationQualification {
+  if (qualification === undefined) return { matchStatus: "unqualified", reason: "missing_report" };
+  try {
+    validateManifest({ updated: qualification.report.createdAt.slice(0, 10), baseline: qualification.config.report, lanes: [qualification.config], blocked: [] });
+    validateComparability([qualification], qualification.config.report, canonical);
+    if (operationalFailures(qualification.report).length > 0 || !qualifies(qualification.report)) return { matchStatus: "unqualified", reason: "quality_gate_failed" };
+  } catch {
+    return { matchStatus: "unqualified", reason: "report_not_admitted" };
+  }
+  const match = matchQualifiedConfiguration(actual, qualification.report);
+  return match === "exact"
+    ? { matchStatus: "tested", policyVersion: "public-leaderboard-interim-v1", reportId: qualification.config.report }
+    : { matchStatus: "unqualified", reason: match === "different" ? "different_configuration" : "unknown_identity" };
+}
+
 export function renderSite(
   manifest: LeaderboardManifest,
   configured: readonly Lane[],
@@ -940,6 +970,7 @@ export function renderSite(
 ): string {
   validateManifest(manifest);
   const releaseVersion = readPackageVersion();
+  const installationNote = `Package ${escapeHtml(releaseVersion)} uses ${escapeHtml(runtimePublication.packageDefault.selection)}. Installed configurations are operator-selected, with unknown identity and no exact qualification claim.`;
   const baseline = validateComparability(configured, manifest.baseline, canonical);
   const operational = configured.filter(({ report }) => operationalFailures(report).length > 0);
   const scored = configured.filter(({ report }) => operationalFailures(report).length === 0);
@@ -960,7 +991,7 @@ export function renderSite(
     qualifies(deployment.report) &&
     qualified.length > 0 &&
     qualified[0].config.name !== deployment.config.name
-      ? ` ${escapeHtml(qualified[0].config.name)} ranks first but is not the deployed lane.`
+      ? ` ${escapeHtml(qualified[0].config.name)} ranks first but is not the benchmark-selected configuration.`
       : "";
   const notRanked: ExcludedConfig[] = [
     ...(manifest.excluded ?? []),
@@ -1007,7 +1038,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 -->
 <a class="skip" href="#leaderboard">Skip to leaderboard</a>
 <header class="mast"><div class="shell"><nav aria-label="Primary"><a class="brand" href="${REPO_URL}">Needlefish</a><div class="navlinks"><a href="#leaderboard">Leaderboard</a><a href="#method">Method</a><a href="${REPO_URL}/tree/main/eval/results">Raw reports</a><a href="${REPO_URL}">Use Needlefish</a></div></nav><div class="hero"><div><h1>Which AI reviewer catches real bugs?</h1><p class="lede">Needlefish measures which model and review setup finds real pull-request defects without blocking clean changes. Every lane reviews the same guarded scenarios three times, and every score links to raw evidence.</p></div><div class="dive-log"><strong>${fixtureCount} × 3</strong><span>review scenarios × independent draws</span></div></div><div class="trust" aria-label="Benchmark trust facts"><div><b>${fixtureCount}</b><span>current fixtures</span></div><div><b>3</b><span>draws per lane</span></div><div><b>sealed</b><span>holdouts included</span></div><div><b>v${ANTICHEAT_VERSION}</b><span>anti-cheat generation</span></div></div></div></header>
-<main><section class="section" id="leaderboard" tabindex="-1"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall and positive-fixture noise ≤ 0.12 are hard gates.</p><div class="decision"><strong>Current deployment</strong><p>${deployment ? deploymentOperational ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} has an operationally invalid report. Release ${escapeHtml(releaseVersion)} is blocked until the lane completes without provider or infrastructure failures.` : qualifies(deployment.report) ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed and passes the current qualification gates.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is deployed but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No deployed lane is configured."}${candidateNote}</p></div>${laneTable(qualified, "Qualified model leaderboard", true)}<p class="legend"><b>Status</b> · <span class="status status-deployed">Deployed</span> ships the current release · <span class="status status-candidate">Candidate</span> passes the same gates but is not shipped · <span class="status status-gate">Below gate</span> missed a hard gate; its score stays visible for comparison. Open a lane name for its diagnostics, reproduce command, and raw report.</p>${chart(qualified, disqualified)}</div></section>
+<main><section class="section" id="leaderboard" tabindex="-1"><div class="shell"><h2>Current leaderboard</h2><p class="intro">A lane is the complete combination of model, agent harness, provider route, and effort. Balanced Review Accuracy gives equal weight to anchored recall and usable specificity. Tier-1 recall and positive-fixture noise ≤ 0.12 are hard gates.</p><div class="decision"><strong>Benchmark selection</strong><p>${installationNote}</p><p>${deployment ? deploymentOperational ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} has an operationally invalid report. Release ${escapeHtml(releaseVersion)} is blocked until the lane completes without provider or infrastructure failures.` : qualifies(deployment.report) ? `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is benchmark-selected and passes the current qualification gates.` : `${escapeHtml(deployment.config.name)} via ${escapeHtml(deployment.report.provider)} is benchmark-selected but fails a current qualification gate. Release ${escapeHtml(releaseVersion)} is blocked until this lane is re-qualified or a qualified replacement is selected.` : "No benchmark-selected configuration is configured."}${candidateNote}</p></div>${laneTable(qualified, "Qualified model leaderboard", true)}<p class="legend"><b>Status</b> · <span class="status status-deployed">Selected</span> is selected for the benchmark · <span class="status status-candidate">Candidate</span> passes the same gates but is not selected · <span class="status status-gate">Below gate</span> missed a hard gate; its score stays visible for comparison. Open a lane name for its diagnostics, reproduce command, and raw report.</p>${chart(qualified, disqualified)}</div></section>
 ${disqualified.length ? `<section class="section"><div class="shell"><h2>Below the gate</h2><p class="intro">These complete reports missed a Tier-1 defect or exceeded the 0.12 positive-noise envelope. Their balanced scores remain visible for comparison, but they receive no rank.</p>${laneTable(disqualified, "Below-gate model lanes", false)}</div></section>` : ""}
 <section class="section"><div class="shell"><h2>Not run</h2><p class="intro">Unavailable routes are shown as blocked, never converted into a zero score.</p><ul class="blocked">${blockedRows(manifest.blocked)}</ul></div></section>
 ${notRanked.length ? `<section class="section"><div class="shell"><h2>Not ranked</h2><p class="intro">Exploratory, incompatible, compromised, or operationally invalid reports remain visible as evidence but never enter the leaderboard.</p><ul class="blocked">${excludedRows(notRanked)}</ul></div></section>` : ""}

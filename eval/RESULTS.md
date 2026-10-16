@@ -2177,3 +2177,16 @@ for it in its score. Idle timeouts, spawn errors, runner crashes, and rate
 limits stay operational. This ranks Grok 4.7 high (two timeouts) and leaves
 MiMo v2.6 Flash unranked (48 runner exits); no other published report
 contained a deadline timeout.
+
+## 2026-10-16 public runtime identity contract
+
+Gate class **R**, pending. The issue149 publication follow-up adds provenance-aware
+ACP launcher/harness/auth-source metadata, conservative exact configuration
+matching and a public distribution map. It does not run a model campaign or
+certify a runtime. Existing reports and model inputs remain unchanged.
+
+New eval reports omit private config/auth digests. Reports requiring those files
+remain private and cannot resume across processes or enter the public leaderboard.
+Existing publication refusals remain in force. Exact identity correspondence alone
+is not evidence that a report passed its quality gate. Production results remain
+`unqualified` until a complete matching qualification artifact is available.

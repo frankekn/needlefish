@@ -35,6 +35,7 @@ import {
 } from "./shared/critic-value";
 import { drawFindings, matchEvidence, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
+import { acpRuntimeIdentity } from "./shared/runtime-identity";
 import {
 	ANTICHEAT_VERSION,
 	type Aggregates,
@@ -68,6 +69,7 @@ interface RunArgs {
 	provider: string | null;
 	route: string | null;
 	runnerVersion: string | null;
+	publicLauncherArtifact: string | null;
 	draws: number;
 	concurrency: number;
 	baseline: boolean;
@@ -115,6 +117,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		if (!normalized || normalized.startsWith("--")) {
 			throw new Error(`${flag} requires a non-empty value`);
 		}
+		if (flag !== "--public-launcher-artifact" && (/[:][/][/]|[?=&]|(?:^|[/\\])(?:Users|home)[/\\]/.test(normalized))) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
 		return normalized;
 	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
@@ -123,6 +126,8 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	const provider = attestationValue("--provider");
 	const route = attestationValue("--route");
 	const runnerVersion = attestationValue("--runner-version");
+	const publicLauncherArtifact = attestationValue("--public-launcher-artifact");
+	if (publicLauncherArtifact !== null && runner !== "acp") throw new Error("--public-launcher-artifact requires --runner acp");
 	const attestation = [provider, route, runnerVersion];
 	if (
 		attestation.some((value) => value !== null) &&
@@ -185,6 +190,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		provider,
 		route,
 		runnerVersion,
+		publicLauncherArtifact,
 		draws,
 		concurrency,
 		baseline,
@@ -686,6 +692,8 @@ function publicInvocationEnvValue(key: string, value: string): string | null {
 		: value;
 }
 
+const privateConfigurationIdentities = new WeakMap<RunArgs, string>();
+
 function runnerConfigIdentities(args: RunArgs): [string, string][] {
 	const home =
 		args.env.HOME?.trim() ||
@@ -704,6 +712,7 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 							return existsSync(json) ? json : path.join(base, "opencode.jsonc");
 						})() : null]]
 					: [];
+	const privateIdentities: [string, string][] = [];
 	const identities = files.map(([key, file]): [string, string] => {
 		if (file === null) return [key, "missing"];
 		try {
@@ -711,46 +720,21 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 				.update(readFileSync(file))
 				.digest("hex")
 				.slice(0, 16);
-			return [key, `sha256:${digest}`];
+			privateIdentities.push([key, digest]);
+			return [key, "<required>"];
 		} catch (error) {
 			if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [key, "missing"];
 			throw error;
 		}
 	});
+	const privateIdentity = JSON.stringify(privateIdentities);
+	if (args.environmentIdentity !== null && privateConfigurationIdentities.has(args) && privateConfigurationIdentities.get(args) !== privateIdentity) throw new Error("runner environment changed during the eval run");
+	privateConfigurationIdentities.set(args, privateIdentity);
 	if (args.runner === "pi") {
 		const usesAuthStore = piUsesAuthStore(args);
 		identities.push(["PI_AUTH_SOURCE", usesAuthStore ? "auth-store" : "environment"]);
 		if (!usesAuthStore) return identities;
-		const provider =
-			args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
-		const authFile = home
-			? path.join(home, ".pi", "agent", "auth.json")
-			: null;
-		if (authFile === null) {
-			identities.push(["PI_AUTH_JSON", "missing"]);
-		} else {
-			let raw: string;
-			try {
-				raw = readFileSync(authFile, "utf8");
-			} catch (error) {
-				if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-					identities.push(["PI_AUTH_JSON", "missing"]);
-					return identities;
-				}
-				throw error;
-			}
-			const auth = JSON.parse(raw) as unknown;
-			const entry =
-				typeof auth === "object" && auth !== null
-					? (auth as Record<string, unknown>)[provider]
-					: undefined;
-			identities.push([
-				"PI_AUTH_JSON",
-				entry === undefined
-					? "missing"
-					: `sha256:${createHash("sha256").update(JSON.stringify(entry)).digest("hex").slice(0, 16)}`,
-			]);
-		}
+		identities.push(["PI_AUTH_JSON", "<required>"]);
 	}
 	return identities;
 }
@@ -768,6 +752,9 @@ function piUsesAuthStore(args: RunArgs): boolean {
 
 export function runnerEnvironment(args: RunArgs): string {
 	const configIdentities = runnerConfigIdentities(args);
+	if (args.runner === "acp") {
+		configIdentities.push(["ACP_PUBLIC_RUNTIME", JSON.stringify(acpRuntimeIdentity(args.publicLauncherArtifact, { ...process.env, ...args.env }, args.runnerVersion))]);
+	}
 	const current = JSON.stringify(
 		[
 			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
@@ -793,6 +780,7 @@ export function runnerEnvironment(args: RunArgs): string {
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
+	if (piUsesAuthStore(args) || runnerConfigIdentities(args).some(([, value]) => value === "<required>")) return true;
 	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
 		const publicValue = publicInvocationEnvValue(key, value);
 		return publicValue === null || publicValue === "<redacted>";
@@ -832,6 +820,7 @@ function reportInvocation(
 	add("--provider", args.provider);
 	add("--route", args.route);
 	add("--runner-version", args.runnerVersion);
+	add("--public-launcher-artifact", args.publicLauncherArtifact ? publicPath(args.publicLauncherArtifact) : null);
 	for (const [key, value] of Object.entries(effectiveInvocationEnv(args)).sort(([a], [b]) =>
 		a.localeCompare(b),
 	)) {

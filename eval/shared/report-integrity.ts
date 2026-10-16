@@ -1,5 +1,6 @@
 import { scorerHash } from "./scorer-hash";
 import type { Report } from "./types";
+import { publicRuntimeIdentityFromReport } from "./runtime-identity";
 
 export interface ReportAttestation {
   readonly provider?: string;
@@ -7,6 +8,7 @@ export interface ReportAttestation {
   readonly runnerVersion?: string;
   readonly runnerEnvironment?: string;
   readonly privateEnvironment?: boolean;
+  readonly publicEnvironmentAttestation?: unknown;
 }
 
 const RUNNER_MODEL_ENV: Partial<Record<Report["runner"], string>> = {
@@ -64,7 +66,7 @@ export function hasCurrentScorer(report: Report): boolean {
 }
 
 export function runnerEnvironmentAttestationError(
-  report: Report & ReportAttestation,
+  report: Pick<Report, "runner" | "model" | "effort"> & ReportAttestation,
 ): string | null {
   if (
     ![report.provider, report.route, report.runnerVersion].every(
@@ -106,6 +108,14 @@ export function runnerEnvironmentAttestationError(
     environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"
   ) {
     return "public lanes require guarded runner-environment attestation";
+  }
+  if (report.runner === "acp") {
+    try {
+      const identity = publicRuntimeIdentityFromReport(report);
+      if ([identity.launcherDigest, identity.harnessVersion, identity.authSource].some((value) => value.status === "unknown")) return "public ACP lanes require complete public launcher, harness and auth-source identities";
+    } catch {
+      return "public ACP lanes require a valid public runtime identity";
+    }
   }
   if (!hasResolvedModelIdentity(report)) {
     return "public lanes require a resolved model and effort identity";
