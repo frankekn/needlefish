@@ -298,7 +298,8 @@
             },
             "url": {
               "type": "string",
-              "pattern": "^https?://[^/@]+(?:/|$)"
+              "description": "Structural HTTP(S) URL contract for normalized output: nonempty host, bracketed IP literal, no userinfo, and an optional decimal port from 0 through 65535 without leading zeros. This does not validate full IP or IDNA semantics; the persisted parser must also validate with WHATWG URL and reject credentials. Schema validation alone is not full admission.",
+              "pattern": "^https?://(?:[^\\s:/?#@\\[\\]\\\\]+|\\[[0-9A-Fa-f:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#].*)?$"
             }
           }
         }
