@@ -108,6 +108,7 @@ test("only user XDG/HOME or explicit absolute paths are used", (t) => {
   assert.equal(connectionsFile({ HOME: f.dir }), path.join(f.dir, ".config", "needlefish", "connections.json"));
   assert.equal(connectionsFile(f.env), f.file);
   assert.throws(() => connectionsFile({ NEEDLEFISH_CONNECTIONS_FILE: "./connections.json" }), /absolute/);
+  assert.throws(() => connectionsFile({ NEEDLEFISH_CONNECTIONS_FILE: "", XDG_CONFIG_HOME: f.dir }), /absolute/);
   assert.throws(() => connectionsFile({ XDG_CONFIG_HOME: "relative" }), /absolute/);
 });
 

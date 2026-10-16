@@ -173,6 +173,18 @@ for (const github of ["closed", "untrusted"] as const) {
   }
 }
 
+for (const mode of ["local", "pr"] as const) {
+  test(`${mode}: malformed connection has a single-line CLI error before launch`, (t) => {
+    const f = fixture(t, "acp");
+    writeFileSync(f.file, "{");
+    const result = f.run(mode === "pr" ? ["pr", "7"] : []);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "needlefish: Connections file is not valid JSON. Check its syntax; do not store credentials in it.\n");
+    assert.equal(result.stdout, "");
+    assert.equal(f.launches().length, 0);
+  });
+}
+
 test("active GitHub review validates its connection with a single-line CLI error", (t) => {
   const f = fixture(t, "acp", { github: "active" });
   writeFileSync(f.file, "{");

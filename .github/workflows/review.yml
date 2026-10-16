@@ -310,8 +310,8 @@ jobs:
           # Self-hosted default lane comes from repo variables; qualified by eval/results/2026-09-20-codex-cpa-*-x1.json (#172):
           # deepseek-v4.1-flash via CLIProxyAPI recall 87% / FP 4% / noise 0.016, mean 51 s. Hosted runs still pass explicit inputs.
           NEEDLEFISH_MODEL_INPUT: ${{ inputs.model || github.event.inputs.model || vars.NEEDLEFISH_MODEL }}
-          # Comma-separated model ids on OTHER providers behind the proxy, tried in order on infra failures.
-          NEEDLEFISH_MODEL_FALLBACKS: ${{ vars.NEEDLEFISH_MODEL_FALLBACKS }}
+          # Operator-selected fallback behind the same proxy; primary model stays configurable.
+          NEEDLEFISH_MODEL_FALLBACKS: gpt-6.1-sol
           NEEDLEFISH_TIMEOUT_MS_INPUT: ${{ inputs.timeout_ms || github.event.inputs.timeout_ms }}
           OPENCODE_IDLE_TIMEOUT_MS_INPUT: ${{ inputs.idle_timeout_ms || github.event.inputs.idle_timeout_ms }}
           CODEX_REASONING_EFFORT: ${{ inputs.codex_reasoning_effort || github.event.inputs.codex_reasoning_effort || vars.NEEDLEFISH_CODEX_REASONING_EFFORT }}
@@ -339,10 +339,12 @@ jobs:
             exit 1
           fi
           if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ]; then
-            if [ -z "${CODEX_BIN:-}" ] && [ -x "$HOME/.local/bin/codex" ]; then
-              export CODEX_BIN="$HOME/.local/bin/codex"
+            # Same rule as runnerCommand: trim, and a blank value means unset.
+            codex_bin=$(node -e 'process.stdout.write((process.env.CODEX_BIN || "").trim())')
+            if [ -z "$codex_bin" ] && [ -x "$HOME/.local/bin/codex" ]; then
+              codex_bin="$HOME/.local/bin/codex"
             fi
-            codex_bin="${CODEX_BIN:-codex}"
+            [ -n "$codex_bin" ] || codex_bin=codex
             codex_version=$("$codex_bin" --version) || {
               echo "Unable to run the selected Codex CLI." >&2
               exit 1
@@ -383,12 +385,9 @@ jobs:
           if [ -n "$NEEDLEFISH_TIMEOUT_MS_INPUT" ]; then args+=(--timeout-ms "$NEEDLEFISH_TIMEOUT_MS_INPUT"); fi
           if [ -n "$OPENCODE_IDLE_TIMEOUT_MS_INPUT" ]; then export OPENCODE_IDLE_TIMEOUT_MS="$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi
           if [ -n "$NEEDLEFISH_RECHECK_INPUT" ]; then args+=(--recheck); fi
-          # Provider fallback chain (self-hosted proxy lane only). Each model id lives on a different
-          # upstream provider behind CLIProxyAPI (Bailian -> Z.ai -> Devin), so switching the id switches
-          # the provider. Only infra-class failures (rate limit, upstream 5xx, timeout, proxy unreachable)
-          # advance the chain; a verdict of CHANGES REQUESTED is a result, not a failure.
+          # The operator-selected fallback uses the same proxy; completed verdicts never switch models.
           chain=()
-          if [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
+          if [ "$NEEDLEFISH_RUNNER_INPUT" = "codex" ] && [ -n "$CODEX_PROXY_BASE_URL_INPUT" ] && [ -n "$NEEDLEFISH_MODEL_INPUT" ]; then
             IFS=',' read -r -a chain <<< "${NEEDLEFISH_MODEL_FALLBACKS:-}"
           fi
           out=""; err_out=""
@@ -397,8 +396,12 @@ jobs:
             local model="$1"; local rc
             args=("${base_args[@]}")
             if [ -n "$model" ]; then
+              export CODEX_REASONING_EFFORT="medium"
+              unset CODEX_SERVICE_TIER
               for i in "${!args[@]}"; do if [ "${args[$i]}" = "--model" ]; then args[$((i+1))]="$model"; fi; done
             fi
+            export NEEDLEFISH_PREVIOUS_CHECK_ID
+            NEEDLEFISH_PREVIOUS_CHECK_ID=$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&per_page=100" --jq '[.check_runs[].id] | max // 0') || NEEDLEFISH_PREVIOUS_CHECK_ID=""
             local err_file
             err_file=$(mktemp)
             set +e
@@ -409,24 +412,40 @@ jobs:
             [ -n "$err_out" ] && printf '%s\n' "$err_out" >&2
             return $rc
           }
+          # shortcut: legacy releases misclassify upstream faults; remove this check fallback after reliable outcomes ship.
+          # A check must be newer than the invocation snapshot; missing evidence preserves the failure.
+          runner_check_failed() {
+            local checks_json
+            checks_json=$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=Needlefish&per_page=100") || return 1
+            node -e '
+              let input = "";
+              process.stdin.on("data", chunk => { input += chunk; });
+              process.stdin.on("end", () => {
+                try {
+                  const checks = JSON.parse(input).check_runs;
+                  const previous = process.env.NEEDLEFISH_PREVIOUS_CHECK_ID ?? "";
+                  if (!/^[0-9]+$/.test(previous)) process.exit(1);
+                  const check = checks.filter(c => c.id > Number(previous) && c.name === "Needlefish" && c.external_id === process.env.GITHUB_RUN_ID && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];
+                  const prefix = "Review errored and did NOT pass this PR.\n\n```\n";
+                  const error = check?.output?.summary?.startsWith(prefix) ? check.output.summary.slice(prefix.length).split("\n")[0] : "";
+                  const failed = check?.status === "completed" && check.conclusion === "failure" && check.output.title === "Needlefish: review failed";
+                  const runnerExit = /^(?:codex|claude|opencode|grok|pi|acp|openai) runner exited [1-9][0-9]*;/.test(error);
+                  const timeout = /^spawn .+ E(?:IDLE)?TIMEDOUT(?:[.;]|$)/.test(error);
+                  const outputFailure = error.startsWith("no JSON object found in codex output") && /likely cause: (empty output|truncated output|html error page)(?:[;.]|$)/.test(error);
+                  process.exit(failed && (runnerExit || timeout || outputFailure) ? 0 : 1);
+                } catch { process.exit(1); }
+              });
+            ' <<<"$checks_json"
+          }
           if run_review ""; then exit 0; else rc=$?; fi
           for next in "${chain[@]}"; do
             [ -n "$next" ] || continue
-            # Provider fallback reads ONE controlled line and nothing else.
-            # Needlefish prints `needlefish-outcome {json}` after the rendered
-            # review and after every diagnostic, and sets "operational":true
-            # only for a recognized runner/transport cause (usage limit, rate
-            # limit, network error, empty/truncated/HTML output). The rendered
-            # review and the raw error text are model-influenced, so scanning
-            # them for "429"/"quota"/"5xx" would let a legitimate CHANGES
-            # REQUESTED verdict re-run the model on another provider. Only the
-            # LAST outcome line counts — it is the one this process wrote last.
-            # The JSON is parsed, not substring-matched, and the chain advances
-            # only on outcome === "failure" && operational === true. Fail
-            # closed: no line, unparseable JSON, or anything else never advances.
+            # Prefer the controlled terminal outcome. Legacy runner faults require this run own check.
             outcome_line="$(grep -a '^needlefish-outcome ' <<<"$out" | tail -n 1 || true)"
             if ! node -e 'let s="";process.stdin.on("data",(d)=>{s+=d});process.stdin.on("end",()=>{let o;try{o=JSON.parse(s)}catch{process.exit(1)}process.exit(o&&o.outcome==="failure"&&o.operational===true?0:1)});' <<<"${outcome_line#needlefish-outcome }"; then
-              echo "needlefish: previous failure is not an operational runner fault; not switching provider" >&2; exit $rc
+              if ! runner_check_failed; then
+                echo "needlefish: no verified operational runner failure; not switching provider" >&2; exit $rc
+              fi
             fi
             echo "::warning title=Needlefish provider fallback::switching lane to $next after operational failure on previous provider"
             if run_review "$next"; then echo "lane=fallback:$next" >> "$GITHUB_STEP_SUMMARY"; exit 0; else rc=$?; fi
