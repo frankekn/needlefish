@@ -60,6 +60,7 @@ final class Command: @unchecked Sendable {
                 }
             }
             guard spawned == 0 else { throw DesktopError.command }
+            defer { kill(-child, SIGKILL) }
             let deadline = Date().addingTimeInterval(timeout)
             var failure: DesktopError?
             var stopDate: Date?
@@ -70,7 +71,6 @@ final class Command: @unchecked Sendable {
                 if waited == child { break }
                 if waited < 0 {
                     if errno == EINTR { continue }
-                    kill(-child, SIGKILL)
                     throw DesktopError.command
                 }
                 let wasCancelled = lock.withLock { cancelled }
@@ -96,7 +96,6 @@ final class Command: @unchecked Sendable {
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
-            kill(-child, SIGKILL)
             let wasCancelled = lock.withLock { cancelled }
             if wasCancelled { failure = .cancelled }
             if let failure { throw failure }

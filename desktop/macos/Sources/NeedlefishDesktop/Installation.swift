@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Security
 
@@ -18,6 +19,17 @@ struct InstallationStore {
             guard try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw DesktopError.command }
         }
         try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    }
+
+    private func lock() throws -> Int32 {
+        try directory()
+        let descriptor = open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw DesktopError.command }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            close(descriptor)
+            throw DesktopError.installationBusy
+        }
+        return descriptor
     }
 
     private var receiptURL: URL { root.appendingPathComponent("receipt.json") }
@@ -49,7 +61,8 @@ struct InstallationStore {
 
     @MainActor
     func install(_ source: URL, verify: (URL) throws -> Void, launch: (URL) async throws -> Void) async throws -> URL {
-        try directory()
+        let descriptor = try lock()
+        defer { close(descriptor) }
         var record = try receipt()
         let id = UUID().uuidString
         let destination = try app(id)
@@ -71,7 +84,8 @@ struct InstallationStore {
 
     @MainActor
     func rollback(verify: (URL) throws -> Void, launch: (URL) async throws -> Void) async throws -> URL {
-        try directory()
+        let descriptor = try lock()
+        defer { close(descriptor) }
         var record = try receipt()
         guard let previous = record.previous else { throw DesktopError.command }
         let destination = try app(previous)
@@ -84,7 +98,8 @@ struct InstallationStore {
     }
 
     func uninstall() throws {
-        try directory()
+        let descriptor = try lock()
+        defer { close(descriptor) }
         let record = try receipt()
         for id in Set([record.current, record.previous].compactMap { $0 }) {
             let url = try app(id)

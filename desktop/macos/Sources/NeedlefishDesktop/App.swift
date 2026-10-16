@@ -65,6 +65,8 @@ final class Onboarding: ObservableObject {
                     _ = try await store.rollback(verify: { try InstallationStore.verify($0, team: team) }, launch: launch)
                 }
                 state = .message("已開啟安裝版本。 / Installed version opened.")
+            } catch DesktopError.installationBusy {
+                state = .message(DesktopError.installationBusy.localizedDescription)
             } catch {
                 state = .message("安裝或回復失敗。上一個可用版本仍保留。請取得官方簽章安裝包。 / Install or rollback failed. The last usable version is retained. Get the official signed package.")
             }
@@ -83,6 +85,8 @@ final class Onboarding: ObservableObject {
         do {
             try InstallationStore().uninstall()
             state = .message("已移除 Needlefish 自有安裝資料。 / Managed installations removed.")
+        } catch DesktopError.installationBusy {
+            state = .message(DesktopError.installationBusy.localizedDescription)
         } catch { state = .message("無法移除安裝資料。未修改 Git 或登入設定。 / Could not remove installation data.") }
     }
 
@@ -264,7 +268,7 @@ struct ContentView: View {
             Text(result.verdict.title).font(.title2).bold()
             Text(result.summary).textSelection(.enabled)
             Text("檢查僅涵蓋本次變更，不保證專案安全。 / Covers this change only. Does not guarantee project safety.")
-            ForEach(result.findings) { finding in
+            ForEach(Array(result.findings.enumerated()), id: \.offset) { _, finding in
                 GroupBox {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("\(finding.severity) \(finding.title)").bold()

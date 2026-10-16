@@ -89,6 +89,17 @@ def sign_runtime(source, identity, node, runner=run):
         runner(args + [str(item)])
 
 
+def reserve_output(output):
+    app = output.absolute()
+    app.mkdir(mode=0o700, parents=True)
+    return app
+
+
+def stage_runtime(source, destination, lock):
+    shutil.copytree(source, destination)
+    verify_runtime(destination, lock)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--development", action="store_true")
@@ -102,8 +113,6 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "build/Needlefish.app")
     args = parser.parse_args()
     lock = json.loads((ROOT / "runtime-lock.json").read_text())
-    if args.output.exists():
-        raise ValueError("Output already exists. Choose a new path; this script never overwrites apps.")
     if args.development:
         runtime = {key: str(getattr(args, key).resolve(strict=True)) for key in ("node", "cli", "codex", "git")}
         runtime["development"] = True
@@ -113,20 +122,21 @@ def main():
         if platform.system() != "Darwin" or platform.machine() != "arm64" or lock.get("platform") != "darwin-arm64":
             raise ValueError("Release packaging requires an Apple silicon macOS host and darwin-arm64 lock.")
         release_requirement(args.team)
-        verify_runtime(args.runtime, lock)
+        if not lock.get("releaseApproved"):
+            raise ValueError("Release blocked. runtime-lock.json has no approved provenance, licenses or qualification.")
         runtime = lock["runtime"]
-    architecture = [] if args.development else ["--arch", "arm64"]
-    run(["swift", "build", "--package-path", str(ROOT), "-j", "2"] + architecture)
-    binary_path = subprocess.check_output(["swift", "build", "--package-path", str(ROOT), "--show-bin-path"] + architecture, text=True).strip()
-    app = args.output.resolve()
+    app = reserve_output(args.output)
     try:
         (app / "Contents/MacOS").mkdir(parents=True)
         resources = app / "Contents/Resources"
         resources.mkdir()
+        architecture = [] if args.development else ["--arch", "arm64"]
+        run(["swift", "build", "--package-path", str(ROOT), "-j", "2"] + architecture)
+        binary_path = subprocess.check_output(["swift", "build", "--package-path", str(ROOT), "--show-bin-path"] + architecture, text=True).strip()
         shutil.copy2(Path(binary_path) / "NeedlefishDesktop", app / "Contents/MacOS/NeedlefishDesktop")
         if not args.development:
-            shutil.copytree(args.runtime, resources / "runtime")
-            shutil.copy2(ROOT / "runtime-lock.json", resources / "runtime-lock.json")
+            stage_runtime(args.runtime, resources / "runtime", lock)
+            (resources / "runtime-lock.json").write_text(json.dumps(lock, indent=2))
         (resources / "runtime.json").write_text(json.dumps(runtime))
         info = {
             "CFBundleExecutable": "NeedlefishDesktop", "CFBundleIdentifier": "com.needlefish.desktop",

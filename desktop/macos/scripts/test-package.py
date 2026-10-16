@@ -47,6 +47,35 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "missing arm64"):
                 package.verify_arm64(source, runner=reject_arch)
 
+    def test_output_reservation_never_removes_another_invocation(self):
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "Needlefish.app"
+            owned = package.reserve_output(output)
+            (owned / "marker").write_text("first invocation")
+            with self.assertRaises(FileExistsError):
+                package.reserve_output(output)
+            self.assertEqual((owned / "marker").read_text(), "first invocation")
+
+    def test_staged_snapshot_is_verified_instead_of_mutable_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / "source"
+            source.mkdir()
+            names = ["node", "cli", "git", "codex", "NOTICE"]
+            for name in names:
+                (source / name).write_text("approved " + name)
+                if name in ["node", "git", "codex"]:
+                    (source / name).chmod(0o700)
+            lock = {"releaseApproved": True,
+                    "files": {name: hashlib.sha256((source / name).read_bytes()).hexdigest() for name in names},
+                    "runtime": {name: name for name in names[:4]}, "notices": ["NOTICE"]}
+            staged = Path(root) / "staged"
+            package.stage_runtime(source, staged, lock)
+            (source / "node").write_text("changed source")
+            package.verify_runtime(staged, lock)
+            self.assertEqual((staged / "node").read_text(), "approved node")
+            with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                package.stage_runtime(source, Path(root) / "rejected", lock)
+
     def test_digest_inventory_and_notices_are_required(self):
         with tempfile.TemporaryDirectory() as root:
             source = Path(root)

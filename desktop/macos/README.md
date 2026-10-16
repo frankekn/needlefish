@@ -2,7 +2,7 @@
 
 Needlefish has a native SwiftUI app for one trusted local Git project. The app calls the existing `doctor`, dry-run and review commands. It does not run a second review engine or HTTP server.
 
-This is a development preview for macOS 14 or newer on Apple silicon. It is not a qualified download for nontechnical users. Issue #150 remains open. No other platform is claimed as supported.
+This is a development preview for macOS 14 or newer on Apple silicon. It is not a qualified download for nontechnical users. Issue #150 remains open. No other platform is claimed as supported. [Process ownership](PROCESS.md) records the lifecycle census and limits.
 
 ## Run the development preview
 
@@ -60,7 +60,7 @@ Launch the generated app in its own process group. Select a temporary folder, in
 - An exact recommended runner and model qualification result. Runtime capability and terminal-failure contracts from #146 and #145 must be integrated through the existing CLI, not copied into Swift.
 - A Developer ID application identity and its team identifier.
 
-The entire approved runtime is copied inside the app. End users need no package manager, PATH change, shell command or additional download. Release packaging requires an Apple silicon macOS build host, explicitly builds arm64, and checks every native app/runtime file with `lipo -verify_arch arm64` before signing. The builder signs nested native binaries and the app, then verifies the signed bundle against the configured team and Developer ID Application certificate. Node alone receives `com.apple.security.cs.allow-jit`; the builder reads back and checks that entitlement. The exact Node release must still pass signed runtime qualification. It does not grant debugger, unsigned executable-memory or library-validation bypass entitlements.
+The entire approved runtime is copied inside the app. End users need no package manager, PATH change, shell command or additional download. Release packaging requires an Apple silicon macOS build host, explicitly builds arm64, and checks every native app/runtime file with `lipo -verify_arch arm64` before signing. Each build atomically reserves its own output directory before building and only removes that owned directory on failure. Runtime bytes are copied into that private directory and verified there before signing, so a changing input directory cannot bypass the lock. The builder signs nested native binaries and the app, then verifies the signed bundle against the configured team and Developer ID Application certificate. Node alone receives `com.apple.security.cs.allow-jit`; the builder reads back and checks that entitlement. The exact Node release must still pass signed runtime qualification. It does not grant debugger, unsigned executable-memory or library-validation bypass entitlements.
 
 ```sh
 python3 desktop/macos/scripts/package.py \

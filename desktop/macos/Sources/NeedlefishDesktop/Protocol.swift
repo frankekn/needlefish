@@ -35,9 +35,10 @@ struct Runtime: Codable, Sendable {
 }
 
 enum DesktopError: Error, LocalizedError {
-    case runtime, invalidOutput, cancelled, timeout, outputLimit, command, quota, network, auth
+    case runtime, invalidOutput, cancelled, timeout, outputLimit, command, quota, network, auth, installationBusy
     var errorDescription: String? {
         switch self {
+        case .installationBusy: "另一個 Needlefish 正在安裝或移除。請稍後重試。 / Another Needlefish is installing or removing a version. Retry shortly."
         case .quota: "帳戶額度不足或請求過多。請在 OpenAI 帳戶確認額度，稍後再試。不會自動改用其他帳戶。 / Quota or rate limit. Check your OpenAI account and retry later."
         case .network: "網路連線失敗。請確認網路與代理設定，再重試。 / Connection failed. Check network and proxy settings."
         case .auth: "登入失效。請重新診斷並登入 OpenAI。 / Sign-in rejected. Check again and sign in."
@@ -113,14 +114,13 @@ struct Result: Decodable, Sendable {
             }
         }
     }
-    struct Finding: Decodable, Identifiable, Sendable {
+    struct Finding: Decodable, Sendable {
         let severity: String
         let title: String
         let file: String
         let lineStart: Int
         let whyItBreaks: String
         let suggestedFix: String
-        var id: String { "\(file):\(lineStart):\(title)" }
     }
     struct Risk: Decodable, Sendable { let text: String; let blocks: Bool }
     let schemaVersion: Int

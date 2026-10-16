@@ -158,10 +158,11 @@ final class DesktopTests: XCTestCase {
         }
     }
     func testNormalAndFailedLeaderExitCannotLeaveOwnedDescendants() async throws {
-        for status in [0, 1] {
+        for status in [0, 1, 137] {
             let root = try temporary()
             let childPID = root.appendingPathComponent("child-pid")
-            let runtime = try fixture("sleep 120 &\necho $! > '\(childPID.path)'\nexit \(status)")
+            let exit = status == 137 ? "kill -KILL $$" : "exit \(status)"
+            let runtime = try fixture("sleep 120 &\necho $! > '\(childPID.path)'\n\(exit)")
             let output = try await Command().run(runtime.command([]), environment: ["PATH": "/bin:/usr/bin"], temporary: root.appendingPathComponent("work"), timeout: 10)
             XCTAssertEqual(output.status, Int32(status))
             let pid = Int32(try String(contentsOf: childPID, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))!
@@ -180,6 +181,16 @@ final class DesktopTests: XCTestCase {
         XCTAssertThrowsError(try readBounded(file, limit: 5)) { error in
             XCTAssertEqual(error.localizedDescription, DesktopError.outputLimit.localizedDescription)
         }
+    }
+    func testSpawnFailureOwnsNoGroupAndRemovesTemporaryOutput() async throws {
+        let root = try temporary()
+        let work = root.appendingPathComponent("work")
+        do {
+            _ = try await Command().run([root.appendingPathComponent("missing-cli").path], environment: [:], temporary: work, timeout: 1)
+            XCTFail("Must reject missing executable")
+        } catch { XCTAssertEqual(error.localizedDescription, DesktopError.command.localizedDescription) }
+        XCTAssertEqual(fm.fileExists(atPath: work.path), false)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path), [])
     }
     func testTimeoutAndLoginCancelAreNotSuccess() async throws {
         let runtime = try fixture("sleep 120")
@@ -266,6 +277,32 @@ final class DesktopTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(Result.self, from: Data(blocking.utf8)).validated())
         let risk = resultJSON("pass").replacingOccurrences(of: #""residualRisks":[]"#, with: #""residualRisks":[{"text":"missing coverage","blocks":true}]"#)
         XCTAssertThrowsError(try JSONDecoder().decode(Result.self, from: Data(risk.utf8)).validated())
+    }
+    @MainActor
+    func testInstallationDirectoryLockRejectsConcurrentTransactionsAndReleasesOnFailure() async throws {
+        let root = try temporary()
+        let source = root.appendingPathComponent("source.app")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        let managed = root.appendingPathComponent("managed")
+        let first = InstallationStore(root: managed)
+        let other = InstallationStore(root: managed)
+        do {
+            _ = try await first.install(source, verify: { _ in }, launch: { _ in
+                XCTAssertThrowsError(try other.uninstall()) { error in
+                    XCTAssertEqual(error.localizedDescription, DesktopError.installationBusy.localizedDescription)
+                }
+                do {
+                    _ = try await other.install(source, verify: { _ in }, launch: { _ in })
+                    XCTFail("Must reject concurrent transaction")
+                } catch { XCTAssertEqual(error.localizedDescription, DesktopError.installationBusy.localizedDescription) }
+                throw DesktopError.command
+            })
+            XCTFail("Must preserve failed launch")
+        } catch { XCTAssertEqual(error.localizedDescription, DesktopError.command.localizedDescription) }
+        let installed = try await other.install(source, verify: { _ in }, launch: { _ in })
+        XCTAssertEqual(fm.fileExists(atPath: installed.path), true)
+        try other.uninstall()
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: managed.path), [])
     }
     func testUninstallRejectsTraversalAndSymlink() throws {
         let root = try temporary()

@@ -13,9 +13,14 @@ checks = [{"name": name, "status": "ok", "detail": "offline UI fixture"}
 doctor = json.dumps({"schemaVersion": 1, "repoRoot": str(args.output.resolve()), "checks": checks})
 scope = json.dumps({"mode": "uncommitted", "changedFiles": [{"path": "example.ts"}],
                     "patchBytes": 42, "untrackedSkipped": []})
-result = json.dumps({"schemaVersion": 1, "verdict": "needs_human",
+result = json.dumps({"schemaVersion": 1, "verdict": "changes_requested",
                      "summary": "OFFLINE UI TEST. Not an actual project review.",
-                     "findings": [], "residualRisks": [{"text": "Confirm the example manually.", "blocks": True}]})
+                     "findings": [
+                         {"severity": "P2", "title": "Same location, separate finding", "file": "example.ts", "lineStart": 8,
+                          "whyItBreaks": "First independent impact.", "suggestedFix": "First distinct next step."},
+                         {"severity": "P2", "title": "Same location, separate finding", "file": "example.ts", "lineStart": 8,
+                          "whyItBreaks": "Second independent impact.", "suggestedFix": "Second distinct next step."}],
+                     "residualRisks": []})
 script = args.output / "fake-cli"
 script.write_text("#!/bin/sh\n" + f"""case "$1" in
  doctor) printf '%s' '{doctor}';;
