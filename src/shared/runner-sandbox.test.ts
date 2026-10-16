@@ -334,6 +334,7 @@ if (args.includes("cat-file")) {
   appendFileSync(${JSON.stringify(path.join(sandboxTmp, "blob-queries"))}, query + "\\n");
   if ((${JSON.stringify(failure)} === "slow-size" && query === "-s") ||
       (${JSON.stringify(failure)} === "slow-blob" && query === "blob")) {
+    process.on("SIGTERM", () => {});
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
   }
 }
@@ -403,6 +404,10 @@ for (const scenario of [
   test(`prepareRunnerSandbox bounds ${scenario.name} fallback queries by the shared deadline`, (t) => {
     const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
       writeFileSync(path.join(r, ".gitattributes"), "*.txt text\n");
+      if (scenario.incomplete) {
+        mkdirSync(path.join(r, "nested"));
+        writeFileSync(path.join(r, "nested", ".gitattributes"), "*.bin filter=lfs -text\n");
+      }
     });
     makeUnreadableAttributes(t, sandboxTmp, scenario.failure);
     let deadline: number | undefined;
