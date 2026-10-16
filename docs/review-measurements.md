@@ -70,7 +70,10 @@ unknown. Byte-identical duplicate records count once. Conflicting
 records with the same execution identity are excluded and diagnosed.
 
 Pipeline time uses `performance.now()` around `review()`, including its retries
-and critic, and excludes GitHub collection and posting. Job queue time uses
+and critic, and excludes GitHub collection and posting. An ordered connection session is one
+invocation. Pipeline time includes its failed routes and final review; runtime
+is the final public result's runtime. Per-route observations and dispatch roles
+are not captured in this unit. Job queue time uses
 GitHub job creation and start timestamps only after the job leaves `queued`.
 A prefilled `started_at` on a queued job does not prove it started.
 `workflowCreatedToTerminalMs` is a separate platform-time observation. True
