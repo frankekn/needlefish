@@ -700,24 +700,57 @@ test("critic subset: small path restores the candidate list on a blocking upgrad
 	]);
 });
 
-test("critic subset: small path accepts unblocking a residual", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({
-				findings: [],
-				residual_risks: [{ text: "need human", blocks: true }],
-			}),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "need human", blocks: false }] }));',
-		),
-	);
+for (const deep of [false, true]) {
+	const pipeline = deep ? largePathBin : smallPathBin;
+	const lane = deep ? "large" : "small";
+	for (const action of ["keep", "downgrade", "omit"]) {
+		test(`critic subset: ${lane} path permits model residual ${action}`, async (t) => {
+			const expected = action === "omit" ? [] : [
+				{ text: "need human", blocks: action === "keep" },
+			];
+			const { repo } = installStub(t, (log) => pipeline(
+				log,
+				candidateReview({
+					findings: [],
+					residual_risks: [{ text: "need human", blocks: true }],
+				}),
+				`fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: ${JSON.stringify(expected)} }));`,
+			));
+			const result = await review(makeBundle(repo, deep));
+			assert.equal(result.verdict, action === "keep" ? "needs_human" : "pass");
+			assert.deepEqual(result.residualRisks, expected);
+		});
+	}
 
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.residualRisks, [
-		{ text: "need human", blocks: false },
-	]);
-});
+	test(`critic subset: ${lane} path consolidates duplicate residual text`, async (t) => {
+		const { repo } = installStub(t, (log) => pipeline(
+			log,
+			candidateReview({ findings: [], residual_risks: [
+				{ text: "Need human", blocks: false },
+				{ text: "NEED   human", blocks: true },
+			] }),
+			ECHO,
+		));
+		const result = await review(makeBundle(repo, deep));
+		assert.equal(result.verdict, "needs_human");
+		assert.deepEqual(result.residualRisks, [{ text: "NEED   human", blocks: true }]);
+	});
+}
+
+for (const action of ["keep", "downgrade", "omit"]) {
+	test(`critic subset: deep infrastructure failure survives critic ${action}`, async (t) => {
+		const { repo } = installStub(t, (log) => largePathBin(
+			log,
+			null,
+			`fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: ${action === "omit" ? "[]" : `parsed.residual_risks.map(risk => ({ ...risk, blocks: ${action === "keep"} }))`} }));`,
+		));
+		const result = await review(makeBundle(repo, true));
+		assert.equal(result.verdict, "needs_human");
+		assert.equal(result.residualRisks.length, 1);
+		assert.equal(result.residualRisks[0].blocks, true);
+		assert.match(result.residualRisks[0].text, /deep review of "h1" failed/);
+	});
+}
 
 test("critic subset: small path accepts residual case/whitespace drift and restores candidate text", async (t) => {
 	const { repo } = installStub(t, (log) =>
