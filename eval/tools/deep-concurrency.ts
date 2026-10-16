@@ -10,14 +10,17 @@ import { loadFixture } from "../shared/fixture";
 import { fixtureSetHash } from "../shared/fixture-catalog";
 import { promptHash } from "../shared/prompt-hash";
 import { reviewPlan } from "../../src/core/review";
+import type { RunnerName } from "../../src/shared/runner";
+
+const runner: RunnerName = "codex";
 
 export const study = {
-	id: "issue193-deep-concurrency-v1",
+	id: "issue193-deep-concurrency-v2",
 	status: "NOT_RUN",
 	gateClass: "R",
-	source: "23a5912aa5938192b32231a0c17dadfe0b9d8320",
+	source: "195db3e20baddf58c4206a98d12ae29f92084e3d",
 	lane: {
-		runner: "codex", model: "gpt-5.6-terra", effort: "high",
+		runner, model: "gpt-5.6-terra", effort: "high",
 		provider: "OpenAI", route: "ChatGPT", runnerVersion: "codex-cli 0.163.0",
 	},
 	replicatesPerFixture: 6,
@@ -97,12 +100,15 @@ export function offlinePlan() {
 		assert.notEqual(fixture.holdout, true, "sealed holdouts are excluded from study design");
 		const loaded = loadFixture(fixture);
 		try {
-			assert.deepEqual(reviewPlan(loaded.bundle), { docsOnlyFastPath: false, largePath: true });
+			const plan = reviewPlan(loaded.bundle, { runner: study.lane.runner, model: study.lane.model });
+			assert.deepEqual(plan, { docsOnlyFastPath: false, largePath: true,
+				capability: { runner: "codex", capability: "repositoryRead",
+					detail: "codex: repositoryRead; the CLI adapter enables repository tools." } });
 			return { id: fixture.id, changedFiles: loaded.bundle.changedFiles.length,
 				patchSha256: createHash("sha256").update(loaded.bundle.patch).digest("hex") };
 		} finally { loaded.cleanup(); }
 	});
-	const protocolFiles = ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v1.md"]
+	const protocolFiles = ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v2.md", "eval/campaigns/deep-concurrency-v1.md"]
 		.map((file) => ({ file, sha256: createHash("sha256").update(readFileSync(path.join(root, file))).digest("hex") }));
 	return { ...study, protocolFiles, modelCallsEnabled: false, fixtureSetHash: fixtureSetHash(fixtures),
 		promptHash: promptHash(), sourceFiles, selection, schedule: pairedSchedule() };
@@ -110,5 +116,8 @@ export function offlinePlan() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	assert.deepEqual(process.argv.slice(2), ["--plan"], "only --plan is supported; model execution is disabled");
-	process.stdout.write(JSON.stringify(offlinePlan(), null, 2) + "\n");
+	const output = JSON.stringify(offlinePlan(), null, 2) + "\n";
+	assert.ok(output === readFileSync(path.join(root, "eval/campaigns/deep-concurrency-v2.plan.json"), "utf8"),
+		"study plan drift: current generator requires its exact v2 comparator");
+	process.stdout.write(output);
 }
