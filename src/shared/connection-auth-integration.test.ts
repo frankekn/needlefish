@@ -318,7 +318,7 @@ test("dry-run validates auth configuration without requiring its credential", (t
 
 for (const [name, overrides, expected] of [
   ["missing account", { ACCOUNT_A_KEY: "" }, /no default account/],
-  ["whitespace-wrapped account", { ACCOUNT_A_KEY: `${keyA}\n` }, /no default account/],
+  ["whitespace-wrapped account", { ACCOUNT_A_KEY: `${keyA}\n` }, /leading\/trailing whitespace.*no default account/],
   ["legacy routing passthrough", { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "OPENAI_BASE_URL" }, /routing settings/],
 ] as const) {
   test(`CLI ${name} stops before any agent starts`, (t) => {

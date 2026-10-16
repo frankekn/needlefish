@@ -96,8 +96,10 @@ automatic fallback.
 Retries and all review passes retain the snapshot without changing `process.env`.
 The bound values are private and absent from serialized options, result and cache.
 Runner output is screened against the selected snapshot before admission, including
-decoded JSON in Markdown fences. Echoed credentials stop the review with a safe
-diagnostic. Raw agent transcripts remain sensitive and can contain credentials.
+decoded JSON in Markdown fences. A complete selected credential value, including
+its JSON-escaped form, stops the review with a safe diagnostic. Partial values,
+other encodings and transformations are not covered. Raw agent transcripts remain
+sensitive and can contain credentials.
 `--dry-run` and docs-only zero-model reviews validate the configuration but do not
 require or bind credentials. Other reviews bind once after collecting the bundle,
 before any model starts.
