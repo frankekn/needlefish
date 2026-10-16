@@ -1,5 +1,7 @@
 import {
 	runCodex,
+	resolveRunnerConfig,
+	type EffectiveRunnerConfig,
 	extractJson,
 	isRunnerSafetyError,
 	MALFORMED_OUTPUT_NEXT_STEP,
@@ -13,7 +15,7 @@ import {
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
-import { resolveRunner } from "../shared/runner-detection.js";
+import { reviewRuntime } from "../shared/runtime.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -74,7 +76,8 @@ interface TraceDeliveryHealth {
 
 interface ReviewRun {
 	readonly bundle: Bundle;
-	readonly runnerOptions: RunnerOptions;
+	readonly runnerConfig: EffectiveRunnerConfig;
+	readonly runtime: NonNullable<ReviewResult["runtime"]>;
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
 	// a retry later succeeds — the eval canary scan must see emit-then-clean-up
@@ -266,7 +269,7 @@ function codexOptions(
 			for (const file of report.pointerFiles) run.lfs.pointerFiles.add(file);
 			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
 		},
-		...run.runnerOptions,
+		effectiveConfig: run.runnerConfig,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
 	};
 }
@@ -743,6 +746,7 @@ function toReviewResult(
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
+		runtime: run.runtime,
 		summary,
 		findings: raw.findings,
 		checked: raw.checked,
@@ -1109,7 +1113,8 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
+	const runnerConfig = resolveRunnerConfig(runnerOptions);
+	if (plan.largePath && runnerConfig.runner === "openai") {
 		throw new Error(
 			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
 		);
@@ -1129,7 +1134,8 @@ export async function review(
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
-		runnerOptions,
+		runnerConfig,
+		runtime: reviewRuntime(runnerConfig, reviewTimeout ? Number(reviewTimeout) : null),
 		stats: [],
 		failedRawOutputs: [],
 		rawOutputs: [],

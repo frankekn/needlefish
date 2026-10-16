@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { runtimeLabel } from "./runtime.js";
 import { runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
 import { findRunnerFailure } from "./runner-failure.js";
@@ -507,6 +508,7 @@ export function prepareEphemeralHome(
 }
 
 export interface CodexOptions extends RunnerOptions {
+	readonly effectiveConfig?: EffectiveRunnerConfig;
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
@@ -560,6 +562,9 @@ interface RunnerInvocation {
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
+	readonly codexEffort: CodexReasoningEffort | undefined;
+	readonly codexServiceTier: string | undefined;
+	readonly piProvider: string | undefined;
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
@@ -590,7 +595,52 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 			"CODEX_PROXY_API_KEY is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
 		);
 	}
-	return { baseUrl, apiKey };
+	return Object.freeze({ baseUrl, apiKey });
+}
+
+const PI_DEFAULT_MODEL = "gpt-5.6-sol";
+const GROK_DEFAULT_MODEL = "grok-build";
+
+export interface EffectiveRunnerConfig {
+	readonly runner: RunnerName;
+	readonly model: string | undefined;
+	readonly reasoningEffort: string | undefined;
+	readonly effectiveEffort: string | undefined;
+	readonly timeoutMs: number;
+	readonly codexEffort: CodexReasoningEffort | undefined;
+	readonly codexServiceTier: string | undefined;
+	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly piProvider: string | undefined;
+}
+
+export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig {
+	try {
+		const runner = resolveRunner(opts);
+		const configuredModel = resolveModel(opts, runner) ??
+			(runner === "pi" ? PI_DEFAULT_MODEL : runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
+		const effort = opts.reasoningEffort || undefined;
+		const model = runner === "acp" ? undefined :
+			runner === "opencode" && configuredModel && effort && effort !== "default"
+				? `${configuredModel.split("#")[0]}#${effort}` : configuredModel;
+		const codexEffort = runner === "codex" ? resolveCodexReasoningEffort() : undefined;
+		const effectiveEffort = runner === "acp" || runner === "openai" ? undefined :
+			runner === "codex" ? effort ?? codexEffort :
+			runner === "pi" ? resolvePiThinking(effort) :
+			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
+		return Object.freeze({
+			runner,
+			model,
+			reasoningEffort: opts.reasoningEffort,
+			effectiveEffort,
+			timeoutMs: opts.timeoutMs ?? timeoutMsFor(runner),
+			codexEffort,
+			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
+			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
+			piProvider: runner === "pi" ? process.env.PI_PROVIDER ?? "openai-codex" : undefined,
+		});
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 }
 
 function remainingReviewMs(deadline: number | undefined): number {
@@ -603,21 +653,16 @@ export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
 ): Promise<string> {
-	let runner: RunnerName;
-	let codexProxy: CodexProxyConfig | undefined;
-	try {
-		runner = resolveRunner(opts);
-		codexProxy = runner === "codex" ? resolveCodexProxyConfig() : undefined;
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const config = opts.effectiveConfig ?? resolveRunnerConfig(opts);
+	const { runner } = config;
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
 	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
-		const model = resolveModel(opts, runner);
+		const modelIdentity = runtimeLabel(config.model);
+		const model = modelIdentity.status === "unknown" ? undefined : modelIdentity.value;
 		opts.onStat({
 			label: opts.label ?? "(unlabeled)",
 			runner,
@@ -633,7 +678,7 @@ export async function runCodex(
 		attempts = attempt;
 		try {
 			remainingReviewMs(opts.reviewDeadlineMs);
-			const result = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			const result = await runCodexOnce(prompt, opts, config, attempt);
 			usage = result.usage;
 			emitStat(true);
 			return result.out;
@@ -684,17 +729,10 @@ export async function runCodex(
 async function runCodexOnce(
 	prompt: string,
 	opts: CodexOptions,
-	runner: RunnerName,
+	config: EffectiveRunnerConfig,
 	runnerAttempt: number,
-	codexProxy: CodexProxyConfig | undefined,
 ): Promise<RunnerAttemptResult> {
-	const model = resolveModel(opts, runner);
-	let timeoutMs: number;
-	try {
-		timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const { runner, model, timeoutMs, codexProxy } = config;
 	if (runner === "openai") {
 		return {
 			out: await runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
@@ -735,7 +773,10 @@ async function runCodexOnce(
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
 						model,
-						reasoningEffort: opts.reasoningEffort,
+						reasoningEffort: config.reasoningEffort,
+						codexEffort: config.codexEffort,
+						codexServiceTier: config.codexServiceTier,
+						piProvider: config.piProvider,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
@@ -1115,7 +1156,7 @@ export function extractJson(text: string): unknown {
 }
 
 function resolveModel(
-	opts: CodexOptions,
+	opts: RunnerOptions,
 	runner: RunnerName,
 ): string | undefined {
 	if (opts.model) return opts.model;
@@ -1188,8 +1229,8 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const reasoningEffort = resolveCodexReasoningEffort();
-	const serviceTier = resolveCodexServiceTier();
+	const reasoningEffort = invocation.codexEffort;
+	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
 		"--color",
@@ -1313,16 +1354,7 @@ async function runOpenCode(
 	];
 	args.push("--file", promptPath);
 	if (invocation.model) {
-		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
-		// variant already in the model id rather than appending a second one.
-		const effort =
-			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
-				? invocation.reasoningEffort
-				: null;
-		args.push(
-			"--model",
-			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
-		);
+		args.push("--model", invocation.model);
 	} else if (invocation.reasoningEffort) {
 		throw new RunnerOperationalError(
 			"opencode reasoning effort requires a model to be specified",
@@ -1350,7 +1382,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
 	const args = [
 		"-m",
-		invocation.model ?? "grok-build",
+		invocation.model ?? GROK_DEFAULT_MODEL,
 		"--prompt-file",
 		promptPath,
 		"--output-format",
@@ -1410,9 +1442,9 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 		// provider registered in ~/.pi/agent/models.json instead of pi's own
 		// openai-codex OAuth (e.g. the ubuntu runner, where credentials live
 		// in the proxy).
-		process.env.PI_PROVIDER ?? "openai-codex",
+		invocation.piProvider ?? "openai-codex",
 		"--model",
-		invocation.model ?? "gpt-5.6-sol",
+		invocation.model ?? PI_DEFAULT_MODEL,
 		"--thinking",
 		thinking,
 	];

@@ -632,6 +632,22 @@ configuration does not prove authentication. Alternatively, set
 `NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential
 files; Needlefish copies only those files into the disposable runner HOME.
 
+## Runtime metadata
+
+Review JSON and cached results include optional, output-only `runtime` metadata.
+It records the runner, public model selector, effort, prompt hash and timeout
+resolved for that review. `known` describes an observed invocation value, not a
+provider's resolved model identity. Release manifest source SHAs are
+`operator_attested`. Unavailable versions and launcher identities stay `unknown`.
+ACP model and effort stay unknown because the protocol does not select them.
+The metadata contains no environment dump, private endpoint or launcher path.
+
+Runtime metadata currently reports `unqualified`. It does not establish an exact
+match with an evaluation report. Missing metadata does not block a review, and
+older cached results remain readable. Local Markdown and GitHub check summaries
+show the tool and service plus expandable technical data. GitHub review bodies
+omit runtime data because later reviews read those bodies as model input.
+
 ## Development
 
 Requires Node 20+, Corepack (recommended) or the pinned pnpm from

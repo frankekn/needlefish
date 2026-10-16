@@ -3629,6 +3629,7 @@ test("runGithub shows the LFS coverage gap in the check summary and keeps it out
 	// prMeta.reviews for `needlefish pr` and `explain`, so they are model input.
 	assert.ok(!review.body.includes("Not reviewed"), "review body must not carry the notice");
 	assert.ok(!review.body.includes("asset.bin"), "review body must not name the pointer file");
+	assert.equal(review.body.includes("Runtime technical data"), false);
 	assert.match(
 		review.body,
 		/CHANGES REQUESTED/,
@@ -3640,6 +3641,9 @@ test("runGithub shows the LFS coverage gap in the check summary and keeps it out
 	}
 	const completed1 = checkSummaries(round1).filter((summary) => summary.includes("- asset.bin"));
 	assert.equal(completed1.length, 1, "the completed check summary carries the notice");
+	assert.match(completed1[0], /AI service claude/);
+	assert.match(completed1[0], /Runtime technical data/);
+	assert.match(completed1[0], /"matchStatus": "unqualified"/);
 	assert.equal(completed1[0].split(notice).length - 1, 1);
 
 	// Round two: the round comment is an issue comment, which the next review
@@ -3651,9 +3655,11 @@ test("runGithub shows the LFS coverage gap in the check summary and keeps it out
 	);
 	assert.ok(roundComment, "round two posts a round comment");
 	assert.ok(!roundComment.payload.includes("Not reviewed"), "round comment must not carry the notice");
+	assert.equal(roundComment.payload.includes("Runtime technical data"), false);
 	const putPost = putReview(round2, 91, 1);
 	assert.ok(putPost, "round two PUT-updates the review body");
 	assert.ok(!parseReviewPayload(putPost.payload).body.includes("Not reviewed"));
+	assert.equal(parseReviewPayload(putPost.payload).body.includes("Runtime technical data"), false);
 	assert.equal(checkSummaries(round2).filter((summary) => summary.includes("- asset.bin")).length, 1);
 
 	// Both rounds' model prompts: the sandbox's own runner notice is present,
@@ -3662,6 +3668,8 @@ test("runGithub shows the LFS coverage gap in the check summary and keeps it out
 	assert.ok(prompts.includes("GIT LFS NOTICE"));
 	assert.ok(!prompts.includes("Not reviewed"));
 	assert.ok(!prompts.includes("coverageGaps"));
+	assert.equal(prompts.includes("launcherDigest"), false);
+	assert.equal(prompts.includes("Runtime technical data"), false);
 });
 
 // --- Dedupe receipt: a marker means "delivered", never "review attempted" ---

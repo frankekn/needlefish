@@ -162,6 +162,9 @@ test("local --json writes pure ReviewResult JSON matching the cache", (t) => {
   const stdoutJson = parseJsonObject(result.stdout);
   assert.equal(stdoutJson.schemaVersion, 1);
   assert.equal(stdoutJson.verdict, "pass");
+  assert.ok(isJsonObject(stdoutJson.runtime));
+  assert.equal(stdoutJson.runtime.runner, "claude");
+  assert.deepEqual(stdoutJson.runtime.qualification, { matchStatus: "unqualified" });
 
   const cachePath = path.join(home, ".cache", "needlefish", "repo", "last-review.json");
   const cache = readFileSync(cachePath, "utf8");
@@ -430,7 +433,7 @@ test("progress leaves model prompts and the cached result unchanged", async (t) 
     const cache = readFileSync(path.join(cacheDir, "last-review.json"), "utf8")
       .replace(/"(durationMs|totalDurationMs)": \d+/g, '"$1": 0');
     // The throwaway runner clone lives under a fresh temp dir per run.
-    const prompts = readFileSync(promptLog, "utf8").replace(/needlefish-managed-[^/]+/g, "needlefish-managed-X");
+    const prompts = readFileSync(promptLog, "utf8").replace(/needlefish-(?:managed-)?[^/]+(?=\/runner-repo)/g, "needlefish-managed-X");
     return { cache, prompts, events };
   };
   const off = await runOnce("off", false);

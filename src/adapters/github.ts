@@ -1737,6 +1737,7 @@ export async function runGithub(
 			const body = renderMarkdown(freshResult, {
 				...renderOpts,
 				omitCoverageGaps: true,
+				omitRuntime: true,
 			});
 			updateReviewBody(repo, prNumber, prev.id, body);
 			// Fail-soft: the round comment is cosmetic; a transient POST failure
@@ -1782,6 +1783,7 @@ export async function runGithub(
 					...renderOpts,
 					stateMarker: renderState(headSha, result.findings),
 					omitCoverageGaps: true,
+					omitRuntime: true,
 				}),
 			);
 			process.stdout.write(stdoutSummary(summary));
@@ -1803,6 +1805,7 @@ export async function runGithub(
 			const body = renderMarkdown(result, {
 				...renderOpts,
 				omitCoverageGaps: true,
+				omitRuntime: true,
 			});
 			const reviewId = postReview(repo, prNumber, headSha, body, comments);
 			await applyVerdictLabel(repo, prNumber, result.verdict);
@@ -1824,6 +1827,7 @@ export async function runGithub(
 					...renderOpts,
 					stateMarker: renderState(headSha, result.findings),
 					omitCoverageGaps: true,
+					omitRuntime: true,
 				}),
 			);
 			process.stdout.write(stdoutSummary(summary));

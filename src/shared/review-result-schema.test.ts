@@ -295,6 +295,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		prBaseSha: "optional",
 		scopeCallouts: "optional",
 		coverageGaps: "optional",
+		runtime: "optional",
 		stats: "optional",
 		totalDurationMs: "optional",
 		coverage: "optional",
