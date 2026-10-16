@@ -395,3 +395,21 @@ for (const flags of [["--dry-run", "--json"], ["--json"], []]) {
     assert.equal(existsSync(cacheFile(fixture)), false);
   });
 }
+
+for (const docs of [false, true]) {
+  for (const explicit of [false, true]) {
+    test(`suspended OpenCode is refused before ${docs ? "docs" : "source"} collection output (${explicit ? "flag" : "environment"})`, (t) => {
+      const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+      const args = ["--repo", fixture.repo, ...(explicit ? ["--runner", "opencode"] : [])];
+      const env = { NEEDLEFISH_RUNNER: explicit ? "claude" : "opencode", OPENCODE_BIN: path.join(fixture.fakeBin, "claude") };
+      for (const mode of [[], ["--dry-run", "--json"]]) {
+        const result = runCli(fixture, [...args, ...mode], env);
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+        assert.equal(result.stdout, "");
+        assert.equal(existsSync(fixture.marker), false, "suspended runner must not launch");
+        assert.equal(existsSync(cacheFile(fixture)), false, "refusal must not create a review cache");
+      }
+    });
+  }
+}

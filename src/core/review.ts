@@ -1154,6 +1154,10 @@ export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
 		readonly detail: string;
 	} | null;
 } {
+	if (runnerOptions.runner || process.env.NEEDLEFISH_RUNNER) {
+		try { resolveRunner(runnerOptions); }
+		catch (error) { if (!(error instanceof RunnerSelectionError)) throw error; }
+	}
 	if (bundle.untrackedSkipped?.length) {
 		const omitted = bundle.untrackedSkipped.slice(0, 10)
 			.map((file) => `${JSON.stringify(file.path.slice(0, 240))} (${file.reason})`).join(", ");
@@ -1190,7 +1194,6 @@ export async function review(
 	onTrace?: ReviewTraceObserver,
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
-	if (runnerOptions.runner || process.env.NEEDLEFISH_RUNNER) resolveRunner(runnerOptions);
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle, runnerOptions);
 	if (plan.binaryOnlyFastPath) {
@@ -1296,7 +1299,7 @@ async function reviewRoutes(
 	try {
 		assertRunnerSchedulingAllowed();
 		if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
-		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, tmp });
+		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, ...(deadline === undefined ? {} : { remainingReviewMs: () => Math.floor(deadline - performance.now()) }), tmp });
 		for (const [routeIndex, {config, plan}] of selections.entries()) {
 			assertRunnerSchedulingAllowed();
 			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
