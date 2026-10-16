@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { chmodSync, cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 const source = resolve("docs/shift-left");
 const cli = resolve("src/cli.ts");
@@ -16,7 +17,15 @@ const finding = {
 
 function setup(t) {
   const dir = mkdtempSync(join(tmpdir(), "needlefish-shift-left-test-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => {
+    const pidFile = join(dir, "review.pid");
+    if (existsSync(pidFile)) {
+      try { process.kill(-Number(readFileSync(pidFile, "utf8")), "SIGKILL"); } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
   const repo = join(dir, "repo");
   const bin = join(dir, "bin");
   const home = join(dir, "home");
@@ -44,6 +53,7 @@ if (args[0] === 'verdict' || args[0] === 'render') {
   process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exit(r.status ?? 1);
 }
 if (process.env.FAKE_WAIT === '1') {
+  fs.writeFileSync(${JSON.stringify(join(dir, "review.pid"))}, String(process.pid));
   const child = cp.spawn(${JSON.stringify(process.execPath)}, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   fs.writeFileSync(${JSON.stringify(join(dir, "child.pid"))}, String(child.pid));
   setInterval(() => {}, 1000);
@@ -163,4 +173,28 @@ test("hook-bound head prevents a concurrent checkout from reviewing another comm
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /differs from the pushed commit/);
   assert.equal(existsSync(f.log), false);
+});
+
+
+test("SIGHUP stops the detached review group and removes its temporary result", { timeout: 10000 }, async (t) => {
+  const f = setup(t);
+  writeFileSync(f.fixture, JSON.stringify(f.base));
+  const gate = spawn(process.execPath, [join(f.repo, ".needlefish/shift-left/review-gate.mjs"), "HEAD"], {
+    cwd: f.repo, env: { ...f.env, FAKE_WAIT: "1", TMPDIR: f.dir }, detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(() => {
+    try { process.kill(-gate.pid, "SIGKILL"); } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+  });
+  const closed = new Promise((resolve) => gate.on("close", (code, signal) => resolve({ code, signal })));
+  const pidFile = join(f.dir, "child.pid");
+  for (let attempts = 0; !existsSync(pidFile) && attempts < 300; attempts++) await delay(10);
+  assert.equal(existsSync(pidFile), true);
+  gate.kill("SIGHUP");
+  assert.deepEqual(await closed, { code: 1, signal: null });
+  const pid = Number(readFileSync(pidFile, "utf8"));
+  assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+  assert.deepEqual(readdirSync(f.dir).filter((name) => name.startsWith("needlefish-pre-pr-")), []);
 });

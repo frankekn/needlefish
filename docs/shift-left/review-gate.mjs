@@ -22,7 +22,7 @@ function stop() {
     }
   }
 }
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     stop();
     rmSync(dir, { recursive: true, force: true });
