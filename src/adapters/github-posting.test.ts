@@ -3836,6 +3836,31 @@ test("a recognized runner transport failure emits operational:true with its cont
 	);
 });
 
+test("Codex credit exhaustion emits operational:true for provider fallback", (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 235,
+		rawReview: defaultRawReview(),
+		runnerExit: { code: 1, stderr: 'ERROR: {"error":{"code":"BAD_REQUEST","message":"You have insufficient credits to make this request.","type":"invalid_request_error"}}' },
+	});
+	const previous = process.env.CODEX_BIN;
+	t.after(() => {
+		if (previous === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous;
+	});
+	process.env.NEEDLEFISH_RUNNER = "codex";
+	process.env.CODEX_BIN = process.env.CLAUDE_BIN;
+
+	const run = spawnGithubCli(fixture, 235);
+
+	assert.equal(run.status, 1, run.stderr);
+	assert.equal(
+		run.stdout.trim().split("\n").at(-1),
+		`needlefish-outcome {"outcome":"failure","operational":true,"cause":"usage limit","prNumber":235,"headSha":"${fixture.headSha}"}`,
+	);
+	assert.match(run.stderr, /likely cause: usage limit;/);
+	assert.doesNotMatch(run.stderr, /insufficient credits/);
+});
+
 test("empty runner output keeps its operational classification", (t) => {
 	const fixture = setupFixture(t, { prNumber: 95, rawReview: "" });
 

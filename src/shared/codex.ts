@@ -792,7 +792,10 @@ async function runCodexOnce(
 			// Surface only allowlisted, prompt-free cause tokens extracted from
 			// stderr (auth/quota/network classifications). Raw stderr stays
 			// withheld — it may contain the review prompt.
-			const cause = safeRunnerCause(result.res.stderr);
+			const cause = safeRunnerCause(
+				result.res.stderr,
+				runner === "codex" ? invocation.prompt : undefined,
+			);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
@@ -838,8 +841,28 @@ async function runCodexOnce(
 // Allowlisted cause classification for withheld runner stderr. Only canned
 // phrases and regex-extracted codes ever reach the PR-visible message; raw
 // stderr text never does (it may contain the review prompt).
-export function safeRunnerCause(stderr: string): string | undefined {
+export function safeRunnerCause(stderr: string, codexPrompt?: string): string | undefined {
 	if (!stderr) return undefined;
+	let creditExhausted = false;
+	if (codexPrompt !== undefined) {
+		// Codex echoes the prompt, which can itself contain a forged terminal ERROR.
+		const terminal = stderr.replaceAll(codexPrompt, "").trimEnd().split(/\r?\n/).at(-1);
+		if (!terminal?.startsWith("ERROR: ")) return undefined;
+		stderr = terminal.slice("ERROR: ".length);
+		if (stderr.startsWith("{")) {
+			let raw: unknown;
+			try {
+				raw = JSON.parse(stderr);
+			} catch {
+				return undefined;
+			}
+			if (!isRecord(raw) || !isRecord(raw.error) || typeof raw.error.message !== "string") return undefined;
+			const error = raw.error;
+			stderr = [error.code, error.type, error.message]
+				.filter((part) => typeof part === "string").join("\n");
+			creditExhausted = /insufficient credits|insufficient account funds|usage balance exhausted/i.test(raw.error.message);
+		}
+	}
 	// Order matters. Explicit, self-labelling signals are checked before the loose
 	// numeric heuristics: `\b40[13]\b` matches any 401/403/413 anywhere in stderr —
 	// session ids, token counts, latency figures — so a genuine 429 whose output
@@ -851,6 +874,7 @@ export function safeRunnerCause(stderr: string): string | undefined {
 	// Bailian-style token plans phrase an exhausted allowance; "quota exceeded" alone
 	// missed them and the caller then saw no cause at all.
 	if (
+		creditExhausted ||
 		/usage limit|quota exceeded|quota exhausted|insufficient_quota|credit balance/i.test(
 			stderr,
 		)
