@@ -16,6 +16,8 @@ critic filter the findings. Fixed rules derive the final verdict.
 
 Use a trusted Git repository. You need Node 20+, Git 2.41+, and an authenticated
 `codex`, `claude`, or `opencode` CLI on `PATH`.
+Run the published v0.4.10 CLI from the repository root.
+The full reference describes current source, including unreleased changes.
 
 ```bash
 npx needlefish doctor
@@ -31,8 +33,9 @@ model provider.
 Read the provider's data and billing terms before reviewing private code.
 
 A dirty worktree reviews staged, unstaged, and eligible untracked changes.
-A clean branch reviews merge-base to `HEAD`. Selecting a subdirectory still
-reviews the whole repository. Use `--base <ref>` to override the detected base.
+A clean branch reviews merge-base to `HEAD`. Use `--base <ref>` to override
+the detected base. Automatic resolution from a subdirectory to the repository
+root is an unreleased source change.
 
 ```bash
 npx needlefish --uncommitted
@@ -43,7 +46,7 @@ npx needlefish pr 123
 `pr 123` reviews the PR ref and needs authenticated `gh`. Local mode prints
 Markdown and caches JSON at `~/.cache/needlefish/<repo>/last-review.json`.
 It does not post to GitHub or apply fixes. `--fix` is not implemented.
-The [`--pr` flag and other modes](docs/reference.md#usage) are documented separately.
+The [`--pr` flag and other modes](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#usage) are documented separately.
 
 Small reviews normally use two model calls, review plus critic. Large reviews
 use one map call, multiple deep calls, and a critic. Repair or retry calls can
@@ -71,7 +74,7 @@ to the captured change and is not proof that the code has no defects.
 For automation, use `--json` and the versioned
 [`ReviewResult` schema](schemas/review-result.v1.schema.json).
 Dry-run JSON has a different shape. See the
-[machine interface](docs/reference.md#machine-interface) for fields and outcomes.
+[machine interface](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#machine-interface) for fields and outcomes.
 
 ## Common errors
 
@@ -82,17 +85,20 @@ Dry-run JSON has a different shape. See the
 | Login, provider, quota, or network error | Read the runner diagnostic. Check that provider's login and account status. `doctor` does not prove quota or connectivity. |
 | Folder is not a Git repository | Select the repository root, or run `git init` only if you intend to create a repository. |
 | Base ref cannot be resolved | Fetch the intended base and pass `--base <ref>`. |
-| A deep review rejects the `openai` runner | Select a tool-capable CLI runner. The HTTP runner supports only small full-diff reviews. |
 | GitHub review is skipped | Read `needlefish-skip` and the check. Closed, stale, same-head, and untrusted-author skips are not new reviews. |
 | Review times out | Inspect the failure and runner logs. Set an appropriate timeout only after checking the cause. Do not treat missing output as a pass. |
 
-[Timeouts and runner options](docs/reference.md#runners) and
-[GitHub authentication](docs/reference.md#hosted-any-repo) contain the full details.
+The `openai` HTTP runner cannot inspect repository files. Use a tool-capable
+CLI runner for large or deep reviews. Refusal before a model call is an
+unreleased source guard, not a v0.4.10 guarantee.
+
+[Timeouts and runner options](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners) and
+[GitHub authentication](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#hosted-any-repo) contain the full details.
 
 ## GitHub Action
 
 From an installed source checkout, preview a hosted workflow for your target repository.
-Follow [development setup](docs/reference.md#development) first.
+Follow [development setup](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#development) first.
 
 ```bash
 pnpm review setup github --repo /path/to/repo
@@ -110,7 +116,7 @@ GitHub reviews use `COMMENT`, not formal approval. The authoritative
 `Needlefish` check is success for `pass`, failure for `changes_requested` or
 execution failure, and neutral for `needs_human`. Neutral is not a pass.
 
-Read the [hosted and self-hosted reference](docs/reference.md#github-action)
+Read the [hosted and self-hosted reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#github-action)
 for secrets, supported hosted runners, permissions, and operator-managed bundles.
 The separate [guided setup Draft preview](https://github.com/frankekn/needlefish/pull/280)
 is not part of the merged CLI described here.
@@ -126,7 +132,7 @@ CLI models run unrestricted in a disposable clone with GitHub tokens stripped,
 fixed `HEAD`, no origin remote, and post-call mutation checks. This clone is not
 an OS sandbox. A runner that learns another local path can still access it.
 Only review trusted projects on an appropriate machine.
-See [runner configuration and isolation](docs/reference.md#runners),
+See [runner configuration and isolation](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners),
 [connections](docs/connections.md), and [ACP startup](docs/acp-startup.md).
 
 ## macOS preview
@@ -138,7 +144,7 @@ tests, exact-lane qualification, and novice trials remain release gates.
 
 ## Reference and development
 
-[Full CLI and GitHub reference](docs/reference.md) contains all modes, result
+[Full CLI and GitHub reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md) contains all modes, result
 fields, auth variables, subprocess environment, self-managed installation,
 and development commands. [Methodology](eval/RESULTS.md),
 [experiment history](eval/RESULTS_HISTORY.md), and [raw reports](eval/results/)
@@ -150,7 +156,7 @@ The [benchmark page](https://frankekn.github.io/needlefish/) and the table below
 use guarded reports. Compare rows only when their prompt, fixture-set, scorer,
 and anti-cheat identities match. Provider failures are operational outcomes.
 Historical results do not qualify the current installation or desktop preview.
-[Column definitions and historical notes](docs/reference.md#historical-benchmark-notes)
+[Column definitions and historical notes](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#historical-benchmark-notes)
 remain in the reference.
 
 The generator currently writes the full table into both READMEs. The generated

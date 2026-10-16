@@ -15,6 +15,8 @@ Needlefish 在 merge 前審查 Git 變更中的缺陷。審查與 critic 篩選 
 
 使用可信任的 Git repo。需要 Node 20 以上、Git 2.41 以上，以及已登入的
 `codex`、`claude` 或 `opencode` CLI，並讓 CLI 位於 `PATH`。
+已發布的 v0.4.10 CLI 請從 repo 根目錄執行。
+完整參考描述目前的原始碼，包含尚未發布的變更。
 
 ```bash
 npx needlefish doctor
@@ -28,8 +30,8 @@ npx needlefish
 審查私有程式碼前，先閱讀供應商的資料與計費條款。
 
 Worktree 有變更時，會審查 staged、unstaged 與符合收集條件的 untracked
-變更。乾淨 branch 則審查 merge-base 到 `HEAD`。選擇子目錄仍會審查整個
-repo。使用 `--base <ref>` 可指定基準。
+變更。乾淨 branch 則審查 merge-base 到 `HEAD`。使用 `--base <ref>` 可指定
+基準。從子目錄自動解析至 repo 根目錄是尚未發布的原始碼變更。
 
 ```bash
 npx needlefish --uncommitted
@@ -40,7 +42,7 @@ npx needlefish pr 123
 `pr 123` 審查 PR ref，需要已登入的 `gh`。本機模式輸出 Markdown，並將
 JSON 快取於 `~/.cache/needlefish/<repo>/last-review.json`。
 本機模式不發布到 GitHub，也不套用修正。`--fix` 尚未實作。
-[`--pr` flag 與其他模式](docs/reference.zh-TW.md#使用方式) 另有完整說明。
+[`--pr` flag 與其他模式](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#使用方式) 另有完整說明。
 
 小型審查通常呼叫模型兩次，分別是 review 與 critic。大型審查使用一次 map、
 多次 deep 與一次 critic。修復輸出格式或重試可能增加費用。純文件變更會跳過
@@ -65,7 +67,7 @@ P3 finding 仍會列出，但不阻擋。Severity 沿用既有 finding 契約。
 自動化使用 `--json` 與帶版本的
 [`ReviewResult` schema](schemas/review-result.v1.schema.json)。
 Dry-run JSON 的格式不同。欄位與 outcome 詳見
-[機器介面](docs/reference.zh-TW.md#機器介面)。
+[機器介面](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#機器介面)。
 
 ## 常見錯誤
 
@@ -76,17 +78,20 @@ Dry-run JSON 的格式不同。欄位與 outcome 詳見
 | 登入、供應商、額度或網路錯誤 | 閱讀 runner 診斷，確認該供應商的登入與帳戶狀態。`doctor` 不證明額度或連線可用。 |
 | 資料夾不是 Git repo | 選擇 repo 根目錄。只有確定要建立新 repo 時才執行 `git init`。 |
 | 無法解析 base ref | Fetch 所需基準，再指定 `--base <ref>`。 |
-| `openai` runner 拒絕 deep 審查 | 改用有工具能力的 CLI runner。HTTP runner 只支援小型完整 diff 審查。 |
 | GitHub 審查被跳過 | 閱讀 `needlefish-skip` 與 check。Closed、stale、same-head 與 untrusted-author skip 都不是新的審查。 |
 | 審查逾時 | 檢查故障與 runner log，確認原因後才調整 timeout。缺少輸出不能當成通過。 |
 
-完整細節見 [timeout 與 runner 選項](docs/reference.zh-TW.md#runners) 及
-[GitHub 認證](docs/reference.zh-TW.md#hosted任何-repo)。
+`openai` HTTP runner 無法檢查 repo 檔案。大型或 deep 審查請改用有工具
+能力的 CLI runner。模型呼叫前拒絕執行是尚未發布的原始碼防護，不是
+v0.4.10 的保證。
+
+完整細節見 [timeout 與 runner 選項](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#runners) 及
+[GitHub 認證](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#hosted任何-repo)。
 
 ## GitHub Action
 
 在安裝完成的原始碼 checkout 內，預覽目標 repo 的 hosted workflow。
-先完成[開發環境安裝](docs/reference.zh-TW.md#開發環境安裝)。
+先完成[開發環境安裝](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#開發環境安裝)。
 
 ```bash
 pnpm review setup github --repo /path/to/repo
@@ -104,7 +109,7 @@ check 對 `pass` 顯示 success，對 `changes_requested` 或執行失敗顯示
 failure，對 `needs_human` 顯示 neutral。Neutral 不是通過。
 
 Secret、hosted 支援的 runner、權限與操作者管理的 bundle 詳見
-[hosted 與 self-hosted 參考](docs/reference.zh-TW.md#github-action)。
+[hosted 與 self-hosted 參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#github-action)。
 另一份[引導設定 Draft 預覽](https://github.com/frankekn/needlefish/pull/280)
 不屬於此處說明的已合併 CLI。
 
@@ -119,7 +124,7 @@ CLI 模型不受程序權限限制，在 disposable clone 執行。GitHub token 
 `HEAD` 固定，沒有 origin remote，每次呼叫後檢查是否變更。
 這不是 OS sandbox。Runner 若得知其他本機路徑，仍可能存取該路徑。
 只在適當機器上審查可信任的專案。詳見
-[runner 設定與隔離](docs/reference.zh-TW.md#runners)、
+[runner 設定與隔離](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#runners)、
 [connections](docs/connections.md) 與 [ACP 啟動](docs/acp-startup.md)。
 
 ## macOS 預覽
@@ -131,7 +136,7 @@ macOS 14 以上，透過既有 CLI 審查可信任的本機專案。
 
 ## 參考與開發
 
-[完整 CLI 與 GitHub 參考](docs/reference.zh-TW.md) 收錄所有模式、結果欄位、
+[完整 CLI 與 GitHub 參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md) 收錄所有模式、結果欄位、
 認證變數、subprocess 環境、自管安裝與開發指令。
 [方法](eval/RESULTS.md)、[實驗歷史](eval/RESULTS_HISTORY.md) 與
 [原始報告](eval/results/) 將 benchmark 證據與安裝指引分開。
@@ -141,7 +146,7 @@ macOS 14 以上，透過既有 CLI 審查可信任的本機專案。
 [Benchmark 頁面](https://frankekn.github.io/needlefish/) 與下表使用受防護的
 report。只有 prompt、fixture-set、scorer 與 anti-cheat identity 相同的列
 才能比較。Provider failure 屬於執行結果。歷史分數不代表目前安裝或 desktop
-預覽已通過資格驗證。[欄位定義與歷史解讀](docs/reference.zh-TW.md#歷史-benchmark-記錄)
+預覽已通過資格驗證。[欄位定義與歷史解讀](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#歷史-benchmark-記錄)
 保留於參考文件。
 
 Generator 目前會把完整表格寫入兩語 README。以下產生區塊維持原樣，讓後續

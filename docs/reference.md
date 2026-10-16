@@ -6,9 +6,9 @@
 
 Local mode is read-only: Markdown to stdout, no GitHub writes.
 
-Invoking from a repository subdirectory, or passing one to `--repo`, reviews the
-whole repository. Paths, root `AGENTS.md`, and cache placement use Git's
-work-tree top level.
+Run published v0.4.10 from the repository root, and pass a root path to `--repo`.
+The unreleased source resolves subdirectory invocations to Git's work-tree top
+level for paths, root `AGENTS.md`, and cache placement.
 
 **Committed work** — run from inside the target repo, or point `--repo` at it
 from anywhere. The default range is merge-base…`HEAD` (see
@@ -354,9 +354,11 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
-The `openai` HTTP runner has no repository-reading tools. It supports small
-full-diff reviews; `--deep` and automatically large reviews fail before any
-request. Use a tool-capable CLI runner instead. Docs-only skips remain supported.
+The `openai` HTTP runner has no repository-reading tools. Use a tool-capable
+CLI runner for large or deep reviews. The unreleased source rejects `--deep`
+and automatically large HTTP reviews before any request. Published v0.4.10
+does not guarantee that refusal. Small full-diff reviews and docs-only skips
+remain supported.
 
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
@@ -481,16 +483,9 @@ recheck` / `@needlefish explain` comments exist in this repository's
 `.github/workflows/commands.yml`; the published composite action does not
 install that workflow.
 
-## Quick start
+## Doctor and GitHub setup details
 
-**Locally** — from inside any git repo you want reviewed. Requires Node 20+, git 2.41+
-and one authed runner CLI (`codex`, `claude`, or `opencode`) on `PATH`:
-
-```bash
-npx needlefish
-```
-
-Not sure the setup is right? `npx needlefish doctor` checks Node, the
+`npx needlefish doctor` checks Node, the
 selected runner CLI and its version, whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
 uses; an env credential the review accepts, such as `OPENAI_API_KEY` for
@@ -500,7 +495,7 @@ scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
 reported as `unknown` and does not fail the exit code.
 
-**On every PR** — preview the hosted workflow from this source checkout:
+Preview the hosted workflow from this source checkout:
 
 ```bash
 pnpm review setup github --repo /path/to/repo
@@ -520,11 +515,6 @@ created by this command. It does not configure a required check or branch
 protection. Once enabled, findings arrive as
 inline review comments anchored to the diff; pushes update the same review in
 place (fresh / still-open / no longer reported) instead of stacking new ones.
-
-Cost: 2 model calls per review on small PRs (`gpt-5.6-terra` at `high` effort
-by default), 1 map + N deep calls + 1 critic on large ones. Docs-only PRs and
-unchanged heads skip the model entirely.
-
 
 ## Historical benchmark notes
 

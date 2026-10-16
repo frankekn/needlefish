@@ -6,8 +6,9 @@
 
 本機模式是唯讀的：Markdown 輸出到 stdout，不寫入 GitHub。
 
-從 repo 子目錄執行，或將子目錄傳給 `--repo`，仍會審查整個 repo。
-檔案路徑、根目錄 `AGENTS.md` 與快取位置皆以 Git work-tree 根目錄為準。
+已發布的 v0.4.10 請從 repo 根目錄執行，`--repo` 也請指定根目錄。
+尚未發布的原始碼會將子目錄解析至 Git work-tree 根目錄，供檔案路徑、
+根目錄 `AGENTS.md` 與快取位置使用。
 
 **已提交的工作**——在目標 repo 內執行，或從任意位置用 `--repo` 指向
 它。預設範圍是 merge-base…`HEAD`（見[基準偵測](#基準偵測)）：
@@ -254,9 +255,10 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
 `acp`。
 
-`openai` HTTP runner 沒有讀取 repo 的工具，只支援小型完整 diff 審查。
-`--deep` 與自動判定的大型審查會在 HTTP request 前拒絕；請改用具工具
-能力的 CLI runner。純文件 fast path 仍可搭配任何 runner。
+`openai` HTTP runner 沒有讀取 repo 的工具。大型或 deep 審查請改用具工具
+能力的 CLI runner。尚未發布的原始碼會在 HTTP request 前拒絕 `--deep`
+與自動判定的大型 HTTP 審查。已發布的 v0.4.10 不保證事前拒絕。
+小型完整 diff 審查與純文件 fast path 仍可使用。
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
@@ -374,16 +376,16 @@ cached-result `render`／`verdict` 診斷。
 explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
 布的 composite action 不會安裝該 workflow。
 
-## 快速開始
+## Doctor 與 GitHub 設定細節
 
-**本機**——在要審查的 git repo 內執行。需要 Node 20 以上，以及一個已登
-入的 runner CLI（`codex`、`claude` 或 `opencode`）位於 `PATH`：
+`npx needlefish doctor` 不呼叫模型，會檢查 Node、所選 runner CLI 與版本、
+Git repo 與偵測到的基準 ref。認證檢查使用 runner 的狀態指令及與審查相同
+的環境變數 allowlist。審查接受的環境憑證，例如 opencode 的
+`OPENAI_API_KEY`，不另行探測即可通過。失敗項目會列出修正方式。
+`--json` 提供相同報告。任何檢查失敗時 exit code 為 1，否則為 0。
+無法判定的檢查列為 `unknown`，不造成非零 exit code，也不證明模型可用。
 
-```bash
-npx needlefish
-```
-
-**每個 PR**：從此版本原始碼預覽指定 Git repo 的 hosted workflow：
+從此版本原始碼預覽指定 Git repo 的 hosted workflow：
 
 ```bash
 pnpm review setup github --repo /path/to/repo
@@ -401,11 +403,6 @@ workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
 啟用後，finding 會
 以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
 份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
-
-成本：小型 PR 每次審查 2 次模型呼叫（預設 `gpt-5.6-terra` @ `high`
-effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR 與未
-變更的 head 會完全跳過模型。
-
 
 ## 歷史 benchmark 記錄
 
