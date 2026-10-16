@@ -101,20 +101,20 @@ test("ACP configuration rejects unsupported auth fields and native adapters", ()
 test("selection binds only the chosen account; an unused missing account is not read", (t) => {
   const f = fixture(t, [entry("a"), entry("b", { env: { AGENT_API_KEY: "ACCOUNT_B_KEY" } })]);
   const before = { ...f.env };
-  const a = resolveConnectionOptions<RunnerOptions>({ connection: "a" }, f.repo, f.env);
+  const a = resolveConnectionOptions<RunnerOptions>({ connections: ["a"] }, f.repo, f.env);
   const child: NodeJS.ProcessEnv = {};
   a.connectionAuth!.applyTo(child);
   assert.equal(child.AGENT_API_KEY, env.ACCOUNT_A_KEY);
   assert.deepEqual(f.env, before);
   assert.doesNotMatch(JSON.stringify(a), /TEST-A/);
-  assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connection: "b" }, f.repo, f.env), /missing/);
+  assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connections: ["b"] }, f.repo, f.env), /missing/);
 });
 
 test("two bound selections do not alias even when used concurrently", async (t) => {
   const f = fixture(t, [entry("a"), entry("b", { env: { AGENT_API_KEY: "ACCOUNT_B_KEY" } })]);
   const source = { ...f.env, ACCOUNT_B_KEY: "TEST-B-KEY" };
-  const a = resolveConnectionOptions<RunnerOptions>({ connection: "a" }, f.repo, source);
-  const b = resolveConnectionOptions<RunnerOptions>({ connection: "b" }, f.repo, source);
+  const a = resolveConnectionOptions<RunnerOptions>({ connections: ["a"] }, f.repo, source);
+  const b = resolveConnectionOptions<RunnerOptions>({ connections: ["b"] }, f.repo, source);
   source.ACCOUNT_A_KEY = source.ACCOUNT_B_KEY = "CHANGED";
   writeFileSync(f.file, "now invalid");
   const children = await Promise.all([a, b].map(async (opts) => {
@@ -129,7 +129,7 @@ test("two bound selections do not alias even when used concurrently", async (t) 
 
 test("separate auth cannot be combined with an unresolved selector", (t) => {
   const f = fixture(t);
-  assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connection: "a", connectionAuth: new AcpEnvironmentAuth(refs, env) }, f.repo, f.env), /cannot be combined/);
+  assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connections: ["a"], connectionAuth: new AcpEnvironmentAuth(refs, env) }, f.repo, f.env), /cannot be combined/);
 });
 
 test("Unicode screening covers mixed escapes and surrogate pairs without changing credentials", () => {

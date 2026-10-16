@@ -1,4 +1,5 @@
 import path from "node:path";
+import { resolveConnectionOptions } from "../shared/connections.js";
 import { explainFinding } from "../core/explain.js";
 import {
   credentialValuesFromEnv,
@@ -33,6 +34,7 @@ export async function runGithubExplain(
   opts: RunnerOptions
 ): Promise<void> {
   const expectedAppId = configuredCheckAppId();
+  if ((opts.connections?.length ?? 0) > 1) throw new Error("explain accepts only one --connection; ordered fallback requires a whole review.");
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
   const repoPath = path.resolve(cwd);
@@ -41,7 +43,7 @@ export async function runGithubExplain(
   // identity this run posts as names the findings.
   const latestReview = findPreviousReview(repo, prNumber, expectedAppId)?.state ?? null;
   const explanation = screenExplanation(
-    await explainFinding(bundle, findingKey, opts, latestReview),
+    await explainFinding(bundle, findingKey, resolveConnectionOptions(opts, bundle.repoPath), latestReview),
     process.env
   );
   // The trailing marker is recognized by normalize.ts isNeedlefishPost when

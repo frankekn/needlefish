@@ -11,6 +11,7 @@ import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definitio
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
   resolveRunnerBinary,
+  runnerReviewCapability,
   type ResolvedRunnerBinary,
 } from "../shared/runner-detection.js";
 import { RUNNER_DEFINITIONS, RUNNERS, isRunnerName, type RunnerName } from "../shared/runner.js";
@@ -26,7 +27,7 @@ import {
 export type DoctorStatus = "ok" | "fail" | "unknown";
 
 export interface DoctorCheck {
-  readonly name: "node" | "runner" | "auth" | "git" | "base";
+  readonly name: "node" | "runner" | "capability" | "auth" | "git" | "base";
   readonly status: DoctorStatus;
   readonly detail: string;
   readonly fix?: string;
@@ -192,6 +193,18 @@ async function cliRunnerCheck(
   };
 }
 
+function capabilityCheck(selection: RunnerSelection): DoctorCheck {
+  if (selection.kind === "unavailable") {
+    return { name: "capability", status: "unknown", detail: "skipped: no runner available" };
+  }
+  const { capability, detail } = runnerReviewCapability(selection.runner);
+  return {
+    name: "capability",
+    status: capability === "promptOnly" ? "fail" : capability === "unknown" ? "unknown" : "ok",
+    detail,
+  };
+}
+
 async function authCheck(selection: RunnerSelection, probeCwd: string): Promise<DoctorCheck> {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
@@ -328,7 +341,7 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   const repo = path.resolve(opts.repo);
   const selected = opts.connection === undefined ? undefined
-    : resolveConnectionOptions<RunnerOptions>({ connection: opts.connection, runner: opts.runner }, repo);
+    : resolveConnectionOptions<RunnerOptions>({ connections: [opts.connection], runner: opts.runner }, repo);
   if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   const cleanup = (): void => rmSync(probeCwd, { recursive: true, force: true });
@@ -339,13 +352,16 @@ export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
     const selectedBinary = selected ? resolveRunnerBinary("codex") : undefined;
     const runner = selected ? {
       check: { name: "runner", status: selectedBinary?.path ? "ok" : "fail", detail: selectedBinary?.path ? "codex: selected connection executable available; CLI not probed" : "codex: selected connection executable unavailable" } satisfies DoctorCheck,
-      selection: { kind: "unavailable" } satisfies RunnerSelection,
+      selection: selectedBinary?.path === undefined
+        ? { kind: "unavailable" } satisfies RunnerSelection
+        : { kind: "cli", runner: "codex", binary: { ...selectedBinary, path: selectedBinary.path } } satisfies RunnerSelection,
     } : await selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
     repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
+      capabilityCheck(runner.selection),
       selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
         ? "codex: credential source chosen; provider account identity unknown; login state not probed"
         : "codex: named connection chosen; provider account identity unknown; login state not probed" } : await authCheck(runner.selection, probeCwd),
@@ -372,7 +388,7 @@ export function serializeDoctorReport(report: DoctorReport): string {
 export function renderDoctorReport(report: DoctorReport): string {
   const lines = [`needlefish ${report.needlefish}`];
   for (const check of report.checks) {
-    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(8)}${check.detail}`);
+    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(Math.max(8, check.name.length + 1))}${check.detail}`);
     if (check.fix !== undefined) {
       const [first, ...rest] = check.fix.split("\n");
       lines.push(`${"".padEnd(16)}fix: ${first}`);

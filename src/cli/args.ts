@@ -97,7 +97,7 @@ Shared options:
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
   --runner <name>      codex | claude | opencode | openai | grok | pi | acp
-  --connection <id>    select one user-configured connection (no automatic fallback)
+  --connection <id>    select a connection; repeat in quota fallback order
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -134,7 +134,7 @@ type MutableLocalOptions = {
   deep?: boolean;
   focus?: string;
   cacheDir?: string;
-  connection?: string;
+  connections?: string[];
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -142,7 +142,7 @@ type MutableLocalOptions = {
 };
 
 type MutableRunnerOptions = {
-  connection?: string;
+  connections?: string[];
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -184,7 +184,7 @@ function parsePr(value: string): number {
 
 function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
-  if (opts.connection !== undefined) runnerOpts.connection = opts.connection;
+  if (opts.connections !== undefined) runnerOpts.connections = opts.connections;
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
@@ -337,8 +337,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     const connectionOption = optionValue(argv, i, "--connection");
     if (connectionOption) {
-      if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
-      opts.connection = connectionOption.value;
+      if (opts.connections?.includes(connectionOption.value)) throw new Error("--connection IDs must not repeat");
+      (opts.connections ??= []).push(connectionOption.value);
       if (connectionOption.consumedNext) i++;
       continue;
     }
@@ -363,12 +363,16 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error(`unknown option ${arg}`);
   }
 
-  if (opts.connection !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
+  if (opts.connections !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
     throw new Error("--connection cannot be combined with --runner or --model");
   }
 
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
+  }
+
+  if ((doctorCommand || explainCommand) && (opts.connections?.length ?? 0) > 1) {
+    throw new Error("doctor and explain accept only one --connection; ordered fallback requires a whole review.");
   }
 
   if (doctorCommand) {
@@ -389,7 +393,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     return {
       kind: "doctor",
       json,
-      ...(opts.connection !== undefined ? { connection: opts.connection } : {}),
+      ...(opts.connections !== undefined ? { connection: opts.connections[0] } : {}),
       ...(repo !== undefined ? { repo } : {}),
       ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
       ...(opts.base !== undefined ? { base: opts.base } : {}),

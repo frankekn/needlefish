@@ -400,11 +400,11 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
-The `openai` HTTP runner has no repository-reading tools. Use a tool-capable
-CLI runner for large or deep reviews. The unreleased source rejects `--deep`
-and automatically large HTTP reviews before any request. Published v0.4.10
-does not guarantee that refusal. Small full-diff reviews and docs-only skips
-remain supported.
+The `openai` HTTP runner has no repository-reading tools. The unreleased
+source rejects every model-backed review, including small diffs and `--deep`,
+before any HTTP request. Docs-only reviews still use the fast path without a
+model call. Disabling that fast path also requires repository-reading tools.
+Published v0.4.10 does not guarantee that refusal.
 
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
@@ -700,3 +700,9 @@ and
 [RESULTS_HISTORY.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md);
 raw reports under
 [eval/results/](https://github.com/frankekn/needlefish/tree/main/eval/results).
+
+## Source preview runner capability
+
+The `openai` HTTP runner has no repository-reading tools. Model reviews fail before any request. Docs-only reviews remain supported. ACP repository capability stays unknown until observed; protocol initialization does not prove tool access.
+
+See [named connections](https://github.com/frankekn/needlefish/blob/main/docs/connections.md) for explicit credential-source selection.

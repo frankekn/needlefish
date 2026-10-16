@@ -92,7 +92,10 @@ test("runCodex spawns a padded CODEX_BIN trimmed, the way detection resolved it"
   mkdirSync(fakeBin);
   for (const name of ["codex", "claude"]) {
     const file = path.join(fakeBin, name);
-    writeFileSync(file, ["#!/bin/sh", `cat > ${JSON.stringify(inputPath)}`, `printf '{"runner":"${name}"}'`].join("\n"));
+    const output = name === "codex"
+      ? JSON.stringify({ type: "item.completed", item: { id: "final", type: "agent_message", text: '{"runner":"codex"}' } })
+      : '{"runner":"claude"}';
+    writeFileSync(file, ["#!/bin/sh", `cat > ${JSON.stringify(inputPath)}`, `printf '%s' '${output}'`].join("\n"));
     chmodSync(file, 0o755);
   }
   clearRunnerEnv(`/usr/bin:/bin:/usr/sbin:/sbin`);
@@ -122,7 +125,8 @@ test("runCodex treats an empty CODEX_BIN as unset and spawns codex from PATH", a
 
   mkdirSync(fakeBin);
   const codex = path.join(fakeBin, "codex");
-  writeFileSync(codex, ["#!/bin/sh", "cat > /dev/null", `printf '{"runner":"codex"}'`].join("\n"));
+  const outputEvent = JSON.stringify({ type: "item.completed", item: { id: "final", type: "agent_message", text: '{"runner":"codex"}' } });
+  writeFileSync(codex, ["#!/bin/sh", "cat > /dev/null", `printf '%s' '${outputEvent}'`].join("\n"));
   chmodSync(codex, 0o755);
   clearRunnerEnv(`${fakeBin}:/usr/bin:/bin:/usr/sbin:/sbin`);
   process.env.CODEX_BIN = "";
@@ -175,7 +179,14 @@ for (const runner of ["codex", "grok"] as const) {
     mkdirSync(path.join(repo, "tools"));
     const trustedBin = path.join(caller, "tools/codex");
     const untrustedBin = path.join(repo, "tools/codex");
-    writeFileSync(trustedBin, ["#!/bin/sh", "cat > /dev/null", "echo trusted-caller", "pwd"].join("\n"));
+    writeFileSync(trustedBin, runner === "codex" ? [
+      "#!/usr/bin/env node",
+      "require('node:fs').readFileSync(0, 'utf8');",
+      "console.log(JSON.stringify({type:'thread.started',thread_id:'trusted'}));",
+      "console.log(JSON.stringify({type:'turn.started'}));",
+      "console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_message',text:'trusted-caller\\n'+process.cwd()}}));",
+      "console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1,reasoning_output_tokens:0}}));",
+    ].join("\n") : ["#!/bin/sh", "cat > /dev/null", "echo trusted-caller", "pwd"].join("\n"));
     writeFileSync(untrustedBin, ["#!/bin/sh", `touch ${JSON.stringify(attackMarker)}`, "echo untrusted-pr"].join("\n"));
     chmodSync(trustedBin, 0o755);
     chmodSync(untrustedBin, 0o755);

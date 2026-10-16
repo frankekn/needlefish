@@ -10,11 +10,12 @@ import { CodexEnvironmentAuth } from "./connection-auth.js";
 import { runtimeLabel } from "./runtime.js";
 import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
-import { findRunnerFailure } from "./runner-failure.js";
+import { findRunnerFailure, RunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
 	type AcpLaunchSpec,
+	type ConnectionOutputGuard,
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
@@ -59,6 +60,7 @@ import {
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
 	prepareRunnerSandbox,
+	type RunnerSandbox,
 } from "./runner-sandbox.js";
 
 export { isRunnerSafetyError } from "./runner-sandbox.js";
@@ -536,12 +538,14 @@ export function prepareEphemeralHome(
 
 export interface CodexOptions extends RunnerOptions {
 	readonly effectiveConfig?: EffectiveRunnerConfig;
+	readonly outputGuards?: readonly ConnectionOutputGuard[];
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
 	readonly targetHeadSha: string;
 	readonly targetBaseSha?: string;
 	readonly targetPatch?: string;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
 	readonly onFailedAttempt?: (
@@ -695,6 +699,7 @@ export async function runCodex(
 ): Promise<string> {
 	const config = opts.effectiveConfig ?? resolveRunnerConfig(opts);
 	const { runner } = config;
+	const guards = opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : []);
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
@@ -723,11 +728,11 @@ export async function runCodex(
 			emitStat(true);
 			return result.out;
 		} catch (err) {
-			if (err instanceof Error && config.connectionAuth) {
+			if (err instanceof Error && guards.length > 0) {
 				// Keep failure types and raw provenance while withholding public credentials.
 				err.message = err instanceof RunnerWorktreeChangedError
 					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
-					: config.connectionAuth.screenDiagnostic(err.message);
+					: guards.reduce((message, guard) => guard.screenDiagnostic(message), err.message);
 			}
 			const raw =
 				err instanceof Error
@@ -740,9 +745,9 @@ export async function runCodex(
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
 			}
-			if (raw && config.connectionAuth && !isRunnerSafetyError(err)) {
+			if (raw && guards.length > 0 && !isRunnerSafetyError(err)) {
 				try {
-					config.connectionAuth.assertOutputSafe(raw);
+					for (const guard of guards) guard.assertOutputSafe(raw);
 				} catch (screeningError) {
 					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
 					emitStat(false);
@@ -820,6 +825,7 @@ async function runCodexOnce(
 					targetHeadSha: opts.targetHeadSha,
 					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
+					...(opts.snapshot ? { snapshot: opts.snapshot } : {}),
 					tmp,
 				});
 				return {
@@ -889,13 +895,17 @@ async function runCodexOnce(
 			);
 		}
 		if (result.res.status !== 0) {
-			// Surface only allowlisted, prompt-free cause tokens extracted from
-			// stderr (auth/quota/network classifications). Raw stderr stays
-			// withheld — it may contain the review prompt.
-			const cause = safeRunnerCause(result.res.stderr);
+			try { assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha); }
+			catch (error) { if (error instanceof Error) throw withRunnerOutput(error); throw error; }
+			// Raw streams can contain the review prompt; expose only canned causes.
+			const cause = runner === "codex"
+				? safeCodexCause(result.res.stdout, result.res.stderr, invocation.prompt)
+				: safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
+					...(runner === "codex" && nativeCodexQuotaExhausted(result.res.stdout, result.res.status)
+						? [{ cause: new RunnerFailure("quota_exhausted", "Selected Codex route exhausted its quota.") }] : []),
 				),
 			);
 		}
@@ -916,8 +926,8 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
-			if (config.connectionAuth) {
-				config.connectionAuth.assertOutputSafe(out);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) {
+				guard.assertOutputSafe(out);
 				let decoded: unknown;
 				try {
 					decoded = extractJson(out);
@@ -925,7 +935,7 @@ async function runCodexOnce(
 					// Explain output can be plain text; raw screening still applies.
 					if (!(error instanceof Error)) throw error;
 				}
-				if (decoded !== undefined) config.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+				if (decoded !== undefined) guard.assertOutputSafe(JSON.stringify(decoded));
 			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
@@ -935,7 +945,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			config.connectionAuth?.assertOutputSafe(raw);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) guard.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
@@ -947,9 +957,155 @@ async function runCodexOnce(
 	}
 }
 
-// Allowlisted cause classification for withheld runner stderr. Only canned
-// phrases and regex-extracted codes ever reach the PR-visible message; raw
-// stderr text never does (it may contain the review prompt).
+type CodexEvent =
+	| { readonly kind: "failure"; readonly message: string }
+	| { readonly kind: "message"; readonly text: string }
+	| { readonly kind: "metadata" };
+
+function* codexEvents(stdout: string): Generator<CodexEvent | null> {
+	for (const line of stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		let event: unknown;
+		try {
+			event = JSON.parse(line);
+		} catch {
+			yield null;
+			continue;
+		}
+		if (!isRecord(event)) { yield null; continue; }
+		switch (event.type) {
+			case "error":
+			case "turn.failed": {
+				const message = event.type === "error" ? event.message : isRecord(event.error) ? event.error.message : undefined;
+				yield typeof message === "string" ? { kind: "failure", message } : null;
+				break;
+			}
+			case "thread.started":
+				yield typeof event.thread_id === "string" ? { kind: "metadata" } : null;
+				break;
+			case "turn.started":
+				yield { kind: "metadata" };
+				break;
+			case "turn.completed": {
+				const usage = event.usage;
+				yield isRecord(usage) && ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
+					.every((field) => Number.isInteger(usage[field])) ? { kind: "metadata" } : null;
+				break;
+			}
+			case "item.started":
+			case "item.updated":
+			case "item.completed": {
+				const item = event.item;
+				if (!isRecord(item) || typeof item.id !== "string" || typeof item.type !== "string") { yield null; break; }
+				if (item.type === "agent_message") {
+					yield typeof item.text !== "string" ? null : event.type === "item.completed"
+						? { kind: "message", text: item.text } : { kind: "metadata" };
+				} else {
+					yield ["reasoning", "command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "todo_list", "error"]
+						.includes(item.type) ? { kind: "metadata" } : null;
+				}
+				break;
+			}
+			default:
+				yield null;
+		}
+	}
+}
+
+function exhaustedCodexMessage(message: string): boolean {
+	let text = message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	const reconnect = text.match(/^Reconnecting\.\.\. [1-5]\/5 \((.+)\)$/);
+	if (reconnect) text = reconnect[1];
+	const nativeStatus = text.match(/^unexpected status 402 Payment Required: (.+), url: (https?:\/\/\S+)$/);
+	if (text.startsWith("unexpected status ")) {
+		if (!nativeStatus) return false;
+		try { new URL(nativeStatus[2]); } catch { return false; }
+		text = nativeStatus[1];
+	}
+
+	if (/^[{["]/.test(text)) {
+		let raw: unknown;
+		try { raw = JSON.parse(text); } catch { return false; }
+		if (!isRecord(raw)) return false;
+		if ("error" in raw && Object.keys(raw).some((key) => key !== "error")) return false;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload) || Object.keys(payload).some((key) => !["code", "type", "message"].includes(key))) return false;
+		if (Object.values(payload).some((value) => typeof value !== "string")) return false;
+		if (payload.code !== undefined && payload.code !== "insufficient_quota" && payload.code !== "payment_required" && payload.code !== "BAD_REQUEST") return false;
+		if (payload.type !== undefined && payload.type !== "insufficient_quota" && payload.type !== "invalid_request_error") return false;
+		const values = Object.values(payload).join("\n");
+		if (/auth|unauthorized|forbidden|token_expired|invalid_api_key|\b40[13]\b/i.test(values)) return false;
+		if (payload.code === "insufficient_quota" || payload.type === "insufficient_quota") return true;
+		if (typeof payload.message !== "string") return false;
+		text = payload.message;
+	}
+	return /^(?:insufficient credits|insufficient account funds|usage balance exhausted|You have insufficient credits to make this request\.(?: Please purchase more credits to continue using the service\.)?)$/i.test(text);
+}
+
+export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
+	if (status === null || !Number.isInteger(status) || status <= 0) return false;
+	for (const line of stdout.split(/\r?\n/).filter((line) => line.trim())) {
+		let envelope: unknown;
+		try { envelope = JSON.parse(line); } catch { return false; }
+		if (!isRecord(envelope)) return false;
+		const fields = envelope.type === "error" ? ["type", "message"] : envelope.type === "turn.failed" ? ["type", "error"]
+			: envelope.type === "thread.started" ? ["type", "thread_id"] : envelope.type === "turn.started" ? ["type"]
+			: envelope.type === "turn.completed" ? ["type", "usage"] : ["type", "item"];
+		if (Object.keys(envelope).some((key) => !fields.includes(key))) return false;
+		if (isRecord(envelope.item) && envelope.item.type === "error" &&
+			(typeof envelope.item.message !== "string" || !/^Model metadata for `[^`\r\n]+` not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(envelope.item.message))) return false;
+		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
+	}
+	let terminal = false;
+	for (const event of codexEvents(stdout)) {
+		if (event === null) return false;
+		if (event.kind === "failure") {
+			if (!exhaustedCodexMessage(event.message)) return false;
+			terminal = !/^Reconnecting\.\.\. /.test(event.message);
+		} else if (terminal) return false;
+	}
+	return terminal;
+}
+
+function safeCodexCause(stdout: string, stderr: string, prompt: string): string | undefined {
+	let failure: { kind: "absent" } | { kind: "seen"; message: string | undefined } = { kind: "absent" };
+	for (const event of codexEvents(stdout)) {
+		if (event === null) return undefined;
+		if (event.kind === "failure") {
+			failure = { kind: "seen", message: event.message };
+		} else if (failure.kind === "seen") {
+			failure = { kind: "seen", message: undefined };
+		}
+	}
+	if (failure.kind === "absent") {
+		// JSON mode keeps model and tool text in stdout events, never stderr.
+		const promptStart = prompt ? stderr.lastIndexOf(prompt) : -1;
+		return safeRunnerCause(promptStart < 0 ? stderr : stderr.slice(promptStart + prompt.length));
+	}
+	if (typeof failure.message !== "string") return undefined;
+	let message = failure.message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	if (/^[{["]/.test(message)) {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(message);
+		} catch {
+			return undefined;
+		}
+		if (!isRecord(raw)) return undefined;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload)) return undefined;
+		const fields = [payload.code, payload.type, payload.message, payload.last_upstream_error];
+		if (fields.some((field) => field !== undefined && typeof field !== "string")) return undefined;
+		message = fields.filter((field) => typeof field === "string").join("\n");
+	}
+	const legacy = safeRunnerCause(message);
+	if (legacy?.startsWith("auth")) return legacy;
+	return /insufficient credits|insufficient account funds|usage balance exhausted/i.test(message)
+		? "usage limit"
+		: legacy;
+}
+
+// Only canned phrases and regex-extracted codes reach the public diagnostic.
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
 	// Order matters. Explicit, self-labelling signals are checked before the loose
@@ -1230,7 +1386,7 @@ function resolveModel(
 	runner: RunnerName,
 ): string | undefined {
 	// Named connections never borrow a model from another ambient lane.
-	if (opts.connection !== undefined) return opts.model;
+	if (opts.connections !== undefined) return opts.model;
 	if (opts.model) return opts.model;
 	if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
 	const modelEnv = RUNNER_DEFINITIONS[runner].modelEnv;
@@ -1306,6 +1462,7 @@ async function runCodexCli(
 	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
+		"--json",
 		"--color",
 		"never",
 		"--ignore-user-config",
@@ -1358,7 +1515,11 @@ async function runCodexCli(
 	try {
 		out = readFileSync(lastMsg, "utf8");
 	} catch {
-		out = res.stdout;
+		out = "";
+		for (const event of codexEvents(res.stdout)) {
+			if (event === null) { out = ""; break; }
+			if (event.kind === "message") out = event.text;
+		}
 	}
 	return { res, out };
 }

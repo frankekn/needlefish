@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildRunnerEnv, extractJson, runCodex, RunnerOperationalError } from "./codex";
+import { buildRunnerEnv, extractJson, runCodex, RunnerOperationalError, safeRunnerCause } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
 import { captureEnv, restoreEnv } from "./runner-test-fixtures";
 import { RunnerTimeoutError } from "./runner-process";
@@ -150,6 +150,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const argsPath = path.join(tmp, "args.json");
+  const promptPath = path.join(tmp, "prompt.txt");
   const previous = process.env.CODEX_BIN;
   t.after(() => {
     if (previous === undefined) delete process.env.CODEX_BIN;
@@ -167,19 +168,26 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
       "const repoPath = JSON.parse(input.slice('The repository to inspect is '.length, input.indexOf('. Your startup directory')));",
       "const head = require('node:child_process').execFileSync('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
       `fs.writeFileSync(${JSON.stringify(argsPath + ".inspection")}, JSON.stringify({ head, launchEntries: fs.readdirSync(process.cwd()), repoPath: fs.realpathSync(repoPath), input }));`,
+      `fs.writeFileSync(${JSON.stringify(promptPath)}, input);`,
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, '{\"ok\":true}');",
+      "process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
 
-  await runCodex("prompt", {
+  let rawOutput = "";
+  const output = await runCodex("prompt", {
     repoPath: repo,
     runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
+    onRaw: (raw) => { rawOutput = raw; },
   });
+  assert.equal(output, '{"ok":true}');
+  assert.match(readFileSync(promptPath, "utf8"), /prompt$/);
+  assert.match(rawOutput, /different stream output/);
 
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
   const launch = readFileSync(argsPath + ".cwd", "utf8");
@@ -193,6 +201,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions or repo in
   assert.equal(path.basename(launch), "runner-launch");
   assert.equal(launch.startsWith(repo + path.sep), false);
   assert.equal(existsSync(launch), false, "launch directory must be removed with its managed parent");
+  assert.equal(args.includes("--json"), true);
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
   assert.equal(args[args.indexOf("project_doc_max_bytes=0") - 1], "-c");
@@ -808,63 +817,72 @@ test("openai runner does not retry a request that exhausts its deadline", async 
 	assert.equal(requests, 1);
 });
 
-test("openai non-2xx attempt emits failure callbacks only", async (t) => {
-	const { createServer } = await import("node:http");
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const previous = {
-		base: process.env.OPENAI_BASE_URL,
-		key: process.env.OPENAI_API_KEY,
-		noRetry: process.env.NEEDLEFISH_NO_RETRY,
-	};
-	const failedBody = `${"x".repeat(2500)} CANARY-HTTP-500`;
-	const server = createServer((_req, res) => {
-		res.statusCode = 500;
-		res.end(failedBody);
-	});
-	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	const address = server.address();
-	if (address === null || typeof address === "string")
-		throw new Error("test server did not bind a port");
-	t.after(() => {
-		server.close();
-		if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
-		else process.env.OPENAI_BASE_URL = previous.base;
-		if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
-		else process.env.OPENAI_API_KEY = previous.key;
-		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
-		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
-	process.env.OPENAI_API_KEY = "test-key";
-	process.env.NEEDLEFISH_NO_RETRY = "1";
+for (const [status, cause] of [[500, "network error"], [502, "network error"], [429, "rate limited"]] as const) {
+	test(`openai HTTP ${status} stays operational and emits failure callbacks only`, async (t) => {
+		const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
+		const repo = initRepo(tmp);
+		const previous = {
+			base: process.env.OPENAI_BASE_URL,
+			key: process.env.OPENAI_API_KEY,
+			noRetry: process.env.NEEDLEFISH_NO_RETRY,
+		};
+		const failedBody = `${"x".repeat(2500)} CANARY-HTTP-${status}`;
+		let requests = 0;
+		const server = createServer((_req, res) => {
+			requests++;
+			res.statusCode = status;
+			res.end(failedBody);
+		});
+		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+		const address = server.address();
+		if (address === null || typeof address === "string")
+			throw new Error("test server did not bind a port");
+		t.after(() => {
+			server.close();
+			if (previous.base === undefined) delete process.env.OPENAI_BASE_URL;
+			else process.env.OPENAI_BASE_URL = previous.base;
+			if (previous.key === undefined) delete process.env.OPENAI_API_KEY;
+			else process.env.OPENAI_API_KEY = previous.key;
+			if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
+			else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
+			rmSync(tmp, { recursive: true, force: true });
+		});
+		process.env.OPENAI_BASE_URL = `http://127.0.0.1:${address.port}`;
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.NEEDLEFISH_NO_RETRY = "1";
 
-	const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
-	const failedRaws: { raw: string; runnerAttempt: number }[] = [];
-	const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
-	await assert.rejects(
-		() =>
-			runCodex("prompt", {
-				repoPath: repo,
-				runner: "openai",
-				model: "test-model",
-				targetHeadSha: headSha(repo),
-				timeoutMs: 5000,
-				onFailedAttempt: (runnerAttempt, raw) =>
-					failedAttempts.push({ runnerAttempt, raw }),
-				onFailedRaw: (raw, runnerAttempt) =>
-					failedRaws.push({ raw, runnerAttempt }),
-				onRaw: (raw, runnerAttempt) =>
-					successfulRaws.push({ raw, runnerAttempt }),
-			}),
-		/openai runner HTTP 500/,
-	);
+		const failedAttempts: { runnerAttempt: number; raw: string | undefined }[] = [];
+		const failedRaws: { raw: string; runnerAttempt: number }[] = [];
+		const successfulRaws: { raw: string; runnerAttempt: number }[] = [];
+		await assert.rejects(
+			() =>
+				runCodex("prompt", {
+					repoPath: repo,
+					runner: "openai",
+					model: "test-model",
+					targetHeadSha: headSha(repo),
+					timeoutMs: 5000,
+					onFailedAttempt: (runnerAttempt, raw) =>
+						failedAttempts.push({ runnerAttempt, raw }),
+					onFailedRaw: (raw, runnerAttempt) =>
+						failedRaws.push({ raw, runnerAttempt }),
+					onRaw: (raw, runnerAttempt) =>
+						successfulRaws.push({ raw, runnerAttempt }),
+				}),
+			(error: unknown) => {
+				assert.ok(error instanceof RunnerOperationalError);
+				assert.equal(error.message, `openai runner HTTP ${status}: ${failedBody.slice(0, 2000)}`);
+				assert.equal(safeRunnerCause(error.message), cause);
+				return true;
+			},
+		);
 
-	assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
-	assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
-	assert.deepEqual(successfulRaws, []);
-});
+		assert.equal(requests, 1);
+		assert.deepEqual(failedAttempts, [{ runnerAttempt: 1, raw: failedBody }]);
+		assert.deepEqual(failedRaws, [{ raw: failedBody, runnerAttempt: 1 }]);
+		assert.deepEqual(successfulRaws, []);
+	});
+}
 
 test("openai non-JSON attempt is failed-only before a valid retry", async (t) => {
 	const { createServer } = await import("node:http");
