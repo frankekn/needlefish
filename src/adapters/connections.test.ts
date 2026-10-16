@@ -325,3 +325,31 @@ test("directory sync failure after lock removal or in a created ancestor reports
   assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
   assert.deepEqual(await fs.readdir(parent), ["connections.json"]);
 });
+
+
+test("saves sync the created chain without opening unrelated traversable ancestors", async t => {
+  const f = await fixture(t);
+  const traversable = path.join(f.root, "traversable"), owned = path.join(traversable, "owned");
+  await fs.mkdir(traversable, { mode: 0o711 }); await fs.mkdir(owned, { mode: 0o700 });
+  const open = fs.open;
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    if (String(args[0]) === traversable) throw Object.assign(new Error("fake ancestor read denied"), { code: "EACCES" });
+    return open(...args);
+  });
+  for (const file of [path.join(owned, "connections.json"), path.join(owned, "new", "needlefish", "connections.json")]) {
+    const env = { NEEDLEFISH_CONNECTIONS_FILE: file };
+    success(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env));
+    assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
+    await assert.rejects(fs.stat(`${file}.lock`), { code: "ENOENT" });
+  }
+});
+
+
+test("missing dot-segment paths cannot escape the verified directory creation anchor", async t => {
+  const f = await fixture(t);
+  const sibling = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "nf-editor-sibling-")));
+  t.after(() => fs.rm(sibling, { recursive: true, force: true }));
+  const file = `${f.root}/missing/../../${path.basename(sibling)}/connections.json`;
+  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "unsafe_configuration");
+  assert.deepEqual(await fs.readdir(sibling), []);
+});

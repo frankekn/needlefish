@@ -73,15 +73,17 @@ async function location(repo: string, env: NodeJS.ProcessEnv, create = false) {
     const canonicalAncestor = await fs.realpath(ancestor);
     await safeAncestors(canonicalAncestor);
     const parent = path.join(canonicalAncestor, ...missing);
+    const nested = path.relative(canonicalAncestor, parent);
+    if (path.isAbsolute(nested) || nested === ".." || nested.startsWith(`..${path.sep}`)) return fail("unsafe_configuration");
     const canonical = path.join(parent, path.basename(file));
     const relative = path.relative(targetRoot(repo), canonical);
     if (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`)) return fail("unsafe_configuration");
     if (missing.length && create) await fs.mkdir(parent, { recursive: true, mode: 0o700 });
-    if (missing.length && !create) return { file: canonical, parent, identity: undefined };
+    if (missing.length && !create) return { file: canonical, parent, syncThrough: canonicalAncestor, identity: undefined };
     const final = await fs.lstat(parent);
     if (!final.isDirectory() || final.isSymbolicLink() || final.uid !== process.getuid?.() || (final.mode & 0o022) !== 0
       || await fs.realpath(parent) !== parent) return fail("unsafe_configuration");
-    return { file: canonical, parent, identity: { dev: final.dev, ino: final.ino } };
+    return { file: canonical, parent, syncThrough: canonicalAncestor, identity: { dev: final.dev, ino: final.ino } };
   } catch (error) {
     if (error instanceof ConnectionsError) throw error;
     return fail("configuration_unavailable");
@@ -173,10 +175,9 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
             const currentLock = await fs.lstat(lockPath);
             if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail(committed ? "save_state_unknown" : "save_failed");
             await fs.unlink(lockPath);
-            // A prior interrupted save may have created an unsynced ancestor.
             for (let directory = loc.parent; ; directory = path.dirname(directory)) {
               await syncDirectory(directory);
-              if (path.dirname(directory) === directory) break;
+              if (directory === loc.syncThrough) break;
             }
           }
         }
