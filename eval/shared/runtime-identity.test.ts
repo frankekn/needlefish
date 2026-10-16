@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { inspect } from "node:util";
 import { executableNames } from "../../src/shared/runner-detection";
-import { acpRuntimeIdentity, matchRuntimeIdentity, parsePublicRuntimeIdentity } from "./runtime-identity";
+import { acpRuntimeIdentity, matchRuntimeIdentity, parsePublicRuntimeIdentity, publicLauncherCandidates } from "./runtime-identity";
 import { matchQualifiedConfiguration } from "./runtime-qualification";
 import { comparisonEnvironmentError, runnerEnvironmentAttestationError } from "./report-integrity";
 import { renderResults } from "../gen-results";
@@ -232,4 +232,25 @@ test("ACP artifact lookup shares platform executable names with runner detection
   assert.deepEqual(executableNames("agent", "win32", undefined), ["agent", "agent.COM", "agent.EXE", "agent.BAT", "agent.CMD"]);
   assert.deepEqual(executableNames("agent.exe", "win32", ".EXE;.CMD"), ["agent.exe"]);
   assert.deepEqual(executableNames("agent", "linux", ".EXE;.CMD"), ["agent"]);
+});
+
+
+test("public launcher metadata follows Windows Path casing", () => {
+  assert.deepEqual(publicLauncherCandidates({ needlefish_acp_bin: "agent", Path: "C:\\Bin;D:\\Other", PathExt: ".EXE;.CMD" }, "win32"), [
+    "C:\\Bin\\agent", "C:\\Bin\\agent.exe", "C:\\Bin\\agent.cmd",
+    "D:\\Other\\agent", "D:\\Other\\agent.exe", "D:\\Other\\agent.cmd",
+  ]);
+});
+
+test("public launcher metadata rejects either Windows relative separator", () => {
+  for (const command of ["relative/agent", "relative\\agent"]) {
+    assert.throws(() => publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: command, PATH: "C:\\Bin" }, "win32"), /depends on the target working directory/);
+  }
+  assert.throws(() => publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", Path: ".;C:\\Bin" }, "win32"), /depends on the target working directory/);
+});
+
+test("public launcher metadata preserves POSIX case sensitivity and candidate order", () => {
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", PATH: "/first:/second", Path: "/ignored", PATHEXT: ".EXE" }, "linux"), ["/first/agent", "/second/agent"]);
+  assert.deepEqual(publicLauncherCandidates({ needlefish_acp_bin: "agent", PATH: "/first" }, "linux"), []);
+  assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "/absolute/agent" }, "linux"), ["/absolute/agent"]);
 });

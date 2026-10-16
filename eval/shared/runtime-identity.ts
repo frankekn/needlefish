@@ -26,6 +26,15 @@ function publicVersion(value: string | undefined, status: "known" | "operator_at
     ? Object.freeze({ status, value }) : runtimeLabel(undefined);
 }
 
+export function publicLauncherCandidates(environment: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): string[] {
+  const pathApi = platform === "win32" ? path.win32 : path.posix;
+  const command = environment.NEEDLEFISH_ACP_BIN?.trim();
+  if (!command) return [];
+  if (!pathApi.isAbsolute(command) && (command.includes(pathApi.sep) || (environment.PATH ?? "").split(pathApi.delimiter).some((dir) => !pathApi.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
+  return pathApi.isAbsolute(command) || command.includes(pathApi.sep) ? [command]
+    : (environment.PATH ?? "").split(pathApi.delimiter).flatMap((dir) => executableNames(command, platform, environment.PATHEXT).map((name) => pathApi.join(dir, name)));
+}
+
 export function acpRuntimeIdentity(
   publicArtifact: string | null,
   environment: Readonly<Record<string, string | undefined>>,
@@ -34,13 +43,9 @@ export function acpRuntimeIdentity(
   let launcherDigest: RuntimeValue = runtimeLabel(undefined);
   if (publicArtifact !== null) {
     try {
-      const command = environment.NEEDLEFISH_ACP_BIN?.trim();
-      if (command && !path.isAbsolute(command) && (command.includes(path.sep) || (environment.PATH ?? "").split(path.delimiter).some((dir) => !path.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
-      const executable = command && (path.isAbsolute(command) || command.includes(path.sep)
-        ? command
-        : (environment.PATH ?? "").split(path.delimiter).flatMap((dir) => executableNames(command, process.platform, environment.PATHEXT).map((name) => path.join(dir, name))).find((file) => {
-          try { accessSync(file, constants.X_OK); return statSync(file).isFile(); } catch { return false; }
-        }));
+      const executable = publicLauncherCandidates(environment).find((file) => {
+        try { accessSync(file, constants.X_OK); return statSync(file).isFile(); } catch { return false; }
+      });
       if (!executable || realpathSync(executable) !== realpathSync(publicArtifact)) {
         throw new Error("public launcher artifact must be the configured ACP executable");
       }
