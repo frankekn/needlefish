@@ -1,0 +1,12 @@
+{
+  "sha": "9ad9e7d829f3d70e64d4230bd166dbaa2c399309",
+  "resolvedClone": "/private/tmp/nf-closure-gates/needlefish-d255-9ad9e7d",
+  "checkedSourceFiles": 236,
+  "mismatches": [],
+  "sourceByteManifestSha256": "c52256282b77ceb92a0f02f4e65ba792969cbc6184158437b2a326424bf8a372",
+  "runningPid": 44099,
+  "actualCwd": "/private/tmp/nf-closure-gates/needlefish-d255-9ad9e7d",
+  "finalVerifiedAt": "2026-10-16T06:20:23.235332+00:00",
+  "finalCheckedSourceFiles": 236,
+  "finalMismatches": []
+}

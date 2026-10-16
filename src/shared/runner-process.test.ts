@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { readRunnerDurationMs, runManagedRunnerProcess, spawnRunnerProcess } from "./runner-process";
-import { isMissingProcess, killProcessIfRunning } from "./runner-test-fixtures";
+import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
 test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", async () => {
   const result = await spawnRunnerProcess({
@@ -194,58 +194,177 @@ test("spawnRunnerProcess kills a SIGTERM-trapping process group after timeout", 
   }
 });
 
-test("spawnRunnerProcess returns after SIGKILL when escaped descendants keep pipes open", { timeout: 12_000 }, async () => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-process-test-"));
-  const escapedPidPath = path.join(tmp, "escaped-pid");
-  const timeoutMs = 200;
-  const timeoutGraceMs = readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS, 5000);
-  const giveUpMs = readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS, 2000);
-  const deadlineMs = timeoutMs + timeoutGraceMs + giveUpMs + 2000;
-  const runnerScript = `const { spawn } = require("node:child_process");
+for (const { childStdout, exitBeforeTimeout } of [
+  { childStdout: "inherit", exitBeforeTimeout: false },
+  { childStdout: "ignore", exitBeforeTimeout: false },
+  { childStdout: "inherit", exitBeforeTimeout: true },
+  { childStdout: "ignore", exitBeforeTimeout: true },
+]) {
+  test(`runner cleanup kills descendants after the leader exits ${exitBeforeTimeout ? "normally" : "on SIGTERM"} with ${childStdout} pipes`, { timeout: 5000, skip: process.platform === "win32" }, async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-leader-exit-"));
+    const pidPath = path.join(tmp, "pids");
+    const previousEnv = captureEnv(["NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS", "NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS"]);
+    process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS = "100";
+    process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS = "100";
+    const script = `
+const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const holdPipe = "process.on('SIGTERM', () => {}); process.on('SIGHUP', () => {}); setInterval(() => {}, 1000);";
-const child = spawn(process.execPath, ["-e", holdPipe], { detached: true, stdio: ["ignore", "inherit", "ignore"] });
-child.unref();
-fs.writeFileSync(${JSON.stringify(escapedPidPath)}, String(child.pid));
-process.on("SIGTERM", () => {});
+const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);"], { stdio: ["ignore", ${JSON.stringify(childStdout)}, "ignore", "ipc"] });
+child.on("message", () => {
+  fs.writeFileSync(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid]));
+  ${exitBeforeTimeout ? "process.exit(0);" : ""}
+});
+process.on("SIGTERM", () => process.exit(0));
 setInterval(() => {}, 1000);
 `;
-
-  try {
-    const result = await Promise.race([
-      spawnRunnerProcess({
+    try {
+      const result = await spawnRunnerProcess({
         command: process.execPath,
-        args: ["-e", runnerScript],
+        args: ["-e", script],
         stdin: "",
         repoPath: tmp,
-        timeoutMs,
+        timeoutMs: 1000,
         env: process.env,
-      }),
-      delay(deadlineMs, undefined, { ref: false }).then(() => {
-        throw new assert.AssertionError({
-          message: "spawnRunnerProcess did not return while an escaped descendant kept stdout open",
-        });
-      }),
-    ]);
-    const error = result.error;
-
-    if (!(error instanceof Error) || !("code" in error)) {
-      throw new assert.AssertionError({ message: "timeout should return a coded Error" });
-    }
-    assert.equal(error.code, "ETIMEDOUT");
-    assert.match(error.message, /ETIMEDOUT/);
-    assert.equal(result.status, null);
-    assert.equal(result.signal, "SIGKILL");
-  } finally {
-    if (existsSync(escapedPidPath)) {
-      const escapedPid = Number(readFileSync(escapedPidPath, "utf8"));
-      for (const pid of [-escapedPid, escapedPid]) {
-        killProcessIfRunning(pid);
+      });
+      if (exitBeforeTimeout && childStdout === "ignore") assert.equal(result.error, undefined);
+      else assert.match(result.error?.message ?? "", /ETIMEDOUT/);
+      const pids: unknown = JSON.parse(readFileSync(pidPath, "utf8"));
+      assert.ok(Array.isArray(pids) && pids.length === 2 && pids.every((pid: unknown) => typeof pid === "number"));
+      const descendantPid: unknown = pids[1];
+      assert.equal(typeof descendantPid, "number");
+      if (typeof descendantPid !== "number") throw new Error("missing descendant pid");
+      const deadline = Date.now() + 1000;
+      while (Date.now() < deadline) {
+        try {
+          process.kill(descendantPid, 0);
+        } catch (error) {
+          if (isMissingProcess(error)) break;
+          throw error;
+        }
+        await delay(25);
       }
+      assert.throws(() => process.kill(descendantPid, 0), isMissingProcess, "SIGTERM-resistant descendant must not outlive timeout cleanup");
+    } finally {
+      restoreEnv(previousEnv);
+      if (existsSync(pidPath)) {
+        const pids: unknown = JSON.parse(readFileSync(pidPath, "utf8"));
+        if (Array.isArray(pids) && typeof pids[0] === "number") killProcessIfRunning(-pids[0]);
+      }
+      rmSync(tmp, { recursive: true, force: true });
     }
-    rmSync(tmp, { recursive: true, force: true });
+  });
+}
+
+test("normal leader exit preserves descendant output before the deadline", async () => {
+  const result = await spawnRunnerProcess({
+    command: process.execPath,
+    args: ["-e", `
+const { spawn } = require("node:child_process");
+spawn(process.execPath, ["-e", "setTimeout(() => process.stdout.write('child output'), 50);"], { stdio: ["ignore", "inherit", "ignore"] });
+process.exit(0);
+`],
+    stdin: "",
+    repoPath: process.cwd(),
+    timeoutMs: 2000,
+    env: process.env,
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "child output");
+});
+
+test("timeout does not signal a group after its exited leader PID is reused", { timeout: 5000, skip: process.platform === "win32" }, async (t) => {
+  const previousEnv = captureEnv(["NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS", "NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS"]);
+  process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS = "50";
+  process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS = "50";
+  const kill = process.kill.bind(process);
+  let leaderPid: number | undefined;
+  let reusedPidObserved = false;
+  const groupSignals: (NodeJS.Signals | number | undefined)[] = [];
+  t.mock.method(process, "kill", (pid: number, signal?: NodeJS.Signals | number) => {
+    if (pid === leaderPid && signal === 0) {
+      reusedPidObserved = true;
+      return true;
+    }
+    if (leaderPid !== undefined && pid === -leaderPid && signal !== 0) groupSignals.push(signal);
+    return kill(pid, signal);
+  });
+  try {
+    const result = await runManagedRunnerProcess({
+      command: process.execPath,
+      args: ["-e", `
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", "process.send('ready'); setInterval(() => {}, 1000);"], { stdio: ["ignore", "inherit", "ignore", "ipc"] });
+child.on("message", () => process.exit(0));
+`],
+      repoPath: process.cwd(),
+      timeoutMs: 500,
+      env: process.env,
+      onSpawn: (controller) => { leaderPid = controller.child.pid; controller.endStdin(); },
+    });
+    assert.match(result.error?.message ?? "", /ETIMEDOUT/);
+    assert.equal(reusedPidObserved, true);
+    assert.deepEqual(groupSignals, [], "a reused leader PID must revoke group signaling ownership");
+  } finally {
+    t.mock.restoreAll();
+    restoreEnv(previousEnv);
+    if (leaderPid !== undefined) killProcessIfRunning(-leaderPid);
   }
 });
+
+for (const exitBeforeTimeout of [false, true]) {
+  test(`spawnRunnerProcess returns when escaped descendants keep pipes open after ${exitBeforeTimeout ? "normal exit" : "SIGKILL"}`, { timeout: 12_000 }, async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-process-test-"));
+    const escapedPidPath = path.join(tmp, "escaped-pid");
+    const timeoutMs = 200;
+    const timeoutGraceMs = readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS, 5000);
+    const giveUpMs = readRunnerDurationMs(process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS, 2000);
+    const deadlineMs = timeoutMs + timeoutGraceMs + giveUpMs + 2000;
+    const runnerScript = `const { spawn } = require("node:child_process");
+  const fs = require("node:fs");
+  const holdPipe = "process.on('SIGTERM', () => {}); process.on('SIGHUP', () => {}); setInterval(() => {}, 1000);";
+  const child = spawn(process.execPath, ["-e", holdPipe], { detached: true, stdio: ["ignore", "inherit", "ignore"] });
+  child.unref();
+  fs.writeFileSync(${JSON.stringify(escapedPidPath)}, String(child.pid));
+  ${exitBeforeTimeout ? "process.exit(0);" : "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"}
+  `;
+
+    try {
+      const result = await Promise.race([
+        spawnRunnerProcess({
+          command: process.execPath,
+          args: ["-e", runnerScript],
+          stdin: "",
+          repoPath: tmp,
+          timeoutMs,
+          env: process.env,
+        }),
+        delay(deadlineMs, undefined, { ref: false }).then(() => {
+          throw new assert.AssertionError({
+            message: "spawnRunnerProcess did not return while an escaped descendant kept stdout open",
+          });
+        }),
+      ]);
+      const error = result.error;
+
+      if (!(error instanceof Error) || !("code" in error)) {
+        throw new assert.AssertionError({ message: "timeout should return a coded Error" });
+      }
+      assert.equal(error.code, "ETIMEDOUT");
+      assert.match(error.message, /ETIMEDOUT/);
+      assert.equal(result.status, null);
+      assert.equal(result.signal, "SIGKILL");
+    } finally {
+      if (existsSync(escapedPidPath)) {
+        const escapedPid = Number(readFileSync(escapedPidPath, "utf8"));
+        for (const pid of [-escapedPid, escapedPid]) {
+          killProcessIfRunning(pid);
+        }
+      }
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
 
 test("runManagedRunnerProcess delivers stderr before exit so a consumer can acknowledge readiness", async () => {
   let observed = "";
