@@ -1,0 +1,117 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-timing-hardening$' --report '<redacted>'",
+  "runnerEnvironment": "[[\"CODEX_BIN\",\"<required>\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:9e165915f29e07f6\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-timing-hardening$' --report eval/reports/slot-40.json",
+  "draws": 1,
+  "createdAt": "2026-10-16T09:21:06.514Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-hard-timing-hardening",
+        "verdict": "changes_requested",
+        "verdictMatch": false,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": true,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 1,
+        "blockingFindingCount": 1,
+        "noiseFindingCount": 1,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 66406,
+      "calls": 2,
+      "retries": 0,
+      "findings": [
+        {
+          "severity": "P2",
+          "category": "bug",
+          "file": "app/token.py",
+          "lineStart": 10,
+          "lineEnd": 10,
+          "title": "Reject malformed stored hashes instead of raising",
+          "whyItBreaks": "Previously, guard(None, token, handler) evaluated unequal and returned {\"status\": 401}. hmac.compare_digest(<str>, None) raises TypeError, so this authentication path now fails with an exception rather than rejecting an invalid or missing stored hash."
+        }
+      ],
+      "matchEvidence": [],
+      "candidateMatchEvidence": [],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": true,
+        "noiseFindingCount": 1,
+        "findingCount": 1,
+        "blockingFindingCount": 1
+      },
+      "criticMs": 42727,
+      "totalPassMs": 66399
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 1,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 0,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 66406,
+    "recallByFixture": {
+      "neg-hard-timing-hardening": 1
+    },
+    "mustFindHitRateByFixture": {},
+    "mustFindHitRate": 0,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {},
+    "recallByDefectClass": {},
+    "lineAnchorValidRateByDefectClass": {},
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0,
+    "candidateFalsePositiveRate": 1,
+    "criticDelta": {
+      "falsePositiveRate": 0
+    },
+    "criticTimeShare": 0.6434886067561258
+  },
+  "gitSha": "a134550590251ee957543057a24b53e104e30199",
+  "fixtureSetHash": "357db07d416dd975",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {},
+  "anticheatVersion": 2,
+  "fixtures": [
+    "neg-hard-timing-hardening"
+  ],
+  "fixtureKinds": {
+    "neg-hard-timing-hardening": "negative"
+  },
+  "fixtureDefectClasses": {
+    "neg-hard-timing-hardening": "safe-security-hardening"
+  }
+}

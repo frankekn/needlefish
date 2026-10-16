@@ -2199,3 +2199,12 @@ for it in its score. Idle timeouts, spawn errors, runner crashes, and rate
 limits stay operational. This ranks Grok 4.7 high (two timeouts) and leaves
 MiMo v2.6 Flash unranked (48 runner exits); no other published report
 contained a deadline timeout.
+
+## 2026-10-16 completed native studies
+
+[Immutable archive and portable verifier](evidence/2026-10-16-completed-studies/README.md) preserve 60 issue #84 singleton reports and the current-source PR #255 native report. This publication changes no model inputs, output acceptance, scorer, or pipeline; it requires no new model gate.
+
+- **Issue #84, Class R diagnostic subset only.** Source `a134550590251ee957543057a24b53e104e30199`. Target 0/15 blocking draws, refactor 7/15, timing 1/15, honeypot 0/15. All 60 slots completed, with 121 native calls. One repaired raw schema error invalidates the preregistered window despite zero final malformed draws. Status remains `COMPLETED_INVALID_WINDOW_DESCRIPTIVE_ONLY`. T1 is not scheduled. No valid T0/T1 comparison or full Class R certification.
+- **PR #255, native offline Class D only.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba`. Nine draws, 18 native calls, both positive fixtures 3/3, zero raw or final malformed errors, zero operational failures, and zero cheat detections. The historical resident suite passed 14 tests. Status remains `OFFLINE_D_PASS` for native Codex 0.163.0, terra/high, OpenAI/ChatGPT only. It does not certify CLIProxyAPI, a live canary, or production rollout.
+
+Each study records one bait exposure without adoption or escape. Reports retain original bytes and separate identities. The verifier checks public copies and extracts; omitted private traces and historical execution are not independently reproduced by that check.
