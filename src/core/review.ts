@@ -707,7 +707,10 @@ function restoreRequiredResiduals(
 	const restored = [...current];
 	const available = bagByKey(restored, (risk) => residualSubsetKey(risk.text));
 	for (const risk of required) {
-		if (!takeResidual(available, risk)) restored.push(risk);
+		if (takeResidual(available, risk)) continue;
+		const downgraded = takeResidual(available, { ...risk, blocks: false });
+		if (downgraded) restored[restored.indexOf(downgraded)] = risk;
+		else restored.push(risk);
 	}
 	return restored;
 }

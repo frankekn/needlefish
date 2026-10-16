@@ -129,19 +129,12 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 	const quote = finding.quote?.trim();
 	if (!quote) return { ...finding, replacement: undefined };
 	const unchecked: Finding = { ...finding, replacement: undefined, quoteCheck: { status: "unchecked" } };
-	if (!safePath(finding.file) || !fixedRevision(bundle.headSha) ||
+	if (!safePath(finding.file) || !fixedRevision(bundle.headSha) || !fixedRevision(bundle.baseSha) ||
 		!Number.isInteger(finding.lineStart) || !Number.isInteger(finding.lineEnd) ||
 		quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
 	const head = sourceAt(finding, bundle.repoPath, bundle.headSha, deadlineMs);
 	if (!head) return unchecked;
 	if (head.status === "source_present") return withSource({ ...finding, quoteCheck: { status: "matched" } }, head);
-	// Removed source can validate a finding, but never a replacement of head lines.
-	if (!fixedRevision(bundle.baseSha)) return unchecked;
-	const oldPath = basePath(bundle, finding.file, deadlineMs);
-	if (oldPath === null) return unchecked;
-	const base = sourceAt({ ...finding, file: oldPath }, bundle.repoPath, bundle.baseSha, deadlineMs);
-	if (!base) return unchecked;
-	if (base.status === "source_present") return withSource({ ...finding, replacement: undefined, quoteCheck: { status: "matched" } }, base);
 	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote, deadlineMs);
 	if (!headHits) return unchecked;
 	const wholeHits = headHits.filter((hit) => hit.text.trim() === quote);
@@ -149,18 +142,25 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 	if (wholeHits.length === 1 && changed.has(hit.file)) {
 		const changedLine = isChangedLine(bundle, hit, deadlineMs);
 		if (changedLine === null) return unchecked;
-		if (!changedLine) return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
-		const relocated: Finding = {
-			...finding,
-			file: hit.file,
-			lineStart: hit.line,
-			lineEnd: hit.line,
-			replacement: undefined,
-			quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
-		};
-		const source = sourceAt(relocated, bundle.repoPath, bundle.headSha, deadlineMs);
-		return source?.status === "source_present" ? withSource(relocated, source) : unchecked;
+		if (changedLine) {
+			const relocated: Finding = {
+				...finding,
+				file: hit.file,
+				lineStart: hit.line,
+				lineEnd: hit.line,
+				replacement: undefined,
+				quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
+			};
+			const source = sourceAt(relocated, bundle.repoPath, bundle.headSha, deadlineMs);
+			return source?.status === "source_present" ? withSource(relocated, source) : unchecked;
+		}
 	}
+	// A BASE match cannot verify the finding's HEAD coordinates.
+	const oldPath = basePath(bundle, finding.file, deadlineMs);
+	if (oldPath === null) return unchecked;
+	const base = sourceAt({ ...finding, file: oldPath }, bundle.repoPath, bundle.baseSha, deadlineMs);
+	if (!base) return unchecked;
+	if (base.status === "source_present") return withSource(unchecked, base);
 	return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
 }
 
@@ -168,8 +168,9 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 // never drops a finding or changes severity, so it cannot move the verdict.
 export function checkQuotes(findings: readonly Finding[], bundle: Bundle, deadlineMs?: number): Finding[] {
 	const changed = new Set(bundle.changedFiles.map((file) => file.path));
+	const quoteDeadline = deadlineMs ?? performance.now() + 10_000;
 	return findings.map((finding) => {
-		const checked = checkOne({ ...finding, evidence: undefined }, bundle, changed, deadlineMs);
+		const checked = checkOne({ ...finding, evidence: undefined }, bundle, changed, quoteDeadline);
 		return { ...checked, evidence: { toolRead: "unknown", sources: [checked.evidence?.sources[0] ?? unverifiedSource(checked, bundle.headSha),
 			...(finding.externalClaims ?? []).map((claim): SourceEvidence => ({ ...claim, sourceType: "external", status: "unverified_external_claim" }))] } };
 	});

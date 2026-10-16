@@ -2757,7 +2757,7 @@ test("review preserves human risk for required external premises after critic pr
 	commitAll(repo, "negative limit");
 	process.env.CODEX_BIN = bin;
 	process.env.CODEX_RETRY_MS = "1";
-	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-external-first", "deep-pruned", "deep-duplicate-premises", "deep-code-first", "deep-external-first-pruned", "deep-code-first-pruned", "deep-distinct-premises", "deep-independent-p1", "deep-external-p1", "deep-fuzzy-pruned", "deep-pipe-pruned"]) {
+	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-external-first", "deep-pruned", "deep-duplicate-premises", "deep-code-first", "deep-external-first-pruned", "deep-code-first-pruned", "deep-distinct-premises", "deep-independent-p1", "deep-external-p1", "deep-fuzzy-pruned", "deep-pipe-pruned", "deep-downgraded-pruned"]) {
 		const candidate = {
 			severity: "P2", category: "bug", title: scenario === "deep-fuzzy-pruned" ? "Shared diagnostic for changed allocation arithmetic and limit: vendor" : scenario === "deep-pipe-pruned" ? "Shared diagnostic|allocation" : "Restore positive limit", file: "src/app.ts", lineStart: 1, lineEnd: 1,
 			quote: "export const limit = -1;", confidence: 0.9, whyItBreaks: scenario === "deep-fuzzy-pruned" ? "The changed allocation path has a behavior change when this value reaches the downstream consumer: vendor requirement" : scenario === "deep-pipe-pruned" ? "consumer arithmetic changed" : "Negative limit makes total negative in src/consumer.ts:2",
@@ -2769,7 +2769,7 @@ test("review preserves human risk for required external premises after critic pr
 			"process.stdin.setEncoding('utf8');", "process.stdin.on('data', chunk => { input += chunk; });", "process.stdin.on('end', () => {",
 			`const candidate = ${JSON.stringify(candidate)};`,
 			`const scenario = ${JSON.stringify(scenario)};`,
-			"if (input.includes('review-MAP pass')) { const names = ['deep-pruned', 'deep-duplicate-premises', 'deep-distinct-premises'].includes(scenario) ? ['externalpass', 'externalpass2'] : scenario.startsWith('deep-external-first') || scenario === 'deep-external-p1' ? ['externalpass', 'codepass'] : ['codepass', 'externalpass']; fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: names.map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
+			"if (input.includes('review-MAP pass')) { const names = ['deep-pruned', 'deep-duplicate-premises', 'deep-distinct-premises', 'deep-downgraded-pruned'].includes(scenario) ? ['externalpass', 'externalpass2'] : scenario.startsWith('deep-external-first') || scenario === 'deep-external-p1' ? ['externalpass', 'codepass'] : ['codepass', 'externalpass']; fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: names.map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
 			"if (input.includes('doing a DEEP review') && input.includes('codepass')) delete candidate.externalClaims;",
 			"if (input.includes('doing a DEEP review') && input.includes('externalpass2') && scenario === 'deep-distinct-premises') candidate.externalClaims[0].claim = 'Vendor specification requires positive totals';",
 			"if (input.includes('doing a DEEP review') && ((input.includes('externalpass') && scenario === 'deep-external-p1') || (input.includes('codepass') && scenario === 'deep-independent-p1'))) candidate.severity = 'P1';",
@@ -2778,7 +2778,7 @@ test("review preserves human risk for required external premises after critic pr
 			"const critic = input.includes('adversarial critic');",
 			"if (critic && scenario === 'deep-independent-p1') candidate.severity = 'P1';",
 			`const findings = critic && ${JSON.stringify(scenario)}.endsWith('pruned') ? [] : [critic ? { ...candidate, title: 'Keep the arithmetic positive' } : candidate];`,
-			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: [] };",
+			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: critic && scenario === 'deep-downgraded-pruned' ? [{ text: 'Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]', blocks: false }] : [] };",
 			"fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(output));", "});"].join("\n"));
 		chmodSync(bin, 0o755);
 		const result = await review({ repoPath: repo, baseSha, headSha: headSha(repo), patch: "-export const limit = 10;\n+export const limit = -1;",

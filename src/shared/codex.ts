@@ -1190,6 +1190,7 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
+	const command = requireRunnerCommand("codex");
 	const reasoningEffort = resolveCodexReasoningEffort();
 	const serviceTier = resolveCodexServiceTier();
 	const args = [
@@ -1233,7 +1234,7 @@ async function runCodexCli(
 		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: requireRunnerCommand("codex"),
+		command: !path.isAbsolute(command) && command.includes(path.sep) ? path.resolve(invocation.repoPath, command) : command,
 		args,
 		stdin: `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
 		repoPath: invocation.launchPath,

@@ -748,7 +748,7 @@ function buildInlineComments(
 ): { comments: InlineComment[]; inlined: Set<Finding> } {
 	const ranges = headLinesInPatch(patch);
 	const anchorable = result.findings.filter(
-		(f) => f.file !== "" && anchorableIn(ranges, f.file, f.lineStart),
+		(f) => f.file !== "" && f.quoteCheck?.status !== "unchecked" && f.quoteCheck?.status !== "not_found" && anchorableIn(ranges, f.file, f.lineStart),
 	);
 	const selected =
 		anchorable.length > 20
