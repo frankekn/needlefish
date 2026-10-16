@@ -939,6 +939,13 @@ export function findPreviousReview(
 	return null;
 }
 
+function ownedCheckAppId(app: unknown, expectedAppId: number | null): number | null {
+	if (!isRecord(app) || typeof app.id !== "number" || !Number.isSafeInteger(app.id) || app.id <= 0) return null;
+	if (expectedAppId === null && app.slug !== "github-actions") return null;
+	if (expectedAppId !== null && app.id !== expectedAppId) return null;
+	return app.id;
+}
+
 // S5a: create the check as in_progress BEFORE any model work so a PR always
 // shows whether a review is running on its latest head. All completions update
 // this same check by id. An unknown id cannot authorize a completion.
@@ -954,17 +961,15 @@ function createPendingCheck(repo: string, headSha: string, round: CheckRound, ex
 			}),
 			() => {
 				const matching = readCheckRuns(repo, headSha).filter((run) => run.head_sha === headSha && run.external_id === JSON.stringify(round));
-				const owned = matching.filter((run) => run.name === "Needlefish" && isRecord(run.app) &&
-					(expectedAppId === null ? run.app.slug === "github-actions" : run.app.id === expectedAppId));
+				const owned = matching.filter((run) => run.name === "Needlefish" && ownedCheckAppId(run.app, expectedAppId) !== null);
 				if (owned.length === 1 && matching.length === 1) return owned[0];
 				if (matching.length > 0) throw new Error("Cannot verify ownership of the stored check; not retrying its POST");
 				return null;
 			},
 		);
-		if (isRecord(created) && typeof created.id === "number" && Number.isSafeInteger(created.id) && created.id > 0 &&
-			isRecord(created.app) && typeof created.app.id === "number" && Number.isSafeInteger(created.app.id) && created.app.id > 0 &&
-			(expectedAppId === null || created.app.id === expectedAppId)) {
-			return { id: created.id, appId: created.app.id };
+		const appId = isRecord(created) ? ownedCheckAppId(created.app, expectedAppId) : null;
+		if (isRecord(created) && typeof created.id === "number" && Number.isSafeInteger(created.id) && created.id > 0 && appId !== null) {
+			return { id: created.id, appId };
 		}
 		throw new Error("GitHub returned no owned check id/app identity");
 	} catch (err) {
@@ -1663,8 +1668,11 @@ export async function runGithub(
 	}
 	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks, prNumber) : null;
 	const prev = previousVerdict !== null ? previous : null;
+	const priorReceipt = prev?.state.v === 2 ? prev.state.delivery : null;
+	const previousCheckOwned = priorReceipt && checks?.some((check) =>
+		check.id === priorReceipt.checkId && ownedCheckAppId(check.app, expectedAppId) === priorReceipt.appId);
 	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck &&
-		checks && !hasNewerRound(prev.state, checks, prNumber)) {
+		checks && previousCheckOwned && !hasNewerRound(prev.state, checks, prNumber)) {
 		process.exitCode = reviewExitCode(previousVerdict);
 		process.stderr.write(`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`);
 		emitSkip("same_head", prNumber, headSha);

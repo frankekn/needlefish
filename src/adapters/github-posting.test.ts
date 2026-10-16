@@ -204,6 +204,9 @@ function mkFinding(overrides: Partial<Finding> = {}): Finding {
 }
 
 function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
+	const checkApp = opts.foreignStoredCheck ? { id: 999, slug: "foreign-app" }
+		: opts.customCheckAppId ? { id: opts.customCheckAppId, slug: "private-review-app" }
+		: { id: 15368, slug: "github-actions" };
 	const tmp = mkdtempSync(
 		path.join(os.tmpdir(), "needlefish-github-posting-test-"),
 	);
@@ -410,11 +413,11 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
 			`    const parsedCheck = JSON.parse(payload);`,
 			`    const nextId = checks.length + 1;`,
-			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: ${JSON.stringify(opts.foreignStoredCheck ? { id: 999, slug: 'foreign-app' } : opts.customCheckAppId ? { id: opts.customCheckAppId, slug: 'private-review-app' } : { id: 15368, slug: 'github-actions' })}, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: ${JSON.stringify(checkApp)}, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
 			`    if (${opts.duplicateStoredCheck === true}) checks.push({ ...checks.at(-1), id: nextId + 1 });`,
 			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
 			`    if (${JSON.stringify(opts.storedCheckPost5xx === true)} && !fs.existsSync(checksStatePath + ".stored-5xx")) { fs.writeFileSync(checksStatePath + ".stored-5xx", "1"); process.stderr.write("gh: Server Error (HTTP 502)"); process.exit(1); }`,
-			`    process.stdout.write(JSON.stringify({ id: nextId, app: { id: ${opts.customCheckAppId ?? 15368} } }));`,
+			`    process.stdout.write(JSON.stringify({ id: nextId, app: ${JSON.stringify(checkApp)} }));`,
 			`    process.exit(0);`,
 			`  }`,
 			`  if (apiPath && apiPath.startsWith('repos/frankekn/needlefish/check-runs/') && method === 'PATCH') {`,
@@ -674,7 +677,7 @@ function seedCompletedVerdictCheck(fixture: Fixture, head = fixture.headSha): vo
 		fixture.checksState,
 		JSON.stringify([
 			{
-    id: 1, name: "Needlefish", head_sha: head, app: { id: 15368 },
+    id: 1, name: "Needlefish", head_sha: head, app: { id: 15368, slug: "github-actions" },
     external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "success",
@@ -4152,7 +4155,7 @@ test("a same-head marker with a completed blocking verdict check still skips", a
 		fixture.checksState,
 		JSON.stringify([
 			{
-				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
+				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
     external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "failure",
@@ -4246,7 +4249,7 @@ test("a same-head marker with a failed needs_human check skips and exits 1", asy
 		fixture.checksState,
 		JSON.stringify([
 			{
-				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
+				id: 1, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
     external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
 				status: "completed",
 				conclusion: "failure",
@@ -4316,7 +4319,7 @@ for (const scenario of [
     seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha, 2),
       user: { login: "github-actions[bot]", type: "Bot" } }]);
     const check = (id: number, verdict: typeof scenario.previous | typeof scenario.latest) => ({
-      id, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368 },
+      id, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
       external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run", recoveryAttempt: 0 }),
       status: "completed", conclusion: verdict === "pass" ? "success" : verdict === "neutral" ? "neutral" : "failure",
       output: { title: `Needlefish: ${verdict === "neutral" ? "needs_human" : verdict}` },
@@ -4697,6 +4700,36 @@ test("a pinned App mismatch on successful create never authorizes model work or 
 	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs")).length, 1);
 	assert.equal(posts.filter(p => p.args.includes("PATCH")).length, 0);
 	assert.equal(runnerInvocationCount(fixture), 0);
+});
+
+test("changing the configured App reviews an existing same-head receipt again", (t) => {
+	const fixture = setupFixture(t, { prNumber: 145, rawReview: defaultRawReview(), customCheckAppId: 4812 });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+		user: { login: "github-actions[bot]", type: "Bot" } }]);
+	seedCompletedVerdictCheck(fixture);
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	const result = spawnGithubCli(fixture, 145);
+	assert.equal(result.status, 1, result.stderr);
+	assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+	const marker = parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "");
+	assert.ok(marker?.v === 2);
+	assert.equal(marker.delivery.appId, 4812);
+});
+
+test("an unpinned custom App check cannot start model work", (t) => {
+	const fixture = setupFixture(t, { prNumber: 146, rawReview: defaultRawReview(), customCheckAppId: 4812 });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	delete process.env.NEEDLEFISH_CHECK_APP_ID;
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	const result = spawnGithubCli(fixture, 146);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stderr, /no owned check id/);
+	assert.equal(runnerInvocationCount(fixture), 0);
+	assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs")).length, 1);
 });
 
 test("failure-comment pre-read and ambiguous POST failure never resend the comment", (t) => {
