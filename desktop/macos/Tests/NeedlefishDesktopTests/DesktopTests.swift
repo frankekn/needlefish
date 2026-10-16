@@ -195,6 +195,91 @@ final class DesktopTests: XCTestCase {
             XCTAssertEqual(kill(pid, 0), -1)
         }
     }
+    func testGroupSignalsReserveLeaderUntilFinalReap() async throws {
+        for mode in ["normal", "failed", "signal", "timeout", "cancel"] {
+            let runtime = try fixture(mode == "normal" ? "exit 0" : mode == "failed" ? "exit 7" : mode == "signal" ? "kill -KILL $$" : "sleep 120")
+            let observations = SignalObservations()
+            let command = Command { group, signal in
+                var info = siginfo_t()
+                let observed = waitid(P_PID, id_t(-group), &info, WEXITED | WNOHANG | WNOWAIT)
+                observations.append(pid: -group, signal: signal, observed: observed, error: errno, exited: info.si_pid)
+                guard observed == 0 else { return -1 }
+                return kill(group, signal)
+            }
+            if mode == "cancel" { command.cancel() }
+            let root = try temporary()
+            do {
+                let output = try await command.run(runtime.command([]), environment: ["PATH": "/bin:/usr/bin"],
+                                                   temporary: root.appendingPathComponent("work"), timeout: mode == "timeout" ? 0.1 : 10)
+                XCTAssertEqual(output.status, mode == "normal" ? 0 : mode == "failed" ? 7 : 137)
+            } catch {
+                XCTAssertEqual(error.localizedDescription, (mode == "cancel" ? DesktopError.cancelled : .timeout).localizedDescription)
+                XCTAssertEqual(["cancel", "timeout"].contains(mode), true)
+            }
+            let signals = observations.values
+            XCTAssertEqual(signals.last?.signal, SIGKILL)
+            for observation in signals {
+                XCTAssertEqual(observation.observed, 0, "\(mode) signal after leader lost; errno=\(observation.error)")
+            }
+            if let final = signals.last {
+                XCTAssertEqual(final.exited, final.pid, "Final group signal must retain exited leader")
+                var info = siginfo_t()
+                let status = waitid(P_PID, id_t(final.pid), &info, WEXITED | WNOHANG | WNOWAIT)
+                let error = errno
+                XCTAssertEqual(status, -1)
+                XCTAssertEqual(error, ECHILD)
+            }
+            XCTAssertEqual(fm.fileExists(atPath: root.appendingPathComponent("work").path), false)
+        }
+    }
+    func testReviewRejectsUndeletableTemporaryWorkspace() async throws {
+        let root = try temporary()
+        let pathFile = root.appendingPathComponent("temporary-path")
+        let runtime = try fixture("printf '%s' \"$TMPDIR\" > '\(pathFile.path)'\nprintf project-source > \"$TMPDIR/copied-project\"\nchflags uchg \"$TMPDIR/copied-project\"\nprintf '%s' '\(resultJSON("pass"))'")
+        defer {
+            if let path = try? String(contentsOf: pathFile, encoding: .utf8) {
+                _ = chflags(path + "/copied-project", 0)
+                try? fm.removeItem(atPath: path)
+            }
+        }
+        do {
+            _ = try await DesktopCLI(runtime: runtime).review(repo: URL(fileURLWithPath: "/project"), command: Command())
+            XCTFail("Undeletable project copy must not produce a completed review")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "本次暫存資料未能清除，可能仍含專案副本。檢查未完成。 / Temporary cleanup failed; a project copy may remain. Review incomplete.")
+            XCTAssertEqual(error.localizedDescription.contains(root.path), false)
+        }
+        let path = try String(contentsOf: pathFile, encoding: .utf8)
+        XCTAssertEqual(try String(contentsOfFile: path + "/copied-project", encoding: .utf8), "project-source")
+        XCTAssertEqual(chflags(path + "/copied-project", 0), 0)
+        try fm.removeItem(atPath: path)
+        XCTAssertEqual(fm.fileExists(atPath: path), false)
+    }
+    func testCleanupFailureOverridesCancellationTimeoutAndOutputFailure() async throws {
+        for mode in ["cancel", "timeout", "output"] {
+            let root = try temporary()
+            let work = root.appendingPathComponent("work")
+            let copied = work.appendingPathComponent("copied-project")
+            let body = mode == "output" ? "head -c 9000000 /dev/zero" : "trap 'exit 0' TERM\nwhile :; do sleep 0.1; done"
+            let runtime = try fixture("printf project-source > '\(copied.path)'\nchflags uchg '\(copied.path)'\n\(body)")
+            defer { _ = chflags(copied.path, 0); try? fm.removeItem(at: work) }
+            let command = Command()
+            let task = Task { try await command.run(runtime.command([]), environment: ["PATH": "/bin:/usr/bin"],
+                                                    temporary: work, timeout: mode == "timeout" ? 0.2 : 10) }
+            for _ in 0..<100 {
+                var attributes = stat()
+                if lstat(copied.path, &attributes) == 0 && attributes.st_flags & UInt32(UF_IMMUTABLE) != 0 { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            if mode == "cancel" { command.cancel() }
+            do { _ = try await task.value; XCTFail("Cleanup failure must stay observable") }
+            catch { XCTAssertEqual(error.localizedDescription, DesktopError.cleanup.localizedDescription) }
+            XCTAssertEqual(try String(contentsOf: copied, encoding: .utf8), "project-source")
+            XCTAssertEqual(chflags(copied.path, 0), 0)
+            try fm.removeItem(at: work)
+            XCTAssertEqual(fm.fileExists(atPath: work.path), false)
+        }
+    }
     func testBothStreamsPreserveExactLimitWithoutDeadlock() async throws {
         let runtime = try fixture("head -c 8388608 /dev/zero >&2 &\nhead -c 8388608 /dev/zero\nwait")
         let output = try await DesktopCLI(runtime: runtime).call([], command: Command(), timeout: 10)
@@ -551,6 +636,33 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 
+    func testCleanupFailureIsPresentedAsIncompleteInsteadOfResult() async throws {
+        let fixture = DesktopTests()
+        let root = try fixture.temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pathFile = root.appendingPathComponent("temporary-path")
+        let runtime = try fixture.fixture("if [ \"$1\" = doctor ]; then printf '%s' '\(fixture.doctorJSON)'; exit 0; fi\ncase \"$*\" in *--dry-run*) printf '%s' '\(fixture.scopeJSON)'; exit 0;; esac\nprintf '%s' \"$TMPDIR\" > '\(pathFile.path)'\nprintf project-source > \"$TMPDIR/copied-project\"\nchflags uchg \"$TMPDIR/copied-project\"\nprintf '%s' '\(fixture.resultJSON("pass"))'")
+        defer {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent())
+            if let path = try? String(contentsOf: pathFile, encoding: .utf8) {
+                _ = chflags(path + "/copied-project", 0)
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
+        let model = Onboarding(runtime: runtime)
+        model.repo = URL(fileURLWithPath: "/project")
+        model.diagnose()
+        try await waitForIdle(model)
+        model.prepare()
+        try await waitForIdle(model)
+        model.trusted = true
+        model.accepted = true
+        model.review()
+        try await waitForIdle(model)
+        guard case .message(let message) = model.state else { return XCTFail("Review must remain incomplete") }
+        XCTAssertEqual(message, "本次暫存資料未能清除，可能仍含專案副本。檢查未完成。 / Temporary cleanup failed; a project copy may remain. Review incomplete.")
+        XCTAssertEqual(message.contains(root.path), false)
+    }
     func testDemoCannotEnablePaidReview() {
         let model = Onboarding()
         model.demo()
@@ -672,5 +784,21 @@ final class OnboardingTests: XCTestCase {
         guard case .consent(let scope) = model.state else { return XCTFail("Consent required") }
         XCTAssertEqual(scope.changedFiles[0].path, "src/example.ts")
         XCTAssertEqual(model.busy, false)
+    }
+}
+
+private final class SignalObservations: @unchecked Sendable {
+    struct Observation {
+        let pid: pid_t
+        let signal: Int32
+        let observed: Int32
+        let error: Int32
+        let exited: pid_t
+    }
+    private let lock = NSLock()
+    private var stored: [Observation] = []
+    var values: [Observation] { lock.withLock { stored } }
+    func append(pid: pid_t, signal: Int32, observed: Int32, error: Int32, exited: pid_t) {
+        lock.withLock { stored.append(Observation(pid: pid, signal: signal, observed: observed, error: error, exited: exited)) }
     }
 }
