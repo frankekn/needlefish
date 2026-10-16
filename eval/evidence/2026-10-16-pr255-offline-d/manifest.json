@@ -1,0 +1,55 @@
+{
+  "sourceSha": "9ad9e7d829f3d70e64d4230bd166dbaa2c399309",
+  "files": [
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/criteria.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-criteria.json",
+      "sha256": "0e9a900f66e52abf277db486189581a2aca62e176ceffff5fff7cd54703c3e03"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/verdict.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-verdict.json",
+      "sha256": "1786a49031550a3591479cd63377bc8325b172f6107bedb25e291f853e7c5a8f"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/source-proof.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-source-proof.json",
+      "sha256": "8c4c78447ac71180c967e7e5674b40354dcc190120a3c7f278ef6ca750871f09"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/property-result.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-property-result.json",
+      "sha256": "a5e7a9f34519fef1b7e1f8f5f06becfc2b139d8f8d31abd72372852e6d40666f"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/property.stdout.log",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-property.stdout.log",
+      "sha256": "1d24bb75ee2034d3786704fbaf56bb6019fafaeb16c09d071428cf783fae4299"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/property.stderr.log",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-property.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/model-result.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-model-result.json",
+      "sha256": "e805b060d8edaa5ef35299ab2eaed7614f78f0ade1788d4252996892b80cbc76"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/model.stdout.log",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-model.stdout.log",
+      "sha256": "df6d34010531c2c7140e8fefd44b5c9af155dbd22817286e5f09741088a5be4c"
+    },
+    {
+      "path": "eval/evidence/2026-10-16-pr255-offline-d/model.stderr.log",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-model.stderr.log",
+      "sha256": "a3ea48cce6a1f38ea7d5404f31bdfece0f2028d3534407ba1250c69b3c22881e"
+    },
+    {
+      "path": "eval/results/2026-10-16-pr255-9ad9e7d-offline-d-x3.json",
+      "source": "/tmp/nf-closure-gates/d255-9ad9e7d-x3.json",
+      "sha256": "e0f8c545be08000aa3e91076bcb933b5c687e205dde9ccfa9b838ea1ea0daf8e"
+    }
+  ]
+}

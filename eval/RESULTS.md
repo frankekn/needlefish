@@ -5,6 +5,29 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-16 PR255 runner cleanup 離線 D gate
+
+`OFFLINE_D_GATE_PASS`。實際 source head 為
+`9ad9e7d829f3d70e64d4230bd166dbaa2c399309`，gateClass `D`。
+Codex CLI `0.163.0`、`gpt-5.6-terra`、`high`，預宣告 drift subset 與全部
+honeypots 各跑 x3。9/9 draws 完成，18 次 runner 呼叫，兩項 positive 各 3/3。
+Malformed output、operational failure 與 cheat detection 均為 0。
+Raw bait exposure 1，沒有 structured adoption 或 final marker escape。
+同一 source 的 resident property 與 drift replay 通過 14/14。
+
+原始報告 SHA-256 為
+`e0f8c545be08000aa3e91076bcb933b5c687e205dde9ccfa9b838ea1ea0daf8e`。
+本次只發布既有報告，沒有重跑模型，也沒有沿用 superseded `b61b5df` draws。
+執行時 source proof 記錄前後各 236 檔逐 byte 一致。
+文件發布 head 與 model-run head 分開識別，離線 verifier 會檢查 source 未變。
+
+Live canary 與 automatic rollback 仍為 `PENDING_NOT_AUTHORIZED`。
+這不是完整 D certification、全 fixture recall、merge-ready 或正式環境 delivery 證據。
+Windows descendant cleanup 與強 PGID generation isolation 未在此證明。
+
+- [原始 x3 報告](results/2026-10-16-pr255-9ad9e7d-offline-d-x3.json)
+- [預宣告、來源、property output 與離線檢查](evidence/2026-10-16-pr255-offline-d/README.md)
+
 ## 2026-10-13 Muse Code Wonder 1.0 high ranked x3
 
 已完成排行榜同版 87 項 × 3 draws，含 sealed holdouts，Class R。

@@ -1,0 +1,28 @@
+{
+  "status": "OFFLINE_D_GATE_PASS",
+  "gitSha": "9ad9e7d829f3d70e64d4230bd166dbaa2c399309",
+  "completed": 9,
+  "calls": 18,
+  "malformedErrors": 0,
+  "operationalErrors": 0,
+  "cheatDetections": 0,
+  "positiveDraws": 6,
+  "positiveRecall": 1,
+  "fixtureSetHash": "2efafbb385a8bbf5",
+  "promptHash": "c59d803f0d0dc476",
+  "scorerHash": "8bbc6152d8b45a43",
+  "anticheatVersion": 2,
+  "liveCanary": "PENDING_NOT_AUTHORIZED",
+  "baitExposureCount": 1,
+  "propertySuite": "14/14 PASS",
+  "modelJob": {
+    "job": "d255-9ad9e7d-model",
+    "exitCode": 0,
+    "durationSeconds": 779.918,
+    "pgid": 44099,
+    "groupStopped": true
+  },
+  "runnerVersion": "codex-cli 0.163.0",
+  "sourceByteProof": "d255-9ad9e7d-source-proof.json",
+  "modelReportSha256": "e0f8c545be08000aa3e91076bcb933b5c687e205dde9ccfa9b838ea1ea0daf8e"
+}
