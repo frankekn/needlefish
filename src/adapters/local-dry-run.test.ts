@@ -133,6 +133,7 @@ test("--dry-run on a source diff reports files and surfaces in plain text", (t) 
   assert.match(result.stdout, /pnpm-lock\.yaml \(dependency\)/);
   assert.match(result.stdout, /docsOnlyFastPath: false/);
   assert.match(result.stdout, /largePath: false/);
+  assert.match(result.stdout, /capability: claude: repositoryRead/);
   // The redacted summary must not leak the diff text or the agentsMd body.
   assert.doesNotMatch(result.stdout, /export const value/);
 });
@@ -283,4 +284,19 @@ test("HTTP dry-run and actual review reject the same unsupported small critic be
   assert.match(dry.stderr, /unsupported-capability.*repositoryRead/);
   assert.equal(existsSync(fixture.marker), false);
   assert.equal(existsSync(cacheFile(fixture)), false);
+});
+
+
+test("ACP dry-run reports unknown repository capability without launching the agent", (t) => {
+  const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
+  const result = runCli(fixture, ["--repo", fixture.repo, "--runner", "acp", "--dry-run", "--json"], {
+    NEEDLEFISH_ACP_BIN: path.join(fixture.fakeBin, "claude"),
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(parseJsonObject(result.stdout).capability, {
+    runner: "acp",
+    capability: "unknown",
+    detail: "acp: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.",
+  });
+  assert.equal(existsSync(fixture.marker), false);
 });

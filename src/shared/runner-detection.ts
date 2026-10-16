@@ -93,3 +93,17 @@ function executableNames(command: string): readonly string[] {
     .filter((ext: string) => ext);
   return [command, ...extensions.map((ext: string) => `${command}${ext}`)];
 }
+
+export function runnerReviewCapability(runner: RunnerName): {
+  readonly runner: RunnerName;
+  readonly capability: (typeof RUNNER_DEFINITIONS)[RunnerName]["reviewCapability"];
+  readonly detail: string;
+} {
+  const capability = RUNNER_DEFINITIONS[runner].reviewCapability;
+  const detail = capability === "promptOnly"
+    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex, claude, or opencode).`
+    : capability === "unknown"
+      ? `${runner}: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.`
+      : `${runner}: repositoryRead; the CLI adapter enables repository tools.`;
+  return { runner, capability, detail };
+}
