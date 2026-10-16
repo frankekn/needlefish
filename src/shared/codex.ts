@@ -13,6 +13,7 @@ import { findRunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
+	type AcpLaunchSpec,
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
@@ -569,6 +570,7 @@ interface RunnerAttemptResult {
 }
 
 interface RunnerInvocation {
+	readonly acpLaunch?: AcpLaunchSpec;
 	readonly prompt: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
@@ -777,6 +779,7 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
+						...(opts.acpLaunch ? { acpLaunch: opts.acpLaunch } : {}),
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
 						model,
@@ -1165,6 +1168,8 @@ function resolveModel(
 	opts: RunnerOptions,
 	runner: RunnerName,
 ): string | undefined {
+	// Named connections never borrow a model from another ambient lane.
+	if (opts.connection !== undefined) return opts.model;
 	if (opts.model) return opts.model;
 	if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
 	const modelEnv = RUNNER_DEFINITIONS[runner].modelEnv;
@@ -1227,7 +1232,7 @@ async function runRunner(
 		case "pi":
 			return await runPi(invocation);
 		case "acp":
-			return await runAcp(invocation);
+			return await runAcp(invocation, invocation.acpLaunch);
 	}
 }
 
