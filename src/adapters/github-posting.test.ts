@@ -60,6 +60,7 @@ type FixtureOptions = {
 	readonly prNumber: number;
 	readonly rawReview: string;
 	readonly readmeContent?: string;
+	readonly baseReadmeContent?: string;
 	readonly staleHeadAfterReview?: boolean;
 	// Report the PR state as 'closed' from the first pull fetch (entry skip).
 	readonly closedPr?: boolean;
@@ -266,6 +267,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	});
 
 	gitText(["branch", "-M", "main"], repo);
+	if (opts.baseReadmeContent !== undefined) {
+		writeFileSync(path.join(repo, "README.md"), opts.baseReadmeContent);
+		commitAll(repo, "base content");
+	}
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
 	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
@@ -968,6 +973,7 @@ test("runGithub posts blocking findings as non-sticky review comments", async (t
 test("runGithub appends a suggestion block when replacement validates", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 14,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -982,6 +988,7 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ["fixed"] },
 				},
 			],
@@ -1006,9 +1013,9 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 });
 
 for (const { name, content, line } of [
-	{ name: "leading blank line", content: "\nfeature\n", line: 2 },
-	{ name: "trailing blank line", content: "feature\n\n", line: 2 },
-	{ name: "no final newline", content: "feature", line: 1 },
+	{ name: "leading blank line", content: "\nfeature content\n", line: 2 },
+	{ name: "trailing blank line", content: "feature content\n\n", line: 2 },
+	{ name: "no final newline", content: "feature content", line: 1 },
 	{ name: "empty file", content: "", line: 1 },
 ]) {
 	test(`runGithub uses committed line bounds for suggestions: ${name}`, async (t) => {
@@ -1020,6 +1027,7 @@ for (const { name, content, line } of [
 				findings: [mkFinding({
 					lineStart: line,
 					lineEnd: line,
+					quote: content.split("\n")[line - 1],
 					replacement: { lines: ["fixed"] },
 				})],
 				checked: ["checked"],
@@ -1039,7 +1047,11 @@ for (const { name, content, line } of [
 		} else {
 			assert.equal(payload.comments.length, 1);
 			assert.equal(payload.comments[0].line, line);
-			assert.match(String(payload.comments[0].body), /```suggestion\nfixed\n```/);
+			if (content.split("\n")[line - 1]) {
+				assert.match(String(payload.comments[0].body), /```suggestion\nfixed\n```/);
+			} else {
+				assert.doesNotMatch(String(payload.comments[0].body), /```suggestion/);
+			}
 		}
 	});
 }
@@ -1047,6 +1059,7 @@ for (const { name, content, line } of [
 test("runGithub omits fence-breaking suggestions but still posts inline comments", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 16,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -1061,6 +1074,7 @@ test("runGithub omits fence-breaking suggestions but still posts inline comments
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ['const fence = "```";'] },
 				},
 			],
@@ -1086,6 +1100,7 @@ test("runGithub omits fence-breaking suggestions but still posts inline comments
 test("runGithub omits invalid suggestions but still posts inline comments", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 15,
+		readmeContent: "feature content\n",
 		rawReview: JSON.stringify({
 			summary: "blocking finding",
 			findings: [
@@ -1100,6 +1115,7 @@ test("runGithub omits invalid suggestions but still posts inline comments", asyn
 					whyItBreaks: "breaks",
 					suggestedFix: "fix",
 					validation: "test",
+					quote: "feature content",
 					replacement: { lines: ["fixed", "second"] },
 				},
 			],
@@ -4247,4 +4263,26 @@ test("a same-head marker with a completed needs_human check still skips", async 
 		"a delivered needs_human verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+
+test("runGithub retains BASE-only quotes in the body instead of unrelated HEAD inline comments", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 242,
+		baseReadmeContent: "const removed = legacyCall();\n",
+		readmeContent: "const unrelated = newCall();\nconst added = currentCall();\n",
+		rawReview: JSON.stringify({ summary: "two findings", findings: [
+			mkFinding({ title: "removed source", quote: "const removed = legacyCall();" }),
+			mkFinding({ title: "current source", lineStart: 2, lineEnd: 2, quote: "const added = currentCall();" }),
+		], checked: ["checked"], residual_risks: [] }),
+	});
+	await runGithub(fixture.repo, 242, { timeoutMs: 1000 });
+	const posted = postedReview(readPosts(fixture.postLog), 242);
+	assert.ok(posted);
+	const payload = parseReviewPayload(posted.payload);
+	assert.equal(payload.comments.length, 1);
+	assert.equal(payload.comments[0].line, 2);
+	assert.match(String(payload.comments[0].body), /current source/);
+	assert.match(payload.body, /removed source/);
+	assert.match(payload.body, /Location unverified/);
 });

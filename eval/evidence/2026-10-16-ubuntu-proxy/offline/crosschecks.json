@@ -1,0 +1,8 @@
+{
+  "nativeAttempts": 19,
+  "allRequireCLIProxyAPI": true,
+  "allDisableOpenAIAuth": true,
+  "allUseDeclaredProxyUrl": true,
+  "sourceBeforeAfterIdentical": true,
+  "boundaryFunctionBodiesIdentical": true
+}

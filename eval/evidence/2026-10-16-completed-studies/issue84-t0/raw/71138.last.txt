@@ -1,0 +1,8 @@
+```json
+{
+  "summary": "PASS: no verified, actionable findings remain.",
+  "findings": [],
+  "checked": [],
+  "residual_risks": []
+}
+```

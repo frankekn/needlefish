@@ -1,0 +1,422 @@
+{
+  "functionBodies": [
+    {
+      "name": "assertCriticSubset",
+      "sha256": "e56de09a8db14e4e9d4b39ac6fc6edc7bafc573367ba6bd8308386f35902504a",
+      "unchanged": true
+    },
+    {
+      "name": "parseUsableReview",
+      "sha256": "c939c43955369551098b0ad5965f8ed621a6f0cebc7c7b49f42685f6304592f9",
+      "unchanged": true
+    }
+  ],
+  "sourceSha256": "b9a2b30ace91e38a5ec5efc72edbe3a8849151108f8dd1481ba206675d4a5ee5",
+  "replayModuleSha256": "ecc7b58e469624eadfd22cd7d1b720310633598b5b56954c481cafd110922ec7",
+  "transformation": "Only relative import paths resolved to frozen source and two private exports appended; original function bodies unchanged.",
+  "attempts": [
+    {
+      "pid": 1508573,
+      "stage": "review",
+      "candidatePid": 1508573,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1508836,
+      "stage": "critic",
+      "candidatePid": 1508573,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1509033,
+      "stage": "review",
+      "candidatePid": 1509033,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1509957,
+      "stage": "critic",
+      "candidatePid": 1509033,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1510243,
+      "stage": "review",
+      "candidatePid": 1510243,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1510507,
+      "stage": "critic",
+      "candidatePid": 1510243,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [],
+      "outputAnchors": []
+    },
+    {
+      "pid": 1510708,
+      "stage": "review",
+      "candidatePid": 1510708,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Include tenant ID in the settings cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Preserve the tenant-aware invalidate API"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Include tenant ID in the settings cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Preserve the tenant-aware invalidate API"
+        }
+      ]
+    },
+    {
+      "pid": 1511916,
+      "stage": "critic",
+      "candidatePid": 1510708,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Include tenant ID in the settings cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Preserve the tenant-aware invalidate API"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Include tenant ID in the settings cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 21,
+          "title": "Preserve the tenant-aware invalidate API"
+        }
+      ]
+    },
+    {
+      "pid": 1512444,
+      "stage": "review",
+      "candidatePid": 1512444,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ]
+    },
+    {
+      "pid": 1512756,
+      "stage": "critic",
+      "candidatePid": 1512444,
+      "exitCode": 0,
+      "error": "Error: malformed critic output: finding was not in the candidate review",
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 12,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ]
+    },
+    {
+      "pid": 1512990,
+      "stage": "critic",
+      "candidatePid": 1512444,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 7,
+          "lineEnd": 12,
+          "title": "Keep tenant ID in the settings cache key"
+        }
+      ]
+    },
+    {
+      "pid": 1513353,
+      "stage": "review",
+      "candidatePid": 1513353,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Include tenant ID in the cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Preserve the public invalidate signature"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Include tenant ID in the cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Preserve the public invalidate signature"
+        }
+      ]
+    },
+    {
+      "pid": 1514107,
+      "stage": "critic",
+      "candidatePid": 1513353,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Include tenant ID in the cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Preserve the public invalidate signature"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/settings.ts",
+          "lineStart": 8,
+          "lineEnd": 8,
+          "title": "Include tenant ID in the cache key"
+        },
+        {
+          "file": "src/settings.ts",
+          "lineStart": 20,
+          "lineEnd": 20,
+          "title": "Preserve the public invalidate signature"
+        }
+      ]
+    },
+    {
+      "pid": 1514525,
+      "stage": "review",
+      "candidatePid": 1514525,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 86,
+          "lineEnd": 88,
+          "title": "Pass focus through large-review prompts"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 86,
+          "lineEnd": 88,
+          "title": "Pass focus through large-review prompts"
+        }
+      ]
+    },
+    {
+      "pid": 1515076,
+      "stage": "critic",
+      "candidatePid": 1514525,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 86,
+          "lineEnd": 88,
+          "title": "Pass focus through large-review prompts"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 86,
+          "lineEnd": 88,
+          "title": "Pass focus through large-review prompts"
+        }
+      ]
+    },
+    {
+      "pid": 1515782,
+      "stage": "review",
+      "candidatePid": 1515782,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Pass the requested focus to each large-PR deep review"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Pass the requested focus to each large-PR deep review"
+        }
+      ]
+    },
+    {
+      "pid": 1516682,
+      "stage": "critic",
+      "candidatePid": 1515782,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Pass the requested focus to each large-PR deep review"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 117,
+          "lineEnd": 121,
+          "title": "Pass the requested focus to each large-PR deep review"
+        }
+      ]
+    },
+    {
+      "pid": 1517574,
+      "stage": "review",
+      "candidatePid": 1517574,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Forward focus and depth to large-review prompts"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Forward focus and depth to large-review prompts"
+        }
+      ]
+    },
+    {
+      "pid": 1519046,
+      "stage": "critic",
+      "candidatePid": 1517574,
+      "exitCode": 0,
+      "error": null,
+      "candidateAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Forward focus and depth to large-review prompts"
+        }
+      ],
+      "outputAnchors": [
+        {
+          "file": "src/core/review.ts",
+          "lineStart": 83,
+          "lineEnd": 89,
+          "title": "Forward focus and depth to large-review prompts"
+        }
+      ]
+    }
+  ],
+  "intermediateContractErrors": 1,
+  "nativeNonzeroExits": 0
+}

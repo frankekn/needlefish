@@ -35,12 +35,19 @@ function autoDetectRunner(): RunnerName {
  * The command runner R is spawned as. The `*_BIN` override is trimmed and a blank
  * value counts as unset; then the catalog default applies. Undefined when R has
  * no CLI (openai) or its override is required and unset (acp). Detection, the
- * doctor, and every spawn site read it here so they cannot disagree.
+ * doctor, and every spawn site share this command spelling.
  */
 export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  return process.env[bin.env]?.trim() || bin.fallback;
+  const command = process.env[bin.env]?.trim() || bin.fallback;
+  return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
+}
+
+export function resolveCallerCommand(command: string, cwd = process.cwd(), pathApi = path): string {
+  return !pathApi.isAbsolute(command) && (command.includes("/") || command.includes(pathApi.sep))
+    ? pathApi.resolve(cwd, command)
+    : command;
 }
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */

@@ -17,7 +17,7 @@ import {
   type AdoptionRow,
 } from "./adoption";
 
-function marker(findings: readonly { title: string; category: string }[]): string {
+function marker(findings: readonly { title: string; category: string; file?: string }[]): string {
   const keys = findings.map((f) => ({ file: "src/a.ts", lineStart: 1, ...f }));
   return `summary\n\n<!-- needlefish-state: ${JSON.stringify({ v: 1, headSha: "abc", findings: keys })} -->`;
 }
@@ -31,13 +31,13 @@ function thread(body: string, opts: { outdated?: boolean; created?: string } = {
   };
 }
 
-function prNode(fields: { number: number; state?: string; merged?: boolean; updatedAt?: string; reviews?: string[]; threads?: unknown[] }): unknown {
+function prNode(fields: { number: number; state?: string; merged?: boolean; updatedAt?: string; reviews?: string[]; threads?: unknown[]; reviewsTruncated?: boolean }) {
   return {
     number: fields.number,
     state: fields.state ?? "MERGED",
     merged: fields.merged ?? true,
     updatedAt: fields.updatedAt ?? "2026-09-20T00:00:00Z",
-    reviews: { nodes: (fields.reviews ?? []).map((body) => ({ body })) },
+    reviews: { pageInfo: { hasPreviousPage: fields.reviewsTruncated ?? false, startCursor: fields.reviewsTruncated ? "reviews-2" : null }, nodes: (fields.reviews ?? []).map((body, index) => ({ id: `R${fields.number}-${index}`, body })) },
     reviewThreads: { pageInfo: { hasNextPage: false }, nodes: fields.threads ?? [] },
   };
 }
@@ -96,7 +96,7 @@ test("classifyFate: only merged PRs are decided", () => {
   assert.equal(classifyFate({ state: "CLOSED", merged: false }, true), "abandoned");
 });
 
-test("rowsFromPr: category from header, then latest round-state marker, else unknown", () => {
+test("rowsFromPr: category from header, then unambiguous path and title, else unknown", () => {
   const { prs } = parsePrPage(
     page(
       [
@@ -122,7 +122,7 @@ test("rowsFromPr: category from header, then latest round-state marker, else unk
   assert.deepEqual(
     rows.map((r) => [r.severity, r.category, r.fate]),
     [
-      ["P2", "boundary", "addressed"],
+      ["P2", "unknown", "addressed"],
       ["P1", "security", "kept"],
       ["P3", "unknown", "kept"],
     ],
@@ -154,7 +154,7 @@ test("rowsFromPr: --since drops threads created before the window", () => {
 });
 
 test("parsePrPage: malformed GitHub responses throw instead of counting nothing", () => {
-  assert.throws(() => parsePrPage({ errors: [{ message: "rate limited" }] }), /data/);
+  assert.throws(() => parsePrPage({ errors: [{ message: "rate limited" }] }), /GraphQL errors.*rate limited/);
   assert.throws(() => parsePrPage(page([{ number: "7" }], null)), /pullRequest\.number/);
   assert.throws(() => parsePrPage(page([prNode({ number: 1, threads: [{ isOutdated: "yes" }] })], null)), /reviewThread/);
 });
@@ -201,7 +201,7 @@ test("renderReport: splits by repo, severity, category, and ISO week", () => {
   assert.match(report, /\| 2026-W40 \| 0% \|/);
 });
 
-function runCli(args: readonly string[]): { status: number | null; stdout: string; stderr: string; calls: string } {
+function runCli(args: readonly string[], responder?: string): { status: number | null; stdout: string; stderr: string; calls: string } {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "adoption-cli-test-"));
   const callLog = path.join(tmp, "calls.log");
   const pages = {
@@ -227,10 +227,10 @@ function runCli(args: readonly string[]): { status: number | null; stdout: strin
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(callLog)}, args.filter((a) => !a.startsWith("query=")).join(" ") + "\\n");
-if (args[0] !== "api" || args[1] !== "graphql" || !args.includes("owner=o") || !args.includes("name=a")) process.exit(3);
+${responder ?? `if (args[0] !== "api" || args[1] !== "graphql" || !args.includes("owner=o") || !args.includes("name=a")) process.exit(3);
 const after = args.find((a) => a.startsWith("after="));
 if (after === "after=c2") { process.stderr.write("third page must not be requested\\n"); process.exit(4); }
-process.stdout.write(JSON.stringify(after === "after=c1" ? ${JSON.stringify(pages.second)} : ${JSON.stringify(pages.first)}));
+process.stdout.write(JSON.stringify(after === "after=c1" ? ${JSON.stringify(pages.second)} : ${JSON.stringify(pages.first)}));`}
 `,
     );
     chmodSync(gh, 0o755);
@@ -262,3 +262,215 @@ test("CLI: gh failure exits non-zero", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /adoption failed: gh api graphql for o\/a failed: third page must not be requested/);
 });
+
+function editPage(bodies: readonly unknown[], endCursor: string | null = null): unknown {
+  return { data: { node: { userContentEdits: {
+    pageInfo: { hasNextPage: endCursor !== null, endCursor },
+    nodes: bodies,
+  } } } };
+}
+
+function historyResponder(prs: unknown[], first: unknown, second?: unknown): string {
+  return `
+const query = args.find((a) => a.startsWith("query="));
+const isHistory = query.includes("userContentEdits");
+if (isHistory && query.includes("pullRequests(")) process.exit(5);
+const response = !isHistory ? ${JSON.stringify(page(prs, null))}
+  : args.includes("after=edits-2") ? ${JSON.stringify(second ?? first)} : ${JSON.stringify(first)};
+process.stdout.write(JSON.stringify(response));`;
+}
+
+test("CLI: recovers overwritten rounds across history pages without changing rows", () => {
+  const pr = prNode({ number: 7, reviews: [marker([]), "human review"], threads: [
+    thread("**P2** Guard the EMPTY list", { outdated: true }),
+    thread("**P1** Strip the token"),
+    thread("**P3** Missing history"),
+    thread("**P2 (contract): Direct category**"),
+  ] });
+  const result = runCli(["o/a", "--json"], historyResponder([pr], editPage([
+    { deletedAt: null, diff: marker([{ title: "strip the token", category: "security" }]) },
+    { deletedAt: null, diff: marker([]) },
+  ], "edits-2"), editPage([
+    { deletedAt: null, diff: marker([{ title: "guard the empty list", category: "bug" }]) },
+  ])));
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [
+    { repo: "o/a", pr: 7, severity: "P2", category: "bug", fate: "addressed", resolved: false, path: "src/a.ts", created: "2026-09-10T12:00:00Z", author: "github-actions" },
+    { repo: "o/a", pr: 7, severity: "P1", category: "security", fate: "kept", resolved: false, path: "src/a.ts", created: "2026-09-10T12:00:00Z", author: "github-actions" },
+    { repo: "o/a", pr: 7, severity: "P3", category: "unknown", fate: "kept", resolved: false, path: "src/a.ts", created: "2026-09-10T12:00:00Z", author: "github-actions" },
+    { repo: "o/a", pr: 7, severity: "P2", category: "contract", fate: "kept", resolved: false, path: "src/a.ts", created: "2026-09-10T12:00:00Z", author: "github-actions" },
+  ]);
+  assert.equal(result.calls.trim().split("\n").length, 3);
+  assert.match(result.calls, /id=R7-0/);
+  assert.match(result.calls, /after=edits-2/);
+  assert.doesNotMatch(result.calls, /id=R7-1/);
+});
+
+test("CLI: history category conflicts stay unknown and path disambiguates titles", () => {
+  const pr = prNode({ number: 7, reviews: [marker([{ title: "same title", category: "bug" }])], threads: [
+    thread("**P2** Same title"), thread("**P1** Old title"), thread("**P3 (runtime): Same title**"),
+  ] });
+  const history = editPage([{ deletedAt: null, diff: marker([
+    { title: "same title", category: "security" },
+    { title: "old title", category: "contract" },
+    { title: "old title", category: "bug", file: "src/other.ts" },
+  ]) }]);
+  const result = runCli(["o/a", "--json"], historyResponder([pr], history));
+  assert.equal(result.status, 0, result.stderr);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["unknown", "contract", "runtime"]);
+});
+
+for (const [name, history] of [
+  ["empty", editPage([])],
+  ["null connection", { data: { node: { userContentEdits: null } } }],
+  ["deleted review", { data: { node: null } }],
+  ["unavailable edits", editPage([
+    null,
+    { deletedAt: "2026-09-11T00:00:00Z", diff: marker([{ title: "old title", category: "bug" }]) },
+    { deletedAt: null, diff: null },
+    { deletedAt: null, diff: "<!-- needlefish-state: malformed -->" },
+    { deletedAt: null, diff: "ordinary review text" },
+  ])],
+] as const) {
+  test(`CLI: ${name} history retains unknown categories`, () => {
+    const pr = prNode({ number: 7, reviews: [marker([])], threads: [thread("**P2** Old title")] });
+    const result = runCli(["o/a", "--json"], historyResponder([pr], history));
+    assert.equal(result.status, 0, result.stderr);
+    const rows: AdoptionRow[] = JSON.parse(result.stdout);
+    assert.deepEqual(rows.map((r) => r.category), ["unknown"]);
+    if (name !== "empty") assert.match(result.stderr, /history.*unavailable|edits.*without valid state/);
+  });
+}
+
+for (const [name, history] of [
+  ["GraphQL errors with partial data", { data: { node: null }, errors: [{ message: "forbidden" }] }],
+  ["missing next cursor", { data: { node: { userContentEdits: { nodes: [], pageInfo: { hasNextPage: true, endCursor: null } } } } }],
+  ["invalid edit", editPage([42])],
+  ["repeated cursor", editPage([], "edits-2")],
+] as const) {
+  test(`CLI: rejects ${name} instead of reporting complete history`, () => {
+    const pr = prNode({ number: 7, reviews: [marker([])], threads: [thread("**P2** Old title")] });
+    const result = runCli(["o/a", "--json"], historyResponder([pr], history));
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /adoption failed/);
+  });
+}
+
+test("CLI: history API failure fails the report", () => {
+  const pr = prNode({ number: 7, reviews: [marker([])], threads: [thread("**P2** Old title")] });
+  const result = runCli(["o/a", "--json"], `
+if (args.some((a) => a.startsWith("id="))) { process.stderr.write("rate limited"); process.exit(1); }
+process.stdout.write(${JSON.stringify(JSON.stringify(page([pr], null)))});`);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /rate limited/);
+  assert.equal(result.stdout, "");
+});
+
+test("CLI: known categories are checked against matching history", () => {
+  const pr = prNode({ number: 7, reviews: [marker([{ title: "known", category: "bug" }])], threads: [
+    thread("**P2** Known"), thread("**P1** Old", { created: "2026-08-01T00:00:00Z" }),
+  ] });
+  const result = runCli(["o/a", "--since", "2026-09-01", "--json"], historyResponder([pr], editPage([
+    { deletedAt: null, diff: marker([{ title: "known", category: "bug" }]) },
+  ])));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.calls.trim().split("\n").length, 2);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["bug"]);
+});
+
+test("CLI: finds the state review beyond the latest 50 reviews", () => {
+  const pr = prNode({ number: 7, reviewsTruncated: true, reviews: ["human review"], threads: [thread("**P2** Old title")] });
+  const older = { data: { repository: { pullRequest: { reviews: {
+    pageInfo: { hasPreviousPage: false, startCursor: null },
+    nodes: [{ id: "original-state", body: marker([]) }],
+  } } } } };
+  const history = editPage([{ deletedAt: null, diff: marker([{ title: "old title", category: "contract" }]) }]);
+  const result = runCli(["o/a", "--json"], `
+const response = args.includes("before=reviews-2") ? ${JSON.stringify(older)}
+  : args.includes("id=original-state") ? ${JSON.stringify(history)} : ${JSON.stringify(page([pr], null))};
+process.stdout.write(JSON.stringify(response));`);
+  assert.equal(result.status, 0, result.stderr);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["contract"]);
+  assert.equal(result.calls.trim().split("\n").length, 3);
+  assert.match(result.calls, /before=reviews-2/);
+  assert.match(result.calls, /id=original-state/);
+});
+
+for (const [name, previous] of [
+  ["missing previous cursor", { nodes: [], pageInfo: { hasPreviousPage: true, startCursor: null } }],
+  ["repeated previous cursor", { nodes: [], pageInfo: { hasPreviousPage: true, startCursor: "reviews-2" } }],
+] as const) {
+  test(`CLI: rejects ${name} in older reviews`, () => {
+    const pr = prNode({ number: 7, reviewsTruncated: true, threads: [thread("**P2** Old title")] });
+    const older = { data: { repository: { pullRequest: { reviews: previous } } } };
+    const result = runCli(["o/a", "--json"], `
+process.stdout.write(JSON.stringify(args.includes("before=reviews-2")
+  ? ${JSON.stringify(older)} : ${JSON.stringify(page([pr], null))}));`);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /adoption failed/);
+  });
+}
+
+test("CLI: reports a truncated thread window while retaining captured rows", () => {
+  const pr = {
+    ...prNode({ number: 7, reviews: [] }),
+    reviewThreads: { pageInfo: { hasNextPage: true }, nodes: [thread("**P1 (security): Strip the token**")] },
+  };
+  const result = runCli(["o/a", "--json"], historyResponder([pr], editPage([])));
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /only the first 100 are counted/);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => [r.severity, r.category]), [["P1", "security"]]);
+});
+
+test("CLI: checks history conflicts even when an older current marker supplies the category", () => {
+  const pr = prNode({ number: 7, reviewsTruncated: true, threads: [thread("**P2** Old title")] });
+  const older = { data: { repository: { pullRequest: { reviews: {
+    pageInfo: { hasPreviousPage: false, startCursor: null },
+    nodes: [{ id: "original-state", body: marker([{ title: "old title", category: "bug" }]) }],
+  } } } } };
+  const history = editPage([{ deletedAt: null, diff: marker([{ title: "old title", category: "contract" }]) }]);
+  const result = runCli(["o/a", "--json"], `
+const response = args.includes("before=reviews-2") ? ${JSON.stringify(older)}
+  : args.includes("id=original-state") ? ${JSON.stringify(history)} : ${JSON.stringify(page([pr], null))};
+process.stdout.write(JSON.stringify(response));`);
+  assert.equal(result.status, 0, result.stderr);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["unknown"]);
+  assert.equal(result.calls.trim().split("\n").length, 3);
+});
+
+test("CLI: a known current category becomes unknown when history conflicts", () => {
+  const pr = prNode({ number: 7, reviews: [marker([{ title: "known", category: "bug" }])], threads: [
+    thread("**P2** Known"), thread("**P1 (security): Known**"),
+  ] });
+  const result = runCli(["o/a", "--json"], historyResponder([pr], editPage([
+    { deletedAt: null, diff: marker([{ title: "known", category: "contract" }]) },
+  ])));
+  assert.equal(result.status, 0, result.stderr);
+  const rows: AdoptionRow[] = JSON.parse(result.stdout);
+  assert.deepEqual(rows.map((r) => r.category), ["unknown", "security"]);
+  assert.equal(result.calls.trim().split("\n").length, 2);
+});
+
+for (const [name, threads, expected] of [
+  ["explicit categories", [thread("**P2 (security): Known**")], ["security"]],
+  ["non-finding comments", [thread("Thanks, fixed.")], []],
+  ["excluded old findings", [thread("**P2** Known", { created: "2026-08-01T00:00:00Z" })], []],
+] as const) {
+  test(`CLI: ${name} do not fetch older reviews or history`, () => {
+    const pr = prNode({ number: 7, reviewsTruncated: true, reviews: [marker([{ title: "known", category: "bug" }])], threads: [...threads] });
+    const result = runCli(["o/a", "--since", "2026-09-01", "--json"], historyResponder([pr], editPage([
+      { deletedAt: null, diff: marker([{ title: "known", category: "contract" }]) },
+    ])));
+    assert.equal(result.status, 0, result.stderr);
+    const rows: AdoptionRow[] = JSON.parse(result.stdout);
+    assert.deepEqual(rows.map((r) => r.category), expected);
+    assert.equal(result.calls.trim().split("\n").length, 1);
+  });
+}

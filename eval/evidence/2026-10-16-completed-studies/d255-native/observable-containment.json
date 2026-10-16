@@ -1,0 +1,68 @@
+{
+  "scope": "Report-visible finding fields and multiplicity, severity may change; full residual containment is covered by resident property suite.",
+  "slots": [
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 0,
+      "candidatePid": 14563,
+      "criticPid": 19487,
+      "contained": true
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 1,
+      "candidatePid": 20507,
+      "criticPid": 22857,
+      "contained": true
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "draw": 2,
+      "candidatePid": 23835,
+      "criticPid": 24495,
+      "contained": true
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 0,
+      "candidatePid": 26341,
+      "criticPid": 31189,
+      "contained": true
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 1,
+      "candidatePid": 36983,
+      "criticPid": 52689,
+      "contained": true
+    },
+    {
+      "fixtureId": "t3-cache-key-tenant",
+      "draw": 2,
+      "candidatePid": 55258,
+      "criticPid": 95247,
+      "contained": true
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 0,
+      "candidatePid": 8932,
+      "criticPid": 28433,
+      "contained": true
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 1,
+      "candidatePid": 30270,
+      "criticPid": 60533,
+      "contained": true
+    },
+    {
+      "fixtureId": "real-pr4-options-not-forwarded",
+      "draw": 2,
+      "candidatePid": 72369,
+      "criticPid": 94952,
+      "contained": true
+    }
+  ]
+}

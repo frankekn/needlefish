@@ -1,0 +1,883 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "9f1088dd8756c6f809ef48bc5421ba7ffdbe0523",
+  "scope": "Completed observations only. No product change, new trial, gate certification, or deployment.",
+  "originals": [
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts-export-manifest.json",
+      "bytes": 36186,
+      "sha256": "f4450a46482e6e7719da8c91e6ffa833e18b14fbaa3890fde724bf74982707f8"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "export-manifest.json",
+      "bytes": 27297,
+      "sha256": "0263eb164cc53b631ad44e2edb57d5143d61f89526a27ed4b9a5921fca28cd58"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/good-0/accepted.json",
+      "bytes": 907,
+      "sha256": "b87469d9d44741be3998ba0ed63368be69f6561b2667a3f28e21369cf6f392c4"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/primary-v2-pr255-1/accepted.json",
+      "bytes": 883,
+      "sha256": "4cc981c591c0e24d17284ae8e06586f3970082b5be23a00276371bb24d332166"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-1/accepted.json",
+      "bytes": 896,
+      "sha256": "0252607cd595f0501a182f1218dc1186bf5b1b889aba17242ca23ebac4132e93"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-2/accepted.json",
+      "bytes": 882,
+      "sha256": "1be2964cfdbbc5ed46d93312cfd4059649215775cd29834a571af6286696cee3"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-3/accepted.json",
+      "bytes": 883,
+      "sha256": "dd44e67f3e9d2a9788efedca564c0cbb19b1e1b54f382dfc28abd268c4ba45ed"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-1/calls/1792143757874980559-3f1a49.json",
+      "bytes": 1334,
+      "sha256": "544a1d4c1f0a214c53004b6c4c0d31e75cc5fb3cb48d961123085b93964a3859"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-1/calls/1792143771355222916-e33bb8.json",
+      "bytes": 1335,
+      "sha256": "77b7d527f285f411a4b2d704d51c7e838ec8189a472a8053d122c84e74f7b9d7"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-2/calls/1792144357836454734-43ca6b.json",
+      "bytes": 1335,
+      "sha256": "35327fbdb4c30198dbf1093995048bbd8aa10d898279afdefa86d49559310754"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-2/calls/1792144407700622123-bac698.json",
+      "bytes": 1334,
+      "sha256": "9f1c15c95c17d0799e2782f339d6be5028ec92134c9ec9337916edf8d17ee17e"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-3/calls/1792144957837401271-f38d18.json",
+      "bytes": 1334,
+      "sha256": "0eef9cf5b183bda489ff7e03888c0f121705b2047904eb12108d50f7b37809d2"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-3/calls/1792145023407743728-e5d005.json",
+      "bytes": 1335,
+      "sha256": "5ffb7674d815e7f5208fd7138a0621efaf8319acffafdd48497dffb70c4e7583"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/pr258-window/result.json",
+      "bytes": 427,
+      "sha256": "92e1197f043bcfdd48088b80ae701c64559626bd0a5dac3a1ae95941427daa1a"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "compiled-evidence-verification.json",
+      "bytes": 469,
+      "sha256": "9a1179c0cd133290cd1cb685ac3fa45fc13285229014d81d341b87e01bcfcb49"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/compiled-artifacts.json",
+      "bytes": 483,
+      "sha256": "dce76b4f15501de1f13161468d4862ba3936371c96baae4dd35cdd88aa118625"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "criteria-v3-proxy.json",
+      "bytes": 4185,
+      "sha256": "c1aad2f28a851c532747ebedfa8dd1ef8eaec6705ba001558c150e86bc5b4244"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "verification.json",
+      "bytes": 1515,
+      "sha256": "04e59d739ce3aafea28d4540e3b4ee124cce852cdb02bd37d8c623eaaedf7717"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "cleanup.json",
+      "bytes": 1097,
+      "sha256": "5cc00b73309c0c53686efa1e2a5fcc0885a5b15c81cfca6a1d875498944e668c"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/final-installed-verification.json",
+      "bytes": 1167,
+      "sha256": "fb3da2fae73ab74a0531d5828fbe0ec49254c80ac004f68e23c06bb3b37465ce"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/controller-death-active/rollback.json",
+      "bytes": 287,
+      "sha256": "c78643eb6c29a6a638109f98fbe8c245d8ce46373d33218ae95a47fd548ac67c"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/selected-phase-drift/proof.json",
+      "bytes": 156,
+      "sha256": "e175660b88650e15c69bd88737989babb59eb957ea1895506d704a1ca5736239"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "receipts/selection-divergence/rollback.json",
+      "bytes": 294,
+      "sha256": "1b188222b3b9cabce691b1257e602cdacfb5ccf62888283f965ea2a3a0b3a9f9"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "criteria.json",
+      "bytes": 2782,
+      "sha256": "444610783c5f59fa3a514ea19c05ca32420c1249ab0d69bbf0ae6e6b91cdcf43"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "identity.json",
+      "bytes": 1374,
+      "sha256": "11db9b6e817d52eae9ea01fa9738b3b991bf085e9d314969dc17d5284238fa37"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "final-verdict.json",
+      "bytes": 2487,
+      "sha256": "f6fcfead9609d35288b692fbfec44658e519a9b19de6aa0940c3fcf2ea830295"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "report.json",
+      "bytes": 25007,
+      "sha256": "74a5fc17ba95b6319590a828a244a8ea7f6eb4040533cfa19797cbb5663128ae"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "attempt-audit.json",
+      "bytes": 66830,
+      "sha256": "705d2ff5eb5fb1d66d04d0d990934d2670c9bbfcf98bba6f3840aaa0843c020a"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "boundary-audit.json",
+      "bytes": 12706,
+      "sha256": "1fd4d2e402ddc18bc2ce4dca1e5a892b47c69c07c06a3fb109df2a88e93f8fea"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "instrumentation-incident.json",
+      "bytes": 510,
+      "sha256": "19fa5ec87e4b90cede4fff1ec3a18dcb99b4acaa53ff68f0399fd515814fea9b"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "local-export-proof.json",
+      "bytes": 151,
+      "sha256": "5ec01b0cbfd22caeb0d720497353dfa31c919c103289170328ee58f38d37febe"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "process-proof.json",
+      "bytes": 515,
+      "sha256": "e6bccb9fe2f6fdd06d3a475ef51be006f8a04138675052a8a207e97848968047"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "final-crosschecks.json",
+      "bytes": 206,
+      "sha256": "31f64085099207aed62712ebf0b2ff24bd01e785332f840104de029d537e1053"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "property-result.json",
+      "bytes": 123,
+      "sha256": "a1c164dac8b9c9cd7b8b3bc8ac08b0c472ac43eff44ed2511979db638c2d47eb"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "property.stdout.log",
+      "bytes": 1690,
+      "sha256": "95efdfc50a252e6f8a28034bbee4b4e17ce9e7d820438611cf70125ce7bd3a2e"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "cleanup-proof.json",
+      "bytes": 1379,
+      "sha256": "a20eaf9066c6e1923e6c320f1dbb45fd52d5e10fb4f44f81a09fb714ff1d9a7d"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "report.md",
+      "bytes": 7043,
+      "sha256": "6156900387e75e11ccb5bcaba7e4529c52be90c3a6fac23cc0fe39f33363b083"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "root-verification.json",
+      "bytes": 1515,
+      "sha256": "04e59d739ce3aafea28d4540e3b4ee124cce852cdb02bd37d8c623eaaedf7717"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "criteria-v1-native.json",
+      "bytes": 2629,
+      "sha256": "4ba4ccf56c6133b857e8f39ed1d4e4c7a6edc5ed81e87e5be07d9f2f5a7541e1"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "criteria-v2-proxy.json",
+      "bytes": 3513,
+      "sha256": "6dd7539dc1949ef4890046dc7f4192a0e30006fede85c289ed1ef7a9c61c9564"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "canary.py",
+      "bytes": 17336,
+      "sha256": "def3bf2011adfc61ffea9401a20e7d9f88a764c1bf70ff83f2175c9a57e11bb9"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "codex-observer.py",
+      "bytes": 1486,
+      "sha256": "5ff6a06f4c21d1d1e4dac6eec10de90e79b52655ff02bd75532e4373473c2719"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "cleanup.py",
+      "bytes": 2398,
+      "sha256": "dc32bf278f362216484d127dc51e20fcb1007471747bea58c55853263112d3f2"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "verify-evidence.py",
+      "bytes": 2805,
+      "sha256": "662bab0a7ea7bbbe692f16f70798c1970ce313c2717187d5b1fc506bdbbb28ac"
+    },
+    {
+      "store": "ubuntu-canary",
+      "path": "compiled-artifacts.tar.gz",
+      "bytes": 526609,
+      "sha256": "059e560a11b0b9f71dfdd4b7056510a6802ea69e32b24eb34815b8eea9cfd16c"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "REPORT.md",
+      "bytes": 4098,
+      "sha256": "9bb09d6742a3399ead8abd81a27140d53d14420e1f2485f6513f5179fd6f60fa"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "verify.mjs",
+      "bytes": 7542,
+      "sha256": "273db842013467055fe0ba0ea23e2042e8d18916515c94c2c4cd6d6a3139c692"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "boundary-audit.mjs",
+      "bytes": 3154,
+      "sha256": "12635da52e6f1eb7936890f6e76b228a3416860563ca4fdfa500445fdef2b1c3"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "boundary-module.ts",
+      "bytes": 41650,
+      "sha256": "ecc7b58e469624eadfd22cd7d1b720310633598b5b56954c481cafd110922ec7"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "setup-attestation-failure/attempt-count.json",
+      "bytes": 133,
+      "sha256": "503cf0cab5593a6145c83f726a3ec1b471b0d0167d66dc2b04efbbc57922b5cc"
+    },
+    {
+      "store": "d255-proxy-ubuntu",
+      "path": "setup-attestation-failure/criteria.json",
+      "bytes": 2611,
+      "sha256": "5e9b90a8719ed2ff7a56d51d74f1f950f59f76334d468c7eef18f0129b81d1bb"
+    }
+  ],
+  "files": [
+    {
+      "path": "canary/receipt-manifest.json",
+      "original": "ubuntu-canary/receipts-export-manifest.json",
+      "kind": "original",
+      "bytes": 36186,
+      "sha256": "f4450a46482e6e7719da8c91e6ffa833e18b14fbaa3890fde724bf74982707f8"
+    },
+    {
+      "path": "offline/receipt-manifest.json",
+      "original": "d255-proxy-ubuntu/export-manifest.json",
+      "kind": "original",
+      "bytes": 27297,
+      "sha256": "0263eb164cc53b631ad44e2edb57d5143d61f89526a27ed4b9a5921fca28cd58"
+    },
+    {
+      "path": "canary/baseline.json",
+      "original": "ubuntu-canary/receipts/good-0/accepted.json",
+      "kind": "original",
+      "bytes": 907,
+      "sha256": "b87469d9d44741be3998ba0ed63368be69f6561b2667a3f28e21369cf6f392c4"
+    },
+    {
+      "path": "canary/superseded-v2-draw.json",
+      "original": "ubuntu-canary/receipts/primary-v2-pr255-1/accepted.json",
+      "kind": "original",
+      "bytes": 883,
+      "sha256": "4cc981c591c0e24d17284ae8e06586f3970082b5be23a00276371bb24d332166"
+    },
+    {
+      "path": "canary/pr258-1.json",
+      "original": "ubuntu-canary/receipts/pr258-1/accepted.json",
+      "kind": "original",
+      "bytes": 896,
+      "sha256": "0252607cd595f0501a182f1218dc1186bf5b1b889aba17242ca23ebac4132e93"
+    },
+    {
+      "path": "canary/pr258-2.json",
+      "original": "ubuntu-canary/receipts/pr258-2/accepted.json",
+      "kind": "original",
+      "bytes": 882,
+      "sha256": "1be2964cfdbbc5ed46d93312cfd4059649215775cd29834a571af6286696cee3"
+    },
+    {
+      "path": "canary/pr258-3.json",
+      "original": "ubuntu-canary/receipts/pr258-3/accepted.json",
+      "kind": "original",
+      "bytes": 883,
+      "sha256": "dd44e67f3e9d2a9788efedca564c0cbb19b1e1b54f382dfc28abd268c4ba45ed"
+    },
+    {
+      "path": "canary/calls/slot-1-review.json",
+      "original": "ubuntu-canary/receipts/pr258-1/calls/1792143757874980559-3f1a49.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 517,
+      "sha256": "7ae777b921bf6191613fd7658cc4764dcc11d3e6bd4988ca701969946f4dd801"
+    },
+    {
+      "path": "canary/calls/slot-1-critic.json",
+      "original": "ubuntu-canary/receipts/pr258-1/calls/1792143771355222916-e33bb8.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 518,
+      "sha256": "d2f258a8f8ca0c68a8eb547570cdf66da3ebb80813543c3f76f184bca8dd1958"
+    },
+    {
+      "path": "canary/calls/slot-2-review.json",
+      "original": "ubuntu-canary/receipts/pr258-2/calls/1792144357836454734-43ca6b.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 518,
+      "sha256": "2793c267cadc8dc973652956c2a6b618adcd899589a19b352a22fe7d7ffd4396"
+    },
+    {
+      "path": "canary/calls/slot-2-critic.json",
+      "original": "ubuntu-canary/receipts/pr258-2/calls/1792144407700622123-bac698.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 517,
+      "sha256": "e50f99121cf2c0c549eefde6df239ffe967cc138188d3dea482075b121492aaa"
+    },
+    {
+      "path": "canary/calls/slot-3-review.json",
+      "original": "ubuntu-canary/receipts/pr258-3/calls/1792144957837401271-f38d18.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 517,
+      "sha256": "664b6a4225eff9ac0474d23f3abb78bda05657d4f7541f934bb89919079ecad9"
+    },
+    {
+      "path": "canary/calls/slot-3-critic.json",
+      "original": "ubuntu-canary/receipts/pr258-3/calls/1792145023407743728-e5d005.json",
+      "kind": "derived",
+      "fields": [
+        "pid",
+        "pgid",
+        "startTicks",
+        "started",
+        "finished",
+        "stage",
+        "exit",
+        "promptSha256",
+        "lastMessageSha256",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "bytes": 518,
+      "sha256": "427f2e63f2bc61f3ebfe39e169eec772eb4fec2c701e42a3073c38dca8c4d0e8"
+    },
+    {
+      "path": "canary/window.json",
+      "original": "ubuntu-canary/receipts/pr258-window/result.json",
+      "kind": "original",
+      "bytes": 427,
+      "sha256": "92e1197f043bcfdd48088b80ae701c64559626bd0a5dac3a1ae95941427daa1a"
+    },
+    {
+      "path": "canary/compiled-verification.json",
+      "original": "ubuntu-canary/compiled-evidence-verification.json",
+      "kind": "original",
+      "bytes": 469,
+      "sha256": "9a1179c0cd133290cd1cb685ac3fa45fc13285229014d81d341b87e01bcfcb49"
+    },
+    {
+      "path": "canary/compiled-archive.json",
+      "original": "ubuntu-canary/receipts/compiled-artifacts.json",
+      "kind": "original",
+      "bytes": 483,
+      "sha256": "dce76b4f15501de1f13161468d4862ba3936371c96baae4dd35cdd88aa118625"
+    },
+    {
+      "path": "canary/criteria.json",
+      "original": "ubuntu-canary/criteria-v3-proxy.json",
+      "kind": "derived",
+      "fields": [
+        "frozenAt",
+        "windowSeconds",
+        "reviewsPerCandidate",
+        "serialOffsetsSeconds",
+        "runner",
+        "codexVersion",
+        "provider",
+        "authMode",
+        "model",
+        "effort",
+        "perCallTimeoutMs",
+        "thresholds",
+        "target",
+        "releases",
+        "scope",
+        "rollback",
+        "cheatDetectionLimit",
+        "protocolVersion",
+        "proxyVersion",
+        "priorProtocol",
+        "priorBaseline",
+        "reason",
+        "effortVerification",
+        "offlineQualification",
+        "harnessSha256",
+        "observerSha256",
+        "supersedeReason",
+        "primaryObservations",
+        "selectionGuard",
+        "restartLimit"
+      ],
+      "bytes": 4054,
+      "sha256": "19cfdbd65dfe849e53f74345943bf964b580531af7326e1d3394ec4928e439ee"
+    },
+    {
+      "path": "canary/verification.json",
+      "original": "ubuntu-canary/verification.json",
+      "kind": "derived",
+      "fields": [
+        "criteriaSha256",
+        "protocol",
+        "candidates.pr255.source",
+        "candidates.pr255.reviews",
+        "candidates.pr255.verdicts",
+        "candidates.pr255.window.status",
+        "candidates.pr255.window.failure",
+        "candidates.pr255.window.rollback.reason",
+        "candidates.pr255.window.rollback.outcome",
+        "candidates.pr255.window.rollback.goodSource",
+        "candidates.pr255.window.rollback.goodVersion",
+        "candidates.pr255.window.rollback.time",
+        "candidates.pr258"
+      ],
+      "bytes": 1417,
+      "sha256": "e8052de178f47769953611d5fe534bd36b62277519418482a25273fd67bf3016"
+    },
+    {
+      "path": "canary/cleanup.json",
+      "original": "ubuntu-canary/cleanup.json",
+      "kind": "derived",
+      "fields": [
+        "taskProcessesBeforeDelete",
+        "existingCurrentsUnchanged",
+        "deletedAt",
+        "credentialsArchived",
+        "rootAbsent",
+        "taskProcessesAfterDelete"
+      ],
+      "bytes": 198,
+      "sha256": "6810024bdb933fedccd3eace980154e1e4a15ad844f5a3f1d7bb4db13bf64e7f"
+    },
+    {
+      "path": "canary/installed-verification.json",
+      "original": "ubuntu-canary/receipts/final-installed-verification.json",
+      "kind": "derived",
+      "fields": [
+        "time",
+        "verifiedLabels",
+        "criteriaSha256",
+        "existingCurrentsUnchanged",
+        "windowResult"
+      ],
+      "bytes": 690,
+      "sha256": "9909368b7ac752e366a758f196968b0bda7fbf2925cafacaa4180805ce2eee3f"
+    },
+    {
+      "path": "canary/controller-death.json",
+      "original": "ubuntu-canary/receipts/controller-death-active/rollback.json",
+      "kind": "derived",
+      "fields": [
+        "reason",
+        "outcome",
+        "goodSource",
+        "goodVersion",
+        "time"
+      ],
+      "bytes": 197,
+      "sha256": "6207f776f8d98a162da74276993e36b8f516d19884fe8b522dd412a60e11465d"
+    },
+    {
+      "path": "canary/selected-drift.json",
+      "original": "ubuntu-canary/receipts/selected-phase-drift/proof.json",
+      "kind": "derived",
+      "fields": [
+        "detectedWithinSeconds",
+        "pass"
+      ],
+      "bytes": 66,
+      "sha256": "1066662141fb574ad99e14949b58cca88b2f6b1c6b4cba641284e30b0a997ae5"
+    },
+    {
+      "path": "canary/selection-divergence.json",
+      "original": "ubuntu-canary/receipts/selection-divergence/rollback.json",
+      "kind": "derived",
+      "fields": [
+        "reason",
+        "outcome",
+        "time"
+      ],
+      "bytes": 105,
+      "sha256": "f3fd3588008705c11d8a4bb8333a16abaaae2ff95cb21f5b08a72193cbe702e1"
+    },
+    {
+      "path": "offline/criteria.json",
+      "original": "d255-proxy-ubuntu/criteria.json",
+      "kind": "derived",
+      "fields": [
+        "gateClass",
+        "candidateSha",
+        "baseSha",
+        "model",
+        "effort",
+        "runner",
+        "runnerVersion",
+        "fixtures",
+        "draws",
+        "concurrency",
+        "holdout",
+        "thresholds",
+        "residentPropertySuite",
+        "driftReplay",
+        "liveCanary",
+        "matchingBaseline",
+        "supersedes",
+        "newRunNoOldDrawReuse",
+        "rawAttemptPolicy",
+        "instrumentation",
+        "supervisorTimeoutSeconds",
+        "provider",
+        "priorNativeEvidencePreserved",
+        "declaredAt",
+        "sourceManifestSha256",
+        "catalog",
+        "runnerVersionArgument",
+        "supervisorSha256"
+      ],
+      "bytes": 2431,
+      "sha256": "9f1e8af47cdda629aaa11d3c6638eda6885c33d2fbaccbb63fe85397b0196036"
+    },
+    {
+      "path": "offline/identity.json",
+      "original": "d255-proxy-ubuntu/identity.json",
+      "kind": "derived",
+      "fields": [
+        "criteriaSha256",
+        "wrapperSha256",
+        "codexSha256",
+        "version",
+        "node",
+        "sourceManifestSha256",
+        "catalog",
+        "nativeExecutableSha256"
+      ],
+      "bytes": 1065,
+      "sha256": "646b6c682b4f441d05a251212c176cdefc231ea0e98b19e0f97bcd1b710e5586"
+    },
+    {
+      "path": "offline/verdict.json",
+      "original": "d255-proxy-ubuntu/final-verdict.json",
+      "kind": "derived",
+      "fields": [
+        "status",
+        "certificate",
+        "cause",
+        "sourceSha",
+        "gateClass",
+        "model",
+        "effort",
+        "provider",
+        "runnerVersion",
+        "draws",
+        "nativeAttempts",
+        "calls",
+        "retries",
+        "positiveFixtures",
+        "finalMalformed",
+        "intermediateJsonOrSchemaErrors",
+        "intermediateContractErrors",
+        "finalOperational",
+        "nativeNonzeroExits",
+        "cheatDetections",
+        "baitExposureCount",
+        "residentProperties",
+        "pauseSeconds",
+        "promptHash",
+        "fixtureSetHash",
+        "scorerHash",
+        "anticheatVersion",
+        "sourceManifestSha256",
+        "sourceTrackedFiles",
+        "nativeExecutableSha256",
+        "observerSha256",
+        "criteriaSha256",
+        "frozenDiagnosticVerdict",
+        "frozenDiagnosticFailures",
+        "liveCanary",
+        "privateEnvironment",
+        "instrumentation",
+        "setupFailureBeforeAnyDraw"
+      ],
+      "bytes": 2114,
+      "sha256": "2c3de91f8f0c893af14886e95f7c95ef3f17ee6f757814d67bea9c4af6fe89c4"
+    },
+    {
+      "path": "offline/report-metrics.json",
+      "original": "d255-proxy-ubuntu/report.json",
+      "kind": "derived",
+      "fields": [
+        "promptHash",
+        "runner",
+        "model",
+        "effort",
+        "provider",
+        "runnerVersion",
+        "draws",
+        "createdAt",
+        "baseline",
+        "holdout",
+        "gateClass",
+        "gitSha",
+        "fixtureSetHash",
+        "scorerHash",
+        "fixtureTiers",
+        "anticheatVersion",
+        "fixtures",
+        "fixtureKinds"
+      ],
+      "rows": {
+        "at": "results",
+        "fields": [
+          "fixtureId",
+          "draw",
+          "durationMs",
+          "calls",
+          "retries",
+          "score.verdict",
+          "score.mustFindHits",
+          "score.mustFindTotal",
+          "score.formatOk",
+          "score.lineAnchorValid",
+          "score.findingCount",
+          "score.cheatDetected",
+          "score.baitExposed",
+          "score.robustness.candidateAdoption",
+          "score.robustness.finalFindingMarkerEscape"
+        ]
+      },
+      "bytes": 5594,
+      "sha256": "5389c3cfbffcbaf886fb3dddeaa73a9b670886a8e8d06a46c46efb6d6d2ccc22"
+    },
+    {
+      "path": "offline/attempt-index.json",
+      "original": "d255-proxy-ubuntu/attempt-audit.json",
+      "kind": "derived",
+      "fields": [],
+      "rows": {
+        "at": null,
+        "fields": [
+          "pid",
+          "metadataFile",
+          "stage",
+          "startedEpoch",
+          "finishedEpoch",
+          "exitCode",
+          "lastMessageSha256",
+          "hashes"
+        ]
+      },
+      "bytes": 16088,
+      "sha256": "64fef1e4d0b367a2574a409b938ab149440b4f2f088495a206c6fa164a3aa7ec"
+    },
+    {
+      "path": "offline/boundary-audit.json",
+      "original": "d255-proxy-ubuntu/boundary-audit.json",
+      "kind": "derived",
+      "fields": [
+        "functionBodies",
+        "sourceSha256",
+        "replayModuleSha256",
+        "transformation",
+        "attempts",
+        "intermediateContractErrors",
+        "nativeNonzeroExits"
+      ],
+      "bytes": 10503,
+      "sha256": "66e0dc5adbcc3d2c2b6fc79da353b46a0ad909a91dfdb12cc0fa27acb0dbdac8"
+    },
+    {
+      "path": "offline/incident.json",
+      "original": "d255-proxy-ubuntu/instrumentation-incident.json",
+      "kind": "original",
+      "bytes": 510,
+      "sha256": "19fa5ec87e4b90cede4fff1ec3a18dcb99b4acaa53ff68f0399fd515814fea9b"
+    },
+    {
+      "path": "offline/local-export-proof.json",
+      "original": "d255-proxy-ubuntu/local-export-proof.json",
+      "kind": "original",
+      "bytes": 151,
+      "sha256": "5ec01b0cbfd22caeb0d720497353dfa31c919c103289170328ee58f38d37febe"
+    },
+    {
+      "path": "offline/process-proof.json",
+      "original": "d255-proxy-ubuntu/process-proof.json",
+      "kind": "original",
+      "bytes": 515,
+      "sha256": "e6bccb9fe2f6fdd06d3a475ef51be006f8a04138675052a8a207e97848968047"
+    },
+    {
+      "path": "offline/crosschecks.json",
+      "original": "d255-proxy-ubuntu/final-crosschecks.json",
+      "kind": "original",
+      "bytes": 206,
+      "sha256": "31f64085099207aed62712ebf0b2ff24bd01e785332f840104de029d537e1053"
+    },
+    {
+      "path": "offline/property-result.json",
+      "original": "d255-proxy-ubuntu/property-result.json",
+      "kind": "original",
+      "bytes": 123,
+      "sha256": "a1c164dac8b9c9cd7b8b3bc8ac08b0c472ac43eff44ed2511979db638c2d47eb"
+    },
+    {
+      "path": "offline/property.stdout.log",
+      "original": "d255-proxy-ubuntu/property.stdout.log",
+      "kind": "original",
+      "bytes": 1690,
+      "sha256": "95efdfc50a252e6f8a28034bbee4b4e17ce9e7d820438611cf70125ce7bd3a2e"
+    },
+    {
+      "path": "offline/cleanup.json",
+      "original": "d255-proxy-ubuntu/cleanup-proof.json",
+      "kind": "derived",
+      "fields": [
+        "existsAfter",
+        "mainMatchesBefore",
+        "ownedGroupsWithoutLiveMembers"
+      ],
+      "bytes": 97,
+      "sha256": "a0ab04f1a1db84439d761889fd03e0e01ec5afbdd78e25120be029ed05be75ad"
+    }
+  ],
+  "receiptManifests": [
+    {
+      "path": "canary/receipt-manifest.json",
+      "store": "ubuntu-canary",
+      "count": 224
+    },
+    {
+      "path": "offline/receipt-manifest.json",
+      "store": "d255-proxy-ubuntu",
+      "count": 189
+    }
+  ]
+}
