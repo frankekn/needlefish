@@ -78,9 +78,9 @@ function isRegularBlob(entry: TreeEntry | null): entry is TreeEntry {
 // chains, no trees, no submodules. Anything else yields NO_AGENTS rather
 // than feeding the link's target path to the model as fake policy.
 //
-// Callers pass the merge base, not the head (issue #240): policy is what was
-// merged before this change, so a PR cannot rewrite the rules it is reviewed
-// under. Its own AGENTS.md edits are reviewed as code.
+// Commit-based branch and PR callers pass the merge base (issue #240), so
+// a PR cannot rewrite its review policy. Uncommitted review uses HEAD as the
+// policy before the working changes. AGENTS.md edits are reviewed as code.
 export function readAgentsAt(cwd: string, ref: string): string {
   try {
     const entry = treeEntry(cwd, ref, "AGENTS.md");
