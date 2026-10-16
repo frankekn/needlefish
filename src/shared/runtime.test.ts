@@ -47,6 +47,19 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
 });
 
+test("model selectors retain safe punctuation without relaxing other runtime identities", () => {
+  const runtime = reviewRuntime(resolveRunnerConfig({ runner: "opencode", model: "provider/model@2026-01-01#high" }), null);
+  assert.deepEqual(runtime.model, { status: "known", value: "provider/model@2026-01-01#high" });
+  assert.deepEqual(parseReviewRuntime(JSON.parse(JSON.stringify(runtime))).model,
+    { status: "known", value: "provider/model@2026-01-01#high" });
+  assert.deepEqual(parseReviewRuntime({ ...runtime, model: { status: "operator_attested", value: "provider/model@2026-01-01" } }).model,
+    { status: "operator_attested", value: "provider/model@2026-01-01" });
+  for (const field of ["coreVersion", "sourceSha", "runnerVersion", "launcherDigest", "effort", "promptHash"] as const) {
+    assert.deepEqual(parseReviewRuntime({ ...runtime, [field]: { status: "known", value: "identity@revision" } })[field],
+      { status: "unknown" });
+  }
+});
+
 test("timeout configuration rejects values the runtime cache cannot read", (t) => {
   assert.equal(parsePositiveInteger(String(Number.MAX_SAFE_INTEGER), "NEEDLEFISH_TIMEOUT_MS"), Number.MAX_SAFE_INTEGER);
   assert.throws(() => parsePositiveInteger("9007199254740992", "NEEDLEFISH_TIMEOUT_MS"), /NEEDLEFISH_TIMEOUT_MS.*safe integer/);
@@ -85,9 +98,12 @@ test("runtime never publishes endpoints, home paths or passthrough environment",
     "C:\\Users\\private-person\\model",
     "~/private-model",
     "opaque-credential-1234567890",
+    "provider/model@opaque-credential-1234567890",
+    "provider/home/private-person/model@revision",
   ]) {
     const runtime = reviewRuntime(resolveRunnerConfig({ runner: "openai", model }), null);
     assert.deepEqual(runtime.model, { status: "unknown" });
+    assert.deepEqual(parseReviewRuntime({ ...runtime, model: { status: "known", value: model } }).model, { status: "unknown" });
     assert.equal(JSON.stringify(runtime).includes("sentinel"), false);
     assert.equal(JSON.stringify(runtime).includes("private-person"), false);
     assert.equal(JSON.stringify(runtime).includes("private.example"), false);
@@ -120,7 +136,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   ].join("\n"));
   chmodSync(bin, 0o755);
   environment(t, {
-    CODEX_BIN: bin, NEEDLEFISH_RUNNER: "codex", NEEDLEFISH_MODEL: "first-model",
+    CODEX_BIN: bin, NEEDLEFISH_RUNNER: "codex", NEEDLEFISH_MODEL: "provider/model@2026-01-01",
     CODEX_REASONING_EFFORT: "medium", NEEDLEFISH_TIMEOUT_MS: "30000", NEEDLEFISH_REVIEW_TIMEOUT_MS: "60000",
     CODEX_PROXY_BASE_URL: undefined, CODEX_PROXY_API_KEY: undefined, NEEDLEFISH_CODEX_PROXY_REQUIRED: undefined,
     NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1",
@@ -138,13 +154,13 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
     process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "90000";
   });
   assert.equal(result.verdict, "pass");
-  assert.deepEqual(result.runtime?.model, { status: "known", value: "first-model" });
+  assert.deepEqual(result.runtime?.model, { status: "known", value: "provider/model@2026-01-01" });
   assert.deepEqual(result.runtime?.effort, { status: "known", value: "high" });
   assert.equal(result.runtime?.runner, "codex");
   assert.equal(result.runtime?.callTimeoutMs, 30000);
   assert.equal(result.runtime?.reviewBudgetMs, 60000);
   assert.deepEqual(result.stats?.map(({ runner, model }) => ({ runner, model })), [
-    { runner: "codex", model: "first-model" }, { runner: "codex", model: "first-model" },
+    { runner: "codex", model: "provider/model@2026-01-01" }, { runner: "codex", model: "provider/model@2026-01-01" },
   ]);
   const calls: unknown = readFileSync(capture, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   assert.ok(Array.isArray(calls));
@@ -152,7 +168,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   for (const call of calls) {
     assert.ok(typeof call === "object" && call !== null && "args" in call && "prompt" in call);
     assert.ok(Array.isArray(call.args));
-    assert.equal(call.args[call.args.indexOf("-m") + 1], "first-model");
+    assert.equal(call.args[call.args.indexOf("-m") + 1], "provider/model@2026-01-01");
     assert.deepEqual(call.args.filter((arg: unknown) => typeof arg === "string" && arg.startsWith("model_reasoning_effort=")), ['model_reasoning_effort="high"']);
     assert.equal(typeof call.prompt, "string");
     assert.equal(String(call.prompt).includes('"runtime"'), false);
