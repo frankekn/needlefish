@@ -28,19 +28,19 @@ function makeRepo(t: TestContext): Bundle {
 	t.after(() => rmSync(tmp, { recursive: true, force: true }));
 	const repo = initRepo(tmp);
 	mkdirSync(path.join(repo, "src"));
-	writeFileSync(path.join(repo, "src", "app.ts"), "const removedLine = legacyCall();\n");
+	writeFileSync(path.join(repo, "src", "app.ts"), "const removedLine = legacyCall();\nconst retained = stableCall();\n");
 	writeFileSync(path.join(repo, "src", "lib.ts"), "export const untouched = stableValue();\n");
 	commitAll(repo, "base");
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
-	writeFileSync(path.join(repo, "src", "app.ts"), "// header\nconst total = price * quantity;\n");
+	writeFileSync(path.join(repo, "src", "app.ts"), "// header\nconst total = price * quantity;\nconst retained = stableCall();\n");
 	writeFileSync(path.join(repo, "src", "other.ts"), "// header\n\nconst unique = onlyInOther();\n");
 	commitAll(repo, "feature");
 	return {
 		repoPath: repo,
 		baseSha,
 		headSha: headSha(repo),
-		patch: "",
+		patch: gitText(["diff", baseSha, "HEAD"], repo),
 		patchStat: "",
 		changedFiles: [
 			{ path: "src/app.ts", surface: "source" },
@@ -180,4 +180,63 @@ test("checkQuotes verifies a cited line before an overflowing whole-tree search"
 	const [unchecked] = checkQuotes([{ ...FINDING, file: "absent.ts", quote }], head);
 	assert.deepEqual(unchecked.quoteCheck, { status: "unchecked" });
 	assert.equal(unchecked.replacement, undefined);
+});
+
+
+test("checkQuotes relocates a later quote in a broad range instead of retaining its replacement", (t) => {
+	const bundle = makeRepo(t);
+	const [finding] = checkQuotes([{ ...FINDING, lineStart: 1, lineEnd: 2, quote: "const total = price * quantity;" }], bundle);
+	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/app.ts:1" });
+	assert.equal(finding.lineStart, 2);
+	assert.equal(finding.lineEnd, 2);
+	assert.equal(finding.replacement, undefined);
+});
+
+test("checkQuotes rejects a base quote after lineStart in a broad range", (t) => {
+	const bundle = makeRepo(t);
+	const [finding] = checkQuotes([{ ...FINDING, lineStart: 1, lineEnd: 2, quote: "const retained = stableCall();" }], bundle);
+	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
+	assert.equal(finding.lineStart, 1);
+	assert.equal(finding.lineEnd, 2);
+	assert.equal(finding.replacement, undefined);
+});
+
+test("checkQuotes does not relocate onto unchanged context in a changed file", (t) => {
+	const bundle = makeRepo(t);
+	const [finding] = checkQuotes([{ ...FINDING, file: "src/other.ts", lineStart: 7, lineEnd: 9, quote: "const retained = stableCall();" }], bundle);
+	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
+	assert.equal(finding.file, "src/other.ts");
+	assert.equal(finding.lineStart, 7);
+	assert.equal(finding.replacement, undefined);
+});
+
+
+test("checkQuotes does not relocate onto the unchanged line after a deletion", (t) => {
+	const bundle = makeRepo(t);
+	writeFileSync(path.join(bundle.repoPath, "src", "app.ts"), "const retained = stableCall();\n");
+	commitAll(bundle.repoPath, "only deletion");
+	const [finding] = checkQuotes([{ ...FINDING, file: "src/other.ts", quote: "const retained = stableCall();" }], { ...bundle, headSha: headSha(bundle.repoPath) });
+	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
+	assert.equal(finding.file, "src/other.ts");
+	assert.equal(finding.replacement, undefined);
+});
+
+
+test("checkQuotes distinguishes retained and added lines across a quoted-path rename", (t) => {
+	const bundle = makeRepo(t);
+	const renamed = 'src/new ["名"].ts';
+	gitText(["mv", "src/lib.ts", renamed], bundle.repoPath);
+	writeFileSync(path.join(bundle.repoPath, renamed), "export const untouched = stableValue();\nconst renamedAdded = freshCall();\n");
+	commitAll(bundle.repoPath, "rename and add");
+	const head: Bundle = { ...bundle, headSha: headSha(bundle.repoPath), changedFiles: [...bundle.changedFiles, { path: renamed, surface: "source" }] };
+	const [unchanged, added] = checkQuotes([
+		{ ...FINDING, quote: "export const untouched = stableValue();" },
+		{ ...FINDING, quote: "const renamedAdded = freshCall();" },
+	], head);
+	assert.deepEqual(unchanged.quoteCheck, { status: "not_found" });
+	assert.equal(unchanged.file, "src/app.ts");
+	assert.deepEqual(added.quoteCheck, { status: "moved", from: "src/app.ts:1" });
+	assert.equal(added.file, renamed);
+	assert.equal(added.lineStart, 2);
+	assert.equal(added.replacement, undefined);
 });

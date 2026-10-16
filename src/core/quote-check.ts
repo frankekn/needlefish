@@ -49,6 +49,22 @@ function grepAt(repoPath: string, ref: string, quote: string, file?: string): Hi
 	return hits;
 }
 
+function isChangedLine(bundle: Bundle, hit: Hit): boolean | null {
+	const res = spawnSync(
+		"git",
+		["--literal-pathspecs", "diff", "--follow", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=0", "--inter-hunk-context=0", bundle.baseSha, bundle.headSha, "--", hit.file],
+		{ cwd: bundle.repoPath, encoding: "utf8", maxBuffer: 1024 * 1024 * 16, timeout: 10_000 },
+	);
+	if (res.error || res.status !== 0) return null;
+	return res.stdout.split("\n").some((line) => {
+		const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+		if (!hunk) return false;
+		const start = Number(hunk[1]);
+		const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
+		return hit.line >= start && hit.line < start + count;
+	});
+}
+
 function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>): Finding {
 	const quote = finding.quote?.trim();
 	if (!quote) return finding;
@@ -56,7 +72,7 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 	if (quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
 	const citedHits = grepAt(bundle.repoPath, bundle.headSha, quote, finding.file);
 	if (!citedHits) return unchecked;
-	const atLocation = (hit: Hit) => hit.text.trim() === quote && hit.line >= finding.lineStart && hit.line <= finding.lineEnd;
+	const atLocation = (hit: Hit) => hit.text.trim() === quote && hit.line === finding.lineStart;
 	if (citedHits.some(atLocation)) return { ...finding, quoteCheck: { status: "matched" } };
 	// Removed source can validate a finding, but never a replacement of head lines.
 	const baseHits = grepAt(bundle.repoPath, bundle.baseSha, quote, finding.file);
@@ -67,6 +83,9 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 	const wholeHits = headHits.filter((hit) => hit.text.trim() === quote);
 	const [hit] = wholeHits;
 	if (wholeHits.length === 1 && changed.has(hit.file)) {
+		const changedLine = isChangedLine(bundle, hit);
+		if (changedLine === null) return unchecked;
+		if (!changedLine) return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
 		return {
 			...finding,
 			file: hit.file,
