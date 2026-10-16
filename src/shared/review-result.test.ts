@@ -40,34 +40,16 @@ test("parseReviewResult preserves valid legacy whitespace and blocking residuals
 	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
 });
 
-test("parseReviewResult rejects blank summaries and checked-only blanks", () => {
-	for (const summary of ["", " \t\r\n\u3000"]) {
-		assert.throws(() => parseReviewResult(serialized({ summary })), /summary blank/);
-	}
-	for (const checked of [[], [""], [" ", "\t\n\u3000"]]) {
-		assert.throws(
-			() => parseReviewResult(serialized({ checked })),
-			/checked list has no non-blank items/,
-		);
-	}
-});
-
-test("parseReviewResult requires coverage even with findings or blocking residuals", () => {
+test("parseReviewResult preserves the published v1 contract for blank legacy coverage", () => {
 	for (const overrides of [
-		{ verdict: "needs_human", residualRisks: [{ text: "not reviewed", blocks: true }] },
-		{
-			verdict: "changes_requested",
-			findings: [{
-				severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
-				lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
-				suggestedFix: "f", validation: "",
-			}],
-		},
+		{ summary: "" },
+		{ summary: " \t\r\n\u3000" },
+		{ checked: [] },
+		{ checked: [""] },
+		{ checked: [" ", "\t\n\u3000"] },
 	]) {
-		assert.throws(
-			() => parseReviewResult(serialized({ ...overrides, checked: [" "] })),
-			/checked list has no non-blank items/,
-		);
+		const legacy = { ...baseResult(), ...overrides };
+		assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
 	}
 });
 

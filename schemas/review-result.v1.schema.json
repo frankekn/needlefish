@@ -20,7 +20,7 @@
       "description": "Derived deterministically from findings and residualRisks.",
       "enum": ["pass", "changes_requested", "needs_human"]
     },
-    "summary": { "type": "string", "pattern": "\\S" },
+    "summary": { "type": "string" },
     "findings": {
       "type": "array",
       "items": { "$ref": "#/$defs/finding" }
@@ -28,8 +28,7 @@
     "checked": {
       "description": "Evidence strings describing what the review examined.",
       "type": "array",
-      "items": { "type": "string" },
-      "contains": { "type": "string", "pattern": "\\S" }
+      "items": { "type": "string" }
     },
     "residualRisks": {
       "type": "array",

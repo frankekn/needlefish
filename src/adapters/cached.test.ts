@@ -143,6 +143,18 @@ test("cached commands reject blank legacy content without printing a verdict", (
     { checked: [" \t", "\n\u3000"] },
     { checked: ["inspected diff", null] },
     { summary: " ", checked: [""] },
+    {
+      verdict: "needs_human", checked: [" "],
+      residualRisks: [{ text: "not reviewed", blocks: true }],
+    },
+    {
+      verdict: "changes_requested", checked: [" "],
+      findings: [{
+        severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
+        lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
+        suggestedFix: "f", validation: "",
+      }],
+    },
   ];
   for (const overrides of invalid) {
     const file = fixture(t, baseResult(overrides));
@@ -150,7 +162,7 @@ test("cached commands reject blank legacy content without printing a verdict", (
       const result = runCli([command, file]);
       assert.equal(result.status, 1, `${command} ${JSON.stringify(overrides)}: ${result.stdout}`);
       assert.equal(result.stdout, "");
-      assert.match(result.stderr, /invalid cached review.*malformed review result/);
+      assert.match(result.stderr, /invalid cached review.*malformed review/);
     }
   }
 });
