@@ -51,7 +51,7 @@ if(endpoint.includes('/contents/.github/workflows?'))out(endpoint.endsWith('ref=
 if(endpoint.includes('/contents/.github/workflows/slow'))out({encoding:'base64',content:Buffer.from('name: unrelated CI').toString('base64')});
 if(endpoint.includes('/contents/.github/workflows/custom.yml'))out({encoding:'base64',content:Buffer.from('uses: frankekn/needlefish@custom').toString('base64')});
 if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main'},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}]:[]);
-if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch)out({object:{sha:'setup-sha'}});missing()}
+if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch){state.branchReads=(state.branchReads||0)+1;save();out({object:{sha:state.branchMoves&&state.branchReads>1?'moved-sha':'setup-sha'}})}missing()}
 if(endpoint.endsWith('/git/ref/heads/main'))out({object:{sha:'base-sha'}});
 if(endpoint.endsWith('/git/commits/base-sha'))out({tree:{sha:'base-tree'}});
 if(endpoint.endsWith('/git/commits/setup-sha'))out({message:state.unowned?'human commit':'Needlefish setup template 1',parents:[{sha:'base-sha'}]});
@@ -408,14 +408,17 @@ for (const initial of [
     const failure = JSON.parse(result.stdout);
     assert.equal(failure.schemaVersion, 1);
     assert.equal(failure.phase, "error");
-    assert.match(failure.message, /workflow|template/i);
+    assert.equal(failure.message, initial.pr
+      ? "An existing setup PR has unrecognized ownership, contents or target branch. Inspect it before setup; it was not changed."
+      : initial.parentDuplicate ? "Another workflow (custom.yml) already configures Needlefish. Ask its owner to reconcile it."
+      : initial.parentWorkflow === "unsupported" ? "Existing workflow is not a supported regular file. Ask its owner to inspect it."
+      : "Existing needlefish.yml differs from the known template. Preserve it and ask its owner to reconcile changes.");
     assert.deepEqual(f.history().filter(call => call.args.includes("--method")), []);
   });
 }
 
-for (const parentWorkflow of ["previous", "current"]) {
-  test(`setup preserves a known template at the immutable parent ${parentWorkflow}`, t => {
-    const f = fixture(t, { parentWorkflow });
+test("setup preserves the previous template at the immutable parent", t => {
+    const f = fixture(t, { parentWorkflow: "previous" });
     const result = f.run(["create-pr", ...remote, "--confirm"]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.equal(JSON.parse(result.stdout).phase, "pr_created");
@@ -423,5 +426,26 @@ for (const parentWorkflow of ["previous", "current"]) {
     assert.equal(writes.length, 4);
     assert.deepEqual(JSON.parse(writes[1]!.input).parents, ["base-sha"]);
     assert.ok(f.history().some(call => call.args.some(arg => arg.endsWith("needlefish.yml?ref=base-sha"))));
+});
+
+test("a moved owned branch is not reused after parent inspection", t => {
+  const f = fixture(t, { branch: true, branchMoves: true });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    schemaVersion: 1, phase: "error",
+    message: "The setup branch changed during setup. No PR was created; inspect and retry.",
   });
-}
+  assert.deepEqual(f.history().filter(call => call.args.includes("--method")), []);
+});
+
+test("a concurrently installed current workflow creates no empty setup commit", t => {
+  const f = fixture(t, { parentWorkflow: "current" });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    schemaVersion: 1, phase: "error",
+    message: "The selected revision already contains the current setup workflow. Nothing was written. Refresh status before retrying.",
+  });
+  assert.deepEqual(f.history().filter(call => call.args.includes("--method")), []);
+});

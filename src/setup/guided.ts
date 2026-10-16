@@ -109,6 +109,26 @@ function actionsPolicy(deadline: number, repository: string, admin: boolean) {
     ? { allowed: true, reason: "The selected-actions policy permits the pinned workflow and composite dependencies. Hosted-runner capacity and AI quota remain unverified." }
     : { allowed: false, reason: `Ask a repository or organization administrator to permit these pinned actions: ${denied.join(", ")}. Verified-publisher policy alone is not assumed to allow these repositories.` };
 }
+function inspectWorkflows(deadline: number, repository: string, ref: string) {
+  const existing = workflow(deadline, repository, ref);
+  let conflict: string | null = existing && existing.content !== GITHUB_WORKFLOW && existing.content !== PREVIOUS_GITHUB_WORKFLOW
+    ? "Existing needlefish.yml differs from the known template. Preserve it and ask its owner to reconcile changes." : null;
+  const files = api(deadline, `repos/${repository}/contents/.github/workflows?ref=${encodeURIComponent(ref)}`, undefined, undefined, true);
+  if (files !== undefined) {
+    for (const entry of array(files)) {
+      const file = object(entry);
+      const name = string(file.name);
+      if (name === "needlefish.yml" || !/\.ya?ml$/.test(name)) continue;
+      if (file.type !== "file") { conflict = "A workflow entry is not a regular file. Ask its owner to inspect the workflows directory."; continue; }
+      const raw = object(required(deadline, `repos/${repository}/contents/.github/workflows/${encodeURIComponent(name)}?ref=${encodeURIComponent(ref)}`));
+      if (raw.encoding !== "base64") throw new Error("Could not inspect existing workflows.");
+      const content = Buffer.from(string(raw.content), "base64").toString("utf8").replace(/^\s*#.*$/gm, "");
+      if (/frankekn\/needlefish(?:@|\/)/i.test(content) || (/needlefish/i.test(content) && /--github/.test(content))) conflict = `Another workflow (${name}) already configures Needlefish. Ask its owner to reconcile it.`;
+    }
+  }
+  return { existing, conflict };
+}
+
 function setupBranch(deadline: number, repository: string, defaultBranch: string, requireOpenDiff: boolean) {
   const value = api(deadline, `repos/${repository}/git/ref/heads/${BRANCH}`, undefined, undefined, true);
   if (value === undefined) return undefined;
@@ -118,7 +138,10 @@ function setupBranch(deadline: number, repository: string, defaultBranch: string
   if (commit.message !== OWNER || content?.content !== GITHUB_WORKFLOW) return { head, conflict: "The setup branch contains unrecognized changes. Preserve it and ask its owner to inspect it." };
   const parents = array(commit.parents ?? null).map(object);
   if (parents.length !== 1) return { head, conflict: "The setup commit has unrecognized parentage. Preserve it and ask its owner to inspect it." };
-  const original = object(required(deadline, `repos/${repository}/compare/${encodeURIComponent(string(parents[0]?.sha))}...${encodeURIComponent(head)}`));
+  const parent = string(parents[0]?.sha);
+  const inspected = inspectWorkflows(deadline, repository, parent);
+  if (inspected.conflict) return { head, conflict: inspected.conflict };
+  const original = object(required(deadline, `repos/${repository}/compare/${encodeURIComponent(parent)}...${encodeURIComponent(head)}`));
   const originalFiles = array(original.files ?? null).map(object);
   let conflict = originalFiles.length !== 1 || originalFiles[0]?.filename !== PATH || original.total_commits !== 1
     ? "The setup commit has additional changes. Preserve it and ask its owner to inspect it." : null;
@@ -138,22 +161,9 @@ export function inspectGithubSetup(requestedRepository: string, deadline = perfo
   const admin = repo.permissions !== undefined && object(repo.permissions).admin === true;
   const policy = actionsPolicy(deadline, repository, admin);
   const actions = policy.allowed;
-  const existing = workflow(deadline, repository, defaultBranch);
-  let conflict: string | null = existing && existing.content !== GITHUB_WORKFLOW && existing.content !== PREVIOUS_GITHUB_WORKFLOW
-    ? "Existing needlefish.yml differs from the known template. Preserve it and ask its owner to reconcile changes." : null;
-  const files = api(deadline, `repos/${repository}/contents/.github/workflows?ref=${encodeURIComponent(defaultBranch)}`, undefined, undefined, true);
-  if (files !== undefined) {
-    for (const entry of array(files)) {
-      const file = object(entry);
-      const name = string(file.name);
-      if (name === "needlefish.yml" || !/\.ya?ml$/.test(name)) continue;
-      if (file.type !== "file") { conflict = "A workflow entry is not a regular file. Ask its owner to inspect the workflows directory."; continue; }
-      const raw = object(required(deadline, `repos/${repository}/contents/.github/workflows/${encodeURIComponent(name)}?ref=${encodeURIComponent(defaultBranch)}`));
-      if (raw.encoding !== "base64") throw new Error("Could not inspect existing workflows.");
-      const content = Buffer.from(string(raw.content), "base64").toString("utf8").replace(/^\s*#.*$/gm, "");
-      if (/frankekn\/needlefish(?:@|\/)/i.test(content) || (/needlefish/i.test(content) && /--github/.test(content))) conflict = `Another workflow (${name}) already configures Needlefish. Ask its owner to reconcile it.`;
-    }
-  }
+  const inspected = inspectWorkflows(deadline, repository, defaultBranch);
+  const existing = inspected.existing;
+  let conflict = inspected.conflict;
   let secret: "present" | "missing" | "unknown" = "unknown";
   if (admin) {
     const metadata = api(deadline, `repos/${repository}/actions/secrets/${SECRET}`, undefined, undefined, true);
@@ -191,6 +201,9 @@ function createSetupPr(deadline: number, repository: string) {
   if (branchHead === null) {
     const base = object(required(deadline, `${endpoint}/git/ref/heads/${encodeURIComponent(status.defaultBranch)}`));
     const parent = string(object(base.object ?? null).sha);
+    const inspected = inspectWorkflows(deadline, status.repository, parent);
+    if (inspected.conflict) throw new Error(inspected.conflict);
+    if (inspected.existing?.content === GITHUB_WORKFLOW) throw new Error("The selected revision already contains the current setup workflow. Nothing was written. Refresh status before retrying.");
     const commit = object(required(deadline, `${endpoint}/git/commits/${parent}`));
     const tree = object(required(deadline, `${endpoint}/git/trees`, { base_tree: string(object(commit.tree ?? null).sha),
       tree: [{ path: PATH, mode: "100644", type: "blob", content: GITHUB_WORKFLOW }] }, "POST"));
