@@ -49,6 +49,7 @@ test("setup previews one pinned hosted workflow without writing to the repositor
   assert.equal(yaml.getIn(["jobs", "review", "steps", 3, "with", "model"]), "gpt-5.6-terra");
   assert.equal(yaml.getIn(["jobs", "review", "steps", 3, "with", "codex_reasoning_effort"]), "high");
   assert.equal(yaml.getIn(["jobs", "review", "steps", 3, "env", "CODEX_API_KEY"]), "${{ secrets.NEEDLEFISH_CODEX_API_KEY }}");
+  assert.equal(yaml.getIn(["jobs", "review", "steps", 3, "env", "NEEDLEFISH_REVIEW_TIMEOUT_MS"]), "1800000");
 });
 
 test("the workflow fails closed before checkout for fork, bot, and untrusted authors", () => {

@@ -58,6 +58,7 @@ jobs:
           codex_reasoning_effort: high
         env:
           CODEX_API_KEY: \${{ secrets.NEEDLEFISH_CODEX_API_KEY }}
+          NEEDLEFISH_REVIEW_TIMEOUT_MS: "1800000"
 `;
 
 export type GithubSetupPlan =
