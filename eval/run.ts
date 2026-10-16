@@ -52,6 +52,7 @@ interface ReviewFamilyAggregates {
 	readonly lineAnchorValidRateByDefectClass: Readonly<Record<string, number>>;
 }
 import {
+	comparisonEnvironmentError,
 	hasConsistentCheatDetection,
 	hasResolvedModelIdentity,
 	type ReportAttestation,
@@ -727,15 +728,28 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 			throw error;
 		}
 	});
-	const privateIdentity = JSON.stringify(privateIdentities);
-	if (args.environmentIdentity !== null && privateConfigurationIdentities.has(args) && privateConfigurationIdentities.get(args) !== privateIdentity) throw new Error("runner environment changed during the eval run");
-	privateConfigurationIdentities.set(args, privateIdentity);
 	if (args.runner === "pi") {
 		const usesAuthStore = piUsesAuthStore(args);
 		identities.push(["PI_AUTH_SOURCE", usesAuthStore ? "auth-store" : "environment"]);
-		if (!usesAuthStore) return identities;
-		identities.push(["PI_AUTH_JSON", "<required>"]);
+		if (usesAuthStore) {
+			identities.push(["PI_AUTH_JSON", "<required>"]);
+			let identity = "missing";
+			if (home) {
+				try {
+					const auth: unknown = JSON.parse(readFileSync(path.join(home, ".pi", "agent", "auth.json"), "utf8"));
+					const provider = args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+					const entry: unknown = typeof auth === "object" && auth !== null && !Array.isArray(auth) ? Object.getOwnPropertyDescriptor(auth, provider)?.value : undefined;
+					if (entry !== undefined) identity = createHash("sha256").update(JSON.stringify(entry)).digest("hex");
+				} catch (error) {
+					if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) throw new Error("private runner authentication identity is unreadable");
+				}
+			}
+			privateIdentities.push(["PI_AUTH_JSON", identity]);
+		}
 	}
+	const privateIdentity = JSON.stringify(privateIdentities);
+	if (args.environmentIdentity !== null && privateConfigurationIdentities.has(args) && privateConfigurationIdentities.get(args) !== privateIdentity) throw new Error("runner environment changed during the eval run");
+	privateConfigurationIdentities.set(args, privateIdentity);
 	return identities;
 }
 
@@ -1291,10 +1305,10 @@ export function writeReport(
 	return report;
 }
 
-export function compare(baselinePath: string, candidate: Report): void {
-	let baseline: Report;
+export function compare(baselinePath: string, candidate: Report & ReportAttestation): void {
+	let baseline: Report & ReportAttestation;
 	try {
-		baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
+		baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
 	} catch (error) {
 		throw new Error(`failed to parse baseline report ${baselinePath}`, {
 			cause: error,
@@ -1344,6 +1358,8 @@ export function compare(baselinePath: string, candidate: Report): void {
 		["baseline", baseline],
 		["candidate", candidate],
 	] as const) {
+		const environmentError = comparisonEnvironmentError(report);
+		if (environmentError) throw new Error(`${label} report has ${environmentError}; cross-report comparison is unavailable.`);
 		if (report.anticheatVersion !== ANTICHEAT_VERSION) {
 			throw new Error(
 				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,

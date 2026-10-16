@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -44,4 +44,32 @@ test("source install release metadata retains the public distribution map withou
   assert.deepEqual(release.runtimePublication, JSON.parse(readFileSync("runtime-publication.json", "utf8")));
   assert.deepEqual(release.runtimePublication.recommendedInstallation, { selection: "operator-selected", identity: "unknown", qualification: "unqualified" });
   assert.equal(release.sha, "a".repeat(40));
+});
+
+
+test("source install reads the cloned public map when invoked from an unrelated working directory", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-install-cwd-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fixture = path.join(root, "source");
+  const home = path.join(root, "test-home");
+  const caller = path.join(root, "caller");
+  const bin = path.join(root, "fakebin");
+  for (const dir of [fixture, home, caller, bin, path.join(fixture, "bin")]) mkdirSync(dir, { recursive: true });
+  const manifest = JSON.parse(readFileSync("runtime-publication.json", "utf8"));
+  writeFileSync(path.join(fixture, "runtime-publication.json"), JSON.stringify(manifest));
+  writeFileSync(path.join(caller, "runtime-publication.json"), JSON.stringify({ version: "WRONG-CALLER" }));
+  writeFileSync(path.join(fixture, "package.json"), JSON.stringify({ version: manifest.packageVersion }));
+  writeFileSync(path.join(fixture, "bin", "needlefish"), "#!/bin/sh\nexit 0\n");
+  chmodSync(path.join(fixture, "bin", "needlefish"), 0o755);
+  writeFileSync(path.join(bin, "pnpm"), "#!/bin/sh\nexit 0\n");
+  chmodSync(path.join(bin, "pnpm"), 0o755);
+  for (const args of [["init", "-b", "main"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture"]]) {
+    const git = spawnSync("git", args, { cwd: fixture, encoding: "utf8" });
+    assert.equal(git.status, 0, git.stderr);
+  }
+  const result = spawnSync("sh", [path.resolve("scripts/deploy-ubuntu.sh")], { cwd: caller, encoding: "utf8", env: { ...process.env, HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`, NEEDLEFISH_REPO_URL: fixture, NEEDLEFISH_REF: "main" } });
+  assert.equal(result.status, 0, result.stderr);
+  const release = JSON.parse(readFileSync(path.join(home, ".local", "share", "needlefish", "current", "release.json"), "utf8"));
+  assert.deepEqual(release.runtimePublication, manifest);
+  assert.equal(release.version, manifest.packageVersion);
 });

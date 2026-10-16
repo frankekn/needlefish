@@ -48,7 +48,7 @@ opencode、OpenAI 相容 HTTP、Grok、pi 與 ACP agent。
 </p>
 
 <p align="center">
-  <sub>Benchmark 選用組態（GPT-5.6 Terra，high effort）在植入缺陷的 eval fixture 上的真實 finding——<a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>。</sub>
+  <sub>GPT-5.6 Terra high-effort benchmark 在植入缺陷的 eval fixture 上的真實 finding——<a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>。</sub>
 </p>
 
 ## 快速開始
@@ -148,7 +148,7 @@ Balanced score 90.47%、recall 93.44%、Tier-1 100%、誤報 12.50%、
 ACP 只是橋接協定，Harness 欄顯示 Muse Code。原始報告保留，公開版本補上
 執行後的 environment attestation，歷史 x1 與額度報告仍分開不排名。詳見
 [完整 x3 結果](eval/RESULTS.md#2026-10-13-muse-code-wonder-10-high-ranked-x3)。
-發布不新增 Muse 呼叫，也不切換部署 lane。
+發布不新增 Muse 呼叫，也不更動 benchmark 選用組態。
 
 解讀：Grok 4.6 在準確度與 noise 上領先，但每次審查慢 3.7 倍，且需要
 runner 上已登入的 Grok CLI，因此仍維持 candidate。Terra high 與 Sol 在

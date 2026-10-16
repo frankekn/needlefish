@@ -11,6 +11,16 @@ export interface ReportAttestation {
   readonly publicEnvironmentAttestation?: unknown;
 }
 
+export function comparisonEnvironmentError(report: ReportAttestation): string | null {
+  if (report.privateEnvironment === true) return "private runner environment identity";
+  if (report.runnerEnvironment === undefined) return null;
+  let pairs: unknown;
+  try { pairs = JSON.parse(report.runnerEnvironment); } catch { return "unknown runner environment identity"; }
+  if (!Array.isArray(pairs) || pairs.some((entry) => !Array.isArray(entry) || entry.length !== 2 || entry.some((value) => typeof value !== "string"))) return "unknown runner environment identity";
+  if (pairs.some((entry) => entry[1] === "<required>" || entry[1] === "<redacted>")) return "private runner environment identity";
+  return null;
+}
+
 const RUNNER_MODEL_ENV: Partial<Record<Report["runner"], string>> = {
   codex: "CODEX_MODEL",
   claude: "CLAUDE_MODEL",

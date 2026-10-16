@@ -863,7 +863,7 @@ function chart(qualifiedLanes: readonly Lane[], disqualifiedLanes: readonly Lane
     });
     yCursor += lanes.length * rowH;
   });
-  return `<figure class="plot" aria-labelledby="plot-title"><figcaption id="plot-title">Balanced Review Accuracy by lane</figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Balanced Review Accuracy with 95% confidence intervals for ${total} scored lanes on a 0 to 100 scale. Hollow bars missed a hard gate.">${grid}${parts.join("")}</svg><p>Bars show Balanced Review Accuracy with 95% confidence whiskers on a 0–100 scale. Orange ranks first, the green mark ships in the current release, and hollow bars missed a hard gate but keep their score for comparison, with the failed gate noted beside the effort. The table remains canonical.</p></figure>`;
+  return `<figure class="plot" aria-labelledby="plot-title"><figcaption id="plot-title">Balanced Review Accuracy by lane</figcaption><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Balanced Review Accuracy with 95% confidence intervals for ${total} scored lanes on a 0 to 100 scale. Hollow bars missed a hard gate.">${grid}${parts.join("")}</svg><p>Bars show Balanced Review Accuracy with 95% confidence whiskers on a 0–100 scale. Orange ranks first, the green mark identifies the benchmark-selected configuration, and hollow bars missed a hard gate but keep their score for comparison, with the failed gate noted beside the effort. The table remains canonical.</p></figure>`;
 }
 
 function laneRows(lanes: readonly Lane[], ranked: boolean): string {

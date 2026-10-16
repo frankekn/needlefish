@@ -6,8 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { acpRuntimeIdentity, matchRuntimeIdentity, parsePublicRuntimeIdentity } from "./runtime-identity";
 import { matchQualifiedConfiguration } from "./runtime-qualification";
-import { runnerEnvironmentAttestationError } from "./report-integrity";
-import { parseArgs, runnerEnvironment, writeReport } from "../run";
+import { comparisonEnvironmentError, runnerEnvironmentAttestationError } from "./report-integrity";
+import { renderResults } from "../gen-results";
+import { score } from "./score";
+import { compare, parseArgs, resumeSlots, runnerEnvironment, writeReport } from "../run";
 
 function launcher() {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-public-launcher-"));
@@ -91,4 +93,55 @@ test("eval metadata labels reject private URLs and home paths before reports or 
   for (const value of [url.href, "/Users/private/provider", "/home/private/provider"]) {
     assert.throws(() => parseArgs(["--provider", value, "--route", "public", "--runner-version", "Agent 1.2.3"]), { message: "--provider requires a public label, not a private endpoint or path" });
   }
+});
+
+test("private Pi auth-store changes are detected in memory without publishing its identity", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-private-auth-identity-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const directory = path.join(root, ".pi", "agent");
+  mkdirSync(directory, { recursive: true });
+  const args = parseArgs(["--runner", "pi", "--env", `HOME=${root}`, "--env", "PI_AUTH_MODE=oauth", "--env", "PI_PROVIDER=selected"]);
+  const missing = runnerEnvironment(args);
+  args.environmentIdentity = missing;
+  writeFileSync(path.join(directory, "auth.json"), JSON.stringify({ selected: { type: "oauth", access: "SYNTHETIC-FIRST" } }));
+  assert.throws(() => runnerEnvironment(args), { message: "runner environment changed during the eval run" });
+  args.environmentIdentity = null;
+  const initial = runnerEnvironment(args);
+  args.environmentIdentity = initial;
+  writeFileSync(path.join(directory, "auth.json"), JSON.stringify({ selected: { type: "oauth", access: "SYNTHETIC-FIRST" }, unrelated: { type: "oauth", access: "SYNTHETIC-OTHER" } }));
+  assert.equal(runnerEnvironment(args), initial);
+  assert.equal(initial.includes("SYNTHETIC-FIRST"), false);
+  assert.equal(initial.includes(createHash("sha256").update(JSON.stringify({ type: "oauth", access: "SYNTHETIC-FIRST" })).digest("hex")), false);
+  assert.equal(new Map<string, string>(JSON.parse(initial)).get("PI_AUTH_JSON"), "<required>");
+  writeFileSync(path.join(directory, "auth.json"), JSON.stringify({ selected: { type: "oauth", access: "SYNTHETIC-SECOND" } }));
+  assert.throws(() => runnerEnvironment(args), { message: "runner environment changed during the eval run" });
+});
+
+test("identical private placeholders cannot authorize cross-report comparison or resume", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-private-comparison-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, ".pi", "agent");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "models.json");
+  const spec = { id: "private-comparison", kind: "negative" as const, defectClass: "clean", description: "private identity comparison", baseFiles: { "src/value.ts": "export const value = 1;" }, headFiles: { "src/value.ts": "export const value = 2;" }, expected: { verdict: "pass" as const } };
+  const buildArgs = (report: string, resume?: string) => parseArgs(["--runner", "pi", "--model", "test-model", "--effort", "high", "--provider", "Pi test", "--route", "private-test", "--runner-version", "Pi 1.0", "--env", `HOME=${root}`, "--env", "PI_AUTH_MODE=proxy", "--env", "PI_PROVIDER=test", "--report", report, ...(resume ? ["--resume", resume] : [])]);
+  const firstPath = path.join(root, "first.json");
+  writeFileSync(file, JSON.stringify({ providers: { test: { apiKey: "SYNTHETIC-ONE" } } }));
+  const draw = { fixtureId: spec.id, draw: 0, score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id), durationMs: 1, calls: 1, retries: 0 };
+  const first = { ...writeReport(buildArgs(firstPath), [draw], [spec]), anticheatVersion: 2 };
+  writeFileSync(firstPath, JSON.stringify(first));
+  for (const [label, secret] of [["same", "SYNTHETIC-ONE"], ["different", "SYNTHETIC-TWO"]]) {
+    writeFileSync(file, JSON.stringify({ providers: { test: { apiKey: secret } } }));
+    const args = buildArgs(path.join(root, label + ".json"), firstPath);
+    const next = { ...writeReport(args, [draw], [spec]), anticheatVersion: 2 };
+    assert.equal(next.runnerEnvironment, first.runnerEnvironment);
+    assert.equal(next.privateEnvironment, true);
+    assert.equal(comparisonEnvironmentError(next), "private runner environment identity");
+    assert.throws(() => compare(firstPath, next), { message: "baseline report has private runner environment identity; cross-report comparison is unavailable." });
+    assert.equal(resumeSlots(args, [spec], [{ spec, draw: 0 }]).skipped, 0);
+    assert.match(renderResults([spec], [{ stem: "first", report: first }, { stem: label, report: next }]), /No guarded report qualifies as a baseline/);
+  }
+  assert.equal(comparisonEnvironmentError({ runnerEnvironment: '[["PRIVATE_CONFIG","<required>"]]', privateEnvironment: false }), "private runner environment identity");
+  assert.equal(comparisonEnvironmentError({ runnerEnvironment: "malformed" }), "unknown runner environment identity");
+  assert.equal(comparisonEnvironmentError({ runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"]]', privateEnvironment: false }), null);
 });
