@@ -1,0 +1,52 @@
+{
+  "declaredAt": "2026-10-16T05:49:42.669743+00:00",
+  "gateClass": "R",
+  "candidateSha": "a16ffde4c0827a4dcd7e44d75c81051f79d71b4b",
+  "baselineSha": "38a84d77f0befb5e3999ff089c7ec2a041ef76e2",
+  "baselineIsCurrentMain": false,
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "runnerVersion": "codex-cli 0.163.0",
+  "capture": {
+    "draws": 1,
+    "fixtures": 93,
+    "holdouts": 17,
+    "fixtureConcurrency": 1,
+    "deepConcurrency": 3,
+    "certification": false
+  },
+  "finalContract": {
+    "draws": 3,
+    "holdout": "include",
+    "tier1Recall": 1,
+    "maxPooledFalsePositives": 2,
+    "minRecall": 0.89,
+    "maxMeanNoisePerPositive": 0.05,
+    "maxInvalid": 1,
+    "maxOperationalFailures": 0,
+    "maxCheatDetections": 0,
+    "confirmation": "x3 all divergent or imperfect positive, negative, or verdict fixtures, without replacing full-run draws"
+  },
+  "confirmation": {
+    "drawsPerSide": 3,
+    "sides": [
+      "baseline",
+      "candidate"
+    ],
+    "fixtureUnion": "all positive recall misses, negative false positives, verdict mismatches, invalid or operational failures, positive noise, or differing fixture outcomes from either capture",
+    "replacesPrimaryDraws": false,
+    "tier1MissCanBeErasedByConfirmation": false,
+    "holdout": "include",
+    "fixtureConcurrency": 1,
+    "deepConcurrency": 3
+  },
+  "methodAudit": {
+    "rootConfirmedAt": "2026-10-16T05:50:30.768383+00:00",
+    "finalFullSetDraws": 3,
+    "confirmationCannotReplaceFullRun": true,
+    "baselineX1IsControlCaptureOnly": true,
+    "matchingX3ControlIfComparingFinal": true,
+    "noMergedReportOrBypassedResume": true
+  }
+}

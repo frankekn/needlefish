@@ -56,6 +56,10 @@ export type CliCommand =
       readonly runner?: RunnerName;
       readonly base?: string;
       readonly json: boolean;
+    }
+  | {
+      readonly kind: "setup-github";
+      readonly repo?: string;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -72,6 +76,8 @@ Usage:
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)
+  needlefish setup github [--repo <path>]
+                                       preview a hosted PR workflow; writes nothing
 
 Shared options:
   --repo <path>        target repository
@@ -79,6 +85,7 @@ Shared options:
   --deep               wider context (call sites, history, adjacent tests)
   --runner <name>      codex | claude | openai | grok | pi | acp
                        opencode is temporarily disabled (issue #207)
+  --connection <id>    select one user-configured connection (no automatic fallback)
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -106,7 +113,8 @@ Env:
   OPENCODE_BIN            reserved while opencode reviews are disabled (#207)
   OPENCODE_IDLE_TIMEOUT_MS inactive while opencode reviews are disabled (#207)
   PI_BIN                  pi executable (default: pi)
-  NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
+  NEEDLEFISH_ACP_BIN      ACP agent executable (required for legacy --runner acp)
+  NEEDLEFISH_CONNECTIONS_FILE  absolute user connections.json path (used only by --connection)
 `;
 
 type MutableLocalOptions = {
@@ -115,6 +123,7 @@ type MutableLocalOptions = {
   deep?: boolean;
   focus?: string;
   cacheDir?: string;
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -122,6 +131,7 @@ type MutableLocalOptions = {
 };
 
 type MutableRunnerOptions = {
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -163,6 +173,7 @@ function parsePr(value: string): number {
 
 function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
+  if (opts.connection !== undefined) runnerOpts.connection = opts.connection;
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
@@ -170,6 +181,20 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  if (argv[0] === "setup") {
+    if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
+    if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
+    let repo: string | undefined;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === "--help" || argv[i] === "-h") return { kind: "help" };
+      const value = optionValue(argv, i, "--repo");
+      if (!value) throw new Error(`setup github accepts only --repo (received ${argv[i]})`);
+      if (repo !== undefined) throw new Error("--repo may only be supplied once");
+      repo = value.value;
+      if (value.consumedNext) i++;
+    }
+    return { kind: "setup-github", ...(repo !== undefined ? { repo } : {}) };
+  }
   const cachedCommand =
     argv[0] === "render" || argv[0] === "verdict" ? argv[0] : undefined;
   if (cachedCommand) {
@@ -277,6 +302,13 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       if (focusOption.consumedNext) i++;
       continue;
     }
+    const connectionOption = optionValue(argv, i, "--connection");
+    if (connectionOption) {
+      if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
+      opts.connection = connectionOption.value;
+      if (connectionOption.consumedNext) i++;
+      continue;
+    }
     const runnerOption = optionValue(argv, i, "--runner");
     if (runnerOption) {
       opts.runner = parseRunnerName(runnerOption.value, "--runner");
@@ -298,6 +330,10 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error(`unknown option ${arg}`);
   }
 
+  if (opts.connection !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
+    throw new Error("--connection cannot be combined with --runner or --model");
+  }
+
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
   }
@@ -314,6 +350,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus !== undefined ||
       opts.deep !== undefined ||
       opts.model !== undefined ||
+      opts.connection !== undefined ||
       opts.timeoutMs !== undefined ||
       opts.localMode !== undefined;
     if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");

@@ -68,33 +68,22 @@ v2.0.30 雖可停用專案設定探索，仍會載入系統外掛與管理設定
 npx needlefish
 ```
 
-**每個 PR**——在目標 repo 新增 `.github/workflows/needlefish.yml`：
+**每個 PR**：從此版本原始碼預覽指定 Git repo 的 hosted workflow：
 
-```yaml
-name: needlefish
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-jobs:
-  review:
-    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history: needlefish needs the merge base
-      - uses: frankekn/needlefish@v0
-        env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+```bash
+pnpm review setup github --repo /path/to/repo
 ```
 
-設定一個 secret——`CODEX_AUTH_JSON`（已登入 Codex CLI 的
-`~/.codex/auth.json` 內容）或 `CODEX_API_KEY`——然後開啟 PR。finding 會
+本版本發布至 npm 後，也可用 `npx needlefish setup github --repo /path/to/repo`
+預覽同一份設定。
+
+指令顯示預計新增的 `.github/workflows/needlefish.yml`，或既有自有檔案的
+差異；不寫入檔案，也不覆蓋自訂 Needlefish workflow。提案固定 action 與
+Codex CLI 版本。Fork、bot 與非信任作者的 PR 會在 checkout 前失敗，不能
+顯示成完成審查。這只是預覽。Repo 管理員仍須透過經審查的 PR 加入
+workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
+不設定憑證、不建立設定 PR、不設定 required check，也不執行審查。
+啟用後，finding 會
 以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
 份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
 
@@ -309,8 +298,8 @@ review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶�
 
 ### Hosted（任何 repo）
 
-上方快速開始的 workflow 就是全部設定——本 repo 同時是在 GitHub-hosted
-`ubuntu-latest` 上執行的 composite action。
+上方的 setup 預覽使用本 repo 的 composite action，在 GitHub-hosted
+`ubuntu-latest` 執行。啟用仍需經審查的 workflow PR 與 repo secret。
 
 **Runner 認證**——repo secret，透過 action step 的 `env` 傳入：
 
@@ -350,9 +339,8 @@ CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`
   新審查）。
 - hosted 路徑每次執行都冷啟動（pnpm install + runner CLI 安裝，約一分
   鐘）。下方的 self-hosted 路徑仍是低延遲選項。
-- Fork PR 不會收到 secrets，所以快速開始中的 `if:` gate 會跳過它們。
-  避免 `pull_request_target`——它會把 secrets 交給由 fork code 觸發的
-  workflow。
+- 產生的 workflow 對 fork、bot 與非信任作者 PR 在 checkout 前失敗，
+  不會顯示為已審查。不要將它改為 `pull_request_target`。
 - 只審查作者為 OWNER／MEMBER／COLLABORATOR 且不是 bot 的 PR；其他 PR
   改為收到 neutral 的 `Needlefish` check。維護者讀過 PR 後，可用
   `allow_untrusted_author: true` 審查。GitHub mode 本身就會執行這道 gate，

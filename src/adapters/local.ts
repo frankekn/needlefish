@@ -33,6 +33,7 @@ import {
 } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
 import { resolveRunner } from "../shared/runner-detection.js";
+import { resolveConnectionOptions } from "../shared/connections.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
@@ -358,7 +359,8 @@ export async function runLocal(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle } = diffBundle(cwd, opts);
-  const result = await review(bundle, opts, undefined, onProgress);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const result = await review(bundle, resolvedOpts, undefined, onProgress);
   writeCache(bundle.repoPath, opts, result);
   return result;
 }
@@ -370,11 +372,12 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
   const result: ReviewResult = {
-    ...(await review(bundle, opts, undefined, onProgress)),
+    ...(await review(bundle, resolvedOpts, undefined, onProgress)),
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };

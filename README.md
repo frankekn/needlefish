@@ -87,33 +87,24 @@ scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
 reported as `unknown` and does not fail the exit code.
 
-**On every PR** — add `.github/workflows/needlefish.yml` to the target repo:
+**On every PR** — preview the hosted workflow from this source checkout:
 
-```yaml
-name: needlefish
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-permissions:
-  contents: read
-  pull-requests: write
-  checks: write
-jobs:
-  review:
-    # Fork PRs don't receive secrets; skip them instead of failing at model auth.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history: needlefish needs the merge base
-      - uses: frankekn/needlefish@v0
-        env:
-          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+```bash
+pnpm review setup github --repo /path/to/repo
 ```
 
-Set one secret — `CODEX_AUTH_JSON` (the contents of a logged-in Codex CLI's
-`~/.codex/auth.json`) or `CODEX_API_KEY` — and open a PR. Findings arrive as
+After this version is published to npm, use
+`npx needlefish setup github --repo /path/to/repo` for the same preview.
+
+The command shows the proposed `.github/workflows/needlefish.yml` or a diff
+against its own existing file. It writes nothing and refuses to replace a
+custom Needlefish workflow. The proposed workflow uses a pinned action and
+Codex CLI, and fails before checkout for fork, bot, or untrusted-author PRs.
+It is a preview, not an enabled installation. A repository administrator
+must add the workflow through a reviewed PR and set the Actions secret
+`NEEDLEFISH_CODEX_API_KEY` separately. No credential, setup PR, or review is
+created by this command. It does not configure a required check or branch
+protection. Once enabled, findings arrive as
 inline review comments anchored to the diff; pushes update the same review in
 place (fresh / still-open / no longer reported) instead of stacking new ones.
 
@@ -395,8 +386,8 @@ line to stdout for automation, alongside the existing prose notice.
 
 ### Hosted (any repo)
 
-The quick-start workflow above is the whole setup — this repo doubles as a
-composite action on GitHub-hosted `ubuntu-latest`.
+The setup preview above uses this repo's composite action on GitHub-hosted
+`ubuntu-latest`. It needs a reviewed workflow PR and a repository secret.
 
 **Runner auth** — repo secrets, passed via `env` on the action step:
 
@@ -437,9 +428,9 @@ the latest release of the selected runner's CLI (`@openai/codex`,
 - The hosted path cold-starts on every run (pnpm install + runner CLI
   install, roughly a minute). The self-hosted path below stays the
   low-latency option.
-- Fork PRs don't receive secrets, so the `if:` gate in the quick start skips
-  them. Avoid `pull_request_target` — it would hand secrets to workflows
-  triggered by fork code.
+- The generated workflow fails before checkout for fork, bot, and untrusted
+  author PRs. It does not mark them reviewed. Do not use `pull_request_target`
+  with the generated workflow.
 - Only PRs whose author is an OWNER, MEMBER, or COLLABORATOR and not a bot
   are reviewed. Others get a neutral `Needlefish` check instead; after
   reading the PR, a maintainer can review it with
