@@ -1170,3 +1170,28 @@ final class AdvancedInputDeadlineTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 }
+
+@MainActor
+final class AdvancedBoundaryRegressionTests: XCTestCase {
+    func testCurrentSixCheckDoctorContractIsAcceptedAndCapabilityStillGates() throws {
+        let fixture = DesktopTests()
+        let json = fixture.doctorJSON.replacingOccurrences(of: #"{"name":"auth""#, with: #"{"name":"capability","status":"ok","detail":"repositoryRead"},{"name":"auth""#)
+        let report = try JSONDecoder().decode(Doctor.self, from: Data(json.utf8)).validated()
+        XCTAssertTrue(report.ready)
+        let unknown = json.replacingOccurrences(of: #""capability","status":"ok""#, with: #""capability","status":"unknown""#)
+        let unavailable = try JSONDecoder().decode(Doctor.self, from: Data(unknown.utf8)).validated()
+        XCTAssertFalse(unavailable.ready)
+        XCTAssertFalse(unavailable.scopeReady)
+    }
+    func testUnicodeEscapedCredentialCannotReachDisplayedResult() async throws {
+        let fixture = DesktopTests()
+        let secret = "offline-only-value"
+        let escaped = secret.utf16.map { String(format: "\\u%04x", $0) }.joined()
+        let response = fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: escaped)
+        let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(response)'")
+        do {
+            _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+            XCTFail("Unicode-escaped credential must remain incomplete")
+        } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
+    }
+}
