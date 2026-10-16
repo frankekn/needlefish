@@ -436,6 +436,9 @@ jobs:
                   const checks = JSON.parse(input).check_runs;
                   const previous = process.env.NEEDLEFISH_PREVIOUS_CHECK_ID ?? "";
                   if (!/^[0-9]+$/.test(previous)) process.exit(1);
+                  const appIdInput = process.env.NEEDLEFISH_CHECK_APP_ID || "";
+                  const appId = appIdInput ? Number(appIdInput) : null;
+                  if (appIdInput && (!/^[1-9][0-9]*$/.test(appIdInput) || !Number.isSafeInteger(appId))) process.exit(1);
                   const currentRun = externalId => {
                     if (externalId === process.env.GITHUB_RUN_ID) return true;
                     try {
@@ -443,7 +446,12 @@ jobs:
                       return round?.v === 2 && round.runId === process.env.GITHUB_RUN_ID && round.prNumber === Number(process.env.PR_NUM);
                     } catch { return false; }
                   };
-                  const check = checks.filter(c => c.id > Number(previous) && c.name === "Needlefish" && currentRun(c.external_id) && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];
+                  const check = checks.filter(c =>
+                    c.id > Number(previous) &&
+                    c.name === "Needlefish" &&
+                    currentRun(c.external_id) &&
+                    (appId === null ? c.app?.slug === "github-actions" : c.app?.id === appId)
+                  ).sort((a, b) => b.id - a.id)[0];
                   const prefix = "Review errored and did NOT pass this PR.\n\n```\n";
                   const error = check?.output?.summary?.startsWith(prefix) ? check.output.summary.slice(prefix.length).split("\n")[0] : "";
                   const failed = check?.status === "completed" && check.conclusion === "failure" && check.output.title === "Needlefish: review failed";

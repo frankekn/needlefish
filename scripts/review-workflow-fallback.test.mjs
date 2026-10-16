@@ -27,7 +27,10 @@ function shq(value) {
 }
 
 // primary/fallback: { out, err, code } the stub emits on that lane.
-function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "codex", tier = "", previousCheckId = 0, snapshotExit = 0 }) {
+function runReviewScript(t, {
+  primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "codex",
+  tier = "", previousCheckId = 0, snapshotExit = 0, appId = "",
+}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-fallback-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const write = (name, content) => {
@@ -101,6 +104,7 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
       NEEDLEFISH_TIMEOUT_MS_INPUT: "",
       OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
       NEEDLEFISH_RECHECK_INPUT: "",
+      NEEDLEFISH_CHECK_APP_ID: appId,
     },
   });
   return {
@@ -370,4 +374,15 @@ test("versioned delivery metadata preserves this workflow run fallback", t => {
  assert.equal(result.status, 0, result.stderr);
  assert.equal(result.invocations.length, 2);
  assert.match(result.invocations[1], /--model gpt-6\.1-sol/);
+});
+
+test("compatibility fallback honors the configured check App ID", t => {
+  const primary = { out: "", err: "", code: 1 };
+  const fallback = { out: "PASS", err: "", code: 0 };
+  const custom = runnerCheck({ app: { id: 4812, slug: "private-review-app" } });
+  for (const [appId, expected] of [["4812", 2], ["9999", 1], ["", 1], ["invalid", 1]]) {
+    const result = runReviewScript(t, { primary, fallback, checks: [custom], appId });
+    assert.equal(result.invocations.length, expected, `App ID ${appId}: ${result.stderr}`);
+    assert.equal(result.status, expected === 2 ? 0 : 1, result.stderr);
+  }
 });
