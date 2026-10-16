@@ -56,6 +56,10 @@ export type CliCommand =
       readonly runner?: RunnerName;
       readonly base?: string;
       readonly json: boolean;
+    }
+  | {
+      readonly kind: "setup-github";
+      readonly repo?: string;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -72,6 +76,8 @@ Usage:
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)
+  needlefish setup github [--repo <path>]
+                                       preview a hosted PR workflow; writes nothing
 
 Shared options:
   --repo <path>        target repository
@@ -173,6 +179,20 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  if (argv[0] === "setup") {
+    if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
+    if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
+    let repo: string | undefined;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === "--help" || argv[i] === "-h") return { kind: "help" };
+      const value = optionValue(argv, i, "--repo");
+      if (!value) throw new Error(`setup github accepts only --repo (received ${argv[i]})`);
+      if (repo !== undefined) throw new Error("--repo may only be supplied once");
+      repo = value.value;
+      if (value.consumedNext) i++;
+    }
+    return { kind: "setup-github", ...(repo !== undefined ? { repo } : {}) };
+  }
   const cachedCommand =
     argv[0] === "render" || argv[0] === "verdict" ? argv[0] : undefined;
   if (cachedCommand) {
