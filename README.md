@@ -673,3 +673,20 @@ diagnostics. `--fix` stays unimplemented by design. Maintainer `@needlefish
 recheck` / `@needlefish explain` comments exist in this repository's
 `.github/workflows/commands.yml`; the published composite action does not
 install that workflow.
+
+### Guided GitHub setup
+
+The macOS development preview exposes the shared hosted setup owner under **Guided GitHub setup**. See [the desktop setup instructions](desktop/macos/README.md#enable-github-review).
+
+Advanced CLI users can use the same owner without writing YAML:
+
+```sh
+needlefish setup github login --confirm
+needlefish setup github repositories --json
+needlefish setup github status --repository owner/repo --json
+needlefish setup github create-pr --repository owner/repo --confirm --json
+```
+
+`create-pr` creates or reuses one owned branch and PR. It never merges the PR, pushes the default branch, or edits branch protection. Existing custom workflows and unrecognized setup branches cause a conflict. Read the workflow and OpenAI code-disclosure/cost notice from `status` before creating the PR.
+
+`set-secret --repository owner/repo --confirm --replace-secret` accepts the credential only through stdin. Use the desktop secure field or a trusted secret manager that writes directly to the pipe. Never put the credential in shell arguments, history, a file, or a URL. GitHub secret writes are unconditional; `--replace-secret` explicitly accepts replacing a value another administrator may have created. A successful secret update leaves AI authentication and the first review unverified. Real first-review and novice-admin acceptance remain open in #151.

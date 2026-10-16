@@ -14,10 +14,12 @@ final class Onboarding: ObservableObject {
     private(set) var runtime: Runtime?
     @Published private(set) var diagnosis: Doctor?
     var canReview: Bool { trusted && accepted && diagnosis?.ready == true }
+    lazy var githubSetup = GithubSetup(runtime: runtime)
     private var operation: Command?
     private var task: Task<Void, Never>?
-    var canCancel: Bool { operation != nil }
-    var busy: Bool { if case .busy = state { true } else { false } }
+    var canCancel: Bool { operation != nil || githubSetup.busy }
+    var localBusy: Bool { if case .busy = state { true } else { false } }
+    var busy: Bool { localBusy || githubSetup.busy }
 
     init(runtime: Runtime? = try? Runtime.bundled()) { self.runtime = runtime }
 
@@ -176,6 +178,7 @@ final class Onboarding: ObservableObject {
     }
 
     func cancel() {
+        if githubSetup.busy { githubSetup.cancel(); return }
         guard operation != nil, busy else { return }
         operation?.cancel()
         code = nil
@@ -208,6 +211,8 @@ final class Onboarding: ObservableObject {
 
 struct ContentView: View {
     @ObservedObject var model: Onboarding
+    @ObservedObject private var githubSetup: GithubSetup
+    init(model: Onboarding) { self.model = model; githubSetup = model.githubSetup }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Needlefish").font(.largeTitle).bold()
@@ -220,6 +225,9 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) { stateView }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            DisclosureGroup("GitHub 引導設定 / Guided GitHub setup") {
+                ScrollView { GithubSetupView(model: githubSetup) }.frame(maxHeight: 460)
+            }.disabled(model.localBusy)
             DisclosureGroup("安裝與移除 / Install and remove") {
                 HStack {
                     Button("安裝正式版本 / Install release") { model.manageInstallation() }

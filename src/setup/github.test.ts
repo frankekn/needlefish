@@ -155,3 +155,11 @@ test("the CLI previews without side effects and returns a nonzero status for con
   assert.match(conflict.stdout, /Plan: conflict[\s\S]*not managed by Needlefish setup/);
   assert.equal(readFileSync(workflowPath(root), "utf8"), "name: custom\n");
 });
+
+
+test("local setup preserves repository roots with trailing whitespace", t => {
+  for (const name of ["space ", "tab\t", "newline\n", "carriage\r"]) {
+    const root = repo(t, name);
+    assert.equal(planGithubSetup(root).path, workflowPath(root));
+  }
+});

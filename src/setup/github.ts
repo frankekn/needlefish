@@ -77,7 +77,7 @@ export function planGithubSetup(repo: string): GithubSetupPlan {
     root = execFileSync("git", ["-C", repo, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    }).replace(/\n$/, "");
   } catch {
     throw new Error(`${repo} is not a Git repository`);
   }

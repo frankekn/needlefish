@@ -85,3 +85,17 @@ The app's **Install release** copies a user-selected official app into `~/Librar
 - Five novice trials, at least four independent successes, including correct result interpretation.
 
 The fake CLI and development machine do not satisfy these gates. Do not close #150 or publish this preview as a supported installation until they pass.
+
+## Enable GitHub review
+
+Open **Guided GitHub setup**. Install the official [GitHub CLI](https://cli.github.com/) if it is unavailable, then use **Sign in to GitHub**. This uses `gh auth login --web --scopes workflow` and its credential store. The official flow requests repository and workflow authorization. It does not request a pasted PAT or change Git configuration.
+
+Select an administered repository and choose **Preview setup**. Read the workflow and disclosure before you consent. **Create or reuse setup PR** writes one dedicated `needlefish/setup-v1` branch and one configuration PR through the GitHub API. Inspect and merge that PR in your browser. The app never pushes the default branch or changes branch protection. An edited workflow, another Needlefish workflow, or an unrecognized setup branch blocks installation and preserves the existing configuration.
+
+Enter an OpenAI API credential in the secure field. Separately confirm creation or replacement of `NEEDLEFISH_CODEX_API_KEY` for the selected repository, then choose **Set this repository secret**. GitHub has no create-only secret operation, so this confirmation also covers a value another administrator creates concurrently. The app sends the value through an anonymous stdin pipe to the shared CLI, then to `gh secret set`. It does not put the value in arguments, URLs, diagnostics or files. The field clears before the operation. Secret metadata does not verify authentication or quota.
+
+After merging setup, open the workflow runs in your browser. Choose a trusted same-repository PR and separately accept the possible model cost before you rerun its existing workflow or update a test PR. Inspect the terminal Needlefish check and review. This preview does not start a paid review or infer success from secret metadata, a missing check, or skipped fork PRs. Authentication and the first review remain explicitly unverified in its JSON status. Logs and the OpenAI billing link help diagnose quota or authentication failure.
+
+Use the repository Actions UI to disable the workflow. Remove only the exact owned workflow through a PR after inspection, and delete the secret separately after checking other users. Preserve all other workflows and required checks. The screen explains where an administrator can require a passing review after a real review has completed; it does not apply that policy.
+
+The guided path has controlled CLI and desktop tests. Real repository enablement and five novice-admin trials remain required under issue #151. This is a development preview, not completed issue acceptance.

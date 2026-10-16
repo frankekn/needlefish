@@ -674,3 +674,73 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(model.busy, false)
     }
 }
+
+final class GithubSetupTests: XCTestCase {
+    func testAnonymousInputPipeWritesExactBytesAndRemovesTemporaryDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-input-" + UUID().uuidString)
+        let input = Data(repeating: 65, count: 16_384)
+        let result = try await Command().run(["/usr/bin/wc", "-c"], environment: ["PATH": "/usr/bin:/bin"],
+                                            temporary: root, timeout: 5, input: input)
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), "16384")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testClosedChildInputDoesNotSignalTheApp() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-epipe-" + UUID().uuidString)
+        do {
+            _ = try await Command().run(["/bin/sh", "-c", "exec 0<&-; sleep 0.2"], environment: ["PATH": "/usr/bin:/bin"],
+                                        temporary: root, timeout: 5, input: Data(repeating: 65, count: 100_000))
+            XCTFail("Closed pipe must fail")
+        } catch { XCTAssertEqual(error as? DesktopError, .command) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testInputWriterCanBeCancelledWithoutAReader() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-cancel-" + UUID().uuidString)
+        let command = Command()
+        let task = Task {
+            try await command.run(["/bin/sleep", "30"], environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                  timeout: 30, input: Data(repeating: 65, count: 100_000))
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        command.cancel()
+        do { _ = try await task.value; XCTFail("Must cancel") }
+        catch { XCTAssertEqual(error as? DesktopError, .cancelled) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testGitHubDeviceCodeDoesNotConfuseCodexLogin() {
+        XCTAssertEqual(githubDeviceCode("! First copy your one-time code: AB12-CD34\nhttps://github.com/login/device"), "AB12-CD34")
+        XCTAssertNil(githubDeviceCode("AB12-CD34"))
+        XCTAssertNil(githubDeviceCode("password: controlled-placeholder"))
+    }
+    func testSetupProtocolCannotClaimCredentialMetadataAsAuthentication() throws {
+        let json = #"{"schemaVersion":1,"repository":"owner/repo","admin":true,"actions":true,"phase":"merged","conflict":null,"secret":"present","authentication":"unknown","firstReview":"not_verified","prUrl":null,"workflow":"test","disclosure":"test","settingsUrl":"https://github.com/owner/repo/settings/actions","removal":"test"}"#
+        let report = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.utf8)).validated()
+        XCTAssertEqual(report.phase, .merged)
+        for bad in [json.replacingOccurrences(of: "unknown", with: "passed"), json.replacingOccurrences(of: "not_verified", with: "completed"), json.replacingOccurrences(of: "https://github.com/owner/repo/settings/actions", with: "https://attacker.invalid")] {
+            XCTAssertThrowsError(try JSONDecoder().decode(GithubSetupStatus.self, from: Data(bad.utf8)).validated())
+        }
+    }
+}
+
+@MainActor
+final class GithubSetupOwnershipTests: XCTestCase {
+    func testGitHubCommandMakesParentBusyAndQuitCancelsItsOwnedGroup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-owner-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("cli")
+        try "sleep 30\n".write(to: script, atomically: true, encoding: .utf8)
+        let runtime = Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true)
+        let model = Onboarding(runtime: runtime)
+        model.githubSetup.load()
+        XCTAssertTrue(model.busy)
+        XCTAssertTrue(model.canCancel)
+        model.cancel()
+        for _ in 0..<100 {
+            if !model.canCancel { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(model.canCancel)
+    }
+}

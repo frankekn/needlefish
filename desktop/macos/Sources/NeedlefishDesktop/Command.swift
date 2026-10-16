@@ -40,7 +40,7 @@ final class Command: @unchecked Sendable {
     func cancel() { lock.withLock { cancelled = true } }
 
     func run(_ arguments: [String], environment: [String: String], temporary: URL,
-             timeout: TimeInterval, progress: @escaping @Sendable (String) async -> Void = { _ in }) async throws -> CommandOutput {
+             timeout: TimeInterval, input: Data? = nil, progress: @escaping @Sendable (String) async -> Void = { _ in }) async throws -> CommandOutput {
         try await Task.detached { [self] in
             try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
@@ -53,6 +53,15 @@ final class Command: @unchecked Sendable {
                 try? stderr.pipe.fileHandleForReading.close()
                 try? stderr.pipe.fileHandleForWriting.close()
             }
+            let stdin = input.map { _ in Pipe() }
+            defer {
+                try? stdin?.fileHandleForReading.close()
+                try? stdin?.fileHandleForWriting.close()
+            }
+            if let stdin {
+                guard fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETFL, O_NONBLOCK) == 0,
+                      fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) == 0 else { throw DesktopError.command }
+            }
             var actions: posix_spawn_file_actions_t?
             var attributes: posix_spawnattr_t?
             posix_spawn_file_actions_init(&actions)
@@ -61,7 +70,11 @@ final class Command: @unchecked Sendable {
                 posix_spawn_file_actions_destroy(&actions)
                 posix_spawnattr_destroy(&attributes)
             }
-            posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+            if let stdin {
+                posix_spawn_file_actions_adddup2(&actions, stdin.fileHandleForReading.fileDescriptor, STDIN_FILENO)
+            } else {
+                posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0)
+            }
             posix_spawn_file_actions_adddup2(&actions, stdout.pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
             posix_spawn_file_actions_adddup2(&actions, stderr.pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
             posix_spawn_file_actions_addchdir_np(&actions, temporary.path)
@@ -87,6 +100,9 @@ final class Command: @unchecked Sendable {
             guard spawned == 0 else { throw DesktopError.command }
             try? stdout.pipe.fileHandleForWriting.close()
             try? stderr.pipe.fileHandleForWriting.close()
+            try? stdin?.fileHandleForReading.close()
+            var inputOffset = 0
+            var inputClosed = false
             var status: Int32 = 0
             do {
                 defer { kill(-child, SIGKILL) }
@@ -101,6 +117,16 @@ final class Command: @unchecked Sendable {
                     } catch {
                         failure = error as? DesktopError ?? .command
                         kill(-child, SIGKILL)
+                    }
+                    if let stdin, let input, !inputClosed {
+                        if inputOffset < input.count {
+                            let count = input.withUnsafeBytes { bytes in
+                                Darwin.write(stdin.fileHandleForWriting.fileDescriptor, bytes.baseAddress!.advanced(by: inputOffset), min(4096, input.count - inputOffset))
+                            }
+                            if count > 0 { inputOffset += count }
+                            else if count < 0 && errno != EAGAIN && errno != EINTR { failure = .command; inputClosed = true; try? stdin.fileHandleForWriting.close() }
+                        }
+                        if inputOffset == input.count { inputClosed = true; try? stdin.fileHandleForWriting.close() }
                     }
                     let waited = waitpid(child, &status, WNOHANG)
                     if waited == child { break }
@@ -121,7 +147,7 @@ final class Command: @unchecked Sendable {
                         }
                     }
                     if stdout.data.count <= 64 * 1024,
-                       let code = deviceCode(String(decoding: stdout.data, as: UTF8.self)), code != previousCode {
+                       let code = deviceCode(String(decoding: stdout.data, as: UTF8.self)) ?? githubDeviceCode(String(decoding: stderr.data + stdout.data, as: UTF8.self)), code != previousCode {
                         previousCode = code
                         await progress(code)
                     }
