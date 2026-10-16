@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { readRunnerDurationMs, runManagedRunnerProcess, spawnRunnerProcess } from "./runner-process";
-import { isMissingProcess, killProcessIfRunning } from "./runner-test-fixtures";
+import { captureEnv, isMissingProcess, killProcessIfRunning, restoreEnv } from "./runner-test-fixtures";
 
 test("spawnRunnerProcess reports EPIPE when stdin closes before prompt drains", async () => {
   const result = await spawnRunnerProcess({
@@ -193,6 +193,58 @@ test("spawnRunnerProcess kills a SIGTERM-trapping process group after timeout", 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+for (const childStdout of ["inherit", "ignore"]) {
+  test(`timeout kills descendants after the leader exits with ${childStdout} pipes`, { timeout: 5000, skip: process.platform === "win32" }, async () => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-leader-exit-"));
+    const pidPath = path.join(tmp, "pids");
+    const previousEnv = captureEnv(["NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS", "NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS"]);
+    process.env.NEEDLEFISH_RUNNER_TIMEOUT_GRACE_MS = "100";
+    process.env.NEEDLEFISH_RUNNER_SIGKILL_GIVE_UP_MS = "100";
+    const script = `
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);"], { stdio: ["ignore", ${JSON.stringify(childStdout)}, "ignore", "ipc"] });
+child.on("message", () => fs.writeFileSync(${JSON.stringify(pidPath)}, JSON.stringify([process.pid, child.pid])));
+process.on("SIGTERM", () => process.exit(0));
+setInterval(() => {}, 1000);
+`;
+    try {
+      const result = await spawnRunnerProcess({
+        command: process.execPath,
+        args: ["-e", script],
+        stdin: "",
+        repoPath: tmp,
+        timeoutMs: 1000,
+        env: process.env,
+      });
+      assert.match(result.error?.message ?? "", /ETIMEDOUT/);
+      const pids: unknown = JSON.parse(readFileSync(pidPath, "utf8"));
+      assert.ok(Array.isArray(pids) && pids.length === 2 && pids.every((pid: unknown) => typeof pid === "number"));
+      const descendantPid: unknown = pids[1];
+      assert.equal(typeof descendantPid, "number");
+      if (typeof descendantPid !== "number") throw new Error("missing descendant pid");
+      const deadline = Date.now() + 1000;
+      while (Date.now() < deadline) {
+        try {
+          process.kill(descendantPid, 0);
+        } catch (error) {
+          if (isMissingProcess(error)) break;
+          throw error;
+        }
+        await delay(25);
+      }
+      assert.throws(() => process.kill(descendantPid, 0), isMissingProcess, "SIGTERM-resistant descendant must not outlive timeout cleanup");
+    } finally {
+      restoreEnv(previousEnv);
+      if (existsSync(pidPath)) {
+        const pids: unknown = JSON.parse(readFileSync(pidPath, "utf8"));
+        if (Array.isArray(pids) && typeof pids[0] === "number") killProcessIfRunning(-pids[0]);
+      }
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
 
 test("spawnRunnerProcess returns after SIGKILL when escaped descendants keep pipes open", { timeout: 12_000 }, async () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-runner-process-test-"));
