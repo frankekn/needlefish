@@ -261,7 +261,7 @@ test("connections machine commands accept only one operation, JSON and repo", ()
   for (const operation of ["list", "edit", "validate", "apply", "inspect"] as const) {
     assert.deepEqual(parseArgs(["connections", operation, "--json", "--repo=/fake/repo"]), { kind: "connections", operation, repo: "/fake/repo" });
   }
-  for (const args of [["list"], ["review", "--json"], ["list", "--json", "--runner", "codex"], ["list", "--json", "--json"], ["list", "--json", "--repo=a", "--repo=b"]]) {
+  for (const args of [["list"], ["review", "--json", "--repo", "/repo"], ["list", "--json", "--runner", "codex"], ["list", "--json", "--json"], ["list", "--json", "--repo=a", "--repo=b"]]) {
     assert.throws(() => parseArgs(["connections", ...args]));
   }
 });

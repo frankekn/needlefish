@@ -179,6 +179,7 @@ function readConnections(file: string, repoPath: string): readonly Connection[] 
 
 export function resolveConnectionRoutes<T extends RunnerOptions>(
   opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env, bindCredentials = true,
+  captured?: { readonly connections: readonly Connection[]; readonly encodedOutputGuard: boolean },
 ): readonly [T, ...T[]] {
   if (opts.connections === undefined) return [opts];
   const [first, ...rest] = opts.connections;
@@ -188,7 +189,7 @@ export function resolveConnectionRoutes<T extends RunnerOptions>(
   if (opts.runner !== undefined || opts.model !== undefined || opts.acpLaunch !== undefined || opts.connectionAuth !== undefined) {
     throw new Error("--connection cannot be combined with --runner, --model or separate ACP launch/auth.");
   }
-  const connections = readConnections(connectionsFile(env), repoPath);
+  const connections = captured?.connections ?? readConnections(connectionsFile(env), repoPath);
   const select = (id: string): Connection => {
     const connection = connections.find(entry => entry.id === id);
     if (!connection) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
@@ -197,7 +198,7 @@ export function resolveConnectionRoutes<T extends RunnerOptions>(
   const selected: readonly [Connection, ...Connection[]] = [select(first), ...rest.map(select)];
   const resolve = (connection: Connection): T => {
     const connectionAuth = connection.auth && bindCredentials
-      ? connection.auth.kind === "codex-env" ? new CodexEnvironmentAuth(connection.auth.env, connection.auth.route, env) : new AcpEnvironmentAuth(connection.auth.env, env)
+      ? connection.auth.kind === "codex-env" ? new CodexEnvironmentAuth(connection.auth.env, connection.auth.route, env) : new AcpEnvironmentAuth(connection.auth.env, env, captured?.encodedOutputGuard)
       : undefined;
     connectionAuth?.assertCompatible(connection.adapter, env);
     return Object.freeze({

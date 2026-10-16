@@ -31,6 +31,7 @@ export interface RunnerOptions {
   readonly runner?: RunnerName;
   readonly model?: string;
   readonly timeoutMs?: number;
+  readonly reviewBudgetMs?: number;
   readonly reasoningEffort?: string;
 }
 

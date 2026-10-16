@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ConnectionsError, readConnectionsRequest, runConnections } from "./adapters/connections.js";
+import { ConnectionsError, readConnectionsRequest, runConnections, runConnectionsReview } from "./adapters/connections.js";
 import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
 import { renderDoctorReport, runDoctor, serializeDoctorReport } from "./adapters/doctor.js";
 import { runGithubExplain } from "./adapters/explain.js";
@@ -34,15 +34,22 @@ async function main() {
     case "connections": {
       const controller = new AbortController();
       const cancel = () => controller.abort();
+      const outputError = () => { controller.abort(); process.exitCode = 1; };
+      process.stdout.on("error", outputError);
       process.once("SIGINT", cancel);
       process.once("SIGTERM", cancel);
       try {
-        const request = command.operation === "list" || command.operation === "edit" ? undefined : await readConnectionsRequest(process.stdin, controller.signal);
-        const result = await runConnections(command.operation, command.repo ?? process.cwd(), request, process.env, controller.signal);
-        process.stdout.write(JSON.stringify(result) + "\n");
-        if (!result.ok) process.exitCode = 1;
+        let request = command.operation === "list" || command.operation === "edit" ? undefined : await readConnectionsRequest(process.stdin, controller.signal, 5000, command.operation === "review");
+        const pending = command.operation === "review"
+          ? runConnectionsReview(request, process.env, controller.signal)
+          : runConnections(command.operation, command.repo ?? process.cwd(), request, process.env, controller.signal);
+        request = undefined;
+        const result = await pending;
+        const output = "ok" in result ? JSON.stringify(result) + "\n" : serializeReviewResult(result);
+        await new Promise<void>((resolve, reject) => process.stdout.write(output, error => error ? reject(error) : resolve()));
+        if ("ok" in result && !result.ok) process.exitCode = 1;
       } catch (error) {
-        process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
+        if (!process.stdout.destroyed) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
         process.exitCode = 1;
       } finally {
         process.off("SIGINT", cancel);

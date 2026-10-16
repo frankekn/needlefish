@@ -47,8 +47,10 @@ export function parseAuthEnvironment(raw: unknown): AuthEnvironmentReferences {
 // out of JSON.stringify/options inspection; no file, argv or global env writes.
 export class AcpEnvironmentAuth {
   readonly #values: Readonly<Record<string, string>>;
+  readonly #encodedOutputGuard: boolean;
 
-  constructor(refs: AuthEnvironmentReferences, env: NodeJS.ProcessEnv = process.env) {
+  constructor(refs: AuthEnvironmentReferences, env: NodeJS.ProcessEnv = process.env, encodedOutputGuard = false) {
+    this.#encodedOutputGuard = encodedOutputGuard;
     const checked = parseAuthEnvironment(refs);
     this.#values = Object.freeze(Object.fromEntries(Object.entries(checked).map(([target, source]) => {
       const value = Object.hasOwn(env, source) ? env[source] : undefined;
@@ -78,26 +80,35 @@ export class AcpEnvironmentAuth {
     return Object.freeze({
       screenDiagnostic: (message: string) => {
         for (const view of codexCredentialViews(message)) {
-          if (patterns.some(pattern => pattern.test(view)) || this.screenDiagnostic(view) !== view) return credentialDiagnostic;
+          if (patterns.some(pattern => pattern.test(view)) || this.#screenPlainDiagnostic(view) !== view) return credentialDiagnostic;
         }
         return message;
       },
       assertOutputSafe: (output: string) => {
         for (const view of codexCredentialViews(output)) {
           if (patterns.some(pattern => pattern.test(view))) throw new ConnectionCredentialLeakError();
-          this.assertOutputSafe(view);
+          this.#assertPlainOutputSafe(view);
         }
       },
     });
   }
 
   screenDiagnostic(message: string): string {
+    return this.#encodedOutputGuard ? this.orderedOutputGuard().screenDiagnostic(message) : this.#screenPlainDiagnostic(message);
+  }
+
+  #screenPlainDiagnostic(message: string): string {
     return containsCredential(message, Object.values(this.#values))
       ? credentialDiagnostic
       : message;
   }
 
   assertOutputSafe(output: string): void {
+    if (this.#encodedOutputGuard) this.orderedOutputGuard().assertOutputSafe(output);
+    else this.#assertPlainOutputSafe(output);
+  }
+
+  #assertPlainOutputSafe(output: string): void {
     const knownValues = Object.values(this.#values);
     if (containsCredential(output, knownValues)
       || screenPayload(output, knownValues).kind === "withheld"

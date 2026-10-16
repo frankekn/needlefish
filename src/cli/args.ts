@@ -97,6 +97,9 @@ Usage:
   needlefish connections list|edit|validate|apply|inspect --json [--repo <path>]
                                        edit operator profiles; validate/apply/inspect
                                        accept bounded JSON through stdin; no model call
+  needlefish connections review --json
+                                       review one frozen local-uncommitted selection
+                                       with bounded stdin and session-only credentials
 
 Shared options:
   --repo <path>        target repository
@@ -200,7 +203,7 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 export function parseArgs(argv: readonly string[]): CliCommand {
   if (argv[0] === "connections") {
     const operation = argv[1];
-    if (operation !== "list" && operation !== "edit" && operation !== "validate" && operation !== "apply" && operation !== "inspect") throw new Error("invalid_request");
+    if (operation !== "list" && operation !== "edit" && operation !== "validate" && operation !== "apply" && operation !== "inspect" && operation !== "review") throw new Error("invalid_request");
     let repo: string | undefined;
     let json = false;
     for (let i = 2; i < argv.length; i++) {
@@ -210,7 +213,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       repo = value.value;
       if (value.consumedNext) i++;
     }
-    if (!json) throw new Error("invalid_request");
+    if (!json || operation === "review" && repo !== undefined) throw new Error("invalid_request");
     return { kind: "connections", operation, ...(repo === undefined ? {} : { repo }) };
   }
   if (argv[0] === "setup") {

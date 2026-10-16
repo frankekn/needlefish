@@ -413,3 +413,60 @@ The fixed error codes are `invalid_request`, `input_too_large`, `input_timeout`,
 `invalid_configuration`, `unsafe_configuration`, `configuration_unavailable`,
 `revision_conflict`, `config_busy`, `save_failed`, `save_state_unknown`, and
 `cancelled`.
+
+## Session-only machine review
+
+`needlefish connections review --json` accepts one bounded JSON request through
+stdin. It uses the existing local-uncommitted adapter, whole-review session,
+quota-only fallback, fixed source snapshot and final cache writer. The request
+contains every selection input. `--repo` and review options on argv are rejected.
+
+```json
+{
+  "repo": "/absolute/path/to/project",
+  "scope": "local-uncommitted",
+  "expectedRevision": "sha256:<exact raw-byte revision from connections list>",
+  "ids": ["account-a", "account-b"],
+  "budgetMs": 120000,
+  "credentialMode": "session",
+  "sources": {"ACCOUNT_A_KEY": "<session value>", "ACCOUNT_B_KEY": "<session value>"}
+}
+```
+
+The existing trusted configuration parent must already exist. The raw revision
+must match before source collection or model execution. Later edits to the
+configuration or credential sources do not change the captured selection.
+`ids` is a nonempty, unique ordered list. `budgetMs` is an explicit integer from
+1 through 2147483647 for the whole model review, shared across fallback routes.
+It overrides the ambient review budget for this request. Collection and finalizer
+time are outside this model budget. The per-call timeout remains unchanged.
+
+In `session` mode every selected route must have explicit `auth.env` references.
+`sources` must contain exactly their distinct source names. Missing, additional
+or duplicate JSON keys are rejected. The same source reference shared by selected
+routes takes one value. No missing value falls back to an ambient source. In
+`existing` mode `sources` must be `{}` and the existing auth owner captures the
+selected ambient references. Auth-free routes keep their existing credential
+policy only in `existing` mode. Neither mode proves account identity or provider
+authentication, and runtime qualification remains unqualified.
+
+Session values bind once through a local environment object and the existing
+private auth owner. They do not enter global `process.env`, argv, the configuration,
+public results, diagnostics or cache. All selected credentials screen runner
+output, including literal, JSON-escaped and percent-encoded complete values.
+Singleton ACP session reviews use the same encoded guard as ordered ACP reviews.
+Existing CLI caller defaults remain unchanged. The existing unrestricted-agent
+trust boundary and limits of complete-value credential screening still apply.
+
+Input has a 128 KiB and five-second limit. Invalid JSON and request errors return
+only the existing `{schemaVersion:1,ok:false,code}` machine envelope. Errors never
+quote an input fragment or secret. A successful response is the existing final
+`ReviewResult`, with no extra account/auth claim. Invalid, cancelled and incomplete
+reviews return a nonzero status and never save a partial result. SIGINT and SIGTERM
+use the existing lifecycle owner to drain runner groups. A closed stdout pipe
+fails without a raw EPIPE diagnostic.
+
+Session credentials are not persisted. Request buffers and references are released
+on completion or cancellation. JavaScript strings and JSON parsing can leave
+copies until garbage collection, so this is not a physical memory zeroization
+claim. This source preview has no GUI, OAuth store or provider qualification.
