@@ -283,6 +283,14 @@ function codexOptions(
 			if (raw && evalTraceOn() && run.outputGuards.length === 0) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
+		...(run.onTrace ? { onNativeToolTrace: (toolTrace, runnerAttempt) => {
+			observeReviewTrace(run.onTrace, {
+				content: "", surface: "native_tool_receipts", toolTrace,
+				passKind: traceAttempt.passKind, passIndex: traceAttempt.passIndex,
+				promptAttempt: traceAttempt.promptAttempt, runnerAttempt,
+				outcome: toolTrace.invocation === "accepted" ? "runner_completed" : "runner_failed",
+			});
+		} } satisfies Pick<CodexOptions, "onNativeToolTrace"> : {}),
 		onLfsReport: (report) => {
 			for (const file of report.pointerFiles) run.lfs.pointerFiles.add(file);
 			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
