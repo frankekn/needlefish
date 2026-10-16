@@ -53,6 +53,7 @@ import {
 	disposeManagedTempDirectory,
 } from "./temp-lifecycle.js";
 import {
+	RunnerWorktreeChangedError,
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
 	prepareRunnerSandbox,
@@ -654,7 +655,9 @@ export async function runCodex(
 		} catch (err) {
 			if (err instanceof Error && opts.connectionAuth) {
 				// Keep failure types and raw provenance while withholding public credentials.
-				err.message = opts.connectionAuth.screenDiagnostic(err.message);
+				err.message = err instanceof RunnerWorktreeChangedError
+					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential."
+					: opts.connectionAuth.screenDiagnostic(err.message);
 			}
 			const raw =
 				err instanceof Error

@@ -61,8 +61,10 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       process.stderr.write('auth error code: ' + process.env.AGENT_API_KEY + '\\n', () => process.exit(1));
       return;
     }
-    if (mode === 'sandbox-leak') {
-      fs.writeFileSync(path.join(process.cwd(), process.env.AGENT_API_KEY), 'temporary');
+    if (mode.startsWith('sandbox-leak')) {
+      const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
+      const filename = mode === 'sandbox-leak-encoded' ? escaped : mode === 'sandbox-leak-double-encoded' ? JSON.stringify(escaped) : process.env.AGENT_API_KEY;
+      fs.writeFileSync(path.join(process.cwd(), filename), 'temporary');
       process.stderr.write('sandbox filename: ' + process.env.AGENT_API_KEY + '\\n');
     }
     if (mode === 'auth-error') {
@@ -206,16 +208,18 @@ test("structured auth failure does not retry or expose the key but retains contr
   f.clean();
 });
 
-for (const mode of ["stderr-leak", "sandbox-leak"]) {
+for (const mode of ["stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded"]) {
   const credential = "synthetic_secret_a1234567890";
   test(`${mode}: failure screening retains raw evidence and error classification after source mutation`, (t) => {
     const f = fixture(t, mode, credential);
     const result = f.run([harness(f, false)], { NEEDLEFISH_NO_RETRY: mode === "stderr-leak" ? "1" : "0" });
     assert.equal(result.status, 1);
     const diagnostic = JSON.parse(result.stdout);
+    const sandbox = mode.startsWith("sandbox-leak");
     assert.match(diagnostic.message, /withheld.*credential/);
-    assert.equal(diagnostic.name, mode === "sandbox-leak" ? "RunnerWorktreeChangedError" : "RunnerOperationalError");
-    assert.equal(diagnostic.safetyError, mode === "sandbox-leak");
+    if (sandbox) assert.equal(diagnostic.message, "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential.");
+    assert.equal(diagnostic.name, sandbox ? "RunnerWorktreeChangedError" : "RunnerOperationalError");
+    assert.equal(diagnostic.safetyError, sandbox);
     assert.equal(diagnostic.sawFailedRaw, true);
     assert.equal(diagnostic.sawFailedAttemptRaw, true);
     assert.ok(!(result.stdout + result.stderr).includes(credential));
@@ -230,6 +234,7 @@ for (const mode of ["stderr-leak", "sandbox-leak"]) {
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /withheld.*credential/);
     assert.ok(!result.stderr.includes(credential));
+    assert.ok(!result.stderr.includes("\\u"));
     assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     f.clean();
   });
@@ -270,7 +275,7 @@ for (const mode of ["leak", "leak-fenced"]) {
   });
 }
 
-for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak"]) {
+for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded"]) {
   test(`GitHub never posts an echoed selected credential: ${mode}`, (t) => {
     const credential = mode === "leak-fenced" ? keyA : "synthetic_secret_a1234567890";
     const f = fixture(t, mode, credential);
@@ -300,6 +305,7 @@ else process.stdout.write('[]');
     assert.match(outbound, /withheld.*credential/);
     assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
     assert.ok(!(result.stdout + result.stderr + outbound).includes(credential));
+    assert.ok(!(result.stdout + result.stderr + outbound).includes("\\u"));
     f.clean();
   });
 }

@@ -77,7 +77,7 @@ export interface RunnerSandboxOptions {
   readonly tmp: string;
 }
 
-class RunnerWorktreeChangedError extends Error {
+export class RunnerWorktreeChangedError extends Error {
   readonly name = "RunnerWorktreeChangedError";
 
   constructor(runner: RunnerName, detail?: string) {
