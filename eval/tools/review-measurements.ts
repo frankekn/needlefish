@@ -13,6 +13,8 @@ export interface MeasurementQuery {
   readonly targetHeadSha: string;
   readonly workflowId: number;
   readonly workflowPath: string;
+  readonly jobKey: string;
+  readonly jobName: string;
   readonly maxPages: number;
 }
 export interface MeasurementRow {
@@ -77,6 +79,7 @@ export function validateMeasurementQuery(input: MeasurementQuery): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(input.repository) || input.repository.length > 201 ||
       !id(input.prNumber) || !/^[a-f0-9]{40}$/.test(input.targetHeadSha) || !id(input.workflowId) ||
       !/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(input.workflowPath) ||
+      (typeof input.jobKey !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]{0,99}$/.test(input.jobKey)) || typeof input.jobName !== "string" || input.jobName.length === 0 || input.jobName.length > 200 || Array.from(input.jobName).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
       !Number.isSafeInteger(input.maxPages) || input.maxPages < 1 || input.maxPages > 10) throw new Error("invalid measurement query");
 }
 
@@ -155,7 +158,8 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
     const round = externalRound(check.external_id);
     if (app?.slug !== "github-actions" || !id(app.id)) binding = unknown("unverified_check_app");
     else if (workflow.status === "recorded") {
-      if (round?.v !== 2 || round.prNumber !== measurement.prNumber || round.roundId !== measurement.invocationId || round.runId !== workflow.runId) binding = unknown("check_run_binding_conflict");
+      if (workflow.jobKey !== query.jobKey) binding = unknown("job_key_contract_conflict");
+      else if (round?.v !== 2 || round.prNumber !== measurement.prNumber || round.roundId !== measurement.invocationId || round.runId !== workflow.runId) binding = unknown("check_run_binding_conflict");
       else {
         const key = `${workflow.runId}/${workflow.runAttempt}`;
         if (!runs.has(key)) {
@@ -169,7 +173,7 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
           run = sourceRun;
           if (!jobs.has(key)) jobs.set(key, pages(`repos/${query.repository}/actions/runs/${workflow.runId}/attempts/${workflow.runAttempt}/jobs`, "jobs", check.id));
           const allJobs = jobs.get(key);
-          const matches = allJobs?.filter((item) => item.name === workflow.jobKey);
+          const matches = allJobs?.filter((item) => item.name === query.jobName);
           const match = matches?.length === 1 ? matches[0] : null;
           if (!match || !id(match.id) || !id(match.run_id) || String(match.run_id) !== workflow.runId || match.run_attempt !== workflow.runAttempt || jobCheckId(match.check_run_url, query.repository) === null) binding = unknown(allJobs === null ? "jobs_incomplete" : "job_binding_conflict");
           else { job = match; binding = { status: "producer_attested" }; }
@@ -210,20 +214,20 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
 
 export function parseMeasurementArgs(argv: readonly string[]): MeasurementQuery | { readonly help: true } {
   if (argv.length === 1 && argv[0] === "--help") return { help: true };
-  if (argv.length < 8) throw new Error("expected repository, PR, --head, --workflow-id and --workflow-path");
+  if (argv.length < 12) throw new Error("expected repository, PR, head, workflow and job identity");
   const [repository, pr] = argv;
   const values = new Map<string, string>();
   for (let i = 2; i < argv.length; i += 2) {
     const flag = argv[i], value = argv[i + 1];
-    if (!["--head", "--workflow-id", "--workflow-path", "--max-pages"].includes(flag) || !value || values.has(flag)) throw new Error("invalid measurement option");
+    if (!["--head", "--workflow-id", "--workflow-path", "--job-key", "--job-name", "--max-pages"].includes(flag) || !value || values.has(flag)) throw new Error("invalid measurement option");
     values.set(flag, value);
   }
   if (!/^[1-9]\d*$/.test(pr) || !/^[1-9]\d*$/.test(values.get("--workflow-id") ?? "") || !/^[1-9]\d*$/.test(values.get("--max-pages") ?? "3")) throw new Error("invalid measurement numeric option");
-  const query = { repository, prNumber: Number(pr), targetHeadSha: values.get("--head") ?? "", workflowId: Number(values.get("--workflow-id")), workflowPath: values.get("--workflow-path") ?? "", maxPages: Number(values.get("--max-pages") ?? "3") };
+  const query = { repository, prNumber: Number(pr), targetHeadSha: values.get("--head") ?? "", workflowId: Number(values.get("--workflow-id")), workflowPath: values.get("--workflow-path") ?? "", jobKey: values.get("--job-key") ?? "", jobName: values.get("--job-name") ?? "", maxPages: Number(values.get("--max-pages") ?? "3") };
   validateMeasurementQuery(query); return query;
 }
 
-const USAGE = "Usage: tsx eval/tools/review-measurements.ts owner/name PR --head SHA --workflow-id ID --workflow-path .github/workflows/review.yml [--max-pages 1..10]\n";
+const USAGE = "Usage: tsx eval/tools/review-measurements.ts owner/name PR --head SHA --workflow-id ID --workflow-path .github/workflows/review.yml --job-key review --job-name review [--max-pages 1..10]\n";
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const query = parseMeasurementArgs(process.argv.slice(2));

@@ -33,13 +33,16 @@ separate outcomes. A force-killed process may leave no final record.
 ## Read records for an explicit PR head
 
 Run the collector from this source checkout. Supply the expected workflow ID
-and path for the repository that ran the job.
+and path for the repository that ran the job. Also supply the expected workflow
+job key and its exact API-visible display name. These are an explicit operator
+contract; GitHub does not expose the workflow job key in the Jobs API.
 
 ```bash
 pnpm exec tsx eval/tools/review-measurements.ts owner/repo 123 \
   --head 0123456789abcdef0123456789abcdef01234567 \
   --workflow-id 123456 \
-  --workflow-path .github/workflows/review.yml
+  --workflow-path .github/workflows/review.yml \
+  --job-key review --job-name review
 ```
 
 The collector only issues read-only `gh api` calls. It reads check envelopes,
@@ -51,7 +54,9 @@ No model or target configuration is read.
 A record must match the requested repository, PR, and target head. The check
 must have the expected name and Actions App identity. Its external round ID
 and run ID must match the record. The workflow ID, path, repository, attempt,
-and unique job name must also match. A workflow merge-ref SHA is reported as
+and captured job key must also match the supplied contract. The exact display
+name must uniquely identify a job in that run attempt. Named and matrix jobs
+require their rendered display name. Duplicate names remain unknown. A workflow merge-ref SHA is reported as
 `workflowRefSha`; it never replaces `targetHeadSha`. The Actions job check ID
 is separate from the self-created `Needlefish` check ID.
 

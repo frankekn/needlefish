@@ -7,7 +7,7 @@ import path from "node:path";
 import { newMeasurement, measurementWorkflow, type MeasurementV1 } from "../../src/adapters/github-measurement.js";
 import { collectReviewMeasurements, parseMeasurementArgs, utcDuration, type GithubRead, type MeasurementQuery } from "./review-measurements.js";
 
-const query: MeasurementQuery = { repository: "org/repo", prNumber: 7, targetHeadSha: "a".repeat(40), workflowId: 44, workflowPath: ".github/workflows/review.yml", maxPages: 2 };
+const query: MeasurementQuery = { repository: "org/repo", prNumber: 7, targetHeadSha: "a".repeat(40), workflowId: 44, workflowPath: ".github/workflows/review.yml", jobKey: "review", jobName: "review", maxPages: 2 };
 function receipt(overrides: Partial<MeasurementV1> = {}): MeasurementV1 {
   return { ...newMeasurement({ repository: query.repository, prNumber: 7, targetHeadSha: query.targetHeadSha, workflow: measurementWorkflow({ runId: "10", runAttempt: "2", jobKey: "review" }) }),
     summaryReviewId: 100, inlineReviewIds: [101], outcome: "verdict", verdict: "pass", delivery: "delivered", pipeline: { status: "observed", clock: "producer_monotonic", elapsedMs: 2500 }, ...overrides };
@@ -122,9 +122,9 @@ test("timestamp failures and CLI inputs are strict without echoing external valu
   assert.deepEqual(utcDuration("2026-10-16T00:00:20Z", "2026-10-16T00:00:00Z"), { status: "unknown", reason: "clock_order_conflict" });
   assert.deepEqual(utcDuration("2026-02-31T00:00:00Z", "2026-10-16T00:00:00Z"), { status: "unknown", reason: "invalid_timestamp" });
   assert.deepEqual(utcDuration("2026-10-16T00:00:00+00:00", null), { status: "unknown", reason: "missing_timestamp" });
-  assert.deepEqual(parseMeasurementArgs(["org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath]), { ...query, maxPages: 3 });
+  assert.deepEqual(parseMeasurementArgs(["org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath, "--job-key", "review", "--job-name", "review"]), { ...query, maxPages: 3 });
   assert.deepEqual(parseMeasurementArgs(["--help"]), { help: true });
-  assert.throws(() => parseMeasurementArgs(["org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath, "--max-pages", "11"]), /invalid measurement query/);
+  assert.throws(() => parseMeasurementArgs(["org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath, "--job-key", "review", "--job-name", "review", "--max-pages", "11"]), /invalid measurement query/);
 });
 
 
@@ -148,7 +148,7 @@ if (args.length !== 2 || args[0] !== 'api' || !(args[1] in responses)) process.e
 process.stdout.write(JSON.stringify(responses[args[1]]));
 `);
   chmodSync(fakeGh, 0o755);
-  const run = spawnSync(process.execPath, ["--import", "tsx", "eval/tools/review-measurements.ts", "org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath], { encoding: "utf8", env: { PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ""}`, HOME: tmp } });
+  const run = spawnSync(process.execPath, ["--import", "tsx", "eval/tools/review-measurements.ts", "org/repo", "7", "--head", query.targetHeadSha, "--workflow-id", "44", "--workflow-path", query.workflowPath, "--job-key", "review", "--job-name", "review"], { encoding: "utf8", env: { PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ""}`, HOME: tmp } });
   assert.equal(run.status, 0, run.stderr); assert.equal(run.stderr, "");
   const report: unknown = JSON.parse(run.stdout); assert.ok(typeof report === "object" && report !== null);
   const rows: unknown = Reflect.get(report, "rows"); assert.ok(Array.isArray(rows)); assert.equal(rows.length, 1);
@@ -179,4 +179,31 @@ test("collector never exceeds the global API read budget", () => {
   });
   assert.equal(calls, 100); assert.equal(report.rows.length, 60); assert.equal(report.partial, true);
   assert.equal(report.diagnostics.some((item) => item.reason === "request_limit"), true);
+});
+
+test("named job binding uses an explicit job-key and display-name contract", () => {
+  const namedQuery = { ...query, jobKey: "review", jobName: "Review PR" };
+  const report = collectReviewMeasurements(namedQuery, fixture(receipt(), { job: { name: "Review PR" } }).read);
+  assert.deepEqual(report.rows[0].binding, { status: "producer_attested" });
+  assert.equal(report.rows[0].workflowJobDatabaseId, 20);
+});
+
+test("a different job whose display name equals the captured key is not selected", () => {
+  const namedQuery = { ...query, jobKey: "review", jobName: "Review PR" };
+  const job = { run_id: 10, run_attempt: 2, status: "completed", created_at: "2026-10-16T00:00:01Z", started_at: "2026-10-16T00:00:11Z" };
+  const report = collectReviewMeasurements(namedQuery, fixture(receipt(), { jobs: [
+    { ...job, id: 20, name: "Review PR", check_run_url: "https://api.github.com/repos/org/repo/check-runs/21" },
+    { ...job, id: 999, name: "review", check_run_url: "https://api.github.com/repos/org/repo/check-runs/1000" },
+  ] }).read);
+  assert.deepEqual(report.rows[0].binding, { status: "producer_attested" });
+  assert.equal(report.rows[0].workflowJobDatabaseId, 20);
+  assert.equal(report.rows[0].workflowJobCheckRunId, 21);
+});
+
+test("captured job key cannot borrow another supplied display-name contract", () => {
+  const record = receipt({ workflow: { status: "recorded", runId: "10", runAttempt: 2, jobKey: "other" } });
+  const report = collectReviewMeasurements(query, fixture(record).read);
+  assert.deepEqual(report.rows[0].binding, { status: "unknown", reason: "job_key_contract_conflict" });
+  assert.equal(report.rows[0].workflowJobDatabaseId, null);
+  assert.equal(report.rows[0].evidenceStatus, "unknown");
 });
