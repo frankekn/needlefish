@@ -106,11 +106,12 @@ process.stdout.write(${JSON.stringify(response)});
   writeFileSync(path.join(bin, "gh"), `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args[0] === 'api') {
-  if (args.includes('--input')) { require('node:fs').readFileSync(0, 'utf8'); process.stdout.write('{"id":1}'); }
+  if (args.includes('--input')) { require('node:fs').readFileSync(0, 'utf8'); process.stdout.write('{"id":1,"app":{"id":15368,"slug":"github-actions"}}'); }
   else if (args[1] === 'repos/frankekn/needlefish/pulls/7') process.stdout.write(${JSON.stringify(JSON.stringify({
     state: options.github === "closed" ? "closed" : "open", head: { sha: head }, base: { sha: base },
     author_association: options.github === "untrusted" ? "NONE" : "MEMBER", user: { login: "author", type: "User" },
   }))});
+  else if (args.some(arg => arg.includes('/check-runs?'))) process.stdout.write('[{"check_runs":[]}]');
   else if (args.includes('--paginate')) process.stdout.write('[[]]');
   else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
   else process.exit(2);
@@ -193,6 +194,20 @@ test("active GitHub review validates its connection with a single-line CLI error
   assert.match(result.stderr, /^needlefish: [^\n]+\n$/);
   assert.match(result.stderr, /connections/i);
   assert.equal(f.launches().length, 0);
+});
+
+test("active GitHub named connection reaches review and critic with the selected model", (t) => {
+  const f = fixture(t, "acp", { github: "active" });
+  const result = f.run(["--github", "--pr", "7"]);
+  assert.equal(result.status, 0, result.stderr);
+  const calls = f.calls();
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.ok(call.argv.includes("chosen-model"));
+    assert.equal(call.githubToken, false);
+    assert.equal(call.ghToken, false);
+    assert.equal(call.configVisible, false);
+  }
 });
 
 for (const adapter of ["claude", "acp"] as const) {
