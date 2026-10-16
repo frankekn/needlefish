@@ -287,3 +287,14 @@ test("blocked diagnostics stay bounded and separate from the gate error", (t) =>
   assert.equal(result.stderr.slice(0, 16384) === "x".repeat(16384), true);
   assert.equal(result.stderr.includes("x".repeat(16385)), false);
 });
+
+
+test("real verdict validation diagnostics survive a schema failure", (t) => {
+  const f = setup(t);
+  const result = f.run({ ...f.base, findings: [{}], summary: "PRIVATE_MODEL_JSON" });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /^needlefish: invalid cached review /);
+  assert.match(result.stderr, /\nNeedlefish gate blocked: review schema or derived verdict validation failed\n$/);
+  assert.doesNotMatch(result.stderr, /PRIVATE_MODEL_JSON/);
+});
