@@ -27,7 +27,7 @@ if(state.clockSteps){state.elapsedMs=(state.elapsedMs||0)+(state.clockSteps[args
 if(state.delayAt===args.find(arg=>arg.startsWith('repos/')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);
 function out(value){console.log(JSON.stringify(value));process.exit(0)}
 function missing(){console.error('gh: Not Found (HTTP 404)');process.exit(1)}
-if(state.fail||(state.failSecret&&args[0]==='secret')){console.error('network failed '+input);process.exit(1)}
+if(state.fail||(state.failAt&&state.failAt===args.find(arg=>arg.startsWith('repos/')))||(state.failSecret&&args[0]==='secret')){console.error('network failed '+input);process.exit(1)}
 if(args[0]==='auth'){if(state.loginOutput&&args[1]==='login')console.log('First copy your one-time code: AB12-CD34');process.exit(state.authFailed?1:0)}
 if(args[0]==='secret'){state.secret=true;save();process.exit(0)}
 const endpoint=args.find(arg=>arg.startsWith('repos/')||arg.startsWith('user/repos'));
@@ -60,7 +60,7 @@ if(endpoint.includes('/compare/'))out({total_commits:1,files:state.extra?[{filen
 if(endpoint.endsWith('/git/trees')){if(body.base_tree!=='base-tree'||body.tree.length!==1||body.tree[0].content!==template)throw Error('unexpected tree');out({sha:'setup-tree'})}
 if(endpoint.endsWith('/git/commits'))out({sha:'setup-sha'});
 if(endpoint.endsWith('/git/refs')){state.branch=true;save();out({ref:body.ref})}
-if(endpoint.endsWith('/pulls')){state.pr=true;save();out({html_url:'https://github.com/owner/repo/pull/7'})}
+if(endpoint.endsWith('/pulls')){state.pr=true;save();out(state.prReply??{html_url:'https://github.com/owner/repo/pull/7'})}
 throw Error('unhandled endpoint '+endpoint);
 `;
   writeFileSync(join(root, "gh"), script); chmodSync(join(root, "gh"), 0o700);
@@ -117,6 +117,52 @@ test("a crash after branch creation reuses the exact owned branch", t => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(f.history().filter(call => call.args.includes("--method")).length, 1);
 });
+
+for (const initial of [{}, { previous: true }, { branch: true }, { branch: true, pr: true }]) {
+  test(`confirmed setup returns its PR without a post-write workflow scan ${JSON.stringify(initial)}`, t => {
+    const f = fixture(t, { ...initial, workflows: [{ name: "slow-ci.yml", type: "file" }], clockSteps: {
+      "repos/owner/repo/contents/.github/workflows/slow-ci.yml?ref=main": 55_000,
+      "repos/owner/repo/contents/.github/workflows/slow-ci.yml?ref=base-sha": 1_000,
+    } });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(f.state().pr, true);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const status = JSON.parse(result.stdout);
+    assert.equal(status.phase, "pr_created");
+    assert.equal(status.prUrl, "https://github.com/owner/repo/pull/7");
+    assert.equal(status.branchHead, "setup-sha");
+    assert.equal(status.firstReview, "not_verified");
+    assert.equal(status.authentication, "unknown");
+    const calls = f.history();
+    assert.equal(calls.filter(call => call.args.includes("repos/owner/repo/contents/.github/workflows/slow-ci.yml?ref=main")).length, 1);
+    assert.equal(calls.filter(call => call.args.includes("repos/owner/repo/contents/.github/workflows/slow-ci.yml?ref=base-sha")).length, 1);
+    assert.equal(calls.filter(call => call.args.includes("--method")).length, initial.pr ? 0 : initial.branch ? 1 : 4);
+    if (!initial.pr) assert.ok(calls.at(-1)?.args.includes("repos/owner/repo/pulls"));
+  });
+}
+
+for (const failAt of ["repos/owner/repo/contents/.github/workflows?ref=base-sha", "repos/owner/repo/git/refs", "repos/owner/repo/pulls"]) {
+  test(`setup still reports a real read or write failure at ${failAt}`, t => {
+    const f = fixture(t, { failAt });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.match(JSON.parse(result.stdout).message, /GitHub request failed/);
+    assert.equal(f.state().pr, undefined);
+    assert.equal(JSON.parse(result.stdout).prUrl, undefined);
+  });
+}
+
+for (const prReply of [{}, { html_url: 7 }, { html_url: "https://github.com/other/repo/pull/7" }, { html_url: "https://github.com/owner/repo/pull/7?token=unexpected" }]) {
+  test(`setup rejects an invalid PR creation URL ${JSON.stringify(prReply)}`, t => {
+    const f = fixture(t, { prReply });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.equal(JSON.parse(result.stdout).prUrl, undefined);
+    assert.equal(f.state().pr, true);
+  });
+}
 
 for (const state of [{ modified: true }, { duplicate: true }, { admin: false }, { actions: false }, { branch: true, unowned: true }, { branch: true, extra: true }]) {
   test(`setup preserves repository state when preflight rejects ${JSON.stringify(state)}`, t => {
