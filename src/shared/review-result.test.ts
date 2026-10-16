@@ -29,6 +29,30 @@ test("parseReviewResult round-trips a serialized result", () => {
 	assert.deepEqual(result, baseResult());
 });
 
+test("parseReviewResult preserves valid legacy whitespace and blocking residuals", () => {
+	const legacy: ReviewResult = {
+		...baseResult(),
+		verdict: "needs_human",
+		summary: " \n## Review\n  保留縮排。\n ",
+		checked: ["", " \n  inspected imports\n  and callers \t", "\u3000"],
+		residualRisks: [{ text: "  auth path not reviewed  ", blocks: true }],
+	};
+	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
+});
+
+test("parseReviewResult preserves the published v1 contract for blank legacy coverage", () => {
+	for (const overrides of [
+		{ summary: "" },
+		{ summary: " \t\r\n\u3000" },
+		{ checked: [] },
+		{ checked: [""] },
+		{ checked: [" ", "\t\n\u3000"] },
+	]) {
+		const legacy = { ...baseResult(), ...overrides };
+		assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
+	}
+});
+
 test("parseReviewResult accepts every optional field by type when present", () => {
 	const result = parseReviewResult(
 		serialized({

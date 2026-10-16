@@ -1,0 +1,41 @@
+{
+  "label": "pr258",
+  "slot": 2,
+  "started": 1792144357.69696,
+  "finished": 1792144429.7901025,
+  "exit": 0,
+  "verdict": "pass",
+  "runnerCalls": 2,
+  "stages": [
+    "review",
+    "critic"
+  ],
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "sourceSha": "ee28669b5eb404730bc29cf5ffb7c450e013b0c8",
+  "base": "f1689617e7d9f181711a0b83b41b7cdd12637ed1",
+  "head": "b9811718cb0e8a06b68d74f0f97dc3f5da409446",
+  "rawOutputCount": 2,
+  "infrastructureFailures": 0,
+  "malformedOutputs": 0,
+  "fallbacks": 0,
+  "privateMarkerDetections": 0,
+  "stats": [
+    {
+      "label": "review",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "durationMs": 49871,
+      "attempts": 1,
+      "ok": true
+    },
+    {
+      "label": "critic",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "durationMs": 21803,
+      "attempts": 1,
+      "ok": true
+    }
+  ]
+}

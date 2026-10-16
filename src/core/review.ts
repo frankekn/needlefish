@@ -12,6 +12,7 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
+import { findRunnerFailure } from "../shared/runner-failure.js";
 import { resolveRunner } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -253,13 +254,13 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn()) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && !run.runnerOptions.connectionAuth) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		onLfsReport: (report) => {
@@ -345,7 +346,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn()) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -973,6 +974,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 					};
 				} catch (e) {
 					if (isRunnerSafetyError(e)) throw e;
+					const failure = findRunnerFailure(e);
+					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).
@@ -1124,8 +1127,8 @@ export async function review(
 		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
 		: undefined;
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace
-		? { failed: false, pending: new Set() }
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerOptions.connectionAuth !== undefined && evalTraceOn())
+		? { failed: onTrace === undefined, pending: new Set() }
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
@@ -1137,9 +1140,9 @@ export async function review(
 		...(onTrace && traceHealth
 			? {
 					onTrace: wrapTraceObserver(onTrace, traceHealth),
-					traceHealth,
 				}
 			: {}),
+		...(traceHealth ? { traceHealth } : {}),
 		...(onProgress ? { onProgress } : {}),
 		startedAt,
 		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),

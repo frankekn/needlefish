@@ -1,6 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { review } from "../core/review.js";
+import { review, reviewPlan } from "../core/review.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
 	priorFateParts,
@@ -8,10 +8,11 @@ import {
 	type PriorFate,
 	type PriorFateCounts,
 } from "../shared/render.js";
-import { changedFiles, ghText, git, makeBundle, readAgentsAt } from "../shared/repo.js";
+import { ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } from "../shared/repo.js";
 import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
+import { resolveConnectionOptions } from "../shared/connections.js";
 import {
 	registerTerminationFinalizer,
 	type Termination,
@@ -682,7 +683,7 @@ export function classifyUnmatched(
 
 // null means the previous head is not available locally, even after one
 // fetch; every unmatched key is then undetermined rather than guessed.
-function touchesSincePrevHead(
+export function touchesSincePrevHead(
 	repoPath: string,
 	prevHead: string,
 	headSha: string,
@@ -699,7 +700,7 @@ function touchesSincePrevHead(
 		}
 		return oldSideTouches(
 			git(
-				["diff", "--no-color", "--no-renames", "-U0", prevHead, headSha],
+				[...reviewDiff(repoPath), "--no-color", "--no-renames", "-U0", prevHead, headSha],
 				repoPath,
 				{ preserveOutput: true },
 			),
@@ -1600,15 +1601,12 @@ export async function runGithub(
 	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
 	if (!baseSha || !headSha)
 		throw new Error("Could not resolve PR base/head SHA");
-	const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
-	const patch = git(["diff", mergeBase, headSha], repoPath, { preserveOutput: true });
-	if (!patch.trim()) {
-		throw new Error(
-			`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
-		);
-	}
-	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath, { preserveOutput: true });
-	const changed = changedFiles(repoPath, mergeBase, headSha);
+	const {
+		baseSha: mergeBase,
+		patch,
+		patchStat,
+		changedFiles: changed,
+	} = prDiffFromShas(repoPath, baseSha, headSha);
 
 	const commentsUrl = stringField(pr, "comments_url");
 	const reviewsUrl = stringField(pr, "review_comments_url");
@@ -1639,6 +1637,7 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, mergeBase),
 	});
 
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
 	const pendingCheckId = createPendingCheck(repo, headSha);
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
@@ -1667,7 +1666,7 @@ export async function runGithub(
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
 		const result: ReviewResult = {
-			...(await review(bundle, opts)),
+			...(await review(bundle, resolvedOpts)),
 			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
 			prNumber,
 			prBaseSha: baseSha,
