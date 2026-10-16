@@ -785,6 +785,7 @@ final class OnboardingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = Onboarding()
         model.state = .busy("Review in progress")
+        model.demo()
         model.saveDiagnostics("diagnostic preview", to: root)
         guard case .busy(let label) = model.state else { return XCTFail("Export must preserve the active operation") }
         XCTAssertEqual(label, "Review in progress")

@@ -184,7 +184,7 @@ final class Onboarding: ObservableObject {
         code = nil
         state = .busy("正在取消並清理本次暫存。 / Cancelling and cleaning temporary files.")
     }
-    func demo() { guard !busy else { return }; state = .result(.demo, demo: true) }
+    func demo() { guard !localBusy else { return }; state = .result(.demo, demo: true) }
     func exportDiagnostics() {
         let content = "Needlefish desktop diagnostic preview\nplatform=macOS arm64\nruntime=\(runtime == nil ? "unavailable" : "available")\nproject=\(repo == nil ? "not selected" : "selected; path omitted")\nNo code, prompts, account data or raw CLI output included.\n"
         let alert = NSAlert()
@@ -199,7 +199,7 @@ final class Onboarding: ObservableObject {
     }
 
     func saveDiagnostics(_ content: String, to url: URL) {
-        guard !busy else { return }
+        guard !localBusy else { return }
         do {
             try content.write(to: url, atomically: true, encoding: .utf8)
             state = .message("已匯出診斷。 / Diagnostics exported.")
@@ -237,9 +237,9 @@ struct ContentView: View {
             }
             HStack {
                 Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(model.busy)
-                Button("離線範例 / Offline example", action: model.demo).disabled(model.busy)
+                Button("離線範例 / Offline example", action: model.demo).disabled(model.localBusy)
                 Spacer()
-                Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics).disabled(model.busy)
+                Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics).disabled(model.localBusy)
             }
         }
         .padding(24)
