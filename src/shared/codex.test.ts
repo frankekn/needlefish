@@ -4,8 +4,9 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { extractJson, runCodex, RunnerOperationalError } from "./codex";
+import { buildRunnerEnv, extractJson, runCodex, RunnerOperationalError } from "./codex";
 import { headSha, initRepo } from "./codex-runner-test-fixtures";
+import { captureEnv, restoreEnv } from "./runner-test-fixtures";
 import { RunnerTimeoutError } from "./runner-process";
 
 test("extractJson parses fenced JSON output", () => {
@@ -62,6 +63,37 @@ test("extractJson rejects invalid JSON", () => {
   const text = "```json\n{ok:true}\n```";
 
   assert.throws(() => extractJson(text), /invalid JSON in codex output/);
+});
+
+test("extractJson rejects duplicated JSON keys instead of silently keeping the last value", () => {
+  // Regression #221: JSON.parse collapses duplicate keys last-value-wins, so a
+  // response repeating "findings" (P1, then []) or "residual_risks"
+  // (blocks:true, then []) normalized to zero findings and a pass verdict.
+  assert.throws(
+    () => extractJson('{"findings":[{"severity":"P1"}],"findings":[],"summary":"ok"}'),
+    /duplicate JSON key "findings" in codex output/,
+  );
+  assert.throws(
+    () => extractJson('{"residual_risks":[{"blocks":true}],"residual_risks":[]}'),
+    /duplicate JSON key "residual_risks" in codex output/,
+  );
+  assert.throws(
+    () => extractJson('```json\n{"findings":[{"severity":"P1","severity":"P0"}]}\n```'),
+    /duplicate JSON key "severity" in codex output/,
+  );
+  // Escaped keys are compared decoded, so the JSON.parse collision is caught.
+  assert.throws(
+    () => extractJson('{"a":1,"\\u0061":2}'),
+    /duplicate JSON key "a" in codex output/,
+  );
+  assert.deepEqual(extractJson('{"a":{"k":1},"b":{"k":2}}'), {
+    a: { k: 1 },
+    b: { k: 2 },
+  });
+  assert.deepEqual(extractJson('{"a":"{ \\"k\\":1, \\"k\\":2 }","b":[["x,y"],"z"]}'), {
+    a: '{ "k":1, "k":2 }',
+    b: [["x,y"], "z"],
+  });
 });
 
 test("extractJson parses a raw JSON document", () => {
@@ -615,6 +647,31 @@ test("runCodex passes NEEDLEFISH_RUNNER_ENV_PASSTHROUGH vars through", async (t)
 
   const dump = JSON.parse(readFileSync(envDump, "utf8")) as { secret: string | null };
   assert.equal(dump.secret, "should-leak-now");
+});
+
+test("buildRunnerEnv seals git config against a passthrough of the same names", (t) => {
+  const previous = captureEnv([
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_NOSYSTEM",
+    "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH",
+    "NEEDLEFISH_TEST_FAKE_SECRET",
+  ]);
+  t.after(() => restoreEnv(previous));
+  process.env.GIT_CONFIG_GLOBAL = "/evil/global";
+  process.env.GIT_CONFIG_SYSTEM = "/evil/system";
+  process.env.GIT_CONFIG_NOSYSTEM = "0";
+  process.env.NEEDLEFISH_TEST_FAKE_SECRET = "kept";
+  process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH =
+    "GIT_CONFIG_GLOBAL,GIT_CONFIG_SYSTEM,GIT_CONFIG_NOSYSTEM,NEEDLEFISH_TEST_FAKE_SECRET";
+
+  const sealed = buildRunnerEnv("codex", "/gh", "/tmp/ephemeral-home");
+
+  assert.equal(sealed.GIT_CONFIG_GLOBAL, "/dev/null");
+  assert.equal(sealed.GIT_CONFIG_SYSTEM, "/dev/null");
+  assert.equal(sealed.GIT_CONFIG_NOSYSTEM, "1");
+  assert.equal(sealed.NEEDLEFISH_TEST_FAKE_SECRET, "kept");
+  assert.equal(sealed.HOME, "/tmp/ephemeral-home");
 });
 
 test("runCodex passes claude auth env vars to the claude runner subprocess", async (t) => {

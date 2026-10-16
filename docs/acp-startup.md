@@ -14,8 +14,11 @@ runner attempt. A late response after cancellation cannot revive the run.
 retryability. A transient server error can recover on the existing second
 attempt; authentication/protocol failures stay non-retryable. Its diagnostics
 name that stage without turning every session error into a handshake failure.
-`session/prompt` retains the normal review timeout and bounded retry policy;
-this change does not impose a 30-second model-review limit.
+`session/prompt` retains the normal review timeout. A managed whole-call timeout
+is terminal after one attempt in every phase, even when its diagnostic cause
+has `retryable: true`. That flag preserves the underlying cause classification;
+it does not override the managed timeout policy. This change does not impose a
+30-second model-review limit.
 
 Failures while waiting for `initialize` or `session/new` report the stage, a
 safe reason, elapsed milliseconds, exit/signal and stream byte counts. Pre-launch

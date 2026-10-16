@@ -195,7 +195,6 @@ test("local --pr records the PR base tip as prBaseSha, distinct from the merge b
   writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
   commitAll(repo, "feature");
   const head = headSha(repo);
-  // Advance main past the merge base so the PR base tip and merge base differ.
   gitText(["checkout", "main"], repo);
   writeFileSync(path.join(repo, "MAIN.md"), "main moved\n");
   commitAll(repo, "main advanced");
@@ -514,8 +513,6 @@ test("runLocal tells the user what to do when the branch has no diff against its
   );
 });
 
-// --- Nested-directory invocation --------------------------------------------
-
 type NestedFixture = {
   readonly tmp: string;
   readonly repo: string;
@@ -648,6 +645,29 @@ test("local CLI --repo pointing at a nested directory resolves the same root sco
   assertRootScopedReview(fixture, result.stdout);
   assert.equal(existsSync(cachePath(fixture, "repo")), true, "cache must be keyed by the repository root");
   assert.equal(existsSync(cachePath(fixture, "deep")), false);
+});
+
+test("local CLI launched outside an explicitly configured worktree reviews the repository root scope", (t) => {
+  const fixture = dirtyNestedFixture(t);
+  const result = spawnSync(
+    process.execPath,
+    ["--import", TSX_LOADER, path.join(process.cwd(), "src/cli.ts"), "--json", "--runner", "claude"],
+    {
+      cwd: fixture.tmp,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: fixture.home,
+        GIT_DIR: path.join(fixture.repo, ".git"),
+        GIT_WORK_TREE: fixture.repo,
+      },
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assertRootScopedReview(fixture, result.stdout);
+  assert.equal(existsSync(cachePath(fixture, "repo")), true, "cache must be keyed by the repository root");
+  assert.equal(readFileSync(cachePath(fixture, "repo"), "utf8"), result.stdout);
 });
 
 test("branch-mode review from a nested directory keeps root-relative paths and root policy", (t) => {

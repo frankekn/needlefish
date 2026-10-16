@@ -90,10 +90,11 @@ export function classifyFiles(files: string[]): { path: string; surface: Surface
 // True only for Markdown that is safe to skip model review: descriptively named
 // prose in a docs/doc directory, or a recognized human-facing basename; never a
 // prompts-like path, a dot-directory, a named repo-policy file, or an
-// unrecognized ALL-CAPS convention name. review() also requires
-// surface === "docs". Every branch that returns true is an allowlist branch:
-// Markdown this function does not recognize gets reviewed, not passed.
-export function isDocsFastPathEligible(file: string): boolean {
+// unrecognized ALL-CAPS convention name. Every branch that returns true is an
+// allowlist branch: Markdown this function does not recognize gets reviewed,
+// not passed.
+export function isDocsFastPathEligible(surface: Surface, file: string): boolean {
+  if (surface !== "docs") return false;
   const normalized = file.replace(/\\/g, "/");
   if (!DOCS_EXT.test(normalized)) return false;
   if (POLICY_DIR.test(normalized)) return false;

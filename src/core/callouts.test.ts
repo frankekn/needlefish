@@ -11,8 +11,6 @@ const CALLOUT_ORDER = [
 	"public-api",
 ] as const;
 
-// A spread of inputs: empty, non-callout surfaces only, single callout
-// surfaces, and a fully interleaved multi-surface set.
 const INPUTS: readonly (readonly ChangedFile[])[] = [
 	[],
 	[
@@ -46,7 +44,6 @@ test("scopeCallouts property: every callout file is an input file with the claim
 					`${file} must be an input file whose surface is ${callout.surface}`,
 				);
 			}
-			// Files keep input order within each callout.
 			assert.deepEqual(
 				callout.files,
 				changedFiles
@@ -54,7 +51,6 @@ test("scopeCallouts property: every callout file is an input file with the claim
 					.map((f) => f.path),
 			);
 		}
-		// Surfaces come out in the fixed callout order, not input order.
 		const ranks = callouts.map((c) => CALLOUT_ORDER.indexOf(c.surface));
 		assert.deepEqual(
 			ranks,

@@ -27,11 +27,15 @@ import {
 	oldSideTouches,
 	classifyUnmatched,
 	capOutboundBody,
+	isLooselyBotShaped,
+	isTrustedStateAuthor,
+	findPreviousReview,
 	type FindingKey,
 	runGithub,
 } from "./github";
 import type { Finding } from "../shared/schema";
 import { WITHHELD_MESSAGE } from "../shared/outbound-screen";
+import { OWN_POST_FINDING_MARKER } from "../shared/normalize";
 
 type Post = {
 	readonly args: readonly string[];
@@ -657,9 +661,14 @@ function defaultRawReview(): string {
 	});
 }
 
-for (const opener of ["<!--", "```text"]) {
-	test(`oversized UTF-8 check summaries keep the link ahead of ${opener}`, async (t) => {
-		const evidence = `\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
+for (const [opener, prefix] of [
+	["<!--", "Checked evidence:"],
+	["```text", "Checked evidence:"],
+	["<!--", ""],
+	["```text", ""],
+]) {
+	test(`oversized UTF-8 check summaries keep the link ahead of ${opener} ${prefix ? "after text" : "at item start"}`, async (t) => {
+		const evidence = `${prefix}\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
 		const fixture = setupFixture(t, {
 			prNumber: 44,
 			rawReview: JSON.stringify({
@@ -670,7 +679,8 @@ for (const opener of ["<!--", "```text"]) {
 		const posts = readPosts(fixture.postLog);
 		const reviewPost = postedReview(posts, 44);
 		assert.ok(reviewPost);
-		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence));
+		// Normalization trims item boundaries; delivery must retain everything else.
+		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence.trim()));
 		const checks = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
 		const payload = JSON.parse(checks.at(-1)!.payload) as {
 			conclusion: string; output: { summary: string };
@@ -793,6 +803,7 @@ test("runGithub caps an oversized inline comment body", async (t) => {
 		"<!-- needlefish-finding -->",
 		"the own-post marker must survive as the last line (normalize.ts read-back)",
 	);
+	assert.equal(lastLine, OWN_POST_FINDING_MARKER);
 });
 
 test("capOutboundBody shrinks an oversized state marker rather than dropping it", () => {
@@ -1906,6 +1917,28 @@ test("runGithub still skips same-head review when the marker is from the authent
 		"PAT-authored marker must enable same-head dedupe",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+});
+
+function assertNotParameter<F extends (...args: never[]) => unknown, A>(
+	fn: F,
+	value: [A] extends [Parameters<F>[number]] ? never : A,
+): void {
+	assert.equal(typeof fn, "function");
+	assert.notEqual(value, null);
+}
+
+test("z-github-actions-z is cosmetic and not a trusted state author", () => {
+	const item = { user: { login: "z-github-actions-z", type: "User" } };
+	const cosmetic = isLooselyBotShaped(item);
+	assert.notEqual(cosmetic, null);
+	if (cosmetic === null) return;
+	const notABoolean: [typeof cosmetic] extends [boolean] ? never : true = true;
+	assert.equal(notABoolean, true);
+	assertNotParameter(isTrustedStateAuthor, cosmetic);
+	assertNotParameter(findPreviousReview, cosmetic);
+	assert.equal(isTrustedStateAuthor(item, ""), false);
+	assert.equal(isTrustedStateAuthor(item, "github-actions[bot]"), false);
+	assert.equal(isLooselyBotShaped({ user: { login: "frankekn", type: "User" } }), null);
 });
 
 // THE BYPASS THIS PR EXISTS TO CLOSE. `z-github-actions-z` is a registrable
