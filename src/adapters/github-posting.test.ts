@@ -115,6 +115,7 @@ type FixtureOptions = {
  readonly failCheckRunReadsOn?: readonly number[];
  readonly lagStoredReviewRead?: boolean;
  readonly lagStoredCheckRead?: boolean;
+ readonly lagStoredIssueRead?: boolean;
 	// Make the runner stub wait this long before writing anything, so a low
 	// timeoutMs produces a real process timeout (ETIMEDOUT).
 	readonly runnerDelayMs?: number;
@@ -480,6 +481,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`if (args[1] === '--paginate' && args[2] === '--slurp' && args[3] === ${JSON.stringify(`repos/frankekn/needlefish/issues/${opts.prNumber}/comments`)}) {`,
 			`  const issueCommentsPath = ${JSON.stringify(issueCommentsState)};`,
 			"  const issueComments = fs.existsSync(issueCommentsPath) ? JSON.parse(fs.readFileSync(issueCommentsPath, 'utf8')) : [];",
+   `  if (${JSON.stringify(opts.lagStoredIssueRead === true)} && fs.existsSync(issueCommentsPath + ".stored-5xx") && !fs.existsSync(issueCommentsPath + ".lagged-read")) { fs.writeFileSync(issueCommentsPath + ".lagged-read", "1"); process.stdout.write("[[]]"); process.exit(0); }`,
 			"  process.stdout.write(JSON.stringify([issueComments]));",
 			"  process.exit(0);",
 			"}",
@@ -4414,8 +4416,8 @@ test("recovery stops after one failed full re-review and recheck remains explici
  assert.equal(runnerInvocationCount(fixture), 6);
 });
 
-test("a stored round-comment 5xx reuses the comment without posting twice", async (t) => {
- const fixture = setupFixture(t, { prNumber: 125, rawReview: defaultRawReview(), storedIssuePost5xx: true });
+test("a stored round-comment 5xx with delayed visibility survives ordinary rerun without posting twice", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 125, rawReview: defaultRawReview(), storedIssuePost5xx: true, lagStoredIssueRead: true });
  await runGithub(fixture.repo, 125, { timeoutMs: 1000 });
  await runGithub(fixture.repo, 125, { timeoutMs: 1000 }, true);
  const comments: unknown = parseJson(readFileSync(fixture.issueCommentsState, "utf8"));
@@ -4424,9 +4426,12 @@ test("a stored round-comment 5xx reuses the comment without posting twice", asyn
  assert.ok(isRecordLike(comments[0]));
  assert.match(String(comments[0].body), /needlefish-round/);
  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
- const before = runnerInvocationCount(fixture);
- await runGithub(fixture.repo, 125, { timeoutMs: 1000 });
- assert.equal(runnerInvocationCount(fixture), before);
+ const before = readPosts(fixture.postLog).length;
+ const rerun = spawnGithubCli(fixture, 125);
+ assert.equal(rerun.status, 1, rerun.stderr);
+ assert.match(rerun.stdout, /"reason":"same_head"/);
+ assert.equal(runnerInvocationCount(fixture), 4);
+ assert.equal(readPosts(fixture.postLog).length, before);
 });
 
 test("an unreadable ambiguous review POST is not repeated", async (t) => {
@@ -4567,9 +4572,16 @@ for (const artifact of ["review", "check"] as const) {
   const endpoint = artifact === "review" ? "repos/frankekn/needlefish/pulls/135/reviews" : "repos/frankekn/needlefish/check-runs";
   const posts = readPosts(fixture.postLog);
   assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes(endpoint)).length, 1);
+  const rerun = spawnGithubCli(fixture, 135);
+  assert.equal(rerun.status, 1, rerun.stderr);
+  assert.match(rerun.stdout, /"reason":"same_head"/);
+  assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes(endpoint)).length, 1);
   const stored: unknown = parseJson(readFileSync(artifact === "review" ? fixture.reviewsState : fixture.checksState, "utf8"));
   assert.ok(Array.isArray(stored));
   assert.equal(stored.length, 1);
+  assert.equal(runnerInvocationCount(fixture), 2);
+  assert.equal(parseState(readReviewBodies(fixture.reviewsState).at(-1) ?? "")?.v, 2);
+  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
   assert.equal(process.exitCode, 1);
  });
 }

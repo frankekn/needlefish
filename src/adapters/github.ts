@@ -1125,7 +1125,7 @@ function postErrorComment(repo: string, prNumber: number, msg: string): void {
 		"```\n" +
 		`${msg.slice(0, 2000)}\n` +
 		"```\n\n" +
-		"The result could not be delivered. Re-run the review.\n" +
+		"Review did not complete. Re-run the review.\n" +
 		"<!-- needlefish-error -->";
 	try {
 		postIssueComment(repo, prNumber, body);
@@ -1509,8 +1509,14 @@ function reconciledPost(args: readonly string[], input: string, read: () => unkn
 		return ghPost(args, input);
 	} catch (error) {
 		if (!isTransientGh5xx(error)) throw error;
-		const existing = read();
-		if (existing !== null) return existing;
+		for (let attempt = 1; attempt <= GH_POST_ATTEMPTS; attempt++) {
+			const existing = read();
+			if (existing !== null) return existing;
+			if (attempt < GH_POST_ATTEMPTS) {
+				const delay = ghPostRetryBaseMs() * attempt;
+				if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+			}
+		}
 		throw error;
 	}
 }
