@@ -29,6 +29,48 @@ test("parseReviewResult round-trips a serialized result", () => {
 	assert.deepEqual(result, baseResult());
 });
 
+test("parseReviewResult preserves valid legacy whitespace and blocking residuals", () => {
+	const legacy: ReviewResult = {
+		...baseResult(),
+		verdict: "needs_human",
+		summary: " \n## Review\n  保留縮排。\n ",
+		checked: ["", " \n  inspected imports\n  and callers \t", "\u3000"],
+		residualRisks: [{ text: "  auth path not reviewed  ", blocks: true }],
+	};
+	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
+});
+
+test("parseReviewResult rejects blank summaries and checked-only blanks", () => {
+	for (const summary of ["", " \t\r\n\u3000"]) {
+		assert.throws(() => parseReviewResult(serialized({ summary })), /summary blank/);
+	}
+	for (const checked of [[], [""], [" ", "\t\n\u3000"]]) {
+		assert.throws(
+			() => parseReviewResult(serialized({ checked })),
+			/checked list has no non-blank items/,
+		);
+	}
+});
+
+test("parseReviewResult requires coverage even with findings or blocking residuals", () => {
+	for (const overrides of [
+		{ verdict: "needs_human", residualRisks: [{ text: "not reviewed", blocks: true }] },
+		{
+			verdict: "changes_requested",
+			findings: [{
+				severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
+				lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
+				suggestedFix: "f", validation: "",
+			}],
+		},
+	]) {
+		assert.throws(
+			() => parseReviewResult(serialized({ ...overrides, checked: [" "] })),
+			/checked list has no non-blank items/,
+		);
+	}
+});
+
 test("parseReviewResult accepts every optional field by type when present", () => {
 	const result = parseReviewResult(
 		serialized({
