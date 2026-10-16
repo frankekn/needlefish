@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import console from "node:console";
+import { URL } from "node:url";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
