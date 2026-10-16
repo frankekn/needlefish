@@ -179,7 +179,14 @@ for (const runner of ["codex", "grok"] as const) {
     mkdirSync(path.join(repo, "tools"));
     const trustedBin = path.join(caller, "tools/codex");
     const untrustedBin = path.join(repo, "tools/codex");
-    writeFileSync(trustedBin, ["#!/bin/sh", "cat > /dev/null", "echo trusted-caller", "pwd"].join("\n"));
+    writeFileSync(trustedBin, runner === "codex" ? [
+      "#!/usr/bin/env node",
+      "require('node:fs').readFileSync(0, 'utf8');",
+      "console.log(JSON.stringify({type:'thread.started',thread_id:'trusted'}));",
+      "console.log(JSON.stringify({type:'turn.started'}));",
+      "console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_message',text:'trusted-caller\\n'+process.cwd()}}));",
+      "console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1,reasoning_output_tokens:0}}));",
+    ].join("\n") : ["#!/bin/sh", "cat > /dev/null", "echo trusted-caller", "pwd"].join("\n"));
     writeFileSync(untrustedBin, ["#!/bin/sh", `touch ${JSON.stringify(attackMarker)}`, "echo untrusted-pr"].join("\n"));
     chmodSync(trustedBin, 0o755);
     chmodSync(untrustedBin, 0o755);

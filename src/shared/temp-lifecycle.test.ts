@@ -256,6 +256,36 @@ process.stdin.resume();
   );
 });
 
+test("Linux termination removes idle owned trees after finalizers settle", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const ready = path.join(root, "ready");
+  const marker = path.join(root, "finalized");
+  const owner = spawnModule(`
+import { existsSync, writeFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { createManagedTempDirectory, registerTerminationFinalizer } from ${JSON.stringify(lifecycleUrl)};
+const directory = await createManagedTempDirectory();
+registerTerminationFinalizer(async () => {
+  await delay(25);
+  writeFileSync(${JSON.stringify(marker)}, String(existsSync(directory)));
+});
+writeFileSync(${JSON.stringify(ready)}, directory);
+setInterval(() => {}, 1000);
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+  await waitForFile(ready);
+  const directory = readFileSync(ready, "utf8");
+  owner.kill("SIGTERM");
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 143);
+  assert.equal(readFileSync(marker, "utf8"), "true", "finalizer must finish before deletion");
+  assert.equal(existsSync(directory), false, "confirmed-idle owned tree must be deleted before exit");
+});
+
 test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const ready = path.join(root, "ready");
