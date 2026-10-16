@@ -337,7 +337,7 @@ jobs:
           PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
-          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
+          NEEDLEFISH_CHECK_APP_ID: ""
           NEEDLEFISH_RECHECK_INPUT: ${{ inputs.recheck && '1' || '' }}
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
@@ -504,7 +504,7 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
-          NEEDLEFISH_CHECK_APP_ID: ${{ vars.NEEDLEFISH_CHECK_APP_ID }}
+          NEEDLEFISH_CHECK_APP_ID: ""
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then

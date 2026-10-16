@@ -4419,7 +4419,12 @@ test("recovery stops after one failed full re-review and recheck remains explici
  assert.equal(runnerInvocationCount(fixture), 4);
  await runGithub(fixture.repo, 124, { timeoutMs: 1000 });
  assert.equal(runnerInvocationCount(fixture), 4);
- assert.match(String(lastCheckCompletion(readPosts(fixture.postLog)).output?.summary), /recovery limit reached/);
+ const posts = readPosts(fixture.postLog);
+ assert.match(String(lastCheckCompletion(posts).output?.summary), /plain rerun stops here again/);
+ const failureComment = posts.filter(p => p.args.includes("repos/frankekn/needlefish/issues/124/comments")).at(-1);
+ assert.ok(failureComment);
+ assert.match(failureComment.payload, /@needlefish recheck/);
+ assert.doesNotMatch(failureComment.payload, /Review did not complete\. Re-run the review\./);
  await runGithub(fixture.repo, 124, { timeoutMs: 1000 }, true);
  assert.equal(runnerInvocationCount(fixture), 6);
 });

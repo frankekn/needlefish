@@ -496,8 +496,10 @@ For direct CLI use with a custom GitHub App, provide its installation token as
 Use the ID from its GitHub App settings or the `app.id` field of a check created
 by that App. The pin validates check ownership; it does not select or mint a token.
 The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
-custom App token. Leave its `NEEDLEFISH_CHECK_APP_ID` repository variable unset
-for the default GitHub Actions identity. A mismatched token and App pin fails closed.
+custom App token. It clears `NEEDLEFISH_CHECK_APP_ID` for review and reconciliation,
+so repository variables and runner environment pins cannot override its GitHub
+Actions identity. Custom App pins apply only to direct CLI use, where a mismatched
+token and App pin fails closed.
 Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the

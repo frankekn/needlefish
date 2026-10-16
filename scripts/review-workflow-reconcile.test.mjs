@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { parse } from "yaml";
 import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
@@ -120,7 +121,7 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			GH_TOKEN: "test-token",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_NUM: prNum,
-   NEEDLEFISH_CHECK_APP_ID: appId,
+   NEEDLEFISH_CHECK_APP_ID: parse(workflow).jobs.reconcile.steps[0].env.NEEDLEFISH_CHECK_APP_ID === "" ? "" : appId,
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
@@ -304,6 +305,14 @@ for (const mode of ["foreign-app", "other-pr", "custom-pinned", "custom-mismatch
   if (mode === "legacy-actions") terminal.external_id = "123456";
   const r = runReconcile({ checkRunsAll: [terminal], appId: mode === "custom-pinned" ? "4812" : mode === "custom-mismatch" ? "9999" : "" });
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.dispatched, ["custom-pinned", "legacy-actions"].includes(mode) ? 0 : 1, r.stdout);
+  assert.equal(r.dispatched, mode === "legacy-actions" ? 0 : 1, r.stdout);
  });
 }
+
+test("bundled reconcile sees the Actions verdict despite a repository or host custom App pin", () => {
+ const r = runReconcile({ appId: "4812", checkRunsAll: [checkRun("Needlefish: pass", "success")] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+ assert.doesNotMatch(r.log, /api -X POST/);
+});

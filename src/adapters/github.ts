@@ -1121,15 +1121,21 @@ function postIssueComment(repo: string, prNumber: number, body: string): void {
 		});
 }
 
+class RecoveryLimitError extends Error {
+	constructor() {
+		super("Automatic review recovery limit reached. Delivery is incomplete; a plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`.");
+	}
+}
+
 // S3: infra-failure comment posted alongside the red check so a red X always
 // has something to read in the PR timeline. Fail-soft: never blocks the check.
-function postErrorComment(repo: string, prNumber: number, msg: string): void {
+function postErrorComment(repo: string, prNumber: number, msg: string, advice = "Review did not complete. Re-run the review."): void {
 	const body =
 		`⚠️ **Needlefish review FAILED TO RUN** — this red check is an infra failure, not a code verdict.\n\n` +
 		"```\n" +
 		`${msg.slice(0, 2000)}\n` +
 		"```\n\n" +
-		"Review did not complete. Re-run the review.\n" +
+		`${advice}\n` +
 		"<!-- needlefish-error -->";
 	try {
 		postIssueComment(repo, prNumber, body);
@@ -1761,7 +1767,7 @@ export async function runGithub(
 			if (prior.recheck) break;
 		}
 		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, previous?.state.headSha === headSha ? 1 : 0);
-		if (recoveryAttempt > 1) throw new Error("Automatic review recovery limit reached. Delivery is incomplete; ask a maintainer to rerun the review.");
+		if (recoveryAttempt > 1) throw new RecoveryLimitError();
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
@@ -2006,7 +2012,7 @@ export async function runGithub(
 				);
 			}
 			// S3: post a PR comment so a red X always has something to read.
-			if (!staleUnknown) postErrorComment(repo, prNumber, msg);
+			if (!staleUnknown) postErrorComment(repo, prNumber, msg, err instanceof RecoveryLimitError ? msg : undefined);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
