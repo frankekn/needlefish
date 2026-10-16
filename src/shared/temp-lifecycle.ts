@@ -247,6 +247,10 @@ async function removeTerminatingTempTree(directory: string, deadlineMs: number):
     writeFileSync(ownerPath, managed.owner, { mode: 0o600, flag: "wx" });
     throw error;
   }
+  if (fstatSync(managed.descriptor).nlink !== 0) {
+    writeFileSync(ownerPath, managed.owner, { mode: 0o600, flag: "wx" });
+    return false;
+  }
   closeSync(managed.descriptor);
   managedDirectories.delete(directory);
   return true;
