@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -60,6 +61,13 @@ test("study CLI rejects execution flags before loading a fixture", () => {
 	assert.equal(child.status, 1);
 	assert.match(child.stderr, /only --plan is supported; model execution is disabled/);
 	assert.equal(child.stdout, "");
+});
+
+test("committed study plan freezes the current protocol and generator without freezing future main", () => {
+	const plan: unknown = JSON.parse(readFileSync("eval/campaigns/deep-concurrency-v1.plan.json", "utf8"));
+	assert.ok(plan && typeof plan === "object" && "protocolFiles" in plan);
+	assert.deepEqual(plan.protocolFiles, ["eval/tools/deep-concurrency.ts", "eval/campaigns/deep-concurrency-v1.md"]
+		.map((file) => ({ file, sha256: createHash("sha256").update(readFileSync(file)).digest("hex") })));
 });
 
 test("production deep scheduler drains seven fake jobs at limits three and seven", async (t) => {
