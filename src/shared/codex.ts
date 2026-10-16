@@ -10,7 +10,7 @@ import { CodexEnvironmentAuth } from "./connection-auth.js";
 import { runtimeLabel } from "./runtime.js";
 import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
-import { findRunnerFailure } from "./runner-failure.js";
+import { findRunnerFailure, RunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
@@ -892,6 +892,8 @@ async function runCodexOnce(
 			);
 		}
 		if (result.res.status !== 0) {
+			try { assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha); }
+			catch (error) { if (error instanceof Error) throw withRunnerOutput(error); throw error; }
 			// Raw streams can contain the review prompt; expose only canned causes.
 			const cause = runner === "codex"
 				? safeCodexCause(result.res.stdout, result.res.stderr, invocation.prompt)
@@ -899,6 +901,8 @@ async function runCodexOnce(
 			throw withRunnerOutput(
 				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
+					...(runner === "codex" && nativeCodexQuotaExhausted(result.res.stdout, result.res.status)
+						? [{ cause: new RunnerFailure("quota_exhausted", "Selected Codex route exhausted its quota.") }] : []),
 				),
 			);
 		}
@@ -1003,6 +1007,37 @@ function* codexEvents(stdout: string): Generator<CodexEvent | null> {
 				yield null;
 		}
 	}
+}
+
+function exhaustedCodexMessage(message: string): boolean {
+	let text = message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	if (/^[{["]/.test(text)) {
+		let raw: unknown;
+		try { raw = JSON.parse(text); } catch { return false; }
+		if (!isRecord(raw)) return false;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload) || Object.keys(payload).some((key) => !["code", "type", "message", "last_upstream_error"].includes(key))) return false;
+		if (Object.values(payload).some((value) => typeof value !== "string")) return false;
+		const values = Object.values(payload).join("\n");
+		if (/auth|unauthorized|forbidden|token_expired|invalid_api_key|\b40[13]\b/i.test(values)) return false;
+		if (payload.code === "insufficient_quota" || payload.type === "insufficient_quota") return true;
+		if (typeof payload.message !== "string") return false;
+		text = payload.message;
+	}
+	return /^(?:insufficient credits|insufficient account funds|usage balance exhausted|You have insufficient credits to make this request\.(?: Please purchase more credits to continue using the service\.)?)$/i.test(text);
+}
+
+export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
+	if (status === null || status === 0) return false;
+	let terminal = false;
+	for (const event of codexEvents(stdout)) {
+		if (event === null) return false;
+		if (event.kind === "failure") {
+			if (!exhaustedCodexMessage(event.message)) return false;
+			terminal = true;
+		} else if (terminal) return false;
+	}
+	return terminal;
 }
 
 function safeCodexCause(stdout: string, stderr: string, prompt: string): string | undefined {
