@@ -153,6 +153,18 @@ function setupBranch(deadline: number, repository: string, defaultBranch: string
   return { head, conflict };
 }
 
+function ownedSetupPrUrl(value: Json, repository: string, defaultBranch: string, branchHead: string): string | null {
+  const pr = object(value);
+  const base = object(pr.base ?? null), head = object(pr.head ?? null);
+  const prefix = `https://github.com/${repository}/pull/`;
+  if (typeof pr.body !== "string" || !pr.body.includes(`<!-- ${OWNER} -->`)
+    || base.ref !== defaultBranch || object(base.repo ?? null).full_name !== repository
+    || head.ref !== BRANCH || head.sha !== branchHead || object(head.repo ?? null).full_name !== repository
+    || typeof pr.number !== "number" || !Number.isSafeInteger(pr.number) || pr.number <= 0
+    || typeof pr.html_url !== "string" || pr.html_url !== prefix + pr.number) return null;
+  return pr.html_url;
+}
+
 export function inspectGithubSetup(requestedRepository: string, deadline = performance.now() + OPERATION_TIMEOUT_MS) {
   repositoryName(requestedRepository);
   const repo = object(required(deadline, `repos/${requestedRepository}`));
@@ -174,12 +186,11 @@ export function inspectGithubSetup(requestedRepository: string, deadline = perfo
   if (branch?.conflict) conflict = branch.conflict;
   let prUrl: string | null = null;
   if (pulls.length > 0) {
-    const pr = object(pulls[0] ?? null);
-    const base = object(pr.base ?? null), head = object(pr.head ?? null);
-    if (pulls.length !== 1 || !branch || branch.conflict || typeof pr.body !== "string" || !pr.body.includes(`<!-- ${OWNER} -->`)
-      || base.ref !== defaultBranch || head.ref !== BRANCH || head.sha !== branch.head || object(head.repo ?? null).full_name !== repository) {
+    const ownedUrl = pulls.length === 1 && branch && !branch.conflict
+      ? ownedSetupPrUrl(pulls[0] ?? null, repository, defaultBranch, branch.head) : null;
+    if (!ownedUrl) {
       conflict = "An existing setup PR has unrecognized ownership, contents or target branch. Inspect it before setup; it was not changed.";
-    } else if (!conflict) prUrl = string(pr.html_url);
+    } else if (!conflict) prUrl = ownedUrl;
   }
   const phase: "conflict" | "merged" | "pr_created" | "preview" = conflict ? "conflict" : existing?.content === GITHUB_WORKFLOW ? "merged" : prUrl ? "pr_created" : "preview";
   return { schemaVersion: 1, repository, defaultBranch, admin, actions, actionsReason: policy.reason, phase, conflict, secret, branchHead: branch?.head ?? null,
@@ -217,9 +228,8 @@ function createSetupPr(deadline: number, repository: string) {
     if (object(current.object ?? null).sha !== branchHead) throw new Error("The setup branch changed during setup. No PR was created; inspect and retry.");
     const created = object(required(deadline, `${endpoint}/pulls`, { title: "Enable Needlefish hosted PR review", head: BRANCH, base: status.defaultBranch,
       body: `<!-- ${OWNER} -->\nUses GitHub-hosted runners and the pinned Needlefish template.\n\n${status.disclosure}\n\nSet repository secret ${SECRET} separately. Review and merge this PR in your browser. The reserved setup branch fails before model calls. Its failed guard means not reviewed, not a passing required review. No credential validation or branch protection change has been performed.`, draft: false }, "POST"));
-    prUrl = string(created.html_url);
-    const prefix = `https://github.com/${status.repository}/pull/`;
-    if (!prUrl.startsWith(prefix) || !/^[1-9]\d*$/.test(prUrl.slice(prefix.length))) throw new Error("GitHub returned an invalid setup PR URL. Inspect status before retrying.");
+    prUrl = ownedSetupPrUrl(created, status.repository, status.defaultBranch, branchHead);
+    if (!prUrl) throw new Error("GitHub created a PR with an unrecognized setup identity. Setup was not completed. Preserve the PR and inspect status before retrying.");
   }
   return { ...status, phase: "pr_created", branchHead, prUrl };
 }
