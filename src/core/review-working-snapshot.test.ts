@@ -6,7 +6,7 @@ import test from "node:test";
 import { diffBundle } from "../adapters/local.js";
 import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures.js";
 import { assertRunnerSandboxClean, prepareRunnerSandbox } from "../shared/runner-sandbox.js";
-import { review } from "./review.js";
+import { review, reviewWithConnections } from "./review.js";
 
 for (const unborn of [false, true]) {
   for (const deep of [false, true]) {
@@ -135,4 +135,64 @@ for (const deleteRefs of [false, true]) {
     assert.equal(gitText(["symbolic-ref", "HEAD"], repo), "refs/heads/later-unborn");
     assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
   });
+}
+
+for (const unborn of [false, true]) {
+  for (const ordered of [false, true]) {
+    test(`quoted findings use captured fixed refs with ${unborn ? "EMPTY" : "committed"} base (${ordered ? "ordered" : "singleton"})`, async (t) => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-quotes-"));
+      const previous = { ...process.env };
+      t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
+      const repo = unborn ? path.join(tmp, "repo") : initRepo(tmp);
+      if (unborn) { mkdirSync(repo); gitText(["init", "--quiet"], repo); }
+      if (!unborn) {
+        writeFileSync(path.join(repo, "app.ts"), "export const removed = oldValue();\n");
+        commitAll(repo, "base quote");
+      }
+      writeFileSync(path.join(repo, "app.ts"), "export const captured = unsafeValue();\nexport const moved = anotherValue();\n");
+      const { bundle } = diffBundle(repo, {});
+      const records = path.join(tmp, "records.jsonl");
+      const bin = path.join(tmp, "claude.cjs");
+      const common = { severity: "P2", title: "Captured bug", category: "bug", confidence: 0.9, whyItBreaks: "unsafe value", suggestedFix: "validate", validation: "test", file: "app.ts", lineStart: 1, lineEnd: 1, replacement: { lines: ["fixed();"] } };
+      const findings = [
+        { ...common, quote: "export const captured = unsafeValue();" },
+        { ...common, title: "Moved quote", quote: "export const moved = anotherValue();" },
+        { ...common, title: "Removed quote", quote: "export const removed = oldValue();" },
+      ];
+      writeFileSync(bin, `#!/usr/bin/env node
+const fs=require('node:fs'),cp=require('node:child_process');
+const prompt=fs.readFileSync(0,'utf8');
+const git=args=>cp.execFileSync('git',args,{encoding:'utf8'}).trim();
+fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({prompt,head:git(['rev-parse','HEAD']),base:git(['rev-parse','HEAD^']),source:fs.readFileSync('app.ts','utf8')})+'\\n');
+fs.rmSync(${JSON.stringify(path.join(repo, ".git"))},{recursive:true,force:true});
+fs.writeFileSync(${JSON.stringify(path.join(repo, "app.ts"))},'source changed after capture\\n');
+process.stdout.write(${JSON.stringify(JSON.stringify({ summary: "captured quotes", findings, checked: ["app.ts"], residual_risks: [] }))});
+`);
+      chmodSync(bin, 0o755);
+      Object.assign(process.env, { CLAUDE_BIN: bin, NEEDLEFISH_NO_RETRY: "1", NEEDLEFISH_REVIEW_TIMEOUT_MS: "15000" });
+      const routes = [{ runner: "claude", model: "first" }, { runner: "claude", model: "second" }] as const;
+      const result = ordered ? await reviewWithConnections(bundle, routes) : await review(bundle, routes[0]);
+      assert.equal(result.headSha, "WORKING");
+      assert.equal(result.baseSha, unborn ? "EMPTY" : bundle.baseSha);
+      assert.equal(result.verdict, "changes_requested");
+      assert.deepEqual(result.findings.map(f => f.quoteCheck), [
+        { status: "matched" }, { status: "moved", from: "app.ts:1" }, { status: unborn ? "not_found" : "unchecked" },
+      ]);
+      assert.deepEqual(result.findings[0]?.replacement, { lines: ["fixed();"] });
+      assert.equal(result.findings[1]?.lineStart, 2);
+      assert.equal(result.findings[1]?.replacement, undefined);
+      assert.equal(result.findings[2]?.replacement, undefined);
+      const rows: { prompt: string; head: string; base: string; source: string }[] = readFileSync(records, "utf8").trim().split("\n").map(line => JSON.parse(line));
+      assert.equal(rows.length, 2);
+      assert.equal(new Set(rows.map(row => row.head)).size, 1);
+      assert.equal(new Set(rows.map(row => row.base)).size, 1);
+      assert.ok(rows.every(row => /^[a-f0-9]{40}$/.test(row.head) && /^[a-f0-9]{40}$/.test(row.base)));
+      assert.ok(rows.every(row => row.source === "export const captured = unsafeValue();\nexport const moved = anotherValue();\n"));
+      assert.match(rows[0]?.prompt ?? "", /"headSha": "WORKING"/);
+      assert.match(rows[0]?.prompt ?? "", unborn ? /"baseSha": "EMPTY"/ : new RegExp(bundle.baseSha));
+      assert.match(rows[1]?.prompt ?? "", /^HEAD: WORKING$/m);
+      assert.equal(existsSync(path.join(repo, ".git")), false);
+      assert.equal(readFileSync(path.join(repo, "app.ts"), "utf8"), "source changed after capture\n");
+    });
+  }
 }
