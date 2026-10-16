@@ -78,6 +78,12 @@ The interim gate is 20/21 Tier-1 successes, at least 2/3 per fixture, and positi
 
 The Phase 2 gate is 86/90 Tier-1 successes, at least 4/6 per fixture, plus calibrated family recall, localization, precision, and noise floors. Family and precision thresholds remain unset until calibration defines acceptable and unacceptable quality points; they must not be guessed from one campaign.
 
+The [Phase 2 measurement contract](../../eval/contracts/issue123-phase-two-measurement.md)
+defines complete broad and deep report admission and the metrics that remain
+unknown. `evaluatePhaseTwoQualification` cannot qualify a lane before every
+required floor and independent quality oracle exists. The historical evaluator
+and Phase 1 publication gate retain their existing behavior.
+
 Composite score ranks only lanes that pass every hard gate. A composite gain cannot compensate for a critical miss or a family blind spot.
 
 ## Pre-run checklist

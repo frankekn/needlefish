@@ -166,7 +166,7 @@ test("new fixture anchors identify head lines in real diff hunks", () => {
 
 test("Phase 2 catalog fills all seven families and seals one new holdout per family", async () => {
   const catalog = await loadFixtures(null);
-  assert.equal(catalog.length, 101);
+  assert.equal(catalog.length, 107);
   const check = checkPhaseTwoFixturePlan(catalog);
   assert.deepEqual(check, {
     ready: true, errors: [], tierOneCount: 15,
@@ -180,7 +180,7 @@ test("Phase 2 catalog fills all seven families and seals one new holdout per fam
   assert.deepEqual(filterByHoldout(additions, "exclude").map((spec) => spec.id), [registry.id]);
   assert.equal(new Set(filterByHoldout(additions, "only").map((spec) => spec.defectClass)).size, 7);
   const original = catalog.filter((spec) => !additions.some((added) => added.id === spec.id));
-  assert.equal(original.length, 93);
-  assert.equal(fixtureSetHash(original), "74c7943ce025fbb6");
+  assert.equal(original.length, 99);
+  assert.equal(fixtureSetHash(original), "41e82602a35bcfcc");
   assert.notEqual(fixtureSetHash(catalog), fixtureSetHash(original));
 });
