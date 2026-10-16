@@ -9,6 +9,11 @@ export class ConnectionCredentialLeakError extends RunnerFailure {
   }
 }
 
+function containsCredential(text: string, values: readonly string[]): boolean {
+  const decoded = text.replace(/\\u([0-9a-f]{4})/gi, (_escape: string, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  return screenText(text, values).kind === "withheld" || screenText(decoded, values).kind === "withheld";
+}
+
 export type AuthEnvironmentReferences = Readonly<Record<string, string>>;
 
 // This increment accepts API keys/tokens, not arbitrary environment overrides.
@@ -68,14 +73,14 @@ export class AcpEnvironmentAuth {
   }
 
   screenDiagnostic(message: string): string {
-    return screenText(message, Object.values(this.#values)).kind === "withheld"
+    return containsCredential(message, Object.values(this.#values))
       ? "Needlefish withheld runner diagnostic: it contained a selected connection credential."
       : message;
   }
 
   assertOutputSafe(output: string): void {
     const knownValues = Object.values(this.#values);
-    if (screenText(output, knownValues).kind === "withheld"
+    if (containsCredential(output, knownValues)
       || screenPayload(output, knownValues).kind === "withheld"
       || output.split(/\r?\n/).some((line) => screenPayload(line, knownValues).kind === "withheld")) {
       throw new ConnectionCredentialLeakError();

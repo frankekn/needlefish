@@ -78,6 +78,10 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
       let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      if (mode.startsWith('explain-escaped')) {
+        const escaped = Array.from(process.env.AGENT_API_KEY).map((c,i) => mode.endsWith('-mixed') && i % 2 === 0 ? c : '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
+        output = 'Credential note ' + escaped;
+      }
       if (mode === 'success-stdout-escaped') {
         const text = JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
         const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
@@ -395,6 +399,31 @@ for (const mode of ["deep-raw-once", "deep-nonzero-once", "success-stdout-escape
     assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY|\\u0054/);
     assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     assert.equal(f.records().length, mode.startsWith("deep-") ? 2 : 1);
+    f.clean();
+  });
+}
+
+for (const mode of ["explain-escaped", "explain-escaped-mixed"]) {
+  test(`${mode}: plain explanation rejects literal Unicode escapes without retry`, (t) => {
+    const f = fixture(t, mode);
+    const script = path.join(f.root, "explain.mjs");
+    writeFileSync(script, `
+import {explainFinding} from ${JSON.stringify(new URL("../core/explain.ts", import.meta.url).href)};
+import {diffBundle} from ${JSON.stringify(new URL("../adapters/local.ts", import.meta.url).href)};
+import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.ts", import.meta.url).href)};
+import {isRunnerSafetyError} from ${JSON.stringify(new URL("./runner-sandbox.ts", import.meta.url).href)};
+const repo=${JSON.stringify(f.repo)};
+const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
+const opts=resolveConnectionOptions({connection:'a'},repo);
+try { console.log(await explainFinding(bundle,'finding',opts)); }
+catch(error) { console.error(JSON.stringify({message:error.message,safety:isRunnerSafetyError(error)})); process.exitCode=1; }
+`);
+    const result = f.run([script], { NEEDLEFISH_NO_RETRY:"0", NEEDLEFISH_EVAL_TRACE:"1" });
+    assert.equal(result.status,1,result.stderr);
+    assert.equal(result.stdout,"");
+    assert.deepEqual(JSON.parse(result.stderr), {message:"Needlefish withheld runner output: it contained a selected connection credential.",safety:true});
+    assert.equal(f.records().length,1);
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     f.clean();
   });
 }

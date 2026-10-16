@@ -131,3 +131,15 @@ test("separate auth cannot be combined with an unresolved selector", (t) => {
   const f = fixture(t);
   assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connection: "a", connectionAuth: new AcpEnvironmentAuth(refs, env) }, f.repo, f.env), /cannot be combined/);
 });
+
+test("Unicode screening covers mixed escapes and surrogate pairs without changing credentials", () => {
+  const auth = new AcpEnvironmentAuth({ AGENT_API_KEY:"SOURCE" }, {SOURCE:"KEY🙂tail"});
+  for (const text of ["note KEY\\ud83d\\ude42tail", "note K\\u0045Y🙂tail", "note KEY🙂tail"]) {
+    assert.throws(() => auth.assertOutputSafe(text), {name:"ConnectionCredentialLeakError"});
+    assert.equal(auth.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  }
+  const child: NodeJS.ProcessEnv = {};
+  auth.applyTo(child);
+  assert.deepEqual(child,{AGENT_API_KEY:"KEY🙂tail"});
+  assert.equal(auth.screenDiagnostic("ordinary safe diagnostic"),"ordinary safe diagnostic");
+});
