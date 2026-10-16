@@ -185,11 +185,12 @@ test("reconcile counts a terminated review as an infra failure", () => {
 });
 
 test("reconcile treats a non-infra failure as a terminal verdict", () => {
-	const r = runReconcile({
-		checkRunsAll: [checkRun("Needlefish: changes_requested — Fix the thing", "failure")],
-	});
-	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+	for (const title of ["Needlefish: changes_requested — Fix the thing", "Needlefish: runner unavailable"]) {
+		const r = runReconcile({ checkRunsAll: [checkRun(title, "failure")] });
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.dispatched, 0);
+		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+	}
 });
 
 test("reconcile waits for an active run of the same workflow for the same PR", () => {

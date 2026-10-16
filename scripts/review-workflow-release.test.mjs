@@ -277,7 +277,7 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
 });
 
-test("review refuses OpenCode before invoking an older self-managed release", t => {
+test("review records terminal OpenCode unavailability without invoking an older release", t => {
   const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-opencode-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const binary = join(root, "needlefish");
@@ -285,16 +285,22 @@ test("review refuses OpenCode before invoking an older self-managed release", t 
   const ghMarker = join(root, "gh-called");
   writeFileSync(binary, '#!/bin/sh\nprintf launched > "$MARKER"\n');
   chmodSync(binary, 0o755);
-  writeFileSync(join(root, "gh"), '#!/bin/sh\nprintf called > "$GH_MARKER"\nprintf 0\n');
+  writeFileSync(join(root, "gh"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_MARKER"\nexit "$GH_EXIT"\n');
   chmodSync(join(root, "gh"), 0o755);
-  const result = spawnSync("bash", ["-c", reviewScript], {
-    encoding: "utf8", timeout: 5000,
-    env: { PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_BIN: binary,
-      NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42", MARKER: marker, GH_MARKER: ghMarker,
-      GITHUB_REPOSITORY: "owner/repo", PR_HEAD_SHA: "a".repeat(40) },
-  });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /OpenCode reviews are temporarily disabled.*issue #207/);
-  assert.equal(existsSync(marker), false);
-  assert.equal(existsSync(ghMarker), false);
+  for (const ghExit of [0, 1]) {
+    const result = spawnSync("bash", ["-e", "-c", reviewScript], {
+      encoding: "utf8", timeout: 5000,
+      env: { PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_BIN: binary,
+        NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42", MARKER: marker, GH_MARKER: ghMarker,
+        GITHUB_REPOSITORY: "owner/repo", PR_HEAD_SHA: "a".repeat(40), GH_EXIT: String(ghExit) },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /OpenCode reviews are temporarily disabled.*issue #207/);
+    assert.equal(existsSync(marker), false);
+    const args = readFileSync(ghMarker, "utf8").trim().split("\n");
+    for (const field of ["POST", "repos/owner/repo/check-runs", "name=Needlefish", `head_sha=${"a".repeat(40)}`, "status=completed", "conclusion=failure", "output[title]=Needlefish: runner unavailable"]) {
+      assert.ok(args.includes(field), `${field}: ${args.join(" ")}`);
+    }
+    assert.ok(args.some((arg) => arg.startsWith("output[summary]=OpenCode reviews are temporarily disabled")));
+  }
 });

@@ -331,7 +331,15 @@ jobs:
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
           if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
-            echo "OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207." >&2
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$PR_HEAD_SHA" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null || true
+            echo "$summary" >&2
             exit 1
           fi
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
