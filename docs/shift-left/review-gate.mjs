@@ -15,6 +15,7 @@ const dir = mkdtempSync(join(tmpdir(), "needlefish-pre-pr-"));
 const file = join(dir, "result.json");
 const deadline = Date.now() + timeoutMs;
 let active;
+let diagnostics = "";
 function stop() {
   if (active?.pid) {
     try { process.kill(-active.pid, "SIGKILL"); } catch (error) {
@@ -45,7 +46,10 @@ async function run(args) {
     }, remaining);
     for (const [stream, append] of [
       [child.stdout, (text) => { stdout += text; }],
-      [child.stderr, (text) => { stderr += text; }],
+      [child.stderr, (text) => {
+        stderr += text;
+        diagnostics += text.slice(0, Math.max(0, 16_384 - diagnostics.length));
+      }],
     ]) {
       stream.setEncoding("utf8");
       stream.on("data", (text) => {
@@ -76,7 +80,10 @@ try {
   const baseSha = execFileSync("git", ["merge-base", base, head], { encoding: "utf8" }).trim();
   const review = await run(["--repo", process.cwd(), "--branch", "--base", base, "--json"]);
   writeFileSync(file, review.stdout, { mode: 0o600 });
-  const data = JSON.parse(readFileSync(file, "utf8"));
+  let data;
+  try { data = JSON.parse(readFileSync(file, "utf8")); } catch {
+    throw new Error("review output is not valid JSON");
+  }
   const verdict = data?.verdict;
   if (!["pass", "changes_requested", "needs_human"].includes(verdict)) {
     throw new Error("review has no recognized verdict");
@@ -99,9 +106,10 @@ try {
     throw new Error("HEAD changed during review");
   }
   process.stdout.write(rendered.stdout);
-  if (review.stderr) process.stderr.write(review.stderr);
+  if (diagnostics) process.stderr.write(diagnostics);
   process.exitCode = expected;
 } catch (error) {
+  if (diagnostics) process.stderr.write(diagnostics.endsWith("\n") ? diagnostics : `${diagnostics}\n`);
   process.stderr.write(`Needlefish gate blocked: ${error.message}\n`);
   process.exitCode = 1;
 } finally {
