@@ -35,7 +35,7 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const SELF_RUN_ID = "777";
 
 function checkRun(title, conclusion = "failure") {
-	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42 }), conclusion, output: { title } };
+	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "fixture-round", runId: SELF_RUN_ID }), conclusion, output: { title } };
 }
 
 function activeRun(id, title) {
@@ -315,4 +315,31 @@ test("bundled reconcile sees the Actions verdict despite a repository or host cu
  assert.equal(r.dispatched, 0);
  assert.match(r.stdout, /already has a terminal Needlefish verdict/);
  assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+for (const externalId of [
+ JSON.stringify({ v: 2, prNumber: 42 }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "", runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: 5, runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: 777 }),
+ JSON.stringify({ v: 2, unrelated: true }),
+ JSON.stringify({ v: 1, prNumber: 42 }),
+ "[]", "true", "null", "unrelated", "",
+]) {
+ test(`reconcile rejects incomplete or unrelated receipt ${externalId}`, () => {
+  const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: externalId };
+  const r = runReconcile({ checkRunsAll: [terminal] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.dispatched, 1, r.stdout);
+  assert.match(r.log, /workflow run review.yml .*pr_number=42/);
+ });
+}
+
+test("reconcile accepts a complete v2 receipt with an empty run ID", () => {
+ const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: "" }) };
+ const r = runReconcile({ checkRunsAll: [terminal] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
 });

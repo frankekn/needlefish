@@ -4426,6 +4426,12 @@ test("recovery stops after one failed full re-review and recheck remains explici
  assert.equal(runnerInvocationCount(fixture), 4);
  const posts = readPosts(fixture.postLog);
  assert.match(String(lastCheckCompletion(posts).output?.summary), /plain rerun stops here again/);
+ const advicePost = posts.filter(p => p.args.includes("POST") && p.args.some(a => /\/issues\/\d+\/comments$/.test(a))).at(-1);
+ assert.ok(advicePost);
+ const advicePayload = parseJson(advicePost.payload);
+ assert.ok(isRecordLike(advicePayload));
+ const advice = String(advicePayload.body).split("```\n\n").at(-1);
+ assert.equal(advice, "A plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`.\n<!-- needlefish-error -->");
  const failureComment = posts.filter(p => p.args.includes("repos/frankekn/needlefish/issues/124/comments")).at(-1);
  assert.ok(failureComment);
  assert.match(failureComment.payload, /@needlefish recheck/);

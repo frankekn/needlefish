@@ -2012,7 +2012,7 @@ export async function runGithub(
 				);
 			}
 			// S3: post a PR comment so a red X always has something to read.
-			if (!staleUnknown) postErrorComment(repo, prNumber, msg, err instanceof RecoveryLimitError ? msg : undefined);
+			if (!staleUnknown) postErrorComment(repo, prNumber, msg, err instanceof RecoveryLimitError ? "A plain rerun stops here again. Force a full review with the recheck input or comment `@needlefish recheck`." : undefined);
 		}
 		process.stderr.write(`needlefish review failed: ${msg}\n`);
 		process.exitCode = 1;
