@@ -4270,3 +4270,29 @@ test("a legacy neutral needs_human check is re-reviewed to fail closed", async (
   assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
   assert.equal(process.exitCode, 1);
 });
+
+for (const scenario of [
+  { label: "legacy neutral before current failure", previous: "neutral", latest: "needs_human", reverse: false },
+  { label: "current failure before legacy neutral", previous: "neutral", latest: "needs_human", reverse: true },
+  { label: "old pass before current blocker", previous: "pass", latest: "changes_requested", reverse: false },
+  { label: "current blocker before old pass", previous: "pass", latest: "changes_requested", reverse: true },
+  { label: "old blocker before current pass", previous: "changes_requested", latest: "pass", reverse: false },
+  { label: "current pass before old blocker", previous: "changes_requested", latest: "pass", reverse: true },
+] as const) {
+  test(`same-head exit uses the newest completed verdict: ${scenario.label}`, (t) => {
+    const fixture = setupFixture(t, { prNumber: 108, rawReview: defaultRawReview() });
+    seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+      user: { login: "github-actions[bot]", type: "Bot" } }]);
+    const check = (id: number, verdict: typeof scenario.previous | typeof scenario.latest) => ({
+      id, status: "completed", conclusion: verdict === "pass" ? "success" : verdict === "neutral" ? "neutral" : "failure",
+      output: { title: `Needlefish: ${verdict === "neutral" ? "needs_human" : verdict}` },
+    });
+    const checks = [check(1, scenario.previous), check(2, scenario.latest)];
+    writeFileSync(fixture.checksState, JSON.stringify(scenario.reverse ? checks.reverse() : checks));
+    const result = spawnGithubCli(fixture, 108);
+    assert.equal(result.status, scenario.latest === "pass" ? 0 : 1, result.stderr);
+    assert.match(result.stdout, /"reason":"same_head"/);
+    assert.equal(runnerInvocationCount(fixture), 0);
+    assert.deepEqual(readPosts(fixture.postLog), []);
+  });
+}

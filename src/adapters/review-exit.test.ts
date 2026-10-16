@@ -30,6 +30,7 @@ process.stdout.write(JSON.stringify({number:7,title:'PR',body:null,comments:[],r
       const runner = path.join(bin, "claude");
       const review = {
         summary: "Review result",
+        docsOnlyFastPath: true,
         findings: outcome === "changes_requested" ? [{
           severity: "P2", title: "Broken auth", category: "bug", file: "auth.ts",
           lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "",
@@ -73,6 +74,7 @@ process.stdin.on('end', () => {
         return;
       }
       const reviewResult = parseReviewResult(JSON.parse(result.stdout));
+      assert.equal(reviewResult.docsOnlyFastPath, undefined, "model cannot supply trusted skip metadata");
       assert.equal(reviewResult.verdict, outcome === "deep-failure" ? "needs_human" : outcome);
       assert.equal(readFileSync(path.join(home, ".cache", "needlefish", "repo", "last-review.json"), "utf8"), result.stdout);
       if (outcome === "deep-failure") {

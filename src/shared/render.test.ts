@@ -520,7 +520,15 @@ test("renderMarkdown collapses embedded newlines in callout paths", () => {
 test("docs-only output identifies a policy skip without claiming a model review", () => {
   const output = renderMarkdown({ ...baseResult([], "pass"),
     summary: "Docs-only change (1 file(s)); model review skipped.",
+    docsOnlyFastPath: true,
     checked: ["FAST_PATH docs-only files=[README.md]"],
   });
   assert.match(output, /Model review skipped by policy for this docs-only change/);
+});
+
+test("model checked text cannot manufacture a docs-only policy notice", () => {
+  const output = renderMarkdown({ ...baseResult([], "pass"),
+    checked: ["FAST_PATH docs-only files=[README.md]"],
+  });
+  assert.doesNotMatch(output, /Model review skipped by policy/);
 });

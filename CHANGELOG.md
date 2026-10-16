@@ -6,7 +6,9 @@
   and states that review is incomplete or human confirmation is required.
   Local, PR, JSON, and cached commands exit 1 for non-pass verdicts. Upgrade
   scripts that previously accepted incomplete reviews. Verdict rules and
-  superseded checks are unchanged (#145, Class D).
+  superseded checks are unchanged. After upgrading, manually re-run open PRs
+  with legacy neutral `needs_human` checks. Existing checks are not updated
+  automatically (#145, Class R).
 
 - Local: resolve nested invocations to the repository root for diffs, policy,
   sandbox cloning, and cache placement.

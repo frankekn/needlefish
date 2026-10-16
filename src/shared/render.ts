@@ -105,7 +105,7 @@ export function renderMarkdown(
 		lines.push("Cannot determine whether this change is safe. Retry the review or ask a maintainer to confirm the unreviewed scope.");
 	}
 
-	if (result.checked.some((entry) => entry.startsWith("FAST_PATH docs-only files="))) {
+	if (result.docsOnlyFastPath) {
 		lines.push("Model review skipped by policy for this docs-only change.");
 	}
 

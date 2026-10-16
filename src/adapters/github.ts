@@ -1449,9 +1449,9 @@ function completedCheckVerdict(repo: string, headSha: string): Verdict | null {
 	if (!isRecord(raw)) return null;
 	const runs = raw.check_runs;
 	if (!Array.isArray(runs)) return null;
-	const entries: unknown[] = runs;
+	const runId = (run: JsonRecord): number => typeof run.id === "number" ? run.id : 0;
+	const entries = runs.filter(isRecord).sort((a, b) => runId(b) - runId(a));
 	for (const run of entries) {
-		if (!isRecord(run)) continue;
 		if (stringField(run, "status") !== "completed") continue;
 		const conclusion = stringField(run, "conclusion");
 		const title = nestedString(run, "output", "title");

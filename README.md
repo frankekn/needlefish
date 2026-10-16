@@ -308,6 +308,7 @@ changelog entry.
 | `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
+| `docsOnlyFastPath` | Optional pipeline-generated flag that all model calls were skipped by docs-only policy. |
 | `coverageGaps` | Optional list of `{ kind: "lfs_pointer_only", file }` entries (changed files the review sandbox could only check out as Git LFS pointer stubs, so their contents were not reviewed), followed by at most one `{ kind: "lfs_scan_incomplete" }` entry when the sandbox could not determine whether changed files are pointer stubs (Git LFS use or the pointer list could not be established). Reported by the sandbox, never by the model; does not affect the verdict. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
@@ -338,13 +339,16 @@ Same-head dedupe requires a trusted receipt and a completed verdict check.
 Receipts are written after delivery. Missing checks, infrastructure failures,
 terminations, and superseded checks do not let old receipts suppress recovery. A same-head skip keeps the
 completed verdict's exit status. Legacy neutral `needs_human` checks trigger a
-full re-review so the check can receive the current failure policy.
+full re-review when that head is triggered again. After upgrading, manually
+re-run open PRs with legacy neutral `needs_human` checks. Existing checks are
+not updated automatically, and neutral checks can still satisfy branch protection.
 
 Review commands exit 0 only for `pass`. `changes_requested`, `needs_human`,
 and execution failures exit 1, including `--json` output. `needs_human` means
 review incomplete or human confirmation required. It does not claim a code
 defect. Retry the review or ask a maintainer to check the unreviewed scope.
-Docs-only changes pass by policy with an explicit "Model review skipped
+Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
+pass by policy with an explicit "Model review skipped
 by policy" notice. No model has reviewed that change.
 
 ### Base detection
