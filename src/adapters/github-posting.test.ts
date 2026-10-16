@@ -90,6 +90,8 @@ type FixtureOptions = {
 	// Fail the first N POSTs to the reviews endpoint with a 502, then succeed.
 	// Every attempt is still appended to postLog before the injected failure.
 	readonly flakyReviewPosts?: number;
+	readonly storedReviewPost5xx?: boolean;
+	readonly storedCheckPost5xx?: boolean;
 	// Fail the first N PUTs to a review id with a 502, then succeed.
 	readonly flakyReviewPuts?: number;
 	// Fail every POST to the reviews endpoint with a 404 (non-retryable).
@@ -369,7 +371,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    const reviewCommentsPath = ${JSON.stringify(reviewCommentsState)};`,
 			"    const reviewComments = fs.existsSync(reviewCommentsPath) ? JSON.parse(fs.readFileSync(reviewCommentsPath, 'utf8')) : [];",
 			"    for (const c of parsed.comments || []) {",
-			"      reviewComments.push({ id: reviewComments.length + 1, pull_request_review_id: reviewId, in_reply_to_id: null, path: c.path, body: c.body, user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
+			"      reviewComments.push({ id: reviewComments.length + 1, pull_request_review_id: reviewId, in_reply_to_id: null, path: c.path, line: c.line, start_line: c.start_line, side: c.side, body: c.body, user: { login: AUTHOR_LOGIN, type: AUTHOR_TYPE } });",
 			"    }",
 			"    fs.writeFileSync(reviewCommentsPath, JSON.stringify(reviewComments));",
 			// Mirror the live API: Create-a-review returns the review object,
@@ -377,6 +379,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			// `return` (valid at CJS top level) instead of process.exit: exit
 			// right after write drops queued pipe output above 64KB, which made
 			// oversized-body tests fail as "GitHub returned invalid JSON".
+			`    if (${JSON.stringify(opts.storedReviewPost5xx === true)} && !fs.existsSync(reviewsPath + ".stored-5xx")) { fs.writeFileSync(reviewsPath + ".stored-5xx", "1"); process.stderr.write("gh: Server Error (HTTP 502)"); process.exit(1); }`,
 			"    process.stdout.write(JSON.stringify({ id: reviewId, body: parsed.body || '' }));",
 			"    process.exitCode = 0;",
 			"    return;",
@@ -395,9 +398,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
 			`    const parsedCheck = JSON.parse(payload);`,
 			`    const nextId = checks.length + 1;`,
-			`    checks.push({ id: nextId, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: { id: 15368 }, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
 			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
-			`    process.stdout.write(JSON.stringify({ id: nextId }));`,
+			`    if (${JSON.stringify(opts.storedCheckPost5xx === true)} && !fs.existsSync(checksStatePath + ".stored-5xx")) { fs.writeFileSync(checksStatePath + ".stored-5xx", "1"); process.stderr.write("gh: Server Error (HTTP 502)"); process.exit(1); }`,
+			`    process.stdout.write(JSON.stringify({ id: nextId, app: { id: 15368 } }));`,
 			`    process.exit(0);`,
 			`  }`,
 			`  if (apiPath && apiPath.startsWith('repos/frankekn/needlefish/check-runs/') && method === 'PATCH') {`,
@@ -4296,3 +4300,36 @@ for (const scenario of [
     assert.deepEqual(readPosts(fixture.postLog), []);
   });
 }
+
+for (const artifact of ["review", "check"] as const) {
+ test(`stored ${artifact} POST 5xx is reconciled without duplicate artifacts`, async (t) => {
+  const fixture = setupFixture(t, { prNumber: 120, rawReview: defaultRawReview(),
+   storedReviewPost5xx: artifact === "review", storedCheckPost5xx: artifact === "check" });
+  await runGithub(fixture.repo, 120, { timeoutMs: 1000 });
+  assert.equal(process.exitCode, 1);
+  const reviews: unknown = parseJson(readFileSync(fixture.reviewsState, "utf8"));
+  assert.ok(Array.isArray(reviews));
+  assert.equal(reviews.length, 1);
+  assert.ok(typeof reviews[0] === "object" && reviews[0] !== null);
+  const state = parseState(String(Reflect.get(reviews[0], "body")));
+  assert.equal(state?.v, 2);
+  const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+  assert.ok(Array.isArray(checks));
+  assert.equal(checks.length, 1);
+  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
+  const before = runnerInvocationCount(fixture);
+  await runGithub(fixture.repo, 120, { timeoutMs: 1000 });
+  assert.equal(runnerInvocationCount(fixture), before);
+ });
+}
+
+test("legacy state and unrelated same-name check cannot prove delivery", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 121, rawReview: defaultRawReview() });
+ seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha), user: { login: "github-actions[bot]", type: "Bot" } }]);
+ seedCompletedVerdictCheck(fixture);
+ await runGithub(fixture.repo, 121, { timeoutMs: 1000 });
+ assert.ok(runnerInvocationCount(fixture) > 0);
+ const fresh = postedReview(readPosts(fixture.postLog), 121);
+ assert.ok(fresh);
+ assert.equal(parseReviewPayload(fresh.payload).comments.length, 1);
+});
