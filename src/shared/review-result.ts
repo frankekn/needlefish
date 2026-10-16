@@ -1,3 +1,4 @@
+import { normalizeReview } from "./normalize.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -412,16 +413,25 @@ export function parseReviewResult(raw: unknown): ReviewResult {
 			OPTIONAL_FIELD_PARSERS[key],
 		);
 	}
+	const summary = requireString(record, "summary");
+	const checked = requireStringList(record, "checked");
+	// Validate coverage without rewriting legacy text or persisted findings.
+	parseField("review content", {
+		summary,
+		checked,
+		findings: [],
+		residual_risks: [],
+	}, normalizeReview);
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict: requireVerdict(record.verdict),
-		summary: requireString(record, "summary"),
+		summary,
 		findings: parseField<readonly Finding[]>(
 			"findings",
 			record.findings,
 			findingListField,
 		),
-		checked: requireStringList(record, "checked"),
+		checked,
 		residualRisks: requireArray(record, "residualRisks").map(requireResidualRisk),
 		baseSha: requireString(record, "baseSha"),
 		headSha: requireString(record, "headSha"),

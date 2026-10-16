@@ -164,7 +164,7 @@ test("cached commands preserve a valid legacy pass without rewriting the cache",
   assert.equal(rendered.status, 0, rendered.stderr);
   assert.match(rendered.stdout, /LGTM/);
   assert.match(rendered.stdout, /Legacy review\./);
-  assert.match(rendered.stdout, /  inspected diff  /);
+  assert.match(rendered.stdout, / {2}inspected diff {2}/);
   const verdict = runCli(["verdict", file]);
   assert.equal(verdict.status, 0, verdict.stderr);
   assert.equal(verdict.stdout, "stored:  pass\nderived: pass\n");
