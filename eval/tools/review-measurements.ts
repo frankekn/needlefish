@@ -69,7 +69,7 @@ export function utcDuration(start: unknown, end: unknown): Duration {
   return to < from ? unknown("clock_order_conflict") : { status: "observed", valueMs: to - from, clock: "github_utc" };
 }
 
-function ghRead(endpoint: string): unknown {
+export function readGithubMeasurement(endpoint: string): unknown {
   const result = spawnSync("gh", ["api", endpoint], { encoding: "utf8", timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error("GitHub measurement read failed");
   try { return JSON.parse(result.stdout); } catch { throw new Error("GitHub measurement response was not JSON"); }
@@ -100,7 +100,7 @@ function jobCheckId(value: unknown, repository: string): number | null {
   } catch { return null; }
 }
 
-export function collectReviewMeasurements(query: MeasurementQuery, githubRead: GithubRead = ghRead): MeasurementCollection {
+export function collectReviewMeasurements(query: MeasurementQuery, githubRead: GithubRead = readGithubMeasurement): MeasurementCollection {
   validateMeasurementQuery(query);
   const diagnostics: { checkRunId: number | null; reason: string }[] = [];
   const report = (reason: string, checkRunId: number | null = null) => { diagnostics.push({ checkRunId, reason }); };
