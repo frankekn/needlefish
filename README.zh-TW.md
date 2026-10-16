@@ -83,6 +83,10 @@ workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
 effort），大型 PR 為 1 次 map + N 次 deep + 1 次 critic。純文件 PR 與未
 變更的 head 會完全跳過模型。
 
+桌面引導設定遇到自訂 Needlefish workflow 或無法辨識的設定分支時會回報衝突。
+無關的自訂 workflow 會保留，不會阻擋設定。操作說明見
+[桌面 GitHub 設定](desktop/macos/README.md#enable-github-review)。
+
 ## Benchmarks
 
 哪一組 model、agent harness、provider route 與 effort，能抓到真正的 PR

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +23,8 @@ const input=readFileSync(0,'utf8');
 appendFileSync(root+'/calls.jsonl',JSON.stringify({args,input})+'\\n');
 const template=readFileSync(root+'/template','utf8');
 function save(){writeFileSync(statePath,JSON.stringify(state))}
+if(state.clockSteps){state.elapsedMs=(state.elapsedMs||0)+(state.clockSteps[args[0]==='secret'?'secret':args.find(arg=>arg.startsWith('repos/'))]||0);save()}
+if(state.delayAt===args.find(arg=>arg.startsWith('repos/')))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,200);
 function out(value){console.log(JSON.stringify(value));process.exit(0)}
 function missing(){console.error('gh: Not Found (HTTP 404)');process.exit(1)}
 if(state.fail||(state.failSecret&&args[0]==='secret')){console.error('network failed '+input);process.exit(1)}
@@ -42,7 +44,8 @@ if(endpoint.includes('/contents/.github/workflows/needlefish.yml')){
   if(content===null)missing();
   out({type:'file',encoding:'base64',sha:'file-sha',content:Buffer.from(content).toString('base64')})
 }
-if(endpoint.includes('/contents/.github/workflows?'))out(state.duplicate?[{name:'custom.yml',type:'file'}]:[]);
+if(endpoint.includes('/contents/.github/workflows?'))out(state.workflows|| (state.duplicate?[{name:'custom.yml',type:'file'}]:[]));
+if(endpoint.includes('/contents/.github/workflows/slow'))out({encoding:'base64',content:Buffer.from('name: unrelated CI').toString('base64')});
 if(endpoint.includes('/contents/.github/workflows/custom.yml'))out({encoding:'base64',content:Buffer.from('uses: frankekn/needlefish@custom').toString('base64')});
 if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main'},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}]:[]);
 if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch)out({object:{sha:'setup-sha'}});missing()}
@@ -58,11 +61,17 @@ if(endpoint.endsWith('/pulls')){state.pr=true;save();out({html_url:'https://gith
 throw Error('unhandled endpoint '+endpoint);
 `;
   writeFileSync(join(root, "gh"), script); chmodSync(join(root, "gh"), 0o700);
-  const run = (args: string[], input = "") => spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "setup", "github", ...args], {
-    encoding: "utf8", input, timeout: 20_000, env: { ...process.env, PATH: root + ":" + process.env.PATH },
+  const clock = join(root, "clock.mjs");
+  writeFileSync(clock, `import { readFileSync } from 'node:fs';
+Object.defineProperty(performance, 'now', { value: () => JSON.parse(readFileSync(${JSON.stringify(state)}, 'utf8')).elapsedMs || 0 });`);
+  const command = (args: string[]) => ["--import", clock, "--import", "tsx", "src/cli.ts", "setup", "github", ...args];
+  const env = { ...process.env, PATH: root + ":" + process.env.PATH };
+  const start = (args: string[]) => spawn(process.execPath, command(args), { env });
+  const run = (args: string[], input = "") => spawnSync(process.execPath, command(args), {
+    encoding: "utf8", input, timeout: 20_000, env,
   });
   const history = () => readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as { args: string[]; input: string });
-  return { root, run, history, state: () => JSON.parse(readFileSync(state, "utf8")) as Record<string, unknown> };
+  return { root, run, start, history, state: () => JSON.parse(readFileSync(state, "utf8")) as Record<string, unknown> };
 }
 const remote = ["--repository", "owner/repo", "--json"];
 
@@ -288,4 +297,96 @@ test("repository case variants converge to the canonical setup PR", t => {
     assert.equal(JSON.parse(result.stdout).repository, "owner/repo");
   }
   assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
+});
+
+for (const action of ["status", "create-pr", "set-secret"]) {
+  test(`guided ${action} shares a deadline across successful slow workflow reads`, t => {
+    const workflows = ["slow1.yml", "slow2.yml", "slow3.yml"].map(name => ({ name, type: "file" }));
+    const clockSteps = Object.fromEntries(workflows.map(file => [`repos/owner/repo/contents/.github/workflows/${file.name}?ref=main`, 40_000]));
+    const f = fixture(t, { workflows, clockSteps });
+    const result = f.run([action, ...remote, ...(action === "status" ? [] : ["--confirm"]), ...(action === "set-secret" ? ["--replace-secret"] : [])], "controlled-deadline-placeholder");
+    assert.equal(result.status, 1);
+    const failure = JSON.parse(result.stdout);
+    assert.equal(failure.phase, "error");
+    assert.match(failure.message, /setup.*deadline.*not completed/i);
+    assert.ok(!result.stdout.includes("controlled-deadline-placeholder"));
+    const calls = f.history();
+    assert.equal(calls.filter(call => call.args.some(arg => arg.includes("/workflows/slow"))).length, 3);
+    assert.ok(calls.every(call => !call.args.includes("--method") && call.args[0] !== "secret"));
+    assert.ok(!calls.some(call => call.args.some(arg => arg.includes("/actions/secrets/"))));
+  });
+}
+
+test("a gh call gets only the remaining operation budget", t => {
+  const f = fixture(t, { clockSteps: { "repos/owner/repo": 104_950 }, delayAt: "repos/owner/repo/actions/permissions" });
+  const result = f.run(["status", ...remote]);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).message, /setup.*deadline.*not completed/i);
+  assert.ok(!f.history().some(call => call.args.some(arg => arg.includes("/contents/"))));
+});
+
+test("expired preflight budget prevents secret writes", t => {
+  const f = fixture(t, { clockSteps: { "repos/owner/repo/git/ref/heads/needlefish/setup-v1": 105_000 } });
+  const result = f.run(["set-secret", ...remote, "--confirm", "--replace-secret"], "controlled-deadline-placeholder");
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).message, /setup.*deadline.*not completed/i);
+  assert.ok(f.history().every(call => call.args[0] !== "secret"));
+  assert.equal(f.state().secret, undefined);
+});
+
+test("deadline after an owned branch write reports incomplete and retry reuses it", t => {
+  const f = fixture(t, { clockSteps: { "repos/owner/repo/git/refs": 105_000 } });
+  const failed = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(failed.status, 1);
+  assert.match(JSON.parse(failed.stdout).message, /setup.*deadline.*not completed/i);
+  assert.equal(f.state().branch, true);
+  assert.equal(f.state().pr, undefined);
+  writeFileSync(join(f.root, "state.json"), JSON.stringify({ ...f.state(), clockSteps: {} }));
+  const retry = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(JSON.parse(retry.stdout).phase, "pr_created");
+  assert.equal(f.history().filter(call => call.args.includes("--method") && call.args.some(arg => arg.endsWith("/git/refs"))).length, 1);
+});
+
+test("a secret write that exhausts the budget cannot report success", t => {
+  const f = fixture(t, { clockSteps: { secret: 105_000 } });
+  const result = f.run(["set-secret", ...remote, "--confirm", "--replace-secret"], "controlled-deadline-placeholder");
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).message, /setup.*deadline.*not completed/i);
+  assert.equal(f.state().secret, true);
+  assert.ok(!result.stdout.includes("controlled-deadline-placeholder"));
+});
+
+test("unrelated custom workflows are preserved and allow setup", t => {
+  const f = fixture(t, { workflows: [{ name: "slow-ci.yml", type: "file" }] });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+  assert.deepEqual(f.state().workflows, [{ name: "slow-ci.yml", type: "file" }]);
+});
+
+test("setup PR mutation shares the budget spent on preflight", t => {
+  const f = fixture(t, { clockSteps: {
+    "repos/owner/repo/git/ref/heads/needlefish/setup-v1": 104_000,
+    "repos/owner/repo/git/ref/heads/main": 1_001,
+  } });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 1);
+  assert.match(JSON.parse(result.stdout).message, /setup.*deadline.*not completed/i);
+  assert.ok(f.history().every(call => !call.args.includes("--method")));
+  assert.equal(f.state().branch, undefined);
+});
+
+test("credential stdin waiting shares the operation deadline", { timeout: 10_000 }, async t => {
+  const f = fixture(t, { clockSteps: { "repos/owner/repo/git/ref/heads/needlefish/setup-v1": 104_950 } });
+  const child = f.start(["set-secret", ...remote, "--confirm", "--replace-secret"]);
+  t.after(() => child.kill());
+  let stdout = "", stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (data: string) => { stdout += data; });
+  child.stderr.setEncoding("utf8").on("data", (data: string) => { stderr += data; });
+  const status = await new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+  assert.equal(status, 1, stderr);
+  assert.match(JSON.parse(stdout).message, /setup.*deadline.*not completed/i);
+  assert.ok(f.history().every(call => call.args[0] !== "secret"));
+  assert.equal(f.state().secret, undefined);
 });
