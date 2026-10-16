@@ -107,7 +107,7 @@ The bound values are private and absent from serialized options, result and cach
 Runner output is screened against the selected snapshot before admission, including
 decoded JSON in Markdown fences. A complete selected credential value, including
 its JSON-escaped form, stops the review with a safe diagnostic. Screening also
-checks one decoding of literal `\uXXXX` escapes in plain text. Partial values,
+checks one decoding of standard JSON string escapes in plain text. Partial values,
 other encodings and transformations are not covered. Raw agent transcripts remain
 sensitive and can contain credentials. Matching uses case-insensitive complete-value
 substrings. Short or common credential values may match ordinary protocol or

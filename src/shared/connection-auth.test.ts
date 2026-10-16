@@ -143,3 +143,19 @@ test("Unicode screening covers mixed escapes and surrogate pairs without changin
   assert.deepEqual(child,{AGENT_API_KEY:"KEY🙂tail"});
   assert.equal(auth.screenDiagnostic("ordinary safe diagnostic"),"ordinary safe diagnostic");
 });
+
+test("one-pass JSON screening handles every JSON escape without recursive decoding", () => {
+  for (const token of ['"', "\\", "/", "\b", "\f", "\n", "\r", "\t"]) {
+    const value = `KEY${token}tail`;
+    const auth = new AcpEnvironmentAuth({ AGENT_API_KEY: "SOURCE" }, { SOURCE: value });
+    const escaped = JSON.stringify(value).slice(1, -1).replace("/", "\\/");
+    assert.throws(() => auth.assertOutputSafe(`prefix ${escaped}`), { name: "ConnectionCredentialLeakError" });
+    assert.equal(auth.screenDiagnostic(`prefix ${escaped}`), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+    const child: NodeJS.ProcessEnv = {};
+    auth.applyTo(child);
+    assert.deepEqual(child, { AGENT_API_KEY: value });
+  }
+  const auth = new AcpEnvironmentAuth({ AGENT_API_KEY: "SOURCE" }, { SOURCE: "KEYtail" });
+  assert.equal(auth.screenDiagnostic("prefix KEY\\u005ctail"), "prefix KEY\\u005ctail");
+  assert.equal(auth.screenDiagnostic("prefix K\\u005cu0045Ytail"), "prefix K\\u005cu0045Ytail");
+});

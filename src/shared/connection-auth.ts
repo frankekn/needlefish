@@ -10,7 +10,10 @@ export class ConnectionCredentialLeakError extends RunnerFailure {
 }
 
 function containsCredential(text: string, values: readonly string[]): boolean {
-  const decoded = text.replace(/\\u([0-9a-f]{4})/gi, (_escape: string, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+  const decoded = text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
+    const value: unknown = JSON.parse(`"${escape}"`);
+    return typeof value === "string" ? value : escape;
+  });
   return screenText(text, values).kind === "withheld" || screenText(decoded, values).kind === "withheld";
 }
 

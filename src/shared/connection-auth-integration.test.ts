@@ -62,6 +62,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
       process.stderr.write(process.env.AGENT_API_KEY + '\\n');
     }
+    if (mode === 'prefixed-json-stderr') process.stderr.write('credential log ' + JSON.stringify(process.env.AGENT_API_KEY) + '\\n');
     if (mode === 'success-stderr-leak' || mode === 'success-stderr-leak-once' && prior === 0) process.stderr.write(process.env.AGENT_API_KEY + '\\n');
     if (mode === 'success-stdout-leak' || mode === 'success-stdout-leak-once' && prior === 0) send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
     if (mode === 'stderr-leak' || mode === 'stderr-leak-once' && prior === 0) {
@@ -78,6 +79,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
       let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      if (mode === 'explain-json-escaped') output = 'Credential note ' + JSON.stringify(process.env.AGENT_API_KEY);
       if (mode.startsWith('explain-escaped')) {
         const escaped = Array.from(process.env.AGENT_API_KEY).map((c,i) => mode.endsWith('-mixed') && i % 2 === 0 ? c : '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
         output = 'Credential note ' + escaped;
@@ -403,9 +405,9 @@ for (const mode of ["deep-raw-once", "deep-nonzero-once", "success-stdout-escape
   });
 }
 
-for (const mode of ["explain-escaped", "explain-escaped-mixed"]) {
+for (const mode of ["explain-escaped", "explain-escaped-mixed", "explain-json-escaped"]) {
   test(`${mode}: plain explanation rejects literal Unicode escapes without retry`, (t) => {
-    const f = fixture(t, mode);
+    const f = fixture(t, mode, mode === "explain-json-escaped" ? "KEY\n\t\"\\tail" : keyA);
     const script = path.join(f.root, "explain.mjs");
     writeFileSync(script, `
 import {explainFinding} from ${JSON.stringify(new URL("../core/explain.ts", import.meta.url).href)};
@@ -427,3 +429,15 @@ catch(error) { console.error(JSON.stringify({message:error.message,safety:isRunn
     f.clean();
   });
 }
+
+test("prefixed JSON credential log aborts trace-enabled output before retention", (t) => {
+  const credential = "KEY\n\t\"\\tail";
+  const f = fixture(t, "prefixed-json-stderr", credential);
+  const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], {NEEDLEFISH_EVAL_TRACE:"1",NEEDLEFISH_NO_RETRY:"0"});
+  assert.equal(result.status,1,result.stderr);
+  assert.equal(result.stdout,"");
+  assert.match(result.stderr,/withheld.*credential/);
+  assert.equal(f.records().length,1);
+  assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
+  f.clean();
+});
