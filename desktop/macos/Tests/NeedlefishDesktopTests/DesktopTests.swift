@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 @testable import NeedlefishDesktop
@@ -367,6 +368,72 @@ final class OnboardingTests: XCTestCase {
         }
         XCTFail("Operation did not complete")
     }
+    func testAppKitCanConstructDelegate() {
+        let delegateType: NSObject.Type = AppDelegate.self
+        guard let delegate = delegateType.init() as? AppDelegate else { return XCTFail("Expected app delegate") }
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+        guard case .welcome = delegate.model.state else { return XCTFail("Expected welcome state") }
+    }
+    func testQuitDoesNotWaitForInstallationLaunchAndPreservesReceipt() async throws {
+        let fixture = DesktopTests()
+        let root = try fixture.temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.app")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let managed = root.appendingPathComponent("managed")
+        let store = InstallationStore(root: managed)
+        _ = try await store.install(source, verify: { _ in }, launch: { _ in })
+        _ = try await store.install(source, verify: { _ in }, launch: { _ in })
+        let receiptURL = managed.appendingPathComponent("receipt.json")
+        let receipt = try Data(contentsOf: receiptURL)
+        for rollback in [false, true] {
+            let delegate = AppDelegate()
+            var pendingLaunch: CheckedContinuation<Void, Error>?
+            delegate.model.startInstallation(source: rollback ? nil : source, store: store, verify: { _ in }) { _ in
+                try await withCheckedThrowingContinuation { pendingLaunch = $0 }
+            }
+            for _ in 0..<100 {
+                if pendingLaunch != nil { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            guard let continuation = pendingLaunch else { return XCTFail("Launch did not start") }
+            XCTAssertEqual(delegate.model.busy, true)
+            XCTAssertEqual(delegate.model.canCancel, false)
+            XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+            XCTAssertEqual(try Data(contentsOf: receiptURL), receipt)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: managed.path).filter { $0.hasSuffix(".app") }.count, rollback ? 2 : 3)
+            continuation.resume(throwing: DesktopError.command)
+            try await waitForIdle(delegate.model)
+            XCTAssertEqual(try Data(contentsOf: receiptURL), receipt)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: managed.path).filter { $0.hasSuffix(".app") }.count, 2)
+        }
+    }
+
+    func testQuitWaitsForOwnedCommandCleanup() async throws {
+        let fixture = DesktopTests()
+        let root = try fixture.temporary()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let childPID = root.appendingPathComponent("child-pid")
+        let cleaned = root.appendingPathComponent("cleaned")
+        let runtime = try fixture.fixture("trap 'sleep 0.2; printf cleaned > \"\(cleaned.path)\"; exit 1' TERM\nsleep 120 &\necho $! > \"\(childPID.path)\"\nwait")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let delegate = AppDelegate(model: Onboarding(runtime: runtime))
+        delegate.model.login()
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: childPID.path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let pid = Int32(try String(contentsOf: childPID, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))!
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        XCTAssertEqual(delegate.model.busy, true)
+        XCTAssertEqual(FileManager.default.fileExists(atPath: cleaned.path), false)
+        try await waitForIdle(delegate.model)
+        XCTAssertEqual(try String(contentsOf: cleaned, encoding: .utf8), "cleaned")
+        XCTAssertEqual(kill(pid, 0), -1)
+        XCTAssertEqual(errno, ESRCH)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+    }
+
     func testDemoCannotEnablePaidReview() {
         let model = Onboarding()
         model.demo()

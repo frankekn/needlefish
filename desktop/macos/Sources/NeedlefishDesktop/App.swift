@@ -45,26 +45,30 @@ final class Onboarding: ObservableObject {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             source = selected
         }
+        startInstallation(source: source, verify: { try InstallationStore.verify($0, team: team) }) { url in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.createsNewApplicationInstance = true
+                configuration.allowsRunningApplicationSubstitution = false
+                NSWorkspace.shared.openApplication(at: url, configuration: configuration) { application, error in
+                    if let error { continuation.resume(throwing: error) }
+                    else if application != nil { continuation.resume() }
+                    else { continuation.resume(throwing: DesktopError.command) }
+                }
+            }
+        }
+    }
+
+    func startInstallation(source: URL?, store: InstallationStore = InstallationStore(),
+                           verify: @escaping (URL) throws -> Void, launch: @escaping (URL) async throws -> Void) {
+        guard !busy else { return }
         state = .busy("正在驗證與開啟安裝版本。 / Verifying and opening the installed version.")
         task = Task {
-            let store = InstallationStore()
             do {
-                let launch: (URL) async throws -> Void = { url in
-                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                        let configuration = NSWorkspace.OpenConfiguration()
-                        configuration.createsNewApplicationInstance = true
-                        configuration.allowsRunningApplicationSubstitution = false
-                        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { application, error in
-                            if let error { continuation.resume(throwing: error) }
-                            else if application != nil { continuation.resume() }
-                            else { continuation.resume(throwing: DesktopError.command) }
-                        }
-                    }
-                }
                 if let source {
-                    _ = try await store.install(source, verify: { try InstallationStore.verify($0, team: team) }, launch: launch)
+                    _ = try await store.install(source, verify: verify, launch: launch)
                 } else {
-                    _ = try await store.rollback(verify: { try InstallationStore.verify($0, team: team) }, launch: launch)
+                    _ = try await store.rollback(verify: verify, launch: launch)
                 }
                 state = .message("已開啟安裝版本。 / Installed version opened.")
             } catch DesktopError.installationBusy {
@@ -313,12 +317,14 @@ struct ContentView: View {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let model = Onboarding()
+    let model: Onboarding
+    override init() { model = Onboarding(); super.init() }
+    init(model: Onboarding) { self.model = model; super.init() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if model.busy {
+        if model.canCancel {
             model.cancel()
             Task {
-                while model.busy { try? await Task.sleep(for: .milliseconds(100)) }
+                while model.canCancel { try? await Task.sleep(for: .milliseconds(100)) }
                 sender.reply(toApplicationShouldTerminate: true)
             }
             return .terminateLater
