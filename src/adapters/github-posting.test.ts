@@ -92,6 +92,7 @@ type FixtureOptions = {
 	readonly flakyReviewPosts?: number;
 	readonly storedReviewPost5xx?: boolean;
 	readonly storedCheckPost5xx?: boolean;
+ readonly foreignStoredCheck?: boolean;
  readonly storedIssuePost5xx?: boolean;
  readonly failReviewReconcileReads?: boolean;
  readonly storedInlineLimit?: number;
@@ -401,7 +402,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
 			`    const parsedCheck = JSON.parse(payload);`,
 			`    const nextId = checks.length + 1;`,
-			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: { id: 15368 }, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
+			`    checks.push({ id: nextId, name: parsedCheck.name, head_sha: parsedCheck.head_sha, external_id: parsedCheck.external_id, app: ${JSON.stringify(opts.foreignStoredCheck ? { id: 999, slug: 'foreign-app' } : { id: 15368, slug: 'github-actions' })}, status: parsedCheck.status || 'completed', conclusion: parsedCheck.conclusion ?? null, output: parsedCheck.output ?? null });`,
 			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
 			`    if (${JSON.stringify(opts.storedCheckPost5xx === true)} && !fs.existsSync(checksStatePath + ".stored-5xx")) { fs.writeFileSync(checksStatePath + ".stored-5xx", "1"); process.stderr.write("gh: Server Error (HTTP 502)"); process.exit(1); }`,
 			`    process.stdout.write(JSON.stringify({ id: nextId, app: { id: 15368 } }));`,
@@ -4378,15 +4379,18 @@ for (const mismatch of ["app", "head", "round", "run", "id", "author"] as const)
  });
 }
 
-test("a failed recovery metadata write prevents another model call", async (t) => {
+test("failed check PATCHes cannot reset the recovery budget", async (t) => {
  const fixture = setupFixture(t, { prNumber: 123, rawReview: defaultRawReview(), flakyCheckRunPatches: 99 });
  await runGithub(fixture.repo, 123, { timeoutMs: 1000 });
  assert.equal(runnerInvocationCount(fixture), 2);
  await runGithub(fixture.repo, 123, { timeoutMs: 1000 });
- assert.equal(runnerInvocationCount(fixture), 2);
+ assert.equal(runnerInvocationCount(fixture), 4);
  assert.equal(process.exitCode, 1);
+ await runGithub(fixture.repo, 123, { timeoutMs: 1000 });
+ await runGithub(fixture.repo, 123, { timeoutMs: 1000 });
+ assert.equal(runnerInvocationCount(fixture), 4);
  const completions = readPosts(fixture.postLog).filter(p => p.args.includes("PATCH"));
- assert.match(completions.at(-1)?.payload ?? "", /review failed/);
+ assert.match(completions.at(-1)?.payload ?? "", /recovery limit reached/);
 });
 
 test("recovery stops after one failed full re-review and recheck remains explicit", async (t) => {
@@ -4453,4 +4457,50 @@ test("a newer owned failed recheck invalidates an older same-head receipt", asyn
  await runGithub(fixture.repo, 128, { timeoutMs: 1000 });
  assert.equal(runnerInvocationCount(fixture), before + 2);
  assert.match(String(lastCheckCompletion(readPosts(fixture.postLog)).output?.title), /changes_requested/);
+});
+
+test("a foreign app cannot supply the reconciled pending check", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 129, rawReview: defaultRawReview(), storedCheckPost5xx: true, foreignStoredCheck: true });
+ await runGithub(fixture.repo, 129, { timeoutMs: 1000 });
+ const posts = readPosts(fixture.postLog);
+ const creates = posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/check-runs"));
+ assert.equal(creates.length, 1);
+ assert.equal(runnerInvocationCount(fixture), 0);
+ assert.equal(posts.filter(p => p.args.includes("PATCH")).length, 0);
+ assert.equal(process.exitCode, 1);
+ const errors: unknown = parseJson(readFileSync(fixture.issueCommentsState, "utf8"));
+ assert.ok(Array.isArray(errors) && isRecordLike(errors[0]));
+ assert.match(String(errors[0].body), /delivery could not start/);
+});
+
+for (const artifact of ["review", "comment"] as const) {
+ test(`unreadable PAT identity does not repeat a stored ${artifact} POST`, async (t) => {
+  const fixture = setupFixture(t, { prNumber: 130, rawReview: artifact === "review" ? defaultRawReview() : "not JSON",
+   authorLogin: "review-pat", failUserApi: true, storedReviewPost5xx: artifact === "review", storedIssuePost5xx: artifact === "comment" });
+  await runGithub(fixture.repo, 130, { timeoutMs: 1000 });
+  const posts = readPosts(fixture.postLog);
+  const endpoint = artifact === "review" ? "repos/frankekn/needlefish/pulls/130/reviews" : "repos/frankekn/needlefish/issues/130/comments";
+  assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes(endpoint)).length, 1);
+  const stored: unknown = parseJson(readFileSync(artifact === "review" ? fixture.reviewsState : fixture.issueCommentsState, "utf8"));
+  assert.ok(Array.isArray(stored));
+  assert.equal(stored.length, 1);
+  assert.match(String(lastCheckCompletion(posts).output?.title), /review failed/);
+ });
+}
+
+test("stale recovery finalizes only its owned check", async (t) => {
+ const fixture = setupFixture(t, { prNumber: 131, rawReview: "not JSON", staleHeadAfterReview: true });
+ writeFileSync(fixture.checksState, JSON.stringify([{ id: 1, name: "Needlefish", head_sha: fixture.headSha,
+  app: { id: 999, slug: "foreign-app" }, status: "in_progress", conclusion: null }]));
+ await runGithub(fixture.repo, 131, { timeoutMs: 1000 });
+ const posts = readPosts(fixture.postLog);
+ const patches = posts.filter(p => p.args.includes("PATCH"));
+ assert.equal(patches.length, 1);
+ assert.ok(patches[0]?.args.includes("repos/frankekn/needlefish/check-runs/2"));
+ assert.equal(lastCheckCompletion(posts).conclusion, "neutral");
+ assert.equal(reviewPostAttempts(posts, 131), 0);
+ const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+ assert.ok(Array.isArray(checks) && isRecordLike(checks[0]) && isRecordLike(checks[1]));
+ assert.equal(checks[0].status, "in_progress");
+ assert.equal(checks[1].status, "completed");
 });
