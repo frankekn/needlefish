@@ -1,3 +1,4 @@
+import type { CodexToolTrace } from "../shared/codex-tool-receipts.js";
 import type { Finding, MapResult, RawReview } from "../shared/schema.js";
 
 export type ReviewTracePassKind = "review" | "map" | "deep" | "critic";
@@ -5,7 +6,8 @@ export type ReviewTracePassKind = "review" | "map" | "deep" | "critic";
 export type ReviewTraceOutcome =
 	| "parsed"
 	| "parse_failed"
-	| "runner_failed";
+	| "runner_failed"
+	| "runner_completed";
 
 export type ReviewTraceFindingSnapshot = Pick<
 	Finding,
@@ -36,9 +38,16 @@ export interface ReviewTraceTextEvent extends ReviewTraceEventBase {
 	readonly finding?: never;
 }
 
+export interface ReviewTraceToolEvent extends ReviewTraceEventBase {
+	readonly surface: "native_tool_receipts";
+	readonly toolTrace: CodexToolTrace;
+	readonly finding?: never;
+}
+
 export type ReviewTraceEvent =
 	| ReviewTraceFindingEvent
-	| ReviewTraceTextEvent;
+	| ReviewTraceTextEvent
+	| ReviewTraceToolEvent;
 
 export type ReviewTraceObserver = (
 	event: ReviewTraceEvent,
