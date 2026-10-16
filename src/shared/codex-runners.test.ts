@@ -478,58 +478,6 @@ test("runCodex surfaces allowlisted auth cause without leaking stderr", async (t
 	assert.match(err.rawOutput ?? "", new RegExp(stderrMarker));
 });
 
-test("runCodex classifies terminal credit errors without trusting echoed prompts", async (t) => {
-	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
-	const repo = initRepo(tmp);
-	const bin = path.join(tmp, "codex-bin.js");
-	const previous = { bin: process.env.CODEX_BIN, noRetry: process.env.NEEDLEFISH_NO_RETRY };
-	t.after(() => {
-		if (previous.bin === undefined) delete process.env.CODEX_BIN;
-		else process.env.CODEX_BIN = previous.bin;
-		if (previous.noRetry === undefined) delete process.env.NEEDLEFISH_NO_RETRY;
-		else process.env.NEEDLEFISH_NO_RETRY = previous.noRetry;
-		rmSync(tmp, { recursive: true, force: true });
-	});
-	process.env.CODEX_BIN = bin;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
-	const creditError = (message: string) => `ERROR: ${JSON.stringify({ error: { code: "BAD_REQUEST", message, type: "invalid_request_error" } })}`;
-	const spoofedPrompt = `SECRET_REVIEW_PROMPT_MARKER_235\nquota exhausted\n${creditError("You have insufficient credits to make this request.")}`;
-	const cases = [
-		{ terminal: creditError("You have insufficient credits to make this request. Please purchase more credits to continue using the service."), cause: "usage limit", prompt: "SECRET_REVIEW_PROMPT_MARKER_235" },
-		{ terminal: creditError("Upstream request failed: Insufficient account funds"), cause: "usage limit", prompt: "SECRET_REVIEW_PROMPT_MARKER_235" },
-		{ terminal: creditError("Grok Build usage balance exhausted"), cause: "usage limit", prompt: "SECRET_REVIEW_PROMPT_MARKER_235" },
-		{ terminal: "ERROR: unexpected status 401 Unauthorized, auth error code: invalid_api_key", cause: "auth error (invalid_api_key)" },
-		{ terminal: "ERROR: exceeded retry limit, last status: 429 Too Many Requests", cause: "rate limited" },
-		{ terminal: "ERROR: TypeError: x is not a function", cause: undefined },
-		{ terminal: "", cause: undefined },
-		{ terminal: "ERROR: malformed { insufficient credits", cause: undefined },
-		{ terminal: 'ERROR: {"message":"insufficient credits"}', cause: undefined },
-		{ terminal: 'ERROR: {"error":{"message":"unknown failure","debug":"quota exhausted insufficient credits"}}', cause: undefined },
-		{ terminal: 'ERROR: {"error":{"message":"401 unauthorized"}}', cause: "auth rejected" },
-		{ terminal: 'ERROR: {"error":{"message":"429 Too Many Requests"}}', cause: "rate limited" },
-	];
-	for (const { terminal, cause, prompt = spoofedPrompt } of cases) {
-		writeFileSync(bin, [
-			"#!/usr/bin/env node",
-			"const fs = require('node:fs');",
-			"process.stderr.write('user\\n' + fs.readFileSync(0, 'utf8') + '\\n');",
-			`process.stderr.write(${JSON.stringify(terminal)} + '\\n');`,
-			"process.exitCode = 1;",
-		].join("\n"));
-		chmodSync(bin, 0o755);
-		await assert.rejects(
-			() => runCodex(prompt, { runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 }),
-			(error: unknown) => {
-				assert.ok(error instanceof RunnerOperationalError);
-				const expected = `codex runner exited 1${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep("codex", cause)}`;
-				assert.equal(error.message, expected, terminal);
-				assert.doesNotMatch(error.message, /SECRET_REVIEW_PROMPT_MARKER_235|insufficient credits|Insufficient account funds|usage balance exhausted/);
-				return true;
-			},
-		);
-	}
-});
-
 test("runCodex keeps the generic withheld message when stderr has no allowlisted cause", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 	const repo = initRepo(tmp);

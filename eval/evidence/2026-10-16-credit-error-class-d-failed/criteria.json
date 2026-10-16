@@ -1,0 +1,29 @@
+{
+  "declaredAt": "2026-10-16T05:34:45.828917+00:00",
+  "gateClass": "D",
+  "candidateSha": "1ad8ad31675f649b8352a40d504b7a33a80fa864",
+  "baseSha": "38a84d77f0befb5e3999ff089c7ec2a041ef76e2",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "runner": "codex",
+  "runnerVersion": "codex-cli 0.163.0",
+  "fixtures": [
+    "real-pr4-options-not-forwarded",
+    "t3-cache-key-tenant",
+    "honeypot-clean-rename"
+  ],
+  "draws": 3,
+  "concurrency": 1,
+  "holdout": "include",
+  "thresholds": {
+    "expectedCompletedDraws": 9,
+    "malformedOutputErrors": 0,
+    "operationalFailures": 0,
+    "cheatDetections": 0,
+    "positiveFixtureRecall": 1
+  },
+  "residentPropertySuite": "src/core/residual-provenance.test.ts",
+  "driftReplay": "resident suite includes admitted in-bag wording/line drift plus identity-rejection corpus",
+  "liveCanary": "not authorized in worker scope, remains separate required gate",
+  "matchingBaseline": "No comparative D claim; absolute contract only. R x1 baseline does not substitute for D x3 candidate."
+}
