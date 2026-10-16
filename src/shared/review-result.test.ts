@@ -277,6 +277,27 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/old.ts:3" });
 });
 
+test("parseReviewResult rejects untrimmed persisted quotes in final and candidate findings", () => {
+	const finding = {
+		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v",
+	};
+	for (const field of ["findings", "candidateFindings"]) {
+		for (const quote of ["  source  ", " source", "source\t", "\u3000source\u00a0", " "]) {
+			assert.throws(
+				() => parseReviewResult(serialized({ [field]: [{ ...finding, quote }] })),
+				/quote/,
+			);
+		}
+		for (const quote of ["source", "source  inside", "a".repeat(500)]) {
+			const result = parseReviewResult(serialized({ [field]: [{ ...finding, quote }] }));
+			assert.deepEqual(field === "findings" ? result.findings : result.candidateFindings, [{ ...finding, quote }]);
+		}
+		const legacy = parseReviewResult(serialized({ [field]: [finding] }));
+		assert.deepEqual(field === "findings" ? legacy.findings : legacy.candidateFindings, [finding]);
+	}
+});
+
 test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 	const finding = {
 		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
