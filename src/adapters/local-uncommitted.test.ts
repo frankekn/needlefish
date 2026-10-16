@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -563,4 +564,54 @@ test("runLocal keeps the removed source path when a tracked file is renamed into
   const prompts = readFileSync(promptPath, "utf8");
   assert.equal(prompts.includes('"path": ".github/workflows/ci.yml"'), true);
   assert.equal(prompts.includes('"path": "docs/ci-notes.md"'), true);
+});
+
+for (const binary of [false, true]) {
+  test(`docs-only review rejects size-capped untracked source, tracked binary=${binary}`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-docs-omission-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const { promptPath } = installFakeClaude(t, tmp);
+    delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    if (binary) {
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+      commitAll(repo, "binary base");
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+    }
+    writeFileSync(join(repo, "README.md"), "Updated documentation\n");
+    writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+    const cacheDir = join(tmp, "cache");
+
+    await assert.rejects(() => runLocal(repo, { cacheDir }), /Untracked file contents omitted.*source\.ts.*per_file_cap/s);
+    assert.equal(existsSync(promptPath), false);
+    assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
+  });
+}
+
+test("docs-only review rejects total-capped untracked source", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-docs-total-omission-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const { promptPath } = installFakeClaude(t, tmp);
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  for (let index = 0; index < 6; index++) {
+    writeFileSync(join(repo, `cap-${index}.md`), "x".repeat(190 * 1024));
+  }
+  writeFileSync(join(repo, "source.ts"), "x".repeat(190 * 1024));
+
+  await assert.rejects(() => runLocal(repo, { cacheDir: join(tmp, "cache") }), /Untracked file contents omitted.*source\.ts.*total_cap/s);
+  assert.equal(existsSync(promptPath), false);
+});
+
+test("source review rejects capped contents before creating a misleading pass cache", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-source-omission-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const { promptPath } = installFakeClaude(t, tmp);
+  writeFileSync(join(repo, "app.ts"), "export const changed = 1;\n");
+  writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+  const cacheDir = join(tmp, "cache");
+  await assert.rejects(() => runLocal(repo, { cacheDir }), /Untracked file contents omitted.*source\.ts.*per_file_cap/s);
+  assert.equal(existsSync(promptPath), false);
+  assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
 });
