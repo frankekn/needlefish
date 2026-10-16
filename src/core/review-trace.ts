@@ -13,6 +13,7 @@ export type ReviewTraceFindingSnapshot = Pick<
 >;
 
 interface ReviewTraceEventBase {
+	readonly routeIndex?: number;
 	readonly content: string;
 	readonly passKind: ReviewTracePassKind;
 	readonly passIndex: number;

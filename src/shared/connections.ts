@@ -5,8 +5,8 @@ import { AcpEnvironmentAuth, CodexEnvironmentAuth, parseAuthEnvironment, parseCo
 import { isRunnerName, type AcpLaunchSpec, type RunnerName, type RunnerOptions } from "./runner.js";
 
 // User/operator configuration, never model output or target-repo policy.
-// ACP and explicit Codex environment credential references are supported. OAuth homes,
-// presets and fallback remain separate increments.
+// ACP and explicit Codex environment credential references are supported.
+// OAuth profiles remain a separate increment.
 type ConnectionAuthSpec =
   | { readonly kind: "acp-env"; readonly env: AuthEnvironmentReferences }
   | { readonly kind: "codex-env"; readonly env: AuthEnvironmentReferences; readonly route: CodexAuthRoute };
@@ -28,7 +28,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 function onlyKeys(value: Record<string, unknown>, keys: readonly string[], label: string): void {
   if (Object.keys(value).some((key) => !keys.includes(key))) {
-    throw new Error(`Invalid connections configuration: unsupported field in ${label}. OAuth profiles and fallback are not supported in this version.`);
+    throw new Error(`Invalid connections configuration: unsupported field in ${label}. OAuth profiles are not supported in this version.`);
   }
 }
 
@@ -142,27 +142,42 @@ function readConnections(file: string, repoPath: string): readonly Connection[] 
   return parseConnections(raw);
 }
 
-// Resolve once at the CLI boundary. No process.env mutation, subprocesses,
-// authentication probes, or automatic provider switching. Legacy calls do
-// not even open the config file. The returned selection is fixed for all passes.
-export function resolveConnectionOptions<T extends RunnerOptions>(
+export function resolveConnectionRoutes<T extends RunnerOptions>(
   opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env, bindCredentials = true,
-): T {
-  if (opts.connection === undefined) return opts;
-  text(opts.connection, "selected connection");
+): readonly [T, ...T[]] {
+  if (opts.connections === undefined) return [opts];
+  const [first, ...rest] = opts.connections;
+  if (first === undefined) throw new Error("Select at least one connection.");
+  for (const id of opts.connections) text(id, "selected connection");
+  if (new Set(opts.connections).size !== opts.connections.length) throw new Error("Selected connection IDs must not repeat.");
   if (opts.runner !== undefined || opts.model !== undefined || opts.acpLaunch !== undefined || opts.connectionAuth !== undefined) {
     throw new Error("--connection cannot be combined with --runner, --model or separate ACP launch/auth.");
   }
-  const selected = readConnections(connectionsFile(env), repoPath).find((entry) => entry.id === opts.connection);
-  if (!selected) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
-  const connectionAuth = selected.auth && bindCredentials
-    ? selected.auth.kind === "codex-env" ? new CodexEnvironmentAuth(selected.auth.env, selected.auth.route, env) : new AcpEnvironmentAuth(selected.auth.env, env)
-    : undefined;
-  connectionAuth?.assertCompatible(selected.adapter, env);
-  return Object.freeze({
-    ...opts, runner: selected.adapter,
-    ...(selected.model === undefined ? {} : { model: selected.model }),
-    ...(selected.launch ? { acpLaunch: selected.launch } : {}),
-    ...(connectionAuth ? { connectionAuth } : {}),
-  });
+  const connections = readConnections(connectionsFile(env), repoPath);
+  const select = (id: string): Connection => {
+    const connection = connections.find(entry => entry.id === id);
+    if (!connection) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
+    return connection;
+  };
+  const selected: readonly [Connection, ...Connection[]] = [select(first), ...rest.map(select)];
+  const resolve = (connection: Connection): T => {
+    const connectionAuth = connection.auth && bindCredentials
+      ? connection.auth.kind === "codex-env" ? new CodexEnvironmentAuth(connection.auth.env, connection.auth.route, env) : new AcpEnvironmentAuth(connection.auth.env, env)
+      : undefined;
+    connectionAuth?.assertCompatible(connection.adapter, env);
+    return Object.freeze({
+      ...opts, connections: Object.freeze([connection.id]), runner: connection.adapter,
+      ...(connection.model === undefined ? {} : { model: connection.model }),
+      ...(connection.launch ? { acpLaunch: connection.launch } : {}),
+      ...(connectionAuth ? { connectionAuth } : {}),
+    });
+  };
+  return Object.freeze([resolve(selected[0]), ...selected.slice(1).map(resolve)]);
+}
+
+export function resolveConnectionOptions<T extends RunnerOptions>(
+  opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env, bindCredentials = true,
+): T {
+  if ((opts.connections?.length ?? 0) > 1) throw new Error("This command accepts only one --connection; use a whole review for ordered fallback.");
+  return resolveConnectionRoutes(opts, repoPath, env, bindCredentials)[0];
 }

@@ -427,7 +427,7 @@ function coordinateTermination(signal: TerminationSignal): void {
   };
   signalRegisteredRunners("terminate", signal);
   startTerminationFinalizers(termination);
-  if (runnersGone() && finalizersSettled) {
+  if (runnersGone() && finalizersSettled && activeTempDirectories.size === 0) {
     terminateImmediately(termination);
     return;
   }
@@ -507,6 +507,17 @@ async function completeTermination({ signal, deadlineMs }: Termination): Promise
   if (!runnersGone()) signalRegisteredRunners("kill", signal);
 
   if (isLinux()) {
+    // Unconfirmed runner exits still leave their trees to the startup reaper.
+    if (runnersGone() && finalizersSettled) {
+      for (const directory of [...activeTempDirectories]) {
+        try {
+          await removeOwnedTempTree(directory);
+          activeTempDirectories.delete(directory);
+        } catch (error) {
+          warnCleanupFailure(`temp directory ${directory}`, error);
+        }
+      }
+    }
     terminationCancel.abort();
     process.exit(signal === "SIGINT" ? 130 : 143);
   }

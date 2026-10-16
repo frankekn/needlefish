@@ -689,3 +689,9 @@ and
 [RESULTS_HISTORY.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md);
 raw reports under
 [eval/results/](https://github.com/frankekn/needlefish/tree/main/eval/results).
+
+## Source preview runner capability
+
+The `openai` HTTP runner has no repository-reading tools. Model reviews fail before any request. Docs-only reviews remain supported. ACP repository capability stays unknown until observed; protocol initialization does not prove tool access.
+
+See [named connections](https://github.com/frankekn/needlefish/blob/main/docs/connections.md) for explicit credential-source selection.

@@ -14,8 +14,9 @@
   sandbox cloning, and cache placement.
 - Runner: expose executable `WORKING` and unborn `EMPTY` sandbox refs and pin
   working patches to their captured baseline without changing result labels.
-- Review: reject tool-less `openai` HTTP large/deep reviews before model calls;
-  small full-diff reviews and docs-only skips remain supported.
+- Review: reject tool-less `openai` HTTP model reviews, including the small-diff
+  critic, before any request. Dry-run and doctor share the capability decision.
+  Docs-only skips remain supported; ACP repository capability stays unknown.
 - GitHub: advance provider fallback only on structured execution outcomes,
   never finding prose or a blocking verdict; preserve typed transport failures.
 - GitHub: write dedupe receipts after delivery and require a completed verdict

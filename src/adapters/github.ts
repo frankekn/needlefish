@@ -1,7 +1,7 @@
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
-import { review, reviewPlan } from "../core/review.js";
+import { reviewWithConnections, reviewPlan } from "../core/review.js";
 import { reviewExitCode } from "../core/verdict.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
@@ -14,7 +14,7 @@ import { ghText, git, makeBundle, prDiffFromShas, readAgentsAt, reviewDiff } fro
 import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
-import { resolveConnectionOptions } from "../shared/connections.js";
+import { resolveConnectionRoutes } from "../shared/connections.js";
 import {
 	registerTerminationFinalizer,
 	type Termination,
@@ -1832,14 +1832,14 @@ export async function runGithub(
 			agentsMd: readAgentsAt(repoPath, mergeBase),
 		});
 
-		const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+		const resolvedOpts = resolveConnectionRoutes(opts, repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
 
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
 		pipelineStart = performance.now();
 		let reviewed: ReviewResult;
-		try { reviewed = await review(bundle, resolvedOpts); }
+		try { reviewed = await reviewWithConnections(bundle, resolvedOpts); }
 		finally { measurement = { ...measurement, pipeline: measurementPipeline(pipelineStart, performance.now()) }; }
 		const result: ReviewResult = {
 			...reviewed,
