@@ -661,9 +661,14 @@ function defaultRawReview(): string {
 	});
 }
 
-for (const opener of ["<!--", "```text"]) {
-	test(`oversized UTF-8 check summaries keep the link ahead of ${opener}`, async (t) => {
-		const evidence = `\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
+for (const [opener, prefix] of [
+	["<!--", "Checked evidence:"],
+	["```text", "Checked evidence:"],
+	["<!--", ""],
+	["```text", ""],
+]) {
+	test(`oversized UTF-8 check summaries keep the link ahead of ${opener} ${prefix ? "after text" : "at item start"}`, async (t) => {
+		const evidence = `${prefix}\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
 		const fixture = setupFixture(t, {
 			prNumber: 44,
 			rawReview: JSON.stringify({
@@ -674,7 +679,8 @@ for (const opener of ["<!--", "```text"]) {
 		const posts = readPosts(fixture.postLog);
 		const reviewPost = postedReview(posts, 44);
 		assert.ok(reviewPost);
-		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence));
+		// Normalization trims item boundaries; delivery must retain everything else.
+		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence.trim()));
 		const checks = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
 		const payload = JSON.parse(checks.at(-1)!.payload) as {
 			conclusion: string; output: { summary: string };
@@ -1748,7 +1754,7 @@ test("runGithub treats corrupted state marker as first round", async (t) => {
 
 // --- Same-head dedupe ---
 
-test("runGithub skips re-review when previous review has same head (no recheck)", async (t) => {
+test("runGithub same-head skip ignores malformed connection configuration", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 30,
 		rawReview: JSON.stringify({
@@ -1764,7 +1770,10 @@ test("runGithub skips re-review when previous review has same head (no recheck)"
 	assert.ok(round1Count > 0, "round 1 should post");
 	const round1Runs = runnerInvocationCount(fixture);
 
-	const round2 = spawnGithubCli(fixture, 30);
+	const malformedConnections = path.join(path.dirname(fixture.repo), "malformed-connections.json");
+	writeFileSync(malformedConnections, "{");
+	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", malformedConnections);
+	const round2 = spawnGithubCli(fixture, 30, ["--connection", "selected"]);
 	assert.equal(round2.status, 0, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
