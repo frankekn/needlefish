@@ -1,0 +1,13 @@
+{
+  "pid": 1509775,
+  "pgid": 1509775,
+  "startTicks": "68294301",
+  "started": 1792143771.3553085,
+  "finished": 1792143793.2088284,
+  "stage": "critic",
+  "exit": 0,
+  "promptSha256": "83eaa5516ed34f1d2e5a8f20b13e4ffb6e58a1d42933cd7217cd6eb9ed54362c",
+  "lastMessageSha256": "5d6964d5bc2a3edd7d9e232f8bc3b02e4fce10af61a36fed073ecadf5acd7bef",
+  "stdoutSha256": "4d6fc9c627f91ad5a166578132d203a77e3f4459aa58fd3334c74bbf8997bc87",
+  "stderrSha256": "6eeb21e6080411d2f1ac65bc2b8bb9e1f7cbe8a9e5d618f4b36de041a21885a1"
+}

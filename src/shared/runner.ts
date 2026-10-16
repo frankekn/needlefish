@@ -1,4 +1,4 @@
-import type { AcpEnvironmentAuth } from "./connection-auth.js";
+import type { AcpEnvironmentAuth, CodexEnvironmentAuth } from "./connection-auth.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG, type RunnerDefinition } from "./runner-definition.js";
 
 export type RunnerName = (typeof RUNNER_CATALOG)[number]["name"];
@@ -24,7 +24,7 @@ export interface AcpLaunchSpec {
 export interface RunnerOptions {
   // CLI selection is resolved once before entering the review pipeline.
   readonly connection?: string;
-  readonly connectionAuth?: AcpEnvironmentAuth;
+  readonly connectionAuth?: AcpEnvironmentAuth | CodexEnvironmentAuth;
   readonly acpLaunch?: AcpLaunchSpec;
   readonly runner?: RunnerName;
   readonly model?: string;

@@ -6,6 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { CodexEnvironmentAuth } from "./connection-auth.js";
 import { runtimeLabel } from "./runtime.js";
 import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
@@ -115,6 +116,7 @@ export function buildRunnerEnv(
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
+		if (runner === "codex" && connectionAuth) env.CODEX_HOME = path.join(ephemeralHome, ".codex");
 		if (connectionAuth) {
 			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
 			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
@@ -437,6 +439,7 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
+	if (runner === "codex" && connectionAuth) mkdirSync(path.join(home, ".codex"), { mode: 0o700 });
 	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
 	// Explicit env auth never stages a default account's files or config.
 	const { required, optional } = connectionAuth
@@ -586,6 +589,7 @@ interface RunnerInvocation {
 	readonly initializeTimeoutMs: number;
 	readonly openCodeIdleTimeoutMs: number;
 	readonly prompt: string;
+	readonly launchPath: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
@@ -594,7 +598,7 @@ interface RunnerInvocation {
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
-	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly codexProxyBaseUrl: string | undefined;
 }
 
 interface CodexProxyConfig {
@@ -671,7 +675,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			effectiveEffort,
 			timeoutMs,
 			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
-			codexProxy: runner === "codex" ? resolveCodexProxyConfig() : undefined,
+			codexProxy: runner === "codex" && !(opts.connectionAuth instanceof CodexEnvironmentAuth) ? resolveCodexProxyConfig() : undefined,
 			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
 		});
 	} catch (error) {
@@ -826,6 +830,7 @@ async function runCodexOnce(
 						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
+						launchPath: sandbox.launchPath,
 						model,
 						reasoningEffort: config.reasoningEffort,
 						codexServiceTier: config.codexServiceTier,
@@ -833,7 +838,7 @@ async function runCodexOnce(
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
-						codexProxy,
+						codexProxyBaseUrl: config.connectionAuth instanceof CodexEnvironmentAuth ? config.connectionAuth.proxyBaseUrl() : codexProxy?.baseUrl,
 					},
 				};
 			} catch (error) {
@@ -1296,6 +1301,7 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
+	const command = requireRunnerCommand("codex");
 	const reasoningEffort = invocation.reasoningEffort;
 	const serviceTier = invocation.codexServiceTier;
 	const args = [
@@ -1305,13 +1311,18 @@ async function runCodexCli(
 		"--ignore-user-config",
 		"-c",
 		`model_reasoning_effort="${reasoningEffort}"`,
+		// The sandbox is checked out at the PR head, so its AGENTS.md (and
+		// AGENTS.override.md) is author-controlled. Review policy comes only from
+		// the bundle's merge-base agentsMd (issue #240); 0 skips project docs.
+		"-c",
+		"project_doc_max_bytes=0",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--ignore-rules",
 		"--skip-git-repo-check",
 		"--output-last-message",
 		lastMsg,
 	];
-	if (invocation.codexProxy) {
+	if (invocation.codexProxyBaseUrl !== undefined) {
 		const provider = "model_providers.cliproxyapi";
 		args.push(
 			"-c",
@@ -1319,7 +1330,7 @@ async function runCodexCli(
 			"-c",
 			`${provider}.name="CLIProxyAPI"`,
 			"-c",
-			`${provider}.base_url=${JSON.stringify(invocation.codexProxy.baseUrl)}`,
+			`${provider}.base_url=${JSON.stringify(invocation.codexProxyBaseUrl)}`,
 			"-c",
 			`${provider}.env_key="CODEX_PROXY_API_KEY"`,
 			"-c",
@@ -1328,14 +1339,17 @@ async function runCodexCli(
 			`${provider}.requires_openai_auth=false`,
 		);
 	}
+	if (invocation.env.CODEX_HOME && (invocation.env.CODEX_API_KEY || invocation.env.CODEX_PROXY_API_KEY)) {
+		args.push("-c", 'cli_auth_credentials_store="file"');
+	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
 
 	const res = await spawnRunnerProcess({
-		command: requireRunnerCommand("codex"),
+		command,
 		args,
-		stdin: invocation.prompt,
-		repoPath: invocation.repoPath,
+		stdin: `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1444,7 +1458,11 @@ async function runOpenCode(
 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const promptPath = path.join(invocation.tmp, "prompt.txt");
-	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+	writeFileSync(
+		promptPath,
+		`The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		{ mode: 0o600 },
+	);
 	const args = [
 		"-m",
 		invocation.model ?? GROK_DEFAULT_MODEL,
@@ -1465,7 +1483,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
-		repoPath: invocation.repoPath,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1500,6 +1518,11 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const args = [
 		"-p",
 		"--no-session",
+		// The sandbox is the PR head: its AGENTS.md, CLAUDE.md and project-local
+		// skills are author-controlled. Policy comes only from the bundle's
+		// merge-base agentsMd (issue #240).
+		"--no-context-files",
+		"--no-approve",
 		"--mode",
 		"text",
 		"--provider",

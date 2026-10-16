@@ -29,6 +29,7 @@ import {
 } from "../shared/schema.js";
 import { normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
+import { checkQuotes } from "./quote-check.js";
 import { deriveVerdict } from "./verdict.js";
 import { loadPrompt } from "./prompts.js";
 import {
@@ -748,7 +749,9 @@ function toReviewResult(
 		verdict,
 		runtime: run.runtime,
 		summary,
-		findings: raw.findings,
+		// After the verdict on purpose: the quote check may relocate or
+		// annotate a finding, never decide pass/fail.
+		findings: checkQuotes(raw.findings, bundle, run.reviewDeadlineMs),
 		checked: raw.checked,
 		residualRisks: raw.residual_risks,
 		baseSha: bundle.baseSha,

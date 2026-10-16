@@ -1,18 +1,22 @@
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AcpEnvironmentAuth, parseAuthEnvironment, type AuthEnvironmentReferences } from "./connection-auth.js";
+import { AcpEnvironmentAuth, CodexEnvironmentAuth, parseAuthEnvironment, parseCodexAuthEnvironment, parseCodexRoute, type CodexAuthRoute, type AuthEnvironmentReferences } from "./connection-auth.js";
 import { isRunnerName, type AcpLaunchSpec, type RunnerName, type RunnerOptions } from "./runner.js";
 
 // User/operator configuration, never model output or target-repo policy.
-// Only ACP environment credential references are supported here. OAuth homes,
+// ACP and explicit Codex environment credential references are supported. OAuth homes,
 // presets and fallback remain separate increments.
+type ConnectionAuthSpec =
+  | { readonly kind: "acp-env"; readonly env: AuthEnvironmentReferences }
+  | { readonly kind: "codex-env"; readonly env: AuthEnvironmentReferences; readonly route: CodexAuthRoute };
+
 export interface Connection {
   readonly id: string;
   readonly adapter: RunnerName;
   readonly model?: string;
   readonly launch?: AcpLaunchSpec;
-  readonly auth?: { readonly env: AuthEnvironmentReferences };
+  readonly auth?: ConnectionAuthSpec;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -52,10 +56,13 @@ export function parseConnections(raw: unknown): readonly Connection[] {
     if (!isRunnerName(adapter)) throw new Error("Unknown connection adapter. Use an existing CLI adapter or acp for a custom agent.");
     let auth: Connection["auth"];
     if (entry.auth !== undefined) {
-      if (adapter !== "acp") throw new Error("Connection auth is currently supported only by the acp adapter.");
+      if (adapter !== "acp" && adapter !== "codex") throw new Error("Connection auth is supported only by the acp and codex adapters.");
       const spec = record(entry.auth, "auth");
-      onlyKeys(spec, ["env"], "auth");
-      auth = Object.freeze({ env: parseAuthEnvironment(spec.env) });
+      onlyKeys(spec, adapter === "codex" ? ["env", "route"] : ["env"], "auth");
+      if (adapter === "codex") {
+        const route = parseCodexRoute(spec.route);
+        auth = Object.freeze({ kind: "codex-env", env: parseCodexAuthEnvironment(spec.env, route), route });
+      } else auth = Object.freeze({ kind: "acp-env", env: parseAuthEnvironment(spec.env) });
     }
     const model = entry.model === undefined ? undefined : text(entry.model, "model");
     let launch: AcpLaunchSpec | undefined;
@@ -148,7 +155,9 @@ export function resolveConnectionOptions<T extends RunnerOptions>(
   }
   const selected = readConnections(connectionsFile(env), repoPath).find((entry) => entry.id === opts.connection);
   if (!selected) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
-  const connectionAuth = selected.auth && bindCredentials ? new AcpEnvironmentAuth(selected.auth.env, env) : undefined;
+  const connectionAuth = selected.auth && bindCredentials
+    ? selected.auth.kind === "codex-env" ? new CodexEnvironmentAuth(selected.auth.env, selected.auth.route, env) : new AcpEnvironmentAuth(selected.auth.env, env)
+    : undefined;
   connectionAuth?.assertCompatible(selected.adapter, env);
   return Object.freeze({
     ...opts, runner: selected.adapter,

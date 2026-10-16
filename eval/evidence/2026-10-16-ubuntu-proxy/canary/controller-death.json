@@ -1,0 +1,7 @@
+{
+  "reason": "controller disappeared",
+  "outcome": "rolled-back",
+  "goodSource": "1654cbe33afea542d601e38a642c787627a44ca6",
+  "goodVersion": "needlefish 0.4.10",
+  "time": 1792143541.3381636
+}

@@ -6,6 +6,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  symlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -1126,4 +1128,33 @@ test("prepareRunnerSandbox leaves no origin write-back route for a WORKING targe
 
   assertNoSourceWriteBack(sandbox.repoPath, repo, "other");
   assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
+ test("prepareRunnerSandbox creates an empty launch directory beside the clone", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-launch-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const work = path.join(tmp, "work");
+  mkdirSync(work);
+  const sandbox = prepareRunnerSandbox({ runner: "codex", repoPath: repo, prompt: repo, targetHeadSha: headSha(repo), tmp: work });
+  assert.equal(path.dirname(sandbox.launchPath), path.dirname(sandbox.repoPath));
+  assert.notEqual(sandbox.launchPath, sandbox.repoPath);
+  assert.deepEqual(readdirSync(sandbox.launchPath), []);
+  assert.equal(sandbox.prompt, sandbox.repoPath);
+  assertRunnerSandboxClean("codex", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
+ test("prepareRunnerSandbox rejects sibling launch under the source repository, including symlinks", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-launch-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const inside = path.join(repo, "temp");
+  mkdirSync(inside);
+  const linked = path.join(tmp, "linked");
+  symlinkSync(inside, linked, "dir");
+  for (const runner of ["codex", "grok"] as const) {
+    for (const work of [inside, linked]) {
+      assert.throws(() => prepareRunnerSandbox({ runner, repoPath: repo, prompt: "", targetHeadSha: headSha(repo), tmp: work }), /launch directory must be outside the target repository/);
+    }
+  }
 });

@@ -2,8 +2,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveConnectionOptions } from "../shared/connections.js";
+import type { RunnerOptions } from "../shared/runner.js";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
-import { git } from "../shared/repo.js";
+import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
@@ -32,12 +34,14 @@ export interface DoctorCheck {
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly needlefish: string;
+  readonly repoRoot?: string;
   /** False when any check failed; an `unknown` check does not fail the report. */
   readonly ok: boolean;
   readonly checks: readonly DoctorCheck[];
 }
 
 export interface DoctorOptions {
+  readonly connection?: string;
   readonly repo: string;
   readonly version: string;
   readonly runner?: RunnerName;
@@ -251,6 +255,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
 
 /** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
 interface WorktreeState {
+  readonly repoRoot: string;
   readonly headExists: boolean;
   readonly dirty: boolean;
 }
@@ -282,12 +287,21 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
     if (!(error instanceof Error)) throw error;
     branch = "detached HEAD";
   }
+  const repoRoot = git(["rev-parse", "--show-toplevel"], repo, { preserveOutput: true }).replace(/\n$/, "");
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
+  const worktree = { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 };
+  const version = git(["--version"], repo);
+  if (!gitSupportsAttrSource(version)) {
+    return {
+      check: { name: "git", status: "fail", detail: `${version}; needlefish needs git 2.41 or later`, fix: "Upgrade git to 2.41 or later." },
+      worktree,
+    };
+  }
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { headExists, dirty: changed > 0 },
+    worktree,
   };
 }
 
@@ -310,15 +324,26 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
+  const selected = opts.connection === undefined ? undefined
+    : resolveConnectionOptions<RunnerOptions>({ connection: opts.connection, runner: opts.runner }, repo);
+  if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   let checks: readonly DoctorCheck[];
+  let repoRoot: string | undefined;
   try {
-    const runner = selectRunner(opts.runner, probeCwd);
+    const selectedBinary = selected ? resolveRunnerBinary("codex") : undefined;
+    const runner = selected ? {
+      check: { name: "runner", status: selectedBinary?.path ? "ok" : "fail", detail: selectedBinary?.path ? "codex: selected connection executable available; CLI not probed" : "codex: selected connection executable unavailable" } satisfies DoctorCheck,
+      selection: { kind: "unavailable" } satisfies RunnerSelection,
+    } : selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
+    repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
-      authCheck(runner.selection, probeCwd),
+      selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
+        ? "codex: credential source chosen; provider account identity unknown; login state not probed"
+        : "codex: named connection chosen; provider account identity unknown; login state not probed" } : authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
     ];
@@ -328,6 +353,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   return {
     schemaVersion: 1,
     needlefish: opts.version,
+    ...(repoRoot === undefined ? {} : { repoRoot }),
     ok: checks.every((check) => check.status !== "fail"),
     checks,
   };

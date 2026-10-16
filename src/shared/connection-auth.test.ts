@@ -88,7 +88,7 @@ test("diagnostics use the frozen credentials and preserve safe messages", () => 
   assert.equal(auth.screenDiagnostic("ACP initialize timeout"), "ACP initialize timeout");
 });
 
-test("configuration permits only explicit ACP env authentication", () => {
+test("ACP configuration rejects unsupported auth fields and native adapters", () => {
   for (const auth of [null, {}, { env: refs, files: [] }, { files: ["auth.json"] }]) {
     assert.throws(() => parseConnections({ version: 1, connections: [entry("a", auth)] }));
   }

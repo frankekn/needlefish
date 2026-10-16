@@ -60,6 +60,11 @@ export interface Bundle {
 	readonly focus: string | null;
 }
 
+// Output-only source-location validation; never a verdict input.
+export type QuoteCheck =
+	| { readonly status: "matched" | "not_found" | "unchecked" }
+	| { readonly status: "moved"; readonly from: string };
+
 export interface Finding {
 	readonly severity: Severity;
 	readonly title: string;
@@ -74,6 +79,8 @@ export interface Finding {
 	readonly consumerFile?: string;
 	readonly consumerLine?: number;
 	readonly replacement?: { readonly lines: readonly string[] };
+	readonly quote?: string;
+	readonly quoteCheck?: QuoteCheck;
 }
 
 export interface ResidualRisk {

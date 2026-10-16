@@ -526,3 +526,85 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
   }
   assert.equal(cwds[0], cwds[1]);
 });
+
+test("doctor probes a relative CODEX_BIN from the caller directory", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const previousCwd = process.cwd();
+  t.after(() => process.chdir(previousCwd));
+  process.chdir(f.tmp);
+  process.env.CODEX_BIN = "./bin/codex";
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(check(report, "runner").detail, `codex (auto-detected; ${path.resolve("bin/codex")}, codex-cli 9.9.9-stub)`);
+  assert.equal(check(report, "auth").detail, "codex: Logged in using ChatGPT");
+});
+
+test("doctor preserves non-Codex relative executable probe behavior", (t) => {
+  const f = setup(t);
+  stub(f.bin, "claude", 'echo "claude 9.9.9-stub"');
+  const previousCwd = process.cwd();
+  t.after(() => process.chdir(previousCwd));
+  process.chdir(f.tmp);
+  process.env.CLAUDE_BIN = "./bin/claude";
+
+  const report = runDoctor({ repo: f.repo, runner: "claude", version: "0.0.0-test" });
+
+  assert.equal(check(report, "runner").detail, "claude (--runner; ./bin/claude, version unknown)");
+});
+
+test("doctor reports the canonical selected repository root from nested and linked folders", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const nested = path.join(f.repo, "nested");
+  mkdirSync(nested);
+  const linked = path.join(f.tmp, "linked-repo");
+  symlinkSync(f.repo, linked, "dir");
+  for (const repo of [f.repo, nested, linked]) {
+    const report = runDoctor({ repo, version: "0.0.0-test" });
+    assert.equal(report.repoRoot, realpathSync(f.repo));
+    assert.equal(check(report, "git").status, "ok");
+  }
+  const notRepo = runDoctor({ repo: f.tmp, version: "0.0.0-test" });
+  assert.equal(notRepo.repoRoot, undefined);
+  assert.equal(check(notRepo, "git").status, "fail");
+});
+
+for (const suffix of [" ", "\t", "\n"]) {
+  test(`doctor preserves repository pathname suffix ${JSON.stringify(suffix)}`, (t) => {
+    const f = setup(t);
+    codexStub(f.bin, 0, "Logged in using ChatGPT");
+    const repo = path.join(f.tmp, `project${suffix}`);
+    mkdirSync(repo);
+    gitText(["init", "-q"], repo);
+    const nested = path.join(repo, "nested");
+    mkdirSync(nested);
+    for (const selected of [repo, nested]) {
+      const report = runDoctor({ repo: selected, version: "0.0.0-test" });
+      assert.equal(check(report, "git").status, "ok");
+      assert.equal(report.repoRoot, realpathSync(repo));
+    }
+  });
+}
+
+test("doctor omits the selected root when Git is too old for safe attributes", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  stub(f.bin, "git", [
+    'if [ "$1" = "--version" ]; then echo "git version 2.40.1"; exit 0; fi',
+    'exec /usr/bin/git "$@"',
+  ].join("\n"));
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.repoRoot, undefined);
+  assert.deepEqual(check(report, "git"), {
+    name: "git",
+    status: "fail",
+    detail: "git version 2.40.1; needlefish needs git 2.41 or later",
+    fix: "Upgrade git to 2.41 or later.",
+  });
+  assert.equal(check(report, "base").status, "ok");
+});

@@ -201,3 +201,39 @@ test("render reports a missing file without a stack trace", (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /cannot read cached review/);
 });
+
+
+test("cached commands reject padded quotes and preserve valid quote and legacy caches", (t) => {
+  const finding = {
+    severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
+    lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
+    suggestedFix: "f", validation: "",
+  };
+  for (const quotedFinding of [
+    { ...finding, quote: "  source  " },
+    { ...finding, quote: "source  inside" },
+    finding,
+  ]) {
+    const file = fixture(t, baseResult({ verdict: "changes_requested", findings: [quotedFinding] }));
+    const before = readFileSync(file, "utf8");
+    for (const command of ["render", "verdict"]) {
+      const result = runCli([command, file]);
+      if ("quote" in quotedFinding && quotedFinding.quote === "  source  ") {
+        assert.equal(result.status, 1, result.stdout);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /invalid cached review.*quote/);
+      } else {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stderr, "");
+        if (command === "verdict") {
+          assert.equal(result.stdout, "stored:  changes_requested\nderived: changes_requested\n");
+        } else {
+          assert.match(result.stdout, /CHANGES REQUESTED/);
+          assert.match(result.stdout, /breaks/);
+          assert.match(result.stdout, /src\/app\.ts:1/);
+        }
+      }
+    }
+    assert.equal(readFileSync(file, "utf8"), before);
+  }
+});
