@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { runtimeLabel, type RuntimeValue } from "../../src/shared/runtime";
-import { credentialValuesFromEnv, screenText } from "../../src/shared/outbound-screen";
+import { screenText } from "../../src/shared/outbound-screen";
 
 export interface PublicRuntimeIdentity {
   readonly version: 1;
@@ -11,8 +11,13 @@ export interface PublicRuntimeIdentity {
   readonly authSource: RuntimeValue;
 }
 
+export function isPublicAttestationLabel(value: string, environment: Readonly<Record<string, string | undefined>>): boolean {
+  const credentials = Object.entries(environment).flatMap(([name, secret]) => secret && /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i.test(name) && !/(_ENV_VARS|_FILES|_PASSTHROUGH)$/i.test(name) ? [secret, secret.trim()].filter(Boolean) : []);
+  return !path.posix.isAbsolute(value) && !path.win32.isAbsolute(value) && !/^~[/\\]/.test(value) && !/[:][/][/]|[?=&]/.test(value) && screenText(value, credentials).kind === "clean";
+}
+
 function publicVersion(value: string | undefined, status: "known" | "operator_attested", environment: NodeJS.ProcessEnv = process.env): RuntimeValue {
-  return value && /^[A-Za-z0-9][A-Za-z0-9 ._+()-]{0,159}$/.test(value) && screenText(value, credentialValuesFromEnv(environment)).kind === "clean"
+  return value && /^[A-Za-z0-9][A-Za-z0-9 ._+()-]{0,159}$/.test(value) && isPublicAttestationLabel(value, environment)
     ? Object.freeze({ status, value }) : runtimeLabel(undefined);
 }
 

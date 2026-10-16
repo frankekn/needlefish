@@ -11,13 +11,19 @@ export interface ReportAttestation {
   readonly publicEnvironmentAttestation?: unknown;
 }
 
-export function comparisonEnvironmentError(report: ReportAttestation): string | null {
+export function comparisonEnvironmentError(report: ReportAttestation & { readonly runner?: Report["runner"] }): string | null {
   if (report.privateEnvironment === true) return "private runner environment identity";
-  if (report.runnerEnvironment === undefined) return null;
+  if (report.runnerEnvironment === undefined) return report.runner === "acp" ? "unknown runner environment identity" : null;
   let pairs: unknown;
   try { pairs = JSON.parse(report.runnerEnvironment); } catch { return "unknown runner environment identity"; }
   if (!Array.isArray(pairs) || pairs.some((entry) => !Array.isArray(entry) || entry.length !== 2 || entry.some((value) => typeof value !== "string"))) return "unknown runner environment identity";
   if (pairs.some((entry) => entry[1] === "<required>" || entry[1] === "<redacted>")) return "private runner environment identity";
+  if (report.runner === "acp" || pairs.some((entry) => entry[0] === "ACP_PUBLIC_RUNTIME")) {
+    try {
+      const identity = publicRuntimeIdentityFromReport(report);
+      if ([identity.launcherDigest, identity.harnessVersion, identity.authSource].some((value) => value.status === "unknown")) return "unknown runner environment identity";
+    } catch { return "unknown runner environment identity"; }
+  }
   return null;
 }
 

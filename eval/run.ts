@@ -35,7 +35,7 @@ import {
 } from "./shared/critic-value";
 import { drawFindings, matchEvidence, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
-import { acpRuntimeIdentity } from "./shared/runtime-identity";
+import { acpRuntimeIdentity, isPublicAttestationLabel } from "./shared/runtime-identity";
 import {
 	ANTICHEAT_VERSION,
 	type Aggregates,
@@ -118,7 +118,6 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		if (!normalized || normalized.startsWith("--")) {
 			throw new Error(`${flag} requires a non-empty value`);
 		}
-		if (flag !== "--public-launcher-artifact" && (/[:][/][/]|[?=&]|(?:^|[/\\])(?:Users|home)[/\\]/.test(normalized))) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
 		return normalized;
 	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
@@ -183,6 +182,9 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		if (eq <= 0) throw new Error(`--env requires KEY=VALUE, got: ${raw}`);
 		env[raw.slice(0, eq)] = raw.slice(eq + 1);
 		i++;
+	}
+	for (const [flag, value] of [["--provider", provider], ["--route", route], ["--runner-version", runnerVersion]]) {
+		if (value !== null && !isPublicAttestationLabel(value, { ...process.env, ...env })) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
 	}
 	return {
 		runner,
@@ -444,8 +446,8 @@ export function resumeSlots(
 		}
 		if (
 			existing.runnerEnvironment !== currentRunnerEnvironment ||
-			existing.privateEnvironment === true ||
-			hasUnverifiableInvocationEnv(args)
+			comparisonEnvironmentError(existing) !== null ||
+			comparisonEnvironmentError({ runner: args.runner, runnerEnvironment: currentRunnerEnvironment, privateEnvironment: hasUnverifiableInvocationEnv(args) }) !== null
 		) {
 			process.stderr.write(
 				"resume: runner environment mismatch, ignoring resume file\n",

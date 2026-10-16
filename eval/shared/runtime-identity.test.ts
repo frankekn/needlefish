@@ -91,7 +91,7 @@ test("eval metadata labels reject private URLs and home paths before reports or 
   url.username = "test-user";
   url.password = "synthetic-password";
   url.searchParams.set("token", "synthetic-query");
-  for (const value of [url.href, "/Users/private/provider", "/home/private/provider"]) {
+  for (const value of [url.href, "/Users/private/provider", "/home/private/provider", "/root/.config/provider", "/private/var/folders/private-provider", "C:\\Users\\private\\provider", "~/private-provider"]) {
     assert.throws(() => parseArgs(["--provider", value, "--route", "public", "--runner-version", "Agent 1.2.3"]), { message: "--provider requires a public label, not a private endpoint or path" });
   }
 });
@@ -169,4 +169,46 @@ test("private identity read failures never expose auth contents or HOME through 
     assert.equal(inspect(error).includes(root), false);
     return true;
   });
+});
+
+test("all attestation labels reject credential values from eval overrides", () => {
+  for (const flag of ["--provider", "--route", "--runner-version"]) {
+    const values = { "--provider": "Public provider", "--route": "public", "--runner-version": "Agent 1.2.3", [flag]: "SYNTHETIC-PRIVATE-LABEL" };
+    const args = Object.entries(values).flatMap(([key, value]) => [key, value]);
+    for (const secret of ["SYNTHETIC-PRIVATE-LABEL", "  SYNTHETIC-PRIVATE-LABEL  "]) {
+      assert.throws(() => parseArgs([...args, "--env", `TEST_ATTESTATION_TOKEN=${secret}`]), { message: `${flag} requires a public label, not a private endpoint or path` });
+    }
+  }
+});
+
+test("nested unknown ACP metadata cannot authorize comparison, resume or a delta baseline", (t) => {
+  const keys = ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
+  const previous = keys.map((key) => [key, process.env[key]] as const);
+  for (const key of keys) delete process.env[key];
+  t.after(() => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-unknown-acp-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, "unknown.json");
+  const spec = { id: "unknown-acp", kind: "negative" as const, defectClass: "clean", description: "unknown ACP identity", baseFiles: { "src/value.ts": "export const value = 1;" }, headFiles: { "src/value.ts": "export const value = 2;" }, expected: { verdict: "pass" as const } };
+  const args = parseArgs(["--runner", "acp", "--model", "test-model", "--effort", "high", "--provider", "Public test", "--route", "public", "--runner-version", "Agent 1.2.3", "--env", "NEEDLEFISH_ACP_BIN=public-launcher", "--report", target]);
+  const draw = { fixtureId: spec.id, draw: 0, score: score({ verdict: "pass", findings: [] }, spec.expected, spec.id), durationMs: 1, calls: 1, retries: 0 };
+  const report = { ...writeReport(args, [draw], [spec]), anticheatVersion: 2 };
+  assert.equal(report.privateEnvironment, false);
+  assert.equal(comparisonEnvironmentError(report), "unknown runner environment identity");
+  writeFileSync(target, JSON.stringify(report));
+  assert.throws(() => compare(target, report), { message: "baseline report has unknown runner environment identity; cross-report comparison is unavailable." });
+  args.resume = target;
+  assert.equal(resumeSlots(args, [spec], [{ spec, draw: 0 }]).skipped, 0);
+  assert.match(renderResults([spec], [{ stem: "unknown-acp", report }]), /No guarded report qualifies as a baseline/);
+  assert.equal(comparisonEnvironmentError({ runner: "acp" }), "unknown runner environment identity");
+  const complete = { version: 1, launcherDigest: { status: "known", value: `sha256:${"a".repeat(64)}` }, harnessVersion: { status: "operator_attested", value: "Agent 1.2.3" }, authSource: { status: "operator_attested", value: "environment" } };
+  const environment = (identity: unknown) => JSON.stringify([["ACP_PUBLIC_RUNTIME", JSON.stringify(identity)]]);
+  assert.equal(comparisonEnvironmentError({ runner: "acp", runnerEnvironment: environment(complete) }), null);
+  for (const key of ["launcherDigest", "harnessVersion", "authSource"]) {
+    assert.equal(comparisonEnvironmentError({ runner: "acp", runnerEnvironment: environment({ ...complete, [key]: { status: "unknown" } }) }), "unknown runner environment identity");
+  }
 });
