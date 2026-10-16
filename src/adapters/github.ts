@@ -824,17 +824,16 @@ function postReview(
 		})),
 	});
 
-	const before = new Set(readReviews(repo, prNumber).map((item) => item.id));
+	const args = ["api", "-X", "POST", `repos/${repo}/pulls/${prNumber}/reviews`, "--input", "-"];
+	let before: Set<unknown>;
+	try { before = new Set(readReviews(repo, prNumber).map((item) => item.id)); }
+	catch {
+		const created = ghPost(args, payload);
+		return isRecord(created) && typeof created.id === "number" ? created.id : null;
+	}
 	const selfLogin = authenticatedLogin();
 	const created = reconciledPost(
-		[
-			"api",
-			"-X",
-			"POST",
-			`repos/${repo}/pulls/${prNumber}/reviews`,
-			"--input",
-			"-",
-		],
+		args,
 		payload,
 		() => {
 			const matching = readReviews(repo, prNumber).filter((item) => !before.has(item.id) &&
@@ -1755,6 +1754,7 @@ export async function runGithub(
 	try {
 		if (!pending) throw new Error("Review delivery could not start; rerun the review");
 		if (!checks) throw new Error("Review delivery history is unreadable; rerun the review");
+		if (previous && !previousChecks) throw new Error("Prior review delivery history is unreadable; rerun the review");
 		const delivery: DeliveryReceipt = { checkId: pending.id, appId: pending.appId, roundId: round.roundId, runId: round.runId };
 		const deliveredCheckId = prev?.state.v === 2 && prev.state.headSha === headSha ? prev.state.delivery.checkId : null;
 		const priorRounds: CheckRound[] = [];
