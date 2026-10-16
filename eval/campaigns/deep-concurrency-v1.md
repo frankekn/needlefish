@@ -16,9 +16,12 @@ from another campaign. A changed source, lane, protocol, or dependency requires
 a new study ID and prior approval to use model resources.
 
 The source is `23a5912aa5938192b32231a0c17dadfe0b9d8320`. The checker compares
-all `src`, prompts, shared eval code, `eval/run.ts`, TypeScript config, package
-manifest, lockfile, and both
-selected specs byte for byte against this commit. It rejects added files and symlinks in the frozen directories. It records SHA-256 digests,
+all `src`, prompts, shared eval code, `eval/run.ts`, root `tsconfig*.json` files,
+package manifest, lockfile, and both selected specs byte for byte against this
+commit. It also freezes the root `tsconfig*.json` path set, including
+`tsconfig.json` and `tsconfig.build.json`. It rejects added or deleted configs,
+config paths that are not regular files, and added files or symlinks in the
+frozen directories. It records SHA-256 digests,
 the existing prompt hash and fixture-set hash, and each generated patch digest.
 The plan also hashes this protocol and the plan generator itself.
 It imports only the two explicitly named non-holdout specs. It does not load

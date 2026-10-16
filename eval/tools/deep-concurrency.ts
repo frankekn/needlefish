@@ -36,6 +36,7 @@ export const study = {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtures = [positive, negative];
+const typescriptConfig = /^tsconfig.*\.json$/;
 
 export function pairedSchedule() {
 	return Array.from({ length: study.replicatesPerFixture }, (_, replicate) =>
@@ -52,20 +53,29 @@ export function pairedSchedule() {
 
 export function assertDirectoryInventory(checkout: string, expected: readonly string[]): void {
 	const directories = ["src", "prompts", "eval/shared"];
+	const configs = readdirSync(checkout, { withFileTypes: true })
+		.filter((entry) => typescriptConfig.test(entry.name))
+		.map((entry) => {
+			assert.equal(entry.isSymbolicLink(), false, `source symlink: ${entry.name}`);
+			assert.equal(entry.isFile(), true, `source not a regular file: ${entry.name}`);
+			return entry.name;
+		});
 	const walk = (relative: string): string[] => readdirSync(path.join(checkout, relative), { withFileTypes: true })
 		.flatMap((entry) => {
 			const file = `${relative}/${entry.name}`;
 			assert.equal(entry.isSymbolicLink(), false, `source symlink: ${file}`);
 			return entry.isDirectory() ? walk(file) : [file];
 		});
-	assert.deepEqual(directories.flatMap(walk).sort(),
-		expected.filter((file) => directories.some((directory) => file.startsWith(`${directory}/`))).sort(),
+	assert.deepEqual([...directories.flatMap(walk), ...configs].sort(),
+		expected.filter((file) => typescriptConfig.test(file) || directories.some((directory) => file.startsWith(`${directory}/`))).sort(),
 		"source path drift");
 }
 
 export function offlinePlan() {
+	const configs = execFileSync("git", ["ls-tree", "--name-only", study.source], { cwd: root, encoding: "utf8" })
+		.trim().split("\n").filter((file) => typescriptConfig.test(file));
 	const files = execFileSync("git", ["ls-tree", "-r", "--name-only", study.source,
-		"src", "prompts", "eval/shared", "eval/run.ts", "package.json", "pnpm-lock.yaml", "tsconfig.json"], { cwd: root, encoding: "utf8" })
+		"src", "prompts", "eval/shared", "eval/run.ts", "package.json", "pnpm-lock.yaml", ...configs], { cwd: root, encoding: "utf8" })
 		.trim().split("\n");
 	files.push(...fixtures.map((fixture) => `eval/fixtures/${fixture.id}/spec.ts`));
 	assertDirectoryInventory(root, files);
