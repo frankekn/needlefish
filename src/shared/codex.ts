@@ -1048,6 +1048,8 @@ export function nativeCodexQuotaExhausted(stdout: string, status: number | null)
 			: envelope.type === "thread.started" ? ["type", "thread_id"] : envelope.type === "turn.started" ? ["type"]
 			: envelope.type === "turn.completed" ? ["type", "usage"] : ["type", "item"];
 		if (Object.keys(envelope).some((key) => !fields.includes(key))) return false;
+		if (isRecord(envelope.item) && envelope.item.type === "error" &&
+			(typeof envelope.item.message !== "string" || !/^Model metadata for `[^`\r\n]+` not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(envelope.item.message))) return false;
 		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
 	}
 	let terminal = false;
@@ -1380,7 +1382,7 @@ function resolveModel(
 	runner: RunnerName,
 ): string | undefined {
 	// Named connections never borrow a model from another ambient lane.
-	if (opts.connection !== undefined) return opts.model;
+	if (opts.connections !== undefined) return opts.model;
 	if (opts.model) return opts.model;
 	if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
 	const modelEnv = RUNNER_DEFINITIONS[runner].modelEnv;

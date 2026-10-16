@@ -23,7 +23,7 @@ export interface AcpLaunchSpec {
 
 export interface RunnerOptions {
   // CLI selection is resolved once before entering the review pipeline.
-  readonly connection?: string;
+  readonly connections?: readonly string[];
   readonly connectionAuth?: AcpEnvironmentAuth | CodexEnvironmentAuth;
   readonly acpLaunch?: AcpLaunchSpec;
   readonly runner?: RunnerName;

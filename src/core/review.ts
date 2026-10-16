@@ -1166,7 +1166,7 @@ export async function reviewWithConnections(
 
 async function reviewRoutes(
 	bundle: Bundle,
-	routes: readonly RunnerOptions[],
+	routes: readonly [RunnerOptions, ...RunnerOptions[]],
 	onTrace: ReviewTraceObserver | undefined,
 	onProgress: ReviewProgressObserver | undefined,
 	startedAt: number,
@@ -1175,11 +1175,13 @@ async function reviewRoutes(
 	if (routes.length > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
 	const budget = timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
 	const deadline = budget === null ? undefined : performance.now() + budget;
-	const selections = routes.map((options) => {
+	const select = (options: RunnerOptions) => {
 		const plan = reviewPlan(bundle, options);
 		if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") throw new Error(plan.capability.detail);
 		return { config: resolveRunnerConfig(options), plan };
-	});
+	};
+	const firstSelection = select(routes[0]);
+	const selections = [firstSelection, ...routes.slice(1).map(select)];
 	const outputGuards = selections.flatMap(({config}) => config.connectionAuth ? [config.connectionAuth] : []);
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
 		? { failed: onTrace === undefined, pending: new Set() } : undefined;
@@ -1187,10 +1189,20 @@ async function reviewRoutes(
 	const rawOutputs: string[] = [];
 	const tmp = await createManagedTempDirectory();
 	let snapshot: RunnerSandbox | undefined;
+	const screenError = (error: unknown) => {
+		if (error instanceof Error && outputGuards.length) error.message = isRunnerSafetyError(error)
+			? "Needlefish withheld review sandbox diagnostic because it may contain a selected connection credential."
+			: outputGuards.reduce((message, guard) => guard.screenDiagnostic(message), error.message);
+		return error;
+	};
+	const assertSnapshotClean = () => {
+		try { if (snapshot) assertRunnerSandboxClean(firstSelection.config.runner, snapshot.repoPath, snapshot.expectedHeadSha); }
+		catch (error) { throw screenError(error); }
+	};
 	try {
 		assertRunnerSchedulingAllowed();
 		if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
-		snapshot = prepareRunnerSandbox({ runner: "codex", repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, tmp });
+		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, tmp });
 		for (const [routeIndex, {config, plan}] of selections.entries()) {
 			assertRunnerSchedulingAllowed();
 			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
@@ -1218,13 +1230,15 @@ async function reviewRoutes(
 				failedRawOutputs.push(...run.failedRawOutputs);
 				rawOutputs.push(...run.rawOutputs);
 				attachRunRaws(error, {...run, failedRawOutputs, rawOutputs});
-				assertRunnerSandboxClean(config.runner, snapshot.repoPath, snapshot.expectedHeadSha);
+				assertSnapshotClean();
 				if (findRunnerFailure(error)?.kind !== "quota_exhausted" || routeIndex === selections.length - 1) throw error;
 			}
 		}
 		throw new Error("No review connection selected.");
+	} catch (error) {
+		throw screenError(error);
 	} finally {
-		try { if (snapshot) assertRunnerSandboxClean("codex", snapshot.repoPath, snapshot.expectedHeadSha); }
+		try { assertSnapshotClean(); }
 		finally { await disposeManagedTempDirectory(tmp); }
 	}
 }

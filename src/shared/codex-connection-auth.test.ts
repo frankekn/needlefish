@@ -60,7 +60,7 @@ process.stdin.resume();
 `);
   chmodSync(binary, 0o755);
   Object.assign(process.env, { HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex"), CODEX_BIN: binary, ACCOUNT_A_KEY: keyA, ACCOUNT_B_KEY: keyB, GH_TOKEN: "FAKE-AMBIENT-GH", GITHUB_TOKEN: "FAKE-AMBIENT-GITHUB", NEEDLEFISH_NO_RETRY: "0", NEEDLEFISH_RETRY_MS: "1", NEEDLEFISH_CONNECTIONS_FILE: file, NEEDLEFISH_ACP_AUTH_FILES: ".codex/auth.json" });
-  const select = (id = "a") => resolveConnectionOptions<RunnerOptions>({ connection: id }, repo);
+  const select = (id = "a") => resolveConnectionOptions<RunnerOptions>({ connections: [id] }, repo);
   const calls = (): {args: string[]; cwd: string; env: NodeJS.ProcessEnv; files: string[]}[] => existsSync(log) ? JSON.parse(`[${readFileSync(log, "utf8").trim().split("\n").join(",")}]`) : [];
   const run = (opts = select(), callbacks = {}) => runCodex("Inspect source", { ...opts, repoPath: repo, targetHeadSha: headSha(repo), ...callbacks });
   return { root, repo, home, file, select, calls, run };
@@ -108,7 +108,7 @@ for (const bad of [undefined, "", " ", " key", "key ", "key tail", "key\ttail", 
   test(`Codex missing or invalid selected key fails before spawn (${typeof bad}:${bad?.length})`, (t) => {
     const f = fixture(t);
     const env = { ...process.env, ACCOUNT_A_KEY: bad };
-    assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connection: "a" }, f.repo, env), /credential/);
+    assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connections: ["a"] }, f.repo, env), /credential/);
     assert.deepEqual(f.calls(), []);
   });
 }

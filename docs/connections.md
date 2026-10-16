@@ -1,6 +1,6 @@
 # Named connections
 
-Choose one existing CLI adapter or trusted ACP executable by name:
+Source preview. Choose existing CLI adapters or trusted ACP executables by name:
 
 ```sh
 needlefish --connection my-cli
@@ -8,8 +8,9 @@ needlefish pr 7 --connection my-agent
 needlefish --connection my-agent --dry-run
 ```
 
-This increment selects **one** connection. It does not implement automatic
-fallback, OAuth account stores, login, installation or provider presets.
+Repeat `--connection` to set the order for whole-review quota fallback.
+A single selection retains its existing behavior. OAuth account stores, login,
+installation and provider presets remain separate work.
 Without `auth`, two names still use the existing adapter credentials, not independent
 accounts. ACP and Codex support the explicit environment bindings below. Unsupported
 `authRef`, arbitrary env, presets and fallback fields are rejected.
@@ -100,7 +101,7 @@ capability classifier. Other explicit source mappings, including values that nam
 host resources, are the trusted operator's responsibility. An unrestricted agent
 may still access any host resource available to its user.
 
-Selection snapshots only the chosen sources. Missing, empty, invalid or
+Selection snapshots all explicitly chosen sources. Missing, empty, invalid or
 whitespace-wrapped values stop before launch: no default account, login probe or
 automatic fallback.
 Retries and all review passes retain the snapshot without changing `process.env`.
@@ -138,7 +139,7 @@ made safe by an empty HOME. Use a trusted agent. This is not an OAuth/Keychain
 integration, token vault, refresh manager or proof that two sources are different
 accounts. Other native CLI bindings and the nontechnical login UI remain separate work.
 
-## One selection, one runtime
+## Shared runtime
 
 Without `--connection`, no connection file is read. Legacy `--runner acp` still
 uses `NEEDLEFISH_ACP_BIN` with empty argv. `--connection` conflicts with explicit
@@ -158,8 +159,9 @@ Named ACP launch goes through the same client as legacy launch:
 No second retry loop, process manager, telemetry schema or routing framework is
 introduced. Raw callbacks, review deadline, clone/HOME cleanup and integrity
 checks stay in the shared lifecycle. Structured authentication failures do not
-retry; transient session/new errors may use its bounded second attempt. Neither
-an error code nor quota prose activates another connection in this increment.
+retry; transient session/new errors may use its bounded second attempt. ACP has no portable quota signal and cannot activate another connection.
+Authentication failures, timeouts, refusal, cancellation and ordinary 429 errors
+also stop without switching.
 
 ## Preview and qualification
 
@@ -211,7 +213,7 @@ and remaining gates in the PR before handing off; recheck head before pushing.
 ACP 現可用 `auth.env` 將工具的密鑰變數綁到不同來源；設定檔只存變數名。
 缺少認證就停止，重試不換帳號；強制使用空白暫存 HOME/XDG，不複製預設帳號。
 此模式拒絕舊的任意 passthrough，避免暗中丟掉必要路由；OAuth、原生 CLI 多帳號、
-額度備援與安裝精靈仍未交付。這也不是作業系統隔離或供應商帳號驗證。
+安裝精靈仍未交付。這也不是作業系統隔離或供應商帳號驗證。
 
 設定只能來自專案外的使用者檔案，請勿放密鑰。選定的 command／argv／模型
 在重試與各審查階段保持固定，並沿用同一套握手、完成性、用量及清理流程。
@@ -282,8 +284,9 @@ executable availability without invoking the CLI. The auth result is `unknown`
 and states that provider account identity is unknown. It does not publish login
 status text, credential fragments, profile paths, or credential digests.
 Missing or invalid selected credentials stop before any CLI probe or review.
-OAuth login, refresh persistence, provider identity verification, automatic
-fallback, and other native adapter auth variants are outside this increment.
+OAuth login, refresh persistence, provider identity verification and other native
+adapter auth variants remain outside this preview. Ordered quota fallback is
+described below.
 
 
 Codex 的 source preview 亦可用 `auth.env` 選定 API key 來源，並必須明確指定
@@ -291,3 +294,53 @@ Codex 的 source preview 亦可用 `auth.env` 選定 API key 來源，並必須�
 重試與各 pass 共用同一份私有 snapshot。`doctor --connection 名稱` 只確認
 Codex 來源已選定，provider 帳號身分仍為 `unknown`，不執行登入狀態查詢。
 這不包含 OAuth 多帳號、refresh 或正式 Class R 資格。
+
+## Ordered whole-review quota fallback
+
+This source preview accepts an ordered list through repeated `--connection`.
+Set the existing review budget before selecting multiple connections:
+
+```sh
+NEEDLEFISH_REVIEW_TIMEOUT_MS=600000 needlefish --connection primary --connection spare
+```
+
+IDs must be known, nonempty and distinct. Do not combine them with `--runner`
+or `--model`. Configuration and all selected credential sources bind once.
+Only the selected route's credentials reach its child process. All selected
+credentials protect public output, including output from a different route.
+
+Only verified native Codex terminal JSONL with a nonzero exit and recognized
+exhaustion semantics can advance the list. The supported native 0.163 proof uses
+controlled Responses-provider exhaustion, not real provider account verification.
+An explicit CLIProxyAPI route remains a proxy route. It does not establish
+ChatGPT subscription exhaustion. Other adapters' prose and generic 429 responses
+cannot activate fallback.
+
+Each route restarts the complete review, including map, deep and critic passes.
+They share one captured source and one monotonic deadline. Each model pass
+retains its independent throwaway clone. A concurrent sandbox, cancellation,
+authentication or other failure prevents a quota event from hiding that failure.
+Existing ordinary deep failures remain blocking residuals when no quota occurs.
+
+Any complete verdict ends the list. `pass`, `needs_human` and
+`changes_requested` never trigger another model. Exhausting every route is an
+operational error. Local mode writes only the final complete cache. GitHub mode
+claims once and delivers only the final complete review, after checking its head.
+Failed-route transcripts remain in the private trace and evaluation canary flow.
+Candidate findings and stats from failed routes do not enter the final result.
+
+`doctor` and `explain` accept one connection only. `--dry-run` reports each
+selected route's capability without binding credentials or calling models.
+Docs-only reviews do not bind credentials, capture source or consume the budget.
+Multiple model routes require `NEEDLEFISH_REVIEW_TIMEOUT_MS`; no new total-budget
+default is implied by the per-pass timeout.
+
+Class R qualification, sealed holdouts and the dependency PR gates remain pending.
+This preview does not qualify any provider, credential store or production install.
+
+重複 `--connection` 可指定整次審查的額度備援順序，多條連線須明確設定
+`NEEDLEFISH_REVIEW_TIMEOUT_MS`。只有已驗證的 Codex native 終局額度訊號能前進。
+每條連線從頭重跑，所有連線共用同一份來源與總期限。完整 verdict 立即結束。
+認證、取消、timeout、隔離故障、一般 429 與 ACP 錯誤文字都不會觸發備援。
+所有選定密鑰共同保護公開輸出，每個子程序只收到自己那條連線的密鑰。
+全部額度耗盡就失敗，不寫部分 cache、不貼部分 review。正式 Class R 尚未完成。

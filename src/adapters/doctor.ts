@@ -338,7 +338,7 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
   const selected = opts.connection === undefined ? undefined
-    : resolveConnectionOptions<RunnerOptions>({ connection: opts.connection, runner: opts.runner }, repo);
+    : resolveConnectionOptions<RunnerOptions>({ connections: [opts.connection], runner: opts.runner }, repo);
   if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   let checks: readonly DoctorCheck[];

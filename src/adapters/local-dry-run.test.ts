@@ -352,3 +352,23 @@ test("ACP dry-run reports unknown repository capability without launching the ag
   });
   assert.equal(existsSync(fixture.marker), false);
 });
+
+for (const docs of [false,true]) {
+  test(`ordered dry-run reports every capability without binding private credentials (${docs ? "docs" : "source"})`,t=>{
+    const fixture=setupDryRunFixture(t,[{path:docs?"docs/guide.md":"app.ts",content:"source preview\n"}]);
+    const config=path.join(fixture.tmp,"connections.json");
+    writeFileSync(config,JSON.stringify({version:1,connections:[
+      {id:"primary",adapter:"codex",model:"selected",auth:{env:{CODEX_API_KEY:"MISSING_SELECTED_SOURCE"},route:{kind:"openai"}}},
+      {id:"spare",adapter:"openai",model:"selected"},
+    ]}));
+    const run=runCli(fixture,["--repo",fixture.repo,"--connection=primary","--connection=spare","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:"invalid"});
+    assert.equal(run.status,docs?0:1,run.stderr);
+    const summary=parseJsonObject(run.stdout);
+    assert.ok(Array.isArray(summary.capabilities));assert.equal(summary.capabilities.length,2);
+    if(docs) assert.deepEqual(summary.capabilities,[null,null]);
+    else assert.deepEqual(summary.capabilities.map((capability:{runner:string})=>capability.runner),["codex","openai"]);
+    assert.equal(existsSync(fixture.marker),false);
+    assert.equal(existsSync(cacheFile(fixture)),false);
+    assert.doesNotMatch(run.stdout,/MISSING_SELECTED_SOURCE|connectionAuth|apiKey/);
+  });
+}

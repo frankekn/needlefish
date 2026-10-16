@@ -7,7 +7,7 @@ for (const prefix of [[], ["pr", "7"], ["--github", "--pr", "7"], ["explain", "7
     for (const selector of [["--connection", "我的連線"], ["--connection=我的連線"]]) {
       const command = parseArgs([...prefix, ...selector, "--timeout-ms", "1000"]);
       assert.ok("opts" in command);
-      assert.deepEqual(command.opts, { connection: "我的連線", timeoutMs: 1000 });
+      assert.deepEqual(command.opts, { connections: ["我的連線"], timeoutMs: 1000 });
     }
   });
 }
@@ -19,10 +19,10 @@ for (const conflict of [["--runner", "claude"], ["--runner=codex"], ["--model", 
   });
 }
 
-test("missing or duplicate connection selectors fail", () => {
+test("missing or duplicate connection IDs fail", () => {
   assert.throws(() => parseArgs(["--connection"]), /requires a value/);
   assert.throws(() => parseArgs(["--connection="]), /requires a value/);
-  assert.throws(() => parseArgs(["--connection=a", "--connection", "b"]), /only be supplied once/);
+  assert.throws(() => parseArgs(["--connection=a", "--connection", "a"]), /must not repeat/);
 });
 
 test("doctor retains its explicit connection instead of diagnosing the default runner", () => {
@@ -38,3 +38,16 @@ test("help, version and legacy options do not select a connection", () => {
   assert.ok("opts" in command);
   assert.deepEqual(command.opts, { runner: "claude", model: "legacy" });
 });
+
+for (const prefix of [[], ["pr", "7"], ["--github", "--pr", "7"]]) {
+  test(`ordered connection IDs are retained by ${prefix[0] ?? "local"}`,()=>{
+    const command=parseArgs([...prefix,"--connection=first","--connection","second"]);
+    assert.ok("opts" in command);
+    assert.deepEqual(command.opts,{connections:["first","second"]});
+  });
+}
+for (const prefix of [["doctor"],["explain","7","--finding","bug"]]) {
+  test(`${prefix[0]} rejects multiple connections explicitly`,()=>{
+    assert.throws(()=>parseArgs([...prefix,"--connection=a","--connection=b"]),/only one --connection/);
+  });
+}

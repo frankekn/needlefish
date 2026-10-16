@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  review,
+  reviewWithConnections,
   reviewPlan,
   type ReviewProgressEvent,
   type ReviewProgressObserver,
@@ -33,7 +33,7 @@ import {
   type UntrackedSkippedFile,
 } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
-import { resolveConnectionOptions } from "../shared/connections.js";
+import { resolveConnectionRoutes } from "../shared/connections.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
@@ -378,8 +378,8 @@ export async function runLocal(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
-  const result = await review(bundle, resolvedOpts, undefined, onProgress);
+  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
+  const result = await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress);
   writeCache(bundle.repoPath, opts, result);
   return result;
 }
@@ -391,12 +391,12 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
   const result: ReviewResult = {
-    ...(await review(bundle, resolvedOpts, undefined, onProgress)),
+    ...(await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress)),
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };
@@ -454,19 +454,26 @@ export interface DryRunReport {
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
   readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
 // render; --print-bundle emits the bundle itself, which is the whole diff and
 // the repo AGENTS.md policy text verbatim.
+function dryRunPlans(bundle: Bundle, opts: LocalOptions) {
+  const [first, ...rest] = resolveConnectionRoutes(opts, bundle.repoPath, process.env, false);
+  const plan = reviewPlan(bundle, first);
+  return { ...plan, ...(rest.length ? { capabilities: [plan.capability, ...rest.map(route => reviewPlan(bundle, route).capability)] } : {}) };
+}
+
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(cwd, opts);
-  return { mode, bundle, ...reviewPlan(bundle, opts) };
+  return { mode, bundle, ...dryRunPlans(bundle, opts) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle, opts) };
+  return { mode: "pr", bundle, ...dryRunPlans(bundle, opts) };
 }
 
 interface DryRunSummary {
@@ -483,6 +490,7 @@ interface DryRunSummary {
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
   readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -509,6 +517,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
     capability: report.capability,
+    ...(report.capabilities ? {capabilities: report.capabilities} : {}),
   };
 }
 
@@ -516,9 +525,11 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
-  if (report.capability?.capability === "promptOnly") {
-    process.stderr.write(`needlefish: ${report.capability.detail}\n`);
-    process.exitCode = 1;
+  for (const capability of report.capabilities ?? [report.capability]) {
+    if (capability?.capability === "promptOnly" || (report.capabilities !== undefined && capability?.capability === "unresolved")) {
+      process.stderr.write(`needlefish: ${capability.detail}\n`);
+      process.exitCode = 1;
+    }
   }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
@@ -566,5 +577,6 @@ export function printDryRun(
   if (summary.capability) {
     lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
   }
+  if (summary.capabilities) summary.capabilities.forEach((capability, index) => lines.push(`route ${index + 1}: ${capability?.detail ?? "docs-only"}`));
   process.stdout.write(`${lines.join("\n")}\n`);
 }

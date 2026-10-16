@@ -4317,3 +4317,34 @@ test("runGithub retains BASE-only quotes in the body instead of unrelated HEAD i
 	assert.match(payload.body, /removed source/);
 	assert.match(payload.body, /Location unverified/);
 });
+
+for (const stale of [false, true]) {
+  test(`ordered routes claim once and ${stale ? "skip stale delivery" : "post only the complete final route"}`, async (t) => {
+    const prNumber = stale ? 151 : 150;
+    const fixture = setupFixture(t, {prNumber, rawReview: defaultRawReview(), staleHeadAfterReview: stale});
+    const root=path.dirname(fixture.repo), config=path.join(root,"ordered-connections.json"), binary=path.join(root,"ordered-codex.cjs");
+    writeFileSync(config,JSON.stringify({version:1,connections:[{id:"first",adapter:"codex",model:"first"},{id:"second",adapter:"codex",model:"second"}]}));
+    writeFileSync(binary,`#!/usr/bin/env node
+const fs=require('node:fs');const input=fs.readFileSync(0,'utf8');const model=process.argv[process.argv.indexOf('-m')+1];
+fs.appendFileSync(${JSON.stringify(fixture.runnerLog)},model+'\\n');
+if(model==='first'){fs.writeFileSync(${JSON.stringify(config)},'configuration changed after selection');console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}}));process.exit(1);}
+fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'second complete',findings:[],checked:['checked'],residual_risks:[]}));
+`);
+    chmodSync(binary,0o755);
+    setEnvForTest(t,"CODEX_BIN",binary);setEnvForTest(t,"NEEDLEFISH_CONNECTIONS_FILE",config);setEnvForTest(t,"NEEDLEFISH_REVIEW_TIMEOUT_MS","15000");
+    const run=spawnGithubCli(fixture,prNumber,["--connection=first","--connection=second"]);
+    assert.equal(run.status,0,run.stderr);
+    assert.deepEqual(readFileSync(fixture.runnerLog,"utf8").trim().split("\n"),["first","second","second"]);
+    const posts=readPosts(fixture.postLog);
+    const checks=posts.filter(post=>post.args.some(arg=>arg.includes("check-runs")));
+    assert.equal(checks.length,2);
+    const reviews=posts.filter(post=>post.args.includes("POST")&&post.args.some(arg=>arg.endsWith(`/pulls/${prNumber}/reviews`)));
+    assert.equal(reviews.length,stale?0:1);
+    if(stale) assert.match(run.stdout,/stale_head/);
+    else {
+      assert.match(parseReviewPayload(reviews[0].payload).body,/second complete/);
+      assert.doesNotMatch(parseReviewPayload(reviews[0].payload).body,/insufficient credits/);
+      assert.equal(run.stdout.split("\n").filter(line=>line.startsWith("needlefish-outcome ")).length,1);
+    }
+  });
+}

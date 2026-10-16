@@ -421,7 +421,7 @@ import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.t
 import {isRunnerSafetyError} from ${JSON.stringify(new URL("./runner-sandbox.ts", import.meta.url).href)};
 const repo=${JSON.stringify(f.repo)};
 const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
-const opts=resolveConnectionOptions({connection:'a'},repo);
+const opts=resolveConnectionOptions({connections: ['a']},repo);
 try { console.log(await explainFinding(bundle,'finding',opts)); }
 catch(error) { console.error(JSON.stringify({message:error.message,safety:isRunnerSafetyError(error)})); process.exitCode=1; }
 `);
@@ -477,7 +477,7 @@ import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.t
 import {score} from ${JSON.stringify(new URL("../../eval/shared/score.ts",import.meta.url).href)};
 const repo=${JSON.stringify(f.repo)};
 const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
-const opts=resolveConnectionOptions({connection:'a'},repo), events=[];
+const opts=resolveConnectionOptions({connections: ['a']},repo), events=[];
 const result=await review(bundle,opts,${observer ? "event=>events.push(event)" : "undefined"});
 const rawEvents=events.filter(e=>e.surface==='raw_success'||e.surface==='raw_failure');
 const fragments=rawEvents.map(e=>e.content.split('\\n').flatMap(line=>{try {const m=JSON.parse(line);return m.params?.update?.sessionUpdate==='agent_thought_chunk' ? [m.params.update.content.text] : [];}catch{return [];}}).join(''));

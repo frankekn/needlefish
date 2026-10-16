@@ -120,3 +120,21 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],J
   delete process.env.CODEX_PROXY_BASE_URL;delete process.env.CODEX_PROXY_API_KEY;delete process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED;
   return {bundle,repo,managed,rows:(): {model:string;stage:string;source:string;cwd:string;contaminated:boolean}[]=>existsSync(records)?readFileSync(records,"utf8").trim().split("\n").map(line=>JSON.parse(line)):[]};
 }
+
+import { runLocal } from "../adapters/local.js";
+for (const mode of ["review","all-quota"]) {
+  test(`local ordered ${mode} ${mode === "all-quota" ? "writes no partial cache" : "caches only the final complete review"}`,async(t)=>{
+    const f=fixture(t,mode), root=path.dirname(f.repo), config=path.join(root,"connections.json"), cache=path.join(root,"cache");
+    writeFileSync(config,JSON.stringify({version:1,connections:[{id:"first",adapter:"codex",model:"first"},{id:"second",adapter:"codex",model:"second"}]}));
+    process.env.NEEDLEFISH_CONNECTIONS_FILE=config;
+    if(mode === "all-quota") {
+      await assert.rejects(runLocal(f.repo,{connections:["first","second"],cacheDir:cache}));
+      assert.equal(existsSync(cache),false);
+    } else {
+      const result=await runLocal(f.repo,{connections:["first","second"],cacheDir:cache});
+      assert.equal(result.summary,"second clean");
+      assert.deepEqual(JSON.parse(readFileSync(path.join(cache,"last-review.json"),"utf8")),result);
+      assert.deepEqual(f.rows().map(row=>row.model),["first","second","second"]);
+    }
+  });
+}
