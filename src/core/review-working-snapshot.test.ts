@@ -109,21 +109,30 @@ test("WORKING snapshot preparation failure removes its managed baseline and pres
   assert.equal(readFileSync(path.join(repo, "app.ts"), "utf8"), "export const captured = 42;\n");
 });
 
-test("captured committed base survives the source switching to an unborn branch", (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-unborn-branch-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
-  const repo = initRepo(tmp);
-  writeFileSync(path.join(repo, "app.ts"), "export const captured = 42;\n");
-  const { bundle } = diffBundle(repo, {});
-  gitText(["symbolic-ref", "HEAD", "refs/heads/later-unborn"], repo);
-  const sandboxTmp = path.join(tmp, "sandbox");
-  mkdirSync(sandboxTmp);
-  const sandbox = prepareRunnerSandbox({
-    runner: "claude", repoPath: repo, prompt: "", tmp: sandboxTmp,
-    targetBaseSha: bundle.baseSha, targetHeadSha: bundle.headSha, targetPatch: bundle.patch,
+for (const deleteRefs of [false, true]) {
+  test(`captured committed base survives unborn source HEAD (${deleteRefs ? "all refs deleted" : "base ref retained"})`, (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-unborn-branch-"));
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const repo = initRepo(tmp);
+    writeFileSync(path.join(repo, "app.ts"), "export const captured = 42;\n");
+    const { bundle } = diffBundle(repo, {});
+    gitText(["symbolic-ref", "HEAD", "refs/heads/later-unborn"], repo);
+    if (deleteRefs) {
+      for (const ref of gitText(["for-each-ref", "--format=%(refname)"], repo).split("\n")) {
+        gitText(["update-ref", "-d", ref], repo);
+      }
+      assert.equal(gitText(["for-each-ref"], repo), "");
+    }
+    const sandboxTmp = path.join(tmp, "sandbox");
+    mkdirSync(sandboxTmp);
+    const sandbox = prepareRunnerSandbox({
+      runner: "claude", repoPath: repo, prompt: "", tmp: sandboxTmp,
+      targetBaseSha: bundle.baseSha, targetHeadSha: bundle.headSha, targetPatch: bundle.patch,
+    });
+    assert.equal(readFileSync(path.join(sandbox.repoPath, "README.md"), "utf8"), "fixture\n");
+    assert.equal(readFileSync(path.join(sandbox.repoPath, "app.ts"), "utf8"), "export const captured = 42;\n");
+    assert.equal(gitText(["rev-parse", "HEAD^"], sandbox.repoPath), bundle.baseSha);
+    assert.equal(gitText(["symbolic-ref", "HEAD"], repo), "refs/heads/later-unborn");
+    assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
   });
-  assert.equal(readFileSync(path.join(sandbox.repoPath, "README.md"), "utf8"), "fixture\n");
-  assert.equal(gitText(["rev-parse", "HEAD^"], sandbox.repoPath), bundle.baseSha);
-  assert.equal(gitText(["symbolic-ref", "HEAD"], repo), "refs/heads/later-unborn");
-  assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
-});
+}
