@@ -185,7 +185,9 @@ final class AdvancedConnections: ObservableObject {
         selection.swapAt(index, index + delta); invalidate(); clearSecrets()
     }
     func saved(_ response: ConnectionsResponse) throws {
-        guard let revision = response.revision, let rows = response.connections else { throw DesktopError.invalidOutput }
+        guard let revision = response.revision, let rows = response.connections else { throw ConnectionsFailure(code: "save_state_unknown") }
+        let ids = rows.map(\.id)
+        guard Set(ids).count == ids.count, ids == document.connections.map(\.id) else { throw ConnectionsFailure(code: "save_state_unknown") }
         baseRevision = revision; catalog = rows; savedDocument = document; draftState = .editing; retainedDraft = nil
         invalidate(); clearSecrets(); message = "已保存。請重新檢查順序與範圍。 / Saved. Inspect the selection and scope again."
     }

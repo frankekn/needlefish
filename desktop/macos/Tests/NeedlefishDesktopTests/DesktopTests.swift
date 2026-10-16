@@ -1264,6 +1264,33 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             if scenario != "validation" { XCTAssertThrowsError(try model.request("apply")) }
         }
     }
+    func testApplyDescriptorIdentityMustMatchWholeDraftBeforeSavedState() throws {
+        let maker = AdvancedConnectionsTests()
+        for ids in [[], ["agent"], ["proxy", "agent"], ["agent", "agent"], ["agent", "proxy", "extra"], ["agent", "proxy"]] {
+            let model = try maker.loaded()
+            var profile = model.document.connections[1]
+            profile.model = "updated-model"
+            model.change(profile, replacing: "proxy")
+            let json = "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(ids.map { maker.row($0) }.joined(separator: ","))]}"
+            let response = try maker.response(json)
+            if ids == ["agent", "proxy"] {
+                try model.saved(response)
+                XCTAssertEqual(model.baseRevision, "sha256:new")
+                XCTAssertFalse(model.dirty)
+            } else {
+                do { try model.saved(response); XCTFail("Partial descriptor success must remain unknown") }
+                catch {
+                    XCTAssertEqual((error as? ConnectionsFailure)?.code, "save_state_unknown")
+                    model.failed(error)
+                }
+                XCTAssertEqual(model.baseRevision, "sha256:old")
+                XCTAssertEqual(model.draftState, .reloadRequired)
+                XCTAssertTrue(model.dirty)
+            }
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy"])
+            XCTAssertEqual(model.document.connections[1].model, "updated-model")
+        }
+    }
     func testUnicodeEscapedCredentialCannotReachDisplayedResult() async throws {
         let fixture = DesktopTests()
         let secret = "offline-only-value"
