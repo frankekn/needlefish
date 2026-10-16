@@ -275,13 +275,16 @@ test("--dry-run with a nested --repo collects root-relative tracked and untracke
 for (const runner of [undefined, "invalid-runner"]) {
   test(`dry-run prints its bundle when runner selection is unresolved (${runner ?? "auto"})`, (t) => {
     const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
-    const git = spawnSync("which", ["git"], { encoding: "utf8" });
-    assert.equal(git.status, 0, git.stderr);
     const gitOnlyBin = path.join(fixture.tmp, "git-only-bin");
     mkdirSync(gitOnlyBin);
-    symlinkSync(git.stdout.trim(), path.join(gitOnlyBin, "git"));
+    const commands = process.platform === "linux" ? ["git", "flock", "sh", "true"] : ["git"];
+    for (const command of commands) {
+      const resolved = spawnSync("which", [command], { encoding: "utf8" });
+      assert.equal(resolved.status, 0, resolved.stderr);
+      symlinkSync(resolved.stdout.trim(), path.join(gitOnlyBin, command));
+    }
     const env = {
-      PATH: `${gitOnlyBin}:/usr/bin:/bin:/usr/sbin:/sbin`,
+      PATH: gitOnlyBin,
       NEEDLEFISH_RUNNER: runner,
       CODEX_BIN: "codex",
       CLAUDE_BIN: "claude",
