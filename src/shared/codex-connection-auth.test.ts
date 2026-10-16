@@ -350,7 +350,8 @@ test("Codex well-formed Unicode percent bytes preserve existing case-insensitive
 });
 
 for (const deep of [false, true]) {
-  test(`selected Codex ${deep ? "deep" : "small"} review retains BASE evidence and required premise across runtime replay`, async (t) => {
+  for (const action of ["keep", "downgrade", "omit"]) {
+  test(`selected Codex ${deep ? "deep" : "small"} review retains BASE evidence and required premise across model residual ${action} and runtime replay`, async (t) => {
     const f = fixture(t, "review");
     const baseSha = headSha(f.repo);
     writeFileSync(path.join(f.repo, "source.ts"), "export const value = 2;\n");
@@ -365,6 +366,8 @@ for (const deep of [false, true]) {
       source: { type: "external", url: "https://spec.example.invalid/reference" },
     }] };
     const risk = "Unverified external premise for source.ts:1 (Check documented contract): The external contract requires the prior value [https://spec.example.invalid/reference]";
+    const modelRisk = { text: "Model-only uncertainty", blocks: true };
+    const modelFinal = action === "omit" ? [] : [{ ...modelRisk, blocks: action === "keep" }];
     const binary = process.env.CODEX_BIN;
     assert.equal(typeof binary, "string");
     if (!binary) throw new Error("fixture binary missing");
@@ -374,7 +377,7 @@ const prompt=fs.readFileSync(0,'utf8'),args=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(path.join(f.root, "calls.jsonl"))},JSON.stringify({args,cwd:process.cwd(),env:process.env,files:fs.readdirSync(process.env.CODEX_HOME)})+'\\n');
 const independent=${JSON.stringify(independent)},premise=${JSON.stringify(premise)};
 const critic=prompt.includes('adversarial critic');
-const result=prompt.includes('review-MAP pass')?{summary:'Mapped source',hotspots:[{name:'source',files:['source.ts'],why:'changed value',risk:'high',edges:[]}]}:{summary:'Reviewed source',checked:['source.ts'],findings:critic?[independent]:[independent,premise],residual_risks:critic?[{text:${JSON.stringify(risk)},blocks:false}]:[]};
+const result=prompt.includes('review-MAP pass')?{summary:'Mapped source',hotspots:[{name:'source',files:['source.ts'],why:'changed value',risk:'high',edges:[]}]}:{summary:'Reviewed source',checked:['source.ts'],findings:critic?[independent]:[independent,premise],residual_risks:critic?[{text:${JSON.stringify(risk)},blocks:false},...${JSON.stringify(modelFinal)}]:[{text:${JSON.stringify(risk)},blocks:false},${JSON.stringify(modelRisk)}]};
 fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
 `);
     const selection = f.select();
@@ -383,7 +386,7 @@ fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(re
       patchStat: "source.ts | 2 +-", changedFiles: [{ path: "source.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep, focus: null },
       selection, event => { trace.push(event.content); }, () => { process.env.ACCOUNT_A_KEY = keyB; });
     assert.equal(result.verdict, "changes_requested");
-    assert.deepEqual(result.residualRisks, [{ text: risk, blocks: true }]);
+    assert.deepEqual(result.residualRisks, [{ text: risk, blocks: true }, ...modelFinal]);
     assert.equal(result.findings.length, 1);
     assert.equal(result.findings[0]?.title, "Retain source behavior");
     const finding = result.findings[0];
@@ -406,4 +409,5 @@ fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(re
     assert.deepEqual(f.calls().map(call => call.env.CODEX_API_KEY), deep ? [keyA, keyA, keyA] : [keyA, keyA]);
     assert.ok(trace.some(raw => raw.includes("Check documented contract")));
   });
+  }
 }

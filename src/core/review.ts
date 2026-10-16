@@ -708,21 +708,19 @@ function restoreRequiredResiduals(
 	current: readonly ResidualRisk[],
 	required: readonly ResidualRisk[],
 ): ResidualRisk[] {
-	const restored = [...current];
-	const available = bagByKey(restored, (risk) => residualSubsetKey(risk.text));
-	for (const risk of required) {
-		if (takeResidual(available, risk)) continue;
-		const downgraded = takeResidual(available, { ...risk, blocks: false });
-		if (downgraded) restored[restored.indexOf(downgraded)] = risk;
-		else restored.push(risk);
+	const restored = new Map<string, ResidualRisk>();
+	for (const risk of [...current, ...required]) {
+		const key = residualSubsetKey(risk.text);
+		if (!restored.has(key) || risk.blocks) restored.set(key, risk);
 	}
-	return restored;
+	return [...restored.values()];
 }
 
 async function runCritic(
 	candidate: RawReview,
 	patchText: string,
 	run: ReviewRun,
+	requiredResiduals: readonly ResidualRisk[] = [],
 ): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
 	run.onProgress?.({ stage: "critic", findings: candidate.findings.length });
@@ -743,7 +741,16 @@ async function runCritic(
 		},
 		run,
 	);
-	return result;
+	return {
+		...result,
+		value: {
+			...result.value,
+			residual_risks: restoreRequiredResiduals(
+				result.value.residual_risks,
+				requiredResiduals,
+			),
+		},
+	};
 }
 
 function externalPremiseRisks(findings: readonly Finding[]): ResidualRisk[] {
@@ -1051,15 +1058,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		candidateMerged,
 		bundle.patchStat || "(see git diff --stat; repo at HEAD)",
 		run,
+		passes.filter((pass) => !pass.ok).flatMap((pass) => pass.residuals),
 	);
-	const blockingResiduals = residuals.filter((risk) => risk.blocks);
-	const final = {
-		...pruned.value,
-		residual_risks: restoreRequiredResiduals(
-			pruned.value.residual_risks,
-			blockingResiduals,
-		),
-	};
+	const final = pruned.value;
 	// Compute coverage from the hotspots whose deep pass actually SUCCEEDED
 	// (includes the tail backstop). A failed pass's files were not reviewed —
 	// counting them (or their hotspot) would make the coverage line overstate
