@@ -14,6 +14,15 @@ import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { resolveRunner } from "../shared/runner-detection.js";
 import {
+	assertRunnerSandboxClean,
+	prepareRunnerSandbox,
+	type RunnerSandbox,
+} from "../shared/runner-sandbox.js";
+import {
+	createManagedTempDirectory,
+	disposeManagedTempDirectory,
+} from "../shared/temp-lifecycle.js";
+import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
 	type CoverageGap,
@@ -73,6 +82,7 @@ interface TraceDeliveryHealth {
 
 interface ReviewRun {
 	readonly bundle: Bundle;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
 	readonly runnerOptions: RunnerOptions;
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
@@ -228,6 +238,7 @@ function codexOptions(
 	return {
 		repoPath: run.bundle.repoPath,
 		targetHeadSha: run.bundle.headSha,
+		...(run.snapshot ? { snapshot: run.snapshot } : {}),
 		...(run.bundle.headSha === "WORKING"
 			? { targetPatch: run.bundle.patch, targetBaseSha: run.bundle.baseSha }
 			: {}),
@@ -1124,35 +1135,57 @@ export async function review(
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace
 		? { failed: false, pending: new Set() }
 		: undefined;
-	const run: ReviewRun = {
-		bundle,
-		runnerOptions,
-		stats: [],
-		failedRawOutputs: [],
-		rawOutputs: [],
-		lfs: { pointerFiles: new Set(), scanIncomplete: false },
-		...(onTrace && traceHealth
-			? {
-					onTrace: wrapTraceObserver(onTrace, traceHealth),
-					traceHealth,
-				}
-			: {}),
-		...(onProgress ? { onProgress } : {}),
-		startedAt,
-		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
-	};
+	const snapshotTmp = bundle.headSha === "WORKING" ? await createManagedTempDirectory() : undefined;
+	let snapshot: RunnerSandbox | undefined;
 	try {
-		const result = await (plan.largePath
-			? reviewLarge(run)
-			: reviewSmall(run));
-		await drainTraceDeliveries(traceHealth);
-		onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
-		return traceHealth?.failed
-			? { ...result, traceDeliveryFailed: true }
-			: result;
-	} catch (err) {
-		await drainTraceDeliveries(traceHealth);
-		attachRunRaws(err, run);
-		throw err;
+		if (snapshotTmp) {
+			snapshot = prepareRunnerSandbox({
+				runner: resolveRunner(runnerOptions),
+				repoPath: bundle.repoPath,
+				prompt: "",
+				targetHeadSha: bundle.headSha,
+				targetBaseSha: bundle.baseSha,
+				targetPatch: bundle.patch,
+				tmp: snapshotTmp,
+			});
+		}
+		const run: ReviewRun = {
+			bundle,
+			...(snapshot ? { snapshot } : {}),
+			runnerOptions,
+			stats: [],
+			failedRawOutputs: [],
+			rawOutputs: [],
+			lfs: { pointerFiles: new Set(), scanIncomplete: false },
+			...(onTrace && traceHealth
+				? {
+						onTrace: wrapTraceObserver(onTrace, traceHealth),
+						traceHealth,
+					}
+				: {}),
+			...(onProgress ? { onProgress } : {}),
+			startedAt,
+			...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
+		};
+		try {
+			const result = await (plan.largePath
+				? reviewLarge(run)
+				: reviewSmall(run));
+			await drainTraceDeliveries(traceHealth);
+			onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
+			return traceHealth?.failed
+				? { ...result, traceDeliveryFailed: true }
+				: result;
+		} catch (err) {
+			await drainTraceDeliveries(traceHealth);
+			attachRunRaws(err, run);
+			throw err;
+		}
+	} finally {
+		try {
+			if (snapshot) assertRunnerSandboxClean(resolveRunner(runnerOptions), snapshot.repoPath, snapshot.expectedHeadSha);
+		} finally {
+			if (snapshotTmp) await disposeManagedTempDirectory(snapshotTmp);
+		}
 	}
 }
