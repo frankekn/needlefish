@@ -819,6 +819,15 @@ final class GithubSetupTests: XCTestCase {
         catch { XCTAssertEqual(error as? DesktopError, .cancelled) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
+    func testSuccessfulChildCannotSilentlyDropInput() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-short-input-" + UUID().uuidString)
+        do {
+            _ = try await Command().run(["/usr/bin/true"], environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                        timeout: 5, input: Data(repeating: 65, count: 100_000))
+            XCTFail("Incomplete input must fail")
+        } catch { XCTAssertEqual(error as? DesktopError, .command) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
     func testGitHubDeviceCodeDoesNotConfuseCodexLogin() {
         XCTAssertEqual(githubDeviceCode("! First copy your one-time code: AB12-CD34\nhttps://github.com/login/device"), "AB12-CD34")
         XCTAssertNil(githubDeviceCode("AB12-CD34"))
@@ -854,6 +863,8 @@ final class GithubSetupOwnershipTests: XCTestCase {
         }
         XCTAssertFalse(model.busy)
         XCTAssertFalse(model.canCancel)
+        guard case .error(let message) = model.githubSetup.state else { return XCTFail("Cancellation must be visible") }
+        XCTAssertEqual(message, DesktopError.cancelled.localizedDescription)
     }
 }
 

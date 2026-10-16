@@ -178,6 +178,7 @@ final class Command: @unchecked Sendable {
                     if wasCancelled { failure = .cancelled }
                     if let failure { throw failure }
                 }
+                if let input, inputOffset != input.count { throw DesktopError.command }
                 while try stdout.drain() {}
                 while try stderr.drain() {}
                 let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)

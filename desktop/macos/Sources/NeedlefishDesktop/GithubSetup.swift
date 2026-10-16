@@ -32,6 +32,7 @@ struct GithubSetupStatus: Decodable, Sendable {
     let repository: String
     let admin: Bool
     let actions: Bool
+    let actionsReason: String?
     let phase: Phase
     let conflict: String?
     let secret: String
@@ -96,13 +97,18 @@ final class GithubSetup: ObservableObject {
     init(runtime: Runtime?) { self.runtime = runtime }
 
     private func run(_ label: String, operation: @escaping @MainActor (DesktopCLI, Command) async throws -> State) {
-        guard !busy, let runtime else { state = .error(DesktopError.runtime.localizedDescription); return }
+        guard !busy else { return }
+        guard let runtime else { state = .error(DesktopError.runtime.localizedDescription); return }
         let command = Command()
         self.command = command
         state = .busy(label)
         code = nil
         task = Task {
             do { state = try await operation(DesktopCLI(runtime: runtime), command) }
+            catch DesktopError.cancelled { state = .error(DesktopError.cancelled.localizedDescription) }
+            catch DesktopError.timeout { state = .error(DesktopError.timeout.localizedDescription) }
+            catch DesktopError.outputLimit { state = .error(DesktopError.outputLimit.localizedDescription) }
+            catch DesktopError.cleanup { state = .error(DesktopError.cleanup.localizedDescription) }
             catch let error as GithubSetupFailure { state = .error(error.localizedDescription) }
             catch { state = .error("未完成。請確認已安裝官方 GitHub CLI、登入 github.com、具備 repo admin 權限、組織允許 Actions，以及網路可用，再重試。帳戶額度與 AI 認證尚未驗證。 / Incomplete. Check official gh installation, sign-in, repository admin access, Actions policy and network, then retry. AI authentication and quota are unverified.") }
             self.command = nil
@@ -163,7 +169,7 @@ struct GithubSetupView: View {
             Text("使用既有 public action 與 GitHub-hosted runner。需 repo admin、官方 gh CLI 與 OpenAI API 帳戶。 / Requires repository admin, official gh CLI and an OpenAI API account.")
             switch model.state {
             case .start:
-                Text("GitHub 官方 gh 登入會要求 repository 與 workflow 授權，並保存至 gh credential store。登入、建立設定 PR、設定 secret 是獨立操作。此介面不改 branch protection。 / Official gh login requests repository and workflow authorization and stores it in the gh credential store. Login, setup PR creation and secret provisioning are separate actions. Branch protection is unchanged.")
+                Text("GitHub 官方 gh 登入會要求 repository 與 workflow 授權，由 gh 保存授權與 host protocol；系統 credential store 不可用時，gh 可能使用自有設定檔。登入、建立設定 PR、設定 secret 是獨立操作。此介面不改 branch protection。 / Official gh login requests repository and workflow authorization and stores authorization and host protocol in gh. If the system credential store is unavailable, gh may use its own configuration file. Login, setup PR creation and secret provisioning are separate actions. Branch protection is unchanged.")
             case .busy(let message):
                 ProgressView(message)
                 if let code = model.code {
@@ -182,6 +188,7 @@ struct GithubSetupView: View {
                 Text(status.repository).bold().textSelection(.enabled)
                 Text(status.phase.title)
                 Text("管理權限 / Admin: \(status.admin ? "yes" : "no"); Actions: \(status.actions ? "enabled" : "unavailable")")
+                if let reason = status.actionsReason { Text(reason).foregroundStyle(status.actions ? Color.primary : Color.orange) }
                 Text("Secret metadata: \(status.secret)。AI 認證未知；第一份 review 尚未確認完成。 / AI authentication unknown; first review not confirmed complete.")
                 Text(status.disclosure).textSelection(.enabled)
                 if let conflict = status.conflict { Text(conflict).foregroundStyle(.orange) }

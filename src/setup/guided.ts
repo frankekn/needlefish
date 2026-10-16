@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { GITHUB_WORKFLOW } from "./github.js";
+import { GITHUB_SETUP_BRANCH, GITHUB_WORKFLOW, PREVIOUS_GITHUB_WORKFLOW } from "./github.js";
 
 const PATH = ".github/workflows/needlefish.yml";
-const BRANCH = "needlefish/setup-v1";
+const BRANCH = GITHUB_SETUP_BRANCH;
 const OWNER = "Needlefish setup template 1";
 const SECRET = "NEEDLEFISH_CODEX_API_KEY";
 
@@ -65,14 +65,61 @@ function workflow(repository: string, ref: string): { content: string; sha: stri
   return { content: Buffer.from(string(file.content), "base64").toString("utf8"), sha: string(file.sha) };
 }
 
+function actionReferences(content: string): string[] {
+  return [...content.matchAll(/^\s*(?:-\s+)?uses:\s*([^\s#]+)/gm)].map(match => string(match[1]));
+}
+function policyMatches(pattern: string, reference: string): boolean {
+  const expression = (pattern.includes("@") ? pattern : pattern + "@*")
+    .split("*").map(part => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  return new RegExp("^" + expression + "$", "i").test(reference);
+}
+function actionsPolicy(repository: string, admin: boolean) {
+  if (!admin) return { allowed: false, reason: "Repository admin permission is required to inspect Actions policy." };
+  const policy = object(required(`repos/${repository}/actions/permissions`));
+  if (policy.enabled !== true) return { allowed: false, reason: "GitHub Actions is disabled. Ask the repository or organization administrator to enable it." };
+  if (policy.allowed_actions === "all") return { allowed: true, reason: "Actions policy permits the pinned actions. Hosted-runner capacity and AI quota remain unverified." };
+  if (policy.allowed_actions !== "selected") return { allowed: false, reason: "Actions policy does not permit the required public actions. Ask an administrator to allow the pinned workflow actions." };
+  const selected = object(required(`repos/${repository}/actions/permissions/selected-actions`));
+  const patterns = array(selected.patterns_allowed ?? []).map(string);
+  const references = actionReferences(GITHUB_WORKFLOW);
+  const needlefish = references.find(ref => ref.startsWith("frankekn/needlefish@"));
+  if (!needlefish) throw new Error("The setup template is missing its pinned public action.");
+  const [slug, ref] = needlefish.split("@");
+  const composite = object(required(`repos/${slug}/contents/action.yml?ref=${ref}`));
+  if (composite.encoding !== "base64") throw new Error("Could not inspect the pinned action dependencies.");
+  references.push(...actionReferences(Buffer.from(string(composite.content), "base64").toString("utf8")));
+  const denied = references.filter(reference => {
+    if (patterns.some(pattern => pattern.startsWith("!") && policyMatches(pattern.slice(1), reference))) return true;
+    return !(selected.github_owned_allowed === true && reference.startsWith("actions/"))
+      && !patterns.some(pattern => !pattern.startsWith("!") && policyMatches(pattern, reference));
+  });
+  return denied.length === 0
+    ? { allowed: true, reason: "The selected-actions policy permits the pinned workflow and composite dependencies. Hosted-runner capacity and AI quota remain unverified." }
+    : { allowed: false, reason: `Ask a repository or organization administrator to permit these pinned actions: ${denied.join(", ")}. Verified-publisher policy alone is not assumed to allow these repositories.` };
+}
+function setupBranch(repository: string, defaultBranch: string) {
+  const value = api(`repos/${repository}/git/ref/heads/${BRANCH}`, undefined, undefined, true);
+  if (value === undefined) return undefined;
+  const head = string(object(object(value).object ?? null).sha);
+  const commit = object(required(`repos/${repository}/git/commits/${head}`));
+  const content = workflow(repository, head);
+  if (commit.message !== OWNER || content?.content !== GITHUB_WORKFLOW) return { head, conflict: "The setup branch contains unrecognized changes. Preserve it and ask its owner to inspect it." };
+  const comparison = object(required(`repos/${repository}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(head)}`));
+  const files = array(comparison.files ?? null).map(object);
+  const conflict = files.length !== 1 || files[0]?.filename !== PATH || comparison.total_commits !== 1
+    ? "The setup branch has additional changes. Preserve it and ask its owner to inspect it." : null;
+  return { head, conflict };
+}
+
 export function inspectGithubSetup(repository: string) {
   repositoryName(repository);
   const repo = object(required(`repos/${repository}`));
   const defaultBranch = string(repo.default_branch);
   const admin = repo.permissions !== undefined && object(repo.permissions).admin === true;
-  const actions = admin ? object(required(`repos/${repository}/actions/permissions`)).enabled === true : false;
+  const policy = actionsPolicy(repository, admin);
+  const actions = policy.allowed;
   const existing = workflow(repository, defaultBranch);
-  let conflict: string | null = existing && existing.content !== GITHUB_WORKFLOW
+  let conflict: string | null = existing && existing.content !== GITHUB_WORKFLOW && existing.content !== PREVIOUS_GITHUB_WORKFLOW
     ? "Existing needlefish.yml differs from the known template. Preserve it and ask its owner to reconcile changes." : null;
   const files = api(`repos/${repository}/contents/.github/workflows?ref=${encodeURIComponent(defaultBranch)}`, undefined, undefined, true);
   if (files !== undefined) {
@@ -93,10 +140,19 @@ export function inspectGithubSetup(repository: string) {
     secret = metadata === undefined ? "missing" : "present";
   }
   const pulls = array(required(`repos/${repository}/pulls?state=open&head=${encodeURIComponent(repository.split("/")[0] + ":" + BRANCH)}&per_page=100`));
-  const owned = pulls.map(object).find(pr => typeof pr.body === "string" && pr.body.includes(`<!-- ${OWNER} -->`));
-  const prUrl = owned ? string(owned.html_url) : null;
-  const phase: "conflict" | "merged" | "pr_created" | "preview" = conflict ? "conflict" : existing ? "merged" : prUrl ? "pr_created" : "preview";
-  return { schemaVersion: 1, repository, defaultBranch, admin, actions, phase, conflict, secret,
+  const branch = setupBranch(repository, defaultBranch);
+  if (branch?.conflict) conflict = branch.conflict;
+  let prUrl: string | null = null;
+  if (pulls.length > 0) {
+    const pr = object(pulls[0] ?? null);
+    const base = object(pr.base ?? null), head = object(pr.head ?? null);
+    if (pulls.length !== 1 || !branch || branch.conflict || typeof pr.body !== "string" || !pr.body.includes(`<!-- ${OWNER} -->`)
+      || base.ref !== defaultBranch || head.ref !== BRANCH || head.sha !== branch.head || object(head.repo ?? null).full_name !== repository) {
+      conflict = "An existing setup PR has unrecognized ownership, contents or target branch. Inspect it before setup; it was not changed.";
+    } else if (!conflict) prUrl = string(pr.html_url);
+  }
+  const phase: "conflict" | "merged" | "pr_created" | "preview" = conflict ? "conflict" : existing?.content === GITHUB_WORKFLOW ? "merged" : prUrl ? "pr_created" : "preview";
+  return { schemaVersion: 1, repository, defaultBranch, admin, actions, actionsReason: policy.reason, phase, conflict, secret, branchHead: branch?.head ?? null,
     authentication: "unknown", firstReview: "not_verified", prUrl, workflow: GITHUB_WORKFLOW, currentWorkflow: existing?.content ?? null,
     disclosure: "Trusted same-repository PR code and rules go to OpenAI Codex (gpt-5.6-terra/high). OpenAI usage and GitHub Actions may incur charges. Fork, bot and untrusted PRs fail without review. Secret metadata does not prove authentication or quota. Branch protection is unchanged.",
     settingsUrl: `https://github.com/${repository}/settings/actions`,
@@ -107,31 +163,26 @@ export function inspectGithubSetup(repository: string) {
 function createSetupPr(repository: string) {
   const status = inspectGithubSetup(repository);
   if (!status.admin) throw new Error("A repository administrator must enable setup. Ask the repository owner to grant admin access or perform setup.");
-  if (!status.actions) throw new Error("GitHub Actions is disabled. Ask the repository or organization administrator to enable the pinned public action and GitHub-hosted runners.");
+  if (!status.actions) throw new Error(status.actionsReason);
   if (status.conflict) throw new Error(status.conflict);
   if (status.phase === "merged") return status;
   const endpoint = `repos/${repository}`;
-  const existing = api(`${endpoint}/git/ref/heads/${BRANCH}`, undefined, undefined, true);
-  if (existing !== undefined) {
-    const head = string(object(object(existing).object ?? null).sha);
-    const commit = object(required(`${endpoint}/git/commits/${head}`));
-    const content = workflow(repository, BRANCH);
-    if (commit.message !== OWNER || content?.content !== GITHUB_WORKFLOW) throw new Error("The setup branch contains unrecognized changes. Preserve it and ask its owner to inspect it.");
-    const comparison = object(required(`${endpoint}/compare/${encodeURIComponent(status.defaultBranch)}...${encodeURIComponent(BRANCH)}`));
-    const files = array(comparison.files ?? null).map(object);
-    if (files.length !== 1 || files[0]?.filename !== PATH || comparison.total_commits !== 1) throw new Error("The setup branch has additional changes. Preserve it and ask its owner to inspect it.");
-  } else {
+  let branchHead = status.branchHead;
+  if (branchHead === null) {
     const base = object(required(`${endpoint}/git/ref/heads/${encodeURIComponent(status.defaultBranch)}`));
     const parent = string(object(base.object ?? null).sha);
     const commit = object(required(`${endpoint}/git/commits/${parent}`));
     const tree = object(required(`${endpoint}/git/trees`, { base_tree: string(object(commit.tree ?? null).sha),
       tree: [{ path: PATH, mode: "100644", type: "blob", content: GITHUB_WORKFLOW }] }, "POST"));
     const created = object(required(`${endpoint}/git/commits`, { message: OWNER, tree: string(tree.sha), parents: [parent] }, "POST"));
-    required(`${endpoint}/git/refs`, { ref: `refs/heads/${BRANCH}`, sha: string(created.sha) }, "POST");
+    branchHead = string(created.sha);
+    required(`${endpoint}/git/refs`, { ref: `refs/heads/${BRANCH}`, sha: branchHead }, "POST");
   }
   if (!status.prUrl) {
+    const current = object(required(`${endpoint}/git/ref/heads/${BRANCH}`));
+    if (object(current.object ?? null).sha !== branchHead) throw new Error("The setup branch changed during setup. No PR was created; inspect and retry.");
     required(`${endpoint}/pulls`, { title: "Enable Needlefish hosted PR review", head: BRANCH, base: status.defaultBranch,
-      body: `<!-- ${OWNER} -->\nUses GitHub-hosted runners and the pinned Needlefish template.\n\n${status.disclosure}\n\nSet repository secret ${SECRET} separately. Review and merge this PR in your browser. No model call, credential validation or branch protection change has been performed.`, draft: false }, "POST");
+      body: `<!-- ${OWNER} -->\nUses GitHub-hosted runners and the pinned Needlefish template.\n\n${status.disclosure}\n\nSet repository secret ${SECRET} separately. Review and merge this PR in your browser. The reserved setup branch fails before model calls. Its failed guard means not reviewed, not a passing required review. No credential validation or branch protection change has been performed.`, draft: false }, "POST");
   }
   return inspectGithubSetup(repository);
 }
@@ -140,7 +191,7 @@ export async function runGuidedGithubSetup(request: SetupRequest) {
   if (request.action === "login") {
     if (!request.confirm) throw new Error("GitHub login requests official gh repository and workflow authorization and stores it in the gh credential store. Confirm with --confirm.");
     const login = spawnSync("gh", ["auth", "login", "--hostname", "github.com", "--web", "--scopes", "workflow", "--git-protocol", "https", "--skip-ssh-key"], {
-      stdio: "inherit", timeout: 16 * 60_000, env: { ...process.env, GH_HOST: "github.com", GH_DEBUG: "", DEBUG: "" },
+      stdio: ["inherit", 2, 2], timeout: 16 * 60_000, env: { ...process.env, GH_HOST: "github.com", GH_DEBUG: "", DEBUG: "" },
     });
     if (login.status !== 0) throw new Error("GitHub login was not completed. Check the official gh CLI and retry.");
     return { schemaVersion: 1, phase: "signed_in", firstReview: "not_verified" };

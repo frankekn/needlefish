@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
-import { GITHUB_WORKFLOW } from "./github.js";
+import { GITHUB_WORKFLOW, PREVIOUS_GITHUB_WORKFLOW } from "./github.js";
 
 function fixture(t: TestContext, initial: Record<string, unknown> = {}) {
   const root = mkdtempSync(join(tmpdir(), "nf-guided-"));
@@ -12,6 +12,7 @@ function fixture(t: TestContext, initial: Record<string, unknown> = {}) {
   const state = join(root, "state.json"), calls = join(root, "calls.jsonl");
   writeFileSync(state, JSON.stringify({ admin: true, actions: true, ...initial }));
   writeFileSync(join(root, "template"), GITHUB_WORKFLOW);
+  writeFileSync(join(root, "previous-template"), PREVIOUS_GITHUB_WORKFLOW);
   const script = `#!${process.execPath}
 import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
 const root=${JSON.stringify(root)};
@@ -25,23 +26,25 @@ function save(){writeFileSync(statePath,JSON.stringify(state))}
 function out(value){console.log(JSON.stringify(value));process.exit(0)}
 function missing(){console.error('gh: Not Found (HTTP 404)');process.exit(1)}
 if(state.fail||(state.failSecret&&args[0]==='secret')){console.error('network failed '+input);process.exit(1)}
-if(args[0]==='auth')process.exit(state.authFailed?1:0);
+if(args[0]==='auth'){if(state.loginOutput&&args[1]==='login')console.log('First copy your one-time code: AB12-CD34');process.exit(state.authFailed?1:0)}
 if(args[0]==='secret'){state.secret=true;save();process.exit(0)}
 const endpoint=args.find(arg=>arg.startsWith('repos/')||arg.startsWith('user/repos'));
 const body=input?JSON.parse(input):{};
 if(endpoint.startsWith('user/repos'))out([[{full_name:'owner/repo',archived:false,permissions:{admin:true},private:true},{full_name:'owner/read',archived:false,permissions:{admin:false}}]]);
 if(endpoint==='repos/owner/repo')out({default_branch:'main',permissions:{admin:state.admin}});
-if(endpoint.endsWith('/actions/permissions'))out({enabled:state.actions});
+if(endpoint.endsWith('/actions/permissions'))out({enabled:state.actions,allowed_actions:state.policy||'all'});
+if(endpoint.endsWith('/actions/permissions/selected-actions'))out({github_owned_allowed:state.githubOwned===true,verified_allowed:false,patterns_allowed:state.patterns||[]});
+if(endpoint.startsWith('repos/frankekn/needlefish/contents/action.yml'))out({encoding:'base64',content:Buffer.from('runs:\\n  steps:\\n    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1').toString('base64')});
 if(endpoint.includes('/actions/secrets/')){if(state.secret)out({name:'NEEDLEFISH_CODEX_API_KEY'});missing()}
 if(endpoint.includes('/contents/.github/workflows/needlefish.yml')){
-  const branch=endpoint.includes('ref=needlefish');
-  const content=branch?(state.branch?template:null):(state.modified?'# human edits':state.merged?template:null);
+  const branch=endpoint.includes('ref=needlefish')||endpoint.includes('ref=setup-sha');
+  const content=branch?(state.branch?(state.branchModified?'# human branch edits':template):null):(state.modified?'# human edits':state.previous?readFileSync(root+'/previous-template','utf8'):state.merged?template:null);
   if(content===null)missing();
   out({type:'file',encoding:'base64',sha:'file-sha',content:Buffer.from(content).toString('base64')})
 }
 if(endpoint.includes('/contents/.github/workflows?'))out(state.duplicate?[{name:'custom.yml',type:'file'}]:[]);
 if(endpoint.includes('/contents/.github/workflows/custom.yml'))out({encoding:'base64',content:Buffer.from('uses: frankekn/needlefish@custom').toString('base64')});
-if(endpoint.includes('/pulls?'))out(state.pr?[{body:'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7'}]:[]);
+if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main'},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}]:[]);
 if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch)out({object:{sha:'setup-sha'}});missing()}
 if(endpoint.endsWith('/git/ref/heads/main'))out({object:{sha:'base-sha'}});
 if(endpoint.endsWith('/git/commits/base-sha'))out({tree:{sha:'base-tree'}});
@@ -187,4 +190,65 @@ test("misplaced credential arguments are rejected without echo", t => {
   assert.equal(result.status, 1);
   assert.ok(!result.stdout.includes(credential) && !result.stderr.includes(credential));
   assert.match(result.stderr, /only through stdin/);
+});
+
+
+for (const state of [{ unowned: true }, { extra: true }, { wrongBase: true }, { staleHead: true }, { foreignHead: true }, { markerMissing: true }, { branchModified: true }]) {
+  test(`status withholds the setup PR link for unrecognized ownership ${JSON.stringify(state)}`, t => {
+    const f = fixture(t, { branch: true, pr: true, ...state });
+    const result = f.run(["status", ...remote]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "conflict");
+    assert.equal(JSON.parse(result.stdout).prUrl, null);
+    const refused = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(refused.status, 1);
+    assert.ok(f.history().every(call => !call.args.includes("--method")));
+  });
+}
+
+for (const state of [
+  { policy: "local_only" },
+  { policy: "selected", patterns: ["actions/*"] },
+  { policy: "selected", patterns: ["actions/checkout@*", "frankekn/needlefish@*"] },
+  { policy: "selected", githubOwned: true, patterns: ["frankekn/*", "!frankekn/needlefish@*"] },
+]) {
+  test(`Actions policy rejects unavailable pinned dependencies ${JSON.stringify(state)}`, t => {
+    const f = fixture(t, state);
+    const result = f.run(["status", ...remote]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).actions, false);
+    assert.equal(f.run(["create-pr", ...remote, "--confirm"]).status, 1);
+    assert.ok(f.history().every(call => !call.args.includes("--method")));
+  });
+}
+
+test("selected Actions policy supports explicit pinned references and GitHub-owned dependencies", t => {
+  const f = fixture(t, { policy: "selected", githubOwned: true, patterns: ["frankekn/needlefish@7e5c4738eeac71c87be1766b3bb30fb82fc4706f"] });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).actions, true);
+  assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+});
+
+test("login progress goes to stderr while JSON status remains valid", t => {
+  const f = fixture(t, { loginOutput: true });
+  const result = f.run(["login", "--confirm", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).phase, "signed_in");
+  assert.match(result.stderr, /one-time code: AB12-CD34/);
+});
+
+
+test("the exact previous generated workflow receives one update PR while manual edits remain protected", t => {
+  const f = fixture(t, { previous: true });
+  const preview = f.run(["status", ...remote]);
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.equal(JSON.parse(preview.stdout).phase, "preview");
+  assert.equal(JSON.parse(preview.stdout).currentWorkflow, PREVIOUS_GITHUB_WORKFLOW);
+  for (let index = 0; index < 2; index++) {
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "pr_created");
+  }
+  assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
 });

@@ -88,7 +88,7 @@ The fake CLI and development machine do not satisfy these gates. Do not close #1
 
 ## Enable GitHub review
 
-Open **Guided GitHub setup**. Install the official [GitHub CLI](https://cli.github.com/) if it is unavailable, then use **Sign in to GitHub**. This uses `gh auth login --web --scopes workflow` and its credential store. The official flow requests repository and workflow authorization. It does not request a pasted PAT or change Git configuration.
+Open **Guided GitHub setup**. Install the official [GitHub CLI](https://cli.github.com/) if it is unavailable, then use **Sign in to GitHub**. This uses `gh auth login --web --scopes workflow` and its credential store. The official flow requests repository and workflow authorization. The official tool stores authorization and the host protocol. If the system credential store is unavailable, gh may use its own configuration file. This flow does not request a pasted PAT.
 
 Select an administered repository and choose **Preview setup**. Read the workflow and disclosure before you consent. **Create or reuse setup PR** writes one dedicated `needlefish/setup-v1` branch and one configuration PR through the GitHub API. Inspect and merge that PR in your browser. The app never pushes the default branch or changes branch protection. An edited workflow, another Needlefish workflow, or an unrecognized setup branch blocks installation and preserves the existing configuration.
 
@@ -99,3 +99,5 @@ After merging setup, open the workflow runs in your browser. Choose a trusted sa
 Use the repository Actions UI to disable the workflow. Remove only the exact owned workflow through a PR after inspection, and delete the secret separately after checking other users. Preserve all other workflows and required checks. The screen explains where an administrator can require a passing review after a real review has completed; it does not apply that policy.
 
 The guided path has controlled CLI and desktop tests. Real repository enablement and five novice-admin trials remain required under issue #151. This is a development preview, not completed issue acceptance.
+
+The `needlefish/setup-v1` branch is reserved for configuration. Its workflow fails before secrets, checkout and model calls, so opening the setup PR cannot start a Needlefish paid review even if the secret already exists. That failed setup guard means the PR has not been reviewed. It is never a passing required check. Authorize a separate review on an ordinary trusted PR after setup.
