@@ -286,6 +286,98 @@ setInterval(() => {}, 1000);
   assert.equal(existsSync(directory), false, "confirmed-idle owned tree must be deleted before exit");
 });
 
+for (const [signal, expectedStatus] of [
+  ["SIGINT", 130],
+  ["SIGTERM", 143],
+] as const) {
+  for (const barrier of ["recursive delete", "permission repair", "exhausted grace"] as const) {
+    test(`Linux ${signal} bounds ${barrier} and preserves unfinished tree ownership`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+      const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+      const ready = path.join(root, "ready");
+      const started = path.join(root, "cleanup-started");
+      const owner = spawnModule(`
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+const originalRm = fs.rm;
+const originalChmod = fs.chmod;
+const directories = [];
+const attempted = new Set();
+fs.rm = async (target, options) => {
+  const owned = directories.find((directory) => target === directory || String(target).startsWith(directory + path.sep));
+  if (owned !== undefined && ${JSON.stringify(barrier)} === "permission repair" && !attempted.has(target)) {
+    attempted.add(target);
+    throw Object.assign(new Error("owned permission barrier"), { code: "EPERM" });
+  }
+  if (owned !== undefined && ${JSON.stringify(barrier)} !== "permission repair") {
+    if (target === owned) await originalRm(path.join(owned, ".needlefish-owner.json"), { force: true });
+    await originalRm(path.join(owned, "removed-before-barrier"), { force: true });
+    writeFileSync(${JSON.stringify(started)}, "recursive delete");
+    await delay(1200);
+  }
+  return await originalRm(target, options);
+};
+fs.chmod = async (target, mode) => {
+  if (directories.some((directory) => String(target).startsWith(directory + path.sep))) {
+    writeFileSync(${JSON.stringify(started)}, "permission repair");
+    await delay(1200);
+  }
+  return await originalChmod(target, mode);
+};
+syncBuiltinESMExports();
+const { createManagedTempDirectory, registerTerminationFinalizer } = await import(${JSON.stringify(lifecycleUrl)});
+for (let index = 0; index < 3; index++) {
+  const directory = await createManagedTempDirectory();
+  directories.push(directory);
+  writeFileSync(path.join(directory, "removed-before-barrier"), "owned payload");
+  const cache = path.join(directory, "cache");
+  mkdirSync(cache);
+  writeFileSync(path.join(cache, "blob"), "owned payload");
+  if (${JSON.stringify(barrier)} === "permission repair") chmodSync(cache, 0o500);
+}
+if (${JSON.stringify(barrier)} === "exhausted grace") {
+  registerTerminationFinalizer(async ({ deadlineMs }) => {
+    while (Date.now() <= deadlineMs + 20) {}
+  });
+}
+writeFileSync(${JSON.stringify(ready)}, JSON.stringify(directories));
+setInterval(() => {}, 1000);
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "150" });
+      t.after(() => {
+        killIfRunning(owner.pid);
+        rmSync(root, { recursive: true, force: true });
+      });
+      await waitForFile(ready);
+      const directories: string[] = JSON.parse(readFileSync(ready, "utf8"));
+      const before = directories.map((directory) => readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8"));
+      const signalledAt = Date.now();
+      owner.kill(signal);
+      const [status, exitSignal] = await waitForExit(owner);
+      const elapsed = Date.now() - signalledAt;
+      assert.equal(exitSignal, null);
+      assert.equal(status, expectedStatus);
+      assert.ok(elapsed < 700, `cleanup exceeded the 150ms shared grace: ${elapsed}ms`);
+      if (barrier === "exhausted grace") {
+        assert.equal(existsSync(started), false, "expired grace must not start tree deletion");
+      } else {
+        assert.equal(readFileSync(started, "utf8"), barrier, "the filesystem barrier must actually run");
+      }
+      assert.equal(directories.length, 3);
+      if (barrier === "recursive delete") {
+        assert.equal(existsSync(path.join(directories[0] ?? "", "removed-before-barrier")), false, "cleanup must reach a partial deletion");
+      }
+      for (const [index, directory] of directories.entries()) {
+        assert.equal(existsSync(directory), true, "unfinished tree must remain for the reaper");
+        assert.equal(readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8"), before[index]);
+        await reapUntilGone(root, directory);
+        assert.equal(existsSync(directory), false, "startup reaper must reclaim the unfinished tree");
+      }
+    });
+  }
+}
+
 test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const ready = path.join(root, "ready");
