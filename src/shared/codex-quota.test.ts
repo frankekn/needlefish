@@ -54,3 +54,14 @@ test("native 0.163 reconnect wrappers retain exact exhaustion semantics", () => 
     assert.equal(nativeCodexQuotaExhausted(event(message.replace(payload,"rate limit exceeded")),1),false);
   }
 });
+
+test("routing rejects mixed unknown schemas even when the terminal contains quota words",()=>{
+  for(const message of [
+    '{"error":{"message":"insufficient credits"},"debug":"401 unauthorized"}',
+    '{"code":"unknown_failure","message":"insufficient credits"}',
+    '{"type":"unknown_failure","message":"insufficient credits"}',
+    '{"message":"insufficient credits","last_upstream_error":"network timeout"}',
+  ])assert.equal(nativeCodexQuotaExhausted(event(message),1),false);
+  const mixed=JSON.stringify({type:"item.completed",item:{id:"auth",type:"error",message:"401 unauthorized"}})+'\n'+event("insufficient credits");
+  assert.equal(nativeCodexQuotaExhausted(mixed,1),false);
+});

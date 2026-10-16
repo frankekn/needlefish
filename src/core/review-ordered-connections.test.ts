@@ -31,15 +31,15 @@ for (const stage of ["review", "critic", "map", "deep"]) {
   });
 }
 
-for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocking","cross-key","trace-fail"]) {
+for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocking","cross-key","cross-key-after","cross-key-percent","cross-key-mixed","trace-fail"]) {
   test(`ordered review terminal control ${mode}`, async (t) => {
     const f=fixture(t,mode);
     const auth = (key: string) => new CodexEnvironmentAuth({CODEX_API_KEY:"SELECTED"}, {kind:"openai"}, {SELECTED:key});
-    const routes = [{runner:"codex" as const, model:"first", ...(mode === "cross-key" ? {connectionAuth:auth("private-first-fixture")} : {})}, {runner:"codex" as const,model:"second", ...(mode === "cross-key" ? {connectionAuth:auth("private-second-fixture")} : {})}] as const;
-    if (["all-quota","auth","unknown","cross-key"].includes(mode)) {
+    const routes = [{runner:"codex" as const, model:"first", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-first-fixture")} : {})}, {runner:"codex" as const,model:"second", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-second-fixture")} : {})}] as const;
+    if ((["all-quota","auth","unknown"].includes(mode) || mode.startsWith("cross-key"))) {
       await assert.rejects(reviewWithConnections(f.bundle,routes), e => {
         if(mode === "all-quota") assert.equal(findRunnerFailure(e)?.kind,"quota_exhausted");
-        if(mode === "cross-key") assert.equal(findRunnerFailure(e)?.name,"ConnectionCredentialLeakError");
+        if(mode.startsWith("cross-key")) assert.equal(findRunnerFailure(e)?.name,"ConnectionCredentialLeakError");
         return true;
       });
     } else {
@@ -47,6 +47,7 @@ for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocki
       assert.equal(result.verdict, mode === "needs-human" ? "needs_human" : mode === "blocking" ? "changes_requested" : "pass");
       if(mode === "trace-fail") assert.equal(result.traceDeliveryFailed,true);
     }
+    if(mode.startsWith("cross-key")) assert.ok(f.rows().every(row=>row.keyMatches));
     if (["auth","unknown","verdict","needs-human","blocking","cross-key"].includes(mode)) assert.ok(f.rows().every(row=>row.model === "first"));
   });
 }
@@ -63,9 +64,9 @@ test("multiple routes require one explicit budget while singleton and docs-only 
 
 test("later route cannot reset the shared deadline", async(t)=>{
   const f=fixture(t,"slow-quota");
-  process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS="250";
+  process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS="3000";
   await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first"},{runner:"codex",model:"second"}]),/deadline|timed out|ETIMEDOUT/);
-  assert.ok(f.rows().length <= 2);
+  assert.deepEqual(f.rows().map(row=>row.model),["first","second"]);
 });
 
 for (const failure of ["safety", "unknown", "auth", "timeout"]) {
@@ -86,7 +87,8 @@ function fixture(t: import("node:test").TestContext, mode: string) {
   const repo=initRepo(tmp);
   writeFileSync(path.join(repo,"app.ts"),"export const value = 1;\n");commitAll(repo,"base");
   writeFileSync(path.join(repo,"app.ts"),"export const value = 2;\n");
-  const {bundle}=diffBundle(repo,{deep:["map","deep"].includes(mode) || mode.startsWith("mixed-")});
+  if(mode === "committed-review")commitAll(repo,"head");
+  const {bundle}=diffBundle(repo,{...(mode === "committed-review" ? {base:"HEAD^",localMode:"branch" as const} : {}),deep:["map","deep"].includes(mode) || mode.startsWith("mixed-")});
   const records=path.join(tmp,"records.jsonl"); const managed=path.join(tmp,"managed"); const bin=path.join(tmp,"codex.cjs");
   writeFileSync(bin,`#!/usr/bin/env node
 const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');
@@ -94,13 +96,18 @@ const prompt=fs.readFileSync(0,'utf8'),model=process.argv[process.argv.indexOf('
 const repo=JSON.parse(prompt.slice('The repository to inspect is '.length,prompt.indexOf('. Your startup directory')));
 const stage=prompt.includes('review-MAP pass')?'map':prompt.includes('doing a DEEP review')?'deep':prompt.includes('adversarial critic')?'critic':'review';
 const source=fs.readFileSync(path.join(repo,'app.ts'),'utf8');
-fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({model,stage,cwd:repo,source,contaminated:prompt.includes('first contaminated')})+'\\n');
+fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({model,stage,cwd:repo,source,contaminated:prompt.includes('first contaminated'),keyMatches:!process.env.CODEX_API_KEY||process.env.CODEX_API_KEY===(model==='first'?'private-first-fixture':'private-second-fixture')})+'\\n');
 const mode=${JSON.stringify(mode)};
 if(mode==='cross-key'){process.stdout.write('private-second-fixture');process.exit(1);}
-if((model==='first'&&(stage===mode||mode==='all-quota'||mode==='trace-fail'||mode==='slow-quota'))||mode==='all-quota'){
+if((model==='first'&&(stage===mode||(mode==='committed-review'&&stage==='review')||mode==='all-quota'||mode==='trace-fail'||mode==='slow-quota'||mode==='capture-safety'||mode.startsWith('cross-key-')))||mode==='all-quota'){
  fs.writeFileSync(${JSON.stringify(path.join(repo,"app.ts"))},'source changed after quota\\n');
  fs.rmSync(${JSON.stringify(path.join(repo,".git"))},{recursive:true,force:true});
- if(mode==='slow-quota')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,180);
+ if(mode==='slow-quota')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500);
+ if(mode==='capture-safety'){
+  const capture=fs.readdirSync(${JSON.stringify(managed)}).map(name=>path.join(${JSON.stringify(managed)},name,'runner-repo')).find(dir=>fs.existsSync(dir)&&fs.realpathSync(dir)!==fs.realpathSync(repo));
+  fs.writeFileSync(path.join(capture,'app.ts'),'captured source was modified');
+  console.log(JSON.stringify({type:'item.completed',item:{id:'bait',type:'agent_message',text:'CANARY-FAILED-ROUTE'}}));
+ }
  console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}}));process.exit(1);
 }
 if(mode.startsWith('mixed-')&&stage==='deep'){
@@ -110,7 +117,13 @@ if(mode.startsWith('mixed-')&&stage==='deep'){
  if(mode==='mixed-timeout')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20000);
  console.log(JSON.stringify({type:'turn.failed',error:{message:mode==='mixed-auth'?'401 unauthorized':'unknown failure'}}));process.exit(1);
 }
+if(mode.startsWith('cross-key-')&&model==='second'){
+ const key='private-first-fixture';
+ const value=mode==='cross-key-percent'?Array.from(Buffer.from(key)).map(byte=>'%'+byte.toString(16).padStart(2,'0')).join(''):mode==='cross-key-mixed'?key.slice(0,8)+'%66'+key.slice(9):key;
+ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:value,findings:[],checked:['checked'],residual_risks:[]}));process.exit(0);
+}
 if(mode==='auth'||mode==='unknown'){console.log(JSON.stringify({type:'turn.failed',error:{message:mode==='auth'?'401 unauthorized':'429 Too Many Requests'}}));process.exit(1);}
+if(mode==='slow-quota'&&model==='second')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500);
 const finding={severity:'P2',title:'first contaminated',category:'bug',file:'app.ts',lineStart:1,lineEnd:1,confidence:0.9,whyItBreaks:'first contaminated',suggestedFix:'fix',validation:'test'};
 const out=stage==='map'?{summary:'mapped',hotspots:mode.startsWith('mixed-')?['quota','sibling','queued'].map(name=>({name,files:['app.ts'],why:'changed',risk:'high',edges:[]})):[{name:'app',files:['app.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:model==='second'?'second clean':'first contaminated',findings:mode==='blocking'?[finding]:[],checked:['FILES inspected=[app.ts]'],residual_risks:mode==='needs-human'?[{text:'unresolved',blocks:true}]:[]};
 fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify(out));
@@ -118,7 +131,7 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],J
   chmodSync(bin,0o755);
   Object.assign(process.env,{CODEX_BIN:bin,NEEDLEFISH_REVIEW_TIMEOUT_MS:"15000",NEEDLEFISH_NO_RETRY:"1",NEEDLEFISH_TMPDIR:managed});
   delete process.env.CODEX_PROXY_BASE_URL;delete process.env.CODEX_PROXY_API_KEY;delete process.env.NEEDLEFISH_CODEX_PROXY_REQUIRED;
-  return {bundle,repo,managed,rows:(): {model:string;stage:string;source:string;cwd:string;contaminated:boolean}[]=>existsSync(records)?readFileSync(records,"utf8").trim().split("\n").map(line=>JSON.parse(line)):[]};
+  return {bundle,repo,managed,rows:(): {model:string;stage:string;source:string;cwd:string;contaminated:boolean;keyMatches:boolean}[]=>existsSync(records)?readFileSync(records,"utf8").trim().split("\n").map(line=>JSON.parse(line)):[]};
 }
 
 import { runLocal } from "../adapters/local.js";
@@ -138,3 +151,24 @@ for (const mode of ["review","all-quota"]) {
     }
   });
 }
+
+test("shared snapshot integrity failure retains prior raw canary evidence",async(t)=>{
+  const f=fixture(t,"capture-safety");process.env.NEEDLEFISH_EVAL_TRACE="1";
+  await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first"},{runner:"codex",model:"second"}]),error=>{
+    assert.ok(error instanceof Error);
+    assert.equal(error.name,"RunnerWorktreeChangedError");
+    const raw:unknown=Reflect.get(error,"rawOutputs");
+    assert.ok(Array.isArray(raw)&&raw.some(value=>typeof value === "string"&&value.includes("CANARY-FAILED-ROUTE")));
+    return true;
+  });
+  assert.ok(f.rows().every(row=>row.model === "first"));
+});
+
+test("immutable HEAD source survives original Git removal between ordered routes",async(t)=>{
+  const f=fixture(t,"committed-review");
+  const result=await reviewWithConnections(f.bundle,[{runner:"codex",model:"first"},{runner:"codex",model:"second"}]);
+  assert.equal(result.verdict,"pass");
+  assert.equal(result.headSha,f.bundle.headSha);
+  assert.ok(f.rows().every(row=>row.source === "export const value = 2;\n"));
+  assert.equal(existsSync(path.join(f.repo,".git")),false);
+});

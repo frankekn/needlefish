@@ -295,14 +295,14 @@ test("Codex encoded summary cannot overwrite local cache; safe review still writ
   mkdirSync(cacheDir);
   const cache = path.join(cacheDir, "last-review.json");
   writeFileSync(cache, "previous safe cache");
-  await assert.rejects(() => runLocal(f.repo, { connection: "a", cacheDir }), ConnectionCredentialLeakError);
+  await assert.rejects(() => runLocal(f.repo, { connections: ["a"], cacheDir }), ConnectionCredentialLeakError);
   assert.equal(readFileSync(cache, "utf8"), "previous safe cache");
   assert.equal(f.calls().length, 1);
   const safe = "Inspect https://debug.invalid/safe%2Fv1 bad%zz%ff";
   const binary = process.env.CODEX_BIN!;
   const source = readFileSync(binary, "utf8");
   writeFileSync(binary, source.replace(JSON.stringify(text), JSON.stringify(safe)));
-  const result = await runLocal(f.repo, { connection: "a", cacheDir });
+  const result = await runLocal(f.repo, { connections: ["a"], cacheDir });
   assert.equal(result.summary, safe);
   assert.ok(renderMarkdown(result).includes(safe));
   assert.equal(JSON.parse(readFileSync(cache, "utf8")).summary, safe);

@@ -297,7 +297,7 @@ function codexOptions(
 // not call-local, and includes SUCCESSFUL pass outputs too: when a later pass
 // rejects there is no ReviewResult, so a canary in an earlier successful map
 // or deep transcript would otherwise never reach the scan.
-function attachRunRaws(err: unknown, run: ReviewRun): void {
+function attachRunRaws(err: unknown, run: Pick<ReviewRun, "failedRawOutputs" | "rawOutputs" | "traceHealth">): void {
 	const raws = [...run.failedRawOutputs, ...run.rawOutputs];
 	if (!(err instanceof Error)) return;
 	if (raws.length > 0) {
@@ -1189,7 +1189,13 @@ async function reviewRoutes(
 	const rawOutputs: string[] = [];
 	const tmp = await createManagedTempDirectory();
 	let snapshot: RunnerSandbox | undefined;
+	let activeRun: ReviewRun | undefined;
 	const screenError = (error: unknown) => {
+		attachRunRaws(error, {
+			failedRawOutputs: [...failedRawOutputs, ...(activeRun?.failedRawOutputs ?? [])],
+			rawOutputs: [...rawOutputs, ...(activeRun?.rawOutputs ?? [])],
+			...(traceHealth ? {traceHealth} : {}),
+		});
 		if (error instanceof Error && outputGuards.length) error.message = isRunnerSafetyError(error)
 			? "Needlefish withheld review sandbox diagnostic because it may contain a selected connection credential."
 			: outputGuards.reduce((message, guard) => guard.screenDiagnostic(message), error.message);
@@ -1214,6 +1220,7 @@ async function reviewRoutes(
 				...(onTrace && traceHealth ? { onTrace: wrapTraceObserver((event) => onTrace(selections.length > 1 ? Object.freeze({ ...event, routeIndex }) : event), traceHealth) } : {}),
 				...(onProgress ? {onProgress} : {}),
 			};
+			activeRun = run;
 			try {
 				const result = await (plan.largePath ? reviewLarge(run) : reviewSmall(run));
 				await drainTraceDeliveries(traceHealth);
@@ -1229,6 +1236,7 @@ async function reviewRoutes(
 				await drainTraceDeliveries(traceHealth);
 				failedRawOutputs.push(...run.failedRawOutputs);
 				rawOutputs.push(...run.rawOutputs);
+				activeRun = undefined;
 				attachRunRaws(error, {...run, failedRawOutputs, rawOutputs});
 				assertSnapshotClean();
 				if (findRunnerFailure(error)?.kind !== "quota_exhausted" || routeIndex === selections.length - 1) throw error;
@@ -1239,6 +1247,8 @@ async function reviewRoutes(
 		throw screenError(error);
 	} finally {
 		try { assertSnapshotClean(); }
-		finally { await disposeManagedTempDirectory(tmp); }
+		finally {
+			await disposeManagedTempDirectory(tmp).catch((error: unknown) => { throw screenError(error); });
+		}
 	}
 }

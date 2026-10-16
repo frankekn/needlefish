@@ -1026,9 +1026,12 @@ function exhaustedCodexMessage(message: string): boolean {
 		let raw: unknown;
 		try { raw = JSON.parse(text); } catch { return false; }
 		if (!isRecord(raw)) return false;
+		if ("error" in raw && Object.keys(raw).some((key) => key !== "error")) return false;
 		const payload = "error" in raw ? raw.error : raw;
-		if (!isRecord(payload) || Object.keys(payload).some((key) => !["code", "type", "message", "last_upstream_error"].includes(key))) return false;
+		if (!isRecord(payload) || Object.keys(payload).some((key) => !["code", "type", "message"].includes(key))) return false;
 		if (Object.values(payload).some((value) => typeof value !== "string")) return false;
+		if (payload.code !== undefined && payload.code !== "insufficient_quota" && payload.code !== "payment_required" && payload.code !== "BAD_REQUEST") return false;
+		if (payload.type !== undefined && payload.type !== "insufficient_quota" && payload.type !== "invalid_request_error") return false;
 		const values = Object.values(payload).join("\n");
 		if (/auth|unauthorized|forbidden|token_expired|invalid_api_key|\b40[13]\b/i.test(values)) return false;
 		if (payload.code === "insufficient_quota" || payload.type === "insufficient_quota") return true;
