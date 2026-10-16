@@ -519,7 +519,10 @@ Digest 不包含其他 import 或私有 provider binary。Harness 版本與認�
 資格比對先驗證報告完整性與既有品質 gate，再比較組態。`exact` 本身不代表通過品質
 門檻。`runtime-publication.json` 分別記錄 benchmark 選用、套件預設與操作人員
 選用的安裝組態。修改後執行 `node scripts/runtime-publication.mjs --write`。
-`pnpm check` 會拒絕文件或版本不一致。Source install 將該公開資料複製到
+此指令只更新兩份 README 與網站中有標記的 runtime publication 區塊。
+`pnpm check` 會拒絕 runtime publication 區塊或版本不一致，而且不寫入檔案。
+完整網站重建仍要求報告符合現行 fixture 契約，歷史報告不能繞過此要求。
+Source install 將該公開資料複製到
 `release.json`，不據此宣稱主機實際使用哪個模型。
 
 ## 開發環境安裝

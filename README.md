@@ -663,7 +663,10 @@ unchanged. The shared configuration matcher returns `exact`, `different`, or
 `runtime-publication.json` distinguishes the benchmark selection, package
 defaults, and an operator-selected installation. Run
 `node scripts/runtime-publication.mjs --write` after changing that file.
-`pnpm check` rejects drift. Source installs copy this map into `release.json`.
+It updates only the marked runtime publication blocks in both READMEs and the site.
+`pnpm check` rejects runtime publication block or version drift without writing files.
+Full site regeneration still requires reports matching the current fixture contract.
+Historical reports cannot bypass that contract. Source installs copy this map into `release.json`.
 It does not attest the operator's effective model or change runner selection.
 
 ## Development

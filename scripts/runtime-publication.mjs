@@ -25,14 +25,21 @@ export function runtimePublicationText(locale = "en") {
     : `Package ${value.packageVersion} auto-detects ${value.packageDefault.runnerPriority.join(", ")} in order. Codex defaults to \`${value.packageDefault.codexEffort}\` effort. The benchmark selects the configuration in [this report](eval/${report}). The operator selects the installation configuration. Its identity is unknown and unqualified. Benchmark selection does not establish what any host has deployed.`;
 }
 
+export function siteRuntimePublicationBlock() {
+  const value = readRuntimePublication();
+  const escapeHtml = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  const note = `Package ${escapeHtml(value.packageVersion)} uses ${escapeHtml(value.packageDefault.selection)}. Installed configurations are operator-selected, with unknown identity and no exact qualification claim. Auto-detection tries ${value.packageDefault.runnerPriority.map(escapeHtml).join(", ")} in order. Codex defaults to ${escapeHtml(value.packageDefault.codexEffort)} effort. Benchmark-selected report: <a href="https://github.com/frankekn/needlefish/blob/main/eval/${escapeHtml(value.benchmarkSelected.report)}">${escapeHtml(value.benchmarkSelected.report)}</a>. Benchmark selection does not establish what any host has deployed.`;
+  return `<!-- runtime-publication:begin -->\n<p>${note}</p>\n<!-- runtime-publication:end -->`;
+}
+
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
   const write = process.argv.includes("--write");
-  for (const [file, locale] of [["README.md", "en"], ["README.zh-TW.md", "zh-TW"]]) {
+  for (const [file, locale] of [["README.md", "en"], ["README.zh-TW.md", "zh-TW"], ["docs/index.html", "site"]]) {
     const target = path.join(root, file);
     const source = readFileSync(target, "utf8");
     const begin = "<!-- runtime-publication:begin -->";
     const end = "<!-- runtime-publication:end -->";
-    const block = `${begin}\n${runtimePublicationText(locale)}\n${end}`;
+    const block = locale === "site" ? siteRuntimePublicationBlock() : `${begin}\n${runtimePublicationText(locale)}\n${end}`;
     const start = source.indexOf(begin);
     const finish = source.indexOf(end);
     assert.ok(start >= 0 && finish > start && source.indexOf(begin, start + begin.length) < 0 && source.indexOf(end, finish + end.length) < 0, `${file} runtime publication markers`);
