@@ -2905,7 +2905,7 @@ test("reviewPlan rejects incomplete typed input before fast paths or runners", a
 		assert.equal(error.message.length < 3000, true);
 		return true;
 	}
-	assert.throws(() => reviewPlan(bundle), omissionError);
+	assert.throws(() => reviewPlan(bundle, {}), omissionError);
 	await assert.rejects(() => review(bundle), omissionError);
 	assert.equal(bundle.untrackedSkipped, skipped);
 });
