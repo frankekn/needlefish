@@ -307,3 +307,19 @@ test("Codex encoded summary cannot overwrite local cache; safe review still writ
   assert.ok(renderMarkdown(result).includes(safe));
   assert.equal(JSON.parse(readFileSync(cache, "utf8")).summary, safe);
 });
+
+
+test("Codex partial encoding preserves literal percent triplets of the selected key", async (t) => {
+  const key = "tok%41secret-Ω-tail";
+  const encoded = "tok%41%73%65%63%72%65%74-%ce%a9-tail";
+  const text = `https://debug.invalid/${encoded}`;
+  const f = fixture(t, "percent-summary", [entry()], text);
+  process.env.ACCOUNT_A_KEY = key;
+  const selection = f.select();
+  assert.throws(() => selection.connectionAuth!.assertOutputSafe(text), ConnectionCredentialLeakError);
+  assert.equal(selection.connectionAuth!.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  const raw: string[] = [];
+  await assert.rejects(() => f.run(selection, { onFailedRaw: (value: string) => raw.push(value) }), ConnectionCredentialLeakError);
+  assert.ok(raw.join("\n").includes(text));
+  assert.equal(f.calls().length, 1);
+});
