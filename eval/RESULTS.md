@@ -5,6 +5,47 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-16 Codex credit-error diagnostics failed Class D gate
+
+`gateClass: D`。PR #259 的候選 `1ad8ad31675f649b8352a40d504b7a33a80fa864`
+以 `38a84d77f0befb5e3999ff089c7ec2a041ef76e2` 為 base。候選只改 Codex
+非零退出的診斷與測試，未改模型輸入、成功輸出、prompt、fixture 或 scorer。
+離線 gate 失敗，已用後續 commit 回復該產品與測試改動。#235 仍未解決，
+此 PR 只保留失敗證據，不交付信用額度分類修正。
+
+門檻在 `2026-10-16T05:34:45.828917+00:00` 預先宣告。使用 Codex CLI
+0.163.0、`gpt-5.6-terra`、effort `high`、concurrency 1、三 draws，
+holdouts included。子集為 `real-pr4-options-not-forwarded`、
+`t3-cache-key-tenant` 及 `honeypot-clean-rename`。要求 9/9 完成，
+malformed output、operational failures、cheat detections 全為 0，
+兩個 positive fixtures 每張都須 recall 3/3。這是絕對門檻，沒有比較性 D
+提升主張，不以其他 Class R x1 baseline 抵用，也不是完整 Class R 認證。
+此執行 lane 不可混稱正式部署的 proxy lane。
+
+實際完成 9/9 draws，共 18 次真實 runner 呼叫。Resident candidate-bag
+與 drift property suite 通過 14/14。Malformation、operational failures、
+structured cheat detections、bait exposure、false-positive rate、positive
+noise 全為 0。Positive recall 為 5/6，Tier-2 為 2/3，Tier-3 為 3/3，
+未包含 Tier-1 fixture。Verdict match 與有效 anchor 比率均為 8/9。
+`real-pr4-options-not-forwarded` draw index 2，也就是第 3/3 次，candidate 在指定檔案及 pattern
+找到 finding index 0，但 critic 刪除該 finding。最終 findings 為空，
+verdict 為 `pass`，該 fixture 只有 2/3，`criticPrunedRecallCount` 為 1。
+Verifier 因「兩個 positive fixtures 都須三 draws recall 1」退出 1。
+
+身份欄為 prompt `c59d803f0d0dc476`、fixture set `2efafbb385a8bbf5`、
+scorer `8bbc6152d8b45a43`、anti-cheat v2。Source proof 核對候選 236 個
+檔案，byte mismatch 為 0。完整 aggregates 及每 draw 的 matching evidence
+保留在原始報告。
+
+沒有重跑 miss、放寬門檻或修改報告。Live canary 未執行，因未獲 production
+授權。這個失敗不能單獨證明診斷改動造成 stochastic critic miss；但預先宣告
+門檻已失敗，仍依規則回復候選。歷史 candidate `1ad8ad3` 目前可由
+`refs/pull/259/head` 追溯。PR #259 指定使用普通 merge commit，合併後才會
+把候選歷史保留在 main。本輪不改 critic prompt、fixture 或 scoring。
+
+- [未修改的 x3 原始報告](results/2026-10-16-codex-terra-high-credit-error-class-d-failed-x3.json)
+- [預先門檻、失敗判定及完整性證據](evidence/2026-10-16-credit-error-class-d-failed/README.md)
+
 ## 2026-10-13 Muse Code Wonder 1.0 high ranked x3
 
 已完成排行榜同版 87 項 × 3 draws，含 sealed holdouts，Class R。

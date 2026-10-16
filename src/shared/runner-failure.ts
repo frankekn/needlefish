@@ -3,6 +3,8 @@
 // In particular, ACP has no portable quota-exhausted code: never infer quota
 // from an agent's prose, an arbitrary JSON-RPC code, or a generic HTTP 429.
 export type RunnerFailureKind =
+  | "startup_timeout"
+  | "startup_failed"
   | "auth_required"
   | "permission_required"
   | "cancelled"
@@ -16,6 +18,7 @@ export class RunnerFailure extends Error {
     readonly kind: RunnerFailureKind,
     message: string,
     readonly retryable: boolean = false,
+    readonly stage?: "initialize" | "session/new",
   ) {
     super(message);
     this.name = "RunnerFailure";

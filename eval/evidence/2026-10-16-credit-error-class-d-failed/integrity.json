@@ -1,0 +1,12 @@
+{
+  "report": "eval/results/2026-10-16-codex-terra-high-credit-error-class-d-failed-x3.json",
+  "reportSha256": "e9aea35b1832c3cf9e2377fbc96fd1e24e80f9fc5d1fb6867dd30635eb01b28c",
+  "sourceReportSha256": "e9aea35b1832c3cf9e2377fbc96fd1e24e80f9fc5d1fb6867dd30635eb01b28c",
+  "artifactsSha256": {
+    "criteria.json": "060fd08b5908826517b69eb2c260d190ef3ab6503614bea07e19919a26d91d11",
+    "verdict.json": "5a7ff6ead78d48fa28e43bc1f55f326b07904af1cbb921e38d3e491d9bdd2464",
+    "verify-stderr.txt": "cabecdf723bab293b66fe4d623d8d5e32f53de8c4f901241de56954ced1aaa1b",
+    "property-suite.txt": "7f078b39231b8ea74e5ad01dc84b24a3b9f14209b6ecab876b73178995715c11",
+    "source-proof.json": "2bf35dcc889f313d442a4dec76458cb342e143e89dcd11c60bad6823c8864f1e"
+  }
+}

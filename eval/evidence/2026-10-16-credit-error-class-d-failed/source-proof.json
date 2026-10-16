@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-16T05:38:43.326935+00:00",
+  "records": [
+    {
+      "job": "d259",
+      "sha": "1ad8ad31675f649b8352a40d504b7a33a80fa864",
+      "pid": 72082,
+      "actualCwd": "/private/tmp/nf-closure-gates/needlefish-d259",
+      "resolvedClone": "/private/tmp/nf-closure-gates/needlefish-d259",
+      "checkedSourceFiles": 236,
+      "mismatches": [],
+      "sourceByteManifestSha256": "bc77ea187d3f3147a0f706848948245bbce3c7a76389d73cb1e6392d5beacc8b"
+    }
+  ]
+}
