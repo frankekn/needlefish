@@ -9,9 +9,10 @@ needlefish --connection my-agent --dry-run
 ```
 
 This increment selects **one** connection. It does not implement automatic
-fallback, separate account stores, login, installation or provider presets.
-Two names using the same CLI still use its existing credentials, not independent
-accounts. Unsupported `authRef`, env, presets and fallback fields are rejected.
+fallback, OAuth account stores, login, installation or provider presets.
+Without `auth`, two names still use the existing adapter credentials, not independent
+accounts. ACP supports the explicit environment bindings below. Unsupported
+`authRef`, arbitrary env, presets and fallback fields are rejected.
 
 ## User-owned configuration
 
@@ -56,8 +57,85 @@ configuration. Explicit Codex proxy requirements are not bypassed. ACP identitie
 are open-ended; adding one does not add a `RunnerName`. `stats.runner` remains the
 adapter. A requested model name is not evidence of the delivered model.
 
-Do not put tokens, passwords or secrets in this file or in argv. Existing generic
-ACP credential staging/passthrough rules still apply; this is not a new vault.
+Do not put tokens, passwords or secrets in this file or in argv. Without `auth`,
+existing generic ACP credential staging/passthrough rules still apply.
+
+## Separate ACP environment credentials
+
+An ACP agent that accepts a credential from an environment variable can bind
+that variable to a different user-owned source for each connection:
+
+```json
+{
+  "version": 1,
+  "connections": [
+    {
+      "id": "account-a", "adapter": "acp",
+      "launch": {"command": "/absolute/path/to/agent", "args": ["acp"]},
+      "auth": {"env": {"AGENT_API_KEY": "ACCOUNT_A_KEY"}}
+    },
+    {
+      "id": "account-b", "adapter": "acp",
+      "launch": {"command": "/absolute/path/to/agent", "args": ["acp"]},
+      "auth": {"env": {"AGENT_API_KEY": "ACCOUNT_B_KEY"}}
+    }
+  ]
+}
+```
+
+These names are examples, not universal agent flags or credential conventions.
+Use your agent's documented credential variable. Supply each source through a
+trusted launch environment or secret manager; do not paste credentials into the
+configuration or command arguments. Targets must be `API_KEY`/`TOKEN` or end in
+`_API_KEY`/`_TOKEN`. Targets beginning with `GH_`, `GITHUB_`, `GIT_` or
+`NEEDLEFISH_` are reserved.
+
+Source names must be environment identifiers. Validation rejects these source
+prefixes without regard to case: `GH_`, `GITHUB_`, `GIT_`, `NEEDLEFISH_`, `XDG_`,
+`NODE_`, `LD_` and `DYLD_`. It also rejects `HOME`, `USERPROFILE`, `HOMEDRIVE`,
+`HOMEPATH`, `PATH`, `PATHEXT`, `SHELL`, `COMSPEC`, `BASH_ENV`, `ENV`, `HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. This denylist is not a general secret or
+capability classifier. Other explicit source mappings, including values that name
+host resources, are the trusted operator's responsibility. An unrestricted agent
+may still access any host resource available to its user.
+
+Selection snapshots only the chosen sources. Missing, empty, invalid or
+whitespace-wrapped values stop before launch: no default account, login probe or
+automatic fallback.
+Retries and all review passes retain the snapshot without changing `process.env`.
+The bound values are private and absent from serialized options, result and cache.
+Runner output is screened against the selected snapshot before admission, including
+decoded JSON in Markdown fences. A complete selected credential value, including
+its JSON-escaped form, stops the review with a safe diagnostic. Screening also
+checks one decoding of standard JSON string escapes in plain text. Partial values,
+other encodings and transformations are not covered. With explicit auth, raw
+transcripts are excluded from public result and cache fields even when eval
+tracing is enabled. Controlled trace callbacks remain
+sensitive and can contain credentials. Without a private trace observer, an
+authenticated traced review marks trace delivery incomplete. Matching uses
+case-insensitive complete-value substrings. Short or common credential values may match ordinary protocol or
+review text and stop a run even without an echo. This conservative check does not
+impose a cross-agent minimum length or entropy rule.
+`--dry-run` and docs-only zero-model reviews validate the configuration schema
+and source names but do not require or bind credentials. They do not validate
+compatibility with unused runtime environment passthrough. Other reviews bind
+once after collecting the bundle, before any model starts.
+
+Explicit auth always gets a new empty disposable HOME/USERPROFILE and XDG
+config/data/cache/state roots, even when `NEEDLEFISH_EPHEMERAL_HOME` is off.
+No ambient ACP auth files or user config are copied. Existing Git-config blocking,
+empty GitHub config, shared deadline, process-group termination and cleanup apply.
+HTTP(S) proxy variables from the existing base allowlist are retained. Before an
+authenticated model run, nonempty `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` is rejected,
+not silently dropped: reconcile
+any required endpoint/CA/routing settings before using this mode. Arbitrary
+per-connection environment and file-based routing are outside this increment.
+
+This isolates **default credential discovery**, not processes or provider identities.
+A same-UID executable can still seek host files; project hooks/skills/MCP are not
+made safe by an empty HOME. Use a trusted agent. This is not an OAuth/Keychain
+integration, token vault, refresh manager or proof that two sources are different
+accounts. Native CLI bindings and the nontechnical login UI remain separate work.
 
 ## One selection, one runtime
 
@@ -107,10 +185,12 @@ live canary are required before merge/deployment; fake-agent CI is not a substit
 | CLI value syntax and conflicts | `src/cli/args.ts` uses `optionValue`; `connection-args.test.ts` |
 | Adapter identities/metadata | Existing `runner-definition.ts`; no connection-specific catalog |
 | ACP command/argv, startup/completion/usage | `acp.ts`; existing `acp*.test.ts` and named-launch integration below |
+| ACP credential references and private snapshot | `connection-auth.ts`; `connection-auth.test.ts` |
+| Child credential/HOME isolation | Existing `codex.ts`; `connection-auth-integration.test.ts` |
 | Cross-pass launch/model plumbing | `src/cli.ts`, `codex.ts`; `connections-integration.test.ts` |
 
 ```sh
-node --test --test-concurrency=1 --import tsx src/cli/connection-args.test.ts src/shared/connections.test.ts src/shared/connections-integration.test.ts src/shared/acp*.test.ts
+node --test --test-concurrency=1 --import tsx src/cli/connection-args.test.ts src/shared/connections.test.ts src/shared/connections-integration.test.ts src/shared/acp*.test.ts src/shared/connection-auth*.test.ts
 pnpm check && pnpm lint && pnpm test
 ```
 
@@ -125,7 +205,11 @@ and remaining gates in the PR before handing off; recheck head before pushing.
 
 用 `--connection 名稱` 明確選定一個工具與模型，或信任的 ACP 啟動程式。
 舊指令不讀新設定、不自動切換服務；指定連線後不能再搭配 `--runner`／`--model`。
-目前沿用工具原本的登入資訊，不同名稱不是獨立帳號，也未交付額度備援或安裝精靈。
+未設定 `auth` 時仍沿用工具原本的登入資訊，不同名稱不是獨立帳號。
+ACP 現可用 `auth.env` 將工具的密鑰變數綁到不同來源；設定檔只存變數名。
+缺少認證就停止，重試不換帳號；強制使用空白暫存 HOME/XDG，不複製預設帳號。
+此模式拒絕舊的任意 passthrough，避免暗中丟掉必要路由；OAuth、原生 CLI 多帳號、
+額度備援與安裝精靈仍未交付。這也不是作業系統隔離或供應商帳號驗證。
 
 設定只能來自專案外的使用者檔案，請勿放密鑰。選定的 command／argv／模型
 在重試與各審查階段保持固定，並沿用同一套握手、完成性、用量及清理流程。

@@ -256,13 +256,13 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn()) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && !run.runnerConfig.connectionAuth) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		onLfsReport: (report) => {
@@ -348,7 +348,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn()) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && !run.runnerConfig.connectionAuth) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -1131,8 +1131,8 @@ export async function review(
 	const reviewDeadlineMs = reviewBudgetMs === null
 		? undefined : performance.now() + reviewBudgetMs;
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace
-		? { failed: false, pending: new Set() }
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerConfig.connectionAuth !== undefined && evalTraceOn())
+		? { failed: onTrace === undefined, pending: new Set() }
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
@@ -1145,9 +1145,9 @@ export async function review(
 		...(onTrace && traceHealth
 			? {
 					onTrace: wrapTraceObserver(onTrace, traceHealth),
-					traceHealth,
 				}
 			: {}),
+		...(traceHealth ? { traceHealth } : {}),
 		...(onProgress ? { onProgress } : {}),
 		startedAt,
 		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),

@@ -276,6 +276,27 @@ test("docs-only named connection keeps the zero-model policy skip", (t) => {
   assert.equal(f.calls().length, 0);
 });
 
+for (const mode of ["local", "pr", "github"] as const) {
+  test(`${mode}: docs-only auth validates configuration without requiring credentials`, (t) => {
+    const f = fixture(t, "acp", { docs: true, github: "active" });
+    const config = JSON.parse(readFileSync(f.file, "utf8"));
+    config.connections.find((entry: { id: string }) => entry.id === "selected-connection-marker").auth = {
+      env: { AGENT_API_KEY: "MISSING_ACCOUNT_KEY" },
+    };
+    delete f.env.MISSING_ACCOUNT_KEY;
+    writeFileSync(f.file, JSON.stringify(config));
+    const args = mode === "github" ? ["--github", "--pr", "7"] : mode === "pr" ? ["pr", "7", "--json"] : ["--json"];
+    const result = f.run(args);
+    assert.equal(result.status, 0, result.stderr);
+    if (mode !== "github") assert.match(result.stdout, /model review skipped/);
+    assert.equal(f.launches().length, 0);
+    writeFileSync(f.file, "{");
+    const invalid = f.run(args);
+    assert.equal(invalid.status, 1, invalid.stderr);
+    assert.match(invalid.stderr, /not valid JSON/);
+  });
+}
+
 
 // These are full CLI tests of the existing launch fixture, not a second ACP client.
 for (const stopReason of ["cancelled", "refusal", "max_tokens", "max_turn_requests", undefined, "unknown"]) {

@@ -6,6 +6,9 @@ import test, { type TestContext } from "node:test";
 import { review } from "../core/review";
 import { promptHash } from "./prompt-hash";
 import { resolveRunnerConfig } from "./codex";
+import { AcpEnvironmentAuth } from "./connection-auth";
+import { parseConnections } from "./connections";
+import { ConnectionCredentialLeakError } from "./runner-failure";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { renderMarkdown } from "./render";
 import { parseReviewResult } from "./review-result";
@@ -45,6 +48,31 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.deepEqual(reviewRuntime(resolveRunnerConfig({ runner: "opencode", model: "provider/model#low", reasoningEffort: "high" }), null).model, { status: "known", value: "provider/model#high" });
   assert.throws(() => parseReviewRuntime({ ...acp, qualification: { matchStatus: "tested" } }), /qualification/);
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
+});
+
+test("effective config preserves bound auth methods and the frozen parsed ACP launch", (t) => {
+  environment(t, { NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: undefined });
+  const [connection] = parseConnections({ version: 1, connections: [{
+    id: "selected", adapter: "acp", model: "selected-model",
+    launch: { command: process.execPath, args: ["--model", "{model}"] },
+  }] });
+  const source = { SELECTED_ACCOUNT_KEY: "TEST-BOUND-ACCOUNT" };
+  const auth = new AcpEnvironmentAuth({ AGENT_API_KEY: "SELECTED_ACCOUNT_KEY" }, source);
+  const config = resolveRunnerConfig({ runner: "acp", acpLaunch: connection!.launch, connectionAuth: auth });
+  source.SELECTED_ACCOUNT_KEY = "TEST-REPLACEMENT-ACCOUNT";
+  assert.equal(config.connectionAuth, auth);
+  assert.equal(config.acpLaunch, connection!.launch);
+  assert.equal(Object.isFrozen(config.acpLaunch), true);
+  assert.equal(Object.isFrozen(config.acpLaunch!.args), true);
+  assert.deepEqual(config.acpLaunch!.args, ["--model", "selected-model"]);
+  const childEnv: NodeJS.ProcessEnv = {};
+  config.connectionAuth!.applyTo(childEnv);
+  assert.deepEqual(childEnv, { AGENT_API_KEY: "TEST-BOUND-ACCOUNT" });
+  assert.throws(() => config.connectionAuth!.assertOutputSafe("TEST-BOUND-ACCOUNT"), ConnectionCredentialLeakError);
+  assert.equal(config.connectionAuth!.screenDiagnostic("failure TEST-BOUND-ACCOUNT"),
+    "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  assert.equal(JSON.stringify(config).includes("TEST-BOUND-ACCOUNT"), false);
+  assert.equal(JSON.stringify(reviewRuntime(config, null)).includes("TEST-BOUND-ACCOUNT"), false);
 });
 
 test("model selectors retain safe punctuation without relaxing other runtime identities", () => {

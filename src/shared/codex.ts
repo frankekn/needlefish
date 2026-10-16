@@ -54,6 +54,7 @@ import {
 	disposeManagedTempDirectory,
 } from "./temp-lifecycle.js";
 import {
+	RunnerWorktreeChangedError,
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
 	prepareRunnerSandbox,
@@ -91,10 +92,11 @@ export function buildRunnerEnv(
 	runner: RunnerName,
 	ghConfigDir: string,
 	ephemeralHome?: string,
+	connectionAuth?: RunnerOptions["connectionAuth"],
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
-	const extra = (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+	const extra = connectionAuth ? [] : (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
@@ -109,11 +111,16 @@ export function buildRunnerEnv(
 	if (ephemeralHome !== undefined) {
 		env.HOME = ephemeralHome;
 		env.USERPROFILE = ephemeralHome;
-		if (runner === "opencode") {
+		if (runner === "opencode" || connectionAuth) {
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
+		if (connectionAuth) {
+			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
+			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
+		}
 	}
+	connectionAuth?.applyTo(env);
 	sealRunnerGitConfig(env);
 	return env;
 }
@@ -411,9 +418,11 @@ function ephemeralAuthFiles(runner: RunnerName, piAuth: PiAuthSelection | undefi
 export function prepareEphemeralHome(
 	runner: RunnerName,
 	tmp: string,
+	connectionAuth?: RunnerOptions["connectionAuth"],
 	selectedPiAuth?: PiAuthSelection,
 ): string | undefined {
-	if (process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
+	connectionAuth?.assertCompatible(runner);
+	if (!connectionAuth && process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
 	// claude exemption: its credential lookup goes through the macOS Keychain
 	// tied to the real HOME; --no-session-persistence already blocks session
 	// writes. Keep real HOME under the flag.
@@ -429,7 +438,10 @@ export function prepareEphemeralHome(
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
 	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
-	const { required, optional } = ephemeralAuthFiles(runner, piAuth);
+	// Explicit env auth never stages a default account's files or config.
+	const { required, optional } = connectionAuth
+		? { required: [], optional: [] }
+		: ephemeralAuthFiles(runner, piAuth);
 	if (!realHome) {
 		// No source HOME is only a problem when something must be staged from
 		// it: an env-authenticated mode (required empty) is independently valid,
@@ -616,6 +628,7 @@ const PI_DEFAULT_MODEL = "gpt-5.6-sol";
 const GROK_DEFAULT_MODEL = "grok-build";
 
 export interface EffectiveRunnerConfig {
+	readonly connectionAuth: RunnerOptions["connectionAuth"];
 	readonly runner: RunnerName;
 	readonly acpLaunch: AcpLaunchSpec | undefined;
 	readonly acpInitializeTimeoutMs: number;
@@ -632,6 +645,7 @@ export interface EffectiveRunnerConfig {
 export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig {
 	try {
 		const runner = resolveRunner(opts);
+		opts.connectionAuth?.assertCompatible(runner);
 		const configuredModel = resolveModel(opts, runner) ??
 			(runner === "pi" ? PI_DEFAULT_MODEL : runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
 		const effort = opts.reasoningEffort || undefined;
@@ -648,6 +662,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
 		return Object.freeze({
 			runner,
+			connectionAuth: opts.connectionAuth,
 			acpLaunch: opts.acpLaunch,
 			acpInitializeTimeoutMs: runner === "acp" ? resolveAcpInitializeTimeoutMs(timeoutMs) : timeoutMs,
 			openCodeIdleTimeoutMs: runner === "opencode" ? openCodeIdleTimeoutMs(timeoutMs) : timeoutMs,
@@ -704,6 +719,12 @@ export async function runCodex(
 			emitStat(true);
 			return result.out;
 		} catch (err) {
+			if (err instanceof Error && config.connectionAuth) {
+				// Keep failure types and raw provenance while withholding public credentials.
+				err.message = err instanceof RunnerWorktreeChangedError
+					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
+					: config.connectionAuth.screenDiagnostic(err.message);
+			}
 			const raw =
 				err instanceof Error
 					? (err as Error & { rawOutput?: string }).rawOutput
@@ -714,6 +735,15 @@ export async function runCodex(
 				// a successful retry discards this error object, and the canary
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
+			}
+			if (raw && config.connectionAuth && !isRunnerSafetyError(err)) {
+				try {
+					config.connectionAuth.assertOutputSafe(raw);
+				} catch (screeningError) {
+					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
+					emitStat(false);
+					throw screeningError;
+				}
 			}
 			if (!(err instanceof Error) || isRunnerSafetyError(err) || findRunnerFailure(err)?.retryable === false) {
 				emitStat(false);
@@ -776,8 +806,8 @@ async function runCodexOnce(
 		const { invocation, sandbox } = (() => {
 			try {
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.piAuth);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome);
+				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth);
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
@@ -881,6 +911,17 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
+			if (config.connectionAuth) {
+				config.connectionAuth.assertOutputSafe(out);
+				let decoded: unknown;
+				try {
+					decoded = extractJson(out);
+				} catch (error) {
+					// Explain output can be plain text; raw screening still applies.
+					if (!(error instanceof Error)) throw error;
+				}
+				if (decoded !== undefined) config.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
 			// output lands in the out-file) must reach the scan whole.
@@ -889,6 +930,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
+			config.connectionAuth?.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
