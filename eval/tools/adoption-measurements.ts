@@ -100,6 +100,7 @@ export function parseFindingMeasurement(value: unknown): FindingMeasurement {
   if (item?.status === "unknown" && (item.identity === null || identity) && typeof item.reason === "string" && /^[a-z_]{1,80}$/.test(item.reason)) return { status: "unknown", identity, reason: item.reason };
   if (item?.status !== "producer_attested" || !identity || !id(item.checkRunId) || !id(item.workflowJobDatabaseId) || !id(item.workflowJobCheckRunId)) throw new Error("invalid finding measurement");
   const receipt = parseMeasurement(JSON.stringify(item.receipt));
+  if (receipt.delivery !== "delivered") return { status: "unknown", identity, reason: "incomplete_delivery" };
   if (receipt.targetHeadSha !== identity.originalHeadSha || !receipt.inlineReviewIds.includes(identity.reviewId) || receipt.workflow.status !== "recorded") throw new Error("invalid historical measurement binding");
   const durations = record(item.durations);
   const pipelineMs = parseDuration(durations?.pipelineMs), jobQueueMs = parseDuration(durations?.jobQueueMs), workflowCreatedToTerminalMs = parseDuration(durations?.workflowCreatedToTerminalMs);

@@ -152,7 +152,7 @@ childProcess.spawnSync = function(command, args, options) {
 syncBuiltinESMExports();
 `);
   for (const delivery of ["partial", "delivered"] as const) {
-    const input = [{ ...row, created: new Date(Date.now() - 86_400_000).toISOString(), measurement: { ...row.measurement, receipt: { ...row.measurement.receipt, delivery } } }];
+    const input: AdoptionRow[] = [{ ...row, created: new Date(Date.now() - 86_400_000).toISOString(), measurement: { ...row.measurement, receipt: { ...row.measurement.receipt, delivery } } }];
     const inputFile = path.join(tmp, `${delivery}.json`), outputDir = path.join(tmp, delivery);
     writeFileSync(inputFile, JSON.stringify(input));
     const result = spawnSync(process.execPath, ["--import", "tsx", "--import", preload, "eval/tools/adoption-weekly.ts", outputDir,
@@ -161,7 +161,7 @@ syncBuiltinESMExports();
     });
     assert.equal(result.status, 0, result.stderr);
     const incomplete = delivery === "partial";
-    const expected = [{ ...input[0], measurement: incomplete ? { status: "unknown", identity: row.measurement.identity, reason: "incomplete_delivery" } : row.measurement }];
+    const expected: AdoptionRow[] = [{ ...input[0], measurement: incomplete ? { status: "unknown", identity: row.measurement.identity, reason: "incomplete_delivery" } : row.measurement }];
     assert.deepEqual(JSON.parse(readFileSync(path.join(outputDir, "rows.json"), "utf8")), expected);
     const metadata: unknown = JSON.parse(readFileSync(path.join(outputDir, "metadata.json"), "utf8"));
     assert.ok(typeof metadata === "object" && metadata !== null && "status" in metadata && "findingThreads" in metadata && "measurements" in metadata);
