@@ -276,3 +276,25 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 	);
 	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
 });
+
+test("review refuses OpenCode before invoking an older self-managed release", t => {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-opencode-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const binary = join(root, "needlefish");
+  const marker = join(root, "review-launched");
+  const ghMarker = join(root, "gh-called");
+  writeFileSync(binary, '#!/bin/sh\nprintf launched > "$MARKER"\n');
+  chmodSync(binary, 0o755);
+  writeFileSync(join(root, "gh"), '#!/bin/sh\nprintf called > "$GH_MARKER"\nprintf 0\n');
+  chmodSync(join(root, "gh"), 0o755);
+  const result = spawnSync("bash", ["-c", reviewScript], {
+    encoding: "utf8", timeout: 5000,
+    env: { PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_BIN: binary,
+      NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42", MARKER: marker, GH_MARKER: ghMarker,
+      GITHUB_REPOSITORY: "owner/repo", PR_HEAD_SHA: "a".repeat(40) },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /OpenCode reviews are temporarily disabled.*issue #207/);
+  assert.equal(existsSync(marker), false);
+  assert.equal(existsSync(ghMarker), false);
+});
