@@ -56,7 +56,7 @@ export function reviewRuntime(config: EffectiveRunnerConfig, reviewBudgetMs: num
     runner: config.runner,
     runnerVersion: runtimeLabel(undefined),
     launcherDigest: runtimeLabel(undefined),
-    model: runtimeLabel(config.model),
+    model: runtimeLabel(config.runner === "acp" ? undefined : config.model),
     effort: runtimeLabel(config.effectiveEffort),
     promptHash: promptIdentity,
     callTimeoutMs: config.timeoutMs,

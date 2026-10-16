@@ -615,6 +615,7 @@ const GROK_DEFAULT_MODEL = "grok-build";
 
 export interface EffectiveRunnerConfig {
 	readonly runner: RunnerName;
+	readonly acpLaunch: AcpLaunchSpec | undefined;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
 	readonly effectiveEffort: string | undefined;
@@ -630,7 +631,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 		const configuredModel = resolveModel(opts, runner) ??
 			(runner === "pi" ? PI_DEFAULT_MODEL : runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
 		const effort = opts.reasoningEffort || undefined;
-		const model = runner === "acp" ? undefined :
+		const model = runner === "acp" ? opts.acpLaunch ? opts.model : undefined :
 			runner === "opencode" && configuredModel && effort && effort !== "default"
 				? `${configuredModel.split("#")[0]}#${effort}` : configuredModel;
 		const effectiveEffort = runner === "acp" || runner === "openai" ? undefined :
@@ -639,6 +640,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
 		return Object.freeze({
 			runner,
+			acpLaunch: opts.acpLaunch,
 			model,
 			reasoningEffort: runner === "codex" ? effectiveEffort : opts.reasoningEffort,
 			effectiveEffort,
@@ -779,7 +781,7 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
-						...(opts.acpLaunch ? { acpLaunch: opts.acpLaunch } : {}),
+						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
 						model,

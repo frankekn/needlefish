@@ -155,46 +155,54 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   assert.equal(nextCodex.callTimeoutMs, 45000);
 });
 
-test("ACP review runtime stays unknown even when a caller supplies model and effort", async (t) => {
-  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-acp-"));
-  t.after(() => rmSync(tmp, { recursive: true, force: true }));
-  const repo = initRepo(tmp);
-  const bin = path.join(tmp, "agent.cjs");
-  const capture = path.join(tmp, "requests.jsonl");
-  writeFileSync(bin, [
-    "#!/usr/bin/env node",
-    "const fs = require('node:fs');",
-    "const rl = require('node:readline').createInterface({ input: process.stdin });",
-    "const send = value => process.stdout.write(JSON.stringify(value) + '\\n');",
-    "rl.on('line', line => {",
-    `  fs.appendFileSync(${JSON.stringify(capture)}, line + '\\n');`,
-    "  const request = JSON.parse(line);",
-    "  let result = {};",
-    "  if (request.method === 'initialize') result = { protocolVersion: 1, agentCapabilities: {} };",
-    "  if (request.method === 'session/new') result = { sessionId: 'sess' };",
-    "  if (request.method === 'session/prompt') {",
-    "    const text = JSON.stringify({ summary: 'ok', findings: [], checked: ['ACP reviewed'], residual_risks: [] });",
-    "    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
-    "    result = { stopReason: 'end_turn' };",
-    "  }",
-    "  send({ jsonrpc: '2.0', id: request.id, result });",
-    "});",
-  ].join("\n"));
-  chmodSync(bin, 0o755);
-  environment(t, { NEEDLEFISH_ACP_BIN: bin, NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
-  const result = await review({
-    repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
-    changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
-  }, { runner: "acp", model: "caller-guess", reasoningEffort: "high", timeoutMs: 5000 });
-  assert.equal(result.verdict, "pass");
-  assert.equal(result.runtime?.runner, "acp");
-  assert.deepEqual(result.runtime?.model, { status: "unknown" });
-  assert.deepEqual(result.runtime?.effort, { status: "unknown" });
-  const requests = readFileSync(capture, "utf8");
-  assert.equal(requests.includes("caller-guess"), false);
-  assert.equal(requests.includes("launcherDigest"), false);
-  assert.deepEqual(result.stats?.map((stat) => stat.model), [undefined, undefined]);
-});
+for (const namedLaunch of [false, true]) {
+  test(`ACP review runtime stays unknown with named launch=${namedLaunch}`, async (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-acp-"));
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const repo = initRepo(tmp);
+    const bin = path.join(tmp, "agent.cjs");
+    const capture = path.join(tmp, "requests.jsonl");
+    const launches = path.join(tmp, "launches.jsonl");
+    writeFileSync(bin, [
+      "#!/usr/bin/env node",
+      "const fs = require('node:fs');",
+      `fs.appendFileSync(${JSON.stringify(launches)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
+      "const rl = require('node:readline').createInterface({ input: process.stdin });",
+      "const send = value => process.stdout.write(JSON.stringify(value) + '\\n');",
+      "rl.on('line', line => {",
+      `  fs.appendFileSync(${JSON.stringify(capture)}, line + '\\n');`,
+      "  const request = JSON.parse(line);",
+      "  let result = {};",
+      "  if (request.method === 'initialize') result = { protocolVersion: 1, agentCapabilities: {} };",
+      "  if (request.method === 'session/new') result = { sessionId: 'sess' };",
+      "  if (request.method === 'session/prompt') {",
+      "    const text = JSON.stringify({ summary: 'ok', findings: [], checked: ['ACP reviewed'], residual_risks: [] });",
+      "    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
+      "    result = { stopReason: 'end_turn' };",
+      "  }",
+      "  send({ jsonrpc: '2.0', id: request.id, result });",
+      "});",
+    ].join("\n"));
+    chmodSync(bin, 0o755);
+    environment(t, { NEEDLEFISH_ACP_BIN: namedLaunch ? path.join(tmp, "wrong-agent") : bin, NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
+    const result = await review({
+      repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
+      changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
+    }, { runner: "acp", model: namedLaunch ? "selected-model" : "caller-guess", reasoningEffort: "high", timeoutMs: 5000,
+      ...(namedLaunch ? { acpLaunch: { command: bin, args: ["--model", "selected-model"] } } : {}),
+    });
+    assert.equal(result.verdict, "pass");
+    assert.equal(result.runtime?.runner, "acp");
+    assert.deepEqual(result.runtime?.model, { status: "unknown" });
+    assert.deepEqual(result.runtime?.effort, { status: "unknown" });
+    const requests = readFileSync(capture, "utf8");
+    assert.equal(requests.includes("caller-guess"), false);
+    assert.equal(requests.includes("launcherDigest"), false);
+    assert.deepEqual(result.stats?.map((stat) => stat.model), namedLaunch ? ["selected-model", "selected-model"] : [undefined, undefined]);
+    assert.deepEqual(readFileSync(launches, "utf8").trim().split("\n").map((line) => JSON.parse(line)),
+      namedLaunch ? [["--model", "selected-model"], ["--model", "selected-model"]] : [[], []]);
+  });
+}
 
 for (const scenario of [
   { name: "provider", provider: "next-provider", authMode: "oauth", initialAuthMode: "oauth", stagedAuth: true },
