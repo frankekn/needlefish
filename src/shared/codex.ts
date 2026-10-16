@@ -59,6 +59,7 @@ import {
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
 	prepareRunnerSandbox,
+	type RunnerSandbox,
 } from "./runner-sandbox.js";
 
 export { isRunnerSafetyError } from "./runner-sandbox.js";
@@ -542,6 +543,7 @@ export interface CodexOptions extends RunnerOptions {
 	readonly targetHeadSha: string;
 	readonly targetBaseSha?: string;
 	readonly targetPatch?: string;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
 	readonly onFailedAttempt?: (
@@ -820,6 +822,7 @@ async function runCodexOnce(
 					targetHeadSha: opts.targetHeadSha,
 					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
+					...(opts.snapshot ? { snapshot: opts.snapshot } : {}),
 					tmp,
 				});
 				return {

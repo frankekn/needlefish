@@ -166,8 +166,8 @@ export function hasHeadCommit(cwd: string): boolean {
 // and external diff drivers stay off: they would rewrite or replace the patch.
 const UNCOMMITTED_DIFF = ["diff", "--no-textconv", "--no-ext-diff"];
 
-function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = [...UNCOMMITTED_DIFF, ...extraArgs, "HEAD"];
+function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[], baseSha: string): string[] {
+  const args = [...UNCOMMITTED_DIFF, ...extraArgs, baseSha];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -255,20 +255,32 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  // shortcut: matching reads miss edits reverted between reads; use OS snapshots if atomic capture is required.
+  const bundle = captureUncommittedBundle(cwd, opts, baseSha);
+  const checked = captureUncommittedBundle(cwd, opts, baseSha);
+  const currentHead = hasHeadCommit(cwd) ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  if (currentHead !== baseSha || JSON.stringify(bundle) !== JSON.stringify(checked)) {
+    throw new Error("Repository changed while capturing uncommitted changes; retry the review.");
+  }
+  return { ...bundle, prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null };
+}
+
+function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: string): Bundle {
+  const headExists = baseSha !== EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd))
+    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", baseSha], cwd))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs([], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
     : "";
   const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
     : "";
   // Rename detection off for the name list only: a `git mv` into a docs path
   // must keep its removed source path, or classification sees docs alone and
   // the fast path skips the review. The patch above keeps its rename headers.
   const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
+    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths, baseSha), cwd)
     : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
@@ -292,12 +304,12 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
-    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    prMeta: null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    // Uncommitted mode has no reviewed commit; read HEAD's blob. An AGENTS.md
-    // that exists only in the working tree is not git policy yet (issue #211).
-    agentsMd: readAgentsAt(cwd, "HEAD"),
+    // Uncommitted mode pins policy to the captured base blob. Working-tree-only
+    // AGENTS.md is not git policy yet; blob-only reads avoid symlink follows (#211).
+    agentsMd: headExists ? readAgentsAt(cwd, baseSha) : NO_AGENTS,
   });
 }
 

@@ -49,4 +49,8 @@ test("tool-less HTTP runner rejects deep and automatically large reviews before 
   const small = await review(bundle, { runner: "openai", model: "probe" });
   assert.equal(small.verdict, "pass");
   assert.equal(requests, 2);
+  const working = await review({ ...bundle, headSha: "WORKING" }, { model: "probe" });
+  assert.equal(working.verdict, "pass");
+  assert.equal(working.headSha, "WORKING");
+  assert.equal(requests, 4);
 });

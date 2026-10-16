@@ -194,7 +194,7 @@ export function formatUncommittedReviewTarget(
   skippedUntracked: readonly string[],
   skippedTracked: readonly string[] = []
 ): string {
-  const lines = ["Review target: uncommitted changes"];
+  const lines = ["Review target: uncommitted changes (captured snapshot)"];
   if (pr !== undefined) lines.push(`PR context: #${pr} metadata only`);
   if (skippedUntracked.length > 0) lines.push(`Skipped untracked files: ${skippedUntracked.join(", ")}`);
   if (skippedTracked.length > 0) lines.push(`Skipped tracked files: ${skippedTracked.join(", ")}`);

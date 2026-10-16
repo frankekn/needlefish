@@ -77,6 +77,7 @@ export interface RunnerSandboxOptions {
   readonly targetHeadSha: string;
   readonly targetBaseSha?: string;
   readonly targetPatch?: string;
+  readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
   readonly tmp: string;
 }
 
@@ -106,15 +107,24 @@ export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandb
       throw new Error(`${options.runner} launch directory must be outside the target repository; move NEEDLEFISH_TMPDIR`);
     }
   }
-  if (options.targetHeadSha === "WORKING") {
+  if (options.targetHeadSha === "WORKING" && !options.snapshot) {
     return prepareWorkingSandbox(options, sourceRepoPath, sandboxPath);
   }
-  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", sourceRepoPath, sandboxPath], sourceRepoPath);
-  git(["fetch", "--quiet", sourceRepoPath, options.targetHeadSha], sandboxPath);
+  const cloneSource = options.snapshot?.repoPath ?? sourceRepoPath;
+  const headSha = options.snapshot?.expectedHeadSha ?? options.targetHeadSha;
+  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", cloneSource, sandboxPath], cloneSource);
+  git(["fetch", "--quiet", cloneSource, headSha], sandboxPath);
   git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandboxPath);
+  if (options.targetHeadSha === "WORKING") {
+    git(["update-ref", "refs/heads/WORKING", headSha], sandboxPath);
+    git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
+    if (options.targetBaseSha === "EMPTY") {
+      git(["update-ref", "refs/heads/EMPTY", `${headSha}^`], sandboxPath);
+    }
+  }
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
-  return finishSandbox(options, sourceRepoPath, sandboxPath, options.targetHeadSha);
+  return finishSandbox(options, sourceRepoPath, sandboxPath, headSha);
 }
 
 function prepareWorkingSandbox(
@@ -125,7 +135,8 @@ function prepareWorkingSandbox(
   if (!options.targetPatch?.trim()) {
     throw new Error("WORKING sandbox requires a target patch");
   }
-  if (options.targetBaseSha !== "EMPTY" && hasHeadCommit(sourceRepoPath)) {
+  if (options.targetBaseSha !== "EMPTY" && (options.targetBaseSha || hasHeadCommit(sourceRepoPath))) {
+    // Initial capture still needs source objects; a pruned base fails checkout.
     git(["clone", "--quiet", "--no-hardlinks", sourceRepoPath, sandboxPath], sourceRepoPath);
     if (options.targetBaseSha) {
       git(["checkout", "--quiet", "--detach", options.targetBaseSha], sandboxPath);
