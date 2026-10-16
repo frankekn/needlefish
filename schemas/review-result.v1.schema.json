@@ -40,6 +40,10 @@
     },
     "headSha": { "type": "string" },
     "reviewTarget": { "type": "string" },
+    "docsOnlyFastPath": {
+      "description": "Set by the review pipeline when docs-only policy skips all model calls. Never supplied by a model.",
+      "type": "boolean"
+    },
     "prNumber": {
       "description": "Present for `needlefish pr <number>`.",
       "type": "integer",

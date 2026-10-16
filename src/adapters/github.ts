@@ -1,5 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reviewExitCode } from "../core/verdict.js";
 import { review } from "../core/review.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
@@ -165,10 +166,10 @@ function nestedString(
 	return isRecord(value) ? stringField(value, nestedField) : "";
 }
 
-const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure" | "neutral"> = {
+const VERDICT_CONCLUSION: Record<Verdict, "success" | "failure"> = {
 	pass: "success",
 	changes_requested: "failure",
-	needs_human: "neutral",
+	needs_human: "failure",
 };
 
 export const VERDICT_LABELS: Record<Verdict, string> = {
@@ -1016,7 +1017,7 @@ const SEV_RANK: Record<Finding["severity"], number> = {
 const VERDICT_HEADLINE_WORD: Record<Verdict, string> = {
 	pass: "LGTM",
 	changes_requested: "CHANGES REQUESTED",
-	needs_human: "NEEDS HUMAN",
+	needs_human: "REVIEW INCOMPLETE. HUMAN CONFIRMATION REQUIRED",
 };
 
 function oneLine(text: string): string {
@@ -1044,7 +1045,9 @@ function firstBlockingResidual(
 }
 
 function checkRunTitle(result: ReviewResult): string {
-	const base = `Needlefish: ${result.verdict}`;
+	const base = result.verdict === "needs_human"
+		? "Needlefish: needs_human. Review incomplete; human confirmation required"
+		: `Needlefish: ${result.verdict}`;
 	if (result.verdict === "changes_requested") {
 		const top = topBlockingFinding(result.findings);
 		if (top) return truncateLine(`${base} — ${oneLine(top.title)}`, 120);
@@ -1429,7 +1432,7 @@ function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipRe
 //
 // Fail-closed on an unreadable check list: an extra review is the safe error,
 // a silently skipped one is not.
-function hasCompletedVerdictCheck(repo: string, headSha: string): boolean {
+function completedCheckVerdict(repo: string, headSha: string): Verdict | null {
 	let raw: unknown;
 	try {
 		raw = ghJson([
@@ -1441,23 +1444,24 @@ function hasCompletedVerdictCheck(repo: string, headSha: string): boolean {
 		process.stderr.write(
 			`needlefish: could not read check runs for ${headSha}: ${msg}; re-reviewing instead of skipping.\n`,
 		);
-		return false;
+		return null;
 	}
-	if (!isRecord(raw)) return false;
+	if (!isRecord(raw)) return null;
 	const runs = raw.check_runs;
-	if (!Array.isArray(runs)) return false;
-	const entries: unknown[] = runs;
-	return entries.some((run) => {
-		if (!isRecord(run)) return false;
-		if (stringField(run, "status") !== "completed") return false;
+	if (!Array.isArray(runs)) return null;
+	const runId = (run: JsonRecord): number => typeof run.id === "number" ? run.id : 0;
+	const entries = runs.filter(isRecord).sort((a, b) => runId(b) - runId(a));
+	for (const run of entries) {
+		if (stringField(run, "status") !== "completed") continue;
 		const conclusion = stringField(run, "conclusion");
 		const title = nestedString(run, "output", "title");
-		return (
-			(conclusion === "success" && title === "Needlefish: pass") ||
-			(conclusion === "neutral" && title.startsWith("Needlefish: needs_human")) ||
-			(conclusion === "failure" && title.startsWith("Needlefish: changes_requested"))
-		);
-	});
+		if (conclusion === "success" && title === "Needlefish: pass") return "pass";
+		if (conclusion === "neutral" && title.startsWith("Needlefish: needs_human")) return null;
+		if (conclusion !== "failure") continue;
+		if (title.startsWith("Needlefish: needs_human")) return "needs_human";
+		if (title.startsWith("Needlefish: changes_requested")) return "changes_requested";
+	}
+	return null;
 }
 
 // A job timeout or watchdog terminates the process while the owned check is
@@ -1585,7 +1589,9 @@ export async function runGithub(
 	// the marker is the review-body receipt, the check is the delivery proof.
 	const prev = findPreviousReview(repo, prNumber);
 	if (prev && prev.state.headSha === headSha && !recheck) {
-		if (hasCompletedVerdictCheck(repo, headSha)) {
+		const verdict = completedCheckVerdict(repo, headSha);
+		if (verdict !== null) {
+			process.exitCode = reviewExitCode(verdict);
 			process.stderr.write(
 				`needlefish: head ${headSha} already reviewed; pass --recheck to force.\n`,
 			);
@@ -1691,7 +1697,7 @@ export async function runGithub(
 			);
 			return;
 		}
-		if (result.verdict === "changes_requested") process.exitCode = 1;
+		process.exitCode = reviewExitCode(result.verdict);
 		// Run before posting this result so fresh round comments are not swept.
 		// This also clears stale infra-error comments when the first successful
 		// review has no previous state-bearing review.
