@@ -58,7 +58,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
       "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
-      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368 } } : {})); process.exit(0); }",
+      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/7') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
@@ -210,7 +210,7 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
       "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
-      "if (args.includes('--input')) { process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368 } } : {})); process.exit(0); }",
+      "if (args.includes('--input')) { process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/9') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
