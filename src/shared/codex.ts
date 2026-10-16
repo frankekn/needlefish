@@ -858,6 +858,7 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
+			opts.connectionAuth?.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {

@@ -57,6 +57,8 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     else send({id:request.id,result:{sessionId:'test-session'}});
   }
   if (request.method === 'session/prompt') {
+    if (mode === 'success-stderr-leak') process.stderr.write(process.env.AGENT_API_KEY + '\\n');
+    if (mode === 'success-stdout-leak') send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
     if (mode === 'stderr-leak') {
       process.stderr.write('auth error code: ' + process.env.AGENT_API_KEY + '\\n', () => process.exit(1));
       return;
@@ -275,7 +277,7 @@ for (const mode of ["leak", "leak-fenced"]) {
   });
 }
 
-for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded"]) {
+for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded", "success-stderr-leak", "success-stdout-leak"]) {
   test(`GitHub never posts an echoed selected credential: ${mode}`, (t) => {
     const credential = mode === "leak-fenced" ? keyA : "synthetic_secret_a1234567890";
     const f = fixture(t, mode, credential);
@@ -334,6 +336,36 @@ for (const [name, overrides, expected] of [
     assert.match(result.stderr, expected);
     assert.doesNotMatch(result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY/);
     assert.equal(f.records().length, 0);
+    f.clean();
+  });
+}
+
+for (const mode of ["success-stderr-leak", "success-stdout-leak"]) {
+  test(`${mode}: successful transcript screening preserves private failed evidence`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([harness(f, false)], { NEEDLEFISH_NO_RETRY: "1" });
+    assert.equal(result.status, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      ok: false,
+      message: "Needlefish withheld runner output: it contained a selected connection credential.",
+      name: "Error",
+      safetyError: false,
+      sawFailedRaw: true,
+      sawFailedAttemptRaw: true,
+    });
+    assert.equal(f.records().length, 1);
+    f.clean();
+  });
+
+  test(`${mode}: trace-enabled CLI withholds successful transcript before result or cache`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], { NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_NO_RETRY: "1" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /withheld.*credential/);
+    assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY/);
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
+    assert.equal(f.records().length, 1);
     f.clean();
   });
 }

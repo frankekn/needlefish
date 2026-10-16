@@ -87,8 +87,17 @@ These names are examples, not universal agent flags or credential conventions.
 Use your agent's documented credential variable. Supply each source through a
 trusted launch environment or secret manager; do not paste credentials into the
 configuration or command arguments. Targets must be `API_KEY`/`TOKEN` or end in
-`_API_KEY`/`_TOKEN`. GitHub/Git orchestration variables cannot be sources or
-targets; process, HOME, executable and routing overrides are not auth bindings.
+`_API_KEY`/`_TOKEN`. Targets beginning with `GH_`, `GITHUB_`, `GIT_` or
+`NEEDLEFISH_` are reserved.
+
+Source names must be environment identifiers. Validation rejects these source
+prefixes without regard to case: `GH_`, `GITHUB_`, `GIT_`, `NEEDLEFISH_`, `XDG_`,
+`NODE_`, `LD_` and `DYLD_`. It also rejects `HOME`, `USERPROFILE`, `HOMEDRIVE`,
+`HOMEPATH`, `PATH`, `PATHEXT`, `SHELL`, `COMSPEC`, `BASH_ENV`, `ENV`, `HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`. This denylist is not a general secret or
+capability classifier. Other explicit source mappings, including values that name
+host resources, are the trusted operator's responsibility. An unrestricted agent
+may still access any host resource available to its user.
 
 Selection snapshots only the chosen sources. Missing, empty, invalid or
 whitespace-wrapped values stop before launch: no default account, login probe or
@@ -100,16 +109,18 @@ decoded JSON in Markdown fences. A complete selected credential value, including
 its JSON-escaped form, stops the review with a safe diagnostic. Partial values,
 other encodings and transformations are not covered. Raw agent transcripts remain
 sensitive and can contain credentials.
-`--dry-run` and docs-only zero-model reviews validate the configuration but do not
-require or bind credentials. Other reviews bind once after collecting the bundle,
-before any model starts.
+`--dry-run` and docs-only zero-model reviews validate the configuration schema
+and source names but do not require or bind credentials. They do not validate
+compatibility with unused runtime environment passthrough. Other reviews bind
+once after collecting the bundle, before any model starts.
 
 Explicit auth always gets a new empty disposable HOME/USERPROFILE and XDG
 config/data/cache/state roots, even when `NEEDLEFISH_EPHEMERAL_HOME` is off.
 No ambient ACP auth files or user config are copied. Existing Git-config blocking,
 empty GitHub config, shared deadline, process-group termination and cleanup apply.
-HTTP(S) proxy variables from the existing base allowlist are retained. Nonempty
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` is rejected, not silently dropped: reconcile
+HTTP(S) proxy variables from the existing base allowlist are retained. Before an
+authenticated model run, nonempty `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` is rejected,
+not silently dropped: reconcile
 any required endpoint/CA/routing settings before using this mode. Arbitrary
 per-connection environment and file-based routing are outside this increment.
 
