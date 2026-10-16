@@ -107,6 +107,7 @@ export async function runManagedRunnerProcess(
     let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     let giveUpTimer: ReturnType<typeof setTimeout> | null = null;
     let killStarted = false;
+    let processGroupReleased = false;
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: invocation.repoPath,
@@ -117,7 +118,7 @@ export async function runManagedRunnerProcess(
     const childClosed = new Promise<void>((resolve) => child.once("close", () => resolve()));
 
     const forceKillSequence = (): void => {
-      if (settled) return;
+      if (settled || giveUpTimer !== null) return;
       killStarted = true;
       if (timer !== null) {
         clearTimeout(timer);
@@ -135,10 +136,9 @@ export async function runManagedRunnerProcess(
         clearTimeout(hardKillTimer);
         hardKillTimer = null;
       }
-      signalRunnerProcessTree(child, "SIGKILL");
-      if (giveUpTimer === null) {
-        giveUpTimer = setTimeout(() => finish(null, "SIGKILL"), runnerSigkillGiveUpMs());
-      }
+      if (!processGroupReleased) signalRunnerProcessTree(child, "SIGKILL");
+      // Escaped descendants may still hold pipes after the owned group is gone.
+      giveUpTimer = setTimeout(() => finish(null, "SIGKILL"), runnerSigkillGiveUpMs());
     };
 
     const beginKillSequence = (firstSignal: NodeJS.Signals): void => {
@@ -160,15 +160,8 @@ export async function runManagedRunnerProcess(
         clearTimeout(cancelTimer);
         cancelTimer = null;
       }
-      signalRunnerProcessTree(child, firstSignal);
-      hardKillTimer = setTimeout(() => {
-        signalRunnerProcessTree(child, "SIGKILL");
-        giveUpTimer = setTimeout(() => {
-          // A setsid-escaped descendant has left this kill group and may keep inherited pipes open.
-          // We cannot kill that escapee here; the goal is to stop waiting for child "close".
-          finish(null, "SIGKILL");
-        }, runnerSigkillGiveUpMs());
-      }, runnerTimeoutGraceMs());
+      if (!processGroupReleased) signalRunnerProcessTree(child, firstSignal);
+      hardKillTimer = setTimeout(forceKillSequence, runnerTimeoutGraceMs());
     };
 
     const finish = (status: number | null, signal: NodeJS.Signals | null): void => {
@@ -305,6 +298,10 @@ export async function runManagedRunnerProcess(
       spawnError = error;
       finish(null, null);
     });
+    child.once("exit", () => {
+      if (killStarted) forceKillSequence();
+      processGroupReleased = true;
+    });
     child.on("close", (status, signal) => {
       unregisterProcessGroup();
       finish(status, signal);
@@ -348,8 +345,8 @@ function runnerSigkillGiveUpMs(): number {
 function signalRunnerProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
   const pid = child.pid;
   if (pid === undefined) return;
-  if (child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) return;
     const args = ["/pid", String(pid), "/T"];
     if (signal === "SIGKILL") args.push("/F");
     spawnSync("taskkill", args, { stdio: "ignore" });
