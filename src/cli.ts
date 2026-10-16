@@ -71,14 +71,15 @@ async function main() {
     return;
   }
 
-  const opts = command.kind === "github"
-    ? command.opts
-    : resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
-
   // --dry-run only collects and prints the bundle: no runners spawn, so the
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
+  // Review adapters have the bundle needed to decide whether credentials are
+  // needed. Preview and explain resolve here; neither uses those adapters.
+  const opts = dryRun || command.kind === "explain"
+    ? resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun)
+    : command.opts;
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {
