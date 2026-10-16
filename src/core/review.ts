@@ -1135,7 +1135,9 @@ export async function review(
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace
 		? { failed: false, pending: new Set() }
 		: undefined;
-	const snapshotTmp = bundle.headSha === "WORKING" ? await createManagedTempDirectory() : undefined;
+	const snapshotTmp = bundle.headSha === "WORKING" && resolveRunner(runnerOptions) !== "openai"
+		? await createManagedTempDirectory()
+		: undefined;
 	let snapshot: RunnerSandbox | undefined;
 	try {
 		if (snapshotTmp) {

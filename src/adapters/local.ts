@@ -298,8 +298,8 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
     prMeta: null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    // Uncommitted mode has no reviewed commit; read HEAD's blob. An AGENTS.md
-    // that exists only in the working tree is not git policy yet (issue #211).
+    // Uncommitted mode pins policy to the captured base blob. Working-tree-only
+    // AGENTS.md is not git policy yet; blob-only reads avoid symlink follows (#211).
     agentsMd: headExists ? readAgentsAt(cwd, baseSha) : NO_AGENTS,
   });
 }

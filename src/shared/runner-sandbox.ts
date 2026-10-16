@@ -126,6 +126,7 @@ function prepareWorkingSandbox(
     throw new Error("WORKING sandbox requires a target patch");
   }
   if (options.targetBaseSha !== "EMPTY" && (options.targetBaseSha || hasHeadCommit(sourceRepoPath))) {
+    // Initial capture still needs source objects; a pruned base fails checkout.
     git(["clone", "--quiet", "--no-hardlinks", sourceRepoPath, sandboxPath], sourceRepoPath);
     if (options.targetBaseSha) {
       git(["checkout", "--quiet", "--detach", options.targetBaseSha], sandboxPath);
