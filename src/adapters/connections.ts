@@ -53,37 +53,20 @@ async function safeAncestors(directory: string): Promise<void> {
   }
 }
 
-async function location(repo: string, env: NodeJS.ProcessEnv, create = false) {
+async function location(repo: string, env: NodeJS.ProcessEnv) {
   let file: string;
   try { file = connectionsFile(env); } catch { return fail("unsafe_configuration"); }
   if ([".", ".."].includes(path.basename(file)) || file.endsWith(path.sep)) return fail("unsafe_configuration");
   const suppliedParent = path.dirname(file);
   try {
-    let ancestor = suppliedParent;
-    const missing: string[] = [];
-    let stat;
-    for (;;) {
-      try { stat = await fs.lstat(ancestor); break; }
-      catch (error) {
-        if (!hasCode(error, "ENOENT") || path.dirname(ancestor) === ancestor) throw error;
-        missing.unshift(path.basename(ancestor)); ancestor = path.dirname(ancestor);
-      }
-    }
+    const stat = await fs.lstat(suppliedParent);
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o022) !== 0) return fail("unsafe_configuration");
-    const canonicalAncestor = await fs.realpath(ancestor);
-    await safeAncestors(canonicalAncestor);
-    const parent = path.join(canonicalAncestor, ...missing);
-    const nested = path.relative(canonicalAncestor, parent);
-    if (path.isAbsolute(nested) || nested === ".." || nested.startsWith(`..${path.sep}`)) return fail("unsafe_configuration");
+    const parent = await fs.realpath(suppliedParent);
+    await safeAncestors(parent);
     const canonical = path.join(parent, path.basename(file));
     const relative = path.relative(targetRoot(repo), canonical);
     if (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`)) return fail("unsafe_configuration");
-    if (missing.length && create) await fs.mkdir(parent, { recursive: true, mode: 0o700 });
-    if (missing.length && !create) return { file: canonical, parent, syncThrough: canonicalAncestor, identity: undefined };
-    const final = await fs.lstat(parent);
-    if (!final.isDirectory() || final.isSymbolicLink() || final.uid !== process.getuid?.() || (final.mode & 0o022) !== 0
-      || await fs.realpath(parent) !== parent) return fail("unsafe_configuration");
-    return { file: canonical, parent, syncThrough: canonicalAncestor, identity: { dev: final.dev, ino: final.ino } };
+    return { file: canonical, parent, identity: { dev: stat.dev, ino: stat.ino } };
   } catch (error) {
     if (error instanceof ConnectionsError) throw error;
     return fail("configuration_unavailable");
@@ -93,17 +76,10 @@ type Location = Awaited<ReturnType<typeof location>>;
 async function stableParent(loc: Location): Promise<void> {
   await safeAncestors(loc.parent);
   const stat = await fs.lstat(loc.parent);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== loc.identity?.dev || stat.ino !== loc.identity?.ino
+  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== loc.identity.dev || stat.ino !== loc.identity.ino
     || stat.uid !== process.getuid?.() || (stat.mode & 0o022) !== 0) fail("unsafe_configuration");
 }
 async function snapshot(loc: Location) {
-  if (!loc.identity) {
-    try { await fs.lstat(loc.parent); } catch (error) {
-      if (hasCode(error, "ENOENT")) return { revision: MISSING, parsed: validate({ version: 1, connections: [] }) };
-      throw error;
-    }
-    return fail("configuration_unavailable");
-  }
   await stableParent(loc);
   let handle;
   try { handle = await fs.open(loc.file, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)); }
@@ -136,7 +112,7 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
   const bytes = Buffer.from(JSON.stringify(parsed.document) + "\n");
   if (bytes.length > MAX_DOCUMENT) fail("invalid_configuration");
   cancelled(signal);
-  const loc = await location(repo, env, true);
+  const loc = await location(repo, env);
   cancelled(signal);
   const lockPath = `${loc.file}.lock`;
   let lock;
@@ -175,10 +151,7 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
             const currentLock = await fs.lstat(lockPath);
             if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail(committed ? "save_state_unknown" : "save_failed");
             await fs.unlink(lockPath);
-            for (let directory = loc.parent; ; directory = path.dirname(directory)) {
-              await syncDirectory(directory);
-              if (directory === loc.syncThrough) break;
-            }
+            await syncDirectory(loc.parent);
           }
         }
       }

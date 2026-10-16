@@ -375,9 +375,9 @@ nothing. Add, edit, and delete profiles by changing the complete `document` from
 and `auth.route` fields. Parsed execution objects contain internal `auth.kind`
 and substituted arguments, so they are not an editable document.
 
-A missing file has revision `missing`. Missing configuration directories remain
-absent during reads and validation. A valid first apply creates them with mode
-0700 under a user-owned parent. Existing invalid configurations are errors and
+A missing file has revision `missing`. The configuration parent directory must
+already exist and belong to the current user. A missing parent returns
+`configuration_unavailable` and writes nothing. Existing invalid configurations are errors and
 cannot be overwritten by an apply. Files must be regular, user-owned, outside the
 reviewed repository, and have no extra hard links. Configuration directories and
 files must not permit writes by other users. Canonical ancestors must belong to
@@ -389,9 +389,8 @@ read-only `--connection` resolver.
 Apply locks the canonical configuration path with an exclusive `.lock` file.
 It compares the exact original byte revision, writes a same-directory exclusive
 0600 temporary file, syncs the file, checks the revision again, renames it, and
-syncs the directory. It then removes its lock and syncs the directory chain
-through the first pre-existing parent of newly created directories. Existing
-configuration directories require only their own sync after lock removal. `revision_conflict`
+syncs the directory. It then removes its lock and syncs that directory again
+before reporting success. `revision_conflict`
 requires a reload and an explicit draft
 reapply. `config_busy` never removes an existing lock, even if it appears stale.
 A failure before rename preserves the original file. `save_state_unknown` means

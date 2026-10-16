@@ -213,13 +213,17 @@ test("real CLI machine operations never launch ACP version/login/model or echo i
 });
 
 
-test("missing configuration directories remain read-only until a valid first apply", async t => {
+test("missing configuration directories require an existing user-provisioned parent", async t => {
   const f = await fixture(t);
   const parent = path.join(f.config, "new", "needlefish");
   const env = { NEEDLEFISH_CONNECTIONS_FILE: path.join(parent, "connections.json") };
-  assert.deepEqual(await runConnections("edit", f.repo, undefined, env), { schemaVersion: 1, ok: true, baseRevision: "missing", document: { version: 1, connections: [] } });
+  error(await runConnections("edit", f.repo, undefined, env), "configuration_unavailable");
+  error(await runConnections("list", f.repo, undefined, env), "configuration_unavailable");
   error(await runConnections("apply", f.repo, { expectedRevision: "missing", document: null }, env), "invalid_configuration");
   await assert.rejects(fs.stat(parent), { code: "ENOENT" });
+  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env), "configuration_unavailable");
+  await assert.rejects(fs.stat(parent), { code: "ENOENT" });
+  await fs.mkdir(parent, { recursive: true, mode: 0o700 });
   success(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env));
   assert.equal((await fs.stat(parent)).mode & 0o777, 0o700);
   assert.equal(await fs.readFile(env.NEEDLEFISH_CONNECTIONS_FILE, "utf8"), JSON.stringify(document) + "\n");
@@ -269,9 +273,9 @@ test("configuration paths reject non-sticky writable ancestors and permit truste
 });
 
 
-test("first save syncs new directory entries and successful lock removal before returning", async t => {
+test("successful apply syncs owned lock removal before returning", async t => {
   const f = await fixture(t);
-  const parent = path.join(f.config, "new", "needlefish");
+  const parent = f.config;
   const file = path.join(parent, "connections.json"), env = { NEEDLEFISH_CONNECTIONS_FILE: file };
   const synced: string[] = [];
   let lockRemoved = false;
@@ -289,12 +293,12 @@ test("first save syncs new directory entries and successful lock removal before 
     return handle;
   });
   success(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env));
-  assert.deepEqual(synced.slice(0, 3), ["config/new/needlefish", "config/new", "config"]);
+  assert.deepEqual(synced.slice(0, 3), ["config"]);
   assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
   assert.deepEqual(await fs.readdir(parent), ["connections.json"]);
 });
 
-test("directory sync failure after lock removal or in a created ancestor reports unknown", async t => {
+test("directory sync failure after lock removal reports unknown", async t => {
   const f = await fixture(t);
   const open = fs.open, unlink = fs.unlink;
   let lockRemoved = false;
@@ -314,20 +318,10 @@ test("directory sync failure after lock removal or in a created ancestor reports
   assert.equal(await fs.readFile(f.file, "utf8"), JSON.stringify(document) + "\n");
   assert.deepEqual(await fs.readdir(f.config), ["connections.json"]);
   mocked.mock.restore();
-  lockRemoved = false;
-  const parent = path.join(f.config, "new", "needlefish"), file = path.join(parent, "connections.json");
-  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
-    const handle = await open(...args);
-    if (String(args[0]) === path.join(f.config, "new")) t.mock.method(handle, "sync", async () => { throw new Error("fake ancestor sync fault"); });
-    return handle;
-  });
-  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "save_state_unknown");
-  assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
-  assert.deepEqual(await fs.readdir(parent), ["connections.json"]);
 });
 
 
-test("saves sync the created chain without opening unrelated traversable ancestors", async t => {
+test("saves sync the owned directory without opening unrelated traversable ancestors", async t => {
   const f = await fixture(t);
   const traversable = path.join(f.root, "traversable"), owned = path.join(traversable, "owned");
   await fs.mkdir(traversable, { mode: 0o711 }); await fs.mkdir(owned, { mode: 0o700 });
@@ -338,6 +332,7 @@ test("saves sync the created chain without opening unrelated traversable ancesto
   });
   for (const file of [path.join(owned, "connections.json"), path.join(owned, "new", "needlefish", "connections.json")]) {
     const env = { NEEDLEFISH_CONNECTIONS_FILE: file };
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     success(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, env));
     assert.equal(await fs.readFile(file, "utf8"), JSON.stringify(document) + "\n");
     await assert.rejects(fs.stat(`${file}.lock`), { code: "ENOENT" });
@@ -345,11 +340,11 @@ test("saves sync the created chain without opening unrelated traversable ancesto
 });
 
 
-test("missing dot-segment paths cannot escape the verified directory creation anchor", async t => {
+test("missing dot-segment paths cannot redirect writes to an existing sibling", async t => {
   const f = await fixture(t);
   const sibling = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "nf-editor-sibling-")));
   t.after(() => fs.rm(sibling, { recursive: true, force: true }));
   const file = `${f.root}/missing/../../${path.basename(sibling)}/connections.json`;
-  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "unsafe_configuration");
+  error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "configuration_unavailable");
   assert.deepEqual(await fs.readdir(sibling), []);
 });
