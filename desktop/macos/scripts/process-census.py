@@ -25,12 +25,15 @@ selected = [
 process = subprocess.Popen(["swift", "test", "--package-path", str(args.package), "-j", "2", "--filter", "|".join(selected)], start_new_session=True)
 print(f"Census test process group {process.pid}", flush=True)
 try:
-    status = process.wait()
+    os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
 finally:
     try:
         os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # Darwin reports EPERM when the unreaped zombie is the group's only member.
         pass
+    finally:
+        status = process.wait()
 if status:
     raise SystemExit(status)
 print(json.dumps({

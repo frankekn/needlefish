@@ -21,13 +21,17 @@ def run(args):
     process = subprocess.Popen(args, start_new_session=True)
     print(f"process group {process.pid}", flush=True)
     try:
-        if process.wait() != 0:
-            raise RuntimeError(f"Command failed: {args[0]}")
+        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
     finally:
         try:
             os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # Darwin reports EPERM when the unreaped zombie is the group's only member.
             pass
+        finally:
+            status = process.wait()
+    if status != 0:
+        raise RuntimeError(f"Command failed: {args[0]}")
 
 
 def verify_runtime(source, lock):

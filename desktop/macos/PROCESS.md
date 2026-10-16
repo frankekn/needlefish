@@ -18,6 +18,8 @@ Before finalizer consolidation, the existing normal, nonzero, cancel and timeout
 
 Run `python3 desktop/macos/scripts/process-census.py --package desktop/macos` to repeat the actor assertions without accounts or model calls. The script checks host capacity, starts the selected tests in their own process group and removes that group after completion.
 
+The Python packager and census observe leader exit with `waitid(WNOWAIT)`, signal the owned group, then reap the leader. The unreaped leader reserves its PID until signalling completes. Darwin returns `EPERM` for a group containing only zombies, so these scripts tolerate that result. Their SIGTERM cleanup is best effort and cannot stop descendants that ignore the signal or change credentials, session, or group.
+
 Installation app versions use separate UUID paths. The one current/previous receipt is a real shared invariant, so each install, rollback and uninstall transaction holds a nonblocking OS lock on the owned root directory. Another running app receives a retry message. No lockfile, daemon or user credential is added.
 
 The group finalizer sends SIGKILL. It does not prove synchronously that every attached writer has closed. A bounded Foundation/POSIX probe on production source `3559924` ran sixteen normal-leader-exit cases with a child that wrote one known valid JSON result in two chunks. All sixteen produced that exact typed result. Separate cancellation and timeout cases ignored a complete pass JSON and returned their terminal errors. This finite probe found no incorrect visible result; it does not prove all possible process schedules. Bounded pipe capture, strict JSON and verdict checks remain the consumer boundary. No generic process-tree supervisor is claimed.
