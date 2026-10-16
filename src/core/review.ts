@@ -12,6 +12,7 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
+import { findRunnerFailure } from "../shared/runner-failure.js";
 import { resolveRunner } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -970,6 +971,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 					};
 				} catch (e) {
 					if (isRunnerSafetyError(e)) throw e;
+					const failure = findRunnerFailure(e);
+					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).
