@@ -313,6 +313,90 @@ test("prepareRunnerSandbox leaves the prompt untouched when no LFS is configured
   assert.equal(sandbox.lfsScanIncomplete, false);
 });
 
+function makeUnreadableAttributes(
+  t: { after: (fn: () => void) => void },
+  sandboxTmp: string,
+  failure?: "blob" | "candidates"
+): void {
+  const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  const bin = path.join(sandboxTmp, "bin");
+  mkdirSync(bin);
+  const wrapper = path.join(bin, "git");
+  writeFileSync(wrapper, `#!${process.execPath}
+const { spawnSync } = require("node:child_process");
+const { chmodSync, readFileSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const args = process.argv.slice(2);
+if (${JSON.stringify(failure)} === "blob" && args.includes("cat-file") && args.includes("blob")) process.exit(1);
+if (${JSON.stringify(failure)} === "candidates" && args.includes(":(attr:filter=lfs)")) process.exit(1);
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: ["inherit", "pipe", "pipe"] });
+if (args.includes("ls-files") && args.includes("*.gitattributes")) {
+  const file = path.join(process.cwd(), ".gitattributes");
+  chmodSync(file, 0);
+  try { readFileSync(file); process.exit(2); } catch {}
+  writeFileSync(${JSON.stringify(path.join(sandboxTmp, "unreadable"))}, "EACCES");
+}
+process.stdout.write(result.stdout);
+process.stderr.write(result.stderr);
+process.exit(result.status ?? 1);
+`);
+  chmodSync(wrapper, 0o755);
+  restoreEnv(t, "PATH");
+  process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ""}`;
+}
+
+for (const scenario of [
+  { name: "plain attributes", attributes: "*.txt text eol=crlf\n", incomplete: false, pointer: false },
+  { name: "LFS attributes", attributes: "*.bin filter=lfs -text\n", incomplete: false, pointer: true },
+  { name: "failed LFS candidates", attributes: "*.bin filter=lfs -text\n", failure: "candidates", incomplete: true, pointer: false },
+  { name: "failed blob read", attributes: "*.txt text\n", failure: "blob", incomplete: true, pointer: false },
+  { name: "oversized blob", attributes: "#".repeat(256 * 1024 + 1), incomplete: true, pointer: false },
+] satisfies readonly {
+  name: string;
+  attributes: string;
+  failure?: "blob" | "candidates";
+  incomplete: boolean;
+  pointer: boolean;
+}[]) {
+  test(`prepareRunnerSandbox handles unreadable ${scenario.name} from captured Git evidence`, (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), scenario.attributes);
+      writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+    });
+    makeUnreadableAttributes(t, sandboxTmp, scenario.failure);
+    const sandbox = prepareRunnerSandbox({
+      runner: "claude", repoPath: repo, prompt: "REVIEW PROMPT BODY",
+      targetHeadSha: headSha(repo), tmp: sandboxTmp,
+    });
+    assert.equal(readFileSync(path.join(sandboxTmp, "unreadable"), "utf8"), "EACCES");
+    assert.equal(sandbox.lfsScanIncomplete, scenario.incomplete);
+    assert.deepEqual(sandbox.lfsPointerFiles, scenario.pointer ? [Buffer.from("asset.bin")] : []);
+    if (scenario.incomplete || scenario.pointer) assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+    else assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+  });
+}
+
+for (const lfs of [false, true]) {
+  test(`prepareRunnerSandbox uses captured WORKING attributes with LFS ${lfs ? "added" : "removed"}`, (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), lfs ? "*.bin -text\n" : "*.bin filter=lfs -text\n");
+      writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+    });
+    writeFileSync(path.join(repo, ".gitattributes"),
+      `.gitattributes text eol=crlf\n${lfs ? "*.bin filter=lfs -text" : "*.bin -text"}\n`);
+    const patch = git(["diff", "HEAD"], repo, { preserveOutput: true });
+    makeUnreadableAttributes(t, sandboxTmp);
+    const sandbox = prepareRunnerSandbox({
+      runner: "claude", repoPath: repo, prompt: "REVIEW PROMPT BODY",
+      targetHeadSha: "WORKING", targetPatch: patch, tmp: sandboxTmp,
+    });
+    assert.equal(sandbox.lfsScanIncomplete, false);
+    assert.deepEqual(sandbox.lfsPointerFiles, lfs ? [Buffer.from("asset.bin")] : []);
+    if (lfs) assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+    else assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+  });
+}
+
 test("prepareRunnerSandbox does not disclose LFS-tracked files that hold real content", (t) => {
   const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
     writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
