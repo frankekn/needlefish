@@ -43,3 +43,14 @@ test("native runner exposes typed nonretry quota through operational wrapper", a
   });
   assert.equal(attempts, 1);
 });
+
+test("native 0.163 reconnect wrappers retain exact exhaustion semantics", () => {
+  for (const payload of ["insufficient credits", "insufficient account funds", '{"code":"payment_required","message":"usage balance exhausted"}']) {
+    const message=`unexpected status 402 Payment Required: ${payload}, url: http://127.0.0.1:4000/v1/responses`;
+    const stream=JSON.stringify({type:"thread.started",thread_id:"native-proof"})+'\n'+JSON.stringify({type:"turn.started"})+'\n'+JSON.stringify({type:"error",message:`Reconnecting... 1/5 (${message})`})+'\n'+event(message);
+    assert.equal(nativeCodexQuotaExhausted(stream,1),true);
+    assert.equal(nativeCodexQuotaExhausted(JSON.stringify({type:"error",message:`Reconnecting... 1/5 (${message})`}),1),false);
+    assert.equal(nativeCodexQuotaExhausted(event(message.replace("402 Payment Required","401 Unauthorized")),1),false);
+    assert.equal(nativeCodexQuotaExhausted(event(message.replace(payload,"rate limit exceeded")),1),false);
+  }
+});

@@ -1013,6 +1013,15 @@ function* codexEvents(stdout: string): Generator<CodexEvent | null> {
 
 function exhaustedCodexMessage(message: string): boolean {
 	let text = message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	const reconnect = text.match(/^Reconnecting\.\.\. [1-5]\/5 \((.+)\)$/);
+	if (reconnect) text = reconnect[1];
+	const nativeStatus = text.match(/^unexpected status (?:402 Payment Required|429 Too Many Requests): (.+), url: (https?:\/\/\S+)$/);
+	if (text.startsWith("unexpected status ")) {
+		if (!nativeStatus) return false;
+		try { new URL(nativeStatus[2]); } catch { return false; }
+		text = nativeStatus[1];
+	}
+
 	if (/^[{["]/.test(text)) {
 		let raw: unknown;
 		try { raw = JSON.parse(text); } catch { return false; }
@@ -1046,7 +1055,7 @@ export function nativeCodexQuotaExhausted(stdout: string, status: number | null)
 		if (event === null) return false;
 		if (event.kind === "failure") {
 			if (!exhaustedCodexMessage(event.message)) return false;
-			terminal = true;
+			terminal = !/^Reconnecting\.\.\. /.test(event.message);
 		} else if (terminal) return false;
 	}
 	return terminal;
