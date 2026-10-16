@@ -36,8 +36,9 @@ export function publicLauncherCandidates(environment: Readonly<Record<string, st
   const pathApi = platform === "win32" ? path.win32 : path.posix;
   const command = environment.NEEDLEFISH_ACP_BIN?.trim();
   if (!command) return [];
-  if (!pathApi.isAbsolute(command) && ((platform === "win32" ? /[/\\]/.test(command) : command.includes(pathApi.sep)) || (environment.PATH ?? "").split(pathApi.delimiter).some((dir) => !pathApi.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
-  return pathApi.isAbsolute(command) || (platform === "win32" ? /[/\\]/.test(command) : command.includes(pathApi.sep)) ? [command]
+  const fullyQualified = (value: string): boolean => pathApi.isAbsolute(value) && (platform !== "win32" || pathApi.parse(value).root.length > 1);
+  if (!fullyQualified(command) && (pathApi.parse(command).root !== "" || (platform === "win32" ? /[/\\]/.test(command) : command.includes(pathApi.sep)) || (environment.PATH ?? "").split(pathApi.delimiter).some((dir) => !fullyQualified(dir)))) throw new Error("public launcher resolution depends on the target working directory or current drive");
+  return fullyQualified(command) ? [command]
     : (environment.PATH ?? "").split(pathApi.delimiter).flatMap((dir) => executableNames(command, platform, environment.PATHEXT).map((name) => pathApi.join(dir, name)));
 }
 
