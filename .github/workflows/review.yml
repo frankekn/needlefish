@@ -351,6 +351,9 @@ jobs:
               -f head_sha="$PR_HEAD_SHA" \
               -f status="completed" \
               -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "${GITHUB_RUN_ID:-}" --arg round "runner-unavailable-${GITHUB_RUN_ID:-}-${GITHUB_RUN_ATTEMPT:-}" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: runner unavailable" \
               -f "output[summary]=$summary" >/dev/null || true
             echo "$summary" >&2
@@ -588,6 +591,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$RUN_ID" --arg round "runner-unavailable-$RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: runner unavailable" \
               -f "output[summary]=$summary" >/dev/null
             echo "$summary"

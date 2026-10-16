@@ -388,6 +388,9 @@ test("reconcile preserves unavailable OpenCode when the initial terminal check i
     assert.match(r.log, /conclusion=failure/);
     assert.match(r.log, /output\[title\]=Needlefish: runner unavailable/);
     assert.match(r.log, /OpenCode reviews are temporarily disabled/);
+    const receipt = r.log.match(/-f external_id=(\{.*?\})(?= -f)/)?.[1];
+    assert.ok(receipt, "unavailable checks retain the owned PR and round receipt");
+    assert.deepEqual(JSON.parse(receipt), { v: 2, prNumber: 42, roundId: "runner-unavailable-777-1", runId: "777" });
   }
 });
 
@@ -398,4 +401,26 @@ test("review and reconcile retain the same original runner input", () => {
   const expected = "${{ inputs.runner || github.event.inputs.runner || 'codex' }}";
   assert.equal(reviewStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
   assert.equal(reconcileStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
+});
+
+test("reconcile recognizes the initial suspended-runner check as one owned terminal result", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-unavailable-receipt-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const record = join(root, "post.json");
+  writeFileSync(join(root, "gh"), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));\n`);
+  chmodSync(join(root, "gh"), 0o755);
+  const review = workflowRun(workflow, "review", "Needlefish review");
+  const first = spawnSync("bash", ["-e", "-c", review], { encoding: "utf8", env: {
+    PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42",
+    GITHUB_REPOSITORY: REPO, PR_HEAD_SHA: HEAD, GITHUB_RUN_ID: SELF_RUN_ID, GITHUB_RUN_ATTEMPT: "1",
+  } });
+  assert.equal(first.status, 1, first.stderr);
+  const args = JSON.parse(readFileSync(record, "utf8"));
+  const fields = Object.fromEntries(args.flatMap((value, index) => args[index - 1] === "-f" ? [[value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]] : []));
+  const terminal = { name: fields.name, app: { id: 15368, slug: "github-actions" }, external_id: fields.external_id ?? "", conclusion: fields.conclusion, output: { title: fields["output[title]"] } };
+  const repeated = runReconcile({ runner: "opencode", checkRunsAll: [terminal] });
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(repeated.dispatched, 0);
+  assert.doesNotMatch(repeated.log, /api -X POST/, "initial refusal must not create a second terminal check");
+  assert.deepEqual(JSON.parse(fields.external_id), { v: 2, prNumber: 42, roundId: "runner-unavailable-777-1", runId: "777" });
 });
