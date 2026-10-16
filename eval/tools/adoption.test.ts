@@ -106,6 +106,37 @@ test("posted category headers preserve semantic titles, state keys, and verdicts
   }
 });
 
+for (const separator of ["\n", "\r\n", "\t"]) {
+  test(`posted multiline title remains an adoption row with ${JSON.stringify(separator)}`, () => {
+    const finding: Finding = {
+      severity: "P2", category: "bug", title: `Guard **輸入**${separator}with \`value\``,
+      file: "src/a.ts", lineStart: 1, lineEnd: 1, confidence: 0.9,
+      whyItBreaks: "breaks", suggestedFix: "fix", validation: "test",
+      replacement: { lines: ["fixed"] },
+    };
+    const original = JSON.stringify(finding);
+    const state = renderState("abc", [finding]);
+    assert.deepEqual(parseState(state)?.findings, [
+      { file: "src/a.ts", lineStart: 1, category: "bug", title: "guard **輸入** with `value`" },
+    ]);
+    const contexts: Map<string, readonly [number, number][]>[] = [new Map(), new Map([["src/a.ts", [[1, 1]]]])];
+    for (const ranges of contexts) {
+      const body = formatSuggestionComment(finding, { ranges, headLineCount: () => 1 }).body;
+      assert.deepEqual(parseFindingHeader(body), {
+        severity: "P2", category: "bug", title: "Guard **輸入** with `value`",
+      });
+      const { prs } = parsePrPage(page([prNode({
+        number: 7, reviews: [state], threads: [thread(body, { outdated: true })],
+      })], null));
+      assert.deepEqual(rowsFromPr("o/r", prs[0], null), [{
+        repo: "o/r", pr: 7, severity: "P2", category: "bug", fate: "addressed",
+        resolved: false, path: "src/a.ts", created: "2026-09-10T12:00:00Z", author: "github-actions",
+      }]);
+    }
+    assert.equal(JSON.stringify(finding), original);
+  });
+}
+
 test("parseFindingHeader: non-finding comments are not counted", () => {
   assert.equal(parseFindingHeader("Thanks, fixed in abc123."), null);
   assert.equal(parseFindingHeader("**Fix:** do the thing"), null);
