@@ -4,6 +4,12 @@ import { join } from "node:path";
 
 const WORKFLOW = ".github/workflows/needlefish.yml";
 const MARKER = "# needlefish-setup-template: 1";
+export const GITHUB_SETUP_BRANCH = "needlefish/setup-v1";
+const SETUP_BRANCH_GUARD = `          if [ "$HEAD_BRANCH" = "${GITHUB_SETUP_BRANCH}" ]; then
+            echo "::error::Needlefish has not reviewed this setup PR. This branch is reserved for configuration only; inspect and merge setup before authorizing a separate review."
+            exit 1
+          fi
+`;
 
 export const GITHUB_WORKFLOW = `${MARKER}
 name: Needlefish review
@@ -26,10 +32,11 @@ jobs:
         env:
           TARGET_REPO: \${{ github.repository }}
           HEAD_REPO: \${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_BRANCH: \${{ github.head_ref }}
           AUTHOR_ASSOCIATION: \${{ github.event.pull_request.author_association }}
           AUTHOR_TYPE: \${{ github.event.pull_request.user.type }}
         run: |
-          if [ "$HEAD_REPO" != "$TARGET_REPO" ] || [ "$AUTHOR_TYPE" = Bot ]; then
+${SETUP_BRANCH_GUARD}          if [ "$HEAD_REPO" != "$TARGET_REPO" ] || [ "$AUTHOR_TYPE" = Bot ]; then
             echo "::error::Needlefish has not reviewed this PR. A maintainer must review fork or bot PRs."
             exit 1
           fi
@@ -61,6 +68,10 @@ jobs:
           NEEDLEFISH_REVIEW_TIMEOUT_MS: "1800000"
 `;
 
+export const PREVIOUS_GITHUB_WORKFLOW = GITHUB_WORKFLOW
+  .replace("          HEAD_BRANCH: ${{ github.head_ref }}\n", "")
+  .replace(SETUP_BRANCH_GUARD, "");
+
 export type GithubSetupPlan =
   | { readonly kind: "create"; readonly path: string; readonly proposed: string }
   | { readonly kind: "unchanged"; readonly path: string; readonly proposed: string }
@@ -77,7 +88,7 @@ export function planGithubSetup(repo: string): GithubSetupPlan {
     root = execFileSync("git", ["-C", repo, "rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
+    }).replace(/\n$/, "");
   } catch {
     throw new Error(`${repo} is not a Git repository`);
   }

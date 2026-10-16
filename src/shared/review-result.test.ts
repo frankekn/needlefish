@@ -57,6 +57,7 @@ test("parseReviewResult accepts every optional field by type when present", () =
 	const result = parseReviewResult(
 		serialized({
 			reviewTarget: "Review target: merge-base..HEAD",
+			docsOnlyFastPath: true,
 			stats: [
 				{
 					label: "review",
@@ -101,6 +102,7 @@ test("parseReviewResult accepts every optional field by type when present", () =
 		}),
 	);
 	assert.equal(result.reviewTarget, "Review target: merge-base..HEAD");
+	assert.equal(result.docsOnlyFastPath, true);
 	assert.equal(result.stats?.length, 2);
 	assert.equal(result.stats?.[0].model, "claude-x");
 	assert.deepEqual(result.stats?.[0].usage, {
@@ -319,6 +321,7 @@ test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 test("parseReviewResult rejects mistyped optional fields", () => {
 	for (const [field, value, pattern] of [
 		["reviewTarget", 5, /reviewTarget/],
+		["docsOnlyFastPath", "true", /docsOnlyFastPath/],
 		["stats", "x", /stats/],
 		["stats", [{ label: "l", runner: "not-a-runner", durationMs: 1, attempts: 1, ok: true }], /runner/],
 		["stats", [{ label: "l", runner: "codex", durationMs: 1, attempts: 0, ok: true }], /attempts/],

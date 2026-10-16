@@ -87,7 +87,8 @@ needlefish verdict ~/.cache/needlefish/<repo>/last-review.json
 `render` runs the file through the same `renderMarkdown` used for stdout, PR
 review bodies, and check summaries. `verdict` recomputes the verdict from the
 cached findings through `deriveVerdict`, prints the stored and derived
-verdicts, and exits 1 when they differ (e.g. an edited cache).
+verdicts, and exits 1 when they differ (e.g. an edited cache). Both cached
+commands exit 1 for `changes_requested` or `needs_human`.
 
 ### Machine interface
 
@@ -105,6 +106,7 @@ changelog entry.
 | `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
+| `docsOnlyFastPath` | Optional pipeline-generated flag that all model calls were skipped by docs-only policy. |
 | `coverageGaps` | Optional list of `{ kind: "lfs_pointer_only", file }` entries (changed files the review sandbox could only check out as Git LFS pointer stubs, so their contents were not reviewed), followed by at most one `{ kind: "lfs_scan_incomplete" }` entry when the sandbox could not determine whether changed files are pointer stubs (Git LFS use or the pointer list could not be established). Reported by the sandbox, never by the model; does not affect the verdict. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
@@ -141,8 +143,20 @@ fallback consumes this result, never review prose. Blocking verdicts still
 exit 1; skips keep the existing `needlefish-skip` line.
 
 Same-head dedupe requires a trusted receipt and a completed verdict check.
-Receipts are written after delivery; failed, missing, terminated, or superseded
-checks do not let old receipts suppress recovery.
+Receipts are written after delivery. Missing checks, infrastructure failures,
+terminations, and superseded checks do not let old receipts suppress recovery. A same-head skip keeps the
+completed verdict's exit status. Legacy neutral `needs_human` checks trigger a
+full re-review when that head is triggered again. After upgrading, manually
+re-run open PRs with legacy neutral `needs_human` checks. Existing checks are
+not updated automatically, and neutral checks can still satisfy branch protection.
+
+Review commands exit 0 only for `pass`. `changes_requested`, `needs_human`,
+and execution failures exit 1, including `--json` output. `needs_human` means
+review incomplete or human confirmation required. It does not claim a code
+defect. Retry the review or ask a maintainer to check the unreviewed scope.
+Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
+pass by policy with an explicit "Model review skipped
+by policy" notice. No model has reviewed that change.
 
 ### Base detection
 
@@ -171,8 +185,15 @@ review with the full rendered review body, plus the authoritative
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | neutral   |
+| needs_human          | COMMENT             | failure   |
 | run failed           | (none)              | failure   |
+
+To block incomplete reviews, set the existing `Needlefish` check as required
+in the consumer repository. No strict flag or new service is needed. Needlefish
+does not change branch protection. On upgrade, `needs_human` changes from
+`neutral` to `failure`; workflows that accepted it must now retry or obtain
+human confirmation. Superseded and policy-skipped checks keep their existing
+neutral status.
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
 the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking
@@ -263,6 +284,7 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      recheck: ${{ inputs.recheck || false }}
       runner: codex
       model: gpt-5.6-terra
       codex_reasoning_effort: xhigh
@@ -272,6 +294,20 @@ jobs:
 The caller must retain `workflow_dispatch.inputs.pr_number`, `actions: write`,
 and a run name ending in ` PR #<number>` for bounded reconciliation. Reconcile
 runs on GitHub-hosted Ubuntu independently of the review runner.
+Automatic dispatches use bounded recovery. To force a full manual review, declare
+an optional boolean `workflow_dispatch.inputs.recheck` with default `false` in
+the caller and forward it through `with.recheck` as shown above.
+
+For direct CLI use with a custom GitHub App, provide its installation token as
+`GH_TOKEN` and set `NEEDLEFISH_CHECK_APP_ID` to that App's numeric ID.
+Use the ID from its GitHub App settings or the `app.id` field of a check created
+by that App. The pin validates check ownership; it does not select or mint a token.
+The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
+custom App token. It clears `NEEDLEFISH_CHECK_APP_ID` for review and reconciliation,
+so repository variables and runner environment pins cannot override its GitHub
+Actions identity. Custom App pins apply only to direct CLI use, where a mismatched
+token and App pin fails closed.
+Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the
 workflow keeps the `self-hosted` default. Explicit `runs_on` inputs still win.

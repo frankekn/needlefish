@@ -105,13 +105,37 @@ pnpm review setup github --repo /path/to/repo
 提案會固定 action 與 Codex CLI 版本，並在 checkout 前拒絕 fork、bot 與
 非信任作者的 PR。不要搭配 `pull_request_target`。
 GitHub review 使用 `COMMENT`，不是正式 approval。權威的 `Needlefish`
-check 對 `pass` 顯示 success，對 `changes_requested` 或執行失敗顯示
-failure，對 `needs_human` 顯示 neutral。Neutral 不是通過。
+check 對 `pass` 顯示 success，對 `changes_requested`、`needs_human`
+或執行失敗顯示 failure。
 
 Secret、hosted 支援的 runner、權限與操作者管理的 bundle 詳見
 [hosted 與 self-hosted 參考](https://github.com/frankekn/needlefish/blob/main/docs/reference.zh-TW.md#github-action)。
-另一份[引導設定 Draft 預覽](https://github.com/frankekn/needlefish/pull/280)
-不屬於此處說明的已合併 CLI。
+### 引導式 GitHub 設定
+
+引導設定是 CLI 與 macOS app 共用、尚未發布的原始碼預覽。
+操作方式見[桌面設定說明](https://github.com/frankekn/needlefish/blob/main/desktop/macos/README.md#enable-github-review)。
+在安裝完成的原始碼 checkout 內，可使用同一個設定流程：
+
+```bash
+pnpm review setup github login --confirm
+pnpm review setup github repositories --json
+pnpm review setup github status --repository owner/repo --json
+pnpm review setup github create-pr --repository owner/repo --confirm --json
+```
+
+`create-pr` 會建立或重用一個自有分支與 PR，不合併 PR、不 push 預設分支，
+也不修改 branch protection。自訂 Needlefish workflow 或無法辨識的設定分支
+會回報衝突。可檢查內容的無關自訂 workflow 會保留，不會阻擋設定。
+無法檢查 workflow 內容時，設定會停止，不寫入變更。
+請 repo 管理員檢查該 workflow 後再重試。
+同意前，先閱讀 `status` 顯示的 workflow、OpenAI 程式碼揭露與成本說明。
+
+`set-secret --repository owner/repo --confirm --replace-secret` 只透過 stdin
+接受憑證。使用桌面安全欄位，或直接寫入 pipe 的可信任 secret manager。
+不要把憑證放進 shell 參數、歷史、檔案或 URL。GitHub secret 寫入沒有條件式
+更新保護。`--replace-secret` 代表同意覆寫另一位管理員可能建立的值。
+Secret 更新不代表 AI 認證或首次審查已驗證。
+真實首次審查與新手管理員驗收仍列於 #151。
 
 ## Runners
 

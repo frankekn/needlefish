@@ -12,10 +12,12 @@ import {
   printDryRun,
   terminalProgress,
 } from "./adapters/local.js";
+import { reviewExitCode } from "./core/verdict.js";
 import { parseArgs, USAGE } from "./cli/args.js";
 import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
+import { runGuidedGithubSetup } from "./setup/guided.js";
 import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
 import { readFileSync } from "node:fs";
 
@@ -57,6 +59,18 @@ async function main() {
       return;
     }
     case "setup-github": {
+      if (command.action) {
+        try {
+          const result = await runGuidedGithubSetup({ action: command.action, confirm: command.confirm === true,
+            replaceSecret: command.replaceSecret === true, ...(command.repository ? { repository: command.repository } : {}) });
+          process.stdout.write(JSON.stringify(result, null, command.json ? undefined : 2) + "\n");
+        } catch (error) {
+          if (!command.json) throw error;
+          process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "error", message: error instanceof Error ? error.message : "GitHub setup failed. Retry after checking your connection." }) + "\n");
+          process.exitCode = 1;
+        }
+        return;
+      }
       const plan = planGithubSetup(command.repo ?? process.cwd());
       process.stdout.write(renderGithubSetup(plan));
       if (plan.kind === "conflict") process.exitCode = 1;
@@ -115,6 +129,7 @@ async function main() {
         command.kind === "pr"
           ? await runLocalPr(cwd, command.pr, opts, progress)
           : await runLocal(cwd, opts, progress);
+      process.exitCode = reviewExitCode(result.verdict);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {

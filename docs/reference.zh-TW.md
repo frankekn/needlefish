@@ -64,6 +64,7 @@ needlefish --repo . --json | jq .verdict
 | `schemaVersion` | 固定為 `1`。 |
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
+| `docsOnlyFastPath` | 選用的 pipeline 旗標，表示 docs-only policy 跳過所有模型呼叫。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |
 | `findings[].consumerLine` | 選用的下游受影響行號。 |
@@ -79,7 +80,14 @@ exit 1，跳過仍使用 `needlefish-skip`。
 
 Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
 完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
-舊收據阻止恢復審查。
+舊收據阻止恢復審查。同一 head 跳過時保留原 verdict 的 exit code。
+舊版 neutral `needs_human` check 在該 head 再次觸發時會完整重審。
+升級後請手動重跑仍使用舊 check 的 open PR，既有 check 不會自動更新。
+
+審查指令只有 `pass` 回傳 exit 0。`changes_requested`、`needs_human`
+與執行失敗都回傳 exit 1，包含 JSON 與快取指令。`needs_human` 表示審查
+未完成或需要人工確認，不表示已證明程式有錯。重試或請維護者檢查未審範圍。
+Docs-only policy skip 會明確顯示未呼叫模型，除非設為 `NEEDLEFISH_NO_FAST_PATH=1`。
 
 ### 基準偵測
 
@@ -106,7 +114,7 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | neutral   |
+| needs_human          | COMMENT             | failure   |
 | run failed           | （無）                | failure   |
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
