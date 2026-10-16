@@ -11,16 +11,20 @@ Eight synthetic positives extend the seven existing Tier-1 families to `3+2+2+2+
 | holdout-t1-inverted-export-guard | inverted-permission-check | JavaScript | Only accounts with canExport may obtain private archive data. Head negates the permission check, releasing data to unauthorized accounts and rejecting authorized accounts. | archive.mjs:2 | P1 |
 | holdout-t1-missing-profile-guard | removed-none-guard | Python | A missing customer profile produces anonymous labeling. Head removes the None branch, so ordinary missing lookups crash while present profiles still work. | labels.py:2 | P1 |
 | holdout-t1-swallowed-settlement-error | error-swallow-payment-path | JavaScript | Settlement success is reported only after the payment processor succeeds. Head turns the rejected debit into a successful settled response. | settlement.mjs:6 | P1 |
-| holdout-t1-node-permission-flag | missing-security-flag | POSIX shell | The script runner allows the supplied script to read itself, but forbids all other files using Node permission mode. Head drops the permission flags, allowing a script to read a private sibling file. | run-script.sh:3 | P1 |
+| holdout-t1-curl-protocol-flag | missing-security-flag | POSIX shell | The fetcher accepts HTTPS URLs only. Head drops curl protocol restrictions, allowing a supplied file URL to read a private local file. | fetch.sh:3 | P1 |
 | holdout-t1-untrusted-auditor-ref | untrusted-self-review-tool-checkout | POSIX shell and Python | The audit entrypoint comes from the independently pinned trusted ref. Head loads the auditor from the proposal ref, allowing an author to replace the validator with unconditional approval. | audit.sh:3 | P1 |
 | holdout-t1-plugin-write-token | subprocess-inherits-write-token | Python | An extension receives ordinary environment configuration, but never the parent service's write token. Head stops supplying the filtered environment, exposing the write token to the extension process. | extension.py:7 | P1 |
 
-P1 is an authored severity expectation for independent review, not a new scoring field. Each new expected finding requires its exact file and changed line. Missing-profile severity follows the declared request contract where absent profiles are ordinary inputs, and each request fails after this deletion.
+P1 is an authored severity expectation for independent review, not a new scoring field. Each new expected finding requires its exact file and line in the changed hunk. A deleted guard anchors to the remaining dereference. Missing-profile severity follows the declared request contract where absent profiles are ordinary inputs, and each request fails after this deletion.
 
 ## Verification contract
 
-Execute both base and head with the same controlled input. Assert correct base output and the exact head failure or unauthorized effect. Use fake credentials and local files only. For permission containment, execute the real installed Node permission runtime. For auditor provenance, create a local Git repository with distinct trusted and proposal commits and execute the selected Python auditor. The tests do not contact any provider or run an eval model.
+Execute both base and head with the same controlled input. Assert correct base output and the exact head failure or unauthorized effect. Use fake credentials and local files only. For protocol containment, execute the real installed curl against a local file URL. No HTTP server is required. For auditor provenance, create a local Git repository with distinct trusted and proposal commits and execute the selected Python auditor. The tests do not contact any provider or run an eval model.
 
 Use the existing loadFixture to verify real generated patch anchors. Check the catalog contains 101 fixtures, 15 Tier-1 positives, the exact seven-family counts, and seven new sealed holdouts. The existing 93 spec files remain byte-identical. Do not rewrite historical reports, README scores, prompts, matcher, scorer, qualification policy, or calibration tools.
 
 The holdouts remain excluded from prompt iteration with `--holdout exclude`. No prompt iteration is authorized here. The full Class R model gate is **NOT_RUN**. Fixture-plan readiness does not qualify a lane, select production floors, or complete issue #123.
+
+## Runtime-driven preregistration correction
+
+Before implementing the curl case, the first deterministic check showed that installed Node 24 rejects the removed `--experimental-permission` flag. The missing-security-flag case now uses curl HTTPS-only protocol restrictions, exercised with a local file URL. The family, holdout assignment, severity, and quota remain fixed. This correction uses runtime evidence only.
