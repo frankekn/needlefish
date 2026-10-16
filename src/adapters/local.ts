@@ -378,7 +378,7 @@ export async function runLocal(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
   const result = await review(bundle, resolvedOpts, undefined, onProgress);
   writeCache(bundle.repoPath, opts, result);
   return result;
@@ -391,7 +391,7 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.

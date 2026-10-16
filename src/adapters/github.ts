@@ -1637,7 +1637,7 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, mergeBase),
 	});
 
-	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle, opts).docsOnlyFastPath);
 	const pendingCheckId = createPendingCheck(repo, headSha);
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
