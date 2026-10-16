@@ -68,7 +68,7 @@ Usage:
                                        explain one finding on a PR (Action mode)
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
-                                       (exits 1 when stored and derived differ)
+                                       (exits 1 for non-pass verdicts or drift)
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)

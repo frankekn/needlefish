@@ -37,7 +37,7 @@ export function priorFateParts(fates: PriorFateCounts): string[] {
 const VERDICT_HEADLINE: Record<Verdict, string> = {
 	pass: "LGTM ✅",
 	changes_requested: "CHANGES REQUESTED ⚠️",
-	needs_human: "NEEDS HUMAN 👀",
+	needs_human: "REVIEW INCOMPLETE. HUMAN CONFIRMATION REQUIRED",
 };
 
 export function renderMarkdown(
@@ -90,7 +90,7 @@ export function renderMarkdown(
 		headlineReplaced = true;
 	} else if (result.verdict === "needs_human" && blockingResiduals.length > 0) {
 		const text = truncate(oneLine(blockingResiduals[0].text), 160);
-		lines.push(`NEEDS HUMAN 👀 — ${text}`);
+		lines.push(`${VERDICT_HEADLINE.needs_human} — ${text}`);
 		headlineReplaced = true;
 	} else {
 		lines.push(
@@ -101,6 +101,13 @@ export function renderMarkdown(
 	// When the headline carried the reason, the summary first-sentence goes on
 	// its own line so the information is not lost.
 	if (headlineReplaced && summary) lines.push(summary);
+	if (result.verdict === "needs_human") {
+		lines.push("Cannot determine whether this change is safe. Retry the review or ask a maintainer to confirm the unreviewed scope.");
+	}
+
+	if (result.checked.some((entry) => entry.startsWith("FAST_PATH docs-only files="))) {
+		lines.push("Model review skipped by policy for this docs-only change.");
+	}
 
 	const nitCount = findings.length - blockingCount;
 	const findingCounts: string[] = [];

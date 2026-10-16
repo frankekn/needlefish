@@ -1765,7 +1765,7 @@ test("runGithub skips re-review when previous review has same head (no recheck)"
 	const round1Runs = runnerInvocationCount(fixture);
 
 	const round2 = spawnGithubCli(fixture, 30);
-	assert.equal(round2.status, 0, round2.stderr);
+	assert.equal(round2.status, 1, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
 	assert.deepEqual(
@@ -4139,6 +4139,7 @@ test("a same-head marker with a completed blocking verdict check still skips", a
 		"a delivered blocking verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.equal(process.exitCode, 1);
 });
 
 test("an unreadable check list re-reviews instead of skipping", async (t) => {
@@ -4198,7 +4199,7 @@ test("a same-head marker whose only check is a superseded neutral check re-revie
 	);
 });
 
-test("a same-head marker with a completed needs_human check still skips", async (t) => {
+test("a same-head marker with a failed needs_human check skips and exits 1", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 105,
 		rawReview: defaultRawReview(),
@@ -4216,7 +4217,7 @@ test("a same-head marker with a completed needs_human check still skips", async 
 			{
 				id: 1,
 				status: "completed",
-				conclusion: "neutral",
+				conclusion: "failure",
 				output: { title: "Needlefish: needs_human — unverified migration" },
 			},
 		]),
@@ -4230,4 +4231,42 @@ test("a same-head marker with a completed needs_human check still skips", async 
 		"a delivered needs_human verdict is a completed review",
 	);
 	assert.deepEqual(readPosts(fixture.postLog), []);
+	assert.equal(process.exitCode, 1);
+});
+
+test("needs_human fails the check and CLI without claiming a code defect", (t) => {
+  const fixture = setupFixture(t, {
+    prNumber: 106,
+    rawReview: JSON.stringify({
+      summary: "Partial review",
+      findings: [],
+      checked: ["public.ts inspected"],
+      residual_risks: [{ text: "auth.ts not reviewed", blocks: true }],
+    }),
+  });
+  const result = spawnGithubCli(fixture, 106);
+  assert.equal(result.status, 1, result.stdout);
+  const payload = lastCheckCompletion(readPosts(fixture.postLog));
+  assert.equal(payload.conclusion, "failure");
+  const output = payload.output;
+  assert.match(String(output?.title), /Review incomplete; human confirmation required/);
+  assert.match(String(output?.summary), /auth.ts not reviewed/);
+  assert.match(String(output?.summary), /Retry the review or ask a maintainer/);
+  assert.doesNotMatch(String(output?.title), /CHANGES REQUESTED/);
+  assert.match(result.stdout, /"outcome":"verdict","verdict":"needs_human"/);
+});
+
+test("a legacy neutral needs_human check is re-reviewed to fail closed", async (t) => {
+  const fixture = setupFixture(t, { prNumber: 107, rawReview: JSON.stringify({
+    summary: "Partial review", findings: [], checked: ["app inspected"],
+    residual_risks: [{ text: "auth not reviewed", blocks: true }],
+  }) });
+  seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+    user: { login: "github-actions[bot]", type: "Bot" } }]);
+  writeFileSync(fixture.checksState, JSON.stringify([{ id: 1, status: "completed",
+    conclusion: "neutral", output: { title: "Needlefish: needs_human" } }]));
+  await runGithub(fixture.repo, 107, { timeoutMs: 1000 });
+  assert.ok(runnerInvocationCount(fixture) > 0);
+  assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).conclusion, "failure");
+  assert.equal(process.exitCode, 1);
 });

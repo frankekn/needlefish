@@ -184,13 +184,16 @@ test("reconcile counts a terminated review as an infra failure", () => {
 	assert.match(capped.stdout, /retry cap reached/);
 });
 
-test("reconcile treats a non-infra failure as a terminal verdict", () => {
-	const r = runReconcile({
-		checkRunsAll: [checkRun("Needlefish: changes_requested — Fix the thing", "failure")],
+for (const title of [
+	"Needlefish: changes_requested — Fix the thing",
+	"Needlefish: needs_human. Review incomplete; human confirmation required",
+]) {
+	test(`reconcile treats ${title} as a terminal verdict`, () => {
+		const r = runReconcile({ checkRunsAll: [checkRun(title, "failure")] });
+		assert.equal(r.dispatched, 0);
+		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
 	});
-	assert.equal(r.dispatched, 0);
-	assert.match(r.stdout, /already has a terminal Needlefish verdict/);
-});
+}
 
 test("reconcile waits for an active run of the same workflow for the same PR", () => {
 	const r = runReconcile({
