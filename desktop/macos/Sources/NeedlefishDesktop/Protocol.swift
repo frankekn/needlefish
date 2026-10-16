@@ -35,7 +35,7 @@ struct Runtime: Codable, Sendable {
 }
 
 enum DesktopError: Error, LocalizedError {
-    case runtime, invalidOutput, cancelled, timeout, outputLimit, command, quota, network, auth, installationBusy
+    case runtime, invalidOutput, cancelled, timeout, outputLimit, cleanup, command, quota, network, auth, installationBusy
     var errorDescription: String? {
         switch self {
         case .installationBusy: "另一個 Needlefish 正在安裝或移除。請稍後重試。 / Another Needlefish is installing or removing a version. Retry shortly."
@@ -47,6 +47,7 @@ enum DesktopError: Error, LocalizedError {
         case .cancelled: "已取消。本次工作已停止。 / Cancelled."
         case .timeout: "等待逾時。請確認網路後重試。 / Timed out. Check your connection and retry."
         case .outputLimit: "輸出超過安全上限。未完成，請縮小變更後重試。 / Output limit exceeded."
+        case .cleanup: "本次暫存資料未能清除，可能仍含專案副本。檢查未完成。 / Temporary cleanup failed; a project copy may remain. Review incomplete."
         case .command: "未完成。請重新診斷環境，確認登入、網路與帳戶額度後重試。 / Incomplete. Check login, connection and quota."
         }
     }
