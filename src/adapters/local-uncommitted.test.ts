@@ -232,7 +232,7 @@ test("runLocal reports binary-only untracked changes as coverage gaps", async (t
 });
 
 for (const omission of ["oversized", "dangling", "empty"] as const) {
-  test(`runLocal rejects binary-only review with a skipped ${omission} file was also skipped`, async (t) => {
+  test(`runLocal rejects binary-only review with a skipped ${omission} file`, async (t) => {
     const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-skipped-"));
     const repo = initRepo(tmp);
     t.after(() => rmSync(tmp, { recursive: true, force: true }));

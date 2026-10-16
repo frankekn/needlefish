@@ -277,7 +277,9 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  if (!patch.trim() && trackedBinaryPaths.length + untracked.binaryFiles.length === 0) {
+  const binaryOnly = trackedBinaryPaths.length + untracked.binaryFiles.length > 0
+    && untracked.skipped.length === untracked.binaryFiles.length;
+  if (!patch.trim() && !binaryOnly) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);

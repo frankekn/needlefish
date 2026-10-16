@@ -99,3 +99,32 @@ test("docs fast path retains non-blocking binary coverage and old v1 results rem
   assert.ok(!renderMarkdown(result, { omitCoverageGaps: true }).includes("Not reviewed"));
   assert.deepEqual(unreviewedBinaryFiles, ["docs/notes.md"]);
 });
+
+for (const fastPath of ["binary-only", "docs-only"] as const) {
+  test(`${fastPath} fast path discloses attribute-classified pointers without a runner`, async (t) => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-binary-pointer-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const file = "asset.bin";
+    writeFileSync(path.join(repo, ".gitattributes"), `${file} filter=lfs -diff\n`);
+    writeFileSync(path.join(repo, file), "old contents\n");
+    commitAll(repo, "base");
+    writeFileSync(path.join(repo, file), `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 123\n`);
+    if (fastPath === "docs-only") writeFileSync(path.join(repo, "README.md"), "New notes\n");
+
+    const previous = process.env.CODEX_BIN;
+    process.env.CODEX_BIN = path.join(tmp, "must-not-run");
+    t.after(() => {
+      if (previous === undefined) delete process.env.CODEX_BIN;
+      else process.env.CODEX_BIN = previous;
+    });
+    const result = await runLocal(repo, {
+      localMode: "uncommitted", runner: "codex", cacheDir: path.join(tmp, "cache"),
+    });
+    assert.equal(result.verdict, "pass");
+    assert.match(result.summary, /model review skipped/);
+    assert.deepEqual(result.unreviewedBinaryFiles, [file]);
+    assert.equal(result.coverageGaps, undefined);
+    assert.match(renderMarkdown(result), /Not reviewed \(non-blocking\)/);
+  });
+}
