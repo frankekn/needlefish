@@ -585,6 +585,14 @@ blank (values are trimmed):
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
+All `*_BIN` executables must come from trusted operator-controlled paths.
+Codex resolves a path-like relative `CODEX_BIN` against Needlefish's caller
+working directory. Detection and doctor use that same directory. The caller
+directory must be trusted; launching Needlefish from a PR-controlled checkout
+does not make its relative executable safe. Other CLI runners still resolve
+relative commands from the target clone at launch. Use absolute trusted paths
+for those runners. Bare executable names continue to use `PATH`.
+
 ### How each runner is launched
 
 - **Codex:** `--ignore-user-config --ignore-rules
@@ -632,9 +640,14 @@ blank (values are trimmed):
 
 Instruction-boundary Class R gates and policy holdouts must use a verified
 runner/version. Unverified runner boundaries are not accepted as equivalent.
-Quoted locations that cannot be checked, including uncommitted `WORKING`
-heads, are marked `unchecked`. GitHub suggestions require a matched quote;
-base-only matches and relocated findings also discard the replacement.
+Quoted locations without verified HEAD evidence, including base-only matches
+and uncommitted `WORKING` heads, are marked `unchecked`. Findings marked
+`unchecked` or `not_found` appear in the review body with a location caveat,
+without a RIGHT-side inline comment. GitHub suggestions require a matched
+HEAD quote; base-only matches and relocated findings discard the replacement.
+Findings without a quote retain diff-based inline eligibility. The Class R gate
+must record the fraction of findings posted inline to check for a drop under
+this conservative policy.
 
 Every CLI runner inspects a **throwaway clean clone** at the review head
 commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex

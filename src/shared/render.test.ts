@@ -542,9 +542,9 @@ test("renderMarkdown folds a bare CR in a hostile path so the note stays one par
 	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
 });
 
-test("renderMarkdown warns when source quotes could not be checked", () => {
+test("renderMarkdown warns when source quotes could not be verified at HEAD", () => {
 	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
-	assert.match(out, /_Location unverified: the quoted source could not be checked\._/);
+	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
 });
 
 test("renderMarkdown shows source caveats and keeps digest and tool limits in details", () => {
@@ -564,10 +564,11 @@ test("renderMarkdown shows source caveats and keeps digest and tool limits in de
 
 
 test("renderMarkdown links removed source to its original path at the captured base", () => {
-	const item = finding("P2", "Restore removed guard", "src/renamed.ts", { evidence: { toolRead: "unknown", sources: [
+	const item = finding("P2", "Restore removed guard", "src/renamed.ts", { quoteCheck: { status: "unchecked" }, evidence: { toolRead: "unknown", sources: [
 		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/original.ts", lineStart: 1, lineEnd: 1,
 			status: "source_present", contentDigest: "c".repeat(64) },
 	] } });
 	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.ok(markdown.includes("_Code source present._\n\n_Location unverified: the quoted source could not be verified at this HEAD location._"));
 	assert.ok(markdown.includes("[`src/renamed.ts:1`](https://github.com/owner/repo/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/original.ts#L1)"));
 });

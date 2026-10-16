@@ -23,7 +23,7 @@ export function quoteNote(finding: Finding): string | null {
 	const check = finding.quoteCheck;
 	if (check?.status === "moved") notes.push(`_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`);
 	if (check?.status === "not_found") notes.push(`_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`);
-	if (check?.status === "unchecked") notes.push("_Location unverified: the quoted source could not be checked._");
+	if (check?.status === "unchecked") notes.push("_Location unverified: the quoted source could not be verified at this HEAD location._");
 	return notes.join("\n\n") || null;
 }
 

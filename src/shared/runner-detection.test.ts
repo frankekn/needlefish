@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -158,17 +158,34 @@ test("runnerCommand trims every *_BIN override and treats blank as unset", (t) =
 });
 
 
-test("runCodex resolves a relative executable from the clone while starting outside it", async (t) => {
+test("runCodex resolves a relative executable from the caller, never the PR clone", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-relative-codex-"));
   const repo = initRepo(tmp);
+  const caller = path.join(tmp, "caller");
+  const attackMarker = path.join(tmp, "untrusted-executed");
   const previous = captureEnv(RUNNER_ENV_KEYS);
-  t.after(() => { restoreEnv(previous); rmSync(tmp, { recursive: true, force: true }); });
+  const previousCwd = process.cwd();
+  t.after(() => {
+    process.chdir(previousCwd);
+    restoreEnv(previous);
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  mkdirSync(path.join(caller, "tools"), { recursive: true });
   mkdirSync(path.join(repo, "tools"));
-  const bin = path.join(repo, "tools/codex");
-  writeFileSync(bin, ["#!/bin/sh", "cat > /dev/null", "pwd"].join("\n"));
-  chmodSync(bin, 0o755);
-  commitAll(repo, "tracked executable");
+  const trustedBin = path.join(caller, "tools/codex");
+  const untrustedBin = path.join(repo, "tools/codex");
+  writeFileSync(trustedBin, ["#!/bin/sh", "cat > /dev/null", "echo trusted-caller", "pwd"].join("\n"));
+  writeFileSync(untrustedBin, ["#!/bin/sh", `touch ${JSON.stringify(attackMarker)}`, "echo untrusted-pr"].join("\n"));
+  chmodSync(trustedBin, 0o755);
+  chmodSync(untrustedBin, 0o755);
+  commitAll(repo, "untrusted tracked executable");
+  process.chdir(caller);
   process.env.CODEX_BIN = "./tools/codex";
-  const output = await runCodex("prompt", { runner: "codex", repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 });
-  assert.equal(path.basename(output.trim()), "runner-launch");
+  const detected = resolveRunnerBinary("codex");
+  assert.equal(realpathSync(detected?.path ?? ""), realpathSync(trustedBin));
+  const output = await runCodex("prompt", { repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 });
+  const [source, cwd] = output.trim().split("\n");
+  assert.equal(source, "trusted-caller");
+  assert.equal(path.basename(cwd ?? ""), "runner-launch");
+  assert.equal(existsSync(attackMarker), false);
 });
