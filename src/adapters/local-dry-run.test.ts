@@ -268,3 +268,17 @@ test("--dry-run with a nested --repo collects root-relative tracked and untracke
     .sort();
   assert.deepEqual(paths, ["app.ts", "newroot.ts", "pkg/deep/mod.ts", "pkg/deep/newmod.ts"]);
 });
+
+for (const flags of [["--dry-run", "--json"], ["--json"], []]) {
+  test(`CLI refuses capped input without a result or cache (${flags.join(" ") || "markdown"})`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: "docs/guide.md", content: "guide\n" }]);
+    writeFileSync(path.join(fixture.repo, "README.md"), "Updated documentation\n");
+    writeFileSync(path.join(fixture.repo, "source.ts"), "x".repeat(201 * 1024));
+    const result = runCli(fixture, ["--repo", fixture.repo, ...flags]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Untracked file contents omitted: "source\.ts" \(per_file_cap\)/);
+    assert.equal(result.stdout, "");
+    assert.equal(existsSync(fixture.marker), false);
+    assert.equal(existsSync(cacheFile(fixture)), false);
+  });
+}

@@ -12,7 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { review } from "./review";
+import { review, reviewPlan } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
 import { renderMarkdown } from "../shared/render.js";
 import { classifySurface } from "../shared/classify";
@@ -2870,4 +2870,30 @@ test("review bounds quote finalization by its shared deadline without changing t
 	assert.equal(result.findings[0].replacement, undefined);
 	assert.equal(readFileSync(calls, "utf8"), "cat-file");
 	assert.ok(Date.now() - startedAt < 2600, "post-model quote work exceeded the review budget");
+});
+
+test("reviewPlan rejects incomplete typed input before fast paths or runners", async () => {
+	const skipped = Object.freeze(Array.from({ length: 30 }, (_, index) => Object.freeze({
+		path: `source-${index}\n.ts${"x".repeat(300)}`,
+		bytes: 205824,
+		reason: "per_file_cap" as const,
+	})));
+	const bundle: Bundle = Object.freeze({
+		repoPath: "/unreachable", baseSha: "base", headSha: "WORKING", patch: "",
+		patchStat: "", changedFiles: [], binaryFiles: ["asset.bin"],
+		untrackedSkipped: skipped, agentsMd: "(none)", prMeta: null, deep: false, focus: null,
+	});
+	function omissionError(error: unknown): boolean {
+		assert.ok(error instanceof Error);
+		assert.match(error.message, /^Untracked file contents omitted: "source-0\\n\.ts/);
+		assert.match(error.message, /source-9\\n\.ts/);
+		assert.match(error.message, /; additional files omitted\. Stage these files or reduce their size before reviewing\.$/);
+		assert.equal(error.message.includes("\n"), false);
+		assert.equal(error.message.includes("source-10"), false);
+		assert.equal(error.message.length < 3000, true);
+		return true;
+	}
+	assert.throws(() => reviewPlan(bundle), omissionError);
+	await assert.rejects(() => review(bundle), omissionError);
+	assert.equal(bundle.untrackedSkipped, skipped);
 });

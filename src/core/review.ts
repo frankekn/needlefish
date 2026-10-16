@@ -1113,6 +1113,11 @@ export function reviewPlan(bundle: Bundle): {
 	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
 } {
+	if (bundle.untrackedSkipped?.length) {
+		const omitted = bundle.untrackedSkipped.slice(0, 10)
+			.map((file) => `${JSON.stringify(file.path.slice(0, 240))} (${file.reason})`).join(", ");
+		throw new Error(`Untracked file contents omitted: ${omitted}${bundle.untrackedSkipped.length > 10 ? "; additional files omitted" : ""}. Stage these files or reduce their size before reviewing.`);
+	}
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
 	const binaryOnlyFastPath = !bundle.patch.trim() && Boolean(bundle.binaryFiles?.length);
 	// Keep review()'s original evaluation order: the docs-only short-circuit
