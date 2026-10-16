@@ -363,6 +363,11 @@ repositories with `-diff`, `binary`, or textconv attributes.
 
 Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flash`,
 **high**. This is not the production lane (Codex `gpt-5.6-terra` high).
+The [owner waiver](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5499966324)
+accepts this substitute lane plus input identity for PR #234. The owner
+[confirmed that decision at `3f8cf6b`](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5543532605).
+This exception does not certify the production Class R gate or change the
+repository's Class R requirements for other changes.
 Criteria were written before the model run (`gate-criteria.md`). All four
 reports record the same runner, model, effort, prompt hash, and `runnerEnvironment`
 hashes (`OPENCODE_CONFIG_JSON sha256:061b047ded343bdc`, `PATH sha256:6221e6a1d61aea33`),
@@ -388,8 +393,20 @@ upgrade (`eval/run.ts`), so the other three reports do not pin the binary.
   2/3 → 2/3, `real-pr1-fallback-missing-commit-pin` 2/3 → 1/3 (not anchored: base
   below 3/3). False positives **1 / 0**, invalid **0 / 0**, cheat **0 / 0**.
 
-**Gate passed** on all six pre-declared criteria. Evidence:
+**Substitute-lane criteria passed** on all six pre-declared criteria.
+**The production Class R gate was not run.** Historical model evidence:
 `eval/evidence/2026-10-13-attr-source/`.
+
+On 2026-10-16, a fresh stub capture at committed source `3f8cf6b2e8573fe547a0932417356d79eccc4db2`
+matched baseline main `ebcd2a0901f157f4de08cd140b2087fa7533c63c` on all 180 prompts,
+93 fixtures, holdouts included. Only commit SHAs and temporary directory prefixes
+were normalized. The [input identity receipt](evidence/2026-10-13-attr-source/integration-input-identity.json)
+records the exact source SHAs, hashes, normalization, and unchanged historical
+reports. This capture made no model-quality calls. It does not test attributes
+behavior or establish recall on the production lane. No fixture exercises
+`.gitattributes` or uncommitted mode. The 12 resident attributes regression tests
+cover those code paths. The exception remains limited to the accepted source
+behavior; later source or evaluation changes require a new scope assessment.
 
 ### 2026-10-06 — Six implementation repairs (Class R)
 
