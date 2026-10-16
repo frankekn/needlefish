@@ -273,7 +273,7 @@ test("checkQuotes matches a removed base line across a quoted-path rename", (t) 
 });
 
 for (const command of ["grep", "diff"]) {
-	test(`checkQuotes shares its remaining deadline across findings and caps ${command}`, (t) => {
+	test(`checkQuotes shares its remaining deadline across findings and caps the first ${command} subprocess`, (t) => {
 		const bundle = makeRepo(t);
 		const bin = path.join(bundle.repoPath, "bin");
 		mkdirSync(bin);
@@ -290,7 +290,7 @@ for (const command of ["grep", "diff"]) {
 			"const args = process.argv.slice(2);",
 			"if (args.includes(command)) {",
 			`  fs.appendFileSync(${JSON.stringify(calls)}, ${JSON.stringify(command + "\n")});`,
-			`  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${budgetMs + 300});`,
+			`  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${budgetMs + 5_000});`,
 			"}",
 			`const result = spawnSync(${JSON.stringify(realGit)}, args, { encoding: 'utf8' });`,
 			"process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '');",
