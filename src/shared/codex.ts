@@ -656,7 +656,7 @@ export async function runCodex(
 			if (err instanceof Error && opts.connectionAuth) {
 				// Keep failure types and raw provenance while withholding public credentials.
 				err.message = err instanceof RunnerWorktreeChangedError
-					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential."
+					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
 					: opts.connectionAuth.screenDiagnostic(err.message);
 			}
 			const raw =
@@ -669,6 +669,15 @@ export async function runCodex(
 				// a successful retry discards this error object, and the canary
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
+			}
+			if (raw && opts.connectionAuth && !isRunnerSafetyError(err)) {
+				try {
+					opts.connectionAuth.assertOutputSafe(raw);
+				} catch (screeningError) {
+					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
+					emitStat(false);
+					throw screeningError;
+				}
 			}
 			if (!(err instanceof Error) || isRunnerSafetyError(err) || findRunnerFailure(err)?.retryable === false) {
 				emitStat(false);

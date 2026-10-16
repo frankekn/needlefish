@@ -16,6 +16,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { RunnerName } from "./runner.js";
+import { ConnectionCredentialLeakError } from "./connection-auth.js";
 import { RunnerTerminatingError } from "./temp-lifecycle.js";
 
 // Git has no "ignore local config" switch. Global/system/parent env are dropped
@@ -90,7 +91,7 @@ export class RunnerWorktreeChangedError extends Error {
 }
 
 export function isRunnerSafetyError(error: unknown): boolean {
-  return error instanceof RunnerWorktreeChangedError || error instanceof RunnerTerminatingError;
+  return error instanceof RunnerWorktreeChangedError || error instanceof RunnerTerminatingError || error instanceof ConnectionCredentialLeakError;
 }
 
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {

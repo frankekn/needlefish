@@ -57,9 +57,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     else send({id:request.id,result:{sessionId:'test-session'}});
   }
   if (request.method === 'session/prompt') {
-    if (mode === 'success-stderr-leak') process.stderr.write(process.env.AGENT_API_KEY + '\\n');
-    if (mode === 'success-stdout-leak') send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
-    if (mode === 'stderr-leak') {
+    const map = JSON.stringify(request.params).includes('review-MAP pass');
+    if (mode.startsWith('deep-') && !map && prior === 1) {
+      if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
+      process.stderr.write(process.env.AGENT_API_KEY + '\\n');
+    }
+    if (mode === 'success-stderr-leak' || mode === 'success-stderr-leak-once' && prior === 0) process.stderr.write(process.env.AGENT_API_KEY + '\\n');
+    if (mode === 'success-stdout-leak' || mode === 'success-stdout-leak-once' && prior === 0) send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
+    if (mode === 'stderr-leak' || mode === 'stderr-leak-once' && prior === 0) {
       process.stderr.write('auth error code: ' + process.env.AGENT_API_KEY + '\\n', () => process.exit(1));
       return;
     }
@@ -72,10 +77,15 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
-      let output = ${JSON.stringify(reviewJson)};
-      if (mode.startsWith('leak')) {
+      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      if (mode === 'success-stdout-escaped') {
+        const text = JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'thought_message_chunk',content:{type:'text',text:process.env.AGENT_API_KEY}}}});
+        const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
+        process.stdout.write(text.replace(process.env.AGENT_API_KEY, escaped) + '\\n');
+      }
+      if (mode.startsWith('leak') && (!mode.endsWith('-once') || prior === 0)) {
         output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],findings:[],residual_risks:[]});
-        if (mode === 'leak-fenced') {
+        if (mode.startsWith('leak-fenced')) {
           const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
           output = '\x60\x60\x60json\\n' + output.replace(process.env.AGENT_API_KEY, escaped) + '\\n\x60\x60\x60';
         }
@@ -143,16 +153,17 @@ const repo = ${JSON.stringify(f.repo)}, head = ${JSON.stringify(f.head)};
 const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connection,repoPath:repo,targetHeadSha:head},repo));
 // Both real executions must retain selection-time values across concurrent calls and retries.
 process.env.ACCOUNT_A_KEY = process.env.ACCOUNT_B_KEY = 'CHANGED-AFTER-SELECTION';
+const hasCredential = raw => raw.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)}) || raw.includes(${JSON.stringify(Array.from(f.env.ACCOUNT_A_KEY ?? "").map(c => "\\u" + c.charCodeAt(0).toString(16).padStart(4,"0")).join(""))});
 let sawFailedRaw = false;
 let sawFailedAttemptRaw = false;
 try {
   const results = await Promise.all(opts.map(opt => runCodex('Return review JSON', {...opt,
-    onFailedRaw:raw => {sawFailedRaw ||= raw.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)});},
-    onFailedAttempt:(attempt,raw) => {sawFailedAttemptRaw ||= raw?.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)}) ?? false;}
+    onFailedRaw:raw => {sawFailedRaw ||= hasCredential(raw);},
+    onFailedAttempt:(attempt,raw) => {sawFailedAttemptRaw ||= raw === undefined ? false : hasCredential(raw);}
   })));
   console.log(JSON.stringify({ok:true,count:results.length,globalUnchanged:process.env.ACCOUNT_A_KEY === 'CHANGED-AFTER-SELECTION'}));
 } catch(error) {
-  console.log(JSON.stringify({ok:false,message:error.message,name:error.name,safetyError:isRunnerSafetyError(error),sawFailedRaw,sawFailedAttemptRaw}));
+  console.log(JSON.stringify({ok:false,message:error.message,name:error.name,safetyError:isRunnerSafetyError(error),sawFailedRaw,sawFailedAttemptRaw,...(error.cause ? {causeName:error.cause.name} : {})}));
   process.exitCode = 1;
 }
 `);
@@ -219,9 +230,9 @@ for (const mode of ["stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sand
     const diagnostic = JSON.parse(result.stdout);
     const sandbox = mode.startsWith("sandbox-leak");
     assert.match(diagnostic.message, /withheld.*credential/);
-    if (sandbox) assert.equal(diagnostic.message, "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential.");
-    assert.equal(diagnostic.name, sandbox ? "RunnerWorktreeChangedError" : "RunnerOperationalError");
-    assert.equal(diagnostic.safetyError, sandbox);
+    if (sandbox) assert.equal(diagnostic.message, "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change.");
+    assert.equal(diagnostic.name, sandbox ? "RunnerWorktreeChangedError" : "ConnectionCredentialLeakError");
+    assert.equal(diagnostic.safetyError, true);
     assert.equal(diagnostic.sawFailedRaw, true);
     assert.equal(diagnostic.sawFailedAttemptRaw, true);
     assert.ok(!(result.stdout + result.stderr).includes(credential));
@@ -277,7 +288,7 @@ for (const mode of ["leak", "leak-fenced"]) {
   });
 }
 
-for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded", "success-stderr-leak", "success-stdout-leak"]) {
+for (const mode of ["leak-fenced", "stderr-leak", "sandbox-leak", "sandbox-leak-encoded", "sandbox-leak-double-encoded", "success-stderr-leak", "success-stdout-leak", "success-stdout-escaped"]) {
   test(`GitHub never posts an echoed selected credential: ${mode}`, (t) => {
     const credential = mode === "leak-fenced" ? keyA : "synthetic_secret_a1234567890";
     const f = fixture(t, mode, credential);
@@ -340,18 +351,19 @@ for (const [name, overrides, expected] of [
   });
 }
 
-for (const mode of ["success-stderr-leak", "success-stdout-leak"]) {
+for (const mode of ["success-stderr-leak", "success-stdout-leak", "success-stderr-leak-once", "success-stdout-leak-once", "leak-once", "leak-fenced-once", "stderr-leak-once"]) {
   test(`${mode}: successful transcript screening preserves private failed evidence`, (t) => {
     const f = fixture(t, mode);
-    const result = f.run([harness(f, false)], { NEEDLEFISH_NO_RETRY: "1" });
+    const result = f.run([harness(f, false)], { NEEDLEFISH_NO_RETRY: "0" });
     assert.equal(result.status, 1);
     assert.deepEqual(JSON.parse(result.stdout), {
       ok: false,
       message: "Needlefish withheld runner output: it contained a selected connection credential.",
-      name: "Error",
-      safetyError: false,
+      name: "ConnectionCredentialLeakError",
+      safetyError: true,
       sawFailedRaw: true,
       sawFailedAttemptRaw: true,
+      ...(mode === "stderr-leak-once" ? { causeName: "RunnerOperationalError" } : {}),
     });
     assert.equal(f.records().length, 1);
     f.clean();
@@ -359,13 +371,30 @@ for (const mode of ["success-stderr-leak", "success-stdout-leak"]) {
 
   test(`${mode}: trace-enabled CLI withholds successful transcript before result or cache`, (t) => {
     const f = fixture(t, mode);
-    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], { NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_NO_RETRY: "1" });
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], { NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_NO_RETRY: "0" });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /withheld.*credential/);
     assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY/);
     assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     assert.equal(f.records().length, 1);
+    f.clean();
+  });
+}
+
+for (const mode of ["deep-raw-once", "deep-nonzero-once", "success-stdout-escaped"]) {
+  test(`${mode}: credential rejection aborts trace-enabled review without retry or public result`, (t) => {
+    const f = fixture(t, mode);
+    const result = f.run([cli, "--repo", f.repo, "--base", f.base, "--branch", "--connection", "a", "--json"], {
+      NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_NO_RETRY: "0",
+      ...(mode.startsWith("deep-") ? { NEEDLEFISH_LARGE_PATCH_CHARS: "1" } : {}),
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /withheld.*credential/);
+    assert.doesNotMatch(result.stdout + result.stderr, /TEST-ACCOUNT|ACCOUNT_A_KEY|\\u0054/);
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
+    assert.equal(f.records().length, mode.startsWith("deep-") ? 2 : 1);
     f.clean();
   });
 }

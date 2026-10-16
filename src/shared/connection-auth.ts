@@ -1,5 +1,13 @@
+import { RunnerFailure } from "./runner-failure.js";
 import type { RunnerName } from "./runner.js";
 import { screenPayload, screenText } from "./outbound-screen.js";
+
+export class ConnectionCredentialLeakError extends RunnerFailure {
+  constructor() {
+    super("protocol_error", "Needlefish withheld runner output: it contained a selected connection credential.");
+    this.name = "ConnectionCredentialLeakError";
+  }
+}
 
 export type AuthEnvironmentReferences = Readonly<Record<string, string>>;
 
@@ -67,8 +75,10 @@ export class AcpEnvironmentAuth {
 
   assertOutputSafe(output: string): void {
     const knownValues = Object.values(this.#values);
-    if (screenPayload(output, knownValues).kind === "withheld" || screenText(output, knownValues).kind === "withheld") {
-      throw new Error("Needlefish withheld runner output: it contained a selected connection credential.");
+    if (screenText(output, knownValues).kind === "withheld"
+      || screenPayload(output, knownValues).kind === "withheld"
+      || output.split(/\r?\n/).some((line) => screenPayload(line, knownValues).kind === "withheld")) {
+      throw new ConnectionCredentialLeakError();
     }
   }
 }
