@@ -159,6 +159,9 @@ test("selected key rotations retain old and new diagnostic guards", (t) => {
 test("doctor selects the credential source without invoking CLI or presenting identity", (t) => {
   const f = fixture(t);
   const report = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  assert.deepEqual(report.checks.find(check => check.name === "capability"), {
+    name: "capability", status: "ok", detail: "codex: repositoryRead; the CLI adapter enables repository tools.",
+  });
   assert.deepEqual(report.checks.find(check => check.name === "auth"), {
     name: "auth", status: "unknown", detail: "codex: credential source chosen; provider account identity unknown; login state not probed",
   });
@@ -167,6 +170,16 @@ test("doctor selects the credential source without invoking CLI or presenting id
   const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "doctor", "--repo", f.repo, "--connection", "a", "--base", "HEAD", "--json"], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /credential source chosen; provider account identity unknown/);
+  assert.deepEqual(JSON.parse(result.stdout).checks.find((check: {name: string}) => check.name === "capability"), {
+    name: "capability", status: "ok", detail: "codex: repositoryRead; the CLI adapter enables repository tools.",
+  });
+  assert.deepEqual(f.calls(), []);
+  process.env.CODEX_BIN = path.join(f.root, "absent-codex");
+  const unavailable = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  assert.equal(unavailable.checks.find(check => check.name === "runner")?.status, "fail");
+  assert.deepEqual(unavailable.checks.find(check => check.name === "capability"), {
+    name: "capability", status: "unknown", detail: "skipped: no runner available",
+  });
   assert.deepEqual(f.calls(), []);
 });
 
