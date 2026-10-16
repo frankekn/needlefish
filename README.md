@@ -70,7 +70,8 @@ opencode, passes without probing), the git repo, and the detected base ref,
 in seconds and with no model call. Every failed check prints its fix; `--json` gives the same report to
 scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
-reported as `unknown` and does not fail the exit code.
+reported as `unknown` and does not fail the exit code. Each runner status
+command has a 10-second hard timeout. A timed-out login check is `unknown`.
 
 **On every PR** — add `.github/workflows/needlefish.yml` to the target repo:
 

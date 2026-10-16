@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnOptions, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -59,14 +59,25 @@ type ProbeResult =
   | { readonly kind: "failed"; readonly reason: string };
 
 function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): ProbeResult {
-  const res = spawnSync(command, [...args], {
+  const options: SpawnSyncOptionsWithStringEncoding & Pick<SpawnOptions, "detached"> = {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: PROBE_TIMEOUT_MS,
+    killSignal: "SIGKILL",
+    detached: process.platform !== "win32",
     maxBuffer: 1024 * 1024,
     env: buildRunnerEnv(runner, path.join(os.tmpdir(), "needlefish-doctor-gh-empty")),
-  });
+  };
+  const res = spawnSync(command, [...args], options);
+  if (process.platform !== "win32" && res.pid > 0) {
+    // The status command can leave descendants holding its pipes after it exits.
+    try {
+      process.kill(-res.pid, "SIGKILL");
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+    }
+  }
   if (res.error) {
     const code = "code" in res.error ? res.error.code : undefined;
     return {

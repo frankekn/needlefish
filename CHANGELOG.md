@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Doctor: hard-stop runner status probes at their 10-second timeout and
+  clean up their remaining POSIX process group.
+
 - Local: resolve nested invocations to the repository root for diffs, policy,
   sandbox cloning, and cache placement.
 - Runner: expose executable `WORKING` and unborn `EMPTY` sandbox refs and pin

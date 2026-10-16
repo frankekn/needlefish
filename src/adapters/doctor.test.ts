@@ -526,3 +526,57 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
   }
   assert.equal(cwds[0], cwds[1]);
 });
+
+for (const stalledCommand of ["--version", "login"]) {
+  test(`doctor hard-stops a signal-trapping ${stalledCommand} probe and its descendants`, { skip: process.platform === "win32" }, async (t) => {
+    const f = setup(t);
+    const record = path.join(f.tmp, "probe.json");
+    const executable = path.join(f.bin, "codex");
+    writeFileSync(executable, `#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+if (process.argv[2] !== ${JSON.stringify(stalledCommand)}) {
+  console.log("codex probe ok");
+  process.exit(0);
+}
+process.on("SIGTERM", () => {});
+const child = spawn(process.execPath, ["-e", 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 13000)'], { stdio: ["ignore", 1, 2] });
+writeFileSync(${JSON.stringify(record)}, JSON.stringify({ cwd: process.cwd(), parent: process.pid, child: child.pid }));
+setTimeout(() => process.exit(0), 13000);
+`);
+    chmodSync(executable, 0o755);
+
+    const started = performance.now();
+    const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "codex" });
+    const elapsed = performance.now() - started;
+
+    assert.ok(elapsed < 12_000, `probe returned after ${Math.round(elapsed)} ms`);
+    if (stalledCommand === "login") {
+      assert.deepEqual(check(report, "auth"), {
+        name: "auth",
+        status: "unknown",
+        detail: "codex: `codex login status` timed out after 10000 ms",
+      });
+    } else {
+      assert.match(check(report, "runner").detail, /version unknown\)$/);
+      assert.equal(check(report, "auth").status, "ok");
+    }
+    const observed: unknown = JSON.parse(readFileSync(record, "utf8"));
+    assert.ok(typeof observed === "object" && observed !== null && "cwd" in observed && "parent" in observed && "child" in observed);
+    assert.equal(typeof observed.cwd, "string");
+    assert.equal(typeof observed.parent, "number");
+    assert.equal(typeof observed.child, "number");
+    assert.ok(typeof observed.cwd === "string" && !existsSync(observed.cwd), "probe directory was removed");
+    for (const pid of [observed.parent, observed.child]) {
+      assert.equal(typeof pid, "number");
+      if (typeof pid !== "number") throw new Error("invalid stub PID");
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const state = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
+        if (!state || state.startsWith("Z")) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const state = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
+      assert.ok(!state || state.startsWith("Z"), `probe process ${pid} survived with state ${state}`);
+    }
+  });
+}
