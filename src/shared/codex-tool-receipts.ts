@@ -63,7 +63,11 @@ export function collectCodexToolReceipts(stdout: string | undefined): CodexToolT
 				else gaps.add("malformed_event");
 				continue;
 			}
-			if (event.type === "thread.started" || event.type === "turn.started" || event.type === "error") continue;
+			if (event.type === "thread.started" || event.type === "turn.started" || event.type === "error") {
+				if (event.type === "thread.started" && typeof event.thread_id !== "string" ||
+					event.type === "error" && typeof event.message !== "string") gaps.add("malformed_event");
+				continue;
+			}
 			if (event.type !== "item.started" && event.type !== "item.completed" && event.type !== "item.updated") {
 				gaps.add("unknown_event"); continue;
 			}
@@ -77,6 +81,9 @@ export function collectCodexToolReceipts(stdout: string | undefined): CodexToolT
 			items.set(item.id, state);
 			if (item.type !== "command_execution") {
 				if (!["agent_message", "reasoning", "todo_list", "error"].includes(item.type)) gaps.add("unsupported_tool");
+				else if ((item.type === "agent_message" || item.type === "reasoning") && typeof item.text !== "string" ||
+					item.type === "error" && typeof item.message !== "string" ||
+					item.type === "todo_list" && (!Array.isArray(item.items) || item.items.some((entry: unknown) => !record(entry) || typeof entry.text !== "string" || typeof entry.completed !== "boolean"))) gaps.add("malformed_event");
 				const phase = event.type === "item.started" ? "started" : "completed";
 				const signature = JSON.stringify(item);
 				if (event.type !== "item.updated") {
@@ -107,9 +114,9 @@ export function collectCodexToolReceipts(stdout: string | undefined): CodexToolT
 			} else {
 				state.completed = signature;
 				const result: Extract<CodexCommandReceipt, { kind: "command_completed" }>["result"] =
-					item.status === "declined" ? { kind: "declined" } :
+					item.status === "declined" && item.exit_code === null ? { kind: "declined" } :
 					item.status === "completed" && item.exit_code === 0 ? { kind: "exit_zero" } :
-					typeof item.exit_code === "number" && item.exit_code !== 0 ? { kind: "exit_nonzero", exitCode: item.exit_code } : { kind: "unconfirmed" };
+					item.status === "failed" && typeof item.exit_code === "number" && item.exit_code !== 0 ? { kind: "exit_nonzero", exitCode: item.exit_code } : { kind: "unconfirmed" };
 				if (result.kind === "unconfirmed") gaps.add("unconfirmed_completion");
 				receipts.push(Object.freeze({ kind: "command_completed", itemId: item.id, result: Object.freeze(result) }));
 			}

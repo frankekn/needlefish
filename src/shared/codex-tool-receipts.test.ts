@@ -201,3 +201,31 @@ test("receipt incompleteness does not tighten last-message fallback or infer eve
 	assert.equal(await runCodex("fixture", { repoPath: f.repo, targetHeadSha: headSha(f.repo), onNativeToolTrace: trace => { traces.push(trace); } }), "safe admitted output");
 	assert.deepEqual(traces[0]?.collection, { status: "incomplete", receipts: [], gaps: ["malformed_event", "missing_terminal"] });
 });
+
+
+for (const [status, exitCode] of [["completed", 2], ["declined", 1], ["failed", 0], ["in_progress", 3]] as const) {
+	test(`contradictory completion ${status}/${exitCode} stays unconfirmed`, () => {
+		assert.deepEqual(collectCodexToolReceipts(stream(command("item.completed", { status, exit_code: exitCode }), terminal)), {
+			status: "incomplete", gaps: ["unconfirmed_completion"], receipts: [{ kind: "command_completed", itemId: "item_0", result: { kind: "unconfirmed" } }],
+		});
+	});
+}
+
+for (const event of [
+	{ type: "thread.started", thread_id: 3 }, { type: "error", message: null },
+	{ type: "item.completed", item: { id: "agent", type: "agent_message", text: 3 } },
+	{ type: "item.completed", item: { id: "reasoning", type: "reasoning" } },
+	{ type: "item.updated", item: { id: "todo", type: "todo_list", items: [{ text: "task", completed: "yes" }] } },
+]) test(`malformed native metadata ${JSON.stringify(event)} marks collection incomplete`, () => {
+	assert.deepEqual(collectCodexToolReceipts(stream(event, terminal)), { status: "incomplete", gaps: ["malformed_event"], receipts: [] });
+});
+
+test("spawn failure has interrupted unknown receipts without guessing from diagnostics", async (t) => {
+	const f = fixture(t, "");
+	writeFileSync(path.join(f.root, "fake.cjs"), "#!/needlefish-test-no-such-interpreter\n");
+	process.env.NEEDLEFISH_NO_RETRY = "1";
+	const traces: CodexToolTrace[] = [];
+	await assert.rejects(runCodex("fixture", { repoPath: f.repo, targetHeadSha: headSha(f.repo), onNativeToolTrace: trace => { traces.push(trace); } }), /ENOENT/);
+	assert.equal(traces[0]?.invocation, "process_error");
+	assert.deepEqual(traces[0]?.collection, { status: "incomplete", receipts: [], gaps: ["missing_terminal", "process_interrupted"] });
+});
