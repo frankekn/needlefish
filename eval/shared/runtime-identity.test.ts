@@ -237,8 +237,8 @@ test("ACP artifact lookup shares platform executable names with runner detection
 
 test("public launcher metadata follows Windows Path casing", () => {
   assert.deepEqual(publicLauncherCandidates({ needlefish_acp_bin: "agent", Path: "C:\\Bin;D:\\Other", PathExt: ".EXE;.CMD" }, "win32"), [
-    "C:\\Bin\\agent", "C:\\Bin\\agent.exe", "C:\\Bin\\agent.cmd",
-    "D:\\Other\\agent", "D:\\Other\\agent.exe", "D:\\Other\\agent.cmd",
+    "C:\\Bin\\agent", "C:\\Bin\\agent.EXE", "C:\\Bin\\agent.CMD",
+    "D:\\Other\\agent", "D:\\Other\\agent.EXE", "D:\\Other\\agent.CMD",
   ]);
 });
 
@@ -253,4 +253,16 @@ test("public launcher metadata preserves POSIX case sensitivity and candidate or
   assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "agent", PATH: "/first:/second", Path: "/ignored", PATHEXT: ".EXE" }, "linux"), ["/first/agent", "/second/agent"]);
   assert.deepEqual(publicLauncherCandidates({ needlefish_acp_bin: "agent", PATH: "/first" }, "linux"), []);
   assert.deepEqual(publicLauncherCandidates({ NEEDLEFISH_ACP_BIN: "/absolute/agent" }, "linux"), ["/absolute/agent"]);
+});
+
+
+test("Windows public identity normalizes auth declarations before label screening", () => {
+  assert.deepEqual(acpRuntimeIdentity(null, { needlefish_acp_auth_env_vars: "SESSION", session: "abc", needlefish_acp_auth_files: "private-config" }, "abc", "win32"), {
+    version: 1, launcherDigest: { status: "unknown" }, harnessVersion: { status: "unknown" },
+    authSource: { status: "operator_attested", value: "environment-and-files" },
+  });
+  assert.deepEqual(acpRuntimeIdentity(null, { needlefish_acp_auth_env_vars: "SESSION", session: "abc" }, "Public 1.0", "win32"), {
+    version: 1, launcherDigest: { status: "unknown" }, harnessVersion: { status: "operator_attested", value: "Public 1.0" },
+    authSource: { status: "operator_attested", value: "environment" },
+  });
 });

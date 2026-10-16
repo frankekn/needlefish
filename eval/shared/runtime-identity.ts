@@ -12,7 +12,12 @@ export interface PublicRuntimeIdentity {
   readonly authSource: RuntimeValue;
 }
 
+function metadataEnvironment(environment: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform): Readonly<Record<string, string | undefined>> {
+  return platform === "win32" ? Object.fromEntries(Object.entries(environment).map(([name, value]) => [name.toUpperCase(), value])) : environment;
+}
+
 export function isPublicAttestationLabel(value: string, environment: Readonly<Record<string, string | undefined>>): boolean {
+  environment = metadataEnvironment(environment, process.platform);
   const declaredNames = new Set([environment.NEEDLEFISH_ACP_AUTH_ENV_VARS ?? "", environment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? ""].flatMap((names) => names.split(",")).map((name) => name.trim().toLowerCase()).filter(Boolean));
   const credentials = [
     ...Object.entries(environment).flatMap(([name, secret]) => secret && (declaredNames.has(name.toLowerCase()) || /(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i.test(name) && !/(_ENV_VARS|_FILES|_PASSTHROUGH)$/i.test(name)) ? [secret, secret.trim()].filter(Boolean) : []),
@@ -27,11 +32,12 @@ function publicVersion(value: string | undefined, status: "known" | "operator_at
 }
 
 export function publicLauncherCandidates(environment: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): string[] {
+  environment = metadataEnvironment(environment, platform);
   const pathApi = platform === "win32" ? path.win32 : path.posix;
   const command = environment.NEEDLEFISH_ACP_BIN?.trim();
   if (!command) return [];
-  if (!pathApi.isAbsolute(command) && (command.includes(pathApi.sep) || (environment.PATH ?? "").split(pathApi.delimiter).some((dir) => !pathApi.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
-  return pathApi.isAbsolute(command) || command.includes(pathApi.sep) ? [command]
+  if (!pathApi.isAbsolute(command) && ((platform === "win32" ? /[/\\]/.test(command) : command.includes(pathApi.sep)) || (environment.PATH ?? "").split(pathApi.delimiter).some((dir) => !pathApi.isAbsolute(dir)))) throw new Error("public launcher resolution depends on the target working directory");
+  return pathApi.isAbsolute(command) || (platform === "win32" ? /[/\\]/.test(command) : command.includes(pathApi.sep)) ? [command]
     : (environment.PATH ?? "").split(pathApi.delimiter).flatMap((dir) => executableNames(command, platform, environment.PATHEXT).map((name) => pathApi.join(dir, name)));
 }
 
@@ -39,11 +45,13 @@ export function acpRuntimeIdentity(
   publicArtifact: string | null,
   environment: Readonly<Record<string, string | undefined>>,
   runnerVersion: string | null,
+  platform: NodeJS.Platform = process.platform,
 ): PublicRuntimeIdentity {
+  environment = metadataEnvironment(environment, platform);
   let launcherDigest: RuntimeValue = runtimeLabel(undefined);
   if (publicArtifact !== null) {
     try {
-      const executable = publicLauncherCandidates(environment).find((file) => {
+      const executable = publicLauncherCandidates(environment, platform).find((file) => {
         try { accessSync(file, constants.X_OK); return statSync(file).isFile(); } catch { return false; }
       });
       if (!executable || realpathSync(executable) !== realpathSync(publicArtifact)) {
