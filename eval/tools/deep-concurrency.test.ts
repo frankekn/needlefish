@@ -32,12 +32,25 @@ test("source inventory rejects added files and symlinks, including untracked pat
 	t.after(() => rmSync(tmp, { recursive: true, force: true }));
 	for (const dir of ["src", "prompts", "eval/shared"]) mkdirSync(path.join(tmp, dir), { recursive: true });
 	writeFileSync(path.join(tmp, "src/a.ts"), "fixed");
-	assertDirectoryInventory(tmp, ["src/a.ts"]);
+	const expected = ["src/a.ts", "tsconfig.json", "tsconfig.build.json"];
+	for (const file of expected.slice(1)) writeFileSync(path.join(tmp, file), "{}");
+	assertDirectoryInventory(tmp, expected);
 	writeFileSync(path.join(tmp, "src/extra.ts"), "not pinned");
-	assert.throws(() => assertDirectoryInventory(tmp, ["src/a.ts"]), /source path drift/);
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source path drift/);
 	rmSync(path.join(tmp, "src/extra.ts"));
 	symlinkSync(path.join(tmp, "src/a.ts"), path.join(tmp, "src/link.ts"));
-	assert.throws(() => assertDirectoryInventory(tmp, ["src/a.ts"]), /source symlink/);
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source symlink/);
+	rmSync(path.join(tmp, "src/link.ts"));
+	writeFileSync(path.join(tmp, "tsconfig.future.json"), "{}");
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source path drift/);
+	rmSync(path.join(tmp, "tsconfig.future.json"));
+	rmSync(path.join(tmp, "tsconfig.build.json"));
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source path drift/);
+	symlinkSync(path.join(tmp, "tsconfig.json"), path.join(tmp, "tsconfig.build.json"));
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source symlink/);
+	rmSync(path.join(tmp, "tsconfig.build.json"));
+	mkdirSync(path.join(tmp, "tsconfig.build.json"));
+	assert.throws(() => assertDirectoryInventory(tmp, expected), /source not a regular file/);
 });
 
 test("study CLI rejects execution flags before loading a fixture", () => {
