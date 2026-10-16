@@ -526,3 +526,23 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
   }
   assert.equal(cwds[0], cwds[1]);
 });
+
+
+test("doctor reports HTTP review capability as unsupported even with a configured credential", (t) => {
+  const f = setup(t);
+  process.env.OPENAI_API_KEY = "local-test-placeholder";
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "openai" });
+  assert.equal(report.ok, false);
+  const capability = report.checks.find((entry) => String(entry.name) === "capability");
+  assert.equal(capability?.status, "fail");
+  assert.match(capability?.detail ?? "", /unsupported-capability.*repositoryRead/);
+});
+
+test("doctor marks an arbitrary ACP launcher repository capability unknown", (t) => {
+  const f = setup(t);
+  process.env.NEEDLEFISH_ACP_BIN = stub(f.bin, "acp-agent", "exit 0");
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "acp" });
+  const capability = report.checks.find((entry) => String(entry.name) === "capability");
+  assert.equal(capability?.status, "unknown");
+  assert.match(capability?.detail ?? "", /unknown.*initialize.*repositoryRead/);
+});

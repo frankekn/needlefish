@@ -73,13 +73,14 @@ function setupDryRunFixture(
   return { tmp, repo, home, marker, fakeBin };
 }
 
-function runCli(fixture: DryRunFixture, args: readonly string[]) {
+function runCli(fixture: DryRunFixture, args: readonly string[], overrides: NodeJS.ProcessEnv = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}`,
     HOME: fixture.home,
     CLAUDE_BIN: "claude",
     NEEDLEFISH_RUNNER: "claude",
+    ...overrides,
   };
   delete env.NEEDLEFISH_NO_FAST_PATH;
   return spawnSync(
@@ -267,4 +268,19 @@ test("--dry-run with a nested --repo collects root-relative tracked and untracke
     .map((file) => (isJsonObject(file) && typeof file.path === "string" ? file.path : ""))
     .sort();
   assert.deepEqual(paths, ["app.ts", "newroot.ts", "pkg/deep/mod.ts", "pkg/deep/newmod.ts"]);
+});
+
+
+test("HTTP dry-run and actual review reject the same unsupported small critic before any model call", (t) => {
+  const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
+  const args = ["--repo", fixture.repo, "--runner", "openai"];
+  const env = { OPENAI_API_KEY: "local-test-placeholder", OPENAI_BASE_URL: "http://127.0.0.1:1/v1" };
+  const dry = runCli(fixture, [...args, "--dry-run"], env);
+  const actual = runCli(fixture, args, env);
+  assert.equal(dry.status, 1, dry.stderr);
+  assert.equal(actual.status, 1, actual.stderr);
+  assert.equal(dry.stderr, actual.stderr);
+  assert.match(dry.stderr, /unsupported-capability.*repositoryRead/);
+  assert.equal(existsSync(fixture.marker), false);
+  assert.equal(existsSync(cacheFile(fixture)), false);
 });
