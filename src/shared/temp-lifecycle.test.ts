@@ -339,15 +339,15 @@ setInterval(() => {}, 1000);
 const result = await spawnRunnerProcess({command:process.execPath,args:[runner,directory,${JSON.stringify(sentinel)},${JSON.stringify(ready)},${JSON.stringify(replacement)}],stdin:"",repoPath:directory,timeoutMs:60_000,env:process.env});
 fs.writeFileSync(${JSON.stringify(closed)}, JSON.stringify({result,healthy}));
 `, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
-    let runnerPid: number | undefined;
+    const cleanup: { runnerPid?: number } = {};
     t.after(() => {
       killIfRunning(owner.pid);
-      if (runnerPid !== undefined) killIfRunning(-runnerPid);
+      if (cleanup.runnerPid !== undefined) killIfRunning(-cleanup.runnerPid);
       rmSync(root, { recursive: true, force: true });
     });
     await waitForFile(ready);
     const info: { directory: string; pid: number } = JSON.parse(readFileSync(ready, "utf8"));
-    runnerPid = info.pid;
+    cleanup.runnerPid = info.pid;
     const before = readFileSync(path.join(info.directory, ".needlefish-owner.json"), "utf8");
     owner.kill("SIGTERM");
     const [status, signal] = await waitForExit(owner);
@@ -385,7 +385,7 @@ for (const [signal, expectedStatus] of [
       const ready = path.join(root, "ready");
       const started = path.join(root, "cleanup-started");
       const owner = spawnModule(`
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readlinkSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
@@ -394,8 +394,9 @@ const originalRm = fs.rm;
 const originalChmod = fs.chmod;
 const directories = [];
 const attempted = new Set();
+const originalPath = (target) => String(target).replace(/^\\/proc\\/self\\/fd\\/([0-9]+)\\/\\.\\//, (_, fd) => readlinkSync("/proc/self/fd/" + fd) + "/");
 fs.rm = async (target, options) => {
-  const owned = directories.find((directory) => target === directory || String(target).startsWith(directory + path.sep));
+  const owned = directories.find((directory) => target === directory || originalPath(target).startsWith(directory + path.sep));
   if (owned !== undefined && ${JSON.stringify(barrier)} === "permission repair" && !attempted.has(target)) {
     attempted.add(target);
     throw Object.assign(new Error("owned permission barrier"), { code: "EPERM" });
@@ -409,7 +410,7 @@ fs.rm = async (target, options) => {
   return await originalRm(target, options);
 };
 fs.chmod = async (target, mode) => {
-  if (directories.some((directory) => String(target).startsWith(directory + path.sep))) {
+  if (directories.some((directory) => originalPath(target).startsWith(directory + path.sep))) {
     writeFileSync(${JSON.stringify(started)}, "permission repair");
     await delay(1200);
   }
@@ -509,6 +510,64 @@ setInterval(() => {}, 1000);
   await reapUntilGone(root, directory);
   assert.equal(existsSync(directory), false, "restored ownership must permit startup reclamation");
 });
+
+for (const replacement of ["root", "owner marker"] as const) {
+  test(`Linux termination does not follow a ${replacement} replaced during final removal`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+    const ready = path.join(root, "ready");
+    const sentinel = path.join(root, "sentinel");
+    const attempted = path.join(root, "attempted");
+    mkdirSync(sentinel);
+    writeFileSync(path.join(sentinel, "payload"), "external payload");
+    const owner = spawnModule(`
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
+const originalRmdir = fs.rmdirSync;
+let directory;
+fs.rmdirSync = (target, options) => {
+  if (target === directory) {
+    fs.writeFileSync(${JSON.stringify(attempted)}, String(fs.existsSync(path.join(directory, ".needlefish-owner.json"))));
+    if (${JSON.stringify(replacement)} === "root") {
+      fs.renameSync(directory, directory + ".displaced");
+      fs.symlinkSync(${JSON.stringify(sentinel)}, directory);
+    } else fs.symlinkSync(${JSON.stringify(path.join(sentinel, "payload"))}, path.join(directory, ".needlefish-owner.json"));
+  }
+  return originalRmdir(target, options);
+};
+syncBuiltinESMExports();
+const { createManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
+directory = await createManagedTempDirectory();
+fs.writeFileSync(${JSON.stringify(ready)}, directory);
+setInterval(() => {}, 1000);
+`, root, { NEEDLEFISH_TERMINATION_GRACE_MS: "1500" });
+    t.after(() => {
+      killIfRunning(owner.pid);
+      rmSync(root, { recursive: true, force: true });
+    });
+    await waitForFile(ready);
+    const directory = readFileSync(ready, "utf8");
+    const before = readFileSync(path.join(directory, ".needlefish-owner.json"), "utf8");
+    owner.kill("SIGTERM");
+    const [status, signal] = await waitForExit(owner);
+    assert.equal(signal, null);
+    assert.equal(status, 143);
+    assert.equal(readFileSync(attempted, "utf8"), "false");
+    assert.equal(readFileSync(path.join(sentinel, "payload"), "utf8"), "external payload");
+    if (replacement === "root") {
+      assert.equal(existsSync(path.join(sentinel, ".needlefish-owner.json")), false);
+      assert.equal(readFileSync(path.join(directory + ".displaced", ".needlefish-owner.json"), "utf8"), before);
+      rmSync(directory);
+      renameSync(directory + ".displaced", directory);
+    } else {
+      assert.equal(lstatSync(path.join(directory, ".needlefish-owner.json")).isSymbolicLink(), true);
+      rmSync(path.join(directory, ".needlefish-owner.json"));
+      writeFileSync(path.join(directory, ".needlefish-owner.json"), before);
+    }
+    await reapUntilGone(root, directory);
+    assert.equal(existsSync(directory), false);
+  });
+}
 
 test("termination unregisters a runner that closes during grace and exits immediately", { timeout: 10_000 }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
