@@ -120,3 +120,55 @@ test("actual collector CLI and weekly replay use GET-only exact historical joins
   assert.equal(calls.some((call) => call.includes("--method") || call.includes("-X") || call.includes("--input")), false);
   assert.ok(calls.filter((call) => call[1] !== "graphql").every((call) => call.length === 2));
 });
+
+
+test("weekly parser keeps incomplete receipts unknown without losing historical identity", () => {
+  const joined = enrichAdoptionRows([finding()], contract, api([receipt()]))[0].measurement;
+  assert.ok(joined?.status === "producer_attested");
+  for (const delivery of ["partial", "verdict_check_published", "posting_failed", "not_applicable"]) {
+    assert.deepEqual(parseFindingMeasurement({ ...joined, receipt: { ...joined.receipt, delivery } }), {
+      status: "unknown", identity: joined.identity, reason: "incomplete_delivery",
+    });
+  }
+  assert.deepEqual(parseFindingMeasurement(joined), joined);
+});
+
+test("weekly CLI preserves incomplete stdout rows in unknown coverage and keeps complete receipts", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-weekly-delivery-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const row = enrichAdoptionRows([finding()], contract, api([receipt()]))[0];
+  assert.ok(row.measurement?.status === "producer_attested");
+  const preload = path.join(tmp, "stdout-boundary.mjs");
+  writeFileSync(preload, `import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { readFileSync } from 'node:fs';
+const original = childProcess.spawnSync;
+childProcess.spawnSync = function(command, args, options) {
+  if (Array.isArray(args) && args.some(arg => typeof arg === 'string' && arg.endsWith('/eval/tools/adoption.ts'))) {
+    return { status: 0, signal: null, stdout: readFileSync(process.env.NF_BOUNDARY_ROWS, 'utf8'), stderr: '', pid: 0, output: [] };
+  }
+  return original(command, args, options);
+};
+syncBuiltinESMExports();
+`);
+  for (const delivery of ["partial", "delivered"] as const) {
+    const input = [{ ...row, created: new Date(Date.now() - 86_400_000).toISOString(), measurement: { ...row.measurement, receipt: { ...row.measurement.receipt, delivery } } }];
+    const inputFile = path.join(tmp, `${delivery}.json`), outputDir = path.join(tmp, delivery);
+    writeFileSync(inputFile, JSON.stringify(input));
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--import", preload, "eval/tools/adoption-weekly.ts", outputDir,
+      "--measurement-workflow", contract.workflowPath, "--measurement-job-key", contract.jobKey, "--measurement-job-name", contract.jobName], {
+      env: { ...process.env, GITHUB_REPOSITORY: repo, NF_BOUNDARY_ROWS: inputFile }, encoding: "utf8", timeout: 30_000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const incomplete = delivery === "partial";
+    const expected = [{ ...input[0], measurement: incomplete ? { status: "unknown", identity: row.measurement.identity, reason: "incomplete_delivery" } : row.measurement }];
+    assert.deepEqual(JSON.parse(readFileSync(path.join(outputDir, "rows.json"), "utf8")), expected);
+    const metadata: unknown = JSON.parse(readFileSync(path.join(outputDir, "metadata.json"), "utf8"));
+    assert.ok(typeof metadata === "object" && metadata !== null && "status" in metadata && "findingThreads" in metadata && "measurements" in metadata);
+    assert.equal(metadata.status, incomplete ? "partial" : "collected");
+    assert.equal(metadata.findingThreads, 1);
+    assert.deepEqual(metadata.measurements, { contract, findingDenominator: 1, unknown: incomplete ? 1 : 0, scope: "producer_attested_only" });
+    assert.ok(readFileSync(path.join(outputDir, "report.md"), "utf8").includes(incomplete
+      ? "Finding coverage: 0/1 producer-attested; 1 unknown" : "Finding coverage: 1/1 producer-attested; 0 unknown"));
+  }
+});
