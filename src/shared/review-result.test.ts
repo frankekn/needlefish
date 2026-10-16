@@ -264,6 +264,7 @@ test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 		{ quote: 7 },
 		{ quoteCheck: { status: "maybe" } },
 		{ quoteCheck: { status: "moved", from: "" } },
+		{ quoteCheck: { status: "moved" } },
 		{ quoteCheck: "matched" },
 	]) {
 		assert.throws(() => parseReviewResult(serialized({ findings: [{ ...finding, ...extra }] })), /quote/);
@@ -346,4 +347,9 @@ test("parseReviewResult rejects mistyped PR scope and callout fields", () => {
 	] as const) {
 		assert.throws(() => parseReviewResult(serialized({ [field]: value })), pattern);
 	}
+});
+
+	test("parseReviewResult preserves an unchecked quote result", () => {
+	const finding = { severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v", quoteCheck: { status: "unchecked" } };
+	assert.deepEqual(parseReviewResult(serialized({ findings: [finding] })).findings[0].quoteCheck, { status: "unchecked" });
 });

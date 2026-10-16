@@ -195,7 +195,6 @@ test("local --pr records the PR base tip as prBaseSha, distinct from the merge b
   writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
   commitAll(repo, "feature");
   const head = headSha(repo);
-  // Advance main past the merge base so the PR base tip and merge base differ.
   gitText(["checkout", "main"], repo);
   writeFileSync(path.join(repo, "MAIN.md"), "main moved\n");
   commitAll(repo, "main advanced");
@@ -513,8 +512,6 @@ test("runLocal tells the user what to do when the branch has no diff against its
     /No diff between [0-9a-f]{40} and HEAD \(main\)\. Nothing to review\. Commit changes on this branch first, or pass --base <ref> to compare against another branch\.$/,
   );
 });
-
-// --- Nested-directory invocation --------------------------------------------
 
 type NestedFixture = {
   readonly tmp: string;

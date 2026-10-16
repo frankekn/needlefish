@@ -243,7 +243,6 @@ test("isNeedlefishPost never drops a human comment", () => {
   for (const body of [...humanBodies, OWN_ROUND_COMMENT, OWN_REVIEW_BODY]) {
     assert.equal(isNeedlefishPost(body, OWN_HUMAN), false, body.slice(0, 40));
   }
-  // A bot-typed post with a marker only mid-body is not one of ours either.
   assert.equal(isNeedlefishPost(HUMAN_PASTED_MARKER_MID, OWN_BOT), false);
 });
 

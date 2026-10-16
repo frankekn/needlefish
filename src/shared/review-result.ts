@@ -138,13 +138,17 @@ function requireReplacement(raw: unknown): Finding["replacement"] {
 function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
 	if (!isRecord(raw)) throw new Error("quoteCheck not an object");
 	const { status, from } = raw;
-	if (status !== "matched" && status !== "moved" && status !== "not_found") {
-		throw new Error("quoteCheck.status not matched, moved, or not_found");
+	if (status !== "matched" && status !== "moved" && status !== "not_found" && status !== "unchecked") {
+		throw new Error("quoteCheck.status not matched, moved, not_found, or unchecked");
 	}
 	if (from !== undefined && (typeof from !== "string" || from === "")) {
 		throw new Error("quoteCheck.from not a non-empty string");
 	}
-	return { status, ...(from !== undefined ? { from } : {}) };
+	if (status === "moved") {
+		if (typeof from !== "string") throw new Error("quoteCheck.from missing for moved location");
+		return { status, from };
+	}
+	return { status };
 }
 
 function requireFinding(raw: unknown): Finding {

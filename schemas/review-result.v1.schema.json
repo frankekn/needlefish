@@ -158,13 +158,15 @@
           "type": "object",
           "required": ["status"],
           "properties": {
-            "status": { "enum": ["matched", "moved", "not_found"] },
+            "status": { "enum": ["matched", "moved", "not_found", "unchecked"] },
             "from": {
               "description": "Original file:line when status is moved.",
               "type": "string",
               "minLength": 1
             }
-          }
+          },
+          "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
+          "then": { "required": ["from"], "properties": { "from": {} } }
         }
       },
       "if": {

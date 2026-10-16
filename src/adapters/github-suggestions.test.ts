@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatSuggestionComment } from "./github-suggestions";
+import { isNeedlefishPost, OWN_POST_FINDING_MARKER } from "../shared/normalize";
 import type { Finding } from "../shared/schema";
 
 function mkFinding(overrides: Partial<Finding> = {}): Finding {
@@ -104,4 +105,23 @@ test("formatSuggestionComment shows the quote-check location note and stays sile
   assert.match(moved.body, /\*\*Validate:\*\* test\n\n_Location corrected from `src\/a\.ts:9`: the quoted source was found here\._\n/);
   assert.match(missing.body, /_Location unverified: the quoted source was not found in `README\.md`\._/);
   assert.equal(matched.body, formatSuggestionComment(mkFinding(), context).body);
+});
+
+test("formatSuggestionComment and isNeedlefishPost share the finding marker", () => {
+  const formatted = formatSuggestionComment(mkFinding(), {
+    ranges: new Map(),
+    headLineCount: () => null,
+  });
+  const lastLine = formatted.body.split("\n").filter((line) => line.length > 0).at(-1);
+  assert.equal(lastLine, OWN_POST_FINDING_MARKER);
+  assert.equal(isNeedlefishPost(formatted.body, { bot: true, own: false }), true);
+});
+
+test("formatSuggestionComment suppresses replacements at unverified or relocated locations", () => {
+ const context = { ranges: new Map([["README.md", [[1, 1]] as const]]), headLineCount: () => 1 };
+ for (const quoteCheck of [{ status: "unchecked" }, { status: "not_found" }, { status: "moved", from: "old.ts:1" }] as const) {
+  const comment = formatSuggestionComment(mkFinding({ replacement: { lines: ["fixed"] }, quoteCheck }), context);
+  assert.equal(comment.body.includes("```suggestion"), false);
+  assert.match(comment.body, /_Location /);
+ }
 });

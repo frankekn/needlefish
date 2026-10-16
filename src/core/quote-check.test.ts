@@ -68,6 +68,7 @@ test("checkQuotes matches a removed line against the cited file at base", (t) =>
 
 	assert.deepEqual(finding.quoteCheck, { status: "matched" });
 	assert.equal(finding.file, "src/app.ts");
+	assert.equal(finding.replacement, undefined);
 });
 
 test("checkQuotes moves a finding to the one changed line that holds its quote", (t) => {
@@ -103,17 +104,17 @@ test("checkQuotes marks a quote found nowhere as not_found and keeps the finding
 	const input = { ...FINDING, quote: "this line does not exist anywhere" };
 	const [finding] = checkQuotes([input], bundle);
 
-	assert.deepEqual(finding, { ...input, quoteCheck: { status: "not_found" } });
+	assert.deepEqual(finding, { ...input, replacement: undefined, quoteCheck: { status: "not_found" } });
 });
 
-test("checkQuotes leaves short, absent, and uncheckable quotes unchanged", (t) => {
+test("checkQuotes marks short and uncheckable quotes unchecked, and preserves absent quotes", (t) => {
 	const bundle = makeRepo(t);
 	const short = { ...FINDING, quote: "x = 1;" };
 	const quoted = { ...FINDING, quote: "this line does not exist anywhere" };
 
-	assert.deepEqual(checkQuotes([short, FINDING], bundle), [short, FINDING]);
+	assert.deepEqual(checkQuotes([short, FINDING], bundle), [{ ...short, replacement: undefined, quoteCheck: { status: "unchecked" } }, FINDING]);
 	// Uncommitted mode reviews the WORKING sentinel, which is not a git ref.
-	assert.deepEqual(checkQuotes([quoted], { ...bundle, headSha: "WORKING" }), [quoted]);
+	assert.deepEqual(checkQuotes([quoted], { ...bundle, headSha: "WORKING" }), [{ ...quoted, replacement: undefined, quoteCheck: { status: "unchecked" } }]);
 });
 
 test("checkQuotes treats the cited file as a literal path, not a glob", (t) => {
@@ -137,6 +138,46 @@ test("checkQuotes leaves a finding unchecked when the quote or file holds a NUL"
 	const quoted = { ...FINDING, quote: "const total = price * quantity;\0" };
 	const filed = { ...FINDING, file: "src/app.ts\0", quote: "const removedLine = legacyCall();" };
 
-	assert.deepEqual(checkQuotes([quoted], bundle), [quoted]);
-	assert.deepEqual(checkQuotes([filed], bundle)[0].quoteCheck, { status: "not_found" });
+	assert.deepEqual(checkQuotes([quoted], bundle), [{ ...quoted, replacement: undefined, quoteCheck: { status: "unchecked" } }]);
+	assert.deepEqual(checkQuotes([filed], bundle)[0].quoteCheck, { status: "unchecked" });
+});
+
+
+test("checkQuotes relocates a whole quote on the wrong line in the cited file and suppresses its replacement", (t) => {
+	const bundle = makeRepo(t);
+	const [finding] = checkQuotes([{ ...FINDING, quote: "const total = price * quantity;" }], bundle);
+	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/app.ts:1" });
+	assert.equal(finding.lineStart, 2);
+	assert.equal(finding.replacement, undefined);
+});
+
+test("checkQuotes rejects a substring in the cited file and suppresses its replacement", (t) => {
+	const bundle = makeRepo(t);
+	const [finding] = checkQuotes([{ ...FINDING, lineStart: 2, lineEnd: 2, quote: "total = price * quantity;" }], bundle);
+	assert.deepEqual(finding.quoteCheck, { status: "not_found" });
+	assert.equal(finding.replacement, undefined);
+});
+
+test("checkQuotes warns on an invalid head or base and suppresses replacements", (t) => {
+	const bundle = makeRepo(t);
+	const quoted = { ...FINDING, quote: "this line does not exist anywhere" };
+	for (const invalid of [{ ...bundle, headSha: "invalid-ref" }, { ...bundle, baseSha: "invalid-ref" }]) {
+		const [finding] = checkQuotes([quoted], invalid);
+		assert.deepEqual(finding.quoteCheck, { status: "unchecked" });
+		assert.equal(finding.replacement, undefined);
+	}
+});
+
+test("checkQuotes verifies a cited line before an overflowing whole-tree search", (t) => {
+	const bundle = makeRepo(t);
+	const quote = "const total = price * quantity;";
+	writeFileSync(path.join(bundle.repoPath, "many.ts"), (quote + "\n").repeat(500_000));
+	commitAll(bundle.repoPath, "many matches");
+	const head = { ...bundle, headSha: headSha(bundle.repoPath) };
+	const [matched] = checkQuotes([{ ...FINDING, lineStart: 2, lineEnd: 2, quote }], head);
+	assert.deepEqual(matched.quoteCheck, { status: "matched" });
+	assert.deepEqual(matched.replacement, FINDING.replacement);
+	const [unchecked] = checkQuotes([{ ...FINDING, file: "absent.ts", quote }], head);
+	assert.deepEqual(unchecked.quoteCheck, { status: "unchecked" });
+	assert.equal(unchecked.replacement, undefined);
 });

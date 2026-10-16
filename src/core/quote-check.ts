@@ -50,24 +50,23 @@ function grepAt(repoPath: string, ref: string, quote: string, file?: string): Hi
 }
 
 function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>): Finding {
-	const quote = finding.quote;
-	if (!quote || quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return finding;
-	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote);
-	if (!headHits) return finding;
-	if (headHits.some((hit) => hit.file === finding.file)) {
-		return { ...finding, quoteCheck: { status: "matched" } };
-	}
-	// A finding about removed code quotes a line that only exists at base.
+	const quote = finding.quote?.trim();
+	if (!quote) return finding;
+	const unchecked: Finding = { ...finding, replacement: undefined, quoteCheck: { status: "unchecked" } };
+	if (quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
+	const citedHits = grepAt(bundle.repoPath, bundle.headSha, quote, finding.file);
+	if (!citedHits) return unchecked;
+	const atLocation = (hit: Hit) => hit.text.trim() === quote && hit.line >= finding.lineStart && hit.line <= finding.lineEnd;
+	if (citedHits.some(atLocation)) return { ...finding, quoteCheck: { status: "matched" } };
+	// Removed source can validate a finding, but never a replacement of head lines.
 	const baseHits = grepAt(bundle.repoPath, bundle.baseSha, quote, finding.file);
-	if (baseHits && baseHits.length > 0) {
-		return { ...finding, quoteCheck: { status: "matched" } };
-	}
-	// -F matches substrings; a move needs the whole line to be the quote, or a
-	// comment or string that mentions the quoted code would become the anchor.
-	const [hit] = headHits;
-	if (headHits.length === 1 && changed.has(hit.file) && hit.text.trim() === quote) {
-		// The old replacement targets the old lines; applied at the new
-		// location it would be a wrong GitHub suggestion.
+	if (!baseHits) return unchecked;
+	if (baseHits.some(atLocation)) return { ...finding, replacement: undefined, quoteCheck: { status: "matched" } };
+	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote);
+	if (!headHits) return unchecked;
+	const wholeHits = headHits.filter((hit) => hit.text.trim() === quote);
+	const [hit] = wholeHits;
+	if (wholeHits.length === 1 && changed.has(hit.file)) {
 		return {
 			...finding,
 			file: hit.file,
@@ -77,7 +76,7 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 			quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
 		};
 	}
-	return { ...finding, quoteCheck: { status: "not_found" } };
+	return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
 }
 
 // Annotates and, on one unique changed-line match, relocates findings. It

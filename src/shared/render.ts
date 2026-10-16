@@ -12,8 +12,9 @@ const SEV_ORDER: Record<Severity, number> = {
 // location caveat wherever the finding appears (issue #240).
 export function quoteNote(finding: Finding): string | null {
 	const check = finding.quoteCheck;
-	if (check?.status === "moved") return `_Location corrected from ${codeSpan(check.from ?? "?")}: the quoted source was found here._`;
+	if (check?.status === "moved") return `_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`;
 	if (check?.status === "not_found") return `_Location unverified: the quoted source was not found in ${codeSpan(finding.file)}._`;
+	if (check?.status === "unchecked") return "_Location unverified: the quoted source could not be checked._";
 	return null;
 }
 
@@ -97,9 +98,6 @@ export function renderMarkdown(
 		(finding) => finding.severity !== "P3",
 	).length;
 
-	// Red-reason headline: when the verdict is red, the first line states WHY
-	// (top blocking finding / first blocking residual) instead of the summary.
-	// Defensive: if the reason data is absent, fall back to the summary headline.
 	let headlineReplaced = false;
 	if (result.verdict === "changes_requested" && headlineBlockingCount > 0) {
 		const top = headlineFindings[0];

@@ -42,6 +42,8 @@ function asString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+export const OWN_POST_FINDING_MARKER = "<!-- needlefish-finding -->";
+
 // Every post Needlefish writes to a PR ends with one of these lines, so its
 // own text is recognized on the way back in without knowing which identity
 // posted it. Producers: github.ts (round, error, state), github-suggestions.ts
@@ -52,7 +54,7 @@ function asString(value: unknown): string {
 const OWN_POST_MARKERS: ReadonlySet<string> = new Set([
   "<!-- needlefish-round -->",
   "<!-- needlefish-error -->",
-  "<!-- needlefish-finding -->",
+  OWN_POST_FINDING_MARKER,
   "<!-- needlefish-explain -->",
 ]);
 const OWN_STATE_MARKER_PREFIX = "<!-- needlefish-state:";

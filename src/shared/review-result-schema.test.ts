@@ -331,7 +331,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		"properties",
 		"replacement",
 	);
-	assertFields<NonNullable<Finding["quoteCheck"]>>(
+	assertFields<{ status: NonNullable<Finding["quoteCheck"]>["status"]; from?: string }>(
 		{ status: "required", from: "optional" },
 		"$defs",
 		"finding",
@@ -412,7 +412,6 @@ test("schema enums match the runtime value sets", (t) => {
 		.sort();
 	assert.deepEqual(gapKindConsts, Object.keys(gapKinds).sort());
 
-	// Every schema enum member must also survive the runtime reader.
 	const tmp = withTmp(t);
 	const real = asObject(
 		cliJson(tmp, makeRepo(tmp, CODE_CHANGE), { NEEDLEFISH_NO_FAST_PATH: "1" }),
