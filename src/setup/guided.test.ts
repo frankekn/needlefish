@@ -50,8 +50,9 @@ if(endpoint.includes('/contents/.github/workflows/needlefish.yml')){
 if(endpoint.includes('/contents/.github/workflows?'))out(endpoint.endsWith('ref=base-sha')&&state.parentDuplicate?[{name:'custom.yml',type:'file'}]:state.workflows|| (state.duplicate?[{name:'custom.yml',type:'file'}]:[]));
 if(endpoint.includes('/contents/.github/workflows/slow'))out({encoding:'base64',content:Buffer.from('name: unrelated CI').toString('base64')});
 if(endpoint.includes('/contents/.github/workflows/custom.yml'))out({encoding:'base64',content:Buffer.from('uses: frankekn/needlefish@custom').toString('base64')});
-if(endpoint.includes('/pulls?'))out(state.pr?[{body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main'},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}]:[]);
-if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch){state.branchReads=(state.branchReads||0)+1;save();out({object:{sha:state.branchMoves&&state.branchReads>1?'moved-sha':'setup-sha'}})}missing()}
+function pullRequest(){return {number:7,body:state.markerMissing?'manual PR':'<!-- Needlefish setup template 1 -->',html_url:'https://github.com/owner/repo/pull/7',base:{ref:state.wrongBase?'release':'main',repo:{full_name:'owner/repo'}},head:{ref:'needlefish/setup-v1',sha:state.staleHead?'stale-sha':state.branchHead||'setup-sha',repo:{full_name:state.foreignHead?'other/repo':'owner/repo'}}}}
+if(endpoint.includes('/pulls?'))out(state.pr?[pullRequest()]:[]);
+if(endpoint.endsWith('/git/ref/heads/needlefish/setup-v1')){if(state.branch){state.branchReads=(state.branchReads||0)+1;save();out({object:{sha:state.branchMoves&&state.branchReads>1?'moved-sha':state.branchHead||'setup-sha'}})}missing()}
 if(endpoint.endsWith('/git/ref/heads/main'))out({object:{sha:'base-sha'}});
 if(endpoint.endsWith('/git/commits/base-sha'))out({tree:{sha:'base-tree'}});
 if(endpoint.endsWith('/git/commits/setup-sha'))out({message:state.unowned?'human commit':'Needlefish setup template 1',parents:[{sha:'base-sha'}]});
@@ -60,7 +61,7 @@ if(endpoint.includes('/compare/'))out({total_commits:1,files:state.extra?[{filen
 if(endpoint.endsWith('/git/trees')){if(body.base_tree!=='base-tree'||body.tree.length!==1||body.tree[0].content!==template)throw Error('unexpected tree');out({sha:'setup-tree'})}
 if(endpoint.endsWith('/git/commits'))out({sha:'setup-sha'});
 if(endpoint.endsWith('/git/refs')){state.branch=true;save();out({ref:body.ref})}
-if(endpoint.endsWith('/pulls')){state.pr=true;save();out(state.prReply??{html_url:'https://github.com/owner/repo/pull/7'})}
+if(endpoint.endsWith('/pulls')){if(state.branchMovesAtPost)state.branchHead='moved-sha';state.pr=true;const reply=Object.hasOwn(state,'prReply')?state.prReply:pullRequest();if(state.branchMovesAfterResponse)state.branchHead='later-sha';save();out(reply)}
 throw Error('unhandled endpoint '+endpoint);
 `;
   writeFileSync(join(root, "gh"), script); chmodSync(join(root, "gh"), 0o700);
@@ -508,4 +509,69 @@ test("a concurrently installed current workflow creates no empty setup commit", 
     message: "The selected revision already contains the current setup workflow. Nothing was written. Refresh status before retrying.",
   });
   assert.deepEqual(f.history().filter(call => call.args.includes("--method")), []);
+});
+
+const createdPr = {
+  number: 7, html_url: "https://github.com/owner/repo/pull/7", body: "<!-- Needlefish setup template 1 -->",
+  base: { ref: "main", repo: { full_name: "owner/repo" } },
+  head: { ref: "needlefish/setup-v1", sha: "setup-sha", repo: { full_name: "owner/repo" } },
+};
+
+for (const initial of [{ branchMovesAtPost: true }, { branch: true, branchMovesAtPost: true }]) {
+  test(`setup rejects the PR created from a moved symbolic branch ${JSON.stringify(initial)}`, t => {
+    const f = fixture(t, initial);
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.equal(JSON.parse(result.stdout).prUrl, undefined);
+    assert.equal(f.state().pr, true);
+    assert.equal(f.state().branchHead, "moved-sha");
+    const calls = f.history();
+    assert.ok(calls.at(-1)?.args.includes("repos/owner/repo/pulls"));
+    assert.equal(calls.filter(call => call.args.includes("--method")).length, initial.branch ? 1 : 4);
+  });
+}
+
+for (const prReply of [
+  { ...createdPr, head: { ...createdPr.head, sha: "other-sha" } },
+  { ...createdPr, head: { ...createdPr.head, ref: "human-branch" } },
+  { ...createdPr, head: { ...createdPr.head, repo: { full_name: "other/repo" } } },
+  { ...createdPr, base: { ...createdPr.base, ref: "release" } },
+  { ...createdPr, base: { ...createdPr.base, repo: { full_name: "other/repo" } } },
+  { ...createdPr, body: "human PR" },
+  { ...createdPr, body: null },
+  { ...createdPr, number: 8 },
+  { ...createdPr, number: "7" },
+  { ...createdPr, number: null },
+  { ...createdPr, head: null },
+  { ...createdPr, base: [] },
+  { ...createdPr, head: { ...createdPr.head, repo: null } },
+  { ...createdPr, base: { ...createdPr.base, repo: null } },
+  { ...createdPr, html_url: "https://github.com/other/repo/pull/7" },
+  { ...createdPr, html_url: "https://github.com/owner/repo/pull/7?token=unexpected" },
+  null, [], 7,
+]) {
+  test(`setup rejects a mismatched or malformed created PR identity ${JSON.stringify(prReply)}`, t => {
+    const f = fixture(t, { prReply });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.equal(JSON.parse(result.stdout).prUrl, undefined);
+    assert.equal(f.state().pr, true);
+    const calls = f.history();
+    assert.ok(calls.at(-1)?.args.includes("repos/owner/repo/pulls"));
+    assert.equal(calls.filter(call => call.args.includes("--method")).length, 4);
+  });
+}
+
+test("a valid creation response confirms its snapshot without another remote read", t => {
+  const f = fixture(t, { branchMovesAfterResponse: true });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const status = JSON.parse(result.stdout);
+  assert.equal(status.phase, "pr_created");
+  assert.equal(status.branchHead, "setup-sha");
+  assert.equal(status.prUrl, "https://github.com/owner/repo/pull/7");
+  assert.equal(f.state().branchHead, "later-sha");
+  assert.ok(f.history().at(-1)?.args.includes("repos/owner/repo/pulls"));
 });
