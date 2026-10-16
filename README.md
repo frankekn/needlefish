@@ -477,6 +477,7 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      recheck: ${{ inputs.recheck || false }}
       runner: codex
       model: gpt-5.6-terra
       codex_reasoning_effort: xhigh
@@ -486,6 +487,20 @@ jobs:
 The caller must retain `workflow_dispatch.inputs.pr_number`, `actions: write`,
 and a run name ending in ` PR #<number>` for bounded reconciliation. Reconcile
 runs on GitHub-hosted Ubuntu independently of the review runner.
+Automatic dispatches use bounded recovery. To force a full manual review, declare
+an optional boolean `workflow_dispatch.inputs.recheck` with default `false` in
+the caller and forward it through `with.recheck` as shown above.
+
+For direct CLI use with a custom GitHub App, provide its installation token as
+`GH_TOKEN` and set `NEEDLEFISH_CHECK_APP_ID` to that App's numeric ID.
+Use the ID from its GitHub App settings or the `app.id` field of a check created
+by that App. The pin validates check ownership; it does not select or mint a token.
+The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
+custom App token. It clears `NEEDLEFISH_CHECK_APP_ID` for review and reconciliation,
+so repository variables and runner environment pins cannot override its GitHub
+Actions identity. Custom App pins apply only to direct CLI use, where a mismatched
+token and App pin fails closed.
+Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the
 workflow keeps the `self-hosted` default. Explicit `runs_on` inputs still win.

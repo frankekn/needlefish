@@ -235,3 +235,17 @@ test("malformed permission payload is denied fail-closed", () => {
 	assert.notEqual(lastOutput(result.githubOutput, "allowed"), "true");
 	assert.match(result.stderr, /Invalid permission payload/);
 });
+
+test("manual recheck dispatch explicitly requests a full review", () => {
+	const dispatch = workflowScript("Dispatch recheck")
+		.replaceAll("${{ github.repository }}", "acme/widgets")
+		.replaceAll("${{ github.event.issue.number }}", "42");
+	const result = spawnSync("bash", ["-c", `gh() { printf '%s\\n' "$@"; }\n${dispatch}`], {
+		encoding: "utf8",
+	});
+	assert.equal(result.status, 0, result.stderr);
+	assert.deepEqual(result.stdout.trim().split("\n"), [
+		"workflow", "run", "review.yml", "-R", "acme/widgets",
+		"-f", "pr_number=42", "-f", "recheck=true",
+	]);
+});
