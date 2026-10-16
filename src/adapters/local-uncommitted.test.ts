@@ -231,6 +231,22 @@ test("runLocal reports binary-only untracked changes as coverage gaps", async (t
   assert.match(result.summary, /model review skipped/);
 });
 
+for (const omission of ["oversized", "dangling", "empty"] as const) {
+  test(`runLocal rejects binary-only review with a skipped ${omission} file was also skipped`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-skipped-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+    if (omission === "dangling") symlinkSync("missing", join(repo, "source.ts"));
+    else writeFileSync(join(repo, "source.ts"), omission === "oversized" ? "x".repeat(201 * 1024) : "");
+
+    await assert.rejects(
+      () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
+      /No uncommitted changes to review\. Skipped files: .*source\.ts/s,
+    );
+  });
+}
+
 test("runLocal threads size-cap-skipped untracked files into large-path deep prompts", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-caps-"));
   const repo = initRepo(tmp);
