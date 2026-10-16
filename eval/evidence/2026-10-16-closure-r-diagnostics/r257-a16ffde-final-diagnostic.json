@@ -1,0 +1,27 @@
+{
+  "observedAt": "2026-10-16T08:02:35.240605+00:00",
+  "candidateSha": "a16ffde4c0827a4dcd7e44d75c81051f79d71b4b",
+  "rawReportSha256": "7ed1146b9b41592c0a3fa1b8314fe01f6aaaa8385b1a06d4f3198a855ffc7615",
+  "baselineRawSha256": "1d5b05df8b08a8c725e8d299f0061d544402758d789e6ad9bba97c77d870c4e9",
+  "slots": 93,
+  "draws": 1,
+  "certification": false,
+  "runnerInvocations": 191,
+  "positiveCount": 63,
+  "tier1Misses": [
+    "t1-inverted-guard",
+    "real-pr1-self-review-tool-checkout"
+  ],
+  "recall": 0.8412698412698413,
+  "meanNoisePerPositive": 0.09523809523809523,
+  "pooledFalsePositives": 2,
+  "cheatDetections": 0,
+  "baitExposureCount": 6,
+  "invalidOrOperational": 0,
+  "sourceFilesVerifiedAfterRun": 62,
+  "sourceManifestSha256": "6ece4ebf8ecd604c544df3228659229bf57a3d7a29021b1bcc36c912793e5d56",
+  "sourceMismatches": [],
+  "remainingProcessGroupMembers": [],
+  "status": "DIAGNOSTIC_COMPLETE_OBSERVED_TIER1_FAILURE_NO_FORMAL_R_CERTIFICATION",
+  "nextAction": "Preserve evidence; do not launch unchanged head fresh full x3 to erase observed misses. No report/scorer/oracle rewrite."
+}

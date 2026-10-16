@@ -560,3 +560,24 @@ for (const suffix of [" ", "\t", "\n"]) {
     }
   });
 }
+
+test("doctor omits the selected root when Git is too old for safe attributes", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  stub(f.bin, "git", [
+    'if [ "$1" = "--version" ]; then echo "git version 2.40.1"; exit 0; fi',
+    'exec /usr/bin/git "$@"',
+  ].join("\n"));
+
+  const report = runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.repoRoot, undefined);
+  assert.deepEqual(check(report, "git"), {
+    name: "git",
+    status: "fail",
+    detail: "git version 2.40.1; needlefish needs git 2.41 or later",
+    fix: "Upgrade git to 2.41 or later.",
+  });
+  assert.equal(check(report, "base").status, "ok");
+});

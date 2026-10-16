@@ -30,9 +30,15 @@ Its fate:
 Adoption rate = addressed / (addressed + kept). The Markdown report splits it
 by repo, severity, category, and ISO week of the thread's creation. Category
 comes from the early header when present, otherwise from the round-state marker
-in Needlefish's review body matched by normalized title, otherwise `unknown`.
-Each round overwrites that marker with only its own findings, so threads from
-earlier rounds of a multi-round PR usually end up `unknown`.
+in Needlefish's review body matched by file path and normalized title.
+When a finding in the requested date window has no category in its header, the tool reads
+all review pages, then all available edit pages for reviews whose current body
+has a valid state marker.
+It passes historical bodies through the same state parser to recover earlier rounds
+and detect conflicts, even when current markers already supply a category.
+Missing or conflicting categories remain `unknown`. An explicit header category
+always takes precedence. This read-only tool does not change posted comments or
+model inputs.
 
 `--since` counts only threads created on or after that UTC date and stops
 paging at the first PR last updated before it. For the weekly report, pass the
@@ -41,5 +47,10 @@ report.
 
 Limits: outdated is a proxy. A rebase or an unrelated edit to the same lines
 also marks a thread outdated, and a fix made elsewhere in the file does not.
-Only the first 100 review threads per PR are read; the tool warns on stderr when
-a PR has more.
+Only the first 100 review threads per PR are read, with a warning on stderr if
+more exist. The initial query reads the latest 50 reviews. For PRs with findings that need state categories,
+the tool also reads older review pages before it requests edit history.
+Deleted, null, or unparseable edits do
+not supply categories, and the tool reports unavailable history on stderr. GitHub
+API errors or invalid pagination fail the report. Available edit history cannot
+prove that deleted or inaccessible content never had a conflicting category.

@@ -16,6 +16,7 @@ import { parseArgs, USAGE } from "./cli/args.js";
 import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
+import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
 import { readFileSync } from "node:fs";
 
 // package.json sits one level above both src/ (dev) and dist/ (published).
@@ -56,6 +57,12 @@ async function main() {
       if (!report.ok) process.exitCode = 1;
       return;
     }
+    case "setup-github": {
+      const plan = planGithubSetup(command.repo ?? process.cwd());
+      process.stdout.write(renderGithubSetup(plan));
+      if (plan.kind === "conflict") process.exitCode = 1;
+      return;
+    }
   }
 
   if (command.kind !== "explain" && command.fix) {
@@ -64,14 +71,15 @@ async function main() {
     return;
   }
 
-  const opts = command.kind === "github"
-    ? command.opts
-    : resolveConnectionOptions(command.opts, command.repo ?? process.cwd());
-
   // --dry-run only collects and prints the bundle: no runners spawn, so the
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
+  // Review adapters have the bundle needed to decide whether credentials are
+  // needed. Preview and explain resolve here; neither uses those adapters.
+  const opts = dryRun || command.kind === "explain"
+    ? resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun)
+    : command.opts;
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {
