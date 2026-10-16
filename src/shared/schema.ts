@@ -64,6 +64,32 @@ export type QuoteCheck =
 	| { readonly status: "matched" | "not_found" | "unchecked" }
 	| { readonly status: "moved"; readonly from: string };
 
+export interface ExternalClaim {
+	readonly claim: string;
+	readonly necessary: boolean;
+	readonly source: { readonly type: "external"; readonly url: string };
+}
+
+export type SourceEvidence =
+	| {
+		readonly sourceType: "git_blob";
+		readonly file: string;
+		readonly lineStart: number;
+		readonly lineEnd: number;
+	} & (
+		| { readonly status: "source_present"; readonly revision: string; readonly contentDigest: string }
+		| { readonly status: "source_unverified"; readonly revision: string | null }
+	)
+	| ExternalClaim & {
+		readonly sourceType: "external";
+		readonly status: "unverified_external_claim";
+	};
+
+export interface FindingEvidence {
+	readonly toolRead: "unknown";
+	readonly sources: readonly SourceEvidence[];
+}
+
 export interface Finding {
 	readonly severity: Severity;
 	readonly title: string;
@@ -80,6 +106,8 @@ export interface Finding {
 	readonly replacement?: { readonly lines: readonly string[] };
 	readonly quote?: string;
 	readonly quoteCheck?: QuoteCheck;
+	readonly externalClaims?: readonly ExternalClaim[];
+	readonly evidence?: FindingEvidence;
 }
 
 export interface ResidualRisk {

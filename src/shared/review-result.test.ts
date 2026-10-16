@@ -353,3 +353,23 @@ test("parseReviewResult rejects mistyped PR scope and callout fields", () => {
 	const finding = { severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v", quoteCheck: { status: "unchecked" } };
 	assert.deepEqual(parseReviewResult(serialized({ findings: [finding] })).findings[0].quoteCheck, { status: "unchecked" });
 });
+
+
+test("evidence JSON round-trip keeps provenance and rejects invented tool observations", () => {
+	const finding = normalizeFinding({ severity: "P2", category: "bug", title: "Restore guard", file: "src/app.ts",
+		lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "rejects valid input", suggestedFix: "restore guard",
+		externalClaims: [{ claim: "Unsupported syntax exists", necessary: false, source: { type: "external", url: "https://spec.example.invalid/reference" } }],
+		evidence: { toolRead: "tool_observed", sources: [] } });
+	assert.equal(finding.evidence, undefined);
+	const result: ReviewResult = { ...baseResult(), verdict: "changes_requested", findings: [{ ...finding,
+		evidence: { toolRead: "unknown", sources: [{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/app.ts",
+			lineStart: 1, lineEnd: 1, status: "source_present", contentDigest: "c".repeat(64) },
+			{ claim: "Unsupported syntax exists", necessary: false, source: { type: "external", url: "https://spec.example.invalid/reference" }, sourceType: "external", status: "unverified_external_claim" }] } }] };
+	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(result))), JSON.parse(serializeReviewResult(result)));
+	assert.throws(() => parseReviewResult({ ...result, findings: [{ ...finding, evidence: { toolRead: "tool_observed", sources: [] } }] }), /unknown toolRead/);
+	for (const externalClaims of [[{ claim: "Missing necessity", source: { type: "external", url: "https://spec.example.invalid" } }],
+		[{ claim: "Unsafe source", necessary: true, source: { type: "external", url: "file:///private" } }],
+		[{ claim: "Secret", necessary: true, source: { type: "external", url: ["https://", "user", ":", "password", "@example.invalid"].join("") } }]]) {
+		assert.throws(() => normalizeFinding({ ...finding, externalClaims }), /externalClaims/);
+	}
+});

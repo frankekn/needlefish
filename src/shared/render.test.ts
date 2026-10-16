@@ -546,3 +546,18 @@ test("renderMarkdown warns when source quotes could not be checked", () => {
 	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
 	assert.match(out, /_Location unverified: the quoted source could not be checked\._/);
 });
+
+test("renderMarkdown shows source caveats and keeps digest and tool limits in details", () => {
+	const item = finding("P2", "Restore guard", "src/app.ts", { evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+		{ sourceType: "external", status: "unverified_external_claim", claim: "Vendor syntax exists", necessary: false,
+			source: { type: "external", url: "https://spec.example.invalid/reference" } },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.match(markdown, /<sub>Code source present; external premise unverified\.<\/sub>/);
+	assert.match(markdown, /<details><summary>Source evidence<\/summary>\n\nTool reading unknown\. Source presence does not verify the bug\./);
+	assert.match(markdown, new RegExp(`SHA-256 .${"c".repeat(64)}`));
+	assert.match(markdown, /blob\/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\/src\/app.ts#L1/);
+	assert.equal(markdown.includes("confidence"), false);
+});

@@ -167,6 +167,30 @@
           },
           "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
           "then": { "required": ["from"], "properties": { "from": {} } }
+        },
+        "externalClaims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/externalClaim"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "toolRead",
+            "sources"
+          ],
+          "properties": {
+            "toolRead": {
+              "const": "unknown"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sourceEvidence"
+              }
+            }
+          }
         }
       },
       "if": {
@@ -246,6 +270,141 @@
         "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
+    },
+    "externalClaim": {
+      "type": "object",
+      "required": [
+        "claim",
+        "necessary",
+        "source"
+      ],
+      "properties": {
+        "claim": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "necessary": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "type",
+            "url"
+          ],
+          "properties": {
+            "type": {
+              "const": "external"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https?://[^/@]+(?:/|$)"
+            }
+          }
+        }
+      }
+    },
+    "sourceEvidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "sourceType",
+            "revision",
+            "file",
+            "lineStart",
+            "lineEnd",
+            "status"
+          ],
+          "properties": {
+            "sourceType": {
+              "const": "git_blob"
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lineStart": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "lineEnd": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "status": {
+              "enum": [
+                "source_present",
+                "source_unverified"
+              ]
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "source_present"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "contentDigest"
+            ],
+            "properties": {
+              "contentDigest": {},
+              "revision": {
+                "type": "string"
+              },
+              "lineStart": {
+                "type": "integer"
+              },
+              "lineEnd": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/externalClaim"
+            },
+            {
+              "type": "object",
+              "required": [
+                "sourceType",
+                "status"
+              ],
+              "properties": {
+                "sourceType": {
+                  "const": "external"
+                },
+                "status": {
+                  "const": "unverified_external_claim"
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   }
 }

@@ -211,6 +211,13 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 	type Mutation = (result: JsonObject, finding: JsonObject, stat: JsonObject) => void;
 	const cases: readonly (readonly [string, boolean, Mutation])[] = [
 		["unchanged", true, () => {}],
+		["declared external premise", true, (_r, f) => { f.externalClaims = [{ claim: "Vendor syntax exists", necessary: true, source: { type: "external", url: "https://spec.example.invalid/reference" } }]; }],
+		["external premise missing necessity", false, (_r, f) => { f.externalClaims = [{ claim: "Vendor syntax exists", source: { type: "external", url: "https://spec.example.invalid/reference" } }]; }],
+		["source evidence", true, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1, contentDigest: "c".repeat(64) }] }; }],
+		["invented tool observation", false, (_r, f) => { f.evidence = { toolRead: "tool_observed", sources: [] }; }],
+		["unverified external evidence", true, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "external", status: "unverified_external_claim", claim: "Vendor syntax exists", necessary: true, source: { type: "external", url: "https://spec.example.invalid/reference" } }] }; }],
+		["source present without digest", false, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1 }] }; }],
+		["source present at symbolic ref", false, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "HEAD", file: "src/app.ts", lineStart: 1, lineEnd: 1, contentDigest: "c".repeat(64) }] }; }],
 		["PR context fields", true, (r) => Object.assign(r, { prNumber: 7, prBaseSha: "c".repeat(40) })],
 		["unknown additive field", true, (r) => { r.futureField = { any: "shape" }; }],
 		["negative consumerLine", true, (_r, f) => { f.consumerLine = -3; }],
@@ -320,6 +327,8 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 			replacement: "optional",
 			quote: "optional",
 			quoteCheck: "optional",
+			externalClaims: "optional",
+			evidence: "optional",
 		},
 		"$defs",
 		"finding",

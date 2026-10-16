@@ -2735,3 +2735,59 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 		assert.ok(!prompts.includes(leak), `model prompt must not contain ${leak}`);
 	}
 });
+
+test("review preserves human risk for required external premises after critic pruning and accepts independent code", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-external-evidence-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = { bin: process.env.CODEX_BIN, retry: process.env.CODEX_RETRY_MS };
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(repo, "src"));
+	writeFileSync(path.join(repo, "src/app.ts"), "export const limit = 10;\n");
+	writeFileSync(path.join(repo, "src/consumer.ts"), "import { limit } from './app';\nexport const total = limit * 2;\n");
+	commitAll(repo, "base");
+	const baseSha = headSha(repo);
+	writeFileSync(path.join(repo, "src/app.ts"), "export const limit = -1;\n");
+	commitAll(repo, "negative limit");
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-pruned"]) {
+		const candidate = {
+			severity: "P2", category: "bug", title: "Restore positive limit", file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			quote: "export const limit = -1;", confidence: 0.9, whyItBreaks: "Negative limit makes total negative in src/consumer.ts:2",
+			suggestedFix: "Restore positive limit", validation: "Inspect consumer arithmetic", consumerFile: "src/consumer.ts", consumerLine: 2,
+			...(scenario === "code-only" ? {} : { externalClaims: [{ claim: "Vendor specification forbids negative limits", necessary: scenario !== "independent",
+				source: { type: "external", url: "https://spec.example.invalid/reference" } }] }),
+		};
+		writeFileSync(bin, ["#!/usr/bin/env node", "const fs = require('node:fs');", "let input = '';",
+			"process.stdin.setEncoding('utf8');", "process.stdin.on('data', chunk => { input += chunk; });", "process.stdin.on('end', () => {",
+			`const candidate = ${JSON.stringify(candidate)};`,
+			"if (input.includes('review-MAP pass')) { fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: ['codepass', 'externalpass'].map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass')) delete candidate.externalClaims;",
+			"const critic = input.includes('adversarial critic');",
+			`const findings = critic && ${JSON.stringify(scenario)}.endsWith('pruned') ? [] : [critic ? { ...candidate, title: 'Keep the arithmetic positive' } : candidate];`,
+			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: [] };",
+			"fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(output));", "});"].join("\n"));
+		chmodSync(bin, 0o755);
+		const result = await review({ repoPath: repo, baseSha, headSha: headSha(repo), patch: "-export const limit = 10;\n+export const limit = -1;",
+			patchStat: "src/app.ts | 2 +-", changedFiles: [{ path: "src/app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: scenario === "deep-pruned", focus: null });
+		if (scenario.endsWith("pruned") || scenario === "kept") {
+			assert.equal(result.verdict, "needs_human", scenario);
+			assert.deepEqual(result.findings, []);
+			assert.deepEqual(result.residualRisks, [{ text: "Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]", blocks: true }]);
+		} else {
+			assert.equal(result.verdict, "changes_requested", scenario);
+			assert.equal(result.findings[0].title, "Restore positive limit");
+			assert.equal(result.findings[0].consumerFile, "src/consumer.ts");
+			assert.equal(result.findings[0].evidence?.toolRead, "unknown");
+			assert.equal(result.findings[0].evidence?.sources[0].status, "source_present");
+			assert.deepEqual(result.residualRisks, []);
+		}
+	}
+});

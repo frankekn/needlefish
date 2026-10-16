@@ -722,6 +722,15 @@ async function runCritic(
 	return result;
 }
 
+function externalPremiseRisks(findings: readonly Finding[]): ResidualRisk[] {
+	return findings.flatMap((finding) =>
+		(finding.externalClaims ?? []).filter((claim) => claim.necessary).map((claim) => ({
+			text: `Unverified external premise for ${finding.file}:${finding.lineStart} (${finding.title}): ${claim.claim} [${claim.source.url}]`,
+			blocks: true,
+		})),
+	);
+}
+
 function toReviewResult(
 	raw: RawReview,
 	run: ReviewRun,
@@ -730,7 +739,10 @@ function toReviewResult(
 	coverage?: string,
 ): ReviewResult {
 	const { bundle } = run;
-	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
+	const unverified = externalPremiseRisks(candidateFindings ?? raw.findings);
+	const residualRisks = restoreRequiredResiduals(raw.residual_risks, unverified);
+	const findings = raw.findings.filter((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+	const verdict = deriveVerdict(findings, residualRisks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
 	// Only files in the diff: a pointer elsewhere in the repository is not a
@@ -746,9 +758,9 @@ function toReviewResult(
 		summary,
 		// After the verdict on purpose: the quote check may relocate or
 		// annotate a finding, never decide pass/fail.
-		findings: checkQuotes(raw.findings, bundle),
+		findings: checkQuotes(findings, bundle),
 		checked: raw.checked,
-		residualRisks: raw.residual_risks,
+		residualRisks,
 		baseSha: bundle.baseSha,
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
@@ -998,7 +1010,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
-	const residuals = passes.flatMap((p) => p.residuals);
+	const residuals = [...passes.flatMap((p) => p.residuals), ...externalPremiseRisks(all)];
 
 	const merged = dedup(all);
 	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
