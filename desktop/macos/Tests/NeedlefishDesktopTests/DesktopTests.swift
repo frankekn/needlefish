@@ -1002,3 +1002,171 @@ final class GithubCredentialBoundaryTests: XCTestCase {
         XCTAssertEqual(result.authentication, "unknown")
     }
 }
+
+@MainActor
+final class AdvancedConnectionsTests: XCTestCase {
+    let fixture = DesktopTests()
+    let raw = #"{"version":1,"connections":[{"id":"agent","adapter":"acp","model":"requested-model","launch":{"command":"/test/agent","args":["--model","{model}"]},"auth":{"env":{"AGENT_TOKEN":"SHARED_TOKEN"}}},{"id":"proxy","adapter":"codex","model":"requested-model","auth":{"route":{"kind":"cliproxyapi","baseUrl":"http://localhost:1234/v1"},"env":{"CODEX_PROXY_API_KEY":"SHARED_TOKEN"}}}]}"#
+    func response(_ json: String) throws -> ConnectionsResponse { try JSONDecoder().decode(ConnectionsResponse.self, from: Data(json.utf8)).validated(status: 0) }
+    func loaded() throws -> AdvancedConnections {
+        let model = AdvancedConnections()
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        return model
+    }
+    func row(_ id: String, readiness: String = "local-available") -> String {
+        "{\"id\":\"\(id)\",\"adapter\":\"codex\",\"requestedModel\":\"requested-model\",\"route\":\"cliproxyapi\",\"credentialSource\":\"reference-configured\",\"providerAccount\":\"unknown\",\"authentication\":\"unknown\",\"readiness\":\"\(readiness)\",\"qualification\":\"unqualified\"}"
+    }
+    func inspect(_ model: AdvancedConnections, readiness: String = "local-available") throws {
+        try model.inspected(response("{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:old\",\"connections\":[\(model.selection.map { row($0, readiness: readiness) }.joined(separator: ","))]}"))
+    }
+    func testRawDraftPreservesPlaceholderRouteAndSourceNames() throws {
+        let model = try loaded()
+        model.change(.init(id: "extra", adapter: "codex", model: "other"), replacing: nil)
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: model.request("apply")) as? [String: Any])
+        XCTAssertEqual(request["expectedRevision"] as? String, "sha256:old")
+        let doc = try XCTUnwrap(request["document"] as? [String: Any])
+        let profiles = try XCTUnwrap(doc["connections"] as? [[String: Any]])
+        XCTAssertEqual((profiles[0]["launch"] as? [String: Any])?["args"] as? [String], ["--model", "{model}"])
+        XCTAssertEqual((profiles[0]["auth"] as? [String: Any])?["env"] as? [String: String], ["AGENT_TOKEN": "SHARED_TOKEN"])
+        XCTAssertNil((profiles[0]["auth"] as? [String: Any])?["kind"])
+        XCTAssertEqual(model.selection, [])
+    }
+    func testConflictRetainsDraftRequiresReloadAndExplicitReapply() throws {
+        let model = try loaded()
+        model.change(.init(id: "new", adapter: "codex", model: "other"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "revision_conflict"))
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "new"])
+        XCTAssertEqual(model.draftState, .conflict)
+        XCTAssertThrowsError(try model.request("apply"))
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy"])
+        model.reapply()
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "new"])
+        XCTAssertEqual(model.baseRevision, "sha256:new")
+        XCTAssertTrue(model.dirty)
+    }
+    func testOrderDistinctReferencesAndDeletionInvalidateReadiness() throws {
+        let model = try loaded()
+        model.select("proxy"); model.select("agent"); model.select("proxy")
+        XCTAssertEqual(model.selection, ["proxy", "agent"])
+        XCTAssertEqual(model.sourceRefs, ["SHARED_TOKEN"])
+        model.move("agent", by: -1)
+        XCTAssertEqual(model.selection, ["agent", "proxy"])
+        model.budget = "1000"
+        model.credentialMode = "session"; model.secrets["SHARED_TOKEN"] = "offline-only-value"
+        try inspect(model)
+        XCTAssertTrue(model.ready)
+        model.delete("agent")
+        XCTAssertEqual(model.selection, ["proxy"])
+        XCTAssertNil(model.inspection)
+        XCTAssertFalse(model.ready)
+    }
+    func testDeletedAndDuplicateNamesCannotProduceReadyReview() throws {
+        let model = try loaded()
+        model.select("absent")
+        XCTAssertFalse(model.validSelection)
+        model.remove("absent")
+        model.select("proxy")
+        model.change(.init(id: "proxy", adapter: "codex", model: "duplicate"), replacing: nil)
+        XCTAssertTrue(model.dirty)
+        XCTAssertFalse(model.ready)
+    }
+    func testUnknownAuthIsNotLoginButKnownLocalBlockCannotStart() throws {
+        let model = try loaded(); model.select("proxy"); model.budget = "1000"
+        try inspect(model, readiness: "local-blocked")
+        XCTAssertFalse(model.ready)
+        try inspect(model)
+        XCTAssertFalse(model.ready)
+        XCTAssertEqual(model.inspection?.first?.authentication, "unknown")
+        model.credentialMode = "session"
+        XCTAssertFalse(model.ready)
+        model.secrets["SHARED_TOKEN"] = "offline-only-value"
+        XCTAssertTrue(model.ready)
+        model.clearSecrets()
+        XCTAssertFalse(model.ready)
+    }
+    func testBudgetIsExplicitBoundedAndConfigurationFailuresAreCanned() throws {
+        let model = try loaded()
+        XCTAssertNil(model.budgetMs)
+        for value in ["0", "-1", "2147483648", "not-a-number"] { model.budget = value; XCTAssertNil(model.budgetMs) }
+        model.budget = "2147483647"; XCTAssertEqual(model.budgetMs, 2147483647)
+        model.failed(ConnectionsFailure(code: "configuration_unavailable"))
+        XCTAssertEqual(model.message, ConnectionsFailure(code: "configuration_unavailable").localizedDescription)
+    }
+    func testInspectionMustMatchExactRevisionAndOrder() throws {
+        let model = try loaded(); model.select("proxy"); model.select("agent")
+        for (revision, ids) in [("sha256:new", ["proxy", "agent"]), ("sha256:old", ["agent", "proxy"])] {
+            let json = "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"\(revision)\",\"connections\":[\(ids.map { row($0) }.joined(separator: ","))]}"
+            XCTAssertThrowsError(try model.inspected(response(json)))
+        }
+        XCTAssertNil(model.inspection)
+    }
+    func testSessionReviewUsesOnlyBoundedAnonymousInputAndExactContract() async throws {
+        let root = try fixture.temporary()
+        let capture = root.appendingPathComponent("fake-input.json")
+        let runtime = try fixture.fixture("[ \"$*\" = 'connections review --json' ] || exit 3\ncat > '\(capture.path)'\nprintf '%s' '\(fixture.resultJSON("needs_human"))'")
+        let result = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "sha256:exact", ids: ["proxy", "agent"], budgetMs: 1200, mode: "session", sources: ["SHARED_TOKEN": "offline-only-value"], command: Command())
+        XCTAssertEqual(result.verdict.rawValue, "needs_human")
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        XCTAssertEqual(Set(request.keys), Set(["repo", "scope", "expectedRevision", "ids", "budgetMs", "credentialMode", "sources"]))
+        XCTAssertEqual(request["repo"] as? String, "/project")
+        XCTAssertEqual(request["scope"] as? String, "local-uncommitted")
+        XCTAssertEqual(request["ids"] as? [String], ["proxy", "agent"])
+        XCTAssertEqual(request["sources"] as? [String: String], ["SHARED_TOKEN": "offline-only-value"])
+        XCTAssertEqual(request["budgetMs"] as? Int, 1200)
+        XCTAssertNil(runtime.environment(temporary: root)["SHARED_TOKEN"])
+    }
+    func testNonzeroMalformedAndEchoedSessionOutputRemainIncomplete() async throws {
+        let secret = "offline-only-value"
+        for body in ["cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; exit 1", "cat >/dev/null; printf invalid", "cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; printf '\(secret)' >&2"] {
+            let runtime = try fixture.fixture(body)
+            do {
+                _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+                XCTFail("Must remain incomplete")
+            } catch { XCTAssertFalse(error.localizedDescription.contains(secret)) }
+        }
+    }
+    func testOversizeInputIsRejectedBeforeSpawn() async throws {
+        let root = try fixture.temporary()
+        let marker = root.appendingPathComponent("spawned")
+        let runtime = try fixture.fixture("touch '\(marker.path)'")
+        do {
+            _ = try await Command().run(runtime.command([]), environment: [:], temporary: root.appendingPathComponent("invocation"), timeout: 1, input: Data(repeating: 65, count: 131073))
+            XCTFail("Must reject input")
+        } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+    func testInputSentCallbackHappensBeforeResult() async throws {
+        let root = try fixture.temporary()
+        let marker = root.appendingPathComponent("sent")
+        let runtime = try fixture.fixture("cat >/dev/null\nsleep 0.2\n[ -f '\(marker.path)' ] || exit 3\nprintf completed")
+        let output = try await DesktopCLI(runtime: runtime).call([], command: Command(), input: Data("{}".utf8), inputSent: { try? Data("cleared".utf8).write(to: marker) })
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(String(decoding: output.stdout, as: UTF8.self), "completed")
+    }
+    func testNoviceReadyIsUnchangedAndAdvancedChangesInvalidateConsent() throws {
+        let owner = Onboarding(runtime: nil)
+        owner.trusted = true; owner.accepted = true
+        XCTAssertFalse(owner.canReview)
+        owner.consentUsesConnections = true
+        owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(fixture.scopeJSON.utf8)))
+        owner.invalidateConnectionConsent()
+        XCTAssertFalse(owner.trusted)
+        XCTAssertFalse(owner.accepted)
+        guard case .message = owner.state else { return XCTFail("Must require a new inspection") }
+    }
+}
+
+final class AdvancedInputDeadlineTests: XCTestCase {
+    func testUnreadInputHasItsOwnDeadlineAndLeavesNoGroup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-advanced-input-deadline-" + UUID().uuidString)
+        let started = Date()
+        do {
+            _ = try await Command().run(["/bin/sleep", "30"], environment: [:], temporary: root, timeout: 30,
+                                        input: Data(repeating: 65, count: 131072))
+            XCTFail("Unread input must time out")
+        } catch { XCTAssertEqual(error as? DesktopError, .timeout) }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+}
