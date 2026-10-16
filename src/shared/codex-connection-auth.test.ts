@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { review } from "../core/review.js";
 import type { Bundle } from "./schema.js";
+import { runLocal } from "../adapters/local.js";
+import { renderMarkdown } from "./render.js";
 import { runDoctor, serializeDoctorReport } from "../adapters/doctor.js";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,7 +28,7 @@ const userinfoUrl = new URL("https://proxy.invalid/v1");
 userinfoUrl.username = "user";
 userinfoUrl.password = "secret";
 
-function fixture(t: TestContext, mode = "success", entries = [entry()]) {
+function fixture(t: TestContext, mode = "success", entries = [entry()], leak = "") {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-codex-account-"));
   const keys = ["HOME", "USERPROFILE", "CODEX_HOME", "CODEX_BIN", "CODEX_API_KEY", "CODEX_PROXY_API_KEY", "CODEX_PROXY_BASE_URL", "NEEDLEFISH_CODEX_PROXY_REQUIRED", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH", "NEEDLEFISH_NO_RETRY", "NEEDLEFISH_RETRY_MS", "NEEDLEFISH_CONNECTIONS_FILE", "ACCOUNT_A_KEY", "ACCOUNT_B_KEY", "GH_TOKEN", "GITHUB_TOKEN", "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NEEDLEFISH_EPHEMERAL_HOME", "NEEDLEFISH_ACP_AUTH_FILES"];
   const previous = captureEnv(keys);
@@ -42,18 +44,23 @@ function fixture(t: TestContext, mode = "success", entries = [entry()]) {
   writeFileSync(file, JSON.stringify(config(entries)));
   writeFileSync(binary, `#!${process.execPath}
 const fs=require('node:fs'),path=require('node:path');
-const args=process.argv.slice(2),log=${JSON.stringify(log)},mode=${JSON.stringify(mode)};
+const args=process.argv.slice(2),log=${JSON.stringify(log)},mode=${JSON.stringify(mode)},leak=${JSON.stringify(leak)};
 const calls=fs.existsSync(log)?fs.readFileSync(log,'utf8').trim().split('\\n').length:0;
 fs.appendFileSync(log,JSON.stringify({args,cwd:process.cwd(),env:process.env,files:fs.readdirSync(process.env.CODEX_HOME||process.env.HOME)})+'\\n');
 const key=process.env.CODEX_API_KEY||process.env.CODEX_PROXY_API_KEY;
 if(args[0]!=='exec'){process.stdout.write('DO NOT PUBLISH '+key);process.exit(0)}
+if(mode==='percent-failed-stdout'){process.stdout.write(leak);process.exit(1)}
+if(mode==='percent-failed-stderr'){process.stderr.write(leak);process.exit(1)}
+if(mode==='percent-stdout')process.stdout.write(leak);
+if(mode==='percent-stderr')process.stderr.write(leak);
 if(mode==='retry'&&calls===0){process.stderr.write('temporary failure');process.exit(1)}
 if(mode==='failed-raw'){process.stdout.write(key);process.exit(1)}
 if(mode==='stderr')process.stderr.write(key);
 if(mode==='escaped-stderr')process.stderr.write(JSON.stringify(key));
 const prompt=fs.readFileSync(0,'utf8');
 const result=prompt.includes('review-MAP pass')?{summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:'Checked source',checked:['source.ts'],findings:[],residual_risks:[]};
-const output=mode==='decoded'?JSON.stringify({summary:key}):mode==='review'?JSON.stringify(result):'{}';
+if(mode==='percent-summary')result.summary=leak;
+const output=mode==='percent-summary'?JSON.stringify(result):mode==='decoded'?JSON.stringify({summary:key}):mode==='review'?JSON.stringify(result):'{}';
 if(mode==='escaped-stderr')process.stderr.write(key.split('').map(c=>String.fromCharCode(92)+'u'+c.charCodeAt(0).toString(16).padStart(4,'0')).join(''));
 fs.writeFileSync(args[args.indexOf('--output-last-message')+1],output);
 process.stdin.resume();
@@ -221,4 +228,121 @@ test("Codex preserves a safe encoded proxy route in the actual child argv", asyn
   assert.equal(await f.run(), "{}");
   assert.ok(f.calls()[0].args.includes('model_providers.cliproxyapi.base_url="https://proxy.invalid/api%2Fv1"'));
   assert.equal(f.calls()[0].env.CODEX_PROXY_API_KEY, keyA);
+});
+
+
+const fullyEncodedKey = Array.from(Buffer.from(keyA)).map(byte => `%${byte.toString(16).padStart(2, "0")}`).join("");
+const encodedOutputCases = [
+  ["lowercase", fullyEncodedKey],
+  ["uppercase", fullyEncodedKey.toUpperCase()],
+  ["partial", `FAKE-${fullyEncodedKey.slice(15)}`],
+  ["JSON percent", fullyEncodedKey.replaceAll("%", "\\u0025")],
+  ["percent JSON key", Array.from(Buffer.from(JSON.stringify(keyA))).map(byte => `%${byte.toString(16).padStart(2, "0")}`).join("")],
+  ["nested percent", fullyEncodedKey.replaceAll("%", "%25")],
+  ["unrelated malformed percent", `bad%zz%ff${fullyEncodedKey}%fe%no`],
+  ["JSON escaped hex", fullyEncodedKey.replaceAll("4", "\\u0034")],
+] as const;
+
+for (const [encoding, encoded] of encodedOutputCases) {
+  test(`Codex ${encoding} credential is withheld at public output and diagnostic boundaries`, (t) => {
+    const f = fixture(t);
+    const auth = f.select().connectionAuth!;
+    const text = `Inspect https://debug.invalid/${encoded}`;
+    assert.throws(() => auth.assertOutputSafe(text), ConnectionCredentialLeakError);
+    assert.equal(auth.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+    const safe = "Inspect https://debug.invalid/safe%2Fv1 bad%zz%ff";
+    assert.equal(auth.screenDiagnostic(safe), safe);
+    auth.assertOutputSafe(safe);
+  });
+
+  for (const channel of ["stdout", "stderr", "failed-stdout", "failed-stderr"]) {
+    test(`Codex ${encoding} ${channel} is a typed nonretry failure with original private trace`, async (t) => {
+      const text = `Inspect https://debug.invalid/${encoded}`;
+      const f = fixture(t, `percent-${channel}`, [entry()], text);
+      const raw: string[] = [];
+      await assert.rejects(() => f.run(f.select(), { onFailedRaw: (value: string) => raw.push(value) }), error => {
+        assert.ok(error instanceof ConnectionCredentialLeakError);
+        assert.equal(error.retryable, false);
+        assert.doesNotMatch(error.message, /FAKE-|debug.invalid|u0025/);
+        return true;
+      });
+      assert.equal(f.calls().length, 1);
+      assert.ok(raw.join("\n").includes(text));
+    });
+  }
+
+  test(`Codex ${encoding} summary cannot reach public review JSON or Markdown`, async (t) => {
+    const text = `Inspect https://debug.invalid/${encoded}`;
+    const f = fixture(t, "percent-summary", [entry()], text);
+    const bundle: Bundle = { repoPath: f.repo, baseSha: headSha(f.repo), headSha: headSha(f.repo), patch: "short", patchStat: "source.ts | 1 +", changedFiles: [{ path: "source.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null };
+    const trace: string[] = [];
+    let publicOutput = "not published";
+    await assert.rejects(async () => {
+      const result = await review(bundle, f.select(), event => { trace.push(event.content); });
+      publicOutput = JSON.stringify(result) + renderMarkdown(result);
+    }, ConnectionCredentialLeakError);
+    assert.equal(publicOutput, "not published");
+    assert.ok(trace.join("\n").includes(JSON.stringify(text).slice(1, -1)));
+    assert.equal(f.calls().length, 1);
+  });
+}
+
+test("Codex encoded summary cannot overwrite local cache; safe review still writes JSON and Markdown", async (t) => {
+  const text = `https://debug.invalid/${fullyEncodedKey.replaceAll("%", "\\u0025")} bad%zz%ff`;
+  const f = fixture(t, "percent-summary", [entry()], text);
+  writeFileSync(path.join(f.repo, "source.ts"), "export const value = 2;\n");
+  const cacheDir = path.join(f.root, "cache");
+  mkdirSync(cacheDir);
+  const cache = path.join(cacheDir, "last-review.json");
+  writeFileSync(cache, "previous safe cache");
+  await assert.rejects(() => runLocal(f.repo, { connection: "a", cacheDir }), ConnectionCredentialLeakError);
+  assert.equal(readFileSync(cache, "utf8"), "previous safe cache");
+  assert.equal(f.calls().length, 1);
+  const safe = "Inspect https://debug.invalid/safe%2Fv1 bad%zz%ff";
+  const binary = process.env.CODEX_BIN!;
+  const source = readFileSync(binary, "utf8");
+  writeFileSync(binary, source.replace(JSON.stringify(text), JSON.stringify(safe)));
+  const result = await runLocal(f.repo, { connection: "a", cacheDir });
+  assert.equal(result.summary, safe);
+  assert.ok(renderMarkdown(result).includes(safe));
+  assert.equal(JSON.parse(readFileSync(cache, "utf8")).summary, safe);
+});
+
+
+test("Codex partial encoding preserves literal percent triplets of the selected key", async (t) => {
+  const key = "tok%41secret-Ω-tail";
+  const encoded = "tok%41%73%65%63%72%65%74-%ce%a9-tail";
+  const text = `https://debug.invalid/${encoded}`;
+  const f = fixture(t, "percent-summary", [entry()], text);
+  process.env.ACCOUNT_A_KEY = key;
+  const selection = f.select();
+  assert.throws(() => selection.connectionAuth!.assertOutputSafe(text), ConnectionCredentialLeakError);
+  assert.equal(selection.connectionAuth!.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  const raw: string[] = [];
+  await assert.rejects(() => f.run(selection, { onFailedRaw: (value: string) => raw.push(value) }), ConnectionCredentialLeakError);
+  assert.ok(raw.join("\n").includes(text));
+  assert.equal(f.calls().length, 1);
+});
+
+
+test("Codex malformed UTF-8 cannot synthesize a replacement character credential", (t) => {
+  const f = fixture(t);
+  process.env.ACCOUNT_A_KEY = "tok�tail";
+  const auth = f.select().connectionAuth!;
+  const safe = "tok%fftail";
+  assert.equal(auth.screenDiagnostic(safe), safe);
+  auth.assertOutputSafe(safe);
+  assert.throws(() => auth.assertOutputSafe("tok%EF%BF%BDtail"), ConnectionCredentialLeakError);
+  assert.throws(() => auth.assertOutputSafe("bad%fftok%25ef%25bf%25bdtail"), ConnectionCredentialLeakError);
+});
+
+
+test("Codex well-formed Unicode percent bytes preserve existing case-insensitive screening", (t) => {
+  const f = fixture(t);
+  process.env.ACCOUNT_A_KEY = "Token-Ω";
+  const auth = f.select().connectionAuth!;
+  for (const text of ["token-ω", "token-%cf%89", "token-%CF%89"]) {
+    assert.throws(() => auth.assertOutputSafe(text), ConnectionCredentialLeakError);
+    assert.equal(auth.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  }
 });
