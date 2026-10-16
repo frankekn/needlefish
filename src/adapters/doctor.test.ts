@@ -526,3 +526,37 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
   }
   assert.equal(cwds[0], cwds[1]);
 });
+
+test("doctor reports the canonical selected repository root from nested and linked folders", (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const nested = path.join(f.repo, "nested");
+  mkdirSync(nested);
+  const linked = path.join(f.tmp, "linked-repo");
+  symlinkSync(f.repo, linked, "dir");
+  for (const repo of [f.repo, nested, linked]) {
+    const report = runDoctor({ repo, version: "0.0.0-test" });
+    assert.equal(report.repoRoot, realpathSync(f.repo));
+    assert.equal(check(report, "git").status, "ok");
+  }
+  const notRepo = runDoctor({ repo: f.tmp, version: "0.0.0-test" });
+  assert.equal(notRepo.repoRoot, undefined);
+  assert.equal(check(notRepo, "git").status, "fail");
+});
+
+for (const suffix of [" ", "\t", "\n"]) {
+  test(`doctor preserves repository pathname suffix ${JSON.stringify(suffix)}`, (t) => {
+    const f = setup(t);
+    codexStub(f.bin, 0, "Logged in using ChatGPT");
+    const repo = path.join(f.tmp, `project${suffix}`);
+    mkdirSync(repo);
+    gitText(["init", "-q"], repo);
+    const nested = path.join(repo, "nested");
+    mkdirSync(nested);
+    for (const selected of [repo, nested]) {
+      const report = runDoctor({ repo: selected, version: "0.0.0-test" });
+      assert.equal(check(report, "git").status, "ok");
+      assert.equal(report.repoRoot, realpathSync(repo));
+    }
+  });
+}
