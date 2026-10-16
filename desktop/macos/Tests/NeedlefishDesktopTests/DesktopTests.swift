@@ -728,6 +728,38 @@ final class OnboardingTests: XCTestCase {
         try await waitForIdle(model)
         guard case .consent = model.state else { return XCTFail("Unsigned review must remain at consent") }
     }
+    func testOldGitDiagnosisExplainsUpgradeWithoutExposingRawDetails() async throws {
+        let fixture = DesktopTests()
+        let doctor = fixture.doctorJSON
+            .replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "")
+            .replacingOccurrences(of: #"{"name":"git","status":"ok","detail":"repo"}"#,
+                with: #"{"name":"git","status":"fail","detail":"git version 2.40.1; needlefish needs git 2.41 or later private-token /private/project","fix":"Upgrade git to 2.41 or later."}"#)
+        let runtime = try fixture.fixture("printf '%s' '\(doctor)'\nexit 1")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let model = Onboarding(runtime: runtime)
+        model.repo = URL(fileURLWithPath: "/selected/folder")
+        model.diagnose()
+        try await waitForIdle(model)
+        guard case .diagnosis(let report) = model.state else { return XCTFail("Expected old Git diagnosis") }
+        XCTAssertEqual(report.checks[3].explanation, "Git 版本過舊。請升級至 Git 2.41 以上，再重新診斷。 / Upgrade Git to 2.41 or later, then check again.")
+        XCTAssertEqual(report.scopeReady, false)
+        XCTAssertEqual(model.repo?.path, "/selected/folder")
+    }
+    func testScopeCollectionFailureDoesNotSuggestLoginOrExposeStderr() async throws {
+        let fixture = DesktopTests()
+        let doctor = fixture.doctorJSON.replacingOccurrences(of: #""auth","status":"ok""#, with: #""auth","status":"fail""#)
+        let runtime = try fixture.fixture("case \"$1\" in doctor) printf '%s' '\(doctor)';; *) printf '%s' 'capture limit exceeded private-token /private/project' >&2; exit 1;; esac")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let model = Onboarding(runtime: runtime)
+        model.repo = URL(fileURLWithPath: "/project")
+        model.diagnose()
+        try await waitForIdle(model)
+        model.prepare()
+        try await waitForIdle(model)
+        guard case .message(let text) = model.state else { return XCTFail("Expected incomplete collection") }
+        XCTAssertEqual(text, "無法整理變更範圍。請重新診斷專案，或縮小本機變更後重試。 / Could not collect changes. Check the project again or reduce local changes and retry.")
+        XCTAssertEqual(model.canReview, false)
+    }
     func testSignedInUserCanReviewAfterBothConsents() async throws {
         let fixture = DesktopTests()
         let runtime = try fixture.fixture("case \"$1\" in doctor) printf '%s' '\(fixture.doctorJSON)';; *) case \"$*\" in *--dry-run*) printf '%s' '\(fixture.scopeJSON)';; *) printf '%s' '\(fixture.resultJSON("pass"))';; esac;; esac")
