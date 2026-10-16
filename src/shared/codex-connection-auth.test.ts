@@ -2,7 +2,9 @@ import { spawnSync } from "node:child_process";
 import { review } from "../core/review.js";
 import type { Bundle } from "./schema.js";
 import { runLocal } from "../adapters/local.js";
-import { renderMarkdown } from "./render.js";
+import { renderMarkdown, quoteNote } from "./render.js";
+import { parseReviewResult } from "./review-result.js";
+import { serializeReviewResult } from "./schema.js";
 import { runDoctor, serializeDoctorReport } from "../adapters/doctor.js";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -346,3 +348,62 @@ test("Codex well-formed Unicode percent bytes preserve existing case-insensitive
     assert.equal(auth.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
   }
 });
+
+for (const deep of [false, true]) {
+  test(`selected Codex ${deep ? "deep" : "small"} review retains BASE evidence and required premise across runtime replay`, async (t) => {
+    const f = fixture(t, "review");
+    const baseSha = headSha(f.repo);
+    writeFileSync(path.join(f.repo, "source.ts"), "export const value = 2;\n");
+    commitAll(f.repo, "change source");
+    const independent = {
+      severity: "P2", category: "bug", title: "Retain source behavior", file: "source.ts", lineStart: 1, lineEnd: 1,
+      confidence: 0.9, whyItBreaks: "The changed value alters the consumer result.", suggestedFix: "Restore the prior value.",
+      validation: "Check the consumer result.", quote: "export const value = 1;", replacement: { lines: ["export const value = 1;"] },
+    };
+    const premise = { ...independent, title: "Check documented contract", externalClaims: [{
+      claim: "The external contract requires the prior value", necessary: true,
+      source: { type: "external", url: "https://spec.example.invalid/reference" },
+    }] };
+    const risk = "Unverified external premise for source.ts:1 (Check documented contract): The external contract requires the prior value [https://spec.example.invalid/reference]";
+    const binary = process.env.CODEX_BIN;
+    assert.equal(typeof binary, "string");
+    if (!binary) throw new Error("fixture binary missing");
+    writeFileSync(binary, `#!${process.execPath}
+const fs=require('node:fs');
+const prompt=fs.readFileSync(0,'utf8'),args=process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(path.join(f.root, "calls.jsonl"))},JSON.stringify({args,cwd:process.cwd(),env:process.env,files:fs.readdirSync(process.env.CODEX_HOME)})+'\\n');
+const independent=${JSON.stringify(independent)},premise=${JSON.stringify(premise)};
+const critic=prompt.includes('adversarial critic');
+const result=prompt.includes('review-MAP pass')?{summary:'Mapped source',hotspots:[{name:'source',files:['source.ts'],why:'changed value',risk:'high',edges:[]}]}:{summary:'Reviewed source',checked:['source.ts'],findings:critic?[independent]:[independent,premise],residual_risks:critic?[{text:${JSON.stringify(risk)},blocks:false}]:[]};
+fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
+`);
+    const selection = f.select();
+    const trace: string[] = [];
+    const result = await review({ repoPath: f.repo, baseSha, headSha: headSha(f.repo), patch: "-export const value = 1;\n+export const value = 2;",
+      patchStat: "source.ts | 2 +-", changedFiles: [{ path: "source.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep, focus: null },
+      selection, event => { trace.push(event.content); }, () => { process.env.ACCOUNT_A_KEY = keyB; });
+    assert.equal(result.verdict, "changes_requested");
+    assert.deepEqual(result.residualRisks, [{ text: risk, blocks: true }]);
+    assert.equal(result.findings.length, 1);
+    assert.equal(result.findings[0]?.title, "Retain source behavior");
+    const finding = result.findings[0];
+    if (!finding) throw new Error("independent finding missing");
+    assert.deepEqual(finding.quoteCheck, { status: "unchecked" });
+    assert.equal(finding.replacement, undefined);
+    assert.equal(finding.evidence?.toolRead, "unknown");
+    const source = finding.evidence?.sources[0];
+    assert.equal(source?.sourceType, "git_blob");
+    if (source?.sourceType !== "git_blob") throw new Error("Git evidence missing");
+    assert.equal(source.status, "source_present");
+    assert.equal(source.revision, baseSha);
+    assert.match(quoteNote(finding) ?? "", /source present.*quoted source could not be verified at this HEAD location/s);
+    const serialized = serializeReviewResult(result);
+    assert.deepEqual(parseReviewResult(JSON.parse(serialized)), JSON.parse(serialized));
+    assert.deepEqual(result.runtime?.qualification, { matchStatus: "unqualified" });
+    assert.doesNotMatch(serialized + renderMarkdown(result), /FAKE-|ACCOUNT_A_KEY|ambient-home/);
+    assert.equal(result.rawOutputs, undefined);
+    assert.equal(f.calls().length, deep ? 3 : 2);
+    assert.deepEqual(f.calls().map(call => call.env.CODEX_API_KEY), deep ? [keyA, keyA, keyA] : [keyA, keyA]);
+    assert.ok(trace.some(raw => raw.includes("Check documented contract")));
+  });
+}

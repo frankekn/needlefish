@@ -8,14 +8,36 @@ const SEV_ORDER: Record<Severity, number> = {
 	P3: 3,
 };
 
-// Shared by the review body and inline comments so a reader sees the same
-// location caveat wherever the finding appears (issue #240).
+function evidenceSummary(finding: Finding): string {
+	const sources = finding.evidence?.sources;
+	if (!sources) return "";
+	const code = sources.some((source) => source.status === "source_present");
+	const external = sources.some((source) => source.status === "unverified_external_claim");
+	return `${code ? "Code source present" : "Code source unverified"}${external ? "; external premise unverified" : ""}.`;
+}
+
 export function quoteNote(finding: Finding): string | null {
+	const notes: string[] = [];
+	const summary = evidenceSummary(finding);
+	if (summary) notes.push(`_${summary}_`);
 	const check = finding.quoteCheck;
-	if (check?.status === "moved") return `_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`;
-	if (check?.status === "not_found") return `_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`;
-	if (check?.status === "unchecked") return "_Location unverified: the quoted source could not be verified at this HEAD location._";
-	return null;
+	if (check?.status === "moved") notes.push(`_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`);
+	if (check?.status === "not_found") notes.push(`_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`);
+	if (check?.status === "unchecked") notes.push("_Location unverified: the quoted source could not be verified at this HEAD location._");
+	return notes.join("\n\n") || null;
+}
+
+export function sourceDetails(finding: Finding): string | null {
+	if (!finding.evidence) return null;
+	const lines = ["<details><summary>Source evidence</summary>", "",
+		"Tool reading unknown. Source presence does not verify the bug.", ""];
+	for (const source of finding.evidence.sources) {
+		if (source.sourceType === "git_blob") {
+			lines.push(`- ${codeSpan(source.status)} ${codeSpan(`${source.revision ?? "uncaptured"}:${source.file}:${source.lineStart}-${source.lineEnd}`)}${source.status === "source_present" ? ` SHA-256 ${codeSpan(source.contentDigest)}` : ""}`);
+		} else lines.push(`- ${codeSpan(source.status)} ${codeSpan(source.claim)} ${codeSpan(source.source.url)}`);
+	}
+	lines.push("", "</details>");
+	return lines.join("\n");
 }
 
 // A path is model output: a fence longer than any backtick run inside keeps
@@ -201,7 +223,7 @@ export function renderMarkdown(
 				? " <sub>(inline comment)</sub>"
 				: "";
 			lines.push(
-				`| ${index + 1} | ${SEVERITY_LABEL[finding.severity]} | ${tableText(finding.title)}${inlineMarker} | ${tableLocation(finding, opts?.repoSlug, result.headSha)} |`,
+				`| ${index + 1} | ${SEVERITY_LABEL[finding.severity]} | ${tableText(finding.title)}${inlineMarker}${finding.evidence ? `<br><sub>${evidenceSummary(finding)}</sub>` : ""} | ${tableLocation(finding, opts?.repoSlug, result.headSha)} |`,
 			);
 		});
 
@@ -226,6 +248,8 @@ export function renderMarkdown(
 					lines.push("");
 					lines.push(`**Validation:** ${finding.validation}`);
 				}
+				const details = sourceDetails(finding);
+				if (details) lines.push("", details);
 				const note = quoteNote(finding);
 				if (note) {
 					lines.push("");
@@ -361,13 +385,16 @@ function tableLocation(
 	headSha?: string,
 ): string {
 	if (!finding.file) return "—";
+	const source = finding.evidence?.sources.find((entry) => entry.sourceType === "git_blob" && entry.status === "source_present");
+	if (source?.sourceType === "git_blob" && source.revision) headSha = source.revision;
+	const file = source?.sourceType === "git_blob" && source.revision ? source.file : finding.file;
 	const location = tableText(plainLocation(finding));
-	if (!repoSlug || !headSha || !isRepoRelativePath(finding.file)) {
+	if (!repoSlug || !headSha || !isRepoRelativePath(file)) {
 		return `\`${location}\``;
 	}
 	// encodeURIComponent leaves ( ) unescaped; an unescaped ) ends the
 	// markdown link early.
-	const encodedPath = finding.file
+	const encodedPath = file
 		.split("/")
 		.map(
 			(segment) =>

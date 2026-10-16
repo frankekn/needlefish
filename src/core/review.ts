@@ -212,10 +212,27 @@ function dedup(findings: readonly Finding[]): Finding[] {
 	const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 	const out = new Map<string, Finding>();
 	for (const f of findings) {
-		const key = `${f.file}|${f.lineStart}|${f.category}|${norm(f.title).slice(0, 60)}|${norm(f.whyItBreaks).slice(0, 80)}`;
+		const key = JSON.stringify([f.file, f.lineStart, f.category, norm(f.title), norm(f.whyItBreaks)]);
 		const prev = out.get(key);
-		if (!prev || SEV_RANK[f.severity] < SEV_RANK[prev.severity])
+		if (!prev) {
 			out.set(key, f);
+			continue;
+		}
+		const strongest = SEV_RANK[f.severity] < SEV_RANK[prev.severity] ? f : prev;
+		if (![prev, f].some((finding) => finding.externalClaims?.some((claim) => claim.necessary))) {
+			out.set(key, strongest);
+			continue;
+		}
+		const independent = [prev, f].find((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+		if (independent) {
+			out.set(key, independent);
+			continue;
+		}
+		const claims = [...(prev.externalClaims ?? []), ...(f.externalClaims ?? [])];
+		out.set(key, {
+			...strongest,
+			externalClaims: [...new Map(claims.map((claim) => [JSON.stringify(claim), claim])).values()],
+		});
 	}
 	return [...out.values()];
 }
@@ -694,7 +711,10 @@ function restoreRequiredResiduals(
 	const restored = [...current];
 	const available = bagByKey(restored, (risk) => residualSubsetKey(risk.text));
 	for (const risk of required) {
-		if (!takeResidual(available, risk)) restored.push(risk);
+		if (takeResidual(available, risk)) continue;
+		const downgraded = takeResidual(available, { ...risk, blocks: false });
+		if (downgraded) restored[restored.indexOf(downgraded)] = risk;
+		else restored.push(risk);
 	}
 	return restored;
 }
@@ -726,6 +746,16 @@ async function runCritic(
 	return result;
 }
 
+function externalPremiseRisks(findings: readonly Finding[]): ResidualRisk[] {
+	const risks = findings.flatMap((finding) =>
+		(finding.externalClaims ?? []).filter((claim) => claim.necessary).map((claim) => ({
+			text: `Unverified external premise for ${finding.file}:${finding.lineStart} (${finding.title}): ${claim.claim} [${claim.source.url}]`,
+			blocks: true,
+		})),
+	);
+	return [...new Map(risks.map((risk) => [risk.text, risk])).values()];
+}
+
 function toReviewResult(
 	raw: RawReview,
 	run: ReviewRun,
@@ -734,7 +764,10 @@ function toReviewResult(
 	coverage?: string,
 ): ReviewResult {
 	const { bundle } = run;
-	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
+	const unverified = externalPremiseRisks(candidateFindings ?? raw.findings);
+	const residualRisks = restoreRequiredResiduals(raw.residual_risks, unverified);
+	const findings = raw.findings.filter((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+	const verdict = deriveVerdict(findings, residualRisks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
 	// Only files in the diff: a pointer elsewhere in the repository is not a
@@ -751,9 +784,9 @@ function toReviewResult(
 		summary,
 		// After the verdict on purpose: the quote check may relocate or
 		// annotate a finding, never decide pass/fail.
-		findings: checkQuotes(raw.findings, bundle, run.reviewDeadlineMs),
+		findings: checkQuotes(findings, bundle, run.reviewDeadlineMs),
 		checked: raw.checked,
-		residualRisks: raw.residual_risks,
+		residualRisks,
 		baseSha: bundle.baseSha,
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
@@ -1005,9 +1038,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
-	const residuals = passes.flatMap((p) => p.residuals);
-
 	const merged = dedup(all);
+	const residuals = [...passes.flatMap((p) => p.residuals), ...externalPremiseRisks(merged)];
 	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
 	const candidateMerged: RawReview = {
 		summary: mapResult.value.summary,
