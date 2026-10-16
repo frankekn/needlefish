@@ -21,6 +21,8 @@ export interface AcpLaunchSpec {
   readonly args: readonly string[];
 }
 
+export type ConnectionOutputGuard = Pick<AcpEnvironmentAuth, "screenDiagnostic" | "assertOutputSafe">;
+
 export interface RunnerOptions {
   // CLI selection is resolved once before entering the review pipeline.
   readonly connections?: readonly string[];

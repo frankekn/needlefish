@@ -161,7 +161,7 @@ function harness(f: ReturnType<typeof fixture>, parallel: boolean): string {
 import {runCodex,isRunnerSafetyError} from ${JSON.stringify(new URL("./codex.ts", import.meta.url).href)};
 import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.ts", import.meta.url).href)};
 const repo = ${JSON.stringify(f.repo)}, head = ${JSON.stringify(f.head)};
-const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connection,repoPath:repo,targetHeadSha:head},repo));
+const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connections:[connection],repoPath:repo,targetHeadSha:head},repo));
 // Both real executions must retain selection-time values across concurrent calls and retries.
 process.env.ACCOUNT_A_KEY = process.env.ACCOUNT_B_KEY = 'CHANGED-AFTER-SELECTION';
 const hasCredential = raw => raw.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)}) || raw.includes(${JSON.stringify(Array.from(f.env.ACCOUNT_A_KEY ?? "").map(c => "\\u" + c.charCodeAt(0).toString(16).padStart(4,"0")).join(""))});

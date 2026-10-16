@@ -73,6 +73,24 @@ export class AcpEnvironmentAuth {
     Object.assign(env, this.#values);
   }
 
+  orderedOutputGuard(): Pick<AcpEnvironmentAuth, "screenDiagnostic" | "assertOutputSafe"> {
+    const patterns = Object.values(this.#values).map(percentCredentialPattern);
+    return Object.freeze({
+      screenDiagnostic: (message: string) => {
+        for (const view of codexCredentialViews(message)) {
+          if (patterns.some(pattern => pattern.test(view)) || this.screenDiagnostic(view) !== view) return credentialDiagnostic;
+        }
+        return message;
+      },
+      assertOutputSafe: (output: string) => {
+        for (const view of codexCredentialViews(output)) {
+          if (patterns.some(pattern => pattern.test(view))) throw new ConnectionCredentialLeakError();
+          this.assertOutputSafe(view);
+        }
+      },
+    });
+  }
+
   screenDiagnostic(message: string): string {
     return containsCredential(message, Object.values(this.#values))
       ? credentialDiagnostic

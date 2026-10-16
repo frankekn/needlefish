@@ -361,7 +361,7 @@ for (const docs of [false,true]) {
       {id:"primary",adapter:"codex",model:"selected",auth:{env:{CODEX_API_KEY:"MISSING_SELECTED_SOURCE"},route:{kind:"openai"}}},
       {id:"spare",adapter:"openai",model:"selected"},
     ]}));
-    const run=runCli(fixture,["--repo",fixture.repo,"--connection=primary","--connection=spare","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:"invalid"});
+    const run=runCli(fixture,["--repo",fixture.repo,"--connection=primary","--connection=spare","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:docs?"invalid":"10000"});
     assert.equal(run.status,docs?0:1,run.stderr);
     const summary=parseJsonObject(run.stdout);
     assert.ok(Array.isArray(summary.capabilities));assert.equal(summary.capabilities.length,2);
@@ -370,5 +370,14 @@ for (const docs of [false,true]) {
     assert.equal(existsSync(fixture.marker),false);
     assert.equal(existsSync(cacheFile(fixture)),false);
     assert.doesNotMatch(run.stdout,/MISSING_SELECTED_SOURCE|connectionAuth|apiKey/);
+  });
+}
+
+for(const budget of [undefined,"invalid"]){
+  test(`ordered model dry-run rejects ${budget ?? "missing"} shared budget before launch`,t=>{
+    const fixture=setupDryRunFixture(t,[{path:"app.ts",content:"source preview\n"}]),config=path.join(fixture.tmp,"connections.json");
+    writeFileSync(config,JSON.stringify({version:1,connections:[{id:"first",adapter:"claude",model:"one"},{id:"second",adapter:"claude",model:"two"}]}));
+    const run=runCli(fixture,["--repo",fixture.repo,"--connection=first","--connection=second","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:budget});
+    assert.equal(run.status,1);assert.match(run.stderr,/NEEDLEFISH_REVIEW_TIMEOUT_MS/);assert.equal(existsSync(fixture.marker),false);
   });
 }

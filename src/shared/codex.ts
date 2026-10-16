@@ -15,6 +15,7 @@ import {
 	RUNNER_DEFINITIONS,
 	parsePositiveInteger,
 	type AcpLaunchSpec,
+	type ConnectionOutputGuard,
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
@@ -537,7 +538,7 @@ export function prepareEphemeralHome(
 
 export interface CodexOptions extends RunnerOptions {
 	readonly effectiveConfig?: EffectiveRunnerConfig;
-	readonly outputGuards?: readonly NonNullable<RunnerOptions["connectionAuth"]>[];
+	readonly outputGuards?: readonly ConnectionOutputGuard[];
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
@@ -1015,7 +1016,7 @@ function exhaustedCodexMessage(message: string): boolean {
 	let text = message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
 	const reconnect = text.match(/^Reconnecting\.\.\. [1-5]\/5 \((.+)\)$/);
 	if (reconnect) text = reconnect[1];
-	const nativeStatus = text.match(/^unexpected status (?:402 Payment Required|429 Too Many Requests): (.+), url: (https?:\/\/\S+)$/);
+	const nativeStatus = text.match(/^unexpected status 402 Payment Required: (.+), url: (https?:\/\/\S+)$/);
 	if (text.startsWith("unexpected status ")) {
 		if (!nativeStatus) return false;
 		try { new URL(nativeStatus[2]); } catch { return false; }

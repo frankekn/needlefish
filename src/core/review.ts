@@ -10,11 +10,13 @@ import {
 import {
 	parsePositiveInteger,
 	type RunnerOptions,
+	type ConnectionOutputGuard,
 	type RunStat,
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
+import { AcpEnvironmentAuth } from "../shared/connection-auth.js";
 import { reviewRuntime } from "../shared/runtime.js";
 import {
 	assertRunnerSandboxClean,
@@ -91,7 +93,7 @@ interface ReviewRun {
 	readonly runnerConfig: EffectiveRunnerConfig;
 	readonly runtime: NonNullable<ReviewResult["runtime"]>;
 	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
-	readonly outputGuards: readonly NonNullable<RunnerOptions["connectionAuth"]>[];
+	readonly outputGuards: readonly ConnectionOutputGuard[];
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
 	// a retry later succeeds — the eval canary scan must see emit-then-clean-up
@@ -1164,6 +1166,12 @@ export async function reviewWithConnections(
 	return reviewRoutes(bundle, routes, onTrace, onProgress, Date.now());
 }
 
+export function reviewBudgetMs(routeCount: number): number | null {
+	const timeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
+	if (routeCount > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
+	return timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
+}
+
 async function reviewRoutes(
 	bundle: Bundle,
 	routes: readonly [RunnerOptions, ...RunnerOptions[]],
@@ -1171,9 +1179,7 @@ async function reviewRoutes(
 	onProgress: ReviewProgressObserver | undefined,
 	startedAt: number,
 ): Promise<ReviewResult> {
-	const timeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
-	if (routes.length > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
-	const budget = timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
+	const budget = reviewBudgetMs(routes.length);
 	const deadline = budget === null ? undefined : performance.now() + budget;
 	const select = (options: RunnerOptions) => {
 		const plan = reviewPlan(bundle, options);
@@ -1182,7 +1188,8 @@ async function reviewRoutes(
 	};
 	const firstSelection = select(routes[0]);
 	const selections = [firstSelection, ...routes.slice(1).map(select)];
-	const outputGuards = selections.flatMap(({config}) => config.connectionAuth ? [config.connectionAuth] : []);
+	const outputGuards = selections.flatMap(({config}) => config.connectionAuth
+		? [selections.length > 1 && config.connectionAuth instanceof AcpEnvironmentAuth ? config.connectionAuth.orderedOutputGuard() : config.connectionAuth] : []);
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
 		? { failed: onTrace === undefined, pending: new Set() } : undefined;
 	const failedRawOutputs: string[] = [];

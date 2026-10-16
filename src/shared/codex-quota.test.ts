@@ -65,3 +65,7 @@ test("routing rejects mixed unknown schemas even when the terminal contains quot
   const mixed=JSON.stringify({type:"item.completed",item:{id:"auth",type:"error",message:"401 unauthorized"}})+'\n'+event("insufficient credits");
   assert.equal(nativeCodexQuotaExhausted(mixed,1),false);
 });
+
+test("unqualified 429 wrapper cannot establish native quota",()=>{
+  assert.equal(nativeCodexQuotaExhausted(event("unexpected status 429 Too Many Requests: insufficient credits, url: https://provider.invalid/v1/responses"),1),false);
+});
