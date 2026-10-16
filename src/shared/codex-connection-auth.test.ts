@@ -174,6 +174,13 @@ test("doctor selects the credential source without invoking CLI or presenting id
     name: "capability", status: "ok", detail: "codex: repositoryRead; the CLI adapter enables repository tools.",
   });
   assert.deepEqual(f.calls(), []);
+  process.env.CODEX_BIN = path.join(f.root, "absent-codex");
+  const unavailable = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  assert.equal(unavailable.checks.find(check => check.name === "runner")?.status, "fail");
+  assert.deepEqual(unavailable.checks.find(check => check.name === "capability"), {
+    name: "capability", status: "unknown", detail: "skipped: no runner available",
+  });
+  assert.deepEqual(f.calls(), []);
 });
 
 test("doctor missing selected source never probes an ambient account", (t) => {
