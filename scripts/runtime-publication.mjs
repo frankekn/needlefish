@@ -45,6 +45,6 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     assert.ok(start >= 0 && finish > start && source.indexOf(begin, start + begin.length) < 0 && source.indexOf(end, finish + end.length) < 0, `${file} runtime publication markers`);
     const generated = source.slice(0, start) + block + source.slice(finish + end.length);
     if (write) writeFileSync(target, generated);
-    else assert.equal(source, generated, `${file}: run node scripts/runtime-publication.mjs --write`);
+    else assert.ok(source === generated, `${file}: run node scripts/runtime-publication.mjs --write`);
   }
 }
