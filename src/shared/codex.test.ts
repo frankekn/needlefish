@@ -150,6 +150,7 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const argsPath = path.join(tmp, "args.json");
+  const promptPath = path.join(tmp, "prompt.txt");
   const previous = process.env.CODEX_BIN;
   t.after(() => {
     if (previous === undefined) delete process.env.CODEX_BIN;
@@ -162,21 +163,29 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
       `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+      `fs.writeFileSync(${JSON.stringify(promptPath)}, fs.readFileSync(0, 'utf8'));`,
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, '{\"ok\":true}');",
+			"process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
 
-  await runCodex("prompt", {
+  let rawOutput = "";
+  const output = await runCodex("prompt", {
     repoPath: repo,
     runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
+    onRaw: (raw) => { rawOutput = raw; },
   });
+	assert.equal(output, '{"ok":true}');
+  assert.equal(readFileSync(promptPath, "utf8"), "prompt");
+  assert.match(rawOutput, /different stream output/);
 
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+	assert.equal(args.includes("--json"), true);
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
   assert.equal(args.includes("-s"), false);
