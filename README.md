@@ -53,10 +53,23 @@ supported too.
   <sub>A real finding from the deployed lane (GPT-5.6 Terra, high effort) on a planted eval fixture — <a href="https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-codex-gpt56-terra-high-x3.json">raw report</a>.</sub>
 </p>
 
+OpenCode review execution is temporarily disabled, including automatic selection.
+OpenCode v2.0.22 and v2.0.30 load target plugins during startup. The verified
+v2.0.30 CLI can disable project discovery but still loads system plugins and
+managed configuration. `--standalone` and an ephemeral HOME do not provide
+complete configuration isolation. Existing OpenCode authentication files are
+preserved. Choose another runner explicitly with `--runner`; Needlefish does
+not switch providers automatically. A future OpenCode release needs renewed
+isolation verification before this lane can be enabled. See [issue #207](https://github.com/frankekn/needlefish/issues/207).
+
+To reproduce the integration check with an already installed CLI, run
+`NEEDLEFISH_OPENCODE_INTEGRATION_BIN=/path/to/opencode node --test --import tsx src/shared/opencode-isolation.test.ts`.
+The test uses no provider credentials and writes only inside its temporary fixture.
+
 ## Quick start
 
 **Locally** — from inside any git repo you want reviewed. Requires Node 20+
-and one authed runner CLI (`codex`, `claude`, or `opencode`) on `PATH`:
+and one authed runner CLI (`codex` or `claude`) on `PATH`:
 
 ```bash
 npx needlefish
@@ -65,8 +78,8 @@ npx needlefish
 Not sure the setup is right? `npx needlefish doctor` checks Node, the
 selected runner CLI and its version, whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
-uses; an env credential the review accepts, such as `OPENAI_API_KEY` for
-opencode, passes without probing), the git repo, and the detected base ref,
+uses; an env credential the review accepts, such as `ANTHROPIC_API_KEY` for
+Claude Code, passes without probing), the git repo, and the detected base ref,
 in seconds and with no model call. Every failed check prints its fix; `--json` gives the same report to
 scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
@@ -510,7 +523,7 @@ runner. Common options:
 
 | option | env | default |
 | --- | --- | --- |
-| runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude`, then `opencode` |
+| runner | `NEEDLEFISH_RUNNER` | auto-detects `codex`, then `claude` |
 | model | `NEEDLEFISH_MODEL` | runner default |
 | Codex reasoning effort | `CODEX_REASONING_EFFORT` | `medium` (composite action and reusable workflow: `high` for `gpt-5.6-terra`) |
 | per-attempt timeout | `NEEDLEFISH_TIMEOUT_MS` | `1200000` (20 min) |
@@ -587,8 +600,8 @@ blank (values are trimmed):
   `--no-session-persistence`.
 - **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
   --sandbox off`.
-- **opencode:** `--auto` in headless mode, with an inline `permission:
-  "allow"` override for its global and build-agent permissions.
+- **opencode:** temporarily disabled before launch until complete configuration
+  isolation is verified. See [issue #207](https://github.com/frankekn/needlefish/issues/207).
 - **pi:** `--no-session --mode text --provider openai-codex --thinking
   <level>` and its default full toolset.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from

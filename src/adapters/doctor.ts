@@ -118,7 +118,7 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
   }
   if (runner === undefined) {
     for (const candidate of RUNNER_CATALOG) {
-      if (!("autoDetect" in candidate)) continue;
+      if (!("autoDetect" in candidate) || "reviewUnavailableReason" in candidate) continue;
       const binary = resolveRunnerBinary(candidate.name);
       if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected", probeCwd);
     }
@@ -129,6 +129,12 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
     };
   }
   const definition = RUNNER_DEFINITIONS[runner];
+  if (definition.reviewUnavailableReason !== undefined) {
+    return {
+      check: { name: "runner", status: "fail", detail: definition.reviewUnavailableReason },
+      selection: { kind: "unavailable" },
+    };
+  }
   if (definition.bin === undefined) {
     return {
       check: { name: "runner", status: "ok", detail: `${runner} (HTTP runner, no CLI)` },

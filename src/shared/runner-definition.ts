@@ -20,6 +20,7 @@ export interface RunnerDefinition {
       readonly loggedIn: "exit-zero" | "non-empty-json-array";
     };
   };
+  readonly reviewUnavailableReason?: string;
   readonly modelEnv?: string;
   readonly envAllowlist: readonly string[];
   readonly authFiles: readonly string[];
@@ -62,6 +63,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "opencode",
+    reviewUnavailableReason: "OpenCode reviews are temporarily disabled because complete project and ambient plugin/config isolation is unavailable in the verified v2 CLI. Choose another runner explicitly; see issue #207.",
     bin: { env: "OPENCODE_BIN", fallback: "opencode" },
     autoDetect: { installCommand: "npm install -g @opencode/cli" },
     login: {

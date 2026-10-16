@@ -3,7 +3,7 @@ import path from "node:path";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "./runner-definition.js";
 import { RUNNER_DEFINITIONS, parseRunnerName, type RunnerName, type RunnerOptions } from "./runner.js";
 
-const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner);
+const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner).filter((runner) => !("reviewUnavailableReason" in runner));
 
 export const NO_AUTO_DETECTED_RUNNER_MESSAGE = [
   "No supported model runner found on PATH.",
@@ -18,10 +18,11 @@ export interface ResolvedRunnerBinary {
 }
 
 export function resolveRunner(opts: RunnerOptions): RunnerName {
-  if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
-  return autoDetectRunner();
+  const runner = opts.runner ?? (envRunner ? parseRunnerName(envRunner, "NEEDLEFISH_RUNNER") : autoDetectRunner());
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
+  return runner;
 }
 
 function autoDetectRunner(): RunnerName {
@@ -45,6 +46,8 @@ export function runnerCommand(runner: RunnerName): string | undefined {
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
 export function requireRunnerCommand(runner: RunnerName): string {
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
   const command = runnerCommand(runner);
   if (command !== undefined) return command;
   const bin = RUNNER_DEFINITIONS[runner].bin;

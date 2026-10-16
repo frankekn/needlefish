@@ -12,7 +12,6 @@ const EXPECTED_INSTALL_MESSAGE = [
   "Install one:",
   "  codex: npm install -g @openai/codex",
   "  claude: npm install -g @anthropic-ai/claude-code",
-  "  opencode: npm install -g @opencode/cli",
 ].join("\n");
 const ENV_KEYS = ["PATH", "NEEDLEFISH_RUNNER", "CODEX_BIN", "CLAUDE_BIN", "OPENCODE_BIN"] as const;
 
@@ -57,7 +56,8 @@ for (const runner of EXPECTED_RUNNERS) {
   test(`explicit ${runner} selection wins over environment and needs no executable`, (t) => {
     isolatedDiscovery(t);
     process.env.NEEDLEFISH_RUNNER = "not-a-runner";
-    assert.equal(resolveRunner({ runner }), runner);
+    if (runner === "opencode") assert.throws(() => resolveRunner({ runner }), /OpenCode reviews are temporarily disabled/);
+    else assert.equal(resolveRunner({ runner }), runner);
   });
 }
 
@@ -66,7 +66,8 @@ for (const runner of EXPECTED_RUNNERS) {
     const dir = isolatedDiscovery(t);
     executable(dir, "codex");
     process.env.NEEDLEFISH_RUNNER = runner;
-    assert.equal(resolveRunner({}), runner);
+    if (runner === "opencode") assert.throws(() => resolveRunner({}), /OpenCode reviews are temporarily disabled/);
+    else assert.equal(resolveRunner({}), runner);
   });
 }
 
@@ -79,10 +80,10 @@ test("invalid environment selection fails instead of silently auto-detecting", (
   });
 });
 
-test("auto-detection preserves codex then claude then opencode priority", (t) => {
+test("auto-detection preserves codex then claude priority and skips suspended opencode", (t) => {
   const dir = isolatedDiscovery(t);
   for (const name of ["opencode", "claude", "codex"]) executable(dir, name);
-  for (const expected of ["codex", "claude", "opencode"]) {
+  for (const expected of ["codex", "claude"]) {
     assert.equal(resolveRunner({}), expected);
     rmSync(path.join(dir, expected));
   }
@@ -92,7 +93,6 @@ test("auto-detection preserves codex then claude then opencode priority", (t) =>
 for (const [name, env] of [
   ["codex", "CODEX_BIN"],
   ["claude", "CLAUDE_BIN"],
-  ["opencode", "OPENCODE_BIN"],
 ] as const) {
   test(`${name} discovery honors absolute and PATH executable overrides`, (t) => {
     const dir = isolatedDiscovery(t);

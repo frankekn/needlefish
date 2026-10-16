@@ -32,6 +32,7 @@ import {
   type UntrackedSkippedFile,
 } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
+import { resolveRunner } from "../shared/runner-detection.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
@@ -436,11 +437,13 @@ export interface DryRunReport {
 // render; --print-bundle emits the bundle itself, which is the whole diff and
 // the repo AGENTS.md policy text verbatim.
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
+  if (opts.runner || process.env.NEEDLEFISH_RUNNER) resolveRunner(opts);
   const { bundle, mode } = diffBundle(cwd, opts);
   return { mode, bundle, ...reviewPlan(bundle) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
+  if (opts.runner || process.env.NEEDLEFISH_RUNNER) resolveRunner(opts);
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
   return { mode: "pr", bundle, ...reviewPlan(bundle) };
 }

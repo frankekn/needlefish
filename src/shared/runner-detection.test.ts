@@ -63,7 +63,7 @@ test("runCodex gives install commands when no auto-detected runner exists", asyn
         targetHeadSha: headSha(repo),
         timeoutMs: 1000,
       }),
-    /No supported model runner found on PATH\.\nInstall one:\n {2}codex: npm install -g @openai\/codex\n {2}claude: npm install -g @anthropic-ai\/claude-code\n {2}opencode: npm install -g @opencode\/cli/
+    /No supported model runner found on PATH\.\nInstall one:\n {2}codex: npm install -g @openai\/codex\n {2}claude: npm install -g @anthropic-ai\/claude-code/
   );
 });
 
