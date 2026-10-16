@@ -491,3 +491,27 @@ console.log(JSON.stringify({verdict:result.verdict,rawOutputs:Object.hasOwn(resu
     });
   }
 }
+
+for (const mode of ["split-thought-success", "split-thought-failure"]) {
+  test(`${mode}: WORKING snapshot preserves authenticated trace privacy and cleanup`, (t) => {
+    const f = fixture(t, mode);
+    const source = path.join(f.repo, "source.ts");
+    writeFileSync(source, "export const value = 3;\n");
+    const result = f.run([cli, "--repo", f.repo, "--uncommitted", "--connection", "a", "--json"], {NEEDLEFISH_EVAL_TRACE:"1",NEEDLEFISH_NO_RETRY:"0"});
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.verdict, "pass");
+    assert.equal(output.headSha, "WORKING");
+    assert.equal(output.traceDeliveryFailed, true);
+    assert.equal(Object.hasOwn(output, "rawOutputs"), false);
+    assert.equal(Object.hasOwn(output, "failedRawOutputs"), false);
+    const cache = readFileSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json"), "utf8");
+    assert.deepEqual(JSON.parse(cache), output);
+    assert.doesNotMatch(result.stdout + cache, /agent_thought_chunk|TEST-|ACCOUNT|rawOutputs|failedRawOutputs/);
+    assert.equal(f.records().length, mode === "split-thought-failure" ? 3 : 2);
+    for (const record of f.records()) isolated(record, f.home);
+    assert.equal(readFileSync(source, "utf8"), "export const value = 3;\n");
+    writeFileSync(source, "export const value = 2;\n");
+    f.clean();
+  });
+}
