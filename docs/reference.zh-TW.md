@@ -255,10 +255,10 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
 `acp`。
 
-`openai` HTTP runner 沒有讀取 repo 的工具。大型或 deep 審查請改用具工具
-能力的 CLI runner。尚未發布的原始碼會在 HTTP request 前拒絕 `--deep`
-與自動判定的大型 HTTP 審查。已發布的 v0.4.10 不保證事前拒絕。
-小型完整 diff 審查與純文件 fast path 仍可使用。
+`openai` HTTP runner 沒有讀取 repo 的工具。尚未發布的原始碼會在任何
+HTTP request 前拒絕所有需要模型的審查，包含小型 diff 與 `--deep`。
+純文件審查仍可使用不呼叫模型的 fast path。停用該 fast path 後，審查
+同樣需要讀取 repo 的工具。已發布的 v0.4.10 不保證事前拒絕。
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process

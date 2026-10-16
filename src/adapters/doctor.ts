@@ -347,7 +347,9 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
     const selectedBinary = selected ? resolveRunnerBinary("codex") : undefined;
     const runner = selected ? {
       check: { name: "runner", status: selectedBinary?.path ? "ok" : "fail", detail: selectedBinary?.path ? "codex: selected connection executable available; CLI not probed" : "codex: selected connection executable unavailable" } satisfies DoctorCheck,
-      selection: { kind: "unavailable" } satisfies RunnerSelection,
+      selection: selectedBinary?.path === undefined
+        ? { kind: "unavailable" } satisfies RunnerSelection
+        : { kind: "cli", runner: "codex", binary: { ...selectedBinary, path: selectedBinary.path } } satisfies RunnerSelection,
     } : selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
     repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
