@@ -350,6 +350,12 @@ function stringListField(value: unknown): string[] {
 	return value;
 }
 
+function nonEmptyStringListField(value: unknown): string[] {
+	const files = stringListField(value);
+	if (files.some((file) => file.length === 0)) throw new Error("contains an empty path");
+	return files;
+}
+
 function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
 	if (!isRecord(value)) throw new Error("entry.usage not an object");
 	const fields = [value.totalTokens, value.inputTokens, value.outputTokens];
@@ -436,6 +442,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
+	unreviewedBinaryFiles: nonEmptyStringListField,
 	coverageGaps: coverageGapListField,
 	runtime: parseReviewRuntime,
 	stats: runStatField,

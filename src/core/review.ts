@@ -780,9 +780,11 @@ function toReviewResult(
 	// Only files in the diff: a pointer elsewhere in the repository is not a
 	// gap in this review's coverage. An unfinished scan is, since the diff may
 	// touch pointers the sandbox never probed.
-	const coverageGaps: CoverageGap[] = bundle.changedFiles
-		.filter((file) => run.lfs.pointerFiles.has(file.path))
-		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
+	const paths = new Set([...bundle.changedFiles.map((file) => file.path), ...(bundle.binaryFiles ?? [])]);
+	const coverageGaps: CoverageGap[] = [...paths]
+		.filter((file) => run.lfs.pointerFiles.has(file))
+		.map((file) => ({ kind: "lfs_pointer_only", file }));
+	const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)].filter((file) => !run.lfs.pointerFiles.has(file));
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
@@ -798,10 +800,11 @@ function toReviewResult(
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
-		...(coverage ? { coverage } : {}),
+		...(coverage ? { coverage: bundle.binaryFiles?.length ? `${coverage}; binary file contents excluded (see Not reviewed)` : coverage } : {}),
 		...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
 		...(evalTraceOn() && run.failedRawOutputs.length > 0
 			? { failedRawOutputs: [...run.failedRawOutputs] }
@@ -850,6 +853,7 @@ async function drainTraceDeliveries(
 async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const { bundle } = run;
 	const { patch, ...meta } = bundle;
+	delete meta.binaryFiles;
 	const reviewPrompt = loadPrompt("review.md")
 		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
 		.replace("{{PATCH}}", () => patch);
@@ -1106,9 +1110,11 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // only threshold owners.
 export function reviewPlan(bundle: Bundle): {
 	readonly docsOnlyFastPath: boolean;
+	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	const binaryOnlyFastPath = !bundle.patch.trim() && Boolean(bundle.binaryFiles?.length);
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1117,7 +1123,8 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
-		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		binaryOnlyFastPath,
+		largePath: docsOnlyFastPath || binaryOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
 
@@ -1129,12 +1136,30 @@ export async function review(
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
 	const plan = reviewPlan(bundle);
+	if (plan.binaryOnlyFastPath) {
+		const files = [...new Set(bundle.binaryFiles)];
+		return {
+			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
+			verdict: "pass",
+			summary: "No text patch to review; model review skipped.",
+			findings: [],
+			checked: [],
+			residualRisks: [],
+			baseSha: bundle.baseSha,
+			headSha: bundle.headSha,
+			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+			unreviewedBinaryFiles: files,
+			coverage: "No text patch reviewed; binary file contents excluded (see Not reviewed)",
+			totalDurationMs: Date.now() - startedAt,
+		};
+	}
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
 		// Docs-only input produces no callouts today, but compute it the same
 		// way so the rule stays uniform if classification changes.
 		const callouts = scopeCallouts(bundle.changedFiles);
+		const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)];
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
@@ -1147,6 +1172,7 @@ export async function review(
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+			...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}

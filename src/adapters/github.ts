@@ -1756,7 +1756,7 @@ export async function runGithub(
 		if (recoveryAttempt > 1) throw new RecoveryLimitError();
 		const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
 		if (!baseSha) throw new Error("Could not resolve PR base SHA");
-		const { baseSha: mergeBase, patch, patchStat, changedFiles: changed } = prDiffFromShas(repoPath, baseSha, headSha);
+		const { baseSha: mergeBase, patch, patchStat, changedFiles: changed, binaryFiles } = prDiffFromShas(repoPath, baseSha, headSha);
 
 		const commentsUrl = stringField(pr, "comments_url");
 		const reviewsUrl = stringField(pr, "review_comments_url");
@@ -1781,6 +1781,7 @@ export async function runGithub(
 			patch,
 			patchStat,
 			changedFiles: changed,
+			binaryFiles,
 			prMeta,
 			deep: false,
 			focus: null,

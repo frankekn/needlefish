@@ -15,62 +15,11 @@ export interface UntrackedPatch {
   readonly paths: readonly string[];
   readonly skipped: readonly string[];
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
-}
-
-interface NumstatRow {
-  readonly additions: string;
-  readonly deletions: string;
-  readonly path: string;
+  readonly binaryFiles: readonly string[];
 }
 
 function isBinary(content: Buffer): boolean {
   return content.includes(0);
-}
-
-function parseNumstatRow(row: string): NumstatRow | null {
-  const firstTab = row.indexOf("\t");
-  if (firstTab === -1) return null;
-  const secondTab = row.indexOf("\t", firstTab + 1);
-  if (secondTab === -1) return null;
-  return {
-    additions: row.slice(0, firstTab),
-    deletions: row.slice(firstTab + 1, secondTab),
-    path: row.slice(secondTab + 1),
-  };
-}
-
-export function parseTrackedBinaryPathsFromNumstat(numstat: string): string[] {
-  const fields = numstat ? numstat.split("\0") : [];
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  const addPath = (filePath: string): void => {
-    if (!filePath || seen.has(filePath)) return;
-    seen.add(filePath);
-    paths.push(filePath);
-  };
-
-  let index = 0;
-  while (index < fields.length) {
-    const row = parseNumstatRow(fields[index] ?? "");
-    index += 1;
-    if (!row) continue;
-
-    const isBinaryRow = row.additions === "-" && row.deletions === "-";
-    if (row.path === "") {
-      const oldPath = fields[index] ?? "";
-      const newPath = fields[index + 1] ?? "";
-      index += 2;
-      if (isBinaryRow) {
-        addPath(oldPath);
-        addPath(newPath);
-      }
-      continue;
-    }
-
-    if (isBinaryRow) addPath(row.path);
-  }
-
-  return paths;
 }
 
 function countInsertions(patch: string): number {
@@ -123,6 +72,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
   const paths: string[] = [];
   const skipped: string[] = [];
   const untrackedSkipped: UntrackedSkippedFile[] = [];
+  const binaryFiles: string[] = [];
   let totalBytes = 0;
 
   for (const file of files) {
@@ -157,6 +107,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     }
     if (isBinary(content)) {
       skipped.push(`${file} (binary)`);
+      binaryFiles.push(file);
       continue;
     }
     if (totalBytes + content.byteLength > MAX_UNTRACKED_TOTAL_BYTES) {
@@ -168,6 +119,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     // NUL-free content that attributes (`-diff`, `binary`) mark binary.
     if (diff.insertions === 0 && /^Binary files /m.test(diff.patch)) {
       skipped.push(`${file} (binary)`);
+      binaryFiles.push(file);
       continue;
     }
     totalBytes += content.byteLength;
@@ -182,6 +134,7 @@ export function buildUntrackedPatch(cwd: string, files: readonly string[]): Untr
     paths,
     skipped,
     untrackedSkipped,
+    binaryFiles,
   };
 }
 

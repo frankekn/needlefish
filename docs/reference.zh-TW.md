@@ -64,6 +64,7 @@ needlefish --repo . --json | jq .verdict
 | `schemaVersion` | 固定為 `1`。 |
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
+| `unreviewedBinaryFiles` | 選用的 Git binary 路徑清單。內容未經審查，屬於非阻擋診斷。已列為 LFS pointer gap 的路徑不重複列出，fast path 不掃描 LFS pointer。 |
 | `docsOnlyFastPath` | 選用的 pipeline 旗標，表示 docs-only policy 跳過所有模型呼叫。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |

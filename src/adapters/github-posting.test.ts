@@ -95,6 +95,7 @@ type FixtureOptions = {
 	// Add a package.json change to the feature commit so the diff carries a
 	// dependency-surface file.
 	readonly dependencyFile?: boolean;
+	readonly binaryFile?: boolean;
 	// Fail the first N POSTs to the reviews endpoint with a 502, then succeed.
 	// Every attempt is still appended to postLog before the injected failure.
 	readonly flakyReviewPosts?: number;
@@ -298,6 +299,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const baseSha = headSha(repo);
 	gitText(["checkout", "-b", "feature"], repo);
 	writeFileSync(path.join(repo, "README.md"), opts.readmeContent ?? "feature\n");
+	if (opts.binaryFile) writeFileSync(path.join(repo, "asset.bin"), Buffer.from([0, 1]));
 	if (opts.dependencyFile === true) {
 		writeFileSync(path.join(repo, "package.json"), '{"name":"fixture"}\n');
 	}
@@ -5103,6 +5105,7 @@ for (const necessary of [false, true]) {
 	test(`external premise necessary=${necessary} preserves its verdict through delivery and same-head receipt`, (t) => {
 		const fixture = setupFixture(t, {
 			prNumber: 267,
+			binaryFile: true,
 			rawReview: JSON.stringify({ summary: "External contract", findings: [mkFinding({
 				severity: "P3", title: "Check external contract", externalClaims: [{
 					claim: "The external contract requires the prior value", necessary,
@@ -5114,10 +5117,13 @@ for (const necessary of [false, true]) {
 		assert.equal(first.status, necessary ? 1 : 0, first.stderr);
 		const posts = readPosts(fixture.postLog);
 		assert.equal(lastCheckCompletion(posts).conclusion, necessary ? "failure" : "success");
+		assert.match(String(lastCheckCompletion(posts).output?.summary), /Not reviewed \(non-blocking\).*binary/s);
+		assert.match(String(lastCheckCompletion(posts).output?.summary), /- asset\.bin/);
 		assert.match(first.stdout, necessary ? /"verdict":"needs_human"/ : /"verdict":"pass"/);
 		const post = postedReview(posts, 267);
 		assert.ok(post);
 		assert.match(parseReviewPayload(post.payload).body, /external contract/i);
+		assert.doesNotMatch(parseReviewPayload(post.payload).body, /Not reviewed \(non-blocking\)/);
 		const second = spawnGithubCli(fixture, 267);
 		assert.equal(second.status, necessary ? 1 : 0, second.stderr);
 		assert.match(second.stdout, /"reason":"same_head"/);

@@ -64,6 +64,11 @@
       "items": { "$ref": "#/$defs/coverageGap" }
     },
     "runtime": { "$ref": "#/$defs/runtime" },
+    "unreviewedBinaryFiles": {
+      "description": "Repo-relative paths Git classified as binary whose contents were not reviewed. Paths also listed as LFS pointer gaps are omitted. Output-only and non-blocking.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
     "stats": {
       "description": "Per-runner-call timing and attempt stats.",
       "type": "array",
