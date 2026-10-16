@@ -335,3 +335,14 @@ test("Codex malformed UTF-8 cannot synthesize a replacement character credential
   assert.throws(() => auth.assertOutputSafe("tok%EF%BF%BDtail"), ConnectionCredentialLeakError);
   assert.throws(() => auth.assertOutputSafe("bad%fftok%25ef%25bf%25bdtail"), ConnectionCredentialLeakError);
 });
+
+
+test("Codex well-formed Unicode percent bytes preserve existing case-insensitive screening", (t) => {
+  const f = fixture(t);
+  process.env.ACCOUNT_A_KEY = "Token-Ω";
+  const auth = f.select().connectionAuth!;
+  for (const text of ["token-ω", "token-%cf%89", "token-%CF%89"]) {
+    assert.throws(() => auth.assertOutputSafe(text), ConnectionCredentialLeakError);
+    assert.equal(auth.screenDiagnostic(text), "Needlefish withheld runner diagnostic: it contained a selected connection credential.");
+  }
+});
