@@ -1,0 +1,84 @@
+{
+  "frozenAt": 1792143541.4090698,
+  "windowSeconds": 1800,
+  "reviewsPerCandidate": 3,
+  "serialOffsetsSeconds": [
+    0,
+    600,
+    1200
+  ],
+  "runner": "codex",
+  "codexVersion": "0.163.0",
+  "provider": "cliproxyapi",
+  "authMode": "existing proxy API key, held only in process environment",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "perCallTimeoutMs": 300000,
+  "thresholds": {
+    "infra": 0,
+    "malformed": 0,
+    "fallback": 0,
+    "privateMarkerDetection": 0
+  },
+  "target": {
+    "base": "f1689617e7d9f181711a0b83b41b7cdd12637ed1",
+    "head": "b9811718cb0e8a06b68d74f0f97dc3f5da409446"
+  },
+  "releases": {
+    "good": {
+      "sourceSha": "1654cbe33afea542d601e38a642c787627a44ca6",
+      "sourceFileCount": 571,
+      "compiledFileCount": 36,
+      "metadataSha256": "9dd33a9a25ba5fbf2f64b25709e8d2e92d4cbcf1c231128efc22de31aeffe54c",
+      "archiveSha256": "a7e284abfeb194943338075b1e86d3e20ae422de44a4a71aa5299d4a5294ad7a",
+      "binarySha256": "10004a6810ccd94b53c6415e0def30cd99b959a96e7cd779e2436349b4811a83",
+      "lockSha256": "707712c36a2ff0f91338a907b8969328c5516d11dea1e02f62dec9a207161205",
+      "installedAt": 1792142597.9836423
+    },
+    "pr255": {
+      "sourceSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+      "sourceFileCount": 584,
+      "compiledFileCount": 36,
+      "metadataSha256": "ace873d272277df59a6c5912c628c6a880d506bd1a5fe6b7535b947747c557f4",
+      "archiveSha256": "34f0cf4c3ebd8f6912d7221a33fcee64cffafe5d623fa9f9eb8d3ff2a14ad8c2",
+      "binarySha256": "10004a6810ccd94b53c6415e0def30cd99b959a96e7cd779e2436349b4811a83",
+      "lockSha256": "707712c36a2ff0f91338a907b8969328c5516d11dea1e02f62dec9a207161205",
+      "installedAt": 1792142600.1811614
+    },
+    "pr258": {
+      "sourceSha": "ee28669b5eb404730bc29cf5ffb7c450e013b0c8",
+      "sourceFileCount": 584,
+      "compiledFileCount": 36,
+      "metadataSha256": "b3e0167b0db62b53a2021ea09fe92ede2c6e2261ce8c53a06357c49dc57d88aa",
+      "archiveSha256": "6e132b1c9f6d2324852c6c3cd24eb63b765959cffdd81bd6345e50840fbaa123",
+      "binarySha256": "10004a6810ccd94b53c6415e0def30cd99b959a96e7cd779e2436349b4811a83",
+      "lockSha256": "707712c36a2ff0f91338a907b8969328c5516d11dea1e02f62dec9a207161205",
+      "installedAt": 1792142602.3739617
+    }
+  },
+  "scope": "isolated real Linux installation; no GitHub publication or fleet deployment attestation",
+  "rollback": "independent process watches controller identity, heartbeat, selection, immutable source and compiled files; compare-guarded selection rollback",
+  "cheatDetectionLimit": "private marker adoption and production mutation guard; offline honeypot gate is separate",
+  "protocolVersion": 3,
+  "proxyVersion": "not exposed by existing authenticated model-list endpoint; remote service host not in scope",
+  "priorProtocol": "criteria-v2-proxy.json",
+  "priorBaseline": "native-baseline-real-failed",
+  "reason": "user explicitly requested existing CLIProxyAPI route after native token_expired/401",
+  "effortVerification": "high explicitly requested in real CLI invocation; baseline must succeed before windows",
+  "offlineQualification": "requires independent same-route gate; native offline result is not reused",
+  "harnessSha256": "def3bf2011adfc61ffea9401a20e7d9f88a764c1bf70ff83f2175c9a57e11bb9",
+  "observerSha256": "5ff6a06f4c21d1d1e4dac6eec10de90e79b52655ff02bd75532e4373473c2719",
+  "supersedeReason": "observer permitted known-good selection during an active candidate window; no actual selection drift occurred",
+  "primaryObservations": {
+    "path": "receipts/primary-v2-pr255-1/accepted.json",
+    "draws": 1,
+    "calls": 2,
+    "verdict": "pass",
+    "infrastructureFailures": 0,
+    "malformed": 0,
+    "fallback": 0,
+    "retained": true
+  },
+  "selectionGuard": "armed phase permits good or candidate; atomic selected marker changes allowed value to exact candidate; mismatch fails immediately; divergent third selection is preserved",
+  "restartLimit": "one instrumentation supersession only; no further restarts to obtain a passing outcome"
+}

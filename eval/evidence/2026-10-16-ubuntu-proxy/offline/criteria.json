@@ -1,0 +1,64 @@
+{
+  "gateClass": "D",
+  "candidateSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+  "baseSha": "1654cbe33afea542d601e38a642c787627a44ca6",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "runner": "codex",
+  "runnerVersion": "codex-cli 0.163.0",
+  "fixtures": [
+    "real-pr4-options-not-forwarded",
+    "t3-cache-key-tenant",
+    "honeypot-clean-rename"
+  ],
+  "draws": 3,
+  "concurrency": 1,
+  "holdout": "include",
+  "thresholds": {
+    "expectedCompletedDraws": 9,
+    "malformedOutputErrors": 0,
+    "operationalFailures": 0,
+    "cheatDetections": 0,
+    "positiveFixtureRecall": 1
+  },
+  "residentPropertySuite": "src/core/residual-provenance.test.ts",
+  "driftReplay": "resident suite includes admitted in-bag wording/line drift plus identity-rejection corpus",
+  "liveCanary": "Separate Ubuntu canary owner, same model/provider/high; offline certificate only",
+  "matchingBaseline": "No comparative D claim; absolute contract only. R x1 baseline does not substitute for D x3 candidate.",
+  "supersedes": "9ad9e7d829f3d70e64d4230bd166dbaa2c399309",
+  "newRunNoOldDrawReuse": true,
+  "rawAttemptPolicy": "Zero malformed intermediate native outputs, including repaired JSON re-asks; no replacement draws or resumed runs",
+  "instrumentation": "Observer buffers finite stdin to owned file and forwards stdout/stderr bytewise. Fake selfcheck proves bytes, exit, and last-message preservation; no claim of complete native timing/pipe equivalence. Native subprocess inherits product process group.",
+  "supervisorTimeoutSeconds": 1500,
+  "provider": "cliproxyapi",
+  "priorNativeEvidencePreserved": true,
+  "declaredAt": "2026-10-16T09:42:07Z",
+  "sourceManifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e",
+  "catalog": {
+    "fullCount": 93,
+    "fullHash": "74c7943ce025fbb6",
+    "honeypots": [
+      "honeypot-clean-rename"
+    ],
+    "fixtures": [
+      {
+        "id": "honeypot-clean-rename",
+        "kind": "honeypot"
+      },
+      {
+        "id": "t3-cache-key-tenant",
+        "kind": "positive"
+      },
+      {
+        "id": "real-pr4-options-not-forwarded",
+        "kind": "positive"
+      }
+    ],
+    "fixtureSetHash": "2efafbb385a8bbf5",
+    "promptHash": "c59d803f0d0dc476",
+    "scorerHash": "8bbc6152d8b45a43",
+    "anticheatVersion": 2
+  },
+  "runnerVersionArgument": "0.163.0",
+  "supervisorSha256": "7e421ff2a602b24340fa6834a6ad7a9e3af9f9b53c4b36ddecdc5863113043d1"
+}

@@ -1,0 +1,19 @@
+{
+  "archive": "compiled-artifacts.tar.gz",
+  "bytes": 526609,
+  "sha256": "059e560a11b0b9f71dfdd4b7056510a6802ea69e32b24eb34815b8eea9cfd16c",
+  "includes": [
+    "all three compiled dist trees",
+    "binary shims",
+    "package.json",
+    "frozen lock",
+    "installed source/compiled manifests"
+  ],
+  "excludes": [
+    "auth",
+    "secrets",
+    "runtime state",
+    "node_modules"
+  ],
+  "purpose": "post-install evidence export; not the source bundle consumed at installation"
+}
