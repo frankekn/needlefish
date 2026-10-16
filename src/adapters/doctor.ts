@@ -32,6 +32,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly needlefish: string;
+  readonly repoRoot?: string;
   /** False when any check failed; an `unknown` check does not fail the report. */
   readonly ok: boolean;
   readonly checks: readonly DoctorCheck[];
@@ -251,6 +252,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
 
 /** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
 interface WorktreeState {
+  readonly repoRoot: string;
   readonly headExists: boolean;
   readonly dirty: boolean;
 }
@@ -287,7 +289,7 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
   const commits = headExists ? "" : ", no commits yet";
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { headExists, dirty: changed > 0 },
+    worktree: { repoRoot: path.resolve(git(["rev-parse", "--show-toplevel"], repo)), headExists, dirty: changed > 0 },
   };
 }
 
@@ -312,9 +314,11 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   const repo = path.resolve(opts.repo);
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   let checks: readonly DoctorCheck[];
+  let repoRoot: string | undefined;
   try {
     const runner = selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
+    repoRoot = gitState.worktree?.repoRoot;
     checks = [
       nodeCheck(),
       runner.check,
@@ -328,6 +332,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
   return {
     schemaVersion: 1,
     needlefish: opts.version,
+    ...(repoRoot === undefined ? {} : { repoRoot }),
     ok: checks.every((check) => check.status !== "fail"),
     checks,
   };
