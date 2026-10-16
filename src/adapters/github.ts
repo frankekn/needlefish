@@ -1673,10 +1673,14 @@ export async function runGithub(
 		emitSkip("untrusted_author", prNumber, prHead);
 		return;
 	}
-	const headSha =
-		process.env.PR_HEAD_SHA ||
-		nestedString(pr, "head", "sha") ||
-		git(["rev-parse", "HEAD"], repoPath);
+	const currentHeadSha = nestedString(pr, "head", "sha");
+	if (!currentHeadSha) throw new Error("PR API returned no head.sha; cannot resolve or verify PR head");
+	const headSha = process.env.PR_HEAD_SHA || currentHeadSha;
+	const entrySkipReason = skipReasonForPr(pr, prNumber, headSha);
+	if (entrySkipReason) {
+		emitSkip(entrySkipReason, prNumber, headSha);
+		return;
+	}
 
 	let previous: ReturnType<typeof findPreviousReview> | undefined;
 	try { previous = findPreviousReview(repo, prNumber, expectedAppId); }
@@ -1705,48 +1709,6 @@ export async function runGithub(
 		emitSkip("same_head", prNumber, headSha);
 		return;
 	}
-
-	const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
-	if (!baseSha || !headSha)
-		throw new Error("Could not resolve PR base/head SHA");
-	const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
-	const patch = git(["diff", mergeBase, headSha], repoPath, { preserveOutput: true });
-	if (!patch.trim()) {
-		throw new Error(
-			`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
-		);
-	}
-	const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath, { preserveOutput: true });
-	const changed = changedFiles(repoPath, mergeBase, headSha);
-
-	const commentsUrl = stringField(pr, "comments_url");
-	const reviewsUrl = stringField(pr, "review_comments_url");
-	const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
-	const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
-	const selfLogin = authenticatedLogin();
-	const ownAuthor = (item: JsonRecord) => isTrustedStateAuthor(item, selfLogin);
-
-	const prMeta = {
-		number: prNumber,
-		title: stringField(pr, "title"),
-		body: typeof pr.body === "string" ? pr.body : null,
-		comments: normalizeBodyList(comments, ownAuthor),
-		reviews: normalizeBodyList(reviews, ownAuthor),
-		checks: [],
-	};
-
-	const bundle = makeBundle({
-		repoPath,
-		baseSha: mergeBase,
-		headSha,
-		patch,
-		patchStat,
-		changedFiles: changed,
-		prMeta,
-		deep: false,
-		focus: null,
-		agentsMd: readAgentsAt(repoPath, headSha),
-	});
 
 	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
@@ -1791,6 +1753,47 @@ export async function runGithub(
 		}
 		const recoveryAttempt = recheck ? 0 : deliveredCheckId !== null ? priorRounds.length : Math.max(priorRounds.length, previous?.state.headSha === headSha ? 1 : 0);
 		if (recoveryAttempt > 1) throw new RecoveryLimitError();
+		const baseSha = process.env.PR_BASE_SHA || nestedString(pr, "base", "sha");
+		if (!baseSha) throw new Error("Could not resolve PR base SHA");
+		const mergeBase = git(["merge-base", baseSha, headSha], repoPath);
+		const patch = git(["diff", mergeBase, headSha], repoPath, { preserveOutput: true });
+		if (!patch.trim()) {
+			throw new Error(
+				`No diff between ${mergeBase} and ${headSha}. Nothing to review.`,
+			);
+		}
+		const patchStat = git(["diff", "--stat", mergeBase, headSha], repoPath, { preserveOutput: true });
+		const changed = changedFiles(repoPath, mergeBase, headSha);
+
+		const commentsUrl = stringField(pr, "comments_url");
+		const reviewsUrl = stringField(pr, "review_comments_url");
+		const comments = commentsUrl ? ghJson(["api", commentsUrl]) : [];
+		const reviews = reviewsUrl ? ghJson(["api", reviewsUrl]) : [];
+		const selfLogin = authenticatedLogin();
+		const ownAuthor = (item: JsonRecord) => isTrustedStateAuthor(item, selfLogin);
+
+		const prMeta = {
+			number: prNumber,
+			title: stringField(pr, "title"),
+			body: typeof pr.body === "string" ? pr.body : null,
+			comments: normalizeBodyList(comments, ownAuthor),
+			reviews: normalizeBodyList(reviews, ownAuthor),
+			checks: [],
+		};
+
+		const bundle = makeBundle({
+			repoPath,
+			baseSha: mergeBase,
+			headSha,
+			patch,
+			patchStat,
+			changedFiles: changed,
+			prMeta,
+			deep: false,
+			focus: null,
+			agentsMd: readAgentsAt(repoPath, headSha),
+		});
+
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
