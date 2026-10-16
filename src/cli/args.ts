@@ -1,3 +1,4 @@
+import type { ConnectionsOperation } from "../adapters/connections.js";
 import type { SetupAction } from "../setup/guided.js";
 import type { LocalOptions } from "../adapters/local.js";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../shared/runner.js";
 
 export type CliCommand =
+  | { readonly kind: "connections"; readonly operation: ConnectionsOperation; readonly repo?: string }
   | {
       readonly kind: "help" | "version";
     }
@@ -91,6 +93,10 @@ Usage:
                                        [--confirm] [--replace-secret] [--json]
                                        inspect setup or explicitly create a PR/set a secret
                                        credentials are accepted only through stdin
+
+  needlefish connections list|edit|validate|apply|inspect --json [--repo <path>]
+                                       edit operator profiles; validate/apply/inspect
+                                       accept bounded JSON through stdin; no model call
 
 Shared options:
   --repo <path>        target repository
@@ -192,6 +198,21 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  if (argv[0] === "connections") {
+    const operation = argv[1];
+    if (operation !== "list" && operation !== "edit" && operation !== "validate" && operation !== "apply" && operation !== "inspect") throw new Error("invalid_request");
+    let repo: string | undefined;
+    let json = false;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === "--json" && !json) { json = true; continue; }
+      const value = optionValue(argv, i, "--repo");
+      if (!value || repo !== undefined) throw new Error("invalid_request");
+      repo = value.value;
+      if (value.consumedNext) i++;
+    }
+    if (!json) throw new Error("invalid_request");
+    return { kind: "connections", operation, ...(repo === undefined ? {} : { repo }) };
+  }
   if (argv[0] === "setup") {
     if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
     if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
