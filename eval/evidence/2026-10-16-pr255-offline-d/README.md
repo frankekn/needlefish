@@ -8,6 +8,14 @@ Live canary 與 automatic rollback 均為 `PENDING_NOT_AUTHORIZED`。
 本次發布只加入證據與 `eval/RESULTS.md`，沒有重跑模型。
 發布後的文件 head 與實際 model-run source head 必須分開識別。
 `verify.py` 會比較目前 checkout 與上述 source head，拒絕證據以外的變動。
+歷史文件發布 head 為 `e5a0b863c5db21e42b471e06e888aa2868595590`。
+若目前 checkout 已整合其他 source 變更，請在該發布 head 的獨立 checkout
+執行歷史檢查。原始 verifier 與證據不因 main 整合而改寫。
+
+PR255 相對整合時 main `1654cbe33afea542d601e38a642c787627a44ca6`
+仍只含 runner controller 與測試的 D 類產品差異，但從本報告 source 到整合
+版本另含 upstream normalization 與認證變更。這份歷史 PASS 不認證新 head。
+目前 head 的離線資格仍待更新，live canary 與 automatic rollback 未執行。
 
 ## 執行與結果
 

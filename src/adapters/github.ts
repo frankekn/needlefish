@@ -1,6 +1,6 @@
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { review } from "../core/review.js";
+import { review, reviewPlan } from "../core/review.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
 	priorFateParts,
@@ -12,6 +12,7 @@ import { changedFiles, ghText, git, makeBundle, readAgentsAt } from "../shared/r
 import { normalizeBodyList, OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import { runText, runTextAsync } from "../shared/process.js";
 import { envFlagOn } from "../shared/env.js";
+import { resolveConnectionOptions } from "../shared/connections.js";
 import {
 	registerTerminationFinalizer,
 	type Termination,
@@ -1639,6 +1640,7 @@ export async function runGithub(
 		agentsMd: readAgentsAt(repoPath, headSha),
 	});
 
+	const resolvedOpts = resolveConnectionOptions(opts, repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
 	const pendingCheckId = createPendingCheck(repo, headSha);
 	// The owned check reaches a terminal state exactly once, and whoever holds
 	// the claim completes it. The result path claims before posting anything
@@ -1667,7 +1669,7 @@ export async function runGithub(
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
 		const result: ReviewResult = {
-			...(await review(bundle, opts)),
+			...(await review(bundle, resolvedOpts)),
 			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
 			prNumber,
 			prBaseSha: baseSha,
