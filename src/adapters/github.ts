@@ -1755,6 +1755,7 @@ export async function runGithub(
 
 	let measurement = newMeasurement({ repository: repo, prNumber, targetHeadSha: headSha, workflow });
 	let pipelineStart: number | null = null;
+	let postingStarted = false;
 	const round: CheckRound = { v: 2, prNumber, roundId: measurement.invocationId, runId: capturedRunId, recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
@@ -1869,6 +1870,7 @@ export async function runGithub(
 			);
 			return;
 		}
+		postingStarted = true;
 		process.exitCode = reviewExitCode(result.verdict);
 		// Run before posting this result so fresh round comments are not swept.
 		// This also clears stale infra-error comments when the first successful
@@ -2034,7 +2036,7 @@ export async function runGithub(
 		// will not complete a claimed check, so this path must.
 		if (checkOwner !== "result" && !detachFinalizer()) return;
 		claimCheck("result");
-		measurement = { ...measurement, outcome: "operational_failure", verdict: null, delivery: "posting_failed" };
+		measurement = { ...measurement, outcome: "operational_failure", verdict: null, delivery: postingStarted ? "posting_failed" : "not_applicable" };
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which

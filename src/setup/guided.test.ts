@@ -601,3 +601,20 @@ test("guided upgrade keeps unrelated required checks and permits an unprotected 
   assert.equal(JSON.parse(result.stdout).firstReview, "not_verified");
   assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
 });
+
+for (const initial of [
+  { previous: true, failAt: "repos/owner/repo/branches/main/protection/required_status_checks" },
+  { previous: true, failAt: "repos/owner/repo/rules/branches/main" },
+  { previous: true, branchRules: {} },
+  { parentWorkflow: "previous", requiredChecks: { contexts: ["Needlefish"], checks: [] } },
+  { previous: true, branch: true, requiredChecks: { contexts: ["Needlefish"], checks: [] } },
+]) {
+  test(`guided upgrade policy errors and late previous templates write nothing ${JSON.stringify(initial)}`, t => {
+    const f = fixture(t, initial);
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.ok(f.history().every(call => !call.args.includes("--method")));
+    assert.equal(f.state().pr, undefined);
+  });
+}

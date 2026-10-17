@@ -138,6 +138,11 @@ workflows and unrecognized setup branches cause a conflict. Unrelated custom
 workflows that setup can inspect are preserved and do not block setup.
 If setup cannot inspect a workflow's contents, it stops without writing changes.
 Ask a repository administrator to inspect that workflow before retrying.
+Upgrades from the previous template inspect classic branch protection and active
+branch rules before writing. If either requires `Needlefish`, setup refuses the
+upgrade. Preserve required checks and ask a maintainer to plan and independently
+review a workflow migration on a separate branch. The reserved setup branch
+does not run a model review and cannot satisfy that required check.
 Read the workflow and OpenAI code-disclosure/cost notice from `status` before consent.
 
 `set-secret --repository owner/repo --confirm --replace-secret` accepts the

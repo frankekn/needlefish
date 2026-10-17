@@ -10,7 +10,9 @@ new UUID. The record captures the repository, PR, reviewed head, Actions run,
 run attempt, and job key. A missing run, attempt, or job makes workflow identity
 `unknown`. The execution role remains `unknown` until a trusted dispatcher owns
 that observation. Closed, stale, and same-head skips that do not create a check
-also do not create a measurement record.
+also do not create a measurement record. The reusable workflow and composite
+action trust gates record check-producing author skips with unknown runtime
+and pipeline values.
 
 The runtime projection contains the typed public runner, model selector,
 effort, core version, and their existing provenance. It does not read current
@@ -27,7 +29,9 @@ required posting and state marker succeed, an output-only PATCH changes the
 record to `delivered`. This PATCH keeps the same title and summary and does not
 write status or conclusion. Its failure does not change the review verdict.
 The stored record then remains conservative. A failed marker or round comment
-produces `partial`. Posting failures, cancellation, and superseded heads retain
+produces `partial`. Failures before posting begins use delivery
+`not_applicable`, including runner and post-review state-probe failures.
+Posting failures, cancellation, and superseded heads retain
 separate outcomes. A force-killed process may leave no final record.
 
 ## Read records for an explicit PR head
@@ -76,7 +80,9 @@ is the final public result's runtime. Per-route observations and dispatch roles
 are not captured in this unit. Job queue time uses
 GitHub job creation and start timestamps only after the job leaves `queued`.
 A prefilled `started_at` on a queued job does not prove it started.
-`workflowCreatedToTerminalMs` is a separate platform-time observation. True
+`workflowCreatedToTerminalMs` is a separate platform-time observation for the
+first attempt only. Re-runs report `rerun_attempt_created_at` because GitHub
+retains the original run creation time. True
 push and trigger times remain `unknown`. Invalid or reversed clocks are unknown.
 Failure and cancelled executions remain separate from successful verdicts.
 

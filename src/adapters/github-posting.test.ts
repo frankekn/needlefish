@@ -5304,7 +5304,7 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1]
   });
 }
 
- test("measurement runner failure is not a posting failure", (t) => {
+test("measurement runner failure is not a posting failure", (t) => {
   const fixture = setupFixture(t, { prNumber: 305, rawReview: defaultRawReview(), runnerExit: { code: 1, stderr: "429 Too Many Requests" } }); measurementActions(t);
   const run = spawnGithubCli(fixture, 305);
   assert.equal(run.status, 1, run.stderr);
@@ -5312,5 +5312,16 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1]
   assert.equal(final.measurement.outcome, "operational_failure");
   assert.equal(final.measurement.delivery, "not_applicable");
   assert.deepEqual(final.measurement.runtime, { status: "unknown" });
+  assert.equal(final.measurement.pipeline.status, "observed");
+});
+
+test("measurement preposting state probe failure is not a posting failure", (t) => {
+  const fixture = setupFixture(t, { prNumber: 306, rawReview: defaultRawReview(), failPullReadsFrom: 2 }); measurementActions(t);
+  const run = spawnGithubCli(fixture, 306);
+  assert.equal(run.status, 1, run.stderr);
+  const final = measurementWrites(readPosts(fixture.postLog)).at(-1); assert.ok(final);
+  assert.equal(final.measurement.outcome, "operational_failure");
+  assert.equal(final.measurement.delivery, "not_applicable");
+  assert.equal(final.measurement.runtime.status, "recorded");
   assert.equal(final.measurement.pipeline.status, "observed");
 });

@@ -20,8 +20,8 @@ function fixture(record = receipt(), overrides: { check?: Record<string, unknown
   const read = (endpoint: string): unknown => {
     calls.push(endpoint);
     if (endpoint === `repos/org/repo/commits/${query.targetHeadSha}/check-runs?check_name=Needlefish&filter=all&per_page=100&page=1`) return { total_count: overrides.checks?.length ?? 1, check_runs: overrides.checks ?? [check] };
-    if (endpoint === "repos/org/repo/actions/runs/10/attempts/2") return run;
-    if (endpoint === "repos/org/repo/actions/runs/10/attempts/2/jobs?per_page=100&page=1") return { total_count: overrides.jobs?.length ?? 1, jobs: overrides.jobs ?? [job] };
+    if (endpoint === `repos/org/repo/actions/runs/10/attempts/${record.workflow.status === "recorded" ? record.workflow.runAttempt : 2}`) return run;
+    if (endpoint === `repos/org/repo/actions/runs/10/attempts/${record.workflow.status === "recorded" ? record.workflow.runAttempt : 2}/jobs?per_page=100&page=1`) return { total_count: overrides.jobs?.length ?? 1, jobs: overrides.jobs ?? [job] };
     throw new Error("unexpected read endpoint");
   };
   return { read, calls };
@@ -222,4 +222,11 @@ test("collector accepts bare and referenced workflow paths but rejects malformed
 test("rerun original creation time never becomes an attempt duration", () => {
   const row = collectReviewMeasurements(query, fixture(receipt(), { run: { created_at: "2026-10-10T00:00:00Z", run_started_at: "2026-10-16T00:00:10Z" } }).read).rows[0];
   assert.deepEqual(row.durations.workflowCreatedToTerminalMs, { status: "unknown", reason: "rerun_attempt_created_at" });
+});
+
+test("first attempt preserves workflow creation duration", () => {
+  const record = receipt({ workflow: measurementWorkflow({ runId: "10", runAttempt: "1", jobKey: "review" }) });
+  const row = collectReviewMeasurements(query, fixture(record, { run: { run_attempt: 1 }, job: { run_attempt: 1 } }).read).rows[0];
+  assert.deepEqual(row.binding, { status: "producer_attested" });
+  assert.deepEqual(row.durations.workflowCreatedToTerminalMs, { status: "observed", valueMs: 20000, clock: "github_utc" });
 });

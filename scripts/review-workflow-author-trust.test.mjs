@@ -509,3 +509,19 @@ for (const [name, script, env] of [
     assert.equal(JSON.parse(post.external_id).roundId, record.invocationId);
   });
 }
+
+for (const [name, script, env] of [
+  ["reusable", resolveScript, eventEnv({ association: "NONE" })],
+  ["composite", trustStep.run, actionEnv({ association: "NONE" })],
+]) {
+  test(`${name} trust skip keeps missing workflow context unknown and retries use distinct UUIDs`, () => {
+    const first = runStep(script, { ...env, GITHUB_RUN_ATTEMPT: "", GITHUB_JOB: "" });
+    const second = runStep(script, env);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(second.status, 0, second.stderr);
+    const unknown = parseMeasurement(postedCheck(first.posts[0])["output[text]"]);
+    const known = parseMeasurement(postedCheck(second.posts[0])["output[text]"]);
+    assert.deepEqual(unknown.workflow, { status: "unknown" });
+    assert.notEqual(unknown.invocationId, known.invocationId);
+  });
+}
