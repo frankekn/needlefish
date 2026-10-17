@@ -1056,6 +1056,90 @@ final class AdvancedConnectionsTests: XCTestCase {
         XCTAssertEqual(model.baseRevision, "sha256:new")
         XCTAssertTrue(model.dirty)
     }
+    func testCleanConflictReloadCannotReapplyStaleConfiguration() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.select("proxy"); model.budget = "1000"
+            try inspect(model)
+            XCTAssertFalse(model.dirty)
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertEqual(model.draftState, code == "revision_conflict" ? .conflict : .reloadRequired)
+            XCTAssertThrowsError(try model.request("apply"))
+            XCTAssertEqual(model.message, code == "revision_conflict"
+                ? "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration."
+                : "保存狀態未知。請重新載入確認，不能直接重試保存。 / Save state unknown. Reload to inspect before retrying.")
+            let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+            XCTAssertFalse(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.model), ["other-editor-model", "other-editor-model"])
+            XCTAssertFalse(model.dirty)
+            XCTAssertEqual(model.baseRevision, "sha256:new")
+        }
+    }
+    func testDirtyConflictsKeepOnlyActualUnsavedDraftForExplicitReapply() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.change(.init(id: "unsaved", adapter: "codex", model: "my-model"), replacing: nil)
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertEqual(model.message, code == "revision_conflict"
+                ? "設定已由別處更改。草稿保留。重新載入後，明確選擇重套草稿。 / Configuration changed. Draft retained. Reload before explicitly reapplying."
+                : "保存狀態未知。草稿保留。請重新載入確認，再明確選擇重套草稿。 / Save state unknown. Draft retained. Reload before explicitly reapplying.")
+            XCTAssertFalse(model.canReapply)
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+            XCTAssertTrue(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "unsaved"])
+            XCTAssertTrue(model.dirty)
+            XCTAssertFalse(model.canReapply)
+            XCTAssertEqual(model.baseRevision, "sha256:new")
+        }
+    }
+    func testCleanInspectAndReviewConflictsReloadWithoutOfferingReapply() async throws {
+        for operation in ["inspect", "review"] {
+            let runtime = try cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(fixture.doctorJSON)'
+            else cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":false,"code":"revision_conflict"}'; exit 1
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            owner.diagnose()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+            owner.connections.select("proxy"); owner.connections.budget = "1000"
+            if operation == "inspect" { owner.prepareConnections() }
+            else {
+                try inspect(owner.connections)
+                owner.connections.credentialMode = "session"
+                owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+                owner.consentUsesConnections = true
+                owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(fixture.scopeJSON.utf8)))
+                owner.trusted = true; owner.accepted = true
+                XCTAssertTrue(owner.canReview)
+                owner.review()
+            }
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            guard case .message(let message) = owner.state else { return XCTFail("Conflict must request reload") }
+            XCTAssertEqual(message, "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration.")
+            XCTAssertEqual(owner.connections.message, message)
+            XCTAssertEqual(owner.connections.draftState, .conflict)
+            XCTAssertEqual(owner.connections.secrets, [:])
+            let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+            XCTAssertFalse(owner.connections.canReapply)
+            owner.connections.reapply()
+            XCTAssertEqual(owner.connections.document.connections.map(\.model), ["other-editor-model", "other-editor-model"])
+        }
+    }
     func testOrderDistinctReferencesAndDeletionInvalidateReadiness() throws {
         let model = try loaded()
         model.select("proxy"); model.select("agent"); model.select("proxy")
