@@ -37,7 +37,7 @@ def rows(ids=None):
              "route": p.get("auth", {}).get("route", {}).get("kind", "opaque" if p["adapter"] == "acp" else "ambient"),
              "credentialSource": "reference-configured" if p.get("auth") else "ambient",
              "providerAccount": "unknown", "authentication": "unknown", "qualification": "unqualified",
-             "readiness": "local-available"} for p in profiles]
+             "readiness": "local-blocked" if (root / "blocked").exists() else "local-available"} for p in profiles]
 if sys.argv[1] == "doctor":
     emit({"schemaVersion": 1, "repoRoot": str(root), "checks": [{"name": name, "status": "ok", "detail": "OFFLINE UI TEST"} for name in ["node", "runner", "capability", "auth", "git", "base"]]})
 elif sys.argv[1] == "connections":
@@ -62,6 +62,10 @@ elif sys.argv[1] == "connections":
     elif operation == "inspect":
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows(request["ids"])})
     elif operation == "review":
+        if (root / "review-conflict").exists():
+            emit({"schemaVersion": 1, "ok": False, "code": "revision_conflict"}); sys.exit(1)
+        if (root / "review-invalid-request").exists():
+            emit({"schemaVersion": 1, "ok": False, "code": "invalid_request"}); sys.exit(1)
         time.sleep(30 if (root / "slow-review").exists() else 1)
         summary = "OFFLINE UI TEST. No actual review."
         if (root / "review-percent-output").exists():

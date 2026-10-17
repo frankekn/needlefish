@@ -1157,6 +1157,7 @@ final class AdvancedConnectionsTests: XCTestCase {
         guard case .consent = owner.state else { return XCTFail("Available runner must permit consent") }
         owner.trusted = true; owner.accepted = true
         XCTAssertTrue(owner.canReview)
+        XCTAssertNil(owner.connections.message)
         XCTAssertEqual(owner.connections.inspection?.first?.qualification, "unqualified")
     }
     func testNoviceScopeFailureDoesNotChangeAdvancedDraftOrSecrets() async throws {

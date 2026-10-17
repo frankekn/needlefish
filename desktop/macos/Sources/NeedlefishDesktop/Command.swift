@@ -108,7 +108,6 @@ final class Command: @unchecked Sendable {
                 try? stderr.pipe.fileHandleForWriting.close()
                 try? stdin?.fileHandleForReading.close()
                 var pendingInput = input
-                defer { let count = pendingInput?.count ?? 0; pendingInput?.resetBytes(in: 0..<count) }
                 var inputOffset = 0
                 var inputClosed = false
                 var status: Int32 = 0
@@ -142,8 +141,6 @@ final class Command: @unchecked Sendable {
                             failure = .timeout
                             inputClosed = true
                             try? stdin.fileHandleForWriting.close()
-                            let count = pendingInput?.count ?? 0
-                            pendingInput?.resetBytes(in: 0..<count)
                             pendingInput = nil
                         }
                         if let stdin, let input = pendingInput, !inputClosed {
@@ -157,8 +154,6 @@ final class Command: @unchecked Sendable {
                             if inputOffset == input.count {
                                 inputClosed = true
                                 try? stdin.fileHandleForWriting.close()
-                                let count = pendingInput?.count ?? 0
-                                pendingInput?.resetBytes(in: 0..<count)
                                 pendingInput = nil
                                 await inputSent()
                             }

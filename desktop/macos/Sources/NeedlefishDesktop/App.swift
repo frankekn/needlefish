@@ -119,7 +119,7 @@ final class Onboarding: ObservableObject {
         }
     }
 
-    private func start(_ label: String, work: @escaping @MainActor (DesktopCLI, Command) async throws -> State) {
+    private func start(_ label: String, usesConnections: Bool = false, work: @escaping @MainActor (DesktopCLI, Command) async throws -> State) {
         guard !busy else { return }
         guard let runtime else { state = .message(DesktopError.runtime.localizedDescription); return }
         let command = Command()
@@ -129,7 +129,7 @@ final class Onboarding: ObservableObject {
         task = Task {
             do { state = try await work(DesktopCLI(runtime: runtime), command) }
             catch {
-                self.connections.failed(error)
+                if usesConnections { self.connections.failed(error) }
                 state = .message((error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.command.localizedDescription)
             }
             operation = nil
@@ -196,14 +196,12 @@ final class Onboarding: ObservableObject {
     func connectionOperation(_ operation: String) {
         guard !busy, let repo else { return }
         invalidateConnectionConsent()
-        start("正在處理連線設定，沒有模型呼叫。 / Managing connections. No model call.") { cli, command in
-            do {
-                let input = operation == "edit" ? nil : try self.connections.request(operation)
-                let response = try await cli.connections(operation, repo: repo, command: command, input: input)
-                if operation == "edit" { try self.connections.load(response) }
-                else { try self.connections.saved(response) }
-                return .message("連線設定已載入或保存。 / Connections loaded or saved.")
-            } catch { self.connections.failed(error); throw error }
+        start("正在處理連線設定，沒有模型呼叫。 / Managing connections. No model call.", usesConnections: true) { cli, command in
+            let input = operation == "edit" ? nil : try self.connections.request(operation)
+            let response = try await cli.connections(operation, repo: repo, command: command, input: input)
+            if operation == "edit" { try self.connections.load(response) }
+            else { try self.connections.saved(response) }
+            return .message("連線設定已載入或保存。 / Connections loaded or saved.")
         }
     }
 
@@ -211,12 +209,19 @@ final class Onboarding: ObservableObject {
         guard !busy, let repo, !connections.dirty, connections.validSelection,
               connections.budgetMs != nil, connections.draftState == .editing else { return }
         trusted = false; accepted = false; consentUsesConnections = true
-        start("正在檢查連線與本機範圍，沒有模型呼叫。 / Inspecting connections and scope. No model call.") { cli, command in
+        start("正在檢查連線與本機範圍，沒有模型呼叫。 / Inspecting connections and scope. No model call.", usesConnections: true) { cli, command in
             let report = try await cli.doctor(repo: repo, command: command)
             self.diagnosis = report
             guard report.scopeReady else { throw DesktopError.scopeCollection }
             let response = try await cli.connections("inspect", repo: repo, command: command, input: self.connections.request("inspect"))
             try self.connections.inspected(response)
+            let unavailable = (self.connections.inspection ?? []).filter { $0.readiness != "local-available" }
+            if !unavailable.isEmpty {
+                let rows = unavailable.map { $0.id + " (" + $0.adapter + "): " + $0.readiness }.joined(separator: "; ")
+                let message = "連線尚不能在本機執行。請確認執行檔可用且支援讀取專案，再重新檢查。 / Connections are not locally ready. Check executable availability and repository-read capability, then inspect again. " + rows
+                self.connections.message = message
+                return .message(message)
+            }
             let scope = try await cli.scope(repo: repo, command: command)
             guard !scope.changedFiles.isEmpty else { return .message("沒有可檢查的變更。 / No changes to review.") }
             return .consent(scope)
@@ -226,7 +231,7 @@ final class Onboarding: ObservableObject {
     func review() {
         guard let repo, canReview, case .consent = state else { return }
         guard runtime != nil else { connections.clearSecrets(); state = .message(DesktopError.runtime.localizedDescription); return }
-        start("正在檢查本機變更副本。可能產生費用。 / Reviewing a copy of local changes. Charges may apply.") { cli, command in
+        start("正在檢查本機變更副本。可能產生費用。 / Reviewing a copy of local changes. Charges may apply.", usesConnections: consentUsesConnections) { cli, command in
             if self.consentUsesConnections {
                 guard let revision = self.connections.baseRevision, let budget = self.connections.budgetMs else { throw DesktopError.invalidOutput }
                 defer { self.connections.clearSecrets() }
@@ -351,7 +356,7 @@ struct ContentView: View {
             Text("將檢查 \(scope.changedFiles.count) 個有本機變更的檔案。按開始時建立副本，包含已暫存、未暫存與可收錄的新檔案。期間請停止編輯。 / Reviews a copy of local staged, unstaged and eligible new files at start. Stop editing during capture.")
             if model.consentUsesConnections {
                 Text("程式碼與規則會依下列順序交給所選連線。完整結果會結束備援。認證未知、資格未驗證、費用未知。 / Code and rules go to the selected routes in this order. A complete result ends fallback. Authentication unknown, unqualified, cost unknown.")
-                ForEach(model.connections.inspection ?? []) { row in Text(row.summary) }
+                ForEach(model.connections.inspection ?? []) { row in Text(row.summary + " · " + row.readiness) }
                 Text("模型審查總預算 / Model budget: " + model.connections.budget + " ms. Collection and cleanup are outside this budget.")
             } else {
                 Text("程式碼與專案規則會交給 OpenAI Codex，使用 gpt-5.6-sol，medium effort。費用未知，依目前登入帳戶計費。 / Code and project rules go to OpenAI Codex, gpt-5.6-sol, medium effort. Cost unknown, billed to the signed-in account.")

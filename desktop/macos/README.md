@@ -104,6 +104,8 @@ The `needlefish/setup-v1` branch is reserved for configuration. Its workflow fai
 
 ## Edit advanced connections
 
+New profiles offer `codex` and `acp`, whose executable paths the desktop can supply explicitly. Existing profiles for other adapters remain visible and retain their fields. The CLI checks their local availability. The desktop does not inherit arbitrary runner overrides from the shell.
+
 Choose the project, then open **Advanced connections** and **Load connections**. The CLI owns configuration validation and writes. Its safe user-owned configuration parent must already exist. A missing parent shows an actionable error and creates nothing. This page does not install a credential store or create the configuration directory.
 
 Add, edit, or delete profiles in the draft. **Cancel edit** discards only that form. **Save all drafts** sends the complete raw document once with its exact revision. ACP arguments retain `{model}` and credentials retain source names. Do not put secret values into profile fields. A conflict keeps the draft and blocks profile edits and saving. An unconfirmed apply response also forces a reload, including truncated output or cancellation after a possible commit. Reload, inspect the current configuration, and explicitly choose **Reapply retained draft** before saving again. An unknown save state also requires reload. The CLI lock coordinates cooperating writers. It cannot provide atomic compare-and-swap against arbitrary external editors.
@@ -114,4 +116,22 @@ Existing ambient sign-in remains available. A known missing ambient Codex sign-i
 
 Inspect the selection and scope, then use the shared trust and cost consent controls to start. Changing the project, profile, route order, or budget invalidates the old inspection and consent. Profile names do not prove separate accounts. Requested models, direct or proxy destinations, unknown authentication, unqualified runtime, and unknown cost remain separate facts. The CLI alone owns authentication binding, fallback, review, and final cache. A malformed, nonzero, cancelled, or incomplete response cannot display a completed advanced review.
 
-For a fake native smoke test, run `python3 desktop/macos/scripts/advanced-smoke-fixture.py /tmp/unique-owned-fixture`. Use its generated Python CLI in a separate development app with the Info.plist boolean `NeedlefishOfflineUITest` set to true. The app displays **OFFLINE UI TEST** throughout. The fixture uses disposable local files and never calls a provider. A `force-conflict` file injects revision conflict. A `slow-review` file permits cancellation and Quit checks. An `apply-invalid-output` file simulates a committed save whose response is unreadable. An `apply-mixed-output` file simulates a committed save with contradictory success and failure fields. A `review-percent-output` file echoes an encoded disposable session value to check output rejection. These observations do not qualify a release, provider, or novice workflow.
+For a fake native smoke test, use a new task-owned directory and the Python interpreter for the generated Python CLI.
+
+```sh
+fixture_root=$(mktemp -d /tmp/needlefish-advanced-ui.XXXXXX)
+python3 desktop/macos/scripts/advanced-smoke-fixture.py "$fixture_root/fixture"
+python3 desktop/macos/scripts/package.py --development \
+  --node /usr/bin/python3 --cli "$fixture_root/fixture/fake-cli.py" \
+  --codex /usr/bin/true --git /usr/bin/git \
+  --output "$fixture_root/Needlefish-Advanced-UI-Test.app"
+/usr/libexec/PlistBuddy -c 'Add :NeedlefishOfflineUITest bool true' \
+  "$fixture_root/Needlefish-Advanced-UI-Test.app/Contents/Info.plist"
+set -m
+"$fixture_root/Needlefish-Advanced-UI-Test.app/Contents/MacOS/Needlefish" &
+app_pgid=$!
+```
+
+Choose `$fixture_root/fixture` as the project folder, open **Advanced connections**, and use **Load connections**. Select both profiles, enter a budget of `1000`, and choose **Session only**. Enter disposable fake values for `OFFLINE_A_KEY` and `OFFLINE_B_KEY`. Use **Inspect connections and scope**, confirm trust and cost consent, and start the offline review. Expect **Human review needed** with `OFFLINE UI TEST. No actual review.` Quit the test app, confirm that its owned process group `$app_pgid` has stopped, and remove only `$fixture_root` after the check.
+
+The development runtime invokes the configured `--node` as the interpreter, so Node or `/bin/sh` cannot run this Python fixture. `/usr/bin/true` is only the offline Codex placeholder. It never authenticates or calls a provider. The app displays **OFFLINE UI TEST** throughout. The fixture uses disposable local files and never calls a provider. A `force-conflict` file injects revision conflict. A `slow-review` file permits cancellation and Quit checks. An `apply-invalid-output` file simulates a committed save whose response is unreadable. An `apply-mixed-output` file simulates a committed save with contradictory success and failure fields. A `review-percent-output` file echoes an encoded disposable session value to check output rejection. A `blocked` file makes inspection return `local-blocked`. A `review-conflict` file injects a review-time revision conflict. A `review-invalid-request` file injects an invalid request. These observations do not qualify a release, provider, or novice workflow.

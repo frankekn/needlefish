@@ -174,7 +174,12 @@ extension DesktopCLI {
                 throw DesktopError.invalidOutput
             }
         }
-        guard output.status == 0 else { throw DesktopError.command }
+        guard output.status == 0 else {
+            if let response = try? JSONDecoder().decode(ConnectionsResponse.self, from: output.stdout), !response.ok {
+                _ = try response.validated(status: output.status)
+            }
+            throw DesktopError.command
+        }
         do {
             let result = try JSONDecoder().decode(Result.self, from: output.stdout).validated()
             let displayed = [result.summary, result.coverage ?? ""] + result.findings.flatMap {
@@ -264,7 +269,7 @@ final class AdvancedConnections: ObservableObject {
     func inspected(_ response: ConnectionsResponse) throws {
         guard let revision = response.revision, revision == baseRevision, let rows = response.connections,
               rows.map(\.id) == selection else { throw ConnectionsFailure(code: "revision_conflict") }
-        inspection = rows; inspectionRevision = revision
+        inspection = rows; inspectionRevision = revision; message = nil
     }
     func request(_ operation: String) throws -> Data {
         struct DocumentRequest: Encodable { let document: ConnectionsDocument }
@@ -301,7 +306,11 @@ private struct ProfileSheet: View {
             Form {
                 TextField("名稱 / Profile ID", text: $profile.id).focused($idFocused)
                 Picker("執行器 / Adapter", selection: $profile.adapter) {
-                    ForEach(["codex", "claude", "opencode", "pi", "openai", "grok", "acp"], id: \.self) { Text($0).tag($0) }
+                    Text("codex").tag("codex")
+                    Text("acp").tag("acp")
+                    if !["codex", "acp"].contains(profile.adapter) {
+                        Text(profile.adapter + " · 既有設定 / Existing configuration").tag(profile.adapter)
+                    }
                 }
                 TextField("要求模型 / Requested model", text: Binding(get: { profile.model ?? "" }, set: { profile.model = $0.isEmpty ? nil : $0 }))
                 if profile.adapter == "codex" {
@@ -331,9 +340,9 @@ private struct ProfileSheet: View {
                             result.launch = .init(command: profile.launch?.command ?? "", args: try JSONDecoder().decode([String].self, from: Data(args.utf8)))
                             let refs = try JSONDecoder().decode([String: String].self, from: Data(env.utf8))
                             result.auth = refs.isEmpty ? nil : .init(env: refs)
-                        } else {
+                        } else if result.adapter == "codex" {
                             result.launch = nil
-                            result.auth = result.adapter == "codex" && route != "ambient" ? .init(env: [route == "openai" ? "CODEX_API_KEY" : "CODEX_PROXY_API_KEY": source], route: .init(kind: route, baseUrl: route == "cliproxyapi" ? endpoint : nil)) : nil
+                            result.auth = route != "ambient" ? .init(env: [route == "openai" ? "CODEX_API_KEY" : "CODEX_PROXY_API_KEY": source], route: .init(kind: route, baseUrl: route == "cliproxyapi" ? endpoint : nil)) : nil
                         }
                         save(result); dismiss()
                     } catch { self.error = "JSON 格式錯誤。未修改草稿。 / Invalid JSON. Draft unchanged." }
