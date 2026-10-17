@@ -5,7 +5,7 @@ import { envFlagOn } from "./env.js";
 import { runnerEnvironmentAttestationError } from "./runner-attestation.js";
 import type { EffectiveRunnerConfig } from "./codex.js";
 import { resolveRunnerBinary } from "./runner-detection.js";
-import { spawnRunnerProcess } from "./runner-process.js";
+import { runManagedRunnerProcess } from "./runner-process.js";
 import { CODEX_PUBLIC_ENV, codexPublicEnvironment } from "./codex-public-environment.js";
 import { isPublicAttestationLabel } from "./public-runtime-identity.js";
 
@@ -131,7 +131,8 @@ export function capturedCodexCommand(config: EffectiveRunnerConfig): string {
   return capture.command;
 }
 
-export async function probeCapturedCodex(config: EffectiveRunnerConfig, publicDigest: string, tmp: string): Promise<void> {
+export async function probeCapturedCodex(config: EffectiveRunnerConfig, publicDigest: string, tmp: string, reviewDeadlineMs?: number): Promise<void> {
+  if (reviewDeadlineMs !== undefined && performance.now() >= reviewDeadlineMs) return;
   const capture = captures.get(config);
   checkCodexInvocation(config);
   if (!capture || capture.drifted || config.codexProxy || config.connectionAuth) return;
@@ -146,7 +147,9 @@ export async function probeCapturedCodex(config: EffectiveRunnerConfig, publicDi
   if (!/^sha256:[a-f0-9]{64}$/.test(publicDigest)) return;
   try {
     const command = capturedCodexCommand(config);
-    const result = await spawnRunnerProcess({ command, args: ["--version"], stdin: "", repoPath: tmp, timeoutMs: Math.min(config.timeoutMs, 2000), env: { PATH: capture.environment.PATH, HOME: tmp, USERPROFILE: tmp } });
+    const timeoutMs = Math.min(config.timeoutMs, 2000, reviewDeadlineMs === undefined ? Infinity : Math.floor(reviewDeadlineMs - performance.now()));
+    if (timeoutMs <= 0) return;
+    const result = await runManagedRunnerProcess({ command, args: ["--version"], repoPath: tmp, timeoutMs, timeoutKillSignal: "SIGKILL", onSpawn: controller => controller.child.stdin.end(""), env: { PATH: capture.environment.PATH, HOME: tmp, USERPROFILE: tmp } });
     const version = result.stdout.trim();
     if (result.status === 0 && !result.error && /^codex-cli \d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?$/.test(version) && isPublicAttestationLabel(version, capture.environment)) capture.runnerVersion = version.slice("codex-cli ".length);
   } catch { /* Optional metadata cannot fail a successful review. */ }

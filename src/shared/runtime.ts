@@ -73,13 +73,13 @@ export function prepareReviewRuntime(config: EffectiveRunnerConfig): void {
   contexts.set(config, { packageIdentity: identity, proof, exactSource, invalidProof });
 }
 
-export async function completeReviewRuntime(config: EffectiveRunnerConfig, tmp: string): Promise<void> {
+export async function completeReviewRuntime(config: EffectiveRunnerConfig, tmp: string, reviewDeadlineMs?: number): Promise<void> {
   const context = contexts.get(config);
   const proof = context?.proof;
   const nativeDigest = proof && nativeDigestFromProof(proof);
   if (nativeDigest && config.runner === "codex" && context?.exactSource !== undefined && proof?.identity.gitSha === context.exactSource) {
     const probeDirectory = path.join(tmp, "runtime-probe");
-    try { mkdirSync(probeDirectory, { recursive: true, mode: 0o700 }); await probeCapturedCodex(config, nativeDigest, probeDirectory); }
+    try { mkdirSync(probeDirectory, { recursive: true, mode: 0o700 }); await probeCapturedCodex(config, nativeDigest, probeDirectory, reviewDeadlineMs); }
     catch { /* Optional identity probes never reject a review. */ }
   }
 }
