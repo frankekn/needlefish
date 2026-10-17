@@ -1789,7 +1789,14 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
                 XCTAssertFalse(try XCTUnwrap(owner.diagnosis).scopeReady)
                 XCTAssertFalse(try XCTUnwrap(owner.diagnosis).ready)
             } else {
-                guard case .message = owner.state else { XCTFail("Unavailable route/repository/scope must stay blocked"); continue }
+                guard case .message(let message) = owner.state else { XCTFail("Unavailable route/repository/scope must stay blocked"); continue }
+                if ["node", "git"].contains(failure) {
+                    let expected = failure == "node"
+                        ? "執行環境不相容。請重新安裝正式安裝包。 / Reinstall the supported package."
+                        : "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project."
+                    XCTAssertEqual(message, expected)
+                    XCTAssertEqual(owner.connections.message, expected)
+                }
                 owner.trusted = true; owner.accepted = true
                 XCTAssertFalse(owner.canReview)
             }
