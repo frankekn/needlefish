@@ -1454,18 +1454,34 @@ private final class InputAllocationOwner: Sendable {}
 
 private final class InputOwnershipProbe: @unchecked Sendable {
     weak var owner: InputAllocationOwner?
-    func makeInput() -> Data {
+    func makeInput(count: Int = 32_768) -> Data {
         let owner = InputAllocationOwner()
         self.owner = owner
-        let bytes = UnsafeMutableRawPointer.allocate(byteCount: 32_768, alignment: 1)
-        bytes.initializeMemory(as: UInt8.self, repeating: 65, count: 32_768)
-        return Data(bytesNoCopy: bytes, count: 32_768, deallocator: .custom { [owner] bytes, _ in
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: count, alignment: 1)
+        bytes.initializeMemory(as: UInt8.self, repeating: 65, count: count)
+        return Data(bytesNoCopy: bytes, count: count, deallocator: .custom { [owner] bytes, _ in
             withExtendedLifetime(owner) { bytes.deallocate() }
         })
     }
 }
 
 final class AdvancedInputDeadlineTests: XCTestCase {
+    func testOutputLimitReleasesInputBeforeSignallingWithoutCompletion() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-output-limit-" + UUID().uuidString)
+        let probe = InputOwnershipProbe()
+        let command = Command(signalGroup: { group, signal in
+            XCTAssertNil(probe.owner, "Release pending bytes before terminating the owned group")
+            return kill(group, signal)
+        })
+        do {
+            _ = try await command.run(["/bin/sh", "-c", "/bin/dd if=/dev/zero bs=65536 count=129 2>/dev/null; cat >/dev/null; sleep 30"],
+                environment: ["PATH": "/usr/bin:/bin"], temporary: root, timeout: 30, input: probe.makeInput(count: 131_072),
+                inputSent: { XCTFail("Output failure cannot signal input completion") })
+            XCTFail("Expected output limit failure")
+        } catch { XCTAssertEqual(error as? DesktopError, .outputLimit) }
+        XCTAssertNil(probe.owner)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
     func testInputBackingReleasedBeforeCallbackWhileChildIsHeld() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-release-" + UUID().uuidString)
         let marker = root.appendingPathComponent("callback")
