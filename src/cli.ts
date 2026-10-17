@@ -13,7 +13,6 @@ import {
   terminalProgress,
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
-import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
 import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
@@ -76,11 +75,7 @@ async function main() {
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
-  // Review adapters have the bundle needed to decide whether credentials are
-  // needed. Preview and explain resolve here; neither uses those adapters.
-  const opts = dryRun || command.kind === "explain"
-    ? resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun)
-    : command.opts;
+  const opts = command.opts;
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {

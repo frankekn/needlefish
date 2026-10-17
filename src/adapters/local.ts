@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  review,
+  reviewWithConnections,
   reviewPlan,
+  isDocsOnlyFastPath,
+  reviewBudgetMs,
   type ReviewProgressEvent,
   type ReviewProgressObserver,
 } from "../core/review.js";
@@ -33,7 +35,7 @@ import {
   type UntrackedSkippedFile,
 } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
-import { resolveConnectionOptions } from "../shared/connections.js";
+import { resolveConnectionRoutes } from "../shared/connections.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
@@ -166,8 +168,8 @@ export function hasHeadCommit(cwd: string): boolean {
 // and external diff drivers stay off: they would rewrite or replace the patch.
 const UNCOMMITTED_DIFF = ["diff", "--no-textconv", "--no-ext-diff"];
 
-function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = [...UNCOMMITTED_DIFF, ...extraArgs, "HEAD"];
+function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[], baseSha: string): string[] {
+  const args = [...UNCOMMITTED_DIFF, ...extraArgs, baseSha];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -255,20 +257,32 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
 
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  // shortcut: matching reads miss edits reverted between reads; use OS snapshots if atomic capture is required.
+  const bundle = captureUncommittedBundle(cwd, opts, baseSha);
+  const checked = captureUncommittedBundle(cwd, opts, baseSha);
+  const currentHead = hasHeadCommit(cwd) ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  if (currentHead !== baseSha || JSON.stringify(bundle) !== JSON.stringify(checked)) {
+    throw new Error("Repository changed while capturing uncommitted changes; retry the review.");
+  }
+  return { ...bundle, prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null };
+}
+
+function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: string): Bundle {
+  const headExists = baseSha !== EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd))
+    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", baseSha], cwd))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs([], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
     : "";
   const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
     : "";
   // Rename detection off for the name list only: a `git mv` into a docs path
   // must keep its removed source path, or classification sees docs alone and
   // the fast path skips the review. The patch above keeps its rename headers.
   const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
+    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths, baseSha), cwd)
     : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
@@ -292,12 +306,12 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
     changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
-    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    prMeta: null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    // Uncommitted mode has no reviewed commit; read HEAD's blob. An AGENTS.md
-    // that exists only in the working tree is not git policy yet (issue #211).
-    agentsMd: readAgentsAt(cwd, "HEAD"),
+    // Uncommitted mode pins policy to the captured base blob. Working-tree-only
+    // AGENTS.md is not git policy yet; blob-only reads avoid symlink follows (#211).
+    agentsMd: headExists ? readAgentsAt(cwd, baseSha) : NO_AGENTS,
   });
 }
 
@@ -366,8 +380,8 @@ export async function runLocal(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
-  const result = await review(bundle, resolvedOpts, undefined, onProgress);
+  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
+  const result = await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress);
   writeCache(bundle.repoPath, opts, result);
   return result;
 }
@@ -379,12 +393,12 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
   const result: ReviewResult = {
-    ...(await review(bundle, resolvedOpts, undefined, onProgress)),
+    ...(await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress)),
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };
@@ -441,19 +455,28 @@ export interface DryRunReport {
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
 // render; --print-bundle emits the bundle itself, which is the whole diff and
 // the repo AGENTS.md policy text verbatim.
+function dryRunPlans(bundle: Bundle, opts: LocalOptions) {
+  const [first, ...rest] = resolveConnectionRoutes(opts, bundle.repoPath, process.env, false);
+  const plan = reviewPlan(bundle, first);
+  if (rest.length && !plan.docsOnlyFastPath) reviewBudgetMs(rest.length + 1);
+  return { ...plan, ...(rest.length ? { capabilities: [plan.capability, ...rest.map(route => reviewPlan(bundle, route).capability)] } : {}) };
+}
+
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(cwd, opts);
-  return { mode, bundle, ...reviewPlan(bundle) };
+  return { mode, bundle, ...dryRunPlans(bundle, opts) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle) };
+  return { mode: "pr", bundle, ...dryRunPlans(bundle, opts) };
 }
 
 interface DryRunSummary {
@@ -469,6 +492,8 @@ interface DryRunSummary {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -494,6 +519,8 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
+    capability: report.capability,
+    ...(report.capabilities ? {capabilities: report.capabilities} : {}),
   };
 }
 
@@ -501,6 +528,12 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
+  for (const capability of report.capabilities ?? [report.capability]) {
+    if (capability?.capability === "promptOnly" || (report.capabilities !== undefined && capability?.capability === "unresolved")) {
+      process.stderr.write(`needlefish: ${capability.detail}\n`);
+      process.exitCode = 1;
+    }
+  }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
     return;
@@ -544,5 +577,9 @@ export function printDryRun(
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
+  if (summary.capability) {
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${summary.capability.detail}`);
+  }
+  if (summary.capabilities) summary.capabilities.forEach((capability, index) => lines.push(`route ${index + 1}: ${capability?.detail ?? "docs-only"}`));
   process.stdout.write(`${lines.join("\n")}\n`);
 }

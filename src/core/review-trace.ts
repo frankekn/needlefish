@@ -1,3 +1,4 @@
+import type { RunnerDiagnostic } from "../shared/codex.js";
 import type { Finding, MapResult, RawReview } from "../shared/schema.js";
 
 export type ReviewTracePassKind = "review" | "map" | "deep" | "critic";
@@ -13,6 +14,7 @@ export type ReviewTraceFindingSnapshot = Pick<
 >;
 
 interface ReviewTraceEventBase {
+	readonly routeIndex?: number;
 	readonly content: string;
 	readonly passKind: ReviewTracePassKind;
 	readonly passIndex: number;
@@ -27,6 +29,7 @@ export interface ReviewTraceFindingEvent extends ReviewTraceEventBase {
 }
 
 export interface ReviewTraceTextEvent extends ReviewTraceEventBase {
+	readonly diagnostic?: RunnerDiagnostic;
 	readonly surface:
 		| "raw_success"
 		| "raw_failure"

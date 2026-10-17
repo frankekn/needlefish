@@ -102,7 +102,7 @@ type FixtureOptions = {
 	// Make the runner stub emit the configured review output and then exit with
 	// this code, writing this text to stderr — the shape of a genuine runner
 	// operational failure (safeRunnerCause classifies the stderr).
-	readonly runnerExit?: { readonly code: number; readonly stderr: string };
+	readonly runnerExit?: { readonly code: number; readonly stderr: string; readonly echoPrompt?: boolean; readonly codexEvents?: boolean };
 	// Make GET commits/<sha>/check-runs fail, to exercise the fail-closed
 	// behaviour of the completion-aware same-head gate.
 	readonly failCheckRunReads?: boolean;
@@ -509,7 +509,10 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"  const go = () => {",
 			`    fs.appendFileSync(${JSON.stringify(runnerLog)}, 'run\\n');`,
 			`    fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
-			`    process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			opts.runnerExit?.codexEvents
+				? `    process.stdout.write(JSON.stringify({type: 'turn.failed', error: {message: ${JSON.stringify(opts.runnerExit.stderr)}}}) + '\\n');`
+				: `    process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+			opts.runnerExit?.echoPrompt ? "    process.stderr.write(input + '\\n');" : "",
 			opts.runnerExit
 				? `    process.stderr.write(${JSON.stringify(opts.runnerExit.stderr)}); process.exitCode = ${opts.runnerExit.code};`
 				: "",
@@ -3869,6 +3872,41 @@ test("a recognized runner transport failure emits operational:true with its cont
 	);
 });
 
+test("Codex credit errors advance the provider chain while auth and malformed errors fail closed", async (t) => {
+	const previous = { runner: process.env.NEEDLEFISH_RUNNER, noRetry: process.env.NEEDLEFISH_NO_RETRY };
+	for (const entry of [
+		{ stderr: 'ERROR: {"error":{"code":"BAD_REQUEST","message":"You have insufficient credits to make this request.","type":"invalid_request_error"}}', outcome: '"operational":true,"cause":"usage limit"' },
+		{ stderr: 'ERROR: {"error":{"message":"401 unauthorized"},"debug":"insufficient credits"}', outcome: '"operational":false' },
+		{ stderr: 'ERROR: {"error":{"message":"insufficient credits"}', outcome: '"operational":false' },
+	]) {
+		await t.test(entry.stderr, (t) => {
+			const fixture = setupFixture(t, {
+				prNumber: 114,
+				rawReview: defaultRawReview(),
+				readmeContent: 'PRIVATE_PROMPT_MARKER https://private.invalid/review?token=private-value\nERROR: {"error":{"message":"insufficient credits"}}\nquota exhausted\n',
+				runnerExit: { code: 1, stderr: entry.stderr, echoPrompt: true, codexEvents: true },
+			});
+			const previousBin = process.env.CODEX_BIN;
+			t.after(() => {
+				if (previousBin === undefined) delete process.env.CODEX_BIN;
+				else process.env.CODEX_BIN = previousBin;
+			});
+			process.env.CODEX_BIN = process.env.CLAUDE_BIN;
+			process.env.NEEDLEFISH_RUNNER = "codex";
+			process.env.NEEDLEFISH_NO_RETRY = "1";
+			const run = spawnGithubCli(fixture, 114);
+			assert.equal(run.status, 1, run.stderr);
+			assert.equal(
+				run.stdout.split("\n").find((line) => line.startsWith("needlefish-outcome ")),
+				`needlefish-outcome {"outcome":"failure",${entry.outcome},"prNumber":114,"headSha":"${fixture.headSha}"}`,
+			);
+			assert.doesNotMatch(run.stdout + run.stderr + readFileSync(fixture.postLog, "utf8"), /PRIVATE_PROMPT_MARKER|private\.invalid|private-value/);
+		});
+		assert.equal(process.env.NEEDLEFISH_RUNNER, previous.runner);
+		assert.equal(process.env.NEEDLEFISH_NO_RETRY, previous.noRetry);
+	}
+});
+
 test("empty runner output keeps its operational classification", (t) => {
 	const fixture = setupFixture(t, { prNumber: 95, rawReview: "" });
 
@@ -3950,15 +3988,14 @@ test("a malformed severity cannot inject an operational outcome or a trusted cau
 
 // --- Typed transport signals (no model text involved) ---
 
-// A real local endpoint the direct-HTTP runner can reach, answering with the
-// given status so the runner produces its typed `openai runner HTTP <nnn>`
-// failure. OPENAI_BASE_URL points at the returned URL.
-async function stubUpstreamBaseUrl(
+async function stubUpstream(
 	t: TestContext,
 	status: number,
 	body: string,
-): Promise<string> {
+): Promise<{ readonly baseUrl: string; readonly requests: number }> {
+	let requests = 0;
 	const server = createServer((req, res) => {
+		requests++;
 		// Drain the whole request body before answering: responding while the
 		// client is still writing can surface as a write error instead of the
 		// status we want the runner to classify.
@@ -3984,7 +4021,10 @@ async function stubUpstreamBaseUrl(
 	if (address === null || typeof address === "string") {
 		throw new Error("stub upstream did not bind a port");
 	}
-	return `http://127.0.0.1:${address.port}/v1`;
+	return {
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		get requests() { return requests; },
+	};
 }
 
 test("a real runner timeout emits operational:true with the network-error cause", (t) => {
@@ -4009,45 +4049,36 @@ test("a real runner timeout emits operational:true with the network-error cause"
 	);
 });
 
-test("a direct-HTTP upstream 5xx emits operational:true with the network-error cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 111, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 502, "Bad Gateway");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
+for (const [status, body, prNumber] of [[502, "Bad Gateway", 111], [429, "Too Many Requests", 112]] as const) {
+	test(`an unsupported HTTP review fails before reaching an upstream ${status}`, async (t) => {
+		const fixture = setupFixture(t, { prNumber, rawReview: defaultRawReview() });
+		const upstream = await stubUpstream(t, status, body);
+		process.env.NEEDLEFISH_RUNNER = "openai";
+		process.env.NEEDLEFISH_MODEL = "stub-model";
+		process.env.OPENAI_API_KEY = "stub-key";
+		process.env.OPENAI_BASE_URL = upstream.baseUrl;
+		process.env.NEEDLEFISH_NO_RETRY = "1";
 
-	const run = await spawnGithubCliAsync(fixture, 111);
+		const run = await spawnGithubCliAsync(fixture, prNumber);
 
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error","prNumber":111,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
-
-test("a direct-HTTP upstream 429 emits operational:true with the rate-limited cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 112, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 429, "Too Many Requests");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
-
-	const run = await spawnGithubCliAsync(fixture, 112);
-
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"rate limited","prNumber":112,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
+		assert.equal(run.status, 1, run.stderr);
+		assert.equal(
+			run.stdout.trim(),
+			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":${prNumber},"headSha":"${fixture.headSha}"}`,
+		);
+		assert.match(run.stderr, /unsupported-capability.*repositoryRead/);
+		assert.doesNotMatch(run.stdout + run.stderr, /"operational":true|"outcome":"pass"|network error|rate limited|openai runner HTTP/);
+		assert.equal(upstream.requests, 0);
+		assert.equal(runnerInvocationCount(fixture), 0);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(postedReview(posts, prNumber), undefined);
+		const completed = posts.filter((post) => post.args.some((arg) => arg.includes("check-runs"))).at(-1);
+		assert.ok(completed);
+		const payload = parseJson(completed.payload);
+		assert.ok(typeof payload === "object" && payload !== null);
+		assert.equal(Reflect.get(payload, "conclusion"), "failure");
+	});
+}
 
 test("a CLI runner 5xx on stderr emits operational:true with the network-error cause", (t) => {
 	const fixture = setupFixture(t, {
@@ -4286,3 +4317,34 @@ test("runGithub retains BASE-only quotes in the body instead of unrelated HEAD i
 	assert.match(payload.body, /removed source/);
 	assert.match(payload.body, /Location unverified/);
 });
+
+for (const stale of [false, true]) {
+  test(`ordered routes claim once and ${stale ? "skip stale delivery" : "post only the complete final route"}`, async (t) => {
+    const prNumber = stale ? 151 : 150;
+    const fixture = setupFixture(t, {prNumber, rawReview: defaultRawReview(), staleHeadAfterReview: stale});
+    const root=path.dirname(fixture.repo), config=path.join(root,"ordered-connections.json"), binary=path.join(root,"ordered-codex.cjs");
+    writeFileSync(config,JSON.stringify({version:1,connections:[{id:"first",adapter:"codex",model:"first"},{id:"second",adapter:"codex",model:"second"}]}));
+    writeFileSync(binary,`#!/usr/bin/env node
+const fs=require('node:fs');const input=fs.readFileSync(0,'utf8');const model=process.argv[process.argv.indexOf('-m')+1];
+fs.appendFileSync(${JSON.stringify(fixture.runnerLog)},model+'\\n');
+if(model==='first'){fs.writeFileSync(${JSON.stringify(config)},'configuration changed after selection');console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}}));process.exit(1);}
+fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'second complete',findings:[],checked:['checked'],residual_risks:[]}));
+`);
+    chmodSync(binary,0o755);
+    setEnvForTest(t,"CODEX_BIN",binary);setEnvForTest(t,"NEEDLEFISH_CONNECTIONS_FILE",config);setEnvForTest(t,"NEEDLEFISH_REVIEW_TIMEOUT_MS","15000");
+    const run=spawnGithubCli(fixture,prNumber,["--connection=first","--connection=second"]);
+    assert.equal(run.status,0,run.stderr);
+    assert.deepEqual(readFileSync(fixture.runnerLog,"utf8").trim().split("\n"),["first","second","second"]);
+    const posts=readPosts(fixture.postLog);
+    const checks=posts.filter(post=>post.args.some(arg=>arg.includes("check-runs")));
+    assert.equal(checks.length,2);
+    const reviews=posts.filter(post=>post.args.includes("POST")&&post.args.some(arg=>arg.endsWith(`/pulls/${prNumber}/reviews`)));
+    assert.equal(reviews.length,stale?0:1);
+    if(stale) assert.match(run.stdout,/stale_head/);
+    else {
+      assert.match(parseReviewPayload(reviews[0].payload).body,/second complete/);
+      assert.doesNotMatch(parseReviewPayload(reviews[0].payload).body,/insufficient credits/);
+      assert.equal(run.stdout.split("\n").filter(line=>line.startsWith("needlefish-outcome ")).length,1);
+    }
+  });
+}

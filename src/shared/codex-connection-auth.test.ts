@@ -67,7 +67,7 @@ process.stdin.resume();
 `);
   chmodSync(binary, 0o755);
   Object.assign(process.env, { HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex"), CODEX_BIN: binary, ACCOUNT_A_KEY: keyA, ACCOUNT_B_KEY: keyB, GH_TOKEN: "FAKE-AMBIENT-GH", GITHUB_TOKEN: "FAKE-AMBIENT-GITHUB", NEEDLEFISH_NO_RETRY: "0", NEEDLEFISH_RETRY_MS: "1", NEEDLEFISH_CONNECTIONS_FILE: file, NEEDLEFISH_ACP_AUTH_FILES: ".codex/auth.json" });
-  const select = (id = "a") => resolveConnectionOptions<RunnerOptions>({ connection: id }, repo);
+  const select = (id = "a") => resolveConnectionOptions<RunnerOptions>({ connections: [id] }, repo);
   const calls = (): {args: string[]; cwd: string; env: NodeJS.ProcessEnv; files: string[]}[] => existsSync(log) ? JSON.parse(`[${readFileSync(log, "utf8").trim().split("\n").join(",")}]`) : [];
   const run = (opts = select(), callbacks = {}) => runCodex("Inspect source", { ...opts, repoPath: repo, targetHeadSha: headSha(repo), ...callbacks });
   return { root, repo, home, file, select, calls, run };
@@ -115,7 +115,7 @@ for (const bad of [undefined, "", " ", " key", "key ", "key tail", "key\ttail", 
   test(`Codex missing or invalid selected key fails before spawn (${typeof bad}:${bad?.length})`, (t) => {
     const f = fixture(t);
     const env = { ...process.env, ACCOUNT_A_KEY: bad };
-    assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connection: "a" }, f.repo, env), /credential/);
+    assert.throws(() => resolveConnectionOptions<RunnerOptions>({ connections: ["a"] }, f.repo, env), /credential/);
     assert.deepEqual(f.calls(), []);
   });
 }
@@ -159,6 +159,9 @@ test("selected key rotations retain old and new diagnostic guards", (t) => {
 test("doctor selects the credential source without invoking CLI or presenting identity", (t) => {
   const f = fixture(t);
   const report = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  assert.deepEqual(report.checks.find(check => check.name === "capability"), {
+    name: "capability", status: "ok", detail: "codex: repositoryRead; the CLI adapter enables repository tools.",
+  });
   assert.deepEqual(report.checks.find(check => check.name === "auth"), {
     name: "auth", status: "unknown", detail: "codex: credential source chosen; provider account identity unknown; login state not probed",
   });
@@ -167,6 +170,16 @@ test("doctor selects the credential source without invoking CLI or presenting id
   const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "doctor", "--repo", f.repo, "--connection", "a", "--base", "HEAD", "--json"], { cwd: process.cwd(), encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /credential source chosen; provider account identity unknown/);
+  assert.deepEqual(JSON.parse(result.stdout).checks.find((check: {name: string}) => check.name === "capability"), {
+    name: "capability", status: "ok", detail: "codex: repositoryRead; the CLI adapter enables repository tools.",
+  });
+  assert.deepEqual(f.calls(), []);
+  process.env.CODEX_BIN = path.join(f.root, "absent-codex");
+  const unavailable = runDoctor({ repo: f.repo, version: "test", connection: "a" });
+  assert.equal(unavailable.checks.find(check => check.name === "runner")?.status, "fail");
+  assert.deepEqual(unavailable.checks.find(check => check.name === "capability"), {
+    name: "capability", status: "unknown", detail: "skipped: no runner available",
+  });
   assert.deepEqual(f.calls(), []);
 });
 
@@ -295,14 +308,14 @@ test("Codex encoded summary cannot overwrite local cache; safe review still writ
   mkdirSync(cacheDir);
   const cache = path.join(cacheDir, "last-review.json");
   writeFileSync(cache, "previous safe cache");
-  await assert.rejects(() => runLocal(f.repo, { connection: "a", cacheDir }), ConnectionCredentialLeakError);
+  await assert.rejects(() => runLocal(f.repo, { connections: ["a"], cacheDir }), ConnectionCredentialLeakError);
   assert.equal(readFileSync(cache, "utf8"), "previous safe cache");
   assert.equal(f.calls().length, 1);
   const safe = "Inspect https://debug.invalid/safe%2Fv1 bad%zz%ff";
   const binary = process.env.CODEX_BIN!;
   const source = readFileSync(binary, "utf8");
   writeFileSync(binary, source.replace(JSON.stringify(text), JSON.stringify(safe)));
-  const result = await runLocal(f.repo, { connection: "a", cacheDir });
+  const result = await runLocal(f.repo, { connections: ["a"], cacheDir });
   assert.equal(result.summary, safe);
   assert.ok(renderMarkdown(result).includes(safe));
   assert.equal(JSON.parse(readFileSync(cache, "utf8")).summary, safe);
