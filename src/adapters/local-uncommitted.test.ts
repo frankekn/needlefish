@@ -113,7 +113,7 @@ test("runLocal skips tracked binary files while reviewing uncommitted text chang
   assert.match(prompts, /diff --git a\/src\/untracked\.ts b\/src\/untracked\.ts/);
   assert.equal(prompts.includes("diff --git a/tracked image.bin"), false);
   assert.equal(prompts.includes("Binary files"), false);
-  assert.equal(prompts.includes('"path": "tracked image.bin"'), false);
+  assert.equal(prompts.includes('"path": "tracked image.bin"'), true);
 });
 
 // The exclude pathspec for a skipped binary file is matched literally: with
@@ -143,7 +143,7 @@ test("runLocal excludes only the exact binary path, not glob matches, when revie
   assert.match(prompts, /\+text two/);
   assert.match(prompts, /diff --git a\/keep\.ts b\/keep\.ts/);
   assert.equal(prompts.includes('"path": "ab.png"'), true);
-  assert.equal(prompts.includes('"path": "a[b].png"'), false);
+  assert.equal(prompts.includes('"path": "a[b].png"'), true);
   assert.equal(prompts.includes("Binary files"), false);
 });
 

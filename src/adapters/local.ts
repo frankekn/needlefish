@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runText } from "../shared/process.js";
 import { binaryPathsFromNumstat } from "../shared/diff-numstat.js";
 import {
   reviewWithConnections,
@@ -268,6 +269,53 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   return { ...bundle, prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null };
 }
 
+function capturedPatchMetadata(cwd: string, baseSha: string, patch: string): {
+  readonly paths: readonly string[];
+  readonly patchStat: string;
+} {
+  if (!patch.trim()) return { paths: [], patchStat: "" };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
+  Object.assign(env, {
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_NO_LAZY_FETCH: "1",
+  });
+  const objectFormat = runText("git", ["rev-parse", "--show-object-format"], { cwd, env });
+  const objects = runText("git", ["rev-parse", "--path-format=absolute", "--git-path", "objects"], {
+    cwd, env, preserveOutput: true,
+  }).replace(/\n$/, "");
+  if ([...objects].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
+    throw new Error("Cannot capture patch metadata: Git object directory contains unsupported control characters.");
+  }
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-captured-patch-"));
+  try {
+    const gitDir = path.join(tmp, "repo.git");
+    runText("git", ["init", "--bare", `--object-format=${objectFormat}`, "--template=", gitDir], { cwd: tmp, env });
+    env.GIT_ALTERNATE_OBJECT_DIRECTORIES = JSON.stringify(objects);
+    const artifactGit = (args: readonly string[]): string =>
+      runText("git", [`--git-dir=${gitDir}`, ...args], { cwd: tmp, env, preserveOutput: true });
+    artifactGit(["read-tree", ...(baseSha === EMPTY_BASE_SHA ? ["--empty"] : [baseSha])]);
+    const baseTree = artifactGit(["write-tree"]).trim();
+    const patchFile = path.join(tmp, "captured.patch");
+    writeFileSync(patchFile, patch);
+    artifactGit(["apply", "--cached", "--whitespace=nowarn", patchFile]);
+    const capturedTree = artifactGit(["write-tree"]).trim();
+    const diff = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames"];
+    return {
+      paths: artifactGit([...diff, "--name-only", "-z", baseTree, capturedTree]).split("\0").filter(Boolean),
+      patchStat: artifactGit([...diff, "--stat", baseTree, capturedTree]),
+    };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: string): Bundle {
   const headExists = baseSha !== EMPTY_BASE_SHA;
   const trackedBinaryPaths = headExists
@@ -276,15 +324,6 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
   const trackedPatch = headExists
     ? git(trackedDiffArgs([], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
     : "";
-  const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
-    : "";
-  // Rename detection off for the name list only: a `git mv` into a docs path
-  // must keep its removed source path, or classification sees docs alone and
-  // the fast path skips the review. The patch above keeps its rename headers.
-  const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths, baseSha), cwd)
-    : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
     ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
@@ -299,16 +338,18 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);
   }
 
+  const metadata = capturedPatchMetadata(cwd, baseSha, patch);
+  const binaryFiles = [...trackedBinaryPaths, ...untracked.binaryFiles];
   return makeBundle({
     repoPath: cwd,
     baseSha,
     headSha: WORKING_HEAD_SHA,
     patch,
-    patchStat: joinSections([trackedPatchStat, untracked.patchStat]),
-    changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
+    patchStat: metadata.patchStat,
+    changedFiles: changedFilesFromPaths([...metadata.paths, ...binaryFiles]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
-    binaryFiles: [...trackedBinaryPaths, ...untracked.binaryFiles],
+    binaryFiles,
     prMeta: null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,

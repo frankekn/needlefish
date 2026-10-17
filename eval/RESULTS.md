@@ -2352,3 +2352,9 @@ re-ask succeeded, with zero final invalid outputs, recall 1 and noise 0. That
 success does not erase the zero-intermediate-error gate failure. The earlier
 INVALID campaign and partial studies remain unchanged. No new R/D campaign or
 live canary ran for this implementation.
+
+
+### Captured local patch metadata, 2026-10-18
+
+- gateClass: R. NOT_RUN. Local uncommitted classification and stat now derive from the captured patch artifact; omitted binary paths also participate in classification.
+- No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.
