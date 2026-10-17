@@ -232,19 +232,53 @@ test("runLocal reports binary-only untracked changes as coverage gaps", async (t
   assert.match(result.summary, /model review skipped/);
 });
 
-for (const omission of ["oversized", "dangling", "empty"] as const) {
-  test(`runLocal rejects binary-only review with a skipped ${omission} file`, async (t) => {
+for (const tracked of [false, true]) {
+  for (const diagnostic of ["dangling", "empty"] as const) {
+    test(`runLocal reports binary coverage with a ${diagnostic} diagnostic, tracked=${tracked}`, async (t) => {
+      const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-diagnostic-"));
+      const repo = initRepo(tmp);
+      t.after(() => rmSync(tmp, { recursive: true, force: true }));
+      const { promptPath } = installFakeClaude(t, tmp);
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+      if (tracked) {
+        commitAll(repo, "binary base");
+        writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+      }
+      if (diagnostic === "dangling") symlinkSync("missing", join(repo, "source.ts"));
+      else writeFileSync(join(repo, "source.ts"), "");
+      const cacheDir = join(tmp, "cache");
+
+      const dryRun = localDryRun(repo, {});
+      assert.equal(dryRun.binaryOnlyFastPath, true);
+      const result = await runLocal(repo, { cacheDir });
+      assert.equal(result.verdict, "pass");
+      assert.deepEqual(result.unreviewedBinaryFiles, ["asset.bin"]);
+      assert.equal(result.summary, "No text patch to review; model review skipped.");
+      assert.match(result.reviewTarget ?? "", /Skipped untracked files: source\.ts/);
+      assert.equal(existsSync(promptPath), false);
+      assert.deepEqual(JSON.parse(readFileSync(join(cacheDir, "last-review.json"), "utf8")).unreviewedBinaryFiles, ["asset.bin"]);
+    });
+  }
+
+  test(`runLocal rejects binary-only review with size-capped source, tracked=${tracked}`, async (t) => {
     const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-skipped-"));
     const repo = initRepo(tmp);
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const { promptPath } = installFakeClaude(t, tmp);
     writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
-    if (omission === "dangling") symlinkSync("missing", join(repo, "source.ts"));
-    else writeFileSync(join(repo, "source.ts"), omission === "oversized" ? "x".repeat(201 * 1024) : "");
+    if (tracked) {
+      commitAll(repo, "binary base");
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+    }
+    writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+    const cacheDir = join(tmp, "cache");
 
     await assert.rejects(
-      () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-      /No uncommitted changes to review\. Skipped files: .*source\.ts/s,
+      () => runLocal(repo, { cacheDir }),
+      /Untracked file contents omitted.*source\.ts.*per_file_cap/s,
     );
+    assert.equal(existsSync(promptPath), false);
+    assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
   });
 }
 
