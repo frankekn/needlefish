@@ -257,7 +257,7 @@ final class AdvancedConnections: ObservableObject {
     func failed(_ error: Error) {
         message = (error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.invalidOutput.localizedDescription
         if let failure = error as? ConnectionsFailure, ["revision_conflict", "save_state_unknown"].contains(failure.code) {
-            retainedDraft = dirty ? document : nil
+            if dirty { retainedDraft = document }
             draftState = failure.code == "revision_conflict" ? .conflict : .reloadRequired
             if retainedDraft != nil {
                 message = failure.code == "revision_conflict"
