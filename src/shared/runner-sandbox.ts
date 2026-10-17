@@ -76,6 +76,7 @@ export interface RunnerSandboxOptions {
   readonly targetBaseSha?: string;
   readonly targetPatch?: string;
   readonly tmp: string;
+  readonly remainingReviewMs?: () => number;
 }
 
 export class RunnerWorktreeChangedError extends Error {
@@ -175,7 +176,7 @@ function finishSandbox(
   expectedHeadSha: string
 ): RunnerSandbox {
   const prompt = options.prompt.split(sourceRepoPath).join(sandboxPath);
-  const lfs = lfsDisclosure(sandboxPath);
+  const lfs = lfsDisclosure(sandboxPath, options.remainingReviewMs);
   return {
     repoPath: sandboxPath,
     prompt: lfs.notice === "" ? prompt : `${prompt}\n\n${lfs.notice}`,
@@ -321,10 +322,10 @@ const UNCERTAIN_LFS_DISCLOSURE: LfsDisclosure = {
   incomplete: true,
 };
 
-function lfsDisclosure(sandboxPath: string): LfsDisclosure {
+function lfsDisclosure(sandboxPath: string, remainingReviewMs?: () => number): LfsDisclosure {
   // Cheap gate first: repositories that never mention filter=lfs pay one
   // small ls-files and produce no notice at all, so nothing changes for them.
-  const scan = scanLfsAttributes(sandboxPath);
+  const scan = scanLfsAttributes(sandboxPath, remainingReviewMs);
   if (scan === "none") return NO_LFS_DISCLOSURE;
   if (scan === "unknown") return UNCERTAIN_LFS_DISCLOSURE;
   let candidates: Buffer[];
@@ -351,26 +352,56 @@ function lfsDisclosure(sandboxPath: string): LfsDisclosure {
 
 type LfsAttributeScan = "none" | "present" | "unknown";
 
-function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
+function scanLfsAttributes(sandboxPath: string, remainingReviewMs?: () => number): LfsAttributeScan {
   let attributeFiles: Buffer[];
   try {
-    attributeFiles = gitNulList(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath);
+    attributeFiles = gitNulList(["ls-files", "--stage", "-z", "--", "*.gitattributes"], sandboxPath);
   } catch {
     return "unknown";
   }
   const probed = attributeFiles.slice(0, MAX_LFS_PROBE_CANDIDATES);
   let unreadable = false;
-  for (const rel of probed) {
-    const text = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+  for (const entry of probed) {
+    const separator = entry.indexOf(0x09);
+    if (separator < 0) {
+      unreadable = true;
+      continue;
+    }
+    const header = entry.subarray(0, separator).toString("ascii");
+    const blob = /^(?:100644|100755) ([a-f0-9]{40,64}) 0$/.exec(header)?.[1];
+    const rel = entry.subarray(separator + 1);
+    const worktreeText = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+    const text = worktreeText ?? (blob === undefined ? undefined : readSmallGitBlobText(blob, sandboxPath, remainingReviewMs));
+    if (worktreeText === undefined && remainingReviewMs) {
+      try {
+        if (remainingReviewMs() <= 0) return "unknown";
+      } catch {
+        return "unknown";
+      }
+    }
     if (text === undefined) {
       unreadable = true;
       continue;
     }
-    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) return "present";
+    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) {
+      return worktreeText === undefined ? "unknown" : "present";
+    }
   }
   // An attributes file we could not read, or a list we could not finish, means
   // "no LFS here" is unproven — report the uncertainty rather than assert none.
   return unreadable || attributeFiles.length > probed.length ? "unknown" : "none";
+}
+
+// The sandbox index includes captured WORKING attributes. Read its exact blob
+// without filters or pathname decoding when checkout bytes are unavailable.
+function readSmallGitBlobText(oid: string, sandboxPath: string, remainingReviewMs?: () => number): string | undefined {
+  try {
+    const size = runGit(["cat-file", "-s", oid], sandboxPath, undefined, remainingReviewMs).trim();
+    if (!/^\d+$/.test(size) || Number(size) > MAX_GITATTRIBUTES_BYTES) return undefined;
+    return runGit(["cat-file", "blob", oid], sandboxPath, undefined, remainingReviewMs);
+  } catch {
+    return undefined;
+  }
 }
 
 function isLfsPointerFile(filePath: Buffer): boolean {
@@ -502,13 +533,16 @@ function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function runGit(args: readonly string[], cwd: string, input?: string): string {
+function runGit(args: readonly string[], cwd: string, input?: string, remainingReviewMs?: () => number): string {
+  const timeout = Math.min(30000, remainingReviewMs?.() ?? Infinity);
+  if (timeout <= 0) throw new Error("Needlefish review deadline exceeded");
   const res = spawnSync("git", [...NEUTRAL_GIT_ARGS, ...args], {
     cwd,
     env: gitEnv(),
     encoding: "utf8",
     input,
-    timeout: 30000,
+    timeout,
+    killSignal: remainingReviewMs ? "SIGKILL" : "SIGTERM",
   });
   if (res.error) throw res.error;
   if (res.status !== 0) {
