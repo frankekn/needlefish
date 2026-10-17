@@ -1650,6 +1650,104 @@ final class AdvancedInputDeadlineTests: XCTestCase {
 
 @MainActor
 final class AdvancedBoundaryRegressionTests: XCTestCase {
+    func testRetryableConnectionFailuresPreserveDraftAndAllowSaveRetry() throws {
+        let maker = AdvancedConnectionsTests()
+        for code in ["config_busy", "configuration_unavailable"] {
+            let model = try maker.loaded()
+            model.change(.init(id: "new", adapter: "codex", model: "unsaved"), replacing: nil)
+            let draft = model.document
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertEqual(model.document, draft)
+            XCTAssertEqual(model.draftState, .editing)
+            XCTAssertFalse(model.canLoad)
+            XCTAssertNoThrow(try model.request("apply"))
+            XCTAssertFalse(try XCTUnwrap(model.message).lowercased().contains("reload"))
+            XCTAssertTrue(try XCTUnwrap(model.message).lowercased().contains("try"))
+            let clean = try maker.loaded()
+            clean.failed(ConnectionsFailure(code: code))
+            XCTAssertTrue(clean.canLoad)
+            XCTAssertFalse(try XCTUnwrap(clean.message).lowercased().contains("reload"))
+        }
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try maker.loaded()
+            model.change(.init(id: "new", adapter: "codex"), replacing: nil)
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertThrowsError(try model.request("apply"))
+            XCTAssertTrue(try XCTUnwrap(model.message).lowercased().contains("reload"))
+        }
+    }
+    func testDiagnosisPreservesDirtyAndRetainedDraftsBeforeStartingCLI() async throws {
+        let maker = AdvancedConnectionsTests()
+        for scenario in ["dirty", "conflict", "retained", "clean"] {
+            let trace = try maker.ownedTemporary().appendingPathComponent("diagnose-calls")
+            let runtime = try maker.cliFixture("printf '%s\\n' \"$*\" >> '\(trace.path)'; printf '%s' '\(DesktopTests().doctorJSON)'")
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(maker.raw)}"))
+            if scenario != "clean" { owner.connections.change(.init(id: "unsaved", adapter: "codex"), replacing: nil) }
+            if ["conflict", "retained"].contains(scenario) { owner.connections.failed(ConnectionsFailure(code: "revision_conflict")) }
+            if scenario == "retained" { try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(maker.raw)}")) }
+            let document = owner.connections.document
+            let revision = owner.connections.baseRevision
+            owner.trusted = true; owner.accepted = true
+            owner.diagnose()
+            for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
+            if scenario == "clean" {
+                XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), "doctor --json --repo /project\n")
+                XCTAssertEqual(owner.connections.draftState, .unloaded)
+                XCTAssertFalse(owner.trusted)
+            } else {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: trace.path), scenario)
+                XCTAssertEqual(owner.repo?.path, "/project", scenario)
+                XCTAssertEqual(owner.connections.document, document, scenario)
+                XCTAssertEqual(owner.connections.baseRevision, revision, scenario)
+                XCTAssertTrue(owner.trusted, scenario)
+                if scenario == "retained" {
+                    XCTAssertTrue(owner.connections.canReapply)
+                    owner.connections.reapply()
+                    XCTAssertEqual(owner.connections.document.connections.map(\.id), ["agent", "proxy", "unsaved"])
+                }
+            }
+        }
+    }
+    func testEarlierACPRouteCanCompleteWhenLaterCodexSignInIsMissing() async throws {
+        let maker = AdvancedConnectionsTests()
+        let trace = try maker.ownedTemporary().appendingPathComponent("review-routes")
+        let doctor = DesktopTests().doctorJSON.replacingOccurrences(of: #""auth","status":"ok""#, with: #""auth","status":"fail""#)
+        let document = #"{"version":1,"connections":[{"id":"agent","adapter":"acp","launch":{"command":"/offline/agent","args":[]}},{"id":"native","adapter":"codex"}]}"#
+        let rows = ["agent", "native"].map { id in
+            "{\"id\":\"\(id)\",\"adapter\":\"\(id == "agent" ? "acp" : "codex")\",\"requestedModel\":null,\"route\":\"\(id == "agent" ? "opaque" : "ambient")\",\"credentialSource\":\"ambient\",\"providerAccount\":\"unknown\",\"authentication\":\"unknown\",\"readiness\":\"local-available\",\"qualification\":\"unqualified\"}"
+        }.joined(separator: ",")
+        let runtime = try maker.cliFixture("""
+        if [ "$1" = doctor ]; then printf '%s' '\(doctor)'
+        elif [ "$2" = inspect ]; then cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":true,"revision":"missing","connections":[\(rows)]}'
+        elif [ "$2" = review ]; then cat > '\(trace.path)'; printf '%s' '\(DesktopTests().resultJSON("pass"))'
+        else printf '%s' '\(DesktopTests().scopeJSON)'
+        fi
+        """)
+        let owner = Onboarding(runtime: runtime)
+        owner.repo = URL(fileURLWithPath: "/project")
+        try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":\(document)}"))
+        owner.connections.select("agent"); owner.connections.select("native"); owner.connections.budget = "1000"
+        owner.prepareConnections()
+        for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
+        guard case .consent = owner.state else { return XCTFail("Expected ordered-route consent") }
+        XCTAssertFalse(owner.canReview)
+        owner.trusted = true; owner.accepted = true
+        XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
+        XCTAssertTrue(owner.canReview)
+        owner.review()
+        for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
+        guard case .result(let result, demo: false) = owner.state else { return XCTFail("Expected completed first-route result") }
+        XCTAssertEqual(result.verdict, .pass)
+        let input = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: trace)) as? [String: Any])
+        XCTAssertEqual(input["ids"] as? [String], ["agent", "native"])
+        XCTAssertEqual(input["credentialMode"] as? String, "existing")
+        owner.connections.move("native", by: -1)
+        XCTAssertTrue(owner.knownMissingAmbientCodexAuth)
+        owner.connections.credentialMode = "session"
+        XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
+    }
     func testSelectedRoutesOwnAvailabilityWithoutBundledCodexGate() async throws {
         let fixture = DesktopTests()
         let maker = AdvancedConnectionsTests()
