@@ -269,7 +269,7 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   return { ...bundle, prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null };
 }
 
-function capturedPatchMetadata(cwd: string, baseSha: string, patch: string): {
+function capturedPatchMetadata(patch: string): {
   readonly paths: readonly string[];
   readonly patchStat: string;
 } {
@@ -283,35 +283,31 @@ function capturedPatchMetadata(cwd: string, baseSha: string, patch: string): {
     GIT_CONFIG_GLOBAL: os.devNull,
     GIT_ATTR_NOSYSTEM: "1",
     GIT_OPTIONAL_LOCKS: "0",
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_NO_LAZY_FETCH: "1",
   });
-  const sourceGit = ["-c", `safe.directory=${cwd}`];
-  const objectFormat = runText("git", [...sourceGit, "rev-parse", "--show-object-format"], { cwd, env });
-  const objects = runText("git", [...sourceGit, "rev-parse", "--path-format=absolute", "--git-path", "objects"], {
-    cwd, env, preserveOutput: true,
-  }).replace(/\n$/, "");
-  if ([...objects].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
-    throw new Error("Cannot capture patch metadata: Git object directory contains unsupported control characters.");
-  }
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-captured-patch-"));
   try {
     const gitDir = path.join(tmp, "repo.git");
-    runText("git", ["init", "--bare", `--object-format=${objectFormat}`, "--template=", gitDir], { cwd: tmp, env });
-    env.GIT_ALTERNATE_OBJECT_DIRECTORIES = JSON.stringify(objects);
-    const artifactGit = (args: readonly string[]): string =>
-      runText("git", [`--git-dir=${gitDir}`, ...args], { cwd: tmp, env, preserveOutput: true });
-    artifactGit(["read-tree", ...(baseSha === EMPTY_BASE_SHA ? ["--empty"] : [baseSha])]);
-    const baseTree = artifactGit(["write-tree"]).trim();
+    runText("git", ["init", "--bare", "--template=", gitDir], { cwd: tmp, env });
     const patchFile = path.join(tmp, "captured.patch");
     writeFileSync(patchFile, patch);
-    artifactGit(["apply", "--cached", "--whitespace=nowarn", patchFile]);
-    const capturedTree = artifactGit(["write-tree"]).trim();
-    const diff = ["diff", "--no-ext-diff", "--no-textconv", "--no-renames"];
-    return {
-      paths: artifactGit([...diff, "--name-only", "-z", baseTree, capturedTree]).split("\0").filter(Boolean),
-      patchStat: artifactGit([...diff, "--stat", baseTree, capturedTree]),
-    };
+    const patchMetadata = (args: readonly string[]): string =>
+      runText("git", [`--git-dir=${gitDir}`, "apply", ...args, patchFile], { cwd: tmp, env, preserveOutput: true });
+    const paths = new Set<string>();
+    for (const reverse of [false, true]) {
+      const numstat = patchMetadata([...(reverse ? ["--reverse"] : []), "--numstat", "-z"]);
+      if (!numstat.endsWith("\0")) throw new Error("Captured patch has missing or malformed path metadata.");
+      for (const row of numstat.slice(0, -1).split("\0")) {
+        const firstTab = row.indexOf("\t");
+        const secondTab = row.indexOf("\t", firstTab + 1);
+        const file = row.slice(secondTab + 1);
+        if (firstTab < 0 || secondTab < 0 || !file ||
+            !/^\d+$/.test(row.slice(0, firstTab)) || !/^\d+$/.test(row.slice(firstTab + 1, secondTab))) {
+          throw new Error("Captured patch has binary or malformed path metadata.");
+        }
+        paths.add(file);
+      }
+    }
+    return { paths: [...paths], patchStat: patchMetadata(["--stat"]) };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -339,7 +335,7 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);
   }
 
-  const metadata = capturedPatchMetadata(cwd, baseSha, patch);
+  const metadata = capturedPatchMetadata(patch);
   const binaryFiles = [...trackedBinaryPaths, ...untracked.binaryFiles];
   return makeBundle({
     repoPath: cwd,

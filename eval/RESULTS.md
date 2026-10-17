@@ -2358,3 +2358,5 @@ live canary ran for this implementation.
 
 - gateClass: R. NOT_RUN. Local uncommitted classification and stat now derive from the captured patch artifact; omitted binary paths also participate in classification.
 - No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.
+
+- Native Git forward/reverse `apply --numstat -z` and `apply --stat` supersede tree materialization for the same captured patch. Dirty-only gitlinks participate in classification; source object-store and replacement lookups are no longer needed. gateClass: R, NOT_RUN.

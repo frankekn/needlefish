@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -126,7 +126,7 @@ process.exit(result.status ?? 1);
   t.after(() => { process.env.PATH = previous; rmSync(tmp, { recursive: true, force: true }); });
   const before = directoryBytes(repo);
   const scratchBefore = readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-"));
-  assert.throws(() => diffBundle(repo, {}), /apply.*failed/);
+  assert.throws(() => diffBundle(repo, {}), /binary or malformed path metadata/);
   assert.deepEqual(directoryBytes(repo), before);
   assert.deepEqual(readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-")), scratchBefore);
 });
@@ -168,3 +168,117 @@ process.exit(result.status ?? 1);
   assert.match(bundle.patch, /\+changed/);
   assert.deepEqual(directoryBytes(repo), before);
 });
+
+test("dirty-only submodule paths remain classified beside docs", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-dirty-submodule-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const childRoot = path.join(tmp, "child");
+  mkdirSync(childRoot);
+  const child = initRepo(childRoot);
+  gitText(["-c", "protocol.file.allow=always", "submodule", "add", child, "source-module"], repo);
+  commitAll(repo, "submodule base");
+  writeFileSync(path.join(repo, "source-module", "README.md"), "dirty module\n");
+  writeFileSync(path.join(repo, "README.md"), "docs\n");
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md", "source-module"]);
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.match(bundle.patch, /-dirty/);
+  assert.match(bundle.patchStat, /source-module/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("captured patch metadata does not depend on the source object-store environment", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-object-store-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const objects = path.join(tmp, "objects");
+  renameSync(path.join(repo, ".git", "objects"), objects);
+  mkdirSync(path.join(repo, ".git", "objects"));
+  const previous = process.env.GIT_OBJECT_DIRECTORY;
+  process.env.GIT_OBJECT_DIRECTORY = objects;
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_OBJECT_DIRECTORY;
+    else process.env.GIT_OBJECT_DIRECTORY = previous;
+  });
+  writeFileSync(path.join(repo, "README.md"), "external objects docs\n");
+  const before = directoryBytes(tmp);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /external objects docs/);
+  assert.deepEqual(directoryBytes(tmp), before);
+});
+
+test("captured patch metadata retains the source replacement preimage", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-replace-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const original = gitText(["rev-parse", "HEAD"], repo);
+  writeFileSync(path.join(repo, "README.md"), "replacement base\n");
+  commitAll(repo, "replacement");
+  const replacement = gitText(["rev-parse", "HEAD"], repo);
+  gitText(["update-ref", "HEAD", original], repo);
+  gitText(["replace", original, replacement], repo);
+  writeFileSync(path.join(repo, "README.md"), "replacement change\n");
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /-replacement base\n\+replacement change/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("SHA256 source with internal TMPDIR keeps native metadata isolated from target config", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-sha256-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = path.join(tmp, "repo");
+  mkdirSync(repo);
+  gitText(["init", "--object-format=sha256"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 1;\n");
+  commitAll(repo, "sha256 base");
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 2;\n");
+  const scratch = path.join(repo, "scratch");
+  mkdirSync(scratch);
+  const previous = process.env.TMPDIR;
+  process.env.TMPDIR = scratch;
+  t.after(() => {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+  });
+  gitText(["config", "apply.ignoreWhitespace", "invalid"], repo);
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["app.ts"]);
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.match(bundle.patch, /\+export const value = 2;/);
+  assert.deepEqual(directoryBytes(repo), before);
+  assert.deepEqual(readdirSync(scratch), []);
+});
+
+for (const metadata of ["1\t0\tREADME.md", "x\t0\tREADME.md\0", "1\t0\t\0", "README.md\0"]) {
+  test(`malformed native path metadata fails closed ${JSON.stringify(metadata)}`, t => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-malformed-metadata-"));
+    const repo = initRepo(tmp);
+    writeFileSync(path.join(repo, "README.md"), "changed\n");
+    const bin = path.join(tmp, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "git"), `#!/usr/bin/env node
+const cp = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('apply') && args.includes('--numstat')) {
+  process.stdout.write(${JSON.stringify(metadata)});
+  process.exit(0);
+}
+const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
+process.stdout.write(result.stdout ?? '');
+process.stderr.write(result.stderr ?? '');
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+    const previous = process.env.PATH;
+    process.env.PATH = `${bin}:${previous ?? ""}`;
+    t.after(() => { process.env.PATH = previous; rmSync(tmp, { recursive: true, force: true }); });
+    const before = directoryBytes(repo);
+    assert.throws(() => diffBundle(repo, {}), /malformed path metadata/);
+    assert.deepEqual(directoryBytes(repo), before);
+  });
+}
