@@ -254,12 +254,10 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   compile(next, capture, "3.0.0");
   writeFileSync(capture, "");
   let replaced = false;
-  const mutation = await review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 }, undefined, () => { if (!replaced && readFileSync(capture, "utf8").includes("CALL_END")) { replaced = true; copyFileSync(next, bin); } });
-  assert.equal(mutation.verdict, "pass");
+  await assert.rejects(review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 }, undefined, () => { if (!replaced && readFileSync(capture, "utf8").includes("CALL_END")) { replaced = true; copyFileSync(next, bin); } }), /captured Codex executable changed/);
   const mutatedCalls = readFileSync(capture, "utf8");
   assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=1.2.3/g) ?? []).length, 1);
-  assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=3.0.0/g) ?? []).length, 1);
-  assert.deepEqual(mutation.runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
+  assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=3.0.0/g) ?? []).length, 0);
   writeFileSync(bin, `#!/bin/sh\nif [ "$1" = --version ]; then echo codex-cli 1.2.3; exit 0; fi\nexec ${JSON.stringify(next)} "$@"\n`);
   chmodSync(bin, 0o755);
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
