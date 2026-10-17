@@ -417,8 +417,8 @@ advanced desktop interface are separate work.
 
 The fixed error codes are `invalid_request`, `input_too_large`, `input_timeout`,
 `invalid_configuration`, `unsafe_configuration`, `configuration_unavailable`,
-`revision_conflict`, `config_busy`, `save_failed`, `save_state_unknown`, and
-`cancelled`.
+`revision_conflict`, `config_busy`, `save_failed`, `save_state_unknown`,
+`cancelled`, and `review_incomplete`.
 
 ## Session-only machine review
 
@@ -468,9 +468,11 @@ Input has a 128 KiB and five-second limit. Invalid JSON and request errors retur
 only the existing `{schemaVersion:1,ok:false,code}` machine envelope. Errors never
 quote an input fragment or secret. A successful response is the existing final
 `ReviewResult`, with no extra account/auth claim. Invalid, cancelled and incomplete
-reviews return a nonzero status and never save a partial result. SIGINT and SIGTERM
-use the existing lifecycle owner to drain runner groups. A closed stdout pipe
-fails without a raw EPIPE diagnostic.
+reviews return a nonzero status and never save a partial result.
+`review_incomplete` identifies a review that did not complete. Completed reviews
+exit zero only for `pass`, preserving the full result and final cache for every
+verdict. SIGINT and SIGTERM use the existing lifecycle owner to drain runner
+groups. A closed stdout pipe fails without a raw EPIPE diagnostic.
 
 Session credentials are not persisted. Request buffers and references are released
 on completion or cancellation. JavaScript strings and JSON parsing can leave

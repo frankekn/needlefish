@@ -48,7 +48,11 @@ async function main() {
         const result = await pending;
         const output = "ok" in result ? JSON.stringify(result) + "\n" : serializeReviewResult(result);
         await new Promise<void>((resolve, reject) => process.stdout.write(output, error => error ? reject(error) : resolve()));
-        if ("ok" in result && !result.ok) process.exitCode = 1;
+        if ("ok" in result) {
+          if (!result.ok) process.exitCode = 1;
+        } else {
+          process.exitCode = reviewExitCode(result.verdict);
+        }
       } catch (error) {
         if (!process.stdout.destroyed) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
         process.exitCode = 1;
