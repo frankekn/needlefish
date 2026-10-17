@@ -8,7 +8,7 @@ import { newMeasurement, type MeasurementV1 } from "../../src/adapters/github-me
 import { parsePrPage, rowsFromPr, renderReport, type AdoptionRow } from "./adoption.js";
 import { enrichAdoptionRows, measurementOptions, parseFindingMeasurement, type MeasurementContract } from "./adoption-measurements.js";
 import { writeWeeklyReport } from "./adoption-weekly.js";
-import type { GithubRead } from "./review-measurements.js";
+import { readGithubMeasurement, type GithubRead } from "./review-measurements.js";
 
 const contract: MeasurementContract = { workflowPath: ".github/workflows/review.yml", jobKey: "review", jobName: "Review source" };
 const repo = "frankekn/needlefish";
@@ -171,4 +171,28 @@ syncBuiltinESMExports();
     assert.ok(readFileSync(path.join(outputDir, "report.md"), "utf8").includes(incomplete
       ? "Finding coverage: 0/1 producer-attested; 1 unknown" : "Finding coverage: 1/1 producer-attested; 0 unknown"));
   }
+});
+
+test("slow GitHub measurements stop at the shared deadline and retain adoption totals", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-measurement-deadline-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const endpoints = [`repos/${repo}/actions/workflows/review.yml`, `repos/${repo}/commits/${sha}/check-runs?check_name=Needlefish&filter=all&per_page=100&page=1`, `repos/${repo}/actions/runs/10/attempts/2`, `repos/${repo}/actions/runs/10/attempts/2/jobs?per_page=100&page=1`];
+  const responses = Object.fromEntries(endpoints.map(endpoint => [endpoint, api([receipt()])(endpoint)]));
+  const log = path.join(tmp, "reads");
+  writeFileSync(path.join(tmp, "gh"), `#!${process.execPath}\nconst fs=require('node:fs');fs.appendFileSync(${JSON.stringify(log)},'read\\n');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,40);const responses=${JSON.stringify(responses)};process.stdout.write(JSON.stringify(responses[process.argv[3]]||{total_count:0,check_runs:[]}));\n`);
+  chmodSync(path.join(tmp, "gh"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${tmp}${path.delimiter}${previous ?? ""}`;
+  t.after(() => { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; });
+  const rows = Array.from({ length: 100 }, (_, index) => finding(index === 0 ? sha : index.toString(16).padStart(40, "0")));
+  const started = performance.now();
+  const joined = enrichAdoptionRows(rows, contract, readGithubMeasurement, started + 1500);
+  assert.ok(performance.now() - started < 2500);
+  assert.equal(joined.length, 100);
+  assert.equal(joined[0].measurement?.status, "producer_attested");
+  assert.deepEqual(joined.at(-1)?.measurement, { status: "unknown", identity: rows.at(-1)?.measurement?.identity, reason: "measurement_deadline" });
+  const report = renderReport(joined, null);
+  assert.match(report, /Finding coverage: 1\/100 producer-attested; 99 unknown/);
+  assert.match(report, /100%/);
+  assert.ok(readFileSync(log, "utf8").trim().split("\n").length < 100);
 });

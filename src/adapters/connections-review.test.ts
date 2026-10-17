@@ -252,3 +252,21 @@ for (const mode of ["safe", "leak"]) {
     }
   });
 }
+
+for (const kind of ["docs", "binary"] as const) {
+  for (const credentialMode of ["existing", "session"] as const) {
+    test(`${kind}-only session ingress skips missing credentials and source capture (${credentialMode})`, t => {
+      const f = fixture(t);
+      writeFileSync(path.join(f.repo, "app.ts"), "export const value = 1;\n");
+      writeFileSync(path.join(f.repo, kind === "docs" ? "README.md" : "image.bin"), kind === "docs" ? "Updated docs\n" : Buffer.from([0, 1, 2]));
+      const result = f.run({ ...f.request, credentialMode, sources: credentialMode === "session" ? { FIRST_REF: "" } : {} }, { FIRST_REF: "" });
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      const output = JSON.parse(result.stdout);
+      assert.equal(output.verdict, "pass");
+      assert.equal(output.docsOnlyFastPath, kind === "docs" ? true : undefined);
+      assert.deepEqual(f.rows(), []);
+      assert.equal(existsSync(f.managed), false);
+      assert.equal(f.cache().length, 1);
+    });
+  }
+}

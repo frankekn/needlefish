@@ -60,7 +60,7 @@ const validate = ajv.compile<ExternalManifest>(object({
   schemaVersion: { const: 1 },
   source: object({
     datasetId: { enum: ["martian", "swrbench"] }, datasetRevision: sha, sourceURL: url,
-    sourceBytes: object({ scope: { enum: ["full", "slice"] }, sha256: hash, byteLength: { type: "integer", minimum: 1, maximum: 200_000 }, rangeStart: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] } }),
+    sourceBytes: object({ scope: { enum: ["full", "slice"] }, sha256: hash, byteLength: { type: "integer", minimum: 1, maximum: 200_000 }, rangeStart: { anyOf: [{ type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, { type: "null" }] } }),
     instanceId: { type: "string", pattern: "^[a-zA-Z0-9._-]+$", maxLength: 200 },
     canonicalRepo: { type: "string", pattern: "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$", maxLength: 200 },
     originalURL: url, datasetLicense: object({ spdx: { const: "MIT" }, noticeSHA256: hash }), upstreamCodeLicense: { const: "unknown" },
@@ -84,6 +84,8 @@ export function parseManifest(bytes: string): ExternalManifest {
   const value: unknown = JSON.parse(bytes);
   if (!validate(value)) throw new Error(`invalid_manifest: ${ajv.errorsText(validate.errors)}`);
   if ((value.source.sourceBytes.scope === "full") !== (value.source.sourceBytes.rangeStart === null)) throw new Error("invalid_source_byte_scope");
+  const { rangeStart, byteLength } = value.source.sourceBytes;
+  if (rangeStart !== null && (!Number.isSafeInteger(rangeStart) || !Number.isSafeInteger(rangeStart + byteLength))) throw new Error("invalid_source_byte_range");
   if (value.evaluator.label === "clean" && value.evaluator.goldCount !== 0) throw new Error("clean_with_gold");
   if (value.evaluator.label === "positive" && value.evaluator.goldCount === 0) throw new Error("positive_without_gold");
   return value;

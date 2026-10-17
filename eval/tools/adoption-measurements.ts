@@ -1,5 +1,5 @@
 import { parseMeasurement, type MeasurementV1 } from "../../src/adapters/github-measurement.js";
-import { collectReviewMeasurements, readGithubMeasurement, type GithubRead, type MeasurementRow } from "./review-measurements.js";
+import { collectReviewMeasurements, readGithubMeasurement, type MeasurementRow } from "./review-measurements.js";
 import type { AdoptionRow } from "./adoption.js";
 
 export interface FindingIdentity {
@@ -53,17 +53,20 @@ export function measurementOptions(argv: readonly string[]): MeasurementContract
   return { workflowPath, jobKey, jobName };
 }
 
-export function enrichAdoptionRows(rows: readonly AdoptionRow[], contract: MeasurementContract, githubRead: GithubRead = readGithubMeasurement): AdoptionRow[] {
+export function enrichAdoptionRows(rows: readonly AdoptionRow[], contract: MeasurementContract, githubRead: typeof readGithubMeasurement = readGithubMeasurement, deadline = performance.now() + 9 * 60 * 1000): AdoptionRow[] {
   let requests = 0;
   const read = (endpoint: string): unknown => {
     if (++requests > 100) throw new Error("measurement request limit");
-    return githubRead(endpoint);
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) throw new Error("measurement deadline");
+    return githubRead(endpoint, Math.min(30_000, remaining));
   };
   const workflows = new Map<string, number | null>();
   const collections = new Map<string, ReturnType<typeof collectReviewMeasurements>>();
   return rows.map((row) => {
     const identity = row.measurement?.identity ?? null;
     const unknown = (reason: string): AdoptionRow => ({ ...row, measurement: { status: "unknown", identity, reason } });
+    if (performance.now() >= deadline) return unknown("measurement_deadline");
     if (!identity) return unknown("missing_original_finding_identity");
     if (!workflows.has(row.repo)) {
       try {

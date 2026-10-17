@@ -383,11 +383,12 @@ export async function runLocal(
   cwd: string,
   opts: LocalOptions,
   onProgress?: ReviewProgressObserver,
-  prepared?: { readonly routes: readonly [RunnerOptions, ...RunnerOptions[]]; readonly signal?: AbortSignal },
+  prepared?: { readonly resolveRoutes: (bindCredentials: boolean) => readonly [RunnerOptions, ...RunnerOptions[]]; readonly signal?: AbortSignal },
 ): Promise<ReviewResult> {
   prepared?.signal?.throwIfAborted();
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = prepared?.routes ?? resolveConnectionRoutes(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles?.length));
+  const bindCredentials = !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles?.length);
+  const resolvedOpts = prepared ? prepared.resolveRoutes(bindCredentials) : resolveConnectionRoutes(opts, bundle.repoPath, process.env, bindCredentials);
   reviewPlan(bundle, resolvedOpts[0]);
   const result = await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress);
   prepared?.signal?.throwIfAborted();

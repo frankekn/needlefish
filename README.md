@@ -23,9 +23,17 @@ isolation verification before this lane can be enabled. See [issue #207](https:/
 
 To reproduce the integration check with an already installed CLI, run
 `NEEDLEFISH_OPENCODE_INTEGRATION_BIN=/path/to/opencode node --test --import tsx src/shared/opencode-isolation.test.ts`.
-The test uses no provider credentials and writes only inside its temporary fixture.
+The test uses no provider credentials. It is not an OS sandbox; a loaded OpenCode
+plugin can write outside the temporary fixture. Run it only on a disposable
+machine or under an external OS sandbox.
 Default CI skips this optional integration. The nonexistent provider is expected
 to fail after plugin startup.
+
+Historical deep-concurrency v1 replay requires its pinned source and restored
+archived generator, protocol, and plan before running the two `--plan` and `cmp`
+commands. The current generator emits v2. Follow
+[the historical v1 replay procedure](eval/campaigns/deep-concurrency-v2.md#preserve-v1).
+The sealed v1 protocol and comparator remain unchanged.
 
 ## Quick start
 

@@ -487,10 +487,11 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
+  const deadline = performance.now() + 9 * 60 * 1000;
   const rows: AdoptionRow[] = [];
   for (const repo of parsed.repos) {
     const collected = collect(repo, parsed.since, parsed.measurements !== undefined);
-    const got = parsed.measurements ? enrichAdoptionRows(collected, parsed.measurements) : collected;
+    const got = parsed.measurements ? enrichAdoptionRows(collected, parsed.measurements, undefined, deadline) : collected;
     process.stderr.write(`adoption: ${repo}: ${got.length} finding threads\n`);
     rows.push(...got);
   }

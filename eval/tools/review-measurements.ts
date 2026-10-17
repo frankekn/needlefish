@@ -69,8 +69,8 @@ export function utcDuration(start: unknown, end: unknown): Duration {
   return to < from ? unknown("clock_order_conflict") : { status: "observed", valueMs: to - from, clock: "github_utc" };
 }
 
-export function readGithubMeasurement(endpoint: string): unknown {
-  const result = spawnSync("gh", ["api", endpoint], { encoding: "utf8", timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
+export function readGithubMeasurement(endpoint: string, timeoutMs = 30_000): unknown {
+  const result = spawnSync("gh", ["api", endpoint], { encoding: "utf8", timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw new Error("GitHub measurement read failed");
   try { return JSON.parse(result.stdout); } catch { throw new Error("GitHub measurement response was not JSON"); }
 }

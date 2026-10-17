@@ -393,6 +393,12 @@ syncs the directory. It then removes its lock and syncs that directory again
 before reporting success. `revision_conflict`
 requires a reload and an explicit draft
 reapply. `config_busy` never removes an existing lock, even if it appears stale.
+The lock records only `pid`, `hostname`, and `createdAt`. After a crash, inspect
+`<connections.json>.lock` on the recorded host. Stop all Needlefish processes
+that can edit this configuration and confirm no apply is running. Then remove
+that exact lock file and reload the editor before saving. Do not remove a lock
+while a writer is running, or rely on a PID alone to identify a stale lock.
+A PID can be reused. This manual recovery never runs automatically.
 A failure before rename preserves the original file. `save_state_unknown` means
 rename completed but durability or cleanup failed. Reload before any retry.
 Cancellation before rename discards the temporary file. Cancellation after a
