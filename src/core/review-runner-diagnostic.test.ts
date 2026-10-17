@@ -50,3 +50,44 @@ process.exit(1);
   };
   assert.equal(await run(false), await run(true));
 });
+
+test("private diagnostic observer failure preserves the retried review verdict", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-schema-retry-"));
+  const repo = initRepo(tmp);
+  const bin = path.join(tmp, "codex.cjs");
+  const calls = path.join(tmp, "calls");
+  const previous = { ...process.env };
+  t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
+  writeFileSync(bin, `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.readFileSync(0);
+const calls = ${JSON.stringify(calls)};
+const count = Number(fs.readFileSync(calls, "utf8")) + 1;
+fs.writeFileSync(calls, String(count));
+if (count === 1) {
+  process.stdout.write('{"type":"future.event","message":"insufficient credits"}\\n');
+  process.exit(1);
+}
+fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], JSON.stringify({ summary: "clean", findings: [], checked: ["source reviewed"], residual_risks: [] }));
+`);
+  chmodSync(bin, 0o755);
+  process.env.CODEX_BIN = bin;
+  delete process.env.NEEDLEFISH_NO_RETRY;
+  process.env.CODEX_RETRY_MS = "1";
+  const bundle = { repoPath: repo, baseSha: "base", headSha: headSha(repo), patch: "short", patchStat: " src/app.ts | 1 +", changedFiles: [{ path: "src/app.ts", surface: "source" as const }], agentsMd: "(none)", prMeta: null, deep: false, focus: null };
+  const run = async (observerThrows: boolean) => {
+    writeFileSync(calls, "0");
+    const events: ReviewTraceEvent[] = [];
+    const result = await review(bundle, {}, event => {
+      events.push(event);
+      if (observerThrows && "diagnostic" in event) throw new Error("private diagnostic observer failed");
+    });
+    assert.equal(result.verdict, "pass");
+    assert.deepEqual(result.findings, []);
+    assert.deepEqual(result.stats?.map(stat => ({ attempts: stat.attempts, ok: stat.ok })), [{ attempts: 2, ok: true }, { attempts: 1, ok: true }]);
+    assert.doesNotMatch(JSON.stringify(result), /unrecognized_codex_event_schema/);
+    assert.deepEqual(events.filter(event => event.surface === "raw_failure").map(event => ({ content: event.content, diagnostic: Reflect.get(event, "diagnostic") })), [{ content: '{"type":"future.event","message":"insufficient credits"}\n', diagnostic: "unrecognized_codex_event_schema" }]);
+    return result.verdict;
+  };
+  assert.equal(await run(false), await run(true));
+});
