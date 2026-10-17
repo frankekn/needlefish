@@ -276,6 +276,13 @@ final class AdvancedConnections: ObservableObject {
         document = retainedDraft; self.retainedDraft = nil; invalidate(); message = "已重套草稿，尚未保存。 / Draft reapplied, not saved."
     }
     var canReapply: Bool { retainedDraft != nil && draftState == .editing && !dirty }
+    var canDiscardDraft: Bool { draftState == .editing && hasUnsavedDraft }
+    func discardDraft() {
+        guard canDiscardDraft else { return }
+        document = savedDocument; retainedDraft = nil
+        selection = selection.filter { id in document.connections.contains { $0.id == id } }
+        invalidate(); clearSecrets(); message = "已捨棄未保存草稿。 / Unsaved draft discarded."
+    }
     func inspected(_ response: ConnectionsResponse) throws {
         guard let revision = response.revision, revision == baseRevision, let rows = response.connections,
               rows.map(\.id) == selection else { throw ConnectionsFailure(code: "revision_conflict") }
@@ -375,6 +382,7 @@ struct AdvancedConnectionsView: View {
     @State private var editing: RawConnection?
     @State private var originalID: String?
     @State private var deleting: RawConnection?
+    @State private var discarding = false
     @FocusState private var profileFocus: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -395,6 +403,10 @@ struct AdvancedConnectionsView: View {
             if let deleting { Button("刪除 / Delete " + deleting.id, role: .destructive) { model.delete(deleting.id); self.deleting = nil } }
             Button("取消 / Cancel", role: .cancel) { deleting = nil }
         }
+        .confirmationDialog("捨棄未保存草稿，採用已載入的設定？ / Discard unsaved draft and use the loaded configuration?", isPresented: $discarding, titleVisibility: .visible) {
+            Button("捨棄草稿 / Discard draft", role: .destructive, action: owner.discardConnectionDraft)
+            Button("取消 / Cancel", role: .cancel) {}
+        }
         .onChange(of: model.budget) { owner.invalidateConnectionConsent() }
         .onChange(of: model.credentialMode) { model.clearSecrets(); owner.invalidateConnectionConsent() }
         .onChange(of: model.document) { owner.invalidateConnectionConsent() }
@@ -408,6 +420,7 @@ struct AdvancedConnectionsView: View {
             Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy || model.draftState != .editing)
             Button("保存全部草稿 / Save all drafts") { owner.connectionOperation("apply") }.disabled(owner.busy || model.draftState != .editing || !model.dirty)
             if model.canReapply { Button("明確重套草稿 / Reapply retained draft", action: model.reapply).disabled(owner.busy) }
+            if model.canDiscardDraft { Button("捨棄草稿 / Discard draft", role: .destructive) { discarding = true }.disabled(owner.busy) }
         }
     }
 

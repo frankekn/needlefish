@@ -1676,6 +1676,78 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             XCTAssertTrue(try XCTUnwrap(model.message).lowercased().contains("reload"))
         }
     }
+    func testDiscardDirtyAndReloadedRetainedDraftRestoresSnapshotAndAllowsDiagnosis() async throws {
+        let maker = AdvancedConnectionsTests()
+        for scenario in ["dirty", "revision_conflict", "save_state_unknown"] {
+            let trace = try maker.ownedTemporary().appendingPathComponent("doctor-trace")
+            let runtime = try maker.cliFixture("printf '%s\\n' \"$*\" >> '\(trace.path)'; printf '%s' '\(DesktopTests().doctorJSON)'")
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(maker.raw)}"))
+            owner.connections.select("agent"); owner.connections.select("proxy")
+            owner.connections.change(.init(id: "draft-only", adapter: "codex"), replacing: nil)
+            if scenario != "dirty" {
+                owner.connections.failed(ConnectionsFailure(code: scenario))
+                XCTAssertFalse(owner.connections.canDiscardDraft)
+                XCTAssertEqual(owner.diagnosisDraftMessage, "請先在進階連線重新載入目前設定，再選擇重套或捨棄草稿。 / Reload the current configuration in Advanced connections, then reapply or discard the draft.")
+                try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:external\",\"document\":{\"version\":1,\"connections\":[{\"id\":\"agent\",\"adapter\":\"codex\",\"model\":\"external\"}]}}"))
+            }
+            let expected = scenario == "dirty"
+                ? try JSONDecoder().decode(ConnectionsDocument.self, from: Data(maker.raw.utf8))
+                : owner.connections.document
+            owner.connections.select("draft-only")
+            let revision = try XCTUnwrap(owner.connections.baseRevision)
+            let rows = owner.connections.selection.map { maker.row($0) }.joined(separator: ",")
+            try owner.connections.inspected(maker.response("{\"schemaVersion\":1,\"ok\":true,\"revision\":\"\(revision)\",\"connections\":[\(rows)]}"))
+            owner.connections.secrets = ["SHARED_TOKEN": "disposable-value"]
+            owner.consentUsesConnections = true; owner.trusted = true; owner.accepted = true
+            owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(DesktopTests().scopeJSON.utf8)))
+            XCTAssertFalse(owner.canDiagnose)
+            XCTAssertTrue(owner.connections.canDiscardDraft)
+            XCTAssertEqual(owner.diagnosisDraftMessage, "重新診斷或選擇資料夾前，請在進階連線保存或捨棄草稿。 / Save or discard the draft in Advanced connections before checking again or choosing a folder.")
+            owner.discardConnectionDraft()
+            XCTAssertEqual(owner.connections.document, expected, scenario)
+            XCTAssertEqual(owner.connections.baseRevision, revision)
+            XCTAssertEqual(owner.connections.selection, scenario == "dirty" ? ["agent", "proxy"] : ["agent"])
+            XCTAssertEqual(owner.connections.secrets, [:])
+            XCTAssertNil(owner.connections.inspection)
+            XCTAssertNil(owner.connections.inspectionRevision)
+            XCTAssertFalse(owner.connections.hasUnsavedDraft)
+            XCTAssertFalse(owner.connections.canReapply)
+            XCTAssertFalse(owner.connections.canDiscardDraft)
+            XCTAssertFalse(owner.trusted); XCTAssertFalse(owner.accepted)
+            XCTAssertEqual(owner.connections.message, "已捨棄未保存草稿。 / Unsaved draft discarded.")
+            XCTAssertNil(owner.diagnosisDraftMessage)
+            XCTAssertTrue(owner.canDiagnose)
+            owner.connections.reapply()
+            XCTAssertEqual(owner.connections.document, expected)
+            owner.diagnose()
+            for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), "doctor --repo /project --runner codex --json\n")
+            XCTAssertEqual(owner.connections.draftState, .unloaded)
+            guard case .diagnosis(let report) = owner.state else { XCTFail("Discard must permit actual diagnosis"); continue }
+            XCTAssertEqual(report.repoRoot, "/test/project")
+        }
+    }
+    func testDiscardCannotBypassReloadOrInterruptBusyOperation() throws {
+        let maker = AdvancedConnectionsTests()
+        for scenario in ["revision_conflict", "save_state_unknown", "busy"] {
+            let owner = Onboarding(runtime: nil)
+            try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(maker.raw)}"))
+            owner.connections.change(.init(id: "draft-only", adapter: "codex"), replacing: nil)
+            if scenario == "busy" { owner.state = .busy("Owned operation") }
+            else { owner.connections.failed(ConnectionsFailure(code: scenario)) }
+            let draft = owner.connections.document
+            owner.connections.secrets = ["SHARED_TOKEN": "disposable-value"]
+            owner.discardConnectionDraft()
+            if scenario != "busy" { owner.connections.discardDraft() }
+            XCTAssertEqual(owner.connections.document, draft)
+            XCTAssertTrue(owner.connections.hasUnsavedDraft)
+            XCTAssertEqual(owner.connections.secrets, ["SHARED_TOKEN": "disposable-value"])
+            XCTAssertFalse(owner.canDiagnose)
+        }
+        XCTAssertFalse(Onboarding(runtime: nil).connections.canDiscardDraft)
+    }
     func testDiagnosisPreservesDirtyAndRetainedDraftsBeforeStartingCLI() async throws {
         let maker = AdvancedConnectionsTests()
         for scenario in ["dirty", "conflict", "retained", "clean"] {
@@ -1737,6 +1809,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
         XCTAssertFalse(owner.canReview)
         owner.trusted = true; owner.accepted = true
         XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
+        XCTAssertTrue(owner.knownMissingAmbientCodexFallback)
         XCTAssertTrue(owner.canReview)
         owner.review()
         for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
@@ -1747,8 +1820,10 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
         XCTAssertEqual(input["credentialMode"] as? String, "existing")
         owner.connections.move("native", by: -1)
         XCTAssertTrue(owner.knownMissingAmbientCodexAuth)
+        XCTAssertFalse(owner.knownMissingAmbientCodexFallback)
         owner.connections.credentialMode = "session"
         XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
+        XCTAssertFalse(owner.knownMissingAmbientCodexFallback)
     }
     func testSelectedRoutesOwnAvailabilityWithoutBundledCodexGate() async throws {
         let fixture = DesktopTests()
@@ -1776,6 +1851,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             let launch = adapter == "acp" ? ",\"launch\":{\"command\":\"/offline/agent\",\"args\":[]}" : ""
             try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":{\"version\":1,\"connections\":[{\"id\":\"selected\",\"adapter\":\"\(adapter)\",\"model\":\"offline-model\"\(launch)}]}}"))
             owner.connections.select("selected"); owner.connections.budget = "1000"
+            owner.connections.secrets = ["DISPOSABLE": "offline-test"]
             owner.prepareConnections()
             for _ in 0..<100 {
                 if !owner.busy { break }
@@ -1796,6 +1872,8 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
                         : "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project."
                     XCTAssertEqual(message, expected)
                     XCTAssertEqual(owner.connections.message, expected)
+                    XCTAssertEqual(owner.connections.secrets, [:])
+                    XCTAssertNil(owner.connections.inspection)
                 }
                 owner.trusted = true; owner.accepted = true
                 XCTAssertFalse(owner.canReview)

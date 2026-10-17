@@ -22,6 +22,13 @@ final class Onboarding: ObservableObject {
         guard let first = connections.selection.first else { return false }
         return connections.document.connections.contains { $0.id == first && $0.adapter == "codex" && $0.auth == nil }
     }
+    var knownMissingAmbientCodexFallback: Bool {
+        guard consentUsesConnections, connections.credentialMode == "existing",
+              diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
+        return connections.selection.dropFirst().contains { id in
+            connections.document.connections.contains { $0.id == id && $0.adapter == "codex" && $0.auth == nil }
+        }
+    }
     lazy var githubSetup = GithubSetup(runtime: runtime)
     private var operation: Command?
     private var task: Task<Void, Never>?
@@ -107,6 +114,18 @@ final class Onboarding: ObservableObject {
     }
 
     var canDiagnose: Bool { !busy && !connections.hasUnsavedDraft }
+    var diagnosisDraftMessage: String? {
+        guard connections.hasUnsavedDraft else { return nil }
+        return connections.draftState == .editing
+            ? "重新診斷或選擇資料夾前，請在進階連線保存或捨棄草稿。 / Save or discard the draft in Advanced connections before checking again or choosing a folder."
+            : "請先在進階連線重新載入目前設定，再選擇重套或捨棄草稿。 / Reload the current configuration in Advanced connections, then reapply or discard the draft."
+    }
+
+    func discardConnectionDraft() {
+        guard !busy, connections.canDiscardDraft else { return }
+        invalidateConnectionConsent()
+        connections.discardDraft()
+    }
 
     func selectFolder() {
         guard canDiagnose else { return }
@@ -218,7 +237,13 @@ final class Onboarding: ObservableObject {
         start("正在檢查連線與本機範圍，沒有模型呼叫。 / Inspecting connections and scope. No model call.", usesConnections: true) { cli, command in
             let report = try await cli.doctor(repo: repo, command: command)
             self.diagnosis = report
-            guard report.repositoryScopeReady else { throw DesktopError.scopeCollection }
+            guard report.repositoryScopeReady else {
+                let message = report.checks.filter { ["node", "git"].contains($0.name) && $0.status != .ok }
+                    .map(\.explanation).joined(separator: "\n")
+                self.connections.invalidate(); self.connections.clearSecrets()
+                self.connections.message = message
+                return .message(message)
+            }
             let response = try await cli.connections("inspect", repo: repo, command: command, input: self.connections.request("inspect"))
             try self.connections.inspected(response)
             let unavailable = (self.connections.inspection ?? []).filter { $0.readiness != "local-available" }
@@ -316,6 +341,7 @@ struct ContentView: View {
                     Button("移除安裝資料 / Remove installations", action: model.uninstall)
                 }.disabled(model.busy)
             }
+            if let message = model.diagnosisDraftMessage { Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(!model.canDiagnose)
                 Button("離線範例 / Offline example", action: model.demo).disabled(model.localBusy)
@@ -379,6 +405,9 @@ struct ContentView: View {
             if model.knownMissingAmbientCodexAuth {
                 Text("選定的 Codex 既有登入不可用。請登入後重新檢查範圍。 / The selected ambient Codex sign-in is unavailable. Sign in, then inspect scope again.")
                 Button("登入 Codex / Sign in to Codex", action: model.login)
+            }
+            if model.knownMissingAmbientCodexFallback {
+                Text("後備 Codex 未登入。前面的連線若無法完成，這條後備連線無法接手。 / Fallback Codex is not signed in. It cannot take over if the earlier routes cannot complete.").foregroundStyle(.orange)
             }
             if !model.consentUsesConnections && model.diagnosis?.ready != true {
                 Text("開始檢查前請先登入。 / Sign in before starting a review.")
