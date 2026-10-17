@@ -1,0 +1,34 @@
+{
+  "criteriaSha256": "444610783c5f59fa3a514ea19c05ca32420c1249ab0d69bbf0ae6e6b91cdcf43",
+  "wrapperSha256": "d3bda04a8ef3a9931ad87efea8ce1d94b0630e7b31471161a14640421f986697",
+  "codexSha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70",
+  "version": "codex-cli 0.163.0",
+  "node": "v26.8.2",
+  "sourceManifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e",
+  "catalog": {
+    "fullCount": 93,
+    "fullHash": "74c7943ce025fbb6",
+    "honeypots": [
+      "honeypot-clean-rename"
+    ],
+    "fixtures": [
+      {
+        "id": "honeypot-clean-rename",
+        "kind": "honeypot"
+      },
+      {
+        "id": "t3-cache-key-tenant",
+        "kind": "positive"
+      },
+      {
+        "id": "real-pr4-options-not-forwarded",
+        "kind": "positive"
+      }
+    ],
+    "fixtureSetHash": "2efafbb385a8bbf5",
+    "promptHash": "c59d803f0d0dc476",
+    "scorerHash": "8bbc6152d8b45a43",
+    "anticheatVersion": 2
+  },
+  "nativeExecutableSha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
+}

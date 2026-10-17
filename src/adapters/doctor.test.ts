@@ -669,3 +669,58 @@ ${output === "split" ? 'process.stderr.write("y".repeat(768 * 1024));' : 'setTim
     assert.doesNotMatch(JSON.stringify(report), /[xy]{160}/);
   });
 }
+
+test("doctor reports the canonical selected repository root from nested and linked folders", async (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  const nested = path.join(f.repo, "nested");
+  mkdirSync(nested);
+  const linked = path.join(f.tmp, "linked-repo");
+  symlinkSync(f.repo, linked, "dir");
+  for (const repo of [f.repo, nested, linked]) {
+    const report = await runDoctor({ repo, version: "0.0.0-test" });
+    assert.equal(report.repoRoot, realpathSync(f.repo));
+    assert.equal(check(report, "git").status, "ok");
+  }
+  const notRepo = await runDoctor({ repo: f.tmp, version: "0.0.0-test" });
+  assert.equal(notRepo.repoRoot, undefined);
+  assert.equal(check(notRepo, "git").status, "fail");
+});
+
+for (const suffix of [" ", "\t", "\n"]) {
+  test(`doctor preserves repository pathname suffix ${JSON.stringify(suffix)}`, async (t) => {
+    const f = setup(t);
+    codexStub(f.bin, 0, "Logged in using ChatGPT");
+    const repo = path.join(f.tmp, `project${suffix}`);
+    mkdirSync(repo);
+    gitText(["init", "-q"], repo);
+    const nested = path.join(repo, "nested");
+    mkdirSync(nested);
+    for (const selected of [repo, nested]) {
+      const report = await runDoctor({ repo: selected, version: "0.0.0-test" });
+      assert.equal(check(report, "git").status, "ok");
+      assert.equal(report.repoRoot, realpathSync(repo));
+    }
+  });
+}
+
+test("doctor omits the selected root when Git is too old for safe attributes", async (t) => {
+  const f = setup(t);
+  codexStub(f.bin, 0, "Logged in using ChatGPT");
+  stub(f.bin, "git", [
+    'if [ "$1" = "--version" ]; then echo "git version 2.40.1"; exit 0; fi',
+    'exec /usr/bin/git "$@"',
+  ].join("\n"));
+
+  const report = await runDoctor({ repo: f.repo, version: "0.0.0-test" });
+
+  assert.equal(report.ok, false);
+  assert.equal(report.repoRoot, undefined);
+  assert.deepEqual(check(report, "git"), {
+    name: "git",
+    status: "fail",
+    detail: "git version 2.40.1; needlefish needs git 2.41 or later",
+    fix: "Upgrade git to 2.41 or later.",
+  });
+  assert.equal(check(report, "base").status, "ok");
+});

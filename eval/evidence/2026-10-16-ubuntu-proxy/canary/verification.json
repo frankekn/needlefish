@@ -1,0 +1,46 @@
+{
+  "criteriaSha256": "c1aad2f28a851c532747ebedfa8dd1ef8eaec6705ba001558c150e86bc5b4244",
+  "protocol": 3,
+  "candidates": {
+    "pr255": {
+      "source": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+      "reviews": 0,
+      "verdicts": [],
+      "window": {
+        "status": "FAILED_HOST_CAPACITY_BEFORE_FIRST_MODEL",
+        "failure": {
+          "error": "memory pressure",
+          "time": 1792143541.625676
+        },
+        "rollback": {
+          "reason": "controller reported failure",
+          "outcome": "rolled-back",
+          "goodSource": "1654cbe33afea542d601e38a642c787627a44ca6",
+          "goodVersion": "needlefish 0.4.10",
+          "time": 1792143542.7183964
+        }
+      }
+    },
+    "pr258": {
+      "source": "ee28669b5eb404730bc29cf5ffb7c450e013b0c8",
+      "reviews": 3,
+      "verdicts": [
+        "changes_requested",
+        "pass",
+        "pass"
+      ],
+      "window": {
+        "status": "LIVE_INSTALLATION_CANARY_PASS",
+        "label": "pr258",
+        "started": 1792143757.6554022,
+        "finished": 1792145559.6592827,
+        "durationSeconds": 1802.0038805007935,
+        "acceptedReviews": 3,
+        "criteriaSha256": "c1aad2f28a851c532747ebedfa8dd1ef8eaec6705ba001558c150e86bc5b4244",
+        "sourceSha": "ee28669b5eb404730bc29cf5ffb7c450e013b0c8",
+        "githubDeliveryObserved": false,
+        "offlineQualification": "owned by parent"
+      }
+    }
+  }
+}

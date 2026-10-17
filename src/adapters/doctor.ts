@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
-import { git } from "../shared/repo.js";
+import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { runManagedRunnerProcess } from "../shared/runner-process.js";
 import { registerTerminationFinalizer } from "../shared/temp-lifecycle.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
@@ -33,6 +33,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly needlefish: string;
+  readonly repoRoot?: string;
   /** False when any check failed; an `unknown` check does not fail the report. */
   readonly ok: boolean;
   readonly checks: readonly DoctorCheck[];
@@ -254,6 +255,7 @@ async function authCheck(selection: RunnerSelection, probeCwd: string): Promise<
 
 /** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
 interface WorktreeState {
+  readonly repoRoot: string;
   readonly headExists: boolean;
   readonly dirty: boolean;
 }
@@ -285,12 +287,21 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
     if (!(error instanceof Error)) throw error;
     branch = "detached HEAD";
   }
+  const repoRoot = git(["rev-parse", "--show-toplevel"], repo, { preserveOutput: true }).replace(/\n$/, "");
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
+  const worktree = { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 };
+  const version = git(["--version"], repo);
+  if (!gitSupportsAttrSource(version)) {
+    return {
+      check: { name: "git", status: "fail", detail: `${version}; needlefish needs git 2.41 or later`, fix: "Upgrade git to 2.41 or later." },
+      worktree,
+    };
+  }
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { headExists, dirty: changed > 0 },
+    worktree,
   };
 }
 
@@ -317,9 +328,11 @@ export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   const cleanup = (): void => rmSync(probeCwd, { recursive: true, force: true });
   const unregisterCleanup = registerTerminationFinalizer(async () => cleanup());
   let checks: readonly DoctorCheck[];
+  let repoRoot: string | undefined;
   try {
     const runner = await selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
+    repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
@@ -334,6 +347,7 @@ export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   return {
     schemaVersion: 1,
     needlefish: opts.version,
+    ...(repoRoot === undefined ? {} : { repoRoot }),
     ok: checks.every((check) => check.status !== "fail"),
     checks,
   };
