@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -392,6 +393,53 @@ for (const windows of [false, true]) {
       assert.equal(child.codex_api_key, "synthetic-case-auth");
       assert.equal(child.CODEX_HOME, path.join(tmp, "home", ".codex"));
     } else assert.throws(() => prepareCapturedCodexHome(config, tmp), /required auth source/);
+  });
+}
+
+for (const auth of ["proxy", "api-key", "auth-files"] as const) {
+  test(`captured Codex ${auth} home satisfies strict CLI startup without ambient auth fallback`, t => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-codex-home-startup-"));
+    isolateCodexTestHome(t, tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const original = path.join(tmp, ".codex");
+    mkdirSync(original, { mode: 0o700 });
+    writeFileSync(path.join(original, "auth.json"), '{"synthetic":"owned-auth-control"}');
+    writeFileSync(path.join(original, "config.toml"), 'model = "owned-config-control"');
+    environment(t, {
+      CODEX_BIN: process.execPath,
+      NEEDLEFISH_EPHEMERAL_HOME: "1",
+      NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: auth === "api-key" ? "CODEX_API_KEY" : undefined,
+      CODEX_API_KEY: auth === "api-key" ? "synthetic-owned-api-key" : undefined,
+      CODEX_PROXY_BASE_URL: auth === "proxy" ? "http://127.0.0.1:1/v1" : undefined,
+      CODEX_PROXY_API_KEY: auth === "proxy" ? "synthetic-owned-proxy-key" : undefined,
+      NEEDLEFISH_CODEX_PROXY_REQUIRED: auth === "proxy" ? "1" : undefined,
+    });
+    const config = resolveRunnerConfig({ runner: "codex" });
+    const home = prepareCapturedCodexHome(config, tmp);
+    const env = buildRunnerEnv("codex", path.join(tmp, "gh"), home, undefined, capturedCodexEnvironment(config));
+    const codexHome = env.CODEX_HOME;
+    assert.equal(codexHome, path.join(tmp, "home", ".codex"));
+    assert.ok(codexHome);
+    const startup = spawnSync(process.execPath, ["-e", `
+      const fs = require("node:fs");
+      const path = require("node:path");
+      const home = process.env.CODEX_HOME;
+      const info = fs.statSync(home);
+      if (!info.isDirectory()) process.exit(2);
+      process.stdout.write(JSON.stringify({
+        mode: info.mode & 0o777,
+        auth: fs.existsSync(path.join(home, "auth.json")),
+        config: fs.existsSync(path.join(home, "config.toml")),
+      }));
+    `], { env, encoding: "utf8" });
+    assert.equal(startup.status, 0, startup.stderr);
+    assert.deepEqual(JSON.parse(startup.stdout), { mode: 0o700, auth: auth === "auth-files", config: auth === "auth-files" });
+    assert.equal(readFileSync(path.join(original, "auth.json"), "utf8"), '{"synthetic":"owned-auth-control"}');
+    assert.equal(readFileSync(path.join(original, "config.toml"), "utf8"), 'model = "owned-config-control"');
+    if (auth === "auth-files") {
+      assert.equal(readFileSync(path.join(codexHome, "auth.json"), "utf8"), '{"synthetic":"owned-auth-control"}');
+      assert.equal(readFileSync(path.join(codexHome, "config.toml"), "utf8"), 'model = "owned-config-control"');
+    }
   });
 }
 
