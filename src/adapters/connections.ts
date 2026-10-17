@@ -3,11 +3,13 @@ import { accessSync, constants, statSync, type Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
-import { ConnectionsDocumentError, connectionsFile, targetRoot, validateConnectionsDocument, type Connection } from "../shared/connections.js";
+import { ConnectionsDocumentError, connectionsFile, targetRoot, validateConnectionsDocument, resolveConnectionRoutes, type Connection } from "../shared/connections.js";
+import { runLocal } from "./local.js";
+import { initializeTempLifecycle } from "../shared/temp-lifecycle.js";
 import { resolveRunnerBinary, runnerReviewCapability } from "../shared/runner-detection.js";
 
-export type ConnectionsOperation = "list" | "edit" | "validate" | "apply" | "inspect";
-type ErrorCode = "invalid_request" | "input_too_large" | "input_timeout" | "invalid_configuration" | "unsafe_configuration" | "configuration_unavailable" | "revision_conflict" | "config_busy" | "save_failed" | "save_state_unknown" | "cancelled";
+export type ConnectionsOperation = "list" | "edit" | "validate" | "apply" | "inspect" | "review";
+type ErrorCode = "invalid_request" | "input_too_large" | "input_timeout" | "invalid_configuration" | "unsafe_configuration" | "configuration_unavailable" | "revision_conflict" | "config_busy" | "save_failed" | "save_state_unknown" | "cancelled" | "review_incomplete";
 export class ConnectionsError extends Error {
   constructor(readonly code: ErrorCode, readonly issues?: readonly { readonly field: string; readonly code: string }[]) { super(code); }
 }
@@ -159,7 +161,7 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
   }
 }
 
-export async function runConnections(operation: ConnectionsOperation, repo: string, request: unknown = undefined,
+export async function runConnections(operation: Exclude<ConnectionsOperation, "review">, repo: string, request: unknown = undefined,
   env: NodeJS.ProcessEnv = process.env, signal?: AbortSignal) {
   try {
     cancelled(signal);
@@ -199,7 +201,69 @@ export async function runConnections(operation: ConnectionsOperation, repo: stri
   }
 }
 
-export async function readConnectionsRequest(input: Readable, signal?: AbortSignal, timeoutMs = 5000): Promise<unknown> {
+type SessionReviewRequest = {
+  readonly repo: string;
+  readonly expectedRevision: string;
+  readonly ids: readonly string[];
+  readonly budgetMs: number;
+  readonly credentials: { readonly kind: "existing" } | { readonly kind: "session"; readonly sources: Readonly<Record<string, string>> };
+};
+
+function parseReviewRequest(request: unknown): SessionReviewRequest {
+  const raw = object(request);
+  keys(raw, ["repo", "scope", "expectedRevision", "ids", "budgetMs", "credentialMode", "sources"]);
+  if (typeof raw.repo !== "string" || !path.isAbsolute(raw.repo) || raw.repo.includes("\0")
+    || raw.scope !== "local-uncommitted" || typeof raw.expectedRevision !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.expectedRevision)
+    || !Array.isArray(raw.ids) || !raw.ids.length || !raw.ids.every((id): id is string => typeof id === "string" && !!id.trim() && id === id.trim())
+    || new Set(raw.ids).size !== raw.ids.length || typeof raw.budgetMs !== "number" || !Number.isSafeInteger(raw.budgetMs)
+    || raw.budgetMs < 1 || raw.budgetMs > 2147483647) return fail("invalid_request");
+  const sources = object(raw.sources);
+  let credentials: SessionReviewRequest["credentials"];
+  if (raw.credentialMode === "existing") {
+    keys(sources, []);
+    credentials = { kind: "existing" };
+  } else if (raw.credentialMode === "session") {
+    credentials = { kind: "session", sources: Object.fromEntries(Object.entries(sources).map(([name, value]) => {
+      if (typeof value !== "string") return fail("invalid_request");
+      return [name, value];
+    })) };
+  } else return fail("invalid_request");
+  return { repo: raw.repo, expectedRevision: raw.expectedRevision, ids: [...raw.ids], budgetMs: raw.budgetMs, credentials };
+}
+
+async function prepareSessionReview(request: unknown, env: NodeJS.ProcessEnv, signal?: AbortSignal) {
+  const parsed = parseReviewRequest(request);
+  cancelled(signal);
+  const current = await snapshot(await location(parsed.repo, env));
+  cancelled(signal);
+  if (current.revision !== parsed.expectedRevision) fail("revision_conflict");
+  const selected = parsed.ids.map(id => current.parsed.connections.find(connection => connection.id === id) ?? fail("invalid_request"));
+  let localEnv = env;
+  if (parsed.credentials.kind === "session") {
+    if (selected.some(connection => !connection.auth)) return fail("invalid_request");
+    const refs = [...new Set(selected.flatMap(connection => connection.auth ? Object.values(connection.auth.env) : []))];
+    keys(parsed.credentials.sources, refs);
+    localEnv = { ...env, ...parsed.credentials.sources };
+  }
+  const opts = { localMode: "uncommitted" as const, connections: parsed.ids, reviewBudgetMs: parsed.budgetMs };
+  const routes = resolveConnectionRoutes(opts, parsed.repo, localEnv, true, { connections: current.parsed.connections, encodedOutputGuard: true });
+  cancelled(signal);
+  return { repo: parsed.repo, opts, routes };
+}
+
+export async function runConnectionsReview(request: unknown, env: NodeJS.ProcessEnv = process.env, signal?: AbortSignal) {
+  try {
+    const prepared = await prepareSessionReview(request, env, signal);
+    request = undefined;
+    cancelled(signal);
+    await initializeTempLifecycle();
+    return await runLocal(prepared.repo, prepared.opts, undefined, { routes: prepared.routes, signal });
+  } catch (error) {
+    return { schemaVersion: 1, ok: false, code: signal?.aborted ? "cancelled" : error instanceof ConnectionsError ? error.code : "review_incomplete" };
+  }
+}
+
+export async function readConnectionsRequest(input: Readable, signal?: AbortSignal, timeoutMs = 5000, rejectDuplicates = false): Promise<unknown> {
   if ("isTTY" in input && input.isTTY) return fail("invalid_request");
   cancelled(signal);
   return new Promise((resolve, reject) => {
@@ -210,13 +274,34 @@ export async function readConnectionsRequest(input: Readable, signal?: AbortSign
       input.off("data", data); input.off("end", end); input.off("error", inputError);
       signal?.removeEventListener("abort", abort);
       input.pause();
-      if (error) { reject(error); return; }
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { reject(new ConnectionsError("invalid_request")); }
+      if (error) { for (const chunk of chunks) chunk.fill(0); reject(error); return; }
+      const bytes = Buffer.concat(chunks);
+      try {
+        const text = bytes.toString("utf8");
+        const request: unknown = JSON.parse(text);
+        if (rejectDuplicates) {
+          const containers: (Set<string> | null)[] = [];
+          for (const match of text.matchAll(/"(?:\\.|[^"\\])*"|[{}[\]]/g)) {
+            const token = match[0];
+            if (token === "{") containers.push(new Set());
+            else if (token === "[") containers.push(null);
+            else if (token === "}" || token === "]") containers.pop();
+            else if (/^\s*:/.test(text.slice(match.index + token.length))) {
+              const name: unknown = JSON.parse(token);
+              const names = containers.at(-1);
+              if (typeof name !== "string" || !names || names.has(name)) return fail("invalid_request");
+              names.add(name);
+            }
+          }
+        }
+        resolve(request);
+      } catch { reject(new ConnectionsError("invalid_request")); }
+      finally { bytes.fill(0); for (const chunk of chunks) chunk.fill(0); }
     };
     const data = (chunk: Buffer | string) => {
-      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const bytes = Buffer.from(chunk);
       size += bytes.length;
-      if (size > 131072) { finish(new ConnectionsError("input_too_large")); return; }
+      if (size > 131072) { bytes.fill(0); finish(new ConnectionsError("input_too_large")); return; }
       chunks.push(bytes);
     };
     const end = () => finish();
