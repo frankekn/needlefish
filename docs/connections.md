@@ -368,7 +368,7 @@ URLs, and credential references do not appear in errors or catalog descriptors.
 names. Keep this response out of logs, exports, and review prompts. Arbitrary
 text entered into profile fields is not certified safe to publish.
 
-Requests must finish within five seconds and contain at most 128 KiB of JSON.
+Reading request JSON from stdin has a five-second timeout and a 128 KiB limit.
 Documents must fit the existing 64 KiB configuration limit. `validate` writes
 nothing. Add, edit, and delete profiles by changing the complete `document` from
 `edit`, then use one `apply`. Preserve ACP `{model}` arguments and raw `auth.env`
