@@ -13,7 +13,22 @@ final class Onboarding: ObservableObject {
     @Published var accepted = false
     private(set) var runtime: Runtime?
     @Published private(set) var diagnosis: Doctor?
-    var canReview: Bool { trusted && accepted && diagnosis?.ready == true }
+    @Published var consentUsesConnections = false
+    let connections = AdvancedConnections()
+    var canReview: Bool { trusted && accepted && (consentUsesConnections ? connections.ready && diagnosis?.repositoryScopeReady == true && !knownMissingAmbientCodexAuth : diagnosis?.ready == true) }
+    var knownMissingAmbientCodexAuth: Bool {
+        guard consentUsesConnections, connections.credentialMode == "existing",
+              diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
+        guard let first = connections.selection.first else { return false }
+        return connections.document.connections.contains { $0.id == first && $0.adapter == "codex" && $0.auth == nil }
+    }
+    var knownMissingAmbientCodexFallback: Bool {
+        guard consentUsesConnections, connections.credentialMode == "existing",
+              diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
+        return connections.selection.dropFirst().contains { id in
+            connections.document.connections.contains { $0.id == id && $0.adapter == "codex" && $0.auth == nil }
+        }
+    }
     lazy var githubSetup = GithubSetup(runtime: runtime)
     private var operation: Command?
     private var task: Task<Void, Never>?
@@ -98,7 +113,22 @@ final class Onboarding: ObservableObject {
         } catch { state = .message("無法移除安裝資料。未修改 Git 或登入設定。 / Could not remove installation data.") }
     }
 
+    var canDiagnose: Bool { !busy && !connections.hasUnsavedDraft }
+    var diagnosisDraftMessage: String? {
+        guard connections.hasUnsavedDraft else { return nil }
+        return connections.draftState == .editing
+            ? "重新診斷或選擇資料夾前，請在進階連線保存或捨棄草稿。 / Save or discard the draft in Advanced connections before checking again or choosing a folder."
+            : "請先在進階連線重新載入目前設定，再選擇重套或捨棄草稿。 / Reload the current configuration in Advanced connections, then reapply or discard the draft."
+    }
+
+    func discardConnectionDraft() {
+        guard !busy, connections.canDiscardDraft else { return }
+        invalidateConnectionConsent()
+        connections.discardDraft()
+    }
+
     func selectFolder() {
+        guard canDiagnose else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -110,7 +140,7 @@ final class Onboarding: ObservableObject {
         }
     }
 
-    private func start(_ label: String, work: @escaping @MainActor (DesktopCLI, Command) async throws -> State) {
+    private func start(_ label: String, usesConnections: Bool = false, work: @escaping @MainActor (DesktopCLI, Command) async throws -> State) {
         guard !busy else { return }
         guard let runtime else { state = .message(DesktopError.runtime.localizedDescription); return }
         let command = Command()
@@ -119,7 +149,14 @@ final class Onboarding: ObservableObject {
         code = nil
         task = Task {
             do { state = try await work(DesktopCLI(runtime: runtime), command) }
-            catch { state = .message((error as? DesktopError)?.localizedDescription ?? DesktopError.command.localizedDescription) }
+            catch {
+                if usesConnections {
+                    self.connections.failed(error)
+                    state = .message(self.connections.message ?? DesktopError.command.localizedDescription)
+                } else {
+                    state = .message((error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.command.localizedDescription)
+                }
+            }
             operation = nil
             code = nil
             task = nil
@@ -127,7 +164,9 @@ final class Onboarding: ObservableObject {
     }
 
     func diagnose() {
-        guard let repo else { return }
+        guard canDiagnose, let repo else { return }
+        connections.reset()
+        consentUsesConnections = false
         trusted = false
         accepted = false
         diagnosis = nil
@@ -141,6 +180,7 @@ final class Onboarding: ObservableObject {
 
     func prepare() {
         guard let repo else { return }
+        consentUsesConnections = false
         trusted = false
         accepted = false
         start("正在讀取變更範圍。沒有模型呼叫。 / Reading change scope. No model call.") { cli, command in
@@ -156,9 +196,9 @@ final class Onboarding: ObservableObject {
         start("等待 OpenAI 登入。可以取消。 / Waiting for OpenAI sign-in. You can cancel.") { cli, command in
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("needlefish-desktop-login-" + UUID().uuidString)
             let output = try await command.run([cli.runtime.codex, "login", "--device-auth"],
-                environment: cli.runtime.environment(temporary: temporary), temporary: temporary, timeout: 16 * 60) { code in
+                environment: cli.runtime.environment(temporary: temporary), temporary: temporary, timeout: 16 * 60, progress: { code in
                     await MainActor.run { self.code = code }
-                }
+                })
             guard output.status == 0 else {
                 return .message("登入未完成。請確認網路與帳戶是否允許 Codex 裝置登入，再重試。 / Sign-in incomplete. Check connection and device login availability.")
             }
@@ -170,14 +210,73 @@ final class Onboarding: ObservableObject {
         }
     }
 
+    func invalidateConnectionConsent() {
+        connections.invalidate()
+        if consentUsesConnections {
+            trusted = false; accepted = false
+            if case .consent = state { state = .message("連線、順序或預算已改變。請重新檢查範圍。 / Selection changed. Inspect scope again.") }
+        }
+    }
+
+    func connectionOperation(_ operation: String) {
+        guard !busy, let repo, operation != "edit" || connections.canLoad else { return }
+        invalidateConnectionConsent()
+        start("正在處理連線設定，沒有模型呼叫。 / Managing connections. No model call.", usesConnections: true) { cli, command in
+            let input = operation == "edit" ? nil : try self.connections.request(operation)
+            let response = try await cli.connections(operation, repo: repo, command: command, input: input)
+            if operation == "edit" { try self.connections.load(response) }
+            else { try self.connections.saved(response) }
+            return .message("連線設定已載入或保存。 / Connections loaded or saved.")
+        }
+    }
+
+    func prepareConnections() {
+        guard !busy, let repo, !connections.dirty, connections.validSelection,
+              connections.budgetMs != nil, connections.draftState == .editing else { return }
+        trusted = false; accepted = false; consentUsesConnections = true
+        start("正在檢查連線與本機範圍，沒有模型呼叫。 / Inspecting connections and scope. No model call.", usesConnections: true) { cli, command in
+            let report = try await cli.doctor(repo: repo, command: command)
+            self.diagnosis = report
+            guard report.repositoryScopeReady else {
+                let message = report.checks.filter { ["node", "git"].contains($0.name) && $0.status != .ok }
+                    .map(\.explanation).joined(separator: "\n")
+                self.connections.invalidate(); self.connections.clearSecrets()
+                self.connections.message = message
+                return .message(message)
+            }
+            let response = try await cli.connections("inspect", repo: repo, command: command, input: self.connections.request("inspect"))
+            try self.connections.inspected(response)
+            let unavailable = (self.connections.inspection ?? []).filter { $0.readiness != "local-available" }
+            if !unavailable.isEmpty {
+                let rows = unavailable.map { $0.id + " (" + $0.adapter + "): " + $0.readiness }.joined(separator: "; ")
+                let message = "連線尚不能在本機執行。請確認執行檔可用且支援讀取專案，再重新檢查。 / Connections are not locally ready. Check executable availability and repository-read capability, then inspect again. " + rows
+                self.connections.message = message
+                return .message(message)
+            }
+            let scope = try await cli.scope(repo: repo, command: command)
+            guard !scope.changedFiles.isEmpty else { return .message("沒有可檢查的變更。 / No changes to review.") }
+            return .consent(scope)
+        }
+    }
+
     func review() {
         guard let repo, canReview, case .consent = state else { return }
-        start("正在檢查本機變更副本。可能產生費用。 / Reviewing a copy of local changes. Charges may apply.") { cli, command in
-            .result(try await cli.review(repo: repo, command: command), demo: false)
+        guard runtime != nil else { connections.clearSecrets(); state = .message(DesktopError.runtime.localizedDescription); return }
+        start("正在檢查本機變更副本。可能產生費用。 / Reviewing a copy of local changes. Charges may apply.", usesConnections: consentUsesConnections) { cli, command in
+            if self.consentUsesConnections {
+                guard let revision = self.connections.baseRevision, let budget = self.connections.budgetMs else { throw DesktopError.invalidOutput }
+                defer { self.connections.clearSecrets() }
+                let result = try await cli.connectionReview(repo: repo, revision: revision, ids: self.connections.selection,
+                    budgetMs: budget, mode: self.connections.credentialMode, sources: self.connections.secrets, command: command,
+                    inputSent: { await MainActor.run { self.connections.clearSecrets() } })
+                return .result(result, demo: false)
+            }
+            return .result(try await cli.review(repo: repo, command: command), demo: false)
         }
     }
 
     func cancel() {
+        connections.clearSecrets()
         if githubSetup.busy { githubSetup.cancel(); return }
         guard operation != nil, busy else { return }
         operation?.cancel()
@@ -212,10 +311,14 @@ final class Onboarding: ObservableObject {
 struct ContentView: View {
     @ObservedObject var model: Onboarding
     @ObservedObject private var githubSetup: GithubSetup
-    init(model: Onboarding) { self.model = model; githubSetup = model.githubSetup }
+    @ObservedObject private var connections: AdvancedConnections
+    init(model: Onboarding) { self.model = model; githubSetup = model.githubSetup; connections = model.connections }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Needlefish").font(.largeTitle).bold()
+            if Bundle.main.object(forInfoDictionaryKey: "NeedlefishOfflineUITest") as? Bool == true {
+                Text("OFFLINE UI TEST. No provider or credentials.").font(.headline).foregroundStyle(.orange)
+            }
             Text("檢查一個專案的本機變更 / Review local changes in one project").font(.headline)
             if model.runtime?.development == true {
                 Text("開發預覽。未通過乾淨機器與正式發行驗收。 / Development preview. Not a qualified release.")
@@ -223,8 +326,14 @@ struct ContentView: View {
             }
             if let repo = model.repo { Text("專案 / Project: " + repo.lastPathComponent).textSelection(.enabled) }
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) { stateView }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 14) {
+                    stateView
+                    if let message = model.diagnosisDraftMessage { Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
+            DisclosureGroup("進階連線 / Advanced connections") {
+                ScrollView { AdvancedConnectionsView(owner: model, model: model.connections) }.frame(maxHeight: 380)
+            }.disabled(model.githubSetup.busy)
             DisclosureGroup("GitHub 引導設定 / Guided GitHub setup") {
                 ScrollView { GithubSetupView(model: githubSetup) }.frame(maxHeight: 460)
             }.disabled(model.localBusy)
@@ -236,7 +345,7 @@ struct ContentView: View {
                 }.disabled(model.busy)
             }
             HStack {
-                Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(model.busy)
+                Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(!model.canDiagnose)
                 Button("離線範例 / Offline example", action: model.demo).disabled(model.localBusy)
                 Spacer()
                 Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics).disabled(model.localBusy)
@@ -272,14 +381,20 @@ struct ContentView: View {
             Text("診斷不確認帳戶額度、網路模型可達性或 runner 能力資格。 / Diagnostics do not verify quota, model connectivity or runner qualification.")
                 .font(.caption)
             HStack {
-                Button("重新診斷 / Check again", action: model.diagnose)
+                Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose)
                 Button("登入 OpenAI / Sign in", action: model.login)
                 Button("查看檢查範圍 / Review scope", action: model.prepare).disabled(!report.scopeReady)
             }
         case .consent(let scope):
             Text("開始前確認 / Before you start").font(.title2)
             Text("將檢查 \(scope.changedFiles.count) 個有本機變更的檔案。按開始時建立副本，包含已暫存、未暫存與可收錄的新檔案。期間請停止編輯。 / Reviews a copy of local staged, unstaged and eligible new files at start. Stop editing during capture.")
-            Text("程式碼與專案規則會交給 OpenAI Codex，使用 gpt-5.6-sol，medium effort。費用未知，依目前登入帳戶計費。 / Code and project rules go to OpenAI Codex, gpt-5.6-sol, medium effort. Cost unknown, billed to the signed-in account.")
+            if model.consentUsesConnections {
+                Text("程式碼與規則會依下列順序交給所選連線。完整結果會結束備援。認證未知、資格未驗證、費用未知。 / Code and rules go to the selected routes in this order. A complete result ends fallback. Authentication unknown, unqualified, cost unknown.")
+                ForEach(model.connections.inspection ?? []) { row in Text(row.summary + " · " + row.readiness) }
+                Text("模型審查總預算 / Model budget: " + model.connections.budget + " ms. Collection and cleanup are outside this budget.")
+            } else {
+                Text("程式碼與專案規則會交給 OpenAI Codex，使用 gpt-5.6-sol，medium effort。費用未知，依目前登入帳戶計費。 / Code and project rules go to OpenAI Codex, gpt-5.6-sol, medium effort. Cost unknown, billed to the signed-in account.")
+            }
             Text("這是拋棄式副本與事後完整性檢查，不是 OS 隔離。只用於你信任的自有專案。 / Uses a disposable copy and integrity checks, not OS isolation. Only review your own trusted projects.")
             if !scope.untrackedSkipped.isEmpty {
                 Text("有 \(scope.untrackedSkipped.count) 個新檔案未收錄。 / Some new files are excluded.").foregroundStyle(.orange)
@@ -289,7 +404,14 @@ struct ContentView: View {
             }
             Toggle("我信任並擁有此專案。 / I own and trust this project.", isOn: $model.trusted)
             Toggle("我同意傳送程式碼，並接受未知費用。 / I consent to sending code and unknown charges.", isOn: $model.accepted)
-            if model.diagnosis?.ready != true {
+            if model.knownMissingAmbientCodexAuth {
+                Text("選定的 Codex 既有登入不可用。請登入後重新檢查範圍。 / The selected ambient Codex sign-in is unavailable. Sign in, then inspect scope again.")
+                Button("登入 Codex / Sign in to Codex", action: model.login)
+            }
+            if model.knownMissingAmbientCodexFallback {
+                Text("後備 Codex 未登入。前面的連線若無法完成，這條後備連線無法接手。 / Fallback Codex is not signed in. It cannot take over if the earlier routes cannot complete.").foregroundStyle(.orange)
+            }
+            if !model.consentUsesConnections && model.diagnosis?.ready != true {
                 Text("開始檢查前請先登入。 / Sign in before starting a review.")
                 Button("登入 OpenAI / Sign in", action: model.login)
             }
@@ -315,10 +437,10 @@ struct ContentView: View {
             }
             if let coverage = result.coverage { Text(coverage).font(.caption) }
             Text(result.verdict == .pass ? "下一步：人工確認後再提交變更。 / Next: inspect the change before committing." : "下一步：依建議確認或修改，再重新檢查。 / Next: inspect or fix the issues, then review again.")
-            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose) }
+            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose) }
         case .message(let text):
             Text(text).font(.title3)
-            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose) }
+            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose) }
         }
     }
 }
