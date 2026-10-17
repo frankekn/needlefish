@@ -140,17 +140,16 @@ review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶�
 | -------- | ------ |
 | codex    | `CODEX_AUTH_JSON`（已登入的 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY` |
-| opencode | 所選模型的 provider key（例如 `OPENAI_API_KEY`） |
 | pi       | `PI_AUTH_JSON`（已登入的 `~/.pi/agent/auth.json` 內容） |
 
-hosted 安裝步驟只接受 `codex`、`claude`、`opencode` 或 `pi`。`grok` 與
-`acp` 是 CLI runner，`openai` 是 HTTP——hosted action 都不會安裝，傳入
-`runner: grok`（或 `openai`／`acp`）會在該安裝步驟失敗；Grok 4.5 請使
-用下方的 self-hosted workflow。Claude 的認證變數（`ANTHROPIC_API_KEY`、
-`CLAUDE_CODE_OAUTH_TOKEN`）與 opencode 的 `OPENAI_API_KEY` 在 runner
-subprocess 的 allowlist 內；其他 provider 的 key 需要
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見
-[Runner subprocess 環境](#runner-subprocess-環境)）。
+hosted 安裝步驟只接受 `codex`、`claude` 或 `pi`。
+OpenCode 的啟動設定隔離尚未完成，因此暫停審查。傳入 `runner: opencode`
+會在安裝前失敗。見 [issue #207](https://github.com/frankekn/needlefish/issues/207)。
+`grok` 與 `acp` 是 CLI runner，`openai` 是 HTTP。hosted action 都不會安裝，
+傳入 `runner: grok`、`openai` 或 `acp` 會在安裝步驟失敗。
+這些 CLI runner 請使用下方的 self-hosted workflow。
+Claude 的認證變數（`ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN`）在 runner
+subprocess 的 allowlist 內。見 [Runner subprocess 環境](#runner-subprocess-環境)。
 
 **輸入**（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設
 `codex`）、`model`、`timeout_ms`、`codex_reasoning_effort`、
@@ -159,7 +158,7 @@ subprocess 的 allowlist 內；其他 provider 的 key 需要
 （預設 `false`）。
 
 **Runner 版本：** 未設定 `runner_version` 時，action 會安裝所選 runner
-CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cli`
+CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`
 或 `@earendil-works/pi-coding-agent`）。要固定版本時，傳入明確版本即可。
 
 **成本與行為：**
