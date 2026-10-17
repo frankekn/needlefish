@@ -116,7 +116,7 @@ const cp = require('node:child_process');
 const args = process.argv.slice(2);
 const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
 process.stdout.write(result.stdout ?? '');
-if (args[0] === 'diff' && !args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))) {
+if (args.includes('diff') && !args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))) {
   process.stdout.write('diff --git a/source.ts b/source.ts\\nindex 1111111..2222222 100644\\nBinary files a/source.ts and b/source.ts differ\\n');
 }
 process.stderr.write(result.stderr ?? '');

@@ -167,7 +167,7 @@ export function hasHeadCommit(cwd: string): boolean {
 // work tree side needs its eol, working-tree-encoding and clean-filter
 // conversions, including ones the uncommitted change itself adds. Textconv
 // and external diff drivers stay off: they would rewrite or replace the patch.
-const UNCOMMITTED_DIFF = ["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-textconv", "--no-ext-diff"];
+const UNCOMMITTED_DIFF = ["-c", "diff.autoRefreshIndex=false", "diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-textconv", "--no-ext-diff"];
 
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[], baseSha: string): string[] {
   const args = [...UNCOMMITTED_DIFF, ...extraArgs, baseSha];
@@ -223,7 +223,9 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   if (!hasHeadCommit(cwd)) {
     throw new Error("No commits yet. Run without --branch to review uncommitted files.");
   }
-  const dirty = git(["status", "--porcelain"], cwd);
+  const dirty = runText("git", ["status", "--porcelain"], {
+    cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+  });
   if (dirty.trim()) {
     process.stderr.write(
       "needlefish: warning: uncommitted changes are not included; review is merge-base..HEAD only.\n"

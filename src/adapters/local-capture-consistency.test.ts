@@ -21,7 +21,7 @@ const fs = require('node:fs');
 const cp = require('node:child_process');
 const args = process.argv.slice(2);
 const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
-if (!fs.existsSync(${JSON.stringify(path.join(tmp, "changed"))}) && args[0] === 'diff' && ${change === "untracked" ? "args.includes('--no-index')" : "!args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))"}) {
+if (!fs.existsSync(${JSON.stringify(path.join(tmp, "changed"))}) && args.includes('diff') && ${change === "untracked" ? "args.includes('--no-index')" : "!args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))"}) {
   fs.writeFileSync(${JSON.stringify(path.join(tmp, "changed"))}, 'changed');
   ${change === "HEAD" ? `cp.execFileSync('/usr/bin/git', ['-c','user.name=Test','-c','user.email=test@example.invalid','commit','--allow-empty','-m','concurrent HEAD'], {stdio:'ignore'});` : `fs.writeFileSync(${JSON.stringify(path.join(repo, change === "tracked" ? "README.md" : "app.ts"))}, 'changed during capture\\n');`}
 }
@@ -57,7 +57,7 @@ test("uncommitted repeated ABA captures classify the captured source patch", (t)
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const args = process.argv.slice(2);
-const patch = args[0] === 'diff' && !args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg));
+const patch = args.includes('diff') && !args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg));
 if (patch) fs.writeFileSync(${JSON.stringify(app)}, 'export const value = 999;\\n');
 const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
 if (patch) fs.writeFileSync(${JSON.stringify(app)}, ${JSON.stringify(original)});
