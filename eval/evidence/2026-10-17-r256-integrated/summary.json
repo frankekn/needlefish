@@ -1,0 +1,73 @@
+{
+  "status": "CLASS_R_FAIL",
+  "gateClass": "R",
+  "candidateSha": "6d41f5295006996c9e3159e611134784f5e0e8e2",
+  "baselineSha": "40409c68b7a3700840f7699d77dc1611f3365712",
+  "runner": {
+    "cli": "codex 0.163.0",
+    "model": "gpt-5.6-terra",
+    "effort": "high",
+    "provider": "OpenAI ChatGPT native"
+  },
+  "primaryFixtureCount": 93,
+  "sealedHoldoutCount": 17,
+  "primaryDrawsPerSide": 3,
+  "confirmationFixtureCount": 26,
+  "confirmationDrawsPerSide": 3,
+  "uniqueSlots": 714,
+  "nativeAttempts": 1493,
+  "outputAdmissionReasks": 25,
+  "runnerRetries": 0,
+  "sourceDrift": false,
+  "dependencyDrift": false,
+  "candidatePrimary": {
+    "recall": [
+      164,
+      189
+    ],
+    "noise": [
+      16,
+      189
+    ],
+    "pooledFalsePositives": [
+      4,
+      84
+    ],
+    "tier1": [
+      21,
+      21
+    ]
+  },
+  "baselinePrimary": {
+    "recall": [
+      166,
+      189
+    ],
+    "noise": [
+      19,
+      189
+    ],
+    "pooledFalsePositives": [
+      6,
+      84
+    ],
+    "tier1": [
+      20,
+      21
+    ]
+  },
+  "thresholds": {
+    "minRecall": 0.89,
+    "maxNoise": 0.05,
+    "maxPooledFalsePositives": 2,
+    "tier1Recall": 1
+  },
+  "reportSha256": {
+    "primary-candidate": "d9b2596cc3c4015192447e42a5e30f3c0cccb862cff198fe75db12cdaa45aba6",
+    "primary-baseline": "58adb1c1c6b2c1f7af1fc595624b5c9f017a71682ad3dc1900e406a810875f89",
+    "confirmation-candidate": "2d71946655610961a1a7d168a4cbd0f2c0564b4e92ddcb6fc54dd6cc05c12b4f",
+    "confirmation-baseline": "271e3e1db2d71debbacd1578165b34d517a2590e10df676bd2568147a1b9b3c2"
+  },
+  "setupManifestSha256": "2e8df37da1b8baef003e3769e9ea0b5d1d2a0767f212a5a3279567823e62553d",
+  "scope": "Aggregate archive summary only. Confirmation does not replace primary. No new qualification or model call. Raw inputs and sealed fixture answers are not published."
+}

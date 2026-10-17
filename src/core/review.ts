@@ -44,7 +44,7 @@ import { normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
 import { checkQuotes } from "./quote-check.js";
 import { deriveVerdict } from "./verdict.js";
-import { loadPrompt } from "./prompts.js";
+import { fillPrompt, loadPrompt } from "./prompts.js";
 import {
 	observeCandidateReviewTrace,
 	observeFinalReviewTrace,
@@ -750,11 +750,12 @@ async function runCritic(
 ): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
 	run.onProgress?.({ stage: "critic", findings: candidate.findings.length });
-	const criticPrompt = loadPrompt("critic.md")
-		.replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
-		.replace("{{PATCH}}", () => patchText)
-		.replace("{{BASE}}", bundle.baseSha)
-		.replace("{{HEAD}}", bundle.headSha);
+	const criticPrompt = fillPrompt(loadPrompt("critic.md"), {
+		FINDINGS: JSON.stringify(candidate, null, 2),
+		PATCH: patchText,
+		BASE: bundle.baseSha,
+		HEAD: bundle.headSha,
+	});
 	const result = await runJsonPrompt(
 		{
 			label: "critic",
@@ -886,9 +887,10 @@ async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const { bundle } = run;
 	const { patch, ...meta } = bundle;
 	delete meta.binaryFiles;
-	const reviewPrompt = loadPrompt("review.md")
-		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
-		.replace("{{PATCH}}", () => patch);
+	const reviewPrompt = fillPrompt(loadPrompt("review.md"), {
+		BUNDLE: JSON.stringify(meta, null, 2),
+		PATCH: patch,
+	});
 	run.onProgress?.({ stage: "review", files: bundle.changedFiles.length });
 	const candidate = await runJsonPrompt(
 		{
@@ -936,9 +938,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		focus: bundle.focus,
 		deep: bundle.deep,
 	};
-	const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () =>
-		JSON.stringify(mapBundle, null, 2),
-	);
+	const mapPrompt = fillPrompt(loadPrompt("map.md"), {
+		BUNDLE: JSON.stringify(mapBundle, null, 2),
+	});
 	run.onProgress?.({ stage: "map", files: bundle.changedFiles.length });
 	const mapResult = await runJsonPrompt(
 		{
@@ -1019,15 +1021,14 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						? { untrackedSkipped: bundle.untrackedSkipped }
 						: {}),
 				};
-				const deepPrompt = loadPrompt("deep.md")
-					.replace("{{AGENTS}}", () => agents)
-					.replace("{{PR_META}}", () =>
-						JSON.stringify(bundle.prMeta, null, 2),
-					)
-					.replace("{{HOTSPOT}}", () => JSON.stringify(hotspot, null, 2))
-					.replace("{{FOCUS}}", bundle.focus ?? "(none)")
-					.replace("{{BASE}}", bundle.baseSha)
-					.replace("{{HEAD}}", bundle.headSha);
+				const deepPrompt = fillPrompt(loadPrompt("deep.md"), {
+					AGENTS: agents,
+					PR_META: JSON.stringify(bundle.prMeta, null, 2),
+					HOTSPOT: JSON.stringify(hotspot, null, 2),
+					FOCUS: bundle.focus ?? "(none)",
+					BASE: bundle.baseSha,
+					HEAD: bundle.headSha,
+				});
 				try {
 					const res = await runJsonPrompt(
 						{

@@ -2316,3 +2316,15 @@ remain private and cannot resume across processes or enter the public leaderboar
 Existing publication refusals remain in force. Exact identity correspondence alone
 is not evidence that a report passed its quality gate. Production results remain
 `unqualified` until a complete matching qualification artifact is available.
+
+## 2026-10-17 integrated PR #256 Class R failure
+
+Gate class **R**, `CLASS_R_FAIL`. The [aggregate evidence](evidence/2026-10-17-r256-integrated/summary.json) records candidate `6d41f5295006996c9e3159e611134784f5e0e8e2` against baseline `40409c68b7a3700840f7699d77dc1611f3365712`. Each side completed the full 93-fixture set three times, including 17 sealed holdouts, followed by the preregistered divergent union confirmation. The lane was native Codex 0.163.0, `gpt-5.6-terra/high`, OpenAI ChatGPT.
+
+Candidate primary recall was 164/189, below 0.89. Noise was 16/189, above 0.05. Pooled negative false positives were 4/84, above the limit of two. Candidate Tier1 recall was 21/21. Baseline recall was 166/189, noise was 19/189, pooled false positives were 6/84, and Tier1 recall was 20/21. The baseline also failed; its failure does not qualify the candidate.
+
+All 714 fixed primary and confirmation slots completed with 1,493 native attempts and no runner retries. There were 25 intermediate output admission or subset rejections followed by same-prompt re-asks. Final invalid, operational failure, and cheat counts were zero. Source and dependency inventories did not drift. Confirmation preserves the original primary failures and does not replace their denominators. The summary includes the four original report SHA256 digests and setup-manifest digest; the original reports and raw attempts remain archived separately.
+
+A post-hoc audit found a shared caller defect that reprocessed literal template tokens inside critic candidate JSON on both sources. This local fix addresses that general input-construction defect without changing prompt wording, matching, scoring, or the owner-approved model-residual critic policy in #220. It neither rescues this failed campaign nor proves a cause for the aggregate quality differences. The changed model inputs require a new complete Class R gate on the new source. No new campaign ran for this fix.
+
+PR #256 is not merged into main. It and dependent qualification work remain unqualified and must not be promoted from Draft on these results. This entry records the failure before delivery; it does not claim that the failed source shipped.

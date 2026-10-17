@@ -112,7 +112,7 @@ process.stdin.on('end', () => {
         }
       }
       const criticCandidate = mode === "large"
-        ? { ...candidate, summary: text, checked: [`[one surface] ${text}`, ...candidate.checked] }
+        ? { ...candidate, summary: text, checked: [`[one surface] ${candidateText}`, ...candidate.checked] }
         : candidate;
       const critic = captured("critic");
       assert.deepEqual(JSON.parse(between(critic, "# Candidate findings\n", "\n# Diff stat")), criticCandidate);
