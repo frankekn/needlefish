@@ -2334,10 +2334,15 @@ PR #256 is not merged into main. It and dependent qualification work remain unqu
 
 Gate class **R**, `NOT_RUN`. The private critic protocol now requires one explicit
 keep/drop decision per candidate ref and materializes findings from the original
-candidate, changing model inputs and output admission. Local behavior tests do
-not certify model quality or semantic ref attribution. A separately authored
-sealed holdout awaits integration after the prompt freeze. No fixture count or
-hash is declared before that integration. The production-lane full Class R x3
+candidate, changing model inputs and output admission. The critic rules now
+require an explicit drop decision instead of deleting or omitting a candidate.
+Local behavior tests do not certify model quality or semantic ref attribution.
+The separately authored sealed holdout commit `72e2f0a` is integrated in source
+`bd3d2691892f92ae42d9ded4a5196bc74fc6d9fa`. The verified catalog has 109 fixtures,
+including 29 holdouts, with `fixtureSetHash: b4fcef1900ab9475`,
+`scorerHash: 8bbc6152d8b45a43`, and `anticheatVersion: 2`. This wording change
+leaves fixture bytes unchanged. The revised `promptHash` is `9c53ddecdcd71c16`,
+computed with `src/shared/prompt-hash.ts`. The production-lane full Class R x3
 gate, sealed holdouts and mechanical confirmation remain required.
 
 The valid source `95d0a9002cdf282aa8e823f6d5f2868358f1a125` Class D study
