@@ -208,7 +208,14 @@ function requireSafeUpgrade(deadline: number, repository: string, defaultBranch:
     ...array(object(protection).contexts ?? []).map(string),
     ...array(object(protection).checks ?? []).map(check => string(object(check).context)),
   ];
-  const rules = array(required(deadline, `repos/${repository}/rules/branches/${branch}`));
+  const rules: Json[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const rows = array(required(deadline, `repos/${repository}/rules/branches/${branch}?per_page=100&page=${page}`));
+    if (rows.length > 100) throw new Error("GitHub returned an invalid branch rules page. Nothing was written.");
+    rules.push(...rows);
+    if (rows.length < 100) break;
+    if (page === 10) throw new Error("GitHub branch rule pagination limit reached. Nothing was written. Ask a maintainer to inspect the workflow migration.");
+  }
   const requiredChecks = rules.flatMap(value => {
     const rule = object(value);
     return rule.type === "required_status_checks"

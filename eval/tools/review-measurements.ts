@@ -100,12 +100,13 @@ function jobCheckId(value: unknown, repository: string): number | null {
   } catch { return null; }
 }
 
-function workflowFile(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const [file, ref, extra] = value.split("@");
-  if (extra !== undefined || (ref !== undefined &&
-      (!/^(?:refs\/[A-Za-z0-9._/-]+|[a-f0-9]{40})$/.test(ref) || ref.includes("..") || ref.includes("//") || ref.endsWith("/") || ref.endsWith(".") || ref.split("/").some(part => part.endsWith(".lock"))))) return null;
-  return file;
+function workflowPathMatches(value: unknown, expected: string): boolean {
+  if (value === expected) return true;
+  if (typeof value !== "string" || !value.startsWith(`${expected}@`)) return false;
+  const ref = value.slice(expected.length + 1);
+  return ref.length > 0 && ref !== "@" && !/[~^:?*[\]\\]/.test(ref) && !Array.from(ref).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) &&
+    !ref.includes("..") && !ref.includes("//") && !ref.includes("@{") && !ref.endsWith(".") &&
+    ref.split("/").every(part => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
 }
 
 export function collectReviewMeasurements(query: MeasurementQuery, githubRead: GithubRead = ghRead): MeasurementCollection {
@@ -176,7 +177,7 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
         }
         const sourceRun = runs.get(key) ?? null;
         const workflowRepository = sourceRun && object(sourceRun.repository)?.full_name;
-        if (!sourceRun || !id(sourceRun.id) || String(sourceRun.id) !== workflow.runId || sourceRun.run_attempt !== workflow.runAttempt || sourceRun.workflow_id !== query.workflowId || workflowFile(sourceRun.path) !== query.workflowPath || (typeof workflowRepository !== "string" || workflowRepository.toLowerCase() !== query.repository.toLowerCase())) binding = unknown("workflow_binding_conflict");
+        if (!sourceRun || !id(sourceRun.id) || String(sourceRun.id) !== workflow.runId || sourceRun.run_attempt !== workflow.runAttempt || sourceRun.workflow_id !== query.workflowId || !workflowPathMatches(sourceRun.path, query.workflowPath) || (typeof workflowRepository !== "string" || workflowRepository.toLowerCase() !== query.repository.toLowerCase())) binding = unknown("workflow_binding_conflict");
         else {
           run = sourceRun;
           if (!jobs.has(key)) jobs.set(key, pages(`repos/${query.repository}/actions/runs/${workflow.runId}/attempts/${workflow.runAttempt}/jobs`, "jobs", check.id));

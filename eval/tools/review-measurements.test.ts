@@ -209,11 +209,11 @@ test("captured job key cannot borrow another supplied display-name contract", ()
 });
 
 test("collector accepts bare and referenced workflow paths but rejects malformed references", () => {
-  for (const path of [query.workflowPath, `${query.workflowPath}@refs/pull/7/merge`, `${query.workflowPath}@refs/heads/main`, `${query.workflowPath}@${"b".repeat(40)}`, `${query.workflowPath}@main`, `${query.workflowPath}@v1.2.3`, `${query.workflowPath}@release/v1.2`, `${query.workflowPath}@feature/review+ui`, `${query.workflowPath}@fix@home`, `${query.workflowPath}@分支`]) {
+  for (const path of [query.workflowPath, `${query.workflowPath}@refs/pull/7/merge`, `${query.workflowPath}@refs/heads/main`, `${query.workflowPath}@${"b".repeat(40)}`, `${query.workflowPath}@main`, `${query.workflowPath}@v1.2.3`, `${query.workflowPath}@release/v1.2`, `${query.workflowPath}@feature/review+ui`, `${query.workflowPath}@fix@home`, `${query.workflowPath}@refs/heads/main@bad`, `${query.workflowPath}@分支`]) {
     const row = collectReviewMeasurements(query, fixture(receipt(), { run: { path } }).read).rows[0];
     assert.deepEqual(row.binding, { status: "producer_attested" }, path);
   }
-  for (const path of [`${query.workflowPath}@`, `${query.workflowPath}@refs/heads/main@bad`, `${query.workflowPath}@refs/heads/../main`, `${query.workflowPath}@refs/heads/main\n`, `.github/workflows/other.yml@refs/heads/main`]) {
+  for (const path of [`${query.workflowPath}@`, `${query.workflowPath}@refs/heads/main@{bad`, `${query.workflowPath}@refs/heads/../main`, `${query.workflowPath}@refs/heads/main\n`, `.github/workflows/other.yml@refs/heads/main`]) {
     const row = collectReviewMeasurements(query, fixture(receipt(), { run: { path } }).read).rows[0];
     assert.deepEqual(row.binding, { status: "unknown", reason: "workflow_binding_conflict" }, path);
   }
