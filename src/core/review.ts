@@ -275,10 +275,11 @@ function codexOptions(
 			: {}),
 		label,
 		onStat: (stat) => run.stats.push(stat),
-		onFailedAttempt: (runnerAttempt, raw) => {
+		onFailedAttempt: (runnerAttempt, raw, diagnostic) => {
 			if (run.onTrace) {
 				observeReviewTrace(run.onTrace, {
 					content: raw ?? "",
+					...(diagnostic ? { diagnostic } : {}),
 					surface: "raw_failure",
 					passKind: traceAttempt.passKind,
 					passIndex: traceAttempt.passIndex,

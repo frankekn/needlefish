@@ -394,8 +394,8 @@ explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；�
 布的 composite action 不會安裝該 workflow。
 
 原生 Codex 額度分類已驗證 CLI 0.163 的 JSON events。其他版本尚未取得
-自動額度 fallback 資格。未知 event schema 保留失敗，並在私有失敗輸出加入
-`unrecognized codex event schema`，不依額度字樣切換路由。單一路由的 deep
+自動額度 fallback 資格。未知 event schema 保留失敗，並以私有失敗 trace metadata 記錄
+`unrecognized_codex_event_schema`，原始 transcript 不變，不依額度字樣切換路由。單一路由的 deep
 review 遇到額度耗盡或取消也會失敗，不會改成 blocking residual。
 
 ## Doctor 與 GitHub 設定細節
