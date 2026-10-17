@@ -125,17 +125,15 @@ function makeRepo(tmp: string, files: Readonly<Record<string, string>>): string 
 	return repo;
 }
 
-// Runs the real CLI entry point with --json against a stub claude runner
-// that answers every pass (review and critic) with STUB_REVIEW.
 function cliJson(tmp: string, repo: string, env: Readonly<Record<string, string>>, expectedExitCode: 0 | 1 = 1): unknown {
 	const bin = path.join(tmp, "claude-bin.js");
 	writeFileSync(
 		bin,
 		[
 			"#!/usr/bin/env node",
-			"process.stdin.resume();",
+			"let input = ''; process.stdin.on('data', chunk => input += chunk);",
 			"process.stdin.on('end', () => {",
-			`  process.stdout.write(${JSON.stringify(JSON.stringify(STUB_REVIEW))});`,
+			`  if(input.includes('adversarial critic')) { const candidate=JSON.parse(input.slice(input.indexOf('# Candidate findings')+'# Candidate findings'.length,input.indexOf('# Diff stat'))); process.stdout.write(JSON.stringify({summary:candidate.summary,decisions:candidate.findings.map(({ref,severity,confidence})=>({ref,action:'keep',severity,confidence})),checked:candidate.checked,residual_risks:candidate.residual_risks})); } else process.stdout.write(${JSON.stringify(JSON.stringify(STUB_REVIEW))});`,
 			"});",
 		].join("\n"),
 	);
