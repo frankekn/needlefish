@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { parseMeasurement } from "../src/adapters/github-measurement.ts";
 import { spawnSync } from "node:child_process";
 import {
 	chmodSync,
@@ -102,6 +103,7 @@ esac
 			GH_TOKEN: "test-token",
 			GITHUB_RUN_ID: "777",
 			GITHUB_RUN_ATTEMPT: "1",
+            GITHUB_JOB: "review",
 			GITHUB_OUTPUT: output,
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			REPO,
@@ -318,7 +320,7 @@ test("reconcile treats the posted skip check as terminal and never dispatches th
 		assert.equal(skipped.posts.length, 1, skipped.log);
 		const posted = postedCheck(skipped.posts[0]);
 		assert.deepEqual(JSON.parse(posted.external_id), {
-			v: 2, prNumber: 42, roundId: "skip-777-1", runId: "777",
+			v: 2, prNumber: 42, roundId: parseMeasurement(posted["output[text]"]).invocationId, runId: "777",
 		});
 		const r = runStep(
 			reconcileScript,
@@ -483,3 +485,27 @@ test("action.yml hands allow_untrusted_author to the review step only when it is
 		assert.equal(r.value, `<${value}>`);
 	}
 });
+
+for (const [name, script, env] of [
+  ["reusable", resolveScript, eventEnv({ association: "NONE" })],
+  ["composite", trustStep.run, actionEnv({ association: "NONE" })],
+]) {
+  test(`${name} trust skip posts a parseable measurement with no runtime or pipeline claim`, () => {
+    const result = runStep(script, env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.posts.length, 1, result.log);
+    const post = postedCheck(result.posts[0]);
+    const record = parseMeasurement(post["output[text]"]);
+    assert.equal(record.outcome, "skipped");
+    assert.equal(record.delivery, "not_applicable");
+    assert.equal(record.verdict, null);
+    assert.equal(record.repository, REPO);
+    assert.equal(record.prNumber, 42);
+    assert.equal(record.targetHeadSha, HEAD);
+    assert.deepEqual(record.runtime, { status: "unknown" });
+    assert.deepEqual(record.pipeline, { status: "unknown" });
+    assert.deepEqual(record.execution, { ordinal: 1, role: "unknown" });
+    assert.deepEqual(record.workflow, { status: "recorded", runId: "777", runAttempt: 1, jobKey: "review" });
+    assert.equal(JSON.parse(post.external_id).roundId, record.invocationId);
+  });
+}

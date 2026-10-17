@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MEASUREMENT_MAX_BYTES, measurementPipeline, measurementRuntime, measurementText, measurementWorkflow, newMeasurement, parseMeasurement, type MeasurementV1 } from "./github-measurement.js";
-import type { ReviewRuntime } from "../shared/runtime.js";
+import { runtimeLabel, type ReviewRuntime } from "../shared/runtime.js";
 
 function receipt(): MeasurementV1 {
   return newMeasurement({ repository: "org/repo", prNumber: 7, targetHeadSha: "a".repeat(40), workflow: measurementWorkflow({ runId: "10", runAttempt: "2", jobKey: "review" }) });
@@ -69,4 +69,19 @@ test("8 KiB cap rejects the complete record without producing truncated JSON", (
   assert.equal(JSON.parse(text ?? "").repository, atLimit.repository);
   assert.equal(measurementText({ ...atLimit, repository: `${atLimit.repository}é` }), undefined);
   assert.throws(() => parseMeasurement(`${text} `), /measurement exceeds byte limit/);
+});
+
+test("measurement runtime parsing uses the public identity privacy contract", () => {
+  for (const value of ["https://private.invalid/key", "/Users/alice/private", "space value", "sk-" + "a".repeat(48)]) {
+    const runtime = { status: "recorded", runner: "codex", model: { status: "known", value }, effort: { status: "known", value }, coreVersion: { status: "known", value }, qualification: { matchStatus: "unqualified" } };
+    const parsed = parseMeasurement(JSON.stringify({ ...receipt(), runtime })).runtime;
+    assert.equal(parsed.status, "recorded");
+    if (parsed.status === "recorded") {
+      assert.deepEqual(parsed.model, runtimeLabel(value, "known", "model"));
+      assert.deepEqual(parsed.effort, runtimeLabel(value));
+      assert.deepEqual(parsed.coreVersion, runtimeLabel(value));
+    }
+  }
+  const runtime = { status: "recorded", runner: "codex", model: { status: "operator_attested", value: "org/model@revision" }, effort: { status: "known", value: "high" }, coreVersion: { status: "known", value: "0.4.10" }, qualification: { matchStatus: "unqualified" } };
+  assert.deepEqual(parseMeasurement(JSON.stringify({ ...receipt(), runtime })).runtime, runtime);
 });

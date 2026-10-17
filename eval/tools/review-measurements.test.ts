@@ -39,7 +39,7 @@ test("collector separates target head, merge ref, job ID and self-created check 
   assert.deepEqual(row.durations, {
     pipelineMs: { status: "observed", valueMs: 2500, clock: "producer_monotonic" },
     jobQueueMs: { status: "observed", valueMs: 10000, clock: "github_utc" },
-    workflowCreatedToTerminalMs: { status: "observed", valueMs: 20000, clock: "github_utc" },
+    workflowCreatedToTerminalMs: { status: "unknown", reason: "rerun_attempt_created_at" },
     triggerToTerminalMs: { status: "unknown", reason: "missing_trusted_event_time" }, pushToTerminalMs: { status: "unknown", reason: "missing_trusted_push_time" },
   });
   assert.equal(source.calls.length, 3);
@@ -70,13 +70,13 @@ for (const [name, overrides, reason] of [
 test("queued job's prefilled started_at is not queue evidence", () => {
   const row = collectReviewMeasurements(query, fixture(receipt(), { job: { status: "queued" } }).read).rows[0];
   assert.deepEqual(row.durations.jobQueueMs, { status: "unknown", reason: "job_not_started" });
-  assert.deepEqual(row.durations.workflowCreatedToTerminalMs, { status: "observed", valueMs: 20000, clock: "github_utc" });
+  assert.deepEqual(row.durations.workflowCreatedToTerminalMs, { status: "unknown", reason: "rerun_attempt_created_at" });
 });
 
 test("nonterminal and missing measurements remain visible diagnostics", () => {
   const record = receipt({ delivery: "partial", outcome: "cancelled", verdict: null });
   const report = collectReviewMeasurements(query, fixture(record, { check: { status: "in_progress" } }).read);
-  assert.deepEqual(report.rows[0].durations.workflowCreatedToTerminalMs, { status: "unknown", reason: "missing_timestamp" });
+  assert.deepEqual(report.rows[0].durations.workflowCreatedToTerminalMs, { status: "unknown", reason: "rerun_attempt_created_at" });
   assert.equal(report.rows[0].checkStatus, "in_progress"); assert.equal(report.rows[0].evidenceStatus, "partial");
   assert.deepEqual(report.diagnostics.map((item) => item.reason), ["delivery_partial", "check_not_terminal"]);
   const missing = collectReviewMeasurements(query, fixture(record, { check: { output: null, status: "in_progress" } }).read);
@@ -206,4 +206,20 @@ test("captured job key cannot borrow another supplied display-name contract", ()
   assert.deepEqual(report.rows[0].binding, { status: "unknown", reason: "job_key_contract_conflict" });
   assert.equal(report.rows[0].workflowJobDatabaseId, null);
   assert.equal(report.rows[0].evidenceStatus, "unknown");
+});
+
+test("collector accepts bare and referenced workflow paths but rejects malformed references", () => {
+  for (const path of [query.workflowPath, `${query.workflowPath}@refs/pull/7/merge`, `${query.workflowPath}@refs/heads/main`, `${query.workflowPath}@${"b".repeat(40)}`]) {
+    const row = collectReviewMeasurements(query, fixture(receipt(), { run: { path } }).read).rows[0];
+    assert.deepEqual(row.binding, { status: "producer_attested" }, path);
+  }
+  for (const path of [`${query.workflowPath}@`, `${query.workflowPath}@refs/heads/main@bad`, `${query.workflowPath}@refs/heads/../main`, `${query.workflowPath}@refs/heads/main\n`, `.github/workflows/other.yml@refs/heads/main`]) {
+    const row = collectReviewMeasurements(query, fixture(receipt(), { run: { path } }).read).rows[0];
+    assert.deepEqual(row.binding, { status: "unknown", reason: "workflow_binding_conflict" }, path);
+  }
+});
+
+test("rerun original creation time never becomes an attempt duration", () => {
+  const row = collectReviewMeasurements(query, fixture(receipt(), { run: { created_at: "2026-10-10T00:00:00Z", run_started_at: "2026-10-16T00:00:10Z" } }).read).rows[0];
+  assert.deepEqual(row.durations.workflowCreatedToTerminalMs, { status: "unknown", reason: "rerun_attempt_created_at" });
 });
