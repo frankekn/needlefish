@@ -45,11 +45,11 @@ final class Command: @unchecked Sendable {
 
     func run(_ arguments: [String], environment: [String: String], temporary: URL,
              timeout: TimeInterval, input: consuming Data? = nil, inputSent: @escaping @Sendable () async -> Void = {}, progress: @escaping @Sendable (String) async -> Void = { _ in }) async throws -> CommandOutput {
-        if let input, input.count > 128 * 1024 { throw DesktopError.invalidOutput }
+        var pendingInput = consume input
+        let inputCount = pendingInput?.count
+        if let inputCount, inputCount > 128 * 1024 { throw DesktopError.invalidOutput }
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        let inputCount = input?.count
-        var pendingInput = consume input
         let result: Swift.Result<CommandOutput, Error>
         do {
             result = .success(try await Task.detached { [self] in
