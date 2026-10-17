@@ -360,56 +360,13 @@ struct AdvancedConnectionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("連線是本機設定名稱，不代表不同帳號。認證未知、資格未驗證、費用未知。 / Profiles do not prove independent accounts. Authentication unknown, unqualified, cost unknown.")
-            HStack {
-                Button("載入連線 / Load connections") { owner.connectionOperation("edit") }.disabled(owner.repo == nil || owner.busy)
-                Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy || model.draftState != .editing)
-                Button("保存全部草稿 / Save all drafts") { owner.connectionOperation("apply") }.disabled(owner.busy || model.draftState != .editing || !model.dirty)
-                if model.canReapply { Button("明確重套草稿 / Reapply retained draft", action: model.reapply).disabled(owner.busy) }
-            }
+            profileActions
             if let message = model.message { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
-            ForEach(Array(model.document.connections.enumerated()), id: \.offset) { _, profile in
-                HStack {
-                    Text(profile.id + " · " + profile.adapter + " · " + (profile.model ?? "agent default"))
-                    Spacer()
-                    Button("編輯 / Edit " + profile.id) { originalID = profile.id; editing = profile }.focused($profileFocus, equals: "edit-" + profile.id)
-                    Button("刪除 / Delete " + profile.id) { deleting = profile }
-                    Button("加入順序 / Select " + profile.id) { model.select(profile.id) }.disabled(model.selection.contains(profile.id))
-                }.disabled(owner.busy || model.draftState != .editing)
-            }
+            profileRows
             Text("本次順序 / This review's route order").font(.headline)
-            ForEach(Array(model.selection.enumerated()), id: \.offset) { index, id in
-                HStack {
-                    Text("\(index + 1). \(id)")
-                    Spacer()
-                    Button("上移 / Move up " + id) { model.move(id, by: -1) }.disabled(index == 0)
-                    Button("下移 / Move down " + id) { model.move(id, by: 1) }.disabled(index == model.selection.count - 1)
-                    Button("移出 / Remove " + id) { model.remove(id) }
-                }.disabled(owner.busy)
-            }
-            LabeledContent("模型審查總預算，毫秒 / Model review budget in milliseconds") {
-                TextField("", text: $model.budget).accessibilityLabel("模型審查總預算，毫秒 / Model review budget in milliseconds")
-            }.disabled(owner.busy)
-            if !model.budget.isEmpty && model.budgetMs == nil {
-                Text("預算須為 1 到 2147483647 的整數。 / Budget must be an integer from 1 through 2147483647.").foregroundStyle(.orange)
-            }
-            Text("收集來源與清理不計入模型預算。外層失控監控另允許十分鐘，再要求清理。 / Collection and cleanup are outside the model budget. The watchdog allows ten extra minutes, then requests cleanup.").font(.caption)
-            Picker("認證來源 / Credential mode", selection: $model.credentialMode) {
-                Text("既有登入與可用來源 / Existing credentials").tag("existing")
-                Text("只在本次提供 / Session only").tag("session")
-            }.disabled(owner.busy)
-            if model.credentialMode == "existing" && !model.sourceRefs.isEmpty {
-                Text("此 App 不轉送任意環境密鑰。這些明確來源須選擇只在本次提供。 / This app does not forward environment keys. Choose Session only for explicit source references.").foregroundStyle(.orange)
-            }
-            if model.credentialMode == "session" {
-                if !model.sessionAllowed { Text("每條選定連線都必須設定明確來源。 / Every selected profile needs explicit source references.").foregroundStyle(.orange) }
-                ForEach(model.sourceRefs, id: \.self) { ref in
-                    LabeledContent("本次密鑰 / Session value " + ref) {
-                        SecureField("", text: Binding(get: { model.secrets[ref] ?? "" }, set: { model.secrets[ref] = $0 }))
-                            .accessibilityLabel("本次密鑰 / Session value " + ref)
-                    }.disabled(owner.busy)
-                }
-                Text("只透過匿名 stdin 傳遞，不保存。無法保證記憶體實體清除。 / Anonymous stdin only, not persisted. Physical memory erasure is not guaranteed.").font(.caption)
-            }
+            routeOrder
+            reviewBudget
+            credentials
             if let rows = model.inspection { ForEach(rows) { row in Text(row.summary + " · " + row.readiness) } }
             Button("檢查連線與範圍 / Inspect connections and scope", action: owner.prepareConnections)
                 .disabled(owner.busy || model.dirty || !model.validSelection || model.budgetMs == nil || model.draftState != .editing)
@@ -423,5 +380,73 @@ struct AdvancedConnectionsView: View {
         .onChange(of: model.credentialMode) { model.clearSecrets(); owner.invalidateConnectionConsent() }
         .onChange(of: model.document) { owner.invalidateConnectionConsent() }
         .onChange(of: model.selection) { owner.invalidateConnectionConsent() }
+    }
+
+    @ViewBuilder
+    private var profileActions: some View {
+        HStack {
+            Button("載入連線 / Load connections") { owner.connectionOperation("edit") }.disabled(owner.repo == nil || owner.busy)
+            Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy || model.draftState != .editing)
+            Button("保存全部草稿 / Save all drafts") { owner.connectionOperation("apply") }.disabled(owner.busy || model.draftState != .editing || !model.dirty)
+            if model.canReapply { Button("明確重套草稿 / Reapply retained draft", action: model.reapply).disabled(owner.busy) }
+        }
+    }
+
+    @ViewBuilder
+    private var profileRows: some View {
+        ForEach(Array(model.document.connections.enumerated()), id: \.offset) { _, profile in
+            HStack {
+                Text(profile.id + " · " + profile.adapter + " · " + (profile.model ?? "agent default"))
+                Spacer()
+                Button("編輯 / Edit " + profile.id) { originalID = profile.id; editing = profile }.focused($profileFocus, equals: "edit-" + profile.id)
+                Button("刪除 / Delete " + profile.id) { deleting = profile }
+                Button("加入順序 / Select " + profile.id) { model.select(profile.id) }.disabled(model.selection.contains(profile.id))
+            }.disabled(owner.busy || model.draftState != .editing)
+        }
+    }
+
+    @ViewBuilder
+    private var routeOrder: some View {
+        ForEach(Array(model.selection.enumerated()), id: \.offset) { index, id in
+            HStack {
+                Text("\(index + 1). \(id)")
+                Spacer()
+                Button("上移 / Move up " + id) { model.move(id, by: -1) }.disabled(index == 0)
+                Button("下移 / Move down " + id) { model.move(id, by: 1) }.disabled(index == model.selection.count - 1)
+                Button("移出 / Remove " + id) { model.remove(id) }
+            }.disabled(owner.busy)
+        }
+    }
+
+    @ViewBuilder
+    private var reviewBudget: some View {
+        LabeledContent("模型審查總預算，毫秒 / Model review budget in milliseconds") {
+            TextField("", text: $model.budget).accessibilityLabel("模型審查總預算，毫秒 / Model review budget in milliseconds")
+        }.disabled(owner.busy)
+        if !model.budget.isEmpty && model.budgetMs == nil {
+            Text("預算須為 1 到 2147483647 的整數。 / Budget must be an integer from 1 through 2147483647.").foregroundStyle(.orange)
+        }
+        Text("收集來源與清理不計入模型預算。外層失控監控另允許十分鐘，再要求清理。 / Collection and cleanup are outside the model budget. The watchdog allows ten extra minutes, then requests cleanup.").font(.caption)
+    }
+
+    @ViewBuilder
+    private var credentials: some View {
+        Picker("認證來源 / Credential mode", selection: $model.credentialMode) {
+            Text("既有登入與可用來源 / Existing credentials").tag("existing")
+            Text("只在本次提供 / Session only").tag("session")
+        }.disabled(owner.busy)
+        if model.credentialMode == "existing" && !model.sourceRefs.isEmpty {
+            Text("此 App 不轉送任意環境密鑰。這些明確來源須選擇只在本次提供。 / This app does not forward environment keys. Choose Session only for explicit source references.").foregroundStyle(.orange)
+        }
+        if model.credentialMode == "session" {
+            if !model.sessionAllowed { Text("每條選定連線都必須設定明確來源。 / Every selected profile needs explicit source references.").foregroundStyle(.orange) }
+            ForEach(model.sourceRefs, id: \.self) { ref in
+                LabeledContent("本次密鑰 / Session value " + ref) {
+                    SecureField("", text: Binding(get: { model.secrets[ref] ?? "" }, set: { model.secrets[ref] = $0 }))
+                        .accessibilityLabel("本次密鑰 / Session value " + ref)
+                }.disabled(owner.busy)
+            }
+            Text("只透過匿名 stdin 傳遞，不保存。無法保證記憶體實體清除。 / Anonymous stdin only, not persisted. Physical memory erasure is not guaranteed.").font(.caption)
+        }
     }
 }
