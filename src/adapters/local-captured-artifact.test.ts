@@ -139,29 +139,44 @@ test("captured artifact retains the resolved source checkout's protected ownersh
   writeFileSync(path.join(repo, "README.md"), "changed\n");
   const config = path.join(tmp, "global.gitconfig");
   gitText(["config", "--file", config, "safe.directory", repo], repo);
+  const trace = path.join(tmp, "git-calls.jsonl");
   const bin = path.join(tmp, "bin");
   mkdirSync(bin);
   writeFileSync(path.join(bin, "git"), `#!/usr/bin/env node
 const cp = require('node:child_process');
+const fs = require('node:fs');
 const env = {...process.env};
 if (process.cwd() === ${JSON.stringify(repo)}) env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
 const result = cp.spawnSync('/usr/bin/git', process.argv.slice(2), {encoding:'utf8', env});
+fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({cwd:process.cwd(), argv:process.argv.slice(2), differentOwner:env.GIT_TEST_ASSUME_DIFFERENT_OWNER === '1', status:result.status}) + '\\n');
 process.stdout.write(result.stdout ?? '');
 process.stderr.write(result.stderr ?? '');
 process.exit(result.status ?? 1);
 `, { mode: 0o755 });
-  const previousPath = process.env.PATH;
-  const previousConfig = process.env.GIT_CONFIG_GLOBAL;
-  process.env.PATH = `${bin}:${previousPath ?? ""}`;
-  process.env.GIT_CONFIG_GLOBAL = config;
+  const keys = ["PATH", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"];
+  const previous = keys.map(key => [key, process.env[key]] as const);
+  process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  process.env.GIT_CONFIG_COUNT = "0";
+  delete process.env.GIT_CONFIG_PARAMETERS;
   t.after(() => {
-    process.env.PATH = previousPath;
-    if (previousConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
-    else process.env.GIT_CONFIG_GLOBAL = previousConfig;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     rmSync(tmp, { recursive: true, force: true });
   });
   process.env.GIT_CONFIG_GLOBAL = os.devNull;
-  assert.throws(() => diffBundle(repo, {}), /dubious ownership/);
+  try {
+    assert.throws(() => diffBundle(repo, {}), /dubious ownership/);
+  } catch (error) {
+    t.diagnostic(JSON.stringify({
+      gitVersion: spawnSync("/usr/bin/git", ["--version"], { encoding: "utf8" }).stdout.trim(),
+      safeDirectories: spawnSync("/usr/bin/git", ["config", "--show-origin", "--show-scope", "--get-all", "safe.directory"], { cwd: tmp, encoding: "utf8" }).stdout.trim(),
+      calls: existsSync(trace) ? readFileSync(trace, "utf8") : "wrapper not invoked",
+    }));
+    throw error;
+  }
   process.env.GIT_CONFIG_GLOBAL = config;
   assert.equal(gitText(["rev-parse", "--show-toplevel"], repo), repo);
   const before = directoryBytes(repo);
