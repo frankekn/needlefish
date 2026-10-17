@@ -427,13 +427,13 @@ for (const auth of ["proxy", "api-key", "auth-files"] as const) {
       const info = fs.statSync(home);
       if (!info.isDirectory()) process.exit(2);
       process.stdout.write(JSON.stringify({
-        mode: info.mode & 0o777,
+        privateDirectory: process.platform === "win32" || (info.mode & 0o777) === 0o700,
         auth: fs.existsSync(path.join(home, "auth.json")),
         config: fs.existsSync(path.join(home, "config.toml")),
       }));
     `], { env, encoding: "utf8" });
     assert.equal(startup.status, 0, startup.stderr);
-    assert.deepEqual(JSON.parse(startup.stdout), { mode: 0o700, auth: auth === "auth-files", config: auth === "auth-files" });
+    assert.deepEqual(JSON.parse(startup.stdout), { privateDirectory: true, auth: auth === "auth-files", config: auth === "auth-files" });
     assert.equal(readFileSync(path.join(original, "auth.json"), "utf8"), '{"synthetic":"owned-auth-control"}');
     assert.equal(readFileSync(path.join(original, "config.toml"), "utf8"), 'model = "owned-config-control"');
     if (auth === "auth-files") {
