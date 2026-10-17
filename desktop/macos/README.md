@@ -128,7 +128,7 @@ python3 desktop/macos/scripts/package.py --development \
 /usr/libexec/PlistBuddy -c 'Add :NeedlefishOfflineUITest bool true' \
   "$fixture_root/Needlefish-Advanced-UI-Test.app/Contents/Info.plist"
 set -m
-"$fixture_root/Needlefish-Advanced-UI-Test.app/Contents/MacOS/Needlefish" &
+"$fixture_root/Needlefish-Advanced-UI-Test.app/Contents/MacOS/NeedlefishDesktop" &
 app_pgid=$!
 ```
 
