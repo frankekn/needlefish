@@ -44,8 +44,11 @@ process.exit(1);
     const raw = `${output}\n${stdout}\n${stderr}`;
     assert.deepEqual(Reflect.get(error, "rawOutputs"), [raw]);
     assert.equal(Reflect.get(error, "rawOutput"), raw);
-    assert.deepEqual(events.map(event => ({ content: event.content, diagnostic: Reflect.get(event, "diagnostic"), surface: event.surface, outcome: event.outcome, runnerAttempt: event.runnerAttempt })), [{ content: raw, diagnostic: "unrecognized_codex_event_schema", surface: "raw_failure", outcome: "runner_failed", runnerAttempt: 1 }]);
-    assert.equal(Object.isFrozen(events[0]), true);
+    assert.deepEqual(events.map(event => ({ content: event.content, diagnostic: Reflect.get(event, "diagnostic"), surface: event.surface, outcome: event.outcome, runnerAttempt: event.runnerAttempt })), [
+      { content: "", diagnostic: undefined, surface: "native_tool_receipts", outcome: "runner_failed", runnerAttempt: 1 },
+      { content: raw, diagnostic: "unrecognized_codex_event_schema", surface: "raw_failure", outcome: "runner_failed", runnerAttempt: 1 },
+    ]);
+    for (const event of events) assert.equal(Object.isFrozen(event), true);
     return error.message;
   };
   assert.equal(await run(false), await run(true));
