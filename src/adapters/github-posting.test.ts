@@ -34,6 +34,7 @@ import {
 	runGithub,
 } from "./github";
 import type { Finding } from "../shared/schema";
+import { parseMeasurement, type MeasurementV1 } from "./github-measurement.js";
 import { WITHHELD_MESSAGE } from "../shared/outbound-screen";
 import { OWN_POST_FINDING_MARKER } from "../shared/normalize";
 
@@ -117,6 +118,7 @@ type FixtureOptions = {
 	// 422 (the create still succeeds), simulating delivery failing after the
 	// review body has already been posted.
 	readonly flakyCheckRunPatches?: number;
+	readonly failMeasurementPatch?: boolean;
 	// Make the runner stub emit the configured review output and then exit with
 	// this code, writing this text to stderr — the shape of a genuine runner
 	// operational failure (safeRunnerCause classifies the stderr).
@@ -460,6 +462,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    }`,
 			`    const checks = fs.existsSync(checksStatePath) ? JSON.parse(fs.readFileSync(checksStatePath, 'utf8')) : [];`,
 			`    const parsedPatch = JSON.parse(payload);`,
+      `    if (${opts.failMeasurementPatch === true} && !('status' in parsedPatch)) { process.stderr.write('gh: Unprocessable Entity (HTTP 422)'); process.exit(1); }`,
 			`    const check = checks.find((c) => c.id === id);`,
 			`    if (check) Object.assign(check, parsedPatch);`,
 			`    fs.writeFileSync(checksStatePath, JSON.stringify(checks));`,
@@ -754,7 +757,7 @@ for (const [opener, prefix] of [
 		assert.ok(reviewPost);
 		// Normalization trims item boundaries; delivery must retain everything else.
 		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence.trim()));
-		const checks = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
+		const checks = posts.filter(isCheckLifecycleWrite);
 		const payload = JSON.parse(checks.at(-1)!.payload) as {
 			conclusion: string; output: { summary: string };
 		};
@@ -766,6 +769,11 @@ for (const [opener, prefix] of [
 		);
 		assert.equal(Buffer.from(payload.output.summary).toString("utf8"), payload.output.summary);
 		assert.ok(!payload.output.summary.includes("\uFFFD"));
+		const writes = measurementWrites(posts);
+		assert.equal(writes.length, 2);
+		assert.equal(writes[1].title, writes[0].title);
+		assert.equal(writes[1].summary, writes[0].summary);
+		assert.deepEqual(writes[1].keys, ["output"]);
 	});
 }
 
@@ -2751,9 +2759,7 @@ test("pending check is created before review and completed by id", async (t) => 
 	await runGithub(fixture.repo, 61, { timeoutMs: 1000 });
 
 	const posts = readPosts(fixture.postLog);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	assert.equal(
 		checkOps.length,
 		2,
@@ -3014,9 +3020,7 @@ test("review error on a stale head closes the pending check as superseded", (t) 
 	);
 
 	const posts = readPosts(fixture.postLog);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	assert.equal(checkOps.length, 2, "pending check must be completed, not left in_progress");
 	const completed = checkOps[checkOps.length - 1];
 	assert.equal(completed.args[1], "-X");
@@ -3062,9 +3066,7 @@ test("review error on a closed PR closes the pending check as superseded", (t) =
 	);
 
 	const posts = readPosts(fixture.postLog);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	assert.equal(checkOps.length, 2, "pending check must be completed, not left in_progress");
 	const completed = checkOps[checkOps.length - 1];
 	const payload = parseJson(completed.payload) as {
@@ -3148,9 +3150,7 @@ test("a transient 502 on the review PUT is retried once and the update lands", a
 		/needlefish-state:/,
 		"the retried PUT must write the new round's body",
 	);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	const completed = checkOps[checkOps.length - 1];
 	const payload = parseJson(completed.payload) as { conclusion?: unknown };
 	assert.equal(
@@ -3175,9 +3175,7 @@ test("a 502 review POST defers recovery when no artifact is visible", async (t) 
 		1,
 		"a negative read is not proof a POST was not stored",
 	);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	const completed = checkOps[checkOps.length - 1];
 	const payload = parseJson(completed.payload) as {
 		conclusion?: unknown;
@@ -3204,9 +3202,7 @@ test("a 404 on the review POST is never retried and fails closed", async (t) => 
 		1,
 		"a 4xx must not be retried",
 	);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	const completed = checkOps[checkOps.length - 1];
 	const payload = parseJson(completed.payload) as {
 		conclusion?: unknown;
@@ -3234,9 +3230,7 @@ test("three consecutive 502s on the review PUT exhaust the budget and fail close
 		3,
 		"the retry budget is exactly three attempts",
 	);
-	const checkOps = posts.filter((p) =>
-		p.args.some((a) => a.includes("check-runs")),
-	);
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	const completed = checkOps[checkOps.length - 1];
 	const payload = parseJson(completed.payload) as {
 		conclusion?: unknown;
@@ -3435,11 +3429,17 @@ function setEnvForTest(t: TestContext, name: string, value: string): void {
 	});
 }
 
+function isCheckLifecycleWrite(post: Post): boolean {
+  if (!post.args.some((arg) => arg.includes("check-runs"))) return false;
+  const payload = parseJson(post.payload);
+  return isRecordLike(payload) && (payload.status === "in_progress" || payload.status === "completed");
+}
+
 function lastCheckCompletion(posts: readonly Post[]): {
 	readonly conclusion?: unknown;
 	readonly output?: { readonly title?: unknown; readonly summary?: unknown };
 } {
-	const checkOps = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
+	const checkOps = posts.filter(isCheckLifecycleWrite);
 	const last = checkOps.at(-1);
 	assert.ok(last, "a check-run operation must be logged");
 	assert.equal(last.args[2], "PATCH", "the pending check must be completed by id");
@@ -3713,7 +3713,7 @@ test("runGithub shows the LFS coverage gap in the check summary and keeps it out
 	const notice = "**Not reviewed (non-blocking):**";
 	const checkSummaries = (posts: readonly Post[]): string[] =>
 		posts
-			.filter((p) => p.args.some((a) => a.includes("check-runs")))
+			.filter(isCheckLifecycleWrite)
 			.map((p) => JSON.parse(p.payload) as { output?: { summary?: string } })
 			.map((payload) => payload.output?.summary ?? "");
 
@@ -3833,7 +3833,7 @@ test("a check-completion failure after the review POST leaves no state marker, s
 		.filter(
 			(p) =>
 				p.args.includes("PATCH") &&
-				p.args.some((a) => a.startsWith("repos/frankekn/needlefish/check-runs/")),
+				p.args.some((a) => a.startsWith("repos/frankekn/needlefish/check-runs/")) && isCheckLifecycleWrite(p),
 		)
 		.at(-1);
 	assert.ok(completed, "the rerun must complete a check");
@@ -5163,6 +5163,103 @@ for (const necessary of [false, true]) {
 	});
 }
 
+function measurementWrites(posts: readonly Post[]): { readonly post: Post; readonly measurement: MeasurementV1; readonly title: unknown; readonly summary: unknown; readonly status: unknown; readonly keys: readonly string[] }[] {
+  return posts.flatMap((post) => {
+    if (!post.args.some((arg) => arg.includes("/check-runs"))) return [];
+    const payload = parseJson(post.payload);
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return [];
+    const output: unknown = Reflect.get(payload, "output");
+    if (typeof output !== "object" || output === null || Array.isArray(output)) return [];
+    const text: unknown = Reflect.get(output, "text");
+    if (typeof text !== "string") return [];
+    return [{ post, measurement: parseMeasurement(text), title: Reflect.get(output, "title"), summary: Reflect.get(output, "summary"), status: Reflect.get(payload, "status"), keys: Object.keys(payload) }];
+  });
+}
+
+function measurementActions(t: TestContext): void {
+  setEnvForTest(t, "GITHUB_RUN_ID", "10");
+  setEnvForTest(t, "GITHUB_RUN_ATTEMPT", "2");
+  setEnvForTest(t, "GITHUB_JOB", "review");
+}
+
+test("measurement initial delivery is output-only and preserves the terminal title and summary", (t) => {
+  const fixture = setupFixture(t, { prNumber: 301, rawReview: defaultRawReview() }); measurementActions(t);
+  setEnvForTest(t, "FAKE_API_KEY", "measurement-private-test-credential");
+  const run = spawnGithubCli(fixture, 301);
+  assert.equal(run.status, 1, run.stderr);
+  const posts = readPosts(fixture.postLog); const writes = measurementWrites(posts);
+  assert.deepEqual(writes.map((write) => write.measurement.delivery), ["verdict_check_published", "delivered"]);
+  const first = writes[0], final = writes[1];
+  assert.equal(first.status, "completed"); assert.equal(final.status, undefined); assert.deepEqual(final.keys, ["output"]);
+  assert.equal(final.title, first.title); assert.equal(final.summary, first.summary);
+  assert.equal(final.measurement.invocationId, first.measurement.invocationId);
+  assert.deepEqual(final.measurement.workflow, { status: "recorded", runId: "10", runAttempt: 2, jobKey: "review" });
+  assert.deepEqual(final.measurement.execution, { ordinal: 1, role: "unknown" });
+  assert.doesNotMatch(JSON.stringify(final.measurement), /credential|connection|endpoint|sourceSha|promptHash|launcher|argv|path/);
+  assert.doesNotMatch(JSON.stringify(posts), /measurement-private-test-credential/);
+  assert.equal(final.measurement.summaryReviewId, 1); assert.deepEqual(final.measurement.inlineReviewIds, [1]);
+  assert.equal(final.measurement.outcome, "verdict"); assert.equal(final.measurement.verdict, "changes_requested");
+  assert.equal(final.measurement.pipeline.status, "observed"); assert.equal(final.measurement.runtime.status, "recorded");
+  const pending = posts.find((post) => post.args.includes("repos/frankekn/needlefish/check-runs")); assert.ok(pending);
+  const round: unknown = JSON.parse(Reflect.get(JSON.parse(pending.payload), "external_id"));
+  assert.equal(Reflect.get(Object(round), "roundId"), final.measurement.invocationId);
+  for (const post of posts.filter((post) => !post.args.some((arg) => arg.includes("/check-runs")))) {
+    assert.doesNotMatch(post.payload, /invocationId|schemaVersion|producer_monotonic/);
+  }
+  assert.doesNotMatch(readFileSync(fixture.promptLog, "utf8"), /invocationId|producer_monotonic/);
+});
+
+test("measurement edited summary keeps new inline review origins separate and recheck is a new execution", (t) => {
+  const fixture = setupFixture(t, { prNumber: 302, rawReview: defaultRawReview() }); measurementActions(t);
+  assert.equal(spawnGithubCli(fixture, 302).status, 1);
+  const first = measurementWrites(readPosts(fixture.postLog)).at(-1); assert.ok(first);
+  const offset = readPosts(fixture.postLog).length;
+  writeFileSync(fixture.reviewOutput, JSON.stringify({ summary: "review", findings: [mkFinding({ title: "bug" }), mkFinding({ title: "new defect" })], checked: ["checked"], residual_risks: [] }));
+  const run = spawnGithubCli(fixture, 302, ["--recheck"]); assert.equal(run.status, 1, run.stderr);
+  const writes = measurementWrites(readPosts(fixture.postLog).slice(offset)); const final = writes.at(-1); assert.ok(final);
+  assert.equal(final.measurement.delivery, "delivered"); assert.equal(final.measurement.summaryReviewId, 1); assert.deepEqual(final.measurement.inlineReviewIds, [2]);
+  assert.notEqual(final.measurement.invocationId, first.measurement.invocationId);
+  assert.equal(final.measurement.targetHeadSha, first.measurement.targetHeadSha);
+});
+
+for (const failure of ["review404", "early", "stored5xx", "metadata", "marker", "round", "stale", "untrusted"] as const) {
+  test(`measurement preserves conservative delivery for ${failure}`, (t) => {
+    const fixture = setupFixture(t, { prNumber: 303, rawReview: defaultRawReview(),
+      reviewPost404: failure === "review404", collectionGitFailure: failure === "early" ? "diff" : undefined,
+      storedReviewPost5xx: failure === "stored5xx", storedCheckPost5xx: failure === "stored5xx",
+      failMeasurementPatch: failure === "metadata", flakyReviewPuts: failure === "marker" ? 3 : 0,
+      failIssueCommentPosts: failure === "round", staleHeadAfterReview: failure === "stale",
+      ...(failure === "untrusted" ? { authorAssociation: "NONE", authorType: "User" } : {}),
+    }); measurementActions(t);
+    if (failure === "round") {
+      assert.equal(spawnGithubCli(fixture, 303).status, 1);
+      const run = spawnGithubCli(fixture, 303, ["--recheck"]); assert.equal(run.status, 1, run.stderr);
+    } else {
+      const run = spawnGithubCli(fixture, 303);
+      assert.equal(run.status, failure === "stale" || failure === "untrusted" ? 0 : 1, run.stderr);
+      if (failure === "metadata") assert.match(run.stderr, /measurement metadata is partial; review verdict is unchanged/);
+    }
+    const writes = measurementWrites(readPosts(fixture.postLog)); const final = writes.at(-1); assert.ok(final);
+    if (failure === "early" || failure === "review404") {
+      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.verdict, null); assert.equal(final.measurement.delivery, "posting_failed");
+      if (failure === "early") { assert.equal(runnerInvocationCount(fixture), 0); assert.deepEqual(final.measurement.pipeline, { status: "unknown" }); }
+    } else if (failure === "stale" || failure === "untrusted") {
+      assert.equal(final.measurement.outcome, failure === "stale" ? "superseded" : "skipped"); assert.equal(final.measurement.delivery, "not_applicable");
+    } else if (failure === "marker" || failure === "round") {
+      assert.equal(final.measurement.outcome, "verdict"); assert.equal(final.measurement.delivery, "partial");
+    } else if (failure === "metadata") {
+      const stored: unknown = JSON.parse(readFileSync(fixture.checksState, "utf8")); assert.ok(Array.isArray(stored));
+      const output: unknown = Reflect.get(Object(stored[0]), "output"); const text: unknown = Reflect.get(Object(output), "text"); assert.equal(typeof text, "string");
+      assert.equal(parseMeasurement(String(text)).delivery, "verdict_check_published");
+      assert.equal(Reflect.get(Object(stored[0]), "conclusion"), "failure");
+    } else {
+      assert.equal(final.measurement.delivery, "delivered");
+      assert.equal(readPosts(fixture.postLog).filter((post) => post.args.includes("POST") && post.args.includes("repos/frankekn/needlefish/pulls/303/reviews")).length, 1);
+    }
+    assert.equal(new Set(writes.slice(failure === "round" ? 2 : 0).map((write) => write.measurement.invocationId)).size, 1);
+  });
+}
+
 for (const stale of [false, true]) {
   test(`ordered routes claim once and ${stale ? "skip stale delivery" : "post only the complete final route"}`, async (t) => {
     const prNumber = stale ? 151 : 150;
@@ -5181,15 +5278,65 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],J
     assert.equal(run.status,0,run.stderr);
     assert.deepEqual(readFileSync(fixture.runnerLog,"utf8").trim().split("\n"),["first","second","second"]);
     const posts=readPosts(fixture.postLog);
-    const checks=posts.filter(post=>post.args.some(arg=>arg.includes("check-runs")));
+    const checks=posts.filter(isCheckLifecycleWrite);
     assert.equal(checks.length,2);
     const reviews=posts.filter(post=>post.args.includes("POST")&&post.args.some(arg=>arg.endsWith(`/pulls/${prNumber}/reviews`)));
     assert.equal(reviews.length,stale?0:1);
     if(stale) assert.match(run.stdout,/stale_head/);
     else {
+      const writes = measurementWrites(posts);
+      const final = writes.at(-1); assert.ok(final);
+      assert.equal(final.measurement.delivery, "delivered");
+      assert.deepEqual(final.measurement.execution, { ordinal: 1, role: "unknown" });
+      assert.equal(final.measurement.runtime.status, "recorded");
+      if (final.measurement.runtime.status === "recorded") assert.deepEqual(final.measurement.runtime.model, { status: "known", value: "second" });
       assert.match(parseReviewPayload(reviews[0].payload).body,/second complete/);
       assert.doesNotMatch(parseReviewPayload(reviews[0].payload).body,/insufficient credits/);
       assert.equal(run.stdout.split("\n").filter(line=>line.startsWith("needlefish-outcome ")).length,1);
+    }
+  });
+}
+
+
+for (const leak of [false, true]) {
+  test(`measurement ordered session retains selected auth and final public runtime with cross-key leak ${leak}`, (t) => {
+    const fixture = setupFixture(t, { prNumber: 304, rawReview: defaultRawReview() }); measurementActions(t);
+    const root = path.dirname(fixture.repo), config = path.join(root, "measurement-connections.json"), binary = path.join(root, "measurement-codex.cjs");
+    const firstKey = "measurement-first-private-fixture", secondKey = "measurement-second-private-fixture";
+    writeFileSync(config, JSON.stringify({ version: 1, connections: [
+      { id: "first-account", adapter: "codex", model: "first", auth: { env: { CODEX_API_KEY: "MEASUREMENT_FIRST_KEY" }, route: { kind: "openai" } } },
+      { id: "second-account", adapter: "codex", model: "second", auth: { env: { CODEX_API_KEY: "MEASUREMENT_SECOND_KEY" }, route: { kind: "openai" } } },
+    ] }));
+    writeFileSync(binary, `#!/usr/bin/env node
+const fs = require('node:fs'); const model = process.argv[process.argv.indexOf('-m') + 1];
+fs.readFileSync(0, 'utf8');
+const expected = model === 'first' ? ${JSON.stringify(firstKey)} : ${JSON.stringify(secondKey)};
+if (process.env.CODEX_API_KEY !== expected) process.exit(8);
+fs.appendFileSync(${JSON.stringify(fixture.runnerLog)}, model + '\\n');
+if (model === 'first') { fs.writeFileSync(${JSON.stringify(config)}, 'changed after capture'); console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})); process.exit(1); }
+fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary:${JSON.stringify(leak ? firstKey : "selected final review")}, findings:[], checked:['checked'], residual_risks:[]}));
+`);
+    chmodSync(binary, 0o755);
+    setEnvForTest(t, "MEASUREMENT_FIRST_KEY", firstKey); setEnvForTest(t, "MEASUREMENT_SECOND_KEY", secondKey);
+    setEnvForTest(t, "CODEX_BIN", binary); setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", config); setEnvForTest(t, "NEEDLEFISH_REVIEW_TIMEOUT_MS", "15000");
+    const run = spawnGithubCli(fixture, 304, ["--connection", "first-account", "--connection", "second-account"]);
+    assert.equal(run.status, leak ? 1 : 0, run.stderr);
+    const posts = readPosts(fixture.postLog); const writes = measurementWrites(posts); const final = writes.at(-1); assert.ok(final);
+    assert.equal(new Set(writes.map((write) => write.measurement.invocationId)).size, 1);
+    assert.deepEqual(final.measurement.execution, { ordinal: 1, role: "unknown" });
+    assert.equal(final.measurement.pipeline.status, "observed");
+    assert.equal(JSON.stringify(posts).includes(firstKey), false); assert.equal(JSON.stringify(posts).includes(secondKey), false);
+    assert.equal((run.stdout + run.stderr).includes(firstKey), false); assert.equal((run.stdout + run.stderr).includes(secondKey), false);
+    if (leak) {
+      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.delivery, "posting_failed");
+      assert.deepEqual(final.measurement.runtime, { status: "unknown" });
+      assert.equal(posts.filter((post) => post.args.includes("POST") && post.args.includes("repos/frankekn/needlefish/pulls/304/reviews")).length, 0);
+    } else {
+      assert.equal(final.measurement.delivery, "delivered"); assert.equal(final.measurement.outcome, "verdict"); assert.equal(final.measurement.verdict, "pass");
+      assert.equal(final.measurement.runtime.status, "recorded");
+      if (final.measurement.runtime.status === "recorded") assert.deepEqual(final.measurement.runtime.model, { status: "known", value: "second" });
+      assert.equal(posts.filter((post) => post.args.includes("POST") && post.args.includes("repos/frankekn/needlefish/pulls/304/reviews")).length, 1);
+      assert.deepEqual(readFileSync(fixture.runnerLog, "utf8").trim().split("\n"), ["first", "second", "second"]);
     }
   });
 }

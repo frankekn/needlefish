@@ -1,5 +1,5 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 import { setTimeout as sleep } from "node:timers/promises";
 import { reviewWithConnections, reviewPlan, isDocsOnlyFastPath } from "../core/review.js";
 import { reviewExitCode } from "../core/verdict.js";
@@ -32,6 +32,11 @@ import {
 } from "./github-suggestions.js";
 import type { Finding, ReviewResult, Verdict } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
+
+import {
+  measurementPipeline, measurementRuntime, measurementText, measurementWorkflow, newMeasurement,
+  type MeasurementV1,
+} from "./github-measurement.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -872,20 +877,22 @@ function persistStateMarker(
 	prNumber: number,
 	reviewId: number | null,
 	body: string,
-): void {
+): boolean {
 	if (reviewId === null) {
 		process.stderr.write(
 			"needlefish: review posted without a state marker (GitHub returned no review id); the next run will re-review this head.\n",
 		);
-		return;
+		return false;
 	}
 	try {
 		updateReviewBody(repo, prNumber, reviewId, body);
+		return true;
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		process.stderr.write(
 			`needlefish: could not persist the review state marker: ${msg}; the next run will re-review this head.\n`,
 		);
+		return false;
 	}
 }
 
@@ -995,7 +1002,8 @@ function createPendingCheck(repo: string, headSha: string, round: CheckRound, ex
 	}
 }
 
-type GhWrite = { readonly args: readonly string[]; readonly input: string };
+type CheckOutput = { readonly title: string; readonly summary: string; readonly text?: string };
+type GhWrite = { readonly args: readonly string[]; readonly input: string; readonly output: CheckOutput };
 
 function postCheck(
 	repo: string,
@@ -1005,9 +1013,23 @@ function postCheck(
 	title: string,
 	summary: string,
 	checkId?: number | null,
-): void {
-	const write = checkCompletion(repo, headSha, result, conclusion, title, summary, checkId);
+	measurement?: MeasurementV1,
+	round?: CheckRound,
+): CheckOutput {
+	const write = checkCompletion(repo, headSha, result, conclusion, title, summary, checkId, measurement, round);
 	ghPost(write.args, write.input);
+	return write.output;
+}
+
+function publishMeasurement(repo: string, checkId: number, output: CheckOutput, measurement: MeasurementV1): void {
+	try {
+		const text = measurementText(measurement);
+		if (text === undefined) throw new Error("measurement exceeds byte limit");
+		if (text === output.text) return;
+		ghPost(["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"], JSON.stringify({ output: { ...output, text } }));
+	} catch {
+		process.stderr.write("needlefish: measurement metadata is partial; review verdict is unchanged.\n");
+	}
 }
 
 function checkCompletion(
@@ -1018,6 +1040,8 @@ function checkCompletion(
 	title: string,
 	summary: string,
 	checkId?: number | null,
+	measurement?: MeasurementV1,
+	round?: CheckRound,
 ): GhWrite {
 	// Checks cap Markdown by UTF-8 bytes, unlike review bodies. The full
 	// review has already been posted; keep its verdict and evidence there.
@@ -1036,24 +1060,30 @@ function checkCompletion(
 		}
 		summary = notice + prefix;
 	}
+	const text = measurement === undefined ? undefined : measurementText(measurement);
+	if (measurement !== undefined && text === undefined) process.stderr.write("needlefish: measurement exceeds byte limit; metadata is partial.\n");
+	const output: CheckOutput = { title, summary, ...(text === undefined ? {} : { text }) };
 	if (typeof checkId === "number") {
 		return {
+			output,
 			args: ["api", "-X", "PATCH", `repos/${repo}/check-runs/${checkId}`, "--input", "-"],
 			input: JSON.stringify({
 				status: "completed",
 				conclusion,
-				output: { title, summary },
+				output,
 			}),
 		};
 	}
 	return {
+		output,
 		args: ["api", "-X", "POST", `repos/${repo}/check-runs`, "--input", "-"],
 		input: JSON.stringify({
 			name: "Needlefish",
 			head_sha: headSha,
+			external_id: round === undefined ? undefined : JSON.stringify(round),
 			status: "completed",
 			conclusion,
-			output: { title, summary },
+			output,
 		}),
 	};
 }
@@ -1564,6 +1594,7 @@ async function completeTerminatedCheck(
 	checkId: number,
 	termination: Termination,
 	claimCheck: () => boolean,
+	measurement: () => MeasurementV1,
 ): Promise<void> {
 	let skipReason: SkipReason | null = null;
 	try {
@@ -1575,6 +1606,7 @@ async function completeTerminatedCheck(
 			`needlefish: could not re-read PR state during termination; completing the check anyway: ${pm}\n`,
 		);
 	}
+	const record: MeasurementV1 = { ...measurement(), outcome: skipReason === null ? "cancelled" : "superseded", verdict: null, delivery: skipReason === null ? "partial" : "not_applicable" };
 	const write =
 		skipReason !== null
 			? checkCompletion(
@@ -1585,6 +1617,7 @@ async function completeTerminatedCheck(
 					"Needlefish: superseded",
 					`The review was terminated and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
 					checkId,
+					record,
 				)
 			: checkCompletion(
 					repo,
@@ -1594,6 +1627,7 @@ async function completeTerminatedCheck(
 					"Needlefish: review terminated",
 					`Needlefish received ${termination.signal} before the review completed (job timeout, cancellation, or watchdog) and did NOT pass this PR. This is not a code verdict.\n\nRe-trigger: push a new commit or re-run with --recheck.`,
 					checkId,
+					record,
 				);
 	// Claimed only now: a verdict that became ready during the re-read above
 	// has already claimed and posted itself, and this PATCH must not overwrite it.
@@ -1638,6 +1672,9 @@ export async function runGithub(
 	const repo = process.env.GITHUB_REPOSITORY;
 	if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
 
+	const capturedRunId = process.env.GITHUB_RUN_ID || "";
+	const workflow = measurementWorkflow({ runId: capturedRunId, runAttempt: process.env.GITHUB_RUN_ATTEMPT, jobKey: process.env.GITHUB_JOB });
+
 	const pr = ghJson(["api", `repos/${repo}/pulls/${prNumber}`]);
 	if (!isRecord(pr)) throw new Error("GitHub PR response was not an object");
 	const state = stringField(pr, "state");
@@ -1661,6 +1698,8 @@ export async function runGithub(
 	) {
 		const prHead = process.env.PR_HEAD_SHA || nestedString(pr, "head", "sha");
 		if (!prHead) throw new Error("Could not resolve PR head SHA");
+		const measurement = { ...newMeasurement({ repository: repo, prNumber, targetHeadSha: prHead, workflow }), outcome: "skipped", delivery: "not_applicable" } satisfies MeasurementV1;
+
 		const reason = `PR author (association ${author.association}, type ${author.type}) is not trusted`;
 		process.stdout.write(`Needlefish skipped PR #${prNumber}: ${reason}.\n`);
 		postCheck(
@@ -1670,6 +1709,9 @@ export async function runGithub(
 			"neutral",
 			"Needlefish: skipped (author not trusted)",
 			`Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. ${reason}. A maintainer who has read this PR can review it by re-running with NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR=1 (the review workflow's allow_untrusted_author: true input sets it).`,
+			undefined,
+			measurement,
+			{ v: 2, prNumber, roundId: measurement.invocationId, runId: capturedRunId, recheck },
 		);
 		emitSkip("untrusted_author", prNumber, prHead);
 		return;
@@ -1711,7 +1753,9 @@ export async function runGithub(
 		return;
 	}
 
-	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
+	let measurement = newMeasurement({ repository: repo, prNumber, targetHeadSha: headSha, workflow });
+	let pipelineStart: number | null = null;
+	const round: CheckRound = { v: 2, prNumber, roundId: measurement.invocationId, runId: capturedRunId, recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
 	// The owned check reaches a terminal state exactly once, and whoever holds
@@ -1733,6 +1777,7 @@ export async function runGithub(
 			: registerTerminationFinalizer((termination) =>
 					completeTerminatedCheck(repo, prNumber, headSha, pendingCheckId, termination, () =>
 						claimCheck("finalizer"),
+						() => ({ ...measurement, pipeline: measurement.pipeline.status === "observed" ? measurement.pipeline : measurementPipeline(pipelineStart, performance.now()) }),
 					),
 				);
 
@@ -1794,16 +1839,22 @@ export async function runGithub(
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface
 		// data lives only on the result and the prompt stays byte-identical.
+		pipelineStart = performance.now();
+		let reviewed: ReviewResult;
+		try { reviewed = await reviewWithConnections(bundle, resolvedOpts); }
+		finally { measurement = { ...measurement, pipeline: measurementPipeline(pipelineStart, performance.now()) }; }
 		const result: ReviewResult = {
-			...(await reviewWithConnections(bundle, resolvedOpts)),
+			...reviewed,
 			reviewTarget: `Review target: PR #${prNumber} ${mergeBase}..${headSha}`,
 			prNumber,
 			prBaseSha: baseSha,
 		};
+		measurement = { ...measurement, runtime: measurementRuntime(result.runtime), outcome: "verdict", verdict: result.verdict, delivery: "verdict_check_published" };
 		if (!claimCheck("result")) return;
 		const conclusion = VERDICT_CONCLUSION[result.verdict];
 		const skipReason = postReviewSkipReason(repo, prNumber, headSha);
 		if (skipReason) {
+			measurement = { ...measurement, outcome: "superseded", verdict: null, delivery: "not_applicable" };
 			// Head moved or PR closed while reviewing: close our own check so it
 			// cannot hang as in_progress forever. Timeline comments stay
 			// suppressed for the stale head exactly as before.
@@ -1816,6 +1867,7 @@ export async function runGithub(
 				"Needlefish: superseded",
 				`A newer head was pushed while this review ran; its result is not posted. reason=${skipReason}`,
 				pendingCheckId,
+				measurement,
 			);
 			return;
 		}
@@ -1833,6 +1885,7 @@ export async function runGithub(
 		}
 
 		if (prev) {
+			measurement = { ...measurement, summaryReviewId: prev.id };
 			const { fresh, open, unmatched } = matchFindings(
 				prev.state.findings,
 				result.findings,
@@ -1885,17 +1938,19 @@ export async function runGithub(
 					pending.botLogin,
 				);
 			} catch (roundErr) {
+				measurement = { ...measurement, delivery: "partial" };
 				const rm = roundErr instanceof Error ? roundErr.message : String(roundErr);
 				process.stderr.write(
 					`needlefish: could not post round comment: ${rm}\n`,
 				);
 			}
 			if (freshComments.length > 0) {
-				postReview(repo, prNumber, headSha, "", freshComments, pending.botLogin);
+				const inlineReviewId = postReview(repo, prNumber, headSha, "", freshComments, pending.botLogin);
+				measurement = inlineReviewId === null ? { ...measurement, delivery: "partial" } : { ...measurement, inlineReviewIds: [inlineReviewId] };
 			}
 			await applyVerdictLabel(repo, prNumber, result.verdict);
 			const summary = renderMarkdown(freshResult, renderOpts);
-			postCheck(
+			const checkOutput = postCheck(
 				repo,
 				headSha,
 				result,
@@ -1903,8 +1958,9 @@ export async function runGithub(
 				checkRunTitle(result),
 				summary,
 				pendingCheckId,
+				measurement,
 			);
-			persistStateMarker(
+			const markerPersisted = persistStateMarker(
 				repo,
 				prNumber,
 				prev.id,
@@ -1915,6 +1971,8 @@ export async function runGithub(
 					omitRuntime: true,
 				}),
 			);
+			measurement = { ...measurement, delivery: markerPersisted && measurement.delivery === "verdict_check_published" ? "delivered" : "partial" };
+			publishMeasurement(repo, pending.id, checkOutput, measurement);
 			process.stdout.write(stdoutSummary(summary));
 			emitOutcome({
 				outcome: "verdict",
@@ -1937,9 +1995,10 @@ export async function runGithub(
 				omitRuntime: true,
 			});
 			const reviewId = postReview(repo, prNumber, headSha, body, comments, pending.botLogin);
+			measurement = { ...measurement, summaryReviewId: reviewId, inlineReviewIds: reviewId !== null && comments.length > 0 ? [reviewId] : [], ...(reviewId === null ? { delivery: "partial" } : {}) };
 			await applyVerdictLabel(repo, prNumber, result.verdict);
 			const summary = renderMarkdown(result, renderOpts);
-			postCheck(
+			const checkOutput = postCheck(
 				repo,
 				headSha,
 				result,
@@ -1947,8 +2006,9 @@ export async function runGithub(
 				checkRunTitle(result),
 				summary,
 				pendingCheckId,
+				measurement,
 			);
-			persistStateMarker(
+			const markerPersisted = persistStateMarker(
 				repo,
 				prNumber,
 				reviewId,
@@ -1959,6 +2019,8 @@ export async function runGithub(
 					omitRuntime: true,
 				}),
 			);
+			measurement = { ...measurement, delivery: markerPersisted && measurement.delivery === "verdict_check_published" ? "delivered" : "partial" };
+			publishMeasurement(repo, pending.id, checkOutput, measurement);
 			process.stdout.write(stdoutSummary(summary));
 			emitOutcome({
 				outcome: "verdict",
@@ -1974,6 +2036,7 @@ export async function runGithub(
 		// will not complete a claimed check, so this path must.
 		if (checkOwner !== "result" && !detachFinalizer()) return;
 		claimCheck("result");
+		measurement = { ...measurement, outcome: "operational_failure", verdict: null, delivery: "posting_failed" };
 		const rawMsg = err instanceof Error ? err.message : String(err);
 		// A thrown message can carry runner or model text. Replacing a withheld
 		// one keeps the failure check below from being withheld too, which
@@ -1997,6 +2060,7 @@ export async function runGithub(
 			process.stderr.write(`needlefish: could not re-read PR state: ${pm}\n`);
 		}
 		if (skipReason !== null) {
+			measurement = { ...measurement, outcome: "superseded", delivery: "not_applicable" };
 			// The review errored AND the head moved or the PR closed: close our
 			// own check as superseded so it cannot hang, but post nothing to
 			// the timeline — no verdict, no error comment — for a stale head.
@@ -2010,6 +2074,7 @@ export async function runGithub(
 					"Needlefish: superseded",
 					`The review errored and the head is stale or the PR closed; nothing is posted for this head. reason=${skipReason}`,
 					pendingCheckId,
+					measurement,
 				);
 			} catch (checkErr) {
 				const cm =
@@ -2031,6 +2096,7 @@ export async function runGithub(
 					"Needlefish: review failed",
 					`Review errored and did NOT pass this PR.\n\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\``,
 					pendingCheckId,
+					measurement,
 				);
 			} catch (checkErr) {
 				const cm =

@@ -20,6 +20,8 @@ import { commitAll, headSha, initRepo } from "../shared/codex-runner-test-fixtur
 // workflows, so nothing else completes that check: the binary must, within
 // the termination grace, and must exit even when gh itself hangs.
 
+import { parseMeasurement } from "./github-measurement.js";
+
 const PR = 7;
 const REPO = "acme/widgets";
 const CHECK_ID = 7;
@@ -86,7 +88,7 @@ function checkPatches(calls: readonly GhCall[]): readonly GhCall[] {
 type CheckCompletion = {
 	readonly status: string;
 	readonly conclusion: string;
-	readonly output: { readonly title: string; readonly summary: string };
+	readonly output: { readonly title: string; readonly summary: string; readonly text: string };
 };
 
 function completion(patch: GhCall): CheckCompletion {
@@ -398,6 +400,20 @@ test("a runner that exits on SIGTERM still yields exactly one terminated complet
 	const patches = checkPatches(calls);
 	assert.equal(patches.length, 1, JSON.stringify(calls.map((c) => c.args)));
 	assert.equal(completion(patches[0]).output.title, "Needlefish: review terminated");
+	const measurement = parseMeasurement(completion(patches[0]).output.text);
+	assert.equal(measurement.outcome, "cancelled");
+	assert.equal(measurement.delivery, "partial");
+	assert.equal(measurement.verdict, null);
+	assert.equal(measurement.pipeline.status, "observed");
+	const pending = calls.find((call) => call.args.includes("POST") && call.args.includes(`repos/${REPO}/check-runs`));
+	assert.ok(pending);
+	const payload: unknown = JSON.parse(pending.payload);
+	assert.ok(typeof payload === "object" && payload !== null);
+	const external: unknown = Reflect.get(payload, "external_id");
+	assert.equal(typeof external, "string");
+	const round: unknown = JSON.parse(String(external));
+	assert.ok(typeof round === "object" && round !== null);
+	assert.equal(measurement.invocationId, Reflect.get(round, "roundId"));
 	assert.equal(postsToTimeline(calls), false, "the review-failed error comment must not be posted for a termination");
 });
 
@@ -423,6 +439,10 @@ test("termination on a stale head completes the check as superseded", { timeout:
 	const body = completion(patches[0]);
 	assert.equal(body.conclusion, "neutral");
 	assert.equal(body.output.title, "Needlefish: superseded");
+	const measurement = parseMeasurement(body.output.text);
+	assert.equal(measurement.outcome, "superseded");
+	assert.equal(measurement.delivery, "not_applicable");
+	assert.equal(measurement.verdict, null);
 	assert.equal(postsToTimeline(calls), false);
 });
 
