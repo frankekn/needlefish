@@ -7,6 +7,7 @@ import { initRepo, headSha } from "../shared/codex-runner-test-fixtures.js";
 import type { Bundle } from "../shared/schema.js";
 import { explainFinding } from "./explain.js";
 import { loadPrompt } from "./prompts.js";
+import { LITERAL_CONTEXT_CAPS } from "./literal-context.js";
 import { review } from "./review.js";
 
 const hostile = "literal {{PATCH}} {{BASE}} {{HEAD}} {{FINDINGS}} {{BUNDLE}} {{AGENTS}} {{PR_META}} {{HOTSPOT}} {{FOCUS}} $& $` $' 雪🐟";
@@ -35,6 +36,10 @@ for (const mode of ["small", "large", "explain"] as const) {
         residual_risks: [{ text: candidateText, blocks: false }],
       };
       const hotspot = { name: "one surface", files: ["README.md"], why: text, risk: "high", edges: [] };
+      const deepHotspot = { ...hotspot, literalContext: {
+        status: "unknown", semanticStatus: "unknown", caps: LITERAL_CONTEXT_CAPS,
+        scannedBytes: 0, scannedFiles: 0, gaps: ["unsupported_snapshot", "no_changed_anchor_seed"], candidates: [],
+      } };
       const map = { summary: text, hotspots: [hotspot] };
       const previous = { ...process.env };
       t.after(() => {
@@ -104,11 +109,11 @@ process.stdin.on('end', () => {
         const prompt = captured("deep");
         assert.deepEqual(JSON.parse(between(prompt, "# PR metadata\n", "\n# AGENTS.md")), bundle.prMeta);
         assert.equal(between(prompt, "# AGENTS.md\n", "\n# Hotspot"), `${text}\n`);
-        assert.deepEqual(JSON.parse(between(prompt, "# Hotspot (this surface)\n", "\n# Refs")), hotspot);
+        assert.deepEqual(JSON.parse(between(prompt, "# Hotspot (this surface)\n", "\n# Refs")), deepHotspot);
         assert.equal(prompt.slice(prompt.indexOf("# Refs\n")), `# Refs\nBASE: ${bundle.baseSha}\nHEAD: ${bundle.headSha}\nFocus: ${text} (if not "(none)", prioritize findings in that area)\n`);
         if (attack === "ordinary") {
           assert.equal(mapPrompt, loadPrompt("map.md").replace("{{BUNDLE}}", () => JSON.stringify(mapBundle, null, 2)));
-          assert.equal(prompt, loadPrompt("deep.md").replace("{{AGENTS}}", () => text).replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2)).replace("{{HOTSPOT}}", () => JSON.stringify(hotspot, null, 2)).replace("{{FOCUS}}", text).replace("{{BASE}}", bundle.baseSha).replace("{{HEAD}}", bundle.headSha));
+          assert.equal(prompt, loadPrompt("deep.md").replace("{{AGENTS}}", () => text).replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2)).replace("{{HOTSPOT}}", () => JSON.stringify(deepHotspot, null, 2)).replace("{{FOCUS}}", text).replace("{{BASE}}", bundle.baseSha).replace("{{HEAD}}", bundle.headSha));
         }
       }
       const criticCandidate = mode === "large"
