@@ -1697,6 +1697,8 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
                 XCTAssertEqual(owner.connections.draftState, .unloaded)
                 XCTAssertFalse(owner.trusted)
             } else {
+                XCTAssertFalse(owner.canDiagnose, scenario)
+                owner.selectFolder()
                 XCTAssertFalse(FileManager.default.fileExists(atPath: trace.path), scenario)
                 XCTAssertEqual(owner.repo?.path, "/project", scenario)
                 XCTAssertEqual(owner.connections.document, document, scenario)

@@ -19,9 +19,8 @@ final class Onboarding: ObservableObject {
     var knownMissingAmbientCodexAuth: Bool {
         guard consentUsesConnections, connections.credentialMode == "existing",
               diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
-        return connections.selection.contains { id in
-            connections.document.connections.contains { $0.id == id && $0.adapter == "codex" && $0.auth == nil }
-        }
+        guard let first = connections.selection.first else { return false }
+        return connections.document.connections.contains { $0.id == first && $0.adapter == "codex" && $0.auth == nil }
     }
     lazy var githubSetup = GithubSetup(runtime: runtime)
     private var operation: Command?
@@ -107,7 +106,10 @@ final class Onboarding: ObservableObject {
         } catch { state = .message("無法移除安裝資料。未修改 Git 或登入設定。 / Could not remove installation data.") }
     }
 
+    var canDiagnose: Bool { !busy && !connections.hasUnsavedDraft }
+
     func selectFolder() {
+        guard canDiagnose else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -143,7 +145,7 @@ final class Onboarding: ObservableObject {
     }
 
     func diagnose() {
-        guard let repo else { return }
+        guard canDiagnose, let repo else { return }
         connections.reset()
         consentUsesConnections = false
         trusted = false
@@ -315,7 +317,7 @@ struct ContentView: View {
                 }.disabled(model.busy)
             }
             HStack {
-                Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(model.busy)
+                Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(!model.canDiagnose)
                 Button("離線範例 / Offline example", action: model.demo).disabled(model.localBusy)
                 Spacer()
                 Button("預覽診斷 / Preview diagnostics", action: model.exportDiagnostics).disabled(model.localBusy)
@@ -351,7 +353,7 @@ struct ContentView: View {
             Text("診斷不確認帳戶額度、網路模型可達性或 runner 能力資格。 / Diagnostics do not verify quota, model connectivity or runner qualification.")
                 .font(.caption)
             HStack {
-                Button("重新診斷 / Check again", action: model.diagnose)
+                Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose)
                 Button("登入 OpenAI / Sign in", action: model.login)
                 Button("查看檢查範圍 / Review scope", action: model.prepare).disabled(!report.scopeReady)
             }
@@ -404,10 +406,10 @@ struct ContentView: View {
             }
             if let coverage = result.coverage { Text(coverage).font(.caption) }
             Text(result.verdict == .pass ? "下一步：人工確認後再提交變更。 / Next: inspect the change before committing." : "下一步：依建議確認或修改，再重新檢查。 / Next: inspect or fix the issues, then review again.")
-            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose) }
+            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose) }
         case .message(let text):
             Text(text).font(.title3)
-            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose) }
+            if model.repo != nil { Button("重新診斷 / Check again", action: model.diagnose).disabled(!model.canDiagnose) }
         }
     }
 }

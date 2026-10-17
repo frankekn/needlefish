@@ -95,9 +95,9 @@ struct ConnectionsFailure: Error, LocalizedError {
     var errorDescription: String? {
         switch code {
         case "revision_conflict": "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration."
-        case "configuration_unavailable": "無法開啟設定。請先由安裝管理者建立由你擁有的安全設定目錄，再重新載入。 / Configuration unavailable. Ask the installer to prepare a safe user-owned configuration directory, then reload."
+        case "configuration_unavailable": "無法開啟設定。請先由安裝管理者建立由你擁有的安全設定目錄，再重試。 / Configuration unavailable. Ask the installer to prepare a safe user-owned configuration directory, then retry."
         case "save_state_unknown": "保存狀態未知。請重新載入確認，不能直接重試保存。 / Save state unknown. Reload to inspect before retrying."
-        case "config_busy": "另一個操作正在保存設定。請稍後重新載入。 / Configuration busy. Reload shortly."
+        case "config_busy": "另一個操作正在保存設定。請稍後重試。 / Configuration busy. Try again shortly."
         case "invalid_configuration":
             if issues.contains(where: { $0.field == "id" && $0.code == "duplicate_id" }) {
                 "連線名稱重複。請為每條連線使用不同名稱。草稿未保存。 / Duplicate profile ID. Use distinct names. Draft not saved."
@@ -215,6 +215,7 @@ final class AdvancedConnections: ObservableObject {
     @Published var message: String?
     private var retainedDraft: ConnectionsDocument?
     var dirty: Bool { document != savedDocument }
+    var hasUnsavedDraft: Bool { dirty || retainedDraft != nil }
     var canLoad: Bool { draftState != .editing || !dirty }
     private var savedDocument = ConnectionsDocument()
     var budgetMs: Int? { guard let value = Int(budget), (1...2147483647).contains(value) else { return nil }; return value }
