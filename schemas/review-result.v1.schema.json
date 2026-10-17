@@ -40,6 +40,10 @@
     },
     "headSha": { "type": "string" },
     "reviewTarget": { "type": "string" },
+    "docsOnlyFastPath": {
+      "description": "Set by the review pipeline when docs-only policy skips all model calls. Never supplied by a model.",
+      "type": "boolean"
+    },
     "prNumber": {
       "description": "Present for `needlefish pr <number>`.",
       "type": "integer",
@@ -58,6 +62,12 @@
       "description": "Changed files whose contents the review could not read. lfs_pointer_only names a file the sandbox could only check out as a Git LFS pointer stub; at most one lfs_scan_incomplete entry means the sandbox could not establish the full pointer list. Reported by the sandbox, never by the model; does not affect the verdict.",
       "type": "array",
       "items": { "$ref": "#/$defs/coverageGap" }
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "unreviewedBinaryFiles": {
+      "description": "Repo-relative paths Git classified as binary whose contents were not reviewed. Paths also listed as LFS pointer gaps are omitted. Output-only and non-blocking.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
     },
     "stats": {
       "description": "Per-runner-call timing and attempt stats.",
@@ -90,6 +100,148 @@
     }
   },
   "$defs": {
+    "runtimeValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "status",
+            "value"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "known",
+                "operator_attested"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "coreVersion",
+        "sourceSha",
+        "runnerVersion",
+        "launcherDigest",
+        "model",
+        "effort",
+        "promptHash",
+        "runner",
+        "callTimeoutMs",
+        "reviewBudgetMs",
+        "qualification"
+      ],
+      "properties": {
+        "coreVersion": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "sourceSha": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "runnerVersion": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "launcherDigest": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "model": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "effort": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "promptHash": {
+          "$ref": "#/$defs/runtimeValue"
+        },
+        "runner": {
+          "enum": [
+            "codex",
+            "claude",
+            "opencode",
+            "grok",
+            "pi",
+            "acp",
+            "openai"
+          ]
+        },
+        "callTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "reviewBudgetMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "qualification": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "matchStatus"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "matchStatus": {
+                  "const": "unqualified"
+                },
+                "reason": {
+                  "enum": [
+                    "missing_report",
+                    "report_not_admitted",
+                    "quality_gate_failed",
+                    "different_configuration",
+                    "unknown_identity"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "matchStatus",
+                "policyVersion",
+                "reportId"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "matchStatus": {
+                  "const": "tested"
+                },
+                "policyVersion": {
+                  "const": "public-leaderboard-interim-v1"
+                },
+                "reportId": {
+                  "type": "string",
+                  "pattern": "^results/[A-Za-z0-9._-]+\\.json$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
     "finding": {
       "type": "object",
       "required": [
@@ -143,6 +295,52 @@
               "type": "array",
               "minItems": 1,
               "items": { "type": "string", "pattern": "^[^\\r\\n]*$" }
+            }
+          }
+        },
+        "quote": {
+          "description": "One source line the finding describes, copied by the reviewer, with leading and trailing whitespace trimmed.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "pattern": "^[^\\r\\n]*$"
+        },
+        "quoteCheck": {
+          "description": "Needlefish's check of quote against the reviewed tree. Never affects the verdict.",
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["matched", "moved", "not_found", "unchecked"] },
+            "from": {
+              "description": "Original file:line when status is moved.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
+          "then": { "required": ["from"], "properties": { "from": {} } }
+        },
+        "externalClaims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/externalClaim"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "toolRead",
+            "sources"
+          ],
+          "properties": {
+            "toolRead": {
+              "const": "unknown"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sourceEvidence"
+              }
             }
           }
         }
@@ -224,6 +422,142 @@
         "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
+    },
+    "externalClaim": {
+      "type": "object",
+      "required": [
+        "claim",
+        "necessary",
+        "source"
+      ],
+      "properties": {
+        "claim": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "necessary": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "type",
+            "url"
+          ],
+          "properties": {
+            "type": {
+              "const": "external"
+            },
+            "url": {
+              "type": "string",
+              "description": "Structural HTTP(S) URL contract for normalized output: nonempty host, bracketed IP literal, no userinfo, and an optional decimal port from 0 through 65535 without leading zeros. This does not validate full IP or IDNA semantics; the persisted parser must also validate with WHATWG URL and reject credentials. Schema validation alone is not full admission.",
+              "pattern": "^https?://(?:[^\\s:/?#@\\[\\]\\\\]+|\\[[0-9A-Fa-f:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#].*)?$"
+            }
+          }
+        }
+      }
+    },
+    "sourceEvidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "sourceType",
+            "revision",
+            "file",
+            "lineStart",
+            "lineEnd",
+            "status"
+          ],
+          "properties": {
+            "sourceType": {
+              "const": "git_blob"
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lineStart": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "lineEnd": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "status": {
+              "enum": [
+                "source_present",
+                "source_unverified"
+              ]
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "source_present"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "contentDigest"
+            ],
+            "properties": {
+              "contentDigest": {},
+              "revision": {
+                "type": "string"
+              },
+              "lineStart": {
+                "type": "integer"
+              },
+              "lineEnd": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/externalClaim"
+            },
+            {
+              "type": "object",
+              "required": [
+                "sourceType",
+                "status"
+              ],
+              "properties": {
+                "sourceType": {
+                  "const": "external"
+                },
+                "status": {
+                  "const": "unverified_external_claim"
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   }
 }

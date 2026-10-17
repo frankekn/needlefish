@@ -164,8 +164,8 @@ esac
 	}
 });
 
-test("review forwards the optional opencode idle timeout without exporting an empty value", () => {
-	assert.match(workflow, /idle_timeout_ms:\n\s+description: Optional opencode inactivity timeout/);
+test("review retains the reserved opencode timeout input without exporting an empty value", () => {
+	assert.match(workflow, /idle_timeout_ms:\n\s+description: Reserved while OpenCode reviews are disabled/);
 	assert.match(
 		reviewScript,
 		/if \[ -n "\$OPENCODE_IDLE_TIMEOUT_MS_INPUT" \]; then export OPENCODE_IDLE_TIMEOUT_MS="\$OPENCODE_IDLE_TIMEOUT_MS_INPUT"; fi/,
@@ -275,4 +275,32 @@ test("reconciliation dispatch does not depend on a local checkout", () => {
 		/gh workflow run "\$workflow_file" --repo "\$REPO" --ref "\$default_branch" -f pr_number="\$PR_NUM"/,
 	);
 	assert.doesNotMatch(workflow, /gh workflow run review\.yml/);
+});
+
+test("review records terminal OpenCode unavailability without invoking an older release", t => {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-opencode-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const binary = join(root, "needlefish");
+  const marker = join(root, "review-launched");
+  const ghMarker = join(root, "gh-called");
+  writeFileSync(binary, '#!/bin/sh\nprintf launched > "$MARKER"\n');
+  chmodSync(binary, 0o755);
+  writeFileSync(join(root, "gh"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_MARKER"\nexit "$GH_EXIT"\n');
+  chmodSync(join(root, "gh"), 0o755);
+  for (const ghExit of [0, 1]) {
+    const result = spawnSync("bash", ["-e", "-c", reviewScript], {
+      encoding: "utf8", timeout: 5000,
+      env: { PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_BIN: binary,
+        NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42", MARKER: marker, GH_MARKER: ghMarker,
+        GITHUB_REPOSITORY: "owner/repo", PR_HEAD_SHA: "a".repeat(40), GH_EXIT: String(ghExit) },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /OpenCode reviews are temporarily disabled.*issue #207/);
+    assert.equal(existsSync(marker), false);
+    const args = readFileSync(ghMarker, "utf8").trim().split("\n");
+    for (const field of ["POST", "repos/owner/repo/check-runs", "name=Needlefish", `head_sha=${"a".repeat(40)}`, "status=completed", "conclusion=failure", "output[title]=Needlefish: runner unavailable"]) {
+      assert.ok(args.includes(field), `${field}: ${args.join(" ")}`);
+    }
+    assert.ok(args.some((arg) => arg.startsWith("output[summary]=OpenCode reviews are temporarily disabled")));
+  }
 });

@@ -35,7 +35,7 @@ process.stdin.on('end', () => {
   const count = fs.readFileSync(calls, 'utf8').trim().split('\\n').length;
   const value = phase === 'map'
     ? { summary: 'mapped', hotspots: Array.from({ length: 6 }, (_, i) => ({ name: 'surface-' + i, files: ['src/f' + i + '.ts'], risk: 'high', why: 'changed source', edges: [] })) }
-    : { summary: 'reviewed', findings: [], checked: ['source checked'], residual_risks: [] };
+    : { summary: 'reviewed', ...(phase === 'critic' ? { decisions: [] } : { findings: [] }), checked: ['source checked'], residual_risks: [] };
   setTimeout(() => fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(behavior)} === 'repair' && count === 1 ? 'invalid JSON' : JSON.stringify(value)), ${JSON.stringify(behavior)} === 'slow' ? 400 : 0);
 });
 `);
@@ -57,8 +57,10 @@ test("shared deadline preserves successful seven-hotspot pipeline output", async
   const before = await review(f.bundle);
   process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "60000";
   const after = await review(f.bundle);
-  const stable = (result: typeof before) => ({ ...result, totalDurationMs: 0, stats: result.stats?.map((s) => ({ ...s, durationMs: 0 })).sort((a, b) => a.label.localeCompare(b.label)) });
+  const stable = (result: typeof before) => ({ ...result, runtime: undefined, totalDurationMs: 0, stats: result.stats?.map((s) => ({ ...s, durationMs: 0 })).sort((a, b) => a.label.localeCompare(b.label)) });
   assert.deepEqual(stable(after), stable(before));
+  assert.equal(before.runtime?.reviewBudgetMs, null);
+  assert.equal(after.runtime?.reviewBudgetMs, 60000);
   assert.equal(f.calls().length, 18); // map + seven deep (including tail) + critic, twice.
   assert.equal(after.verdict, "pass");
 });

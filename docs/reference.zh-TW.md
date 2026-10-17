@@ -64,6 +64,8 @@ needlefish --repo . --json | jq .verdict
 | `schemaVersion` | 固定為 `1`。 |
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
+| `unreviewedBinaryFiles` | 選用的 Git binary 路徑清單。內容未經審查，屬於非阻擋診斷。已列為 LFS pointer gap 的路徑不重複列出，fast path 不掃描 LFS pointer。 |
+| `docsOnlyFastPath` | 選用的 pipeline 旗標，表示 docs-only policy 跳過所有模型呼叫。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |
 | `findings[].consumerLine` | 選用的下游受影響行號。 |
@@ -79,7 +81,18 @@ exit 1，跳過仍使用 `needlefish-skip`。
 
 Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
 完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
-舊收據阻止恢復審查。
+舊收據阻止恢復審查。同一 head 跳過時保留原 verdict 的 exit code。
+舊版 neutral `needs_human` check 在該 head 再次觸發時會完整重審。
+升級後請手動重跑仍使用舊 check 的 open PR，既有 check 不會自動更新。
+
+審查指令只有 `pass` 回傳 exit 0。`changes_requested`、`needs_human`
+與執行失敗都回傳 exit 1，包含 JSON 與快取指令。`needs_human` 表示審查
+未完成或需要人工確認，不表示已證明程式有錯。重試或請維護者檢查未審範圍。
+Docs-only policy skip 會明確顯示未呼叫模型，除非設為 `NEEDLEFISH_NO_FAST_PATH=1`。
+
+未追蹤檔案若超過單檔 200 KiB 或合計 1 MiB 上限而未納入，審查會拒絕執行，
+包含 docs-only policy skip。指令回傳 exit 1，不寫入新的審查結果。
+請將省略的檔案加入暫存區以納入 Git diff，或縮小檔案後重試。
 
 ### 基準偵測
 
@@ -106,7 +119,7 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | neutral   |
+| needs_human          | COMMENT             | failure   |
 | run failed           | （無）                | failure   |
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
@@ -255,10 +268,10 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
 `acp`。
 
-`openai` HTTP runner 沒有讀取 repo 的工具。大型或 deep 審查請改用具工具
-能力的 CLI runner。尚未發布的原始碼會在 HTTP request 前拒絕 `--deep`
-與自動判定的大型 HTTP 審查。已發布的 v0.4.10 不保證事前拒絕。
-小型完整 diff 審查與純文件 fast path 仍可使用。
+`openai` HTTP runner 沒有讀取 repo 的工具。尚未發布的原始碼會在任何
+HTTP request 前拒絕所有需要模型的審查，包含小型 diff 與 `--deep`。
+純文件審查仍可使用不呼叫模型的 fast path。停用該 fast path 後，審查
+同樣需要讀取 repo 的工具。已發布的 v0.4.10 不保證事前拒絕。
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
@@ -294,6 +307,10 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
   Client Protocol process。timeout 時 Needlefish 會先送
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
   prompt response 若包含 token usage，review stats 會保留 input／output 總量。
+
+清理程序不是防範同一使用者程序的 OS 安全邊界。這類程序可在刪除路徑時，
+把無關資料移入自有暫存樹。Node 沒有依 inode 身分原子判定的 unlink 或
+目錄刪除操作。不要用維護者帳戶執行主動攻擊的 CLI。
 
 每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
 行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
@@ -376,12 +393,19 @@ cached-result `render`／`verdict` 診斷。
 explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
 布的 composite action 不會安裝該 workflow。
 
+原生 Codex 額度分類已驗證 CLI 0.163 的 JSON events。其他版本尚未取得
+自動額度 fallback 資格。未知 event schema 保留失敗，並以私有失敗 trace metadata 記錄
+`unrecognized_codex_event_schema`，原始 transcript 不變，不依額度字樣切換路由。單一路由的 deep
+review 遇到額度耗盡或取消也會失敗，不會改成 blocking residual。
+
 ## Doctor 與 GitHub 設定細節
 
-`npx needlefish doctor` 不呼叫模型，會檢查 Node、所選 runner CLI 與版本、
-Git repo 與偵測到的基準 ref。認證檢查使用 runner 的狀態指令及與審查相同
+`npx needlefish doctor` 不呼叫模型，會檢查 Node、Git repo 與偵測到的基準 ref。
+一般 runner 選擇會另檢查 CLI 版本。認證檢查使用 runner 的狀態指令及與審查相同
 的環境變數 allowlist。審查接受的環境憑證，例如 opencode 的
-`OPENAI_API_KEY`，不另行探測即可通過。失敗項目會列出修正方式。
+`OPENAI_API_KEY`，不另行探測即可通過。
+`doctor --connection` 檢查具名連線設定與執行檔是否可用，不探測 CLI 版本、
+帳戶身分或登入狀態。這些項目保留為 `unknown`。失敗項目會列出修正方式。
 `--json` 提供相同報告。任何檢查失敗時 exit code 為 1，否則為 0。
 無法判定的檢查列為 `unknown`，不造成非零 exit code，也不證明模型可用。
 

@@ -1,6 +1,7 @@
 /** Static runner metadata; execution and credential-selection policy stay in the adapters. */
 export interface RunnerDefinition {
   readonly name: string;
+  readonly reviewCapability: "repositoryRead" | "promptOnly" | "unknown";
   /**
    * CLI executable: the env override and the command name used when it is unset or blank. Absent for
    * HTTP runners; no fallback when the override is required. runnerCommand is the one reader.
@@ -20,6 +21,7 @@ export interface RunnerDefinition {
       readonly loggedIn: "exit-zero" | "non-empty-json-array";
     };
   };
+  readonly reviewUnavailableReason?: string;
   readonly modelEnv?: string;
   readonly envAllowlist: readonly string[];
   readonly authFiles: readonly string[];
@@ -36,6 +38,7 @@ export interface RunnerDefinition {
 export const RUNNER_DEFINITIONS = [
   {
     name: "codex",
+    reviewCapability: "repositoryRead",
     bin: { env: "CODEX_BIN", fallback: "codex" },
     autoDetect: { installCommand: "npm install -g @openai/codex" },
     login: {
@@ -49,6 +52,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "claude",
+    reviewCapability: "repositoryRead",
     bin: { env: "CLAUDE_BIN", fallback: "claude" },
     autoDetect: { installCommand: "npm install -g @anthropic-ai/claude-code" },
     login: {
@@ -62,6 +66,8 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "opencode",
+    reviewCapability: "repositoryRead",
+    reviewUnavailableReason: "OpenCode reviews are temporarily disabled because complete project and ambient plugin/config isolation is unavailable in the verified v2 CLI. Choose another runner explicitly; see issue #207.",
     bin: { env: "OPENCODE_BIN", fallback: "opencode" },
     autoDetect: { installCommand: "npm install -g @opencode/cli" },
     login: {
@@ -78,6 +84,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "openai",
+    reviewCapability: "promptOnly",
     modelEnv: "OPENAI_MODEL",
     envAllowlist: [],
     authFiles: [],
@@ -85,6 +92,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "grok",
+    reviewCapability: "repositoryRead",
     bin: { env: "GROK_BIN", fallback: "grok" },
     login: { command: "grok login" },
     modelEnv: "GROK_MODEL",
@@ -94,6 +102,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "pi",
+    reviewCapability: "repositoryRead",
     bin: { env: "PI_BIN", fallback: "pi" },
     modelEnv: "PI_MODEL",
     envAllowlist: ["PI_BIN", "PI_MODEL", "PI_PROVIDER", "PI_AUTH_MODE"],
@@ -102,6 +111,7 @@ export const RUNNER_DEFINITIONS = [
   },
   {
     name: "acp",
+    reviewCapability: "unknown",
     bin: { env: "NEEDLEFISH_ACP_BIN" },
     envAllowlist: ["NEEDLEFISH_ACP_BIN"],
     authFiles: [],

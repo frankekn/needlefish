@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { ConnectionsError, readConnectionsRequest, runConnections, runConnectionsReview } from "./adapters/connections.js";
 import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
 import { renderDoctorReport, runDoctor, serializeDoctorReport } from "./adapters/doctor.js";
 import { runGithubExplain } from "./adapters/explain.js";
@@ -12,8 +13,8 @@ import {
   printDryRun,
   terminalProgress,
 } from "./adapters/local.js";
+import { reviewExitCode } from "./core/verdict.js";
 import { parseArgs, USAGE } from "./cli/args.js";
-import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
 import { runGuidedGithubSetup } from "./setup/guided.js";
@@ -31,6 +32,32 @@ async function main() {
   const command = parseArgs(process.argv.slice(2));
 
   switch (command.kind) {
+    case "connections": {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      const outputError = () => { controller.abort(); process.exitCode = 1; };
+      process.stdout.on("error", outputError);
+      process.once("SIGINT", cancel);
+      process.once("SIGTERM", cancel);
+      try {
+        let request = command.operation === "list" || command.operation === "edit" ? undefined : await readConnectionsRequest(process.stdin, controller.signal, 5000, command.operation === "review");
+        const pending = command.operation === "review"
+          ? runConnectionsReview(request, process.env, controller.signal)
+          : runConnections(command.operation, command.repo ?? process.cwd(), request, process.env, controller.signal);
+        request = undefined;
+        const result = await pending;
+        const output = "ok" in result ? JSON.stringify(result) + "\n" : serializeReviewResult(result);
+        await new Promise<void>((resolve, reject) => process.stdout.write(output, error => error ? reject(error) : resolve()));
+        if ("ok" in result && !result.ok) process.exitCode = 1;
+      } catch (error) {
+        if (!process.stdout.destroyed) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
+        process.exitCode = 1;
+      } finally {
+        process.off("SIGINT", cancel);
+        process.off("SIGTERM", cancel);
+      }
+      return;
+    }
     case "version":
       process.stdout.write(`needlefish ${VERSION}\n`);
       return;
@@ -45,12 +72,11 @@ async function main() {
     case "verdict":
       runCachedVerdict(command.file);
       return;
-    // doctor spawns only runner status commands, never a review attempt, so
-    // it stays outside the runner temp lifecycle too.
     case "doctor": {
-      const report = runDoctor({
+      const report = await runDoctor({
         repo: command.repo ?? process.cwd(),
         version: VERSION,
+        ...(command.connection !== undefined ? { connection: command.connection } : {}),
         ...(command.runner !== undefined ? { runner: command.runner } : {}),
         ...(command.base !== undefined ? { base: command.base } : {}),
       });
@@ -88,11 +114,7 @@ async function main() {
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
-  // Review adapters have the bundle needed to decide whether credentials are
-  // needed. Preview and explain resolve here; neither uses those adapters.
-  const opts = dryRun || command.kind === "explain"
-    ? resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun)
-    : command.opts;
+  const opts = command.opts;
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {
@@ -129,6 +151,7 @@ async function main() {
         command.kind === "pr"
           ? await runLocalPr(cwd, command.pr, opts, progress)
           : await runLocal(cwd, opts, progress);
+      process.exitCode = reviewExitCode(result.verdict);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {
@@ -140,6 +163,11 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (process.argv[2] === "connections") {
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: "invalid_request" }) + "\n");
+    process.exitCode = 1;
+    return;
+  }
   process.stderr.write(`needlefish: ${err instanceof Error ? err.message : err}\n`);
   process.exitCode = 1;
 });

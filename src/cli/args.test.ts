@@ -229,9 +229,11 @@ test("parseArgs accepts the doctor command with its diagnostic options only", ()
     runner: "claude",
     base: "develop",
   });
+  assert.deepEqual(parseArgs(["doctor", "--connection", "account-a", "--json"]), { kind: "doctor", connection: "account-a", json: true });
+  assert.throws(() => parseArgs(["doctor", "--connection", "a", "--runner", "codex"]), /cannot be combined/);
   assert.deepEqual(parseArgs(["doctor", "--help"]), { kind: "help" });
   for (const flag of ["--deep", "--pr=1", "--github", "--dry-run", "--focus=x", "--model=m", "--uncommitted"]) {
-    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner, --base, and --json/, flag);
+    assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner or --connection, --base, and --json/, flag);
   }
 });
 
@@ -251,5 +253,15 @@ test("guided setup parser separates repository and effect confirmations", () => 
   });
   for (const args of [["status"], ["repositories", "--repository", "a/b"], ["status", "--repo", "/tmp"], ["status", "--repository", "a/b", "--replace-secret"], ["--json"]]) {
     assert.throws(() => parseArgs(["setup", "github", ...args]));
+  }
+});
+
+
+test("connections machine commands accept only one operation, JSON and repo", () => {
+  for (const operation of ["list", "edit", "validate", "apply", "inspect"] as const) {
+    assert.deepEqual(parseArgs(["connections", operation, "--json", "--repo=/fake/repo"]), { kind: "connections", operation, repo: "/fake/repo" });
+  }
+  for (const args of [["list"], ["review", "--json", "--repo", "/repo"], ["list", "--json", "--runner", "codex"], ["list", "--json", "--json"], ["list", "--json", "--repo=a", "--repo=b"]]) {
+    assert.throws(() => parseArgs(["connections", ...args]));
   }
 });

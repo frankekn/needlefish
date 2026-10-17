@@ -34,7 +34,11 @@ jobs:
       - name: Collect the previous seven UTC days
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pnpm exec tsx eval/tools/adoption-weekly.ts adoption-weekly
+        run: >-
+          pnpm exec tsx eval/tools/adoption-weekly.ts adoption-weekly
+          --measurement-workflow .github/workflows/review.yml
+          --measurement-job-key review
+          --measurement-job-name review
       - name: Preserve report and diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

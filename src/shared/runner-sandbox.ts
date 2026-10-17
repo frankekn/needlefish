@@ -10,6 +10,7 @@ import {
   opendirSync,
   openSync,
   readSync,
+  realpathSync,
   rmSync,
   type Stats,
   writeFileSync,
@@ -55,8 +56,10 @@ const sandboxGitMetadata = new Map<string, string>();
 
 export interface RunnerSandbox {
   readonly repoPath: string;
+  readonly launchPath: string;
   readonly prompt: string;
   readonly expectedHeadSha: string;
+  readonly expectedBaseSha?: string;
   // Repo-relative pathnames of tracked files that are Git LFS pointer stubs in
   // this checkout, as raw bytes (see sandboxChildPath). The same list the
   // prompt notice was rendered from; the caller filters and decodes it.
@@ -75,7 +78,9 @@ export interface RunnerSandboxOptions {
   readonly targetHeadSha: string;
   readonly targetBaseSha?: string;
   readonly targetPatch?: string;
+  readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
   readonly tmp: string;
+  readonly remainingReviewMs?: () => number;
 }
 
 export class RunnerWorktreeChangedError extends Error {
@@ -97,15 +102,31 @@ export function isRunnerSafetyError(error: unknown): boolean {
 export function prepareRunnerSandbox(options: RunnerSandboxOptions): RunnerSandbox {
   const sandboxPath = path.join(options.tmp, "runner-repo");
   const sourceRepoPath = path.resolve(options.repoPath);
-  if (options.targetHeadSha === "WORKING") {
+  if (options.runner === "codex" || options.runner === "grok") {
+    const sourceRoot = git(["rev-parse", "--show-toplevel"], options.snapshot?.repoPath ?? sourceRepoPath);
+    const relative = path.relative(realpathSync(sourceRoot), realpathSync(options.tmp));
+    if (relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
+      throw new Error(`${options.runner} launch directory must be outside the target repository; move NEEDLEFISH_TMPDIR`);
+    }
+  }
+  if (options.targetHeadSha === "WORKING" && !options.snapshot) {
     return prepareWorkingSandbox(options, sourceRepoPath, sandboxPath);
   }
-  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", sourceRepoPath, sandboxPath], sourceRepoPath);
-  git(["fetch", "--quiet", sourceRepoPath, options.targetHeadSha], sandboxPath);
+  const cloneSource = options.snapshot?.repoPath ?? sourceRepoPath;
+  const headSha = options.snapshot?.expectedHeadSha ?? options.targetHeadSha;
+  git(["clone", "--quiet", "--no-hardlinks", "--no-checkout", cloneSource, sandboxPath], cloneSource);
+  git(["fetch", "--quiet", cloneSource, headSha], sandboxPath);
   git(["checkout", "--quiet", "--detach", "FETCH_HEAD"], sandboxPath);
+  if (options.targetHeadSha === "WORKING") {
+    git(["update-ref", "refs/heads/WORKING", headSha], sandboxPath);
+    git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
+    if (options.targetBaseSha === "EMPTY") {
+      git(["update-ref", "refs/heads/EMPTY", `${headSha}^`], sandboxPath);
+    }
+  }
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
-  return finishSandbox(options, sourceRepoPath, sandboxPath, options.targetHeadSha);
+  return finishSandbox(options, sourceRepoPath, sandboxPath, headSha);
 }
 
 function prepareWorkingSandbox(
@@ -116,7 +137,8 @@ function prepareWorkingSandbox(
   if (!options.targetPatch?.trim()) {
     throw new Error("WORKING sandbox requires a target patch");
   }
-  if (options.targetBaseSha !== "EMPTY" && hasHeadCommit(sourceRepoPath)) {
+  if (options.targetBaseSha !== "EMPTY" && (options.targetBaseSha || hasHeadCommit(sourceRepoPath))) {
+    // Initial capture still needs source objects; a pruned base fails checkout.
     git(["clone", "--quiet", "--no-hardlinks", sourceRepoPath, sandboxPath], sourceRepoPath);
     if (options.targetBaseSha) {
       git(["checkout", "--quiet", "--detach", options.targetBaseSha], sandboxPath);
@@ -134,6 +156,7 @@ function prepareWorkingSandbox(
     );
     git(["update-ref", "refs/heads/EMPTY", "HEAD"], sandboxPath);
   }
+  const expectedBaseSha = git(["rev-parse", "HEAD"], sandboxPath);
   // Write patch to a file rather than piping via stdin: multi-byte (CJK) hunks
   // plus hand-joined untracked diffs were rejected as "corrupt patch" on stdin.
   // git apply requires a terminator newline; add one only when missing. Diff
@@ -165,7 +188,7 @@ function prepareWorkingSandbox(
   git(["update-ref", "-d", "refs/tags/WORKING"], sandboxPath);
   severSourceRemote(sandboxPath);
   recordGitMetadata(sandboxPath);
-  return finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha);
+  return { ...finishSandbox(options, sourceRepoPath, sandboxPath, expectedHeadSha), expectedBaseSha };
 }
 
 function finishSandbox(
@@ -174,10 +197,13 @@ function finishSandbox(
   sandboxPath: string,
   expectedHeadSha: string
 ): RunnerSandbox {
+  const launchPath = path.join(options.tmp, "runner-launch");
+  mkdirSync(launchPath);
   const prompt = options.prompt.split(sourceRepoPath).join(sandboxPath);
-  const lfs = lfsDisclosure(sandboxPath);
+  const lfs = lfsDisclosure(sandboxPath, options.remainingReviewMs);
   return {
     repoPath: sandboxPath,
+    launchPath,
     prompt: lfs.notice === "" ? prompt : `${prompt}\n\n${lfs.notice}`,
     expectedHeadSha,
     lfsPointerFiles: lfs.pointers,
@@ -216,7 +242,8 @@ function severSourceRemote(sandboxPath: string): void {
 export function assertRunnerSandboxClean(
   runner: RunnerName,
   repoPath: string,
-  expectedHeadSha: string
+  expectedHeadSha: string,
+  retainMetadata = false
 ): void {
   const metadataKey = path.resolve(repoPath);
   try {
@@ -280,7 +307,7 @@ export function assertRunnerSandboxClean(
       throw new RunnerWorktreeChangedError(runner, status.slice(0, 2000));
     }
   } finally {
-    sandboxGitMetadata.delete(metadataKey);
+    if (!retainMetadata) sandboxGitMetadata.delete(metadataKey);
   }
 }
 
@@ -321,10 +348,10 @@ const UNCERTAIN_LFS_DISCLOSURE: LfsDisclosure = {
   incomplete: true,
 };
 
-function lfsDisclosure(sandboxPath: string): LfsDisclosure {
+function lfsDisclosure(sandboxPath: string, remainingReviewMs?: () => number): LfsDisclosure {
   // Cheap gate first: repositories that never mention filter=lfs pay one
   // small ls-files and produce no notice at all, so nothing changes for them.
-  const scan = scanLfsAttributes(sandboxPath);
+  const scan = scanLfsAttributes(sandboxPath, remainingReviewMs);
   if (scan === "none") return NO_LFS_DISCLOSURE;
   if (scan === "unknown") return UNCERTAIN_LFS_DISCLOSURE;
   let candidates: Buffer[];
@@ -351,26 +378,56 @@ function lfsDisclosure(sandboxPath: string): LfsDisclosure {
 
 type LfsAttributeScan = "none" | "present" | "unknown";
 
-function scanLfsAttributes(sandboxPath: string): LfsAttributeScan {
+function scanLfsAttributes(sandboxPath: string, remainingReviewMs?: () => number): LfsAttributeScan {
   let attributeFiles: Buffer[];
   try {
-    attributeFiles = gitNulList(["ls-files", "-z", "--", "*.gitattributes"], sandboxPath);
+    attributeFiles = gitNulList(["ls-files", "--stage", "-z", "--", "*.gitattributes"], sandboxPath);
   } catch {
     return "unknown";
   }
   const probed = attributeFiles.slice(0, MAX_LFS_PROBE_CANDIDATES);
   let unreadable = false;
-  for (const rel of probed) {
-    const text = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+  for (const entry of probed) {
+    const separator = entry.indexOf(0x09);
+    if (separator < 0) {
+      unreadable = true;
+      continue;
+    }
+    const header = entry.subarray(0, separator).toString("ascii");
+    const blob = /^(?:100644|100755) ([a-f0-9]{40,64}) 0$/.exec(header)?.[1];
+    const rel = entry.subarray(separator + 1);
+    const worktreeText = readSmallFileText(sandboxChildPath(sandboxPath, rel), MAX_GITATTRIBUTES_BYTES);
+    const text = worktreeText ?? (blob === undefined ? undefined : readSmallGitBlobText(blob, sandboxPath, remainingReviewMs));
+    if (worktreeText === undefined && remainingReviewMs) {
+      try {
+        if (remainingReviewMs() <= 0) return "unknown";
+      } catch {
+        return "unknown";
+      }
+    }
     if (text === undefined) {
       unreadable = true;
       continue;
     }
-    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) return "present";
+    if (/(^|\s)filter=lfs(\s|$)/m.test(text)) {
+      return worktreeText === undefined ? "unknown" : "present";
+    }
   }
   // An attributes file we could not read, or a list we could not finish, means
   // "no LFS here" is unproven — report the uncertainty rather than assert none.
   return unreadable || attributeFiles.length > probed.length ? "unknown" : "none";
+}
+
+// The sandbox index includes captured WORKING attributes. Read its exact blob
+// without filters or pathname decoding when checkout bytes are unavailable.
+function readSmallGitBlobText(oid: string, sandboxPath: string, remainingReviewMs?: () => number): string | undefined {
+  try {
+    const size = runGit(["cat-file", "-s", oid], sandboxPath, undefined, remainingReviewMs).trim();
+    if (!/^\d+$/.test(size) || Number(size) > MAX_GITATTRIBUTES_BYTES) return undefined;
+    return runGit(["cat-file", "blob", oid], sandboxPath, undefined, remainingReviewMs);
+  } catch {
+    return undefined;
+  }
 }
 
 function isLfsPointerFile(filePath: Buffer): boolean {
@@ -502,13 +559,16 @@ function hasHeadCommit(cwd: string): boolean {
   }
 }
 
-function runGit(args: readonly string[], cwd: string, input?: string): string {
+function runGit(args: readonly string[], cwd: string, input?: string, remainingReviewMs?: () => number): string {
+  const timeout = Math.min(30000, remainingReviewMs?.() ?? Infinity);
+  if (timeout <= 0) throw new Error("Needlefish review deadline exceeded");
   const res = spawnSync("git", [...NEUTRAL_GIT_ARGS, ...args], {
     cwd,
     env: gitEnv(),
     encoding: "utf8",
     input,
-    timeout: 30000,
+    timeout,
+    killSignal: remainingReviewMs ? "SIGKILL" : "SIGTERM",
   });
   if (res.error) throw res.error;
   if (res.status !== 0) {

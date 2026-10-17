@@ -63,6 +63,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       if (mode === 'split-thought-failure') { process.stdout.write('', () => process.exit(1)); return; }
     }
     const map = JSON.stringify(request.params).includes('review-MAP pass');
+    const critic = JSON.stringify(request.params).includes('adversarial critic');
     if (mode.startsWith('deep-') && !map && prior === 1) {
       if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
       process.stderr.write(process.env.AGENT_API_KEY + '\\n');
@@ -83,7 +84,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
-      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : critic ? ${JSON.stringify(JSON.stringify({summary:'Checked source',checked:['source.ts'],decisions:[],residual_risks:[]}))} : ${JSON.stringify(reviewJson)};
       if (mode === 'explain-json-escaped') output = 'Credential note ' + JSON.stringify(process.env.AGENT_API_KEY);
       if (mode.startsWith('explain-escaped')) {
         const escaped = Array.from(process.env.AGENT_API_KEY).map((c,i) => mode.endsWith('-mixed') && i % 2 === 0 ? c : '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
@@ -95,7 +96,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
         process.stdout.write(text.replace(process.env.AGENT_API_KEY, escaped) + '\\n');
       }
       if (mode.startsWith('leak') && (!mode.endsWith('-once') || prior === 0)) {
-        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],findings:[],residual_risks:[]});
+        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],...(critic?{decisions:[]}:{findings:[]}),residual_risks:[]});
         if (mode.startsWith('leak-fenced')) {
           const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
           output = '\x60\x60\x60json\\n' + output.replace(process.env.AGENT_API_KEY, escaped) + '\\n\x60\x60\x60';
@@ -161,7 +162,7 @@ function harness(f: ReturnType<typeof fixture>, parallel: boolean): string {
 import {runCodex,isRunnerSafetyError} from ${JSON.stringify(new URL("./codex.ts", import.meta.url).href)};
 import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.ts", import.meta.url).href)};
 const repo = ${JSON.stringify(f.repo)}, head = ${JSON.stringify(f.head)};
-const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connection,repoPath:repo,targetHeadSha:head},repo));
+const opts = ${parallel ? "['a','b']" : "['a']"}.map(connection => resolveConnectionOptions({connections:[connection],repoPath:repo,targetHeadSha:head},repo));
 // Both real executions must retain selection-time values across concurrent calls and retries.
 process.env.ACCOUNT_A_KEY = process.env.ACCOUNT_B_KEY = 'CHANGED-AFTER-SELECTION';
 const hasCredential = raw => raw.includes(${JSON.stringify(f.env.ACCOUNT_A_KEY)}) || raw.includes(${JSON.stringify(Array.from(f.env.ACCOUNT_A_KEY ?? "").map(c => "\\u" + c.charCodeAt(0).toString(16).padStart(4,"0")).join(""))});
@@ -312,10 +313,11 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--input')) {
   fs.appendFileSync(${JSON.stringify(writes)}, fs.readFileSync(0,'utf8') + '\\n');
-  process.stdout.write('{"id":1}');
+  process.stdout.write('{"id":1,"app":{"id":15368,"slug":"github-actions"}}');
 } else if (args[1] === 'repos/frankekn/needlefish/pulls/7') {
   process.stdout.write(${JSON.stringify(JSON.stringify({ state: "open", author_association: "MEMBER", user: { login: "author", type: "User" }, head: { sha: f.head }, base: { sha: f.base } }))});
 } else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
+else if (args.some(arg => arg.includes('/check-runs?'))) process.stdout.write('[{"check_runs":[]}]');
 else if (args.includes('--paginate')) process.stdout.write('[[]]');
 else process.stdout.write('[]');
 `);
@@ -327,6 +329,7 @@ else process.stdout.write('[]');
     assert.equal(result.status, 1);
     const outbound = readFileSync(writes, "utf8");
     assert.match(outbound, /withheld.*credential/);
+    assert.equal(f.records().length, 1, "the selected agent must run before its output is withheld");
     assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
     assert.ok(!(result.stdout + result.stderr + outbound).includes(credential));
     assert.ok(!(result.stdout + result.stderr + outbound).includes("\\u"));
@@ -421,7 +424,7 @@ import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.t
 import {isRunnerSafetyError} from ${JSON.stringify(new URL("./runner-sandbox.ts", import.meta.url).href)};
 const repo=${JSON.stringify(f.repo)};
 const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
-const opts=resolveConnectionOptions({connection:'a'},repo);
+const opts=resolveConnectionOptions({connections: ['a']},repo);
 try { console.log(await explainFinding(bundle,'finding',opts)); }
 catch(error) { console.error(JSON.stringify({message:error.message,safety:isRunnerSafetyError(error)})); process.exitCode=1; }
 `);
@@ -477,7 +480,7 @@ import {resolveConnectionOptions} from ${JSON.stringify(new URL("./connections.t
 import {score} from ${JSON.stringify(new URL("../../eval/shared/score.ts",import.meta.url).href)};
 const repo=${JSON.stringify(f.repo)};
 const {bundle}=diffBundle(repo,{base:${JSON.stringify(f.base)},localMode:'branch'});
-const opts=resolveConnectionOptions({connection:'a'},repo), events=[];
+const opts=resolveConnectionOptions({connections: ['a']},repo), events=[];
 const result=await review(bundle,opts,${observer ? "event=>events.push(event)" : "undefined"});
 const rawEvents=events.filter(e=>e.surface==='raw_success'||e.surface==='raw_failure');
 const fragments=rawEvents.map(e=>e.content.split('\\n').flatMap(line=>{try {const m=JSON.parse(line);return m.params?.update?.sessionUpdate==='agent_thought_chunk' ? [m.params.update.content.text] : [];}catch{return [];}}).join(''));
@@ -490,4 +493,28 @@ console.log(JSON.stringify({verdict:result.verdict,rawOutputs:Object.hasOwn(resu
       f.clean();
     });
   }
+}
+
+for (const mode of ["split-thought-success", "split-thought-failure"]) {
+  test(`${mode}: WORKING snapshot preserves authenticated trace privacy and cleanup`, (t) => {
+    const f = fixture(t, mode);
+    const source = path.join(f.repo, "source.ts");
+    writeFileSync(source, "export const value = 3;\n");
+    const result = f.run([cli, "--repo", f.repo, "--uncommitted", "--connection", "a", "--json"], {NEEDLEFISH_EVAL_TRACE:"1",NEEDLEFISH_NO_RETRY:"0"});
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.verdict, "pass");
+    assert.equal(output.headSha, "WORKING");
+    assert.equal(output.traceDeliveryFailed, true);
+    assert.equal(Object.hasOwn(output, "rawOutputs"), false);
+    assert.equal(Object.hasOwn(output, "failedRawOutputs"), false);
+    const cache = readFileSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json"), "utf8");
+    assert.deepEqual(JSON.parse(cache), output);
+    assert.doesNotMatch(result.stdout + cache, /agent_thought_chunk|TEST-|ACCOUNT|rawOutputs|failedRawOutputs/);
+    assert.equal(f.records().length, mode === "split-thought-failure" ? 3 : 2);
+    for (const record of f.records()) isolated(record, f.home);
+    assert.equal(readFileSync(source, "utf8"), "export const value = 3;\n");
+    writeFileSync(source, "export const value = 2;\n");
+    f.clean();
+  });
 }

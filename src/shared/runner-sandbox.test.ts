@@ -6,6 +6,8 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  symlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -13,12 +15,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { diffBundle } from "../adapters/local.js";
+import { reviewWithConnections } from "../core/review.js";
 import { buildUntrackedPatch, joinSections } from "../adapters/local-uncommitted";
+import { runCodex, RunnerOperationalError } from "./codex";
 import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
 import { git } from "./repo";
 import {
   assertRunnerSandboxClean,
   isRunnerSafetyError,
+  RunnerWorktreeChangedError,
   prepareRunnerSandbox,
 } from "./runner-sandbox";
 
@@ -312,6 +318,187 @@ test("prepareRunnerSandbox leaves the prompt untouched when no LFS is configured
   assert.deepEqual(sandbox.lfsPointerFiles, []);
   assert.equal(sandbox.lfsScanIncomplete, false);
 });
+
+function makeUnreadableAttributes(
+  t: { after: (fn: () => void) => void },
+  sandboxTmp: string,
+  failure?: "blob" | "stage-separator" | "slow-size" | "slow-blob"
+): void {
+  const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+  const bin = path.join(sandboxTmp, "bin");
+  mkdirSync(bin);
+  const wrapper = path.join(bin, "git");
+  writeFileSync(path.join(sandboxTmp, "blob-queries"), "");
+  writeFileSync(wrapper, `#!${process.execPath}
+const { spawnSync } = require("node:child_process");
+const { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } = require("node:fs");
+const path = require("node:path");
+const args = process.argv.slice(2);
+if (args.includes("cat-file")) {
+  const query = args[args.indexOf("cat-file") + 1];
+  appendFileSync(${JSON.stringify(path.join(sandboxTmp, "blob-queries"))}, query + "\\n");
+  if ((${JSON.stringify(failure)} === "slow-size" && query === "-s") ||
+      (${JSON.stringify(failure)} === "slow-blob" && query === "blob")) {
+    process.on("SIGTERM", () => {});
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+  }
+}
+if (${JSON.stringify(failure)} === "blob" && args.includes("cat-file") && args.includes("blob")) process.exit(1);
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: ["inherit", "pipe", "pipe"] });
+if (args.includes("ls-files") && args.includes("*.gitattributes")) {
+  const file = path.join(process.cwd(), ".gitattributes");
+  rmSync(file);
+  mkdirSync(file);
+  try { readFileSync(file); process.exit(2); } catch {}
+  writeFileSync(${JSON.stringify(path.join(sandboxTmp, "unreadable"))}, "EISDIR");
+}
+process.stdout.write(${JSON.stringify(failure)} === "stage-separator" && args.includes("ls-files") && args.includes("*.gitattributes")
+  ? "README.md\\0" : result.stdout);
+process.stderr.write(result.stderr);
+process.exit(result.status ?? 1);
+`);
+  chmodSync(wrapper, 0o755);
+  restoreEnv(t, "PATH");
+  process.env.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ""}`;
+}
+
+for (const scenario of [
+  { name: "plain attributes", attributes: "*.txt text eol=crlf\n", incomplete: false },
+  { name: "LFS attributes", attributes: "*.bin filter=lfs -text\n", incomplete: true },
+  { name: "malformed stage entry", attributes: "*.bin filter=lfs -text\n", failure: "stage-separator", incomplete: true },
+  { name: "failed blob read", attributes: "*.txt text\n", failure: "blob", incomplete: true },
+  { name: "oversized blob", attributes: "#".repeat(256 * 1024 + 1), incomplete: true },
+] satisfies readonly {
+  name: string;
+  attributes: string;
+  failure?: "blob" | "stage-separator";
+  incomplete: boolean;
+}[]) {
+  test(`prepareRunnerSandbox handles unreadable ${scenario.name} from captured Git evidence`, (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), scenario.attributes);
+      writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+    });
+    makeUnreadableAttributes(t, sandboxTmp, scenario.failure);
+    const sandbox = prepareRunnerSandbox({
+      runner: "claude", repoPath: repo, prompt: "REVIEW PROMPT BODY",
+      targetHeadSha: headSha(repo), tmp: sandboxTmp,
+    });
+    assert.equal(readFileSync(path.join(sandboxTmp, "unreadable"), "utf8"), "EISDIR");
+    assert.equal(sandbox.lfsScanIncomplete, scenario.incomplete);
+    assert.deepEqual(sandbox.lfsPointerFiles, []);
+    if (scenario.incomplete) assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+    else assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+  });
+}
+
+for (const scenario of [
+  { name: "expired", budgetMs: 0, queries: "", incomplete: true },
+  { name: "expires after size", budgetMs: 2000, expiresAfterSize: true, queries: "-s\n", incomplete: true },
+  { name: "slow size", budgetMs: 200, failure: "slow-size", queries: "-s\n", incomplete: true },
+  { name: "slow blob", budgetMs: 200, failure: "slow-blob", queries: "-s\nblob\n", incomplete: true },
+  { name: "fast", budgetMs: 2000, queries: "-s\nblob\n", incomplete: false },
+] satisfies readonly {
+  name: string;
+  budgetMs: number;
+  expiresAfterSize?: boolean;
+  failure?: "slow-size" | "slow-blob";
+  queries: string;
+  incomplete: boolean;
+}[]) {
+  test(`prepareRunnerSandbox bounds ${scenario.name} fallback queries by the shared deadline`, (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), "*.txt text\n");
+      if (scenario.incomplete) {
+        mkdirSync(path.join(r, "nested"));
+        writeFileSync(path.join(r, "nested", ".gitattributes"), "*.bin filter=lfs -text\n");
+      }
+    });
+    makeUnreadableAttributes(t, sandboxTmp, scenario.failure);
+    let deadline: number | undefined;
+    let budgetChecks = 0;
+    const options = {
+      runner: "claude" as const, repoPath: repo, prompt: "REVIEW PROMPT BODY",
+      targetHeadSha: headSha(repo), tmp: sandboxTmp,
+      remainingReviewMs: () => {
+        if ("expiresAfterSize" in scenario && scenario.expiresAfterSize && budgetChecks++ > 0) return 0;
+        deadline ??= performance.now() + scenario.budgetMs;
+        return Math.floor(deadline - performance.now());
+      },
+    };
+    const sandbox = prepareRunnerSandbox(options);
+    assert.equal(sandbox.lfsScanIncomplete, scenario.incomplete);
+    assert.deepEqual(sandbox.lfsPointerFiles, []);
+    if (scenario.incomplete) assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+    else assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+    assert.equal(readFileSync(path.join(sandboxTmp, "blob-queries"), "utf8"), scenario.queries);
+    assert.notEqual(deadline, undefined);
+    assert.ok(performance.now() < (deadline ?? 0) + 800, "fallback must stop near the shared deadline");
+  });
+}
+
+test("runCodex stops slow fallback queries at the whole-review deadline", async (t) => {
+  const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+    writeFileSync(path.join(r, ".gitattributes"), "*.txt text\n");
+  });
+  makeUnreadableAttributes(t, sandboxTmp, "slow-size");
+  restoreEnv(t, "NEEDLEFISH_NO_RETRY");
+  process.env.NEEDLEFISH_NO_RETRY = "1";
+  const reviewDeadlineMs = performance.now() + 1500;
+  await assert.rejects(runCodex("REVIEW PROMPT BODY", {
+    runner: "claude", repoPath: repo, targetHeadSha: headSha(repo),
+    reviewDeadlineMs, timeoutMs: 10000,
+  }), (error: unknown) => error instanceof RunnerOperationalError && /review deadline/.test(error.message));
+  assert.equal(readFileSync(path.join(sandboxTmp, "blob-queries"), "utf8"), "-s\n");
+  assert.ok(performance.now() < reviewDeadlineMs + 800, "review must stop near its shared deadline");
+});
+
+for (const routeCount of [1, 2]) {
+  test(`captured review bounds initial LFS fallback across ${routeCount} route(s)`, async (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), "*.txt text\n");
+      writeFileSync(path.join(r, "app.ts"), "export const value = 1;\n");
+    });
+    writeFileSync(path.join(repo, "app.ts"), "export const value = 2;\n");
+    const { bundle } = diffBundle(repo, {});
+    makeUnreadableAttributes(t, sandboxTmp, "slow-size");
+    for (const key of ["NEEDLEFISH_REVIEW_TIMEOUT_MS", "CLAUDE_BIN"]) restoreEnv(t, key);
+    process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "1500";
+    const marker = path.join(sandboxTmp, "model-started");
+    const binary = path.join(sandboxTmp, "claude");
+    writeFileSync(binary, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`);
+    chmodSync(binary, 0o755);
+    process.env.CLAUDE_BIN = binary;
+    const first = { runner: "claude" as const };
+    const routes = routeCount === 1 ? [first] as const : [first, first] as const;
+    const deadline = performance.now() + 1500;
+    await assert.rejects(reviewWithConnections(bundle, routes), RunnerWorktreeChangedError);
+    assert.equal(readFileSync(path.join(sandboxTmp, "blob-queries"), "utf8"), "-s\n");
+    assert.ok(performance.now() < deadline + 800, "initial capture must share the review deadline");
+    assert.equal(existsSync(marker), false, "exhausted capture must not start any model route");
+  });
+}
+
+for (const lfs of [false, true]) {
+  test(`prepareRunnerSandbox uses captured WORKING attributes with LFS ${lfs ? "added" : "removed"}`, (t) => {
+    const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
+      writeFileSync(path.join(r, ".gitattributes"), lfs ? "*.bin -text\n" : "*.bin filter=lfs -text\n");
+      writeFileSync(path.join(r, "asset.bin"), LFS_POINTER_BODY);
+    });
+    writeFileSync(path.join(repo, ".gitattributes"),
+      `.gitattributes text eol=crlf\n${lfs ? "*.bin filter=lfs -text" : "*.bin -text"}\n`);
+    const patch = git(["diff", "HEAD"], repo, { preserveOutput: true });
+    makeUnreadableAttributes(t, sandboxTmp);
+    const sandbox = prepareRunnerSandbox({
+      runner: "claude", repoPath: repo, prompt: "REVIEW PROMPT BODY",
+      targetHeadSha: "WORKING", targetPatch: patch, tmp: sandboxTmp,
+    });
+    assert.equal(sandbox.lfsScanIncomplete, lfs);
+    assert.deepEqual(sandbox.lfsPointerFiles, []);
+    if (lfs) assert.match(sandbox.prompt, /GIT LFS NOTICE/);
+    else assert.equal(sandbox.prompt, "REVIEW PROMPT BODY");
+  });
+}
 
 test("prepareRunnerSandbox does not disclose LFS-tracked files that hold real content", (t) => {
   const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
@@ -728,6 +915,7 @@ import path from "node:path";
 import {
   assertRunnerSandboxClean,
   isRunnerSafetyError,
+  RunnerWorktreeChangedError,
   prepareRunnerSandbox,
 } from ${JSON.stringify(SANDBOX_MODULE)};
 
@@ -1126,4 +1314,33 @@ test("prepareRunnerSandbox leaves no origin write-back route for a WORKING targe
 
   assertNoSourceWriteBack(sandbox.repoPath, repo, "other");
   assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
+ test("prepareRunnerSandbox creates an empty launch directory beside the clone", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-launch-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const work = path.join(tmp, "work");
+  mkdirSync(work);
+  const sandbox = prepareRunnerSandbox({ runner: "codex", repoPath: repo, prompt: repo, targetHeadSha: headSha(repo), tmp: work });
+  assert.equal(path.dirname(sandbox.launchPath), path.dirname(sandbox.repoPath));
+  assert.notEqual(sandbox.launchPath, sandbox.repoPath);
+  assert.deepEqual(readdirSync(sandbox.launchPath), []);
+  assert.equal(sandbox.prompt, sandbox.repoPath);
+  assertRunnerSandboxClean("codex", sandbox.repoPath, sandbox.expectedHeadSha);
+});
+
+ test("prepareRunnerSandbox rejects sibling launch under the source repository, including symlinks", (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-launch-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const inside = path.join(repo, "temp");
+  mkdirSync(inside);
+  const linked = path.join(tmp, "linked");
+  symlinkSync(inside, linked, "dir");
+  for (const runner of ["codex", "grok"] as const) {
+    for (const work of [inside, linked]) {
+      assert.throws(() => prepareRunnerSandbox({ runner, repoPath: repo, prompt: "", targetHeadSha: headSha(repo), tmp: work }), /launch directory must be outside the target repository/);
+    }
+  }
 });

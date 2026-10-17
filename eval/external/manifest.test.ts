@@ -241,3 +241,13 @@ test("unrelated objects sharing a blob prefix cannot change frozen diff bytes", 
     if (after.status === "source-ready") assert.match(after.reviewer.diff, /^index [a-f0-9]{40}\.\.44b7bbd77d9e79118961db2677e73a0eef12efa0 100644$/m);
   } finally { f.cleanup(); }
 });
+
+test("raw JSON source byte offsets reject rounding and interval overflow", () => {
+  const base = clean();
+  for (const rawOffset of ["9007199254740993", "9007199254740992", "9007199254740991"]) {
+    const raw = JSON.stringify({ ...base, source: { ...base.source, sourceBytes: { ...base.source.sourceBytes, rangeStart: "RAW_OFFSET", byteLength: 2 } } }).replace('"RAW_OFFSET"', rawOffset);
+    assert.throws(() => parseManifest(raw), /invalid_manifest|invalid_source_byte_range/);
+  }
+  const safe = { ...base, source: { ...base.source, sourceBytes: { ...base.source.sourceBytes, rangeStart: Number.MAX_SAFE_INTEGER - 2, byteLength: 2 } } };
+  assert.equal(parseManifest(JSON.stringify(safe)).source.sourceBytes.rangeStart, 9007199254740989);
+});

@@ -11,6 +11,7 @@ export type RunnerFailureKind =
   | "refused"
   | "response_limit"
   | "protocol_error"
+  | "quota_exhausted"
   | "unknown";
 
 export class RunnerFailure extends Error {

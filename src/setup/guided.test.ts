@@ -34,6 +34,8 @@ const endpoint=args.find(arg=>arg.startsWith('repos/')||arg.startsWith('user/rep
 const body=input?JSON.parse(input):{};
 if(endpoint.startsWith('user/repos'))out([[{full_name:'owner/repo',archived:false,permissions:{admin:true},private:true},{full_name:'owner/read',archived:false,permissions:{admin:false}}]]);
 if(endpoint.toLowerCase()==='repos/owner/repo')out({full_name:'owner/repo',default_branch:'main',permissions:{admin:state.admin}});
+if(endpoint.includes('/protection/required_status_checks')){if(state.requiredChecks)out(state.requiredChecks);missing()}
+if(endpoint.includes('/rules/branches/')){const page=Number(new URL('https://api.invalid/'+endpoint).searchParams.get('page')||'1');out(state.rulePages?state.rulePages[page-1]||[]:state.branchRules||[])}
 if(endpoint.endsWith('/actions/permissions'))out({enabled:state.actions,allowed_actions:state.policy||'all'});
 if(endpoint.endsWith('/actions/permissions/selected-actions'))out({github_owned_allowed:state.githubOwned===true,verified_allowed:false,patterns_allowed:state.patterns||[]});
 if(endpoint.startsWith('repos/frankekn/needlefish/contents/action.yml'))out({encoding:'base64',content:Buffer.from('runs:\\n  steps:\\n    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1').toString('base64')});
@@ -574,4 +576,62 @@ test("a valid creation response confirms its snapshot without another remote rea
   assert.equal(status.prUrl, "https://github.com/owner/repo/pull/7");
   assert.equal(f.state().branchHead, "later-sha");
   assert.ok(f.history().at(-1)?.args.includes("repos/owner/repo/pulls"));
+});
+
+for (const policy of [
+  { requiredChecks: { contexts: ["Needlefish"], checks: [] } },
+  { requiredChecks: { contexts: [], checks: [{ context: "Needlefish", app_id: 15368 }] } },
+  { branchRules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Needlefish", integration_id: 15368 }] } }] },
+]) {
+  test(`guided upgrade refuses a required review before any write ${JSON.stringify(policy)}`, t => {
+    const f = fixture(t, { previous: true, ...policy });
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(JSON.parse(result.stdout).message, /required Needlefish.*manual migration/i);
+    assert.equal(JSON.parse(result.stdout).firstReview, undefined);
+    assert.ok(f.history().every(call => !call.args.includes("--method")));
+    assert.equal(f.state().branch, undefined);
+  });
+}
+
+test("guided upgrade keeps unrelated required checks and permits an unprotected upgrade", t => {
+  const f = fixture(t, { previous: true, requiredChecks: { contexts: ["ci"], checks: [{ context: "ci", app_id: 15368 }] } });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(result.stdout).firstReview, "not_verified");
+  assert.equal(f.history().filter(call => call.args.includes("--method")).length, 4);
+});
+
+for (const initial of [
+  { previous: true, failAt: "repos/owner/repo/branches/main/protection/required_status_checks" },
+  { previous: true, failAt: "repos/owner/repo/rules/branches/main?per_page=100&page=1" },
+  { previous: true, branchRules: {} },
+  { parentWorkflow: "previous", requiredChecks: { contexts: ["Needlefish"], checks: [] } },
+  { previous: true, branch: true, requiredChecks: { contexts: ["Needlefish"], checks: [] } },
+]) {
+  test(`guided upgrade policy errors and late previous templates write nothing ${JSON.stringify(initial)}`, t => {
+    const f = fixture(t, initial);
+    const result = f.run(["create-pr", ...remote, "--confirm"]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(JSON.parse(result.stdout).phase, "error");
+    assert.ok(f.history().every(call => !call.args.includes("--method")));
+    assert.equal(f.state().pr, undefined);
+  });
+}
+
+test("guided upgrade finds a required review after the first rules page", t => {
+  const f = fixture(t, { previous: true, rulePages: [Array.from({ length: 100 }, () => ({ type: "required_pull_request_reviews" })), [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Needlefish" }] } }]] });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(JSON.parse(result.stdout).message, /required Needlefish.*manual migration/i);
+  assert.ok(f.history().some(call => call.args.includes("repos/owner/repo/rules/branches/main?per_page=100&page=2")));
+  assert.ok(f.history().every(call => !call.args.includes("--method")));
+});
+
+test("guided upgrade refuses incomplete rules pagination before writes", t => {
+  const f = fixture(t, { previous: true, rulePages: Array.from({ length: 10 }, () => Array.from({ length: 100 }, () => ({ type: "required_pull_request_reviews" }))) });
+  const result = f.run(["create-pr", ...remote, "--confirm"]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(JSON.parse(result.stdout).message, /rule pagination limit/i);
+  assert.ok(f.history().every(call => !call.args.includes("--method")));
 });

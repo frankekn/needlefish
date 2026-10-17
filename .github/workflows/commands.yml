@@ -99,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run review.yml -R "${{ github.repository }}" -f pr_number="${{ github.event.issue.number }}"
+          gh workflow run review.yml -R "${{ github.repository }}" -f pr_number="${{ github.event.issue.number }}" -f recheck=true
 
   explain:
     # Runs on the ephemeral x64-review pool (on the tailnet, reaches CLIProxyAPI); same lane as review.

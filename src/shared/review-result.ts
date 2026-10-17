@@ -1,3 +1,5 @@
+import { parseExternalClaims } from "./normalize.js";
+import { parseReviewRuntime } from "./runtime.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -5,6 +7,8 @@ import {
 	type Category,
 	type CoverageGap,
 	type Finding,
+	type FindingEvidence,
+	type SourceEvidence,
 	type ResidualRisk,
 	type ReviewResult,
 	type ScopeCallout,
@@ -135,6 +139,52 @@ function requireReplacement(raw: unknown): Finding["replacement"] {
 	return { lines };
 }
 
+function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
+	if (!isRecord(raw)) throw new Error("quoteCheck not an object");
+	const { status, from } = raw;
+	if (status !== "matched" && status !== "moved" && status !== "not_found" && status !== "unchecked") {
+		throw new Error("quoteCheck.status not matched, moved, not_found, or unchecked");
+	}
+	if (from !== undefined && (typeof from !== "string" || from === "")) {
+		throw new Error("quoteCheck.from not a non-empty string");
+	}
+	if (status === "moved") {
+		if (typeof from !== "string") throw new Error("quoteCheck.from missing for moved location");
+		return { status, from };
+	}
+	return { status };
+}
+
+function requireEvidence(raw: unknown): FindingEvidence {
+	if (!isRecord(raw) || raw.toolRead !== "unknown" || !Array.isArray(raw.sources)) {
+		throw new Error("evidence requires unknown toolRead and sources array");
+	}
+	const sources = raw.sources.map((source): SourceEvidence => {
+		if (!isRecord(source)) throw new Error("evidence source not an object");
+		if (source.sourceType === "external" && source.status === "unverified_external_claim") {
+			const [claim] = parseExternalClaims([source]);
+			return { ...claim, sourceType: "external", status: "unverified_external_claim" };
+		}
+		if (source.sourceType !== "git_blob" ||
+			(source.revision !== null && (typeof source.revision !== "string" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(source.revision)))) {
+			throw new Error("evidence requires git_blob and fixed revision or null");
+		}
+		const file = fieldNonEmpty(source, "file");
+		const lineStart = fieldPositiveNumber(source, "lineStart");
+		const lineEnd = fieldPositiveNumber(source, "lineEnd");
+		if (lineEnd < lineStart) throw new Error("evidence lineEnd before lineStart");
+		const location = { sourceType: "git_blob", revision: source.revision, file, lineStart, lineEnd } satisfies Partial<SourceEvidence>;
+		if (source.status === "source_unverified") return { ...location, status: "source_unverified" };
+		if (source.status !== "source_present" || source.revision === null ||
+			typeof source.contentDigest !== "string" || !/^[a-f0-9]{64}$/.test(source.contentDigest) ||
+			!Number.isInteger(lineStart) || !Number.isInteger(lineEnd)) {
+			throw new Error("source_present requires fixed revision, integer lines and SHA-256 digest");
+		}
+		return { ...location, revision: source.revision, status: "source_present", contentDigest: source.contentDigest };
+	});
+	return { toolRead: "unknown", sources };
+}
+
 function requireFinding(raw: unknown): Finding {
 	if (!isRecord(raw)) throw new Error("not an object");
 	const severity = requireSeverity(raw.severity);
@@ -183,6 +233,16 @@ function requireFinding(raw: unknown): Finding {
 	}
 	const replacement =
 		raw.replacement === undefined ? undefined : requireReplacement(raw.replacement);
+	const quote = raw.quote;
+	if (
+		quote !== undefined &&
+		(typeof quote !== "string" || quote === "" || quote !== quote.trim() || quote.length > 500 || /[\r\n]/.test(quote))
+	) {
+		throw new Error("quote not a non-empty trimmed one-line string of at most 500 characters");
+	}
+	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
+	const externalClaims = raw.externalClaims === undefined ? undefined : parseExternalClaims(raw.externalClaims);
+	const evidence = raw.evidence === undefined ? undefined : requireEvidence(raw.evidence);
 	return {
 		severity,
 		title,
@@ -197,6 +257,10 @@ function requireFinding(raw: unknown): Finding {
 		...(consumerFile !== undefined ? { consumerFile } : {}),
 		...(consumerLine !== undefined ? { consumerLine } : {}),
 		...(replacement !== undefined ? { replacement } : {}),
+		...(quote !== undefined ? { quote } : {}),
+		...(quoteCheck !== undefined ? { quoteCheck } : {}),
+		...(externalClaims !== undefined ? { externalClaims } : {}),
+		...(evidence !== undefined ? { evidence } : {}),
 	};
 }
 
@@ -286,6 +350,12 @@ function stringListField(value: unknown): string[] {
 	return value;
 }
 
+function nonEmptyStringListField(value: unknown): string[] {
+	const files = stringListField(value);
+	if (files.some((file) => file.length === 0)) throw new Error("contains an empty path");
+	return files;
+}
+
 function runUsageField(value: unknown): NonNullable<RunStat["usage"]> {
 	if (!isRecord(value)) throw new Error("entry.usage not an object");
 	const fields = [value.totalTokens, value.inputTokens, value.outputTokens];
@@ -368,10 +438,13 @@ const OPTIONAL_FIELD_PARSERS: {
 	readonly [K in OptionalFieldKey]-?: (value: unknown) => ReviewResult[K];
 } = {
 	reviewTarget: stringField,
+	docsOnlyFastPath: booleanField,
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
+	unreviewedBinaryFiles: nonEmptyStringListField,
 	coverageGaps: coverageGapListField,
+	runtime: parseReviewRuntime,
 	stats: runStatField,
 	totalDurationMs: finiteNumberField,
 	coverage: stringField,

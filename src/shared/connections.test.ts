@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { connectionsFile, parseConnections, resolveConnectionOptions } from "./connections.js";
-import { RUNNERS } from "./runner.js";
+import { RUNNERS, type RunnerOptions } from "./runner.js";
 
 const command = path.join(path.parse(process.cwd()).root, "tools", "custom agent");
 const cli = { id: "我的連線", adapter: "claude", model: "selected-model" };
@@ -75,30 +75,30 @@ test("selection is explicit, immutable, preserves local options and does not mut
   const f = fixture(t);
   const env = { ...f.env, NEEDLEFISH_RUNNER: "codex", NEEDLEFISH_MODEL: "wrong-model" };
   const before = { ...env };
-  const opts = { connection: "any-brand", deep: true, timeoutMs: 1234 };
+  const opts = { connections: ["any-brand"], deep: true, timeoutMs: 1234 };
   const resolved = resolveConnectionOptions(opts, f.repo, env);
   assert.deepEqual(resolved, { ...opts, runner: "acp", model: "custom-model", acpLaunch: { command, args: ["acp", "--model", "custom-model"] } });
   assert.ok(Object.isFrozen(resolved));
   writeFileSync(f.file, "invalid now");
-  assert.equal(resolved.connection, "any-brand");
-  assert.deepEqual(opts, { connection: "any-brand", deep: true, timeoutMs: 1234 });
+  assert.deepEqual(resolved.connections, ["any-brand"]);
+  assert.deepEqual(opts, { connections: ["any-brand"], deep: true, timeoutMs: 1234 });
   assert.deepEqual(env, before);
 });
 
 test("ACP agent default does not borrow an ambient requested model", (t) => {
   const f = fixture(t, config([{ id: "a", adapter: "acp", launch: { command, args: [] } }]));
-  const resolved = resolveConnectionOptions({ connection: "a", model: undefined }, f.repo, { ...f.env, NEEDLEFISH_MODEL: "wrong" });
+  const resolved = resolveConnectionOptions({ connections: ["a"], model: undefined }, f.repo, { ...f.env, NEEDLEFISH_MODEL: "wrong" });
   assert.equal(resolved.model, undefined);
 });
 
 test("unknown selection never falls back to the first entry", (t) => {
   const f = fixture(t);
-  assert.throws(() => resolveConnectionOptions({ connection: "missing" }, f.repo, f.env), /not found/);
+  assert.throws(() => resolveConnectionOptions({ connections: ["missing"] }, f.repo, f.env), /not found/);
 });
 
 test("conflicting explicit options are rejected before file access", () => {
   for (const extra of [{ runner: "codex" as const }, { model: "other" }, { acpLaunch: { command, args: [] } }]) {
-    assert.throws(() => resolveConnectionOptions({ connection: "a", ...extra }, "missing", {}), /cannot be combined/);
+    assert.throws(() => resolveConnectionOptions({ connections: ["a"], ...extra }, "missing", {}), /cannot be combined/);
   }
 });
 
@@ -116,7 +116,7 @@ test("repository config is rejected even from a nested working directory", (t) =
   const f = fixture(t);
   const inside = path.join(f.repo, "connections.json");
   writeFileSync(inside, JSON.stringify(config()));
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, path.join(f.repo, "sub"), { NEEDLEFISH_CONNECTIONS_FILE: inside }), /outside the reviewed repository/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, path.join(f.repo, "sub"), { NEEDLEFISH_CONNECTIONS_FILE: inside }), /outside the reviewed repository/);
 });
 
 test("a user-path symlink cannot redirect config into the target repo", { skip: process.platform === "win32" }, (t) => {
@@ -125,13 +125,13 @@ test("a user-path symlink cannot redirect config into the target repo", { skip: 
   writeFileSync(inside, JSON.stringify(config()));
   rmSync(f.file);
   symlinkSync(inside, f.file);
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /symlink targets/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /symlink targets/);
 });
 
 test("bad JSON diagnostics never echo configuration bytes", (t) => {
   const f = fixture(t);
   writeFileSync(f.file, '{"token":"TEST_SECRET_DO_NOT_PRINT", BROKEN');
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), (error: unknown) => {
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.match(error.message, /not valid JSON/);
     assert.doesNotMatch(error.message, /TEST_SECRET|BROKEN/);
@@ -142,18 +142,18 @@ test("bad JSON diagnostics never echo configuration bytes", (t) => {
 test("missing, oversized and non-regular files fail clearly", (t) => {
   const f = fixture(t);
   writeFileSync(f.file, " ".repeat(65537));
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /64 KiB/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /64 KiB/);
   rmSync(f.file);
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /unavailable/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /unavailable/);
   mkdirSync(f.file);
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /regular file/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /regular file/);
 });
 
 test("FIFO configuration cannot block the process", { skip: process.platform === "win32" }, (t) => {
   const f = fixture(t);
   rmSync(f.file);
   assert.equal(spawnSync("mkfifo", [f.file]).status, 0);
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /regular file/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /regular file/);
 });
 
 test("parsed connections are frozen copies without freezing caller-owned input", () => {
@@ -190,7 +190,7 @@ test("duplicate IDs are diagnosed before validating the duplicate adapter", () =
 
 test("selecting a valid entry does not silently ignore a malformed unselected entry", (t) => {
   const f = fixture(t, config([cli, { ...acp, launch: { command, args: [5] } }]));
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /ACP args must be an array of strings/);
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /ACP args must be an array of strings/);
 });
 
 for (const size of [65535, 65536, 65537]) {
@@ -202,9 +202,9 @@ for (const size of [65535, 65536, 65537]) {
     assert.equal(Buffer.byteLength(raw), size);
     writeFileSync(f.file, raw);
     if (size > 65536) {
-      assert.throws(() => resolveConnectionOptions({ connection: cli.id }, f.repo, f.env), /64 KiB/);
+      assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env), /64 KiB/);
     } else {
-      assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, f.env).connection, cli.id);
+      assert.deepEqual(resolveConnectionOptions({ connections: [cli.id] }, f.repo, f.env).connections, [cli.id]);
     }
   });
 }
@@ -215,7 +215,7 @@ test("repository config is rejected beneath a worktree-style .git file", (t) => 
   writeFileSync(path.join(f.repo, ".git"), "gitdir: ../worktree-metadata\n");
   const inside = path.join(f.repo, "connections.json");
   writeFileSync(inside, JSON.stringify(config()));
-  assert.throws(() => resolveConnectionOptions({ connection: cli.id }, path.join(f.repo, "sub"), {
+  assert.throws(() => resolveConnectionOptions({ connections: [cli.id] }, path.join(f.repo, "sub"), {
     NEEDLEFISH_CONNECTIONS_FILE: inside,
   }), /outside the reviewed repository/);
 });
@@ -226,16 +226,35 @@ test("a sibling directory sharing the repository name prefix remains outside the
   mkdirSync(sibling);
   const file = path.join(sibling, "connections.json");
   writeFileSync(file, JSON.stringify(config()));
-  assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, {
+  assert.deepEqual(resolveConnectionOptions({ connections: [cli.id] }, f.repo, {
     NEEDLEFISH_CONNECTIONS_FILE: file,
-  }).connection, cli.id);
+  }).connections, [cli.id]);
 });
 
 test("a symlink between user-owned paths outside the repository remains supported", { skip: process.platform === "win32" }, (t) => {
   const f = fixture(t);
   const link = path.join(f.dir, "selected.json");
   symlinkSync(f.file, link);
-  assert.equal(resolveConnectionOptions({ connection: cli.id }, f.repo, {
+  assert.deepEqual(resolveConnectionOptions({ connections: [cli.id] }, f.repo, {
     NEEDLEFISH_CONNECTIONS_FILE: link,
-  }).connection, cli.id);
+  }).connections, [cli.id]);
+});
+
+import { resolveConnectionRoutes } from "./connections.js";
+
+test("ordered selection validates the complete list and freezes every private source once", (t)=>{
+  const f=fixture(t,config([
+    {id:"first",adapter:"codex",model:"one",auth:{env:{CODEX_API_KEY:"FIRST"},route:{kind:"openai"}}},
+    {id:"second",adapter:"codex",model:"two",auth:{env:{CODEX_API_KEY:"SECOND"},route:{kind:"openai"}}},
+  ]));
+  const env={...f.env,FIRST:"frozen-first",SECOND:"frozen-second"};
+  for(const connections of [[],["first","first"],["first","missing"],[" "]]) assert.throws(()=>resolveConnectionRoutes({connections},f.repo,env));
+  const routes=resolveConnectionRoutes<RunnerOptions>({connections:["second","first"]},f.repo,env);
+  writeFileSync(f.file,"changed after resolution");env.FIRST="rotated-first";env.SECOND="rotated-second";
+  assert.deepEqual(routes.map(route=>route.model),["two","one"]);
+  const actual=routes.map(route=>{const child:NodeJS.ProcessEnv={};route.connectionAuth?.applyTo(child);return child.CODEX_API_KEY;});
+  assert.deepEqual(actual,["frozen-second","frozen-first"]);
+  assert.ok(Object.isFrozen(routes));
+  assert.doesNotMatch(JSON.stringify(routes),/frozen|rotated/);
+  assert.throws(()=>resolveConnectionOptions({connections:["first","second"]},f.repo,env),/only one/);
 });

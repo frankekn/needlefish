@@ -1,3 +1,4 @@
+import type { ConnectionsOperation } from "../adapters/connections.js";
 import type { SetupAction } from "../setup/guided.js";
 import type { LocalOptions } from "../adapters/local.js";
 import {
@@ -8,6 +9,7 @@ import {
 } from "../shared/runner.js";
 
 export type CliCommand =
+  | { readonly kind: "connections"; readonly operation: ConnectionsOperation; readonly repo?: string }
   | {
       readonly kind: "help" | "version";
     }
@@ -53,6 +55,7 @@ export type CliCommand =
     }
   | {
       readonly kind: "doctor";
+      readonly connection?: string;
       readonly repo?: string;
       readonly runner?: RunnerName;
       readonly base?: string;
@@ -78,7 +81,7 @@ Usage:
                                        explain one finding on a PR (Action mode)
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
-                                       (exits 1 when stored and derived differ)
+                                       (exits 1 for non-pass verdicts or drift)
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)
@@ -91,12 +94,20 @@ Usage:
                                        inspect setup or explicitly create a PR/set a secret
                                        credentials are accepted only through stdin
 
+  needlefish connections list|edit|validate|apply|inspect --json [--repo <path>]
+                                       edit operator profiles; validate/apply/inspect
+                                       accept bounded JSON through stdin; no model call
+  needlefish connections review --json
+                                       review one frozen local-uncommitted selection
+                                       with bounded stdin and session-only credentials
+
 Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
-  --runner <name>      codex | claude | opencode | openai | grok | pi | acp
-  --connection <id>    select one user-configured connection (no automatic fallback)
+  --runner <name>      codex | claude | openai | grok | pi | acp
+                       opencode is temporarily disabled (issue #207)
+  --connection <id>    select a connection; repeat in quota fallback order
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -113,15 +124,16 @@ Local diff options:
   --branch             review merge-base..HEAD even when the worktree is dirty
 
 Env:
-  NEEDLEFISH_RUNNER       codex | claude | opencode | openai | grok | pi | acp (default: auto-detect codex, claude, opencode)
+  NEEDLEFISH_RUNNER       codex | claude | openai | grok | pi | acp (auto-detect codex, claude)
+                         opencode is temporarily disabled (issue #207)
   NEEDLEFISH_MODEL        model id for the selected runner
   NEEDLEFISH_TIMEOUT_MS   per-call timeout (default: 1200000)
   NEEDLEFISH_GH_POST_RETRY_MS  base delay between idempotent GitHub write retries on a 5xx (default: 250)
   NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR  1 = --github reviews PRs whose author is not OWNER/MEMBER/COLLABORATOR, or is a bot
   CODEX_BIN               codex executable (default: codex)
   CLAUDE_BIN              claude executable (default: claude)
-  OPENCODE_BIN            opencode executable (default: opencode)
-  OPENCODE_IDLE_TIMEOUT_MS opencode inactivity timeout (default: min of per-call timeout and 600000)
+  OPENCODE_BIN            reserved while opencode reviews are disabled (#207)
+  OPENCODE_IDLE_TIMEOUT_MS inactive while opencode reviews are disabled (#207)
   PI_BIN                  pi executable (default: pi)
   NEEDLEFISH_ACP_BIN      ACP agent executable (required for legacy --runner acp)
   NEEDLEFISH_CONNECTIONS_FILE  absolute user connections.json path (used only by --connection)
@@ -133,7 +145,7 @@ type MutableLocalOptions = {
   deep?: boolean;
   focus?: string;
   cacheDir?: string;
-  connection?: string;
+  connections?: string[];
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -141,7 +153,7 @@ type MutableLocalOptions = {
 };
 
 type MutableRunnerOptions = {
-  connection?: string;
+  connections?: string[];
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -183,7 +195,7 @@ function parsePr(value: string): number {
 
 function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
-  if (opts.connection !== undefined) runnerOpts.connection = opts.connection;
+  if (opts.connections !== undefined) runnerOpts.connections = opts.connections;
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
@@ -191,6 +203,21 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  if (argv[0] === "connections") {
+    const operation = argv[1];
+    if (operation !== "list" && operation !== "edit" && operation !== "validate" && operation !== "apply" && operation !== "inspect" && operation !== "review") throw new Error("invalid_request");
+    let repo: string | undefined;
+    let json = false;
+    for (let i = 2; i < argv.length; i++) {
+      if (argv[i] === "--json" && !json) { json = true; continue; }
+      const value = optionValue(argv, i, "--repo");
+      if (!value || repo !== undefined) throw new Error("invalid_request");
+      repo = value.value;
+      if (value.consumedNext) i++;
+    }
+    if (!json || operation === "review" && repo !== undefined) throw new Error("invalid_request");
+    return { kind: "connections", operation, ...(repo === undefined ? {} : { repo }) };
+  }
   if (argv[0] === "setup") {
     if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
     if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
@@ -336,8 +363,8 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     }
     const connectionOption = optionValue(argv, i, "--connection");
     if (connectionOption) {
-      if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
-      opts.connection = connectionOption.value;
+      if (opts.connections?.includes(connectionOption.value)) throw new Error("--connection IDs must not repeat");
+      (opts.connections ??= []).push(connectionOption.value);
       if (connectionOption.consumedNext) i++;
       continue;
     }
@@ -362,12 +389,16 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error(`unknown option ${arg}`);
   }
 
-  if (opts.connection !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
+  if (opts.connections !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
     throw new Error("--connection cannot be combined with --runner or --model");
   }
 
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
+  }
+
+  if ((doctorCommand || explainCommand) && (opts.connections?.length ?? 0) > 1) {
+    throw new Error("doctor and explain accept only one --connection; ordered fallback requires a whole review.");
   }
 
   if (doctorCommand) {
@@ -382,13 +413,13 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus !== undefined ||
       opts.deep !== undefined ||
       opts.model !== undefined ||
-      opts.connection !== undefined ||
       opts.timeoutMs !== undefined ||
       opts.localMode !== undefined;
-    if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");
+    if (unsupported) throw new Error("doctor accepts only --repo, --runner or --connection, --base, and --json");
     return {
       kind: "doctor",
       json,
+      ...(opts.connections !== undefined ? { connection: opts.connections[0] } : {}),
       ...(repo !== undefined ? { repo } : {}),
       ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
       ...(opts.base !== undefined ? { base: opts.base } : {}),

@@ -68,7 +68,7 @@ test("render prints the cached result through renderMarkdown", (t) => {
 
   const result = runCli(["render", file]);
 
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 1, result.stderr);
   assert.match(result.stdout, /CHANGES REQUESTED/);
   assert.match(result.stdout, /Drops the sentinel check/);
   assert.match(result.stdout, /src\/app\.ts:10/);
@@ -102,7 +102,7 @@ test("verdict prints stored and derived verdicts", (t) => {
 
   const result = runCli(["verdict", file]);
 
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 1, result.stderr);
   assert.match(result.stdout, /stored: {2}changes_requested\n/);
   assert.match(result.stdout, /derived: changes_requested\n/);
   assert.equal(result.stderr, "");
@@ -201,3 +201,57 @@ test("render reports a missing file without a stack trace", (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /cannot read cached review/);
 });
+
+
+test("cached commands reject padded quotes and preserve valid quote and legacy caches", (t) => {
+  const finding = {
+    severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
+    lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
+    suggestedFix: "f", validation: "",
+  };
+  for (const quotedFinding of [
+    { ...finding, quote: "  source  " },
+    { ...finding, quote: "source  inside" },
+    finding,
+  ]) {
+    const file = fixture(t, baseResult({ verdict: "changes_requested", findings: [quotedFinding] }));
+    const before = readFileSync(file, "utf8");
+    for (const command of ["render", "verdict"]) {
+      const result = runCli([command, file]);
+      if ("quote" in quotedFinding && quotedFinding.quote === "  source  ") {
+        assert.equal(result.status, 1, result.stdout);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /invalid cached review.*quote/);
+      } else {
+        assert.equal(result.status, 1, result.stderr);
+        assert.equal(result.stderr, "");
+        if (command === "verdict") {
+          assert.equal(result.stdout, "stored:  changes_requested\nderived: changes_requested\n");
+        } else {
+          assert.match(result.stdout, /CHANGES REQUESTED/);
+          assert.match(result.stdout, /breaks/);
+          assert.match(result.stdout, /src\/app\.ts:1/);
+        }
+      }
+    }
+    assert.equal(readFileSync(file, "utf8"), before);
+  }
+});
+for (const command of ["render", "verdict"]) {
+  for (const verdict of ["pass", "needs_human"]) {
+    test(`${command} exits ${verdict === "pass" ? 0 : 1} for ${verdict}`, (t) => {
+      const file = fixture(t, baseResult({
+        verdict,
+        residualRisks: verdict === "needs_human"
+          ? [{ text: "auth.ts not reviewed", blocks: true }]
+          : [],
+      }));
+      const result = runCli([command, file]);
+      assert.equal(result.status, verdict === "pass" ? 0 : 1, result.stderr);
+      if (command === "render" && verdict === "needs_human") {
+        assert.match(result.stdout, /REVIEW INCOMPLETE/);
+        assert.match(result.stdout, /Retry the review or ask a maintainer/);
+      }
+    });
+  }
+}

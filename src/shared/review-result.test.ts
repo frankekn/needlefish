@@ -57,6 +57,7 @@ test("parseReviewResult accepts every optional field by type when present", () =
 	const result = parseReviewResult(
 		serialized({
 			reviewTarget: "Review target: merge-base..HEAD",
+			docsOnlyFastPath: true,
 			stats: [
 				{
 					label: "review",
@@ -101,6 +102,7 @@ test("parseReviewResult accepts every optional field by type when present", () =
 		}),
 	);
 	assert.equal(result.reviewTarget, "Review target: merge-base..HEAD");
+	assert.equal(result.docsOnlyFastPath, true);
 	assert.equal(result.stats?.length, 2);
 	assert.equal(result.stats?.[0].model, "claude-x");
 	assert.deepEqual(result.stats?.[0].usage, {
@@ -263,6 +265,8 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 					consumerFile: "src/app.ts",
 					consumerLine: 33,
 					replacement: { lines: ["export fn(a, b) {", "  return a;"] },
+					quote: "export fn(a) {",
+					quoteCheck: { status: "moved", from: "src/old.ts:3" },
 				},
 			],
 		}),
@@ -271,11 +275,53 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 	assert.equal(finding.consumerFile, "src/app.ts");
 	assert.equal(finding.consumerLine, 33);
 	assert.deepEqual(finding.replacement, { lines: ["export fn(a, b) {", "  return a;"] });
+	assert.equal(finding.quote, "export fn(a) {");
+	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/old.ts:3" });
+});
+
+test("parseReviewResult rejects untrimmed persisted quotes in final and candidate findings", () => {
+	const finding = {
+		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v",
+	};
+	for (const field of ["findings", "candidateFindings"]) {
+		for (const quote of ["  source  ", " source", "source\t", "\u3000source\u00a0", " "]) {
+			assert.throws(
+				() => parseReviewResult(serialized({ [field]: [{ ...finding, quote }] })),
+				/quote/,
+			);
+		}
+		for (const quote of ["source", "source  inside", "a".repeat(500)]) {
+			const result = parseReviewResult(serialized({ [field]: [{ ...finding, quote }] }));
+			assert.deepEqual(field === "findings" ? result.findings : result.candidateFindings, [{ ...finding, quote }]);
+		}
+		const legacy = parseReviewResult(serialized({ [field]: [finding] }));
+		assert.deepEqual(field === "findings" ? legacy.findings : legacy.candidateFindings, [finding]);
+	}
+});
+
+test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
+	const finding = {
+		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v",
+	};
+	for (const extra of [
+		{ quote: "a\nb" },
+		{ quote: "" },
+		{ quote: 7 },
+		{ quoteCheck: { status: "maybe" } },
+		{ quoteCheck: { status: "moved", from: "" } },
+		{ quoteCheck: { status: "moved" } },
+		{ quoteCheck: "matched" },
+	]) {
+		assert.throws(() => parseReviewResult(serialized({ findings: [{ ...finding, ...extra }] })), /quote/);
+	}
 });
 
 test("parseReviewResult rejects mistyped optional fields", () => {
 	for (const [field, value, pattern] of [
 		["reviewTarget", 5, /reviewTarget/],
+		["docsOnlyFastPath", "true", /docsOnlyFastPath/],
 		["stats", "x", /stats/],
 		["stats", [{ label: "l", runner: "not-a-runner", durationMs: 1, attempts: 1, ok: true }], /runner/],
 		["stats", [{ label: "l", runner: "codex", durationMs: 1, attempts: 0, ok: true }], /attempts/],
@@ -322,6 +368,17 @@ test("parseReviewResult preserves coverageGaps exactly", () => {
 	assert.equal(parseReviewResult(serialized()).coverageGaps, undefined);
 });
 
+test("parseReviewResult preserves additive binary paths and rejects malformed paths", () => {
+	const unreviewedBinaryFiles = ["image.bin", "new\nline.bin"];
+	const result = parseReviewResult(serialized({ unreviewedBinaryFiles }));
+	assert.deepEqual(result.unreviewedBinaryFiles, unreviewedBinaryFiles);
+	assert.deepEqual(JSON.parse(serializeReviewResult(result)), serialized({ unreviewedBinaryFiles }));
+	assert.equal(parseReviewResult(serialized()).unreviewedBinaryFiles, undefined);
+	for (const value of ["image.bin", ["image.bin", 1], [""]]) {
+		assert.throws(() => parseReviewResult(serialized({ unreviewedBinaryFiles: value })), /unreviewedBinaryFiles/);
+	}
+});
+
 test("parseReviewResult rejects mistyped coverageGaps entries", () => {
 	for (const [value, pattern] of [
 		["assets/model.bin", /coverageGaps: not an array/],
@@ -348,5 +405,30 @@ test("parseReviewResult rejects mistyped PR scope and callout fields", () => {
 		["scopeCallouts", [{ surface: "dependency" }], /files/],
 	] as const) {
 		assert.throws(() => parseReviewResult(serialized({ [field]: value })), pattern);
+	}
+});
+
+	test("parseReviewResult preserves an unchecked quote result", () => {
+	const finding = { severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v", quoteCheck: { status: "unchecked" } };
+	assert.deepEqual(parseReviewResult(serialized({ findings: [finding] })).findings[0].quoteCheck, { status: "unchecked" });
+});
+
+
+test("evidence JSON round-trip keeps provenance and rejects invented tool observations", () => {
+	const finding = normalizeFinding({ severity: "P2", category: "bug", title: "Restore guard", file: "src/app.ts",
+		lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "rejects valid input", suggestedFix: "restore guard",
+		externalClaims: [{ claim: "Unsupported syntax exists", necessary: false, source: { type: "external", url: "https://spec.example.invalid/reference" } }],
+		evidence: { toolRead: "tool_observed", sources: [] } });
+	assert.equal(finding.evidence, undefined);
+	const result: ReviewResult = { ...baseResult(), verdict: "changes_requested", findings: [{ ...finding,
+		evidence: { toolRead: "unknown", sources: [{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/app.ts",
+			lineStart: 1, lineEnd: 1, status: "source_present", contentDigest: "c".repeat(64) },
+			{ claim: "Unsupported syntax exists", necessary: false, source: { type: "external", url: "https://spec.example.invalid/reference" }, sourceType: "external", status: "unverified_external_claim" }] } }] };
+	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(result))), JSON.parse(serializeReviewResult(result)));
+	assert.throws(() => parseReviewResult({ ...result, findings: [{ ...finding, evidence: { toolRead: "tool_observed", sources: [] } }] }), /unknown toolRead/);
+	for (const externalClaims of [[{ claim: "Missing necessity", source: { type: "external", url: "https://spec.example.invalid" } }],
+		[{ claim: "Unsafe source", necessary: true, source: { type: "external", url: "file:///private" } }],
+		[{ claim: "Secret", necessary: true, source: { type: "external", url: ["https://", "user", ":", "password", "@example.invalid"].join("") } }]]) {
+		assert.throws(() => normalizeFinding({ ...finding, externalClaims }), /externalClaims/);
 	}
 });

@@ -1,5 +1,7 @@
 import {
 	runCodex,
+	resolveRunnerConfig,
+	type EffectiveRunnerConfig,
 	extractJson,
 	isRunnerSafetyError,
 	MALFORMED_OUTPUT_NEXT_STEP,
@@ -8,12 +10,26 @@ import {
 import {
 	parsePositiveInteger,
 	type RunnerOptions,
+	type ConnectionOutputGuard,
 	type RunStat,
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
-import { resolveRunner } from "../shared/runner-detection.js";
+import { AcpEnvironmentAuth } from "../shared/connection-auth.js";
+import { reviewRuntime, prepareReviewRuntime, completeReviewRuntime } from "../shared/runtime.js";
+import {
+	assertRunnerSandboxClean,
+	prepareRunnerSandbox,
+	type RunnerSandbox,
+} from "../shared/runner-sandbox.js";
+import {
+	assertRunnerSchedulingAllowed,
+	createManagedTempDirectory,
+	disposeManagedTempDirectory,
+	registerTerminationFinalizer,
+} from "../shared/temp-lifecycle.js";
+import { resolveRunner, runnerReviewCapability, RunnerSelectionError } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -25,10 +41,12 @@ import {
 	type ReviewResult,
 	type Severity,
 } from "../shared/schema.js";
-import { normalizeMap, normalizeReview } from "../shared/normalize.js";
+import { normalizeFinding, normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
+import { checkQuotes } from "./quote-check.js";
+import { collectLargeLiteralContext, hotspotLiteralContext, type LargeLiteralContext } from "./large-literal-context.js";
 import { deriveVerdict } from "./verdict.js";
-import { loadPrompt } from "./prompts.js";
+import { fillPrompt, loadPrompt } from "./prompts.js";
 import {
 	observeCandidateReviewTrace,
 	observeFinalReviewTrace,
@@ -74,7 +92,10 @@ interface TraceDeliveryHealth {
 
 interface ReviewRun {
 	readonly bundle: Bundle;
-	readonly runnerOptions: RunnerOptions;
+	readonly runnerConfig: EffectiveRunnerConfig;
+	readonly runtime: NonNullable<ReviewResult["runtime"]>;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha" | "expectedBaseSha">;
+	readonly outputGuards: readonly ConnectionOutputGuard[];
 	readonly stats: RunStat[];
 	// Raw text of every failed parse attempt across all passes, kept even when
 	// a retry later succeeds — the eval canary scan must see emit-then-clean-up
@@ -94,6 +115,7 @@ interface ReviewRun {
 	readonly onProgress?: ReviewProgressObserver;
 	readonly startedAt: number;
 	readonly reviewDeadlineMs?: number;
+	readonly literalContext: () => Promise<LargeLiteralContext>;
 }
 
 interface ReviewPass {
@@ -175,9 +197,10 @@ async function mapLimit<T, R>(
 			},
 		),
 	);
-	const rejection = settled.find(
-		(s): s is PromiseRejectedResult => s.status === "rejected",
-	);
+	const rejections = settled.filter((s): s is PromiseRejectedResult => s.status === "rejected");
+	const rejection = rejections.find((s) => isRunnerSafetyError(s.reason))
+		?? rejections.find((s) => findRunnerFailure(s.reason)?.kind !== "quota_exhausted")
+		?? rejections[0];
 	if (rejection) throw rejection.reason;
 	return results;
 }
@@ -208,10 +231,27 @@ function dedup(findings: readonly Finding[]): Finding[] {
 	const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 	const out = new Map<string, Finding>();
 	for (const f of findings) {
-		const key = `${f.file}|${f.lineStart}|${f.category}|${norm(f.title).slice(0, 60)}|${norm(f.whyItBreaks).slice(0, 80)}`;
+		const key = JSON.stringify([f.file, f.lineStart, f.category, norm(f.title), norm(f.whyItBreaks)]);
 		const prev = out.get(key);
-		if (!prev || SEV_RANK[f.severity] < SEV_RANK[prev.severity])
+		if (!prev) {
 			out.set(key, f);
+			continue;
+		}
+		const strongest = SEV_RANK[f.severity] < SEV_RANK[prev.severity] ? f : prev;
+		if (![prev, f].some((finding) => finding.externalClaims?.some((claim) => claim.necessary))) {
+			out.set(key, strongest);
+			continue;
+		}
+		const independent = [prev, f].find((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+		if (independent) {
+			out.set(key, independent);
+			continue;
+		}
+		const claims = [...(prev.externalClaims ?? []), ...(f.externalClaims ?? [])];
+		out.set(key, {
+			...strongest,
+			externalClaims: [...new Map(claims.map((claim) => [JSON.stringify(claim), claim])).values()],
+		});
 	}
 	return [...out.values()];
 }
@@ -229,15 +269,17 @@ function codexOptions(
 	return {
 		repoPath: run.bundle.repoPath,
 		targetHeadSha: run.bundle.headSha,
+		...(run.snapshot ? { snapshot: run.snapshot } : {}),
 		...(run.bundle.headSha === "WORKING"
 			? { targetPatch: run.bundle.patch, targetBaseSha: run.bundle.baseSha }
 			: {}),
 		label,
 		onStat: (stat) => run.stats.push(stat),
-		onFailedAttempt: (runnerAttempt, raw) => {
+		onFailedAttempt: (runnerAttempt, raw, diagnostic) => {
 			if (run.onTrace) {
 				observeReviewTrace(run.onTrace, {
 					content: raw ?? "",
+					...(diagnostic ? { diagnostic } : {}),
 					surface: "raw_failure",
 					passKind: traceAttempt.passKind,
 					passIndex: traceAttempt.passIndex,
@@ -253,20 +295,29 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && run.outputGuards.length === 0) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn() && !run.runnerOptions.connectionAuth) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && run.outputGuards.length === 0) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
+		...(run.onTrace ? { onNativeToolTrace: (toolTrace, runnerAttempt) => {
+			observeReviewTrace(run.onTrace, {
+				content: "", surface: "native_tool_receipts", toolTrace,
+				passKind: traceAttempt.passKind, passIndex: traceAttempt.passIndex,
+				promptAttempt: traceAttempt.promptAttempt, runnerAttempt,
+				outcome: toolTrace.invocation === "accepted" ? "runner_completed" : "runner_failed",
+			});
+		} } satisfies Pick<CodexOptions, "onNativeToolTrace"> : {}),
 		onLfsReport: (report) => {
 			for (const file of report.pointerFiles) run.lfs.pointerFiles.add(file);
 			if (report.scanIncomplete) run.lfs.scanIncomplete = true;
 		},
-		...run.runnerOptions,
+		effectiveConfig: run.runnerConfig,
+		outputGuards: run.outputGuards,
 		...(run.reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs: run.reviewDeadlineMs }),
 	};
 }
@@ -277,7 +328,7 @@ function codexOptions(
 // not call-local, and includes SUCCESSFUL pass outputs too: when a later pass
 // rejects there is no ReviewResult, so a canary in an earlier successful map
 // or deep transcript would otherwise never reach the scan.
-function attachRunRaws(err: unknown, run: ReviewRun): void {
+function attachRunRaws(err: unknown, run: Pick<ReviewRun, "failedRawOutputs" | "rawOutputs" | "traceHealth">): void {
 	const raws = [...run.failedRawOutputs, ...run.rawOutputs];
 	if (!(err instanceof Error)) return;
 	if (raws.length > 0) {
@@ -345,7 +396,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && run.outputGuards.length === 0) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -389,92 +440,6 @@ function parseUsableReview(label: string): (raw: unknown) => RawReview {
 	};
 }
 
-// Critic contract is prune-only (prompts/critic.md). Real critics paraphrase
-// title/whyItBreaks/suggestedFix and nudge lineEnd/lineStart; those fields
-// are not identity. Matching is file + category + nearest unused candidate
-// lineStart within ±2. That window absorbs same-call re-anchoring (statement
-// vs condition). It is not the adapter's ±10, which exists for CROSS-ROUND
-// drift after code moved. An invented finding shares no candidate
-// file+category+near-lineStart and still fails closed. Matched content is
-// restored from the candidate so paraphrased text cannot reach deriveVerdict;
-// only severity and confidence come from the critic. Unknown keys throw from
-// parse so runJsonPrompt retries, then fails closed.
-//
-// Two unused candidates can sit at the SAME distance from the critic's anchor
-// (candidates at 50 and 54, critic anchored at 52). Line distance alone then
-// says nothing, and picking by array order restores the neighbour's content
-// under this finding's severity — real content, real severity, wrong pairing.
-// The tie is broken by token overlap on the text the critic paraphrases
-// (title + whyItBreaks): paraphrase keeps the domain words, so overlap ranks
-// the intended candidate above an unrelated one. Overlap is a TIE-BREAK ONLY.
-// Eligibility is still file + category + ±2 and nothing else, so no text
-// comparison can reject a finding that the window admits — the exact-field
-// key that rejected 92/252 real reviews on 2026-08-22
-// (eval/RESULTS_HISTORY.md) cannot come back through this path. Ordering is
-// total and deterministic: nearest line, then higher overlap, then first in
-// candidate order.
-//
-// Assignment is a maximum bipartite matching over that eligibility relation,
-// NOT first-come consumption. Greedy consumption destroys globally correct
-// assignments: candidates at 50 and 54 with critic findings anchored at 52
-// then 50 have a complete assignment (52→54, 50→50), but a greedy pass gives
-// 50 to the 52-anchored finding and then rejects a real review — a false
-// rejection in the seam whose first version already failed a gate at 92/252
-// for rejecting real reviews.
-//
-// Findings are processed in a canonical CONTENT order rather than array
-// order, so the assignment is a function of the two finding sets alone:
-// permuting the critic's findings cannot change who matches what. Each
-// finding first takes its most-preferred free candidate (nearest line, then
-// higher overlap, then candidate order — the tie-break above). Only a finding
-// that finds nothing free runs Kuhn's augmenting-path search, which may
-// displace an incumbent onto its own second choice. That ordering matters:
-// augmenting unconditionally would let a finding with no content signal
-// displace one that matched its candidate strongly, undoing the tie-break, so
-// displacement happens only when the alternative is rejecting the review
-// outright — and the displaced finding still lands on a real candidate it was
-// eligible for.
-//
-// Rejection keeps its exact meaning — the throw fires iff no complete
-// matching exists, i.e. some critic finding has no candidate under the same
-// eligibility relation. Eligibility is untouched, so this only ever accepts
-// MORE real critic output, never less; invention still fails closed, and 1:1
-// still holds because a candidate is the match of at most one finding.
-//
-// Cost, for F critic findings and C candidates: O(F·C) eligibility pairs,
-// O(F+C) tokenizations (token sets are built once, not per pair), and Kuhn is
-// O(F·E) = O(F²·C) worst case. Both are single digits in practice.
-//
-// Two things this deliberately does NOT do, both repeatedly proposed and both
-// rejected on recorded evidence — do not "fix" them without new evidence:
-//
-//   1. Require the critic to echo an opaque per-candidate identity token, or
-//      make a low-overlap match fail closed. Either turns text back into an
-//      admission test. The production critic paraphrases, and the exact-field
-//      key that did this rejected 92/252 real reviews (36.5%) on 2026-08-22.
-//      A rejection here throws away a whole real review; the defect it would
-//      buy is mis-ATTRIBUTION between two real candidates, never invention.
-//      Wrong trade.
-//   2. Withhold the critic's severity unless identity is "verified" by text
-//      similarity. Severity correction in both directions is the critic's job
-//      (prompts/critic.md; the severity-correction tests). Gating it on a
-//      similarity score would make the VERDICT depend on how heavily the
-//      critic paraphrased — a silent, unfalsifiable verdict shift, which is
-//      strictly worse in this seam than a loud, testable rule. Severity is a
-//      channel the critic legitimately owns for a candidate it matched.
-//
-// What actually bounds the critic is unchanged: content is always restored
-// from a real candidate, and the matching is 1:1, so no critic output can add
-// a finding that the candidate review did not contain.
-//
-// Residuals have no file/line/category — the text is the identity. Word-level
-// paraphrase is too collision-prone (an invented blocking residual could
-// pair with an unrelated candidate and manufacture needs_human). Identity is
-// exact text after case-fold and whitespace collapse. Depleting the bag
-// still caps copies.
-
-const CRITIC_FINDING_LINE_WINDOW = 2;
-
 function residualSubsetKey(text: string): string {
 	return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
@@ -491,135 +456,6 @@ function bagByKey<T>(
 		else bag.set(key, [item]);
 	}
 	return bag;
-}
-
-function findingTokens(finding: Finding): Set<string> {
-	return new Set(
-		`${finding.title} ${finding.whyItBreaks}`
-			.toLowerCase()
-			.split(/[^\p{L}\p{N}]+/u)
-			.filter((token) => token.length > 0),
-	);
-}
-
-// Jaccard overlap. 0 when either side has no tokens, so an empty-text finding
-// falls back to candidate order rather than outranking anything.
-function tokenOverlap(a: Set<string>, b: Set<string>): number {
-	if (a.size === 0 || b.size === 0) return 0;
-	let shared = 0;
-	for (const token of a) {
-		if (b.has(token)) shared++;
-	}
-	return shared / (a.size + b.size - shared);
-}
-
-// Content-derived, so the processing order below cannot depend on where a
-// finding sat in the critic's array. Two findings identical in every field are
-// interchangeable: whichever takes which candidate, the restored output is the
-// same.
-function canonicalFindingKey(finding: Finding): string {
-	return [
-		finding.file,
-		finding.category,
-		String(finding.lineStart),
-		String(finding.lineEnd),
-		finding.severity,
-		String(finding.confidence),
-		finding.title,
-		finding.whyItBreaks,
-	].join("\u0000");
-}
-
-// The eligibility relation — file + category + ±2 lineStart — and nothing
-// else. Order within it is preference only: nearest line, then higher token
-// overlap, then candidate order.
-function eligibleCandidates(
-	finding: Finding,
-	candidates: readonly Finding[],
-	candidateTokens: readonly Set<string>[],
-): number[] {
-	const criticTokens = findingTokens(finding);
-	const eligible: { index: number; delta: number; overlap: number }[] = [];
-	for (let i = 0; i < candidates.length; i++) {
-		const candidate = candidates[i];
-		if (candidate.file !== finding.file) continue;
-		if (candidate.category !== finding.category) continue;
-		const delta = Math.abs(candidate.lineStart - finding.lineStart);
-		if (delta > CRITIC_FINDING_LINE_WINDOW) continue;
-		eligible.push({
-			index: i,
-			delta,
-			overlap: tokenOverlap(criticTokens, candidateTokens[i]),
-		});
-	}
-	eligible.sort(
-		(a, b) => a.delta - b.delta || b.overlap - a.overlap || a.index - b.index,
-	);
-	return eligible.map((entry) => entry.index);
-}
-
-// Maximum bipartite matching (Kuhn). Returns one candidate index per critic
-// finding, or undefined when no complete matching exists — which is exactly
-// the old "this finding was not in the candidate review" condition, since a
-// finding with no eligible candidate can never be covered.
-function matchCriticFindings(
-	criticFindings: readonly Finding[],
-	candidates: readonly Finding[],
-): number[] | undefined {
-	const candidateTokens = candidates.map(findingTokens);
-	const adjacency = criticFindings.map((finding) =>
-		eligibleCandidates(finding, candidates, candidateTokens),
-	);
-	const order = criticFindings
-		.map((finding, index) => ({ index, key: canonicalFindingKey(finding) }))
-		.sort((a, b) =>
-			a.key < b.key ? -1 : a.key > b.key ? 1 : a.index - b.index,
-		)
-		.map((entry) => entry.index);
-
-	const ownerOf = new Array<number>(candidates.length).fill(-1);
-	const assign = (finding: number, visited: boolean[]): boolean => {
-		for (const candidate of adjacency[finding]) {
-			if (visited[candidate]) continue;
-			visited[candidate] = true;
-			const owner = ownerOf[candidate];
-			if (owner < 0 || assign(owner, visited)) {
-				ownerOf[candidate] = finding;
-				return true;
-			}
-		}
-		return false;
-	};
-
-	// Phase 1 takes the most-preferred FREE candidate. Augmenting unconditionally
-	// would let a finding with no content signal displace one that matched its
-	// candidate strongly — undoing the tie-break — so displacement is deferred.
-	const unplaced: number[] = [];
-	for (const finding of order) {
-		const free = adjacency[finding].find(
-			(candidate) => ownerOf[candidate] < 0,
-		);
-		if (free === undefined) unplaced.push(finding);
-		else ownerOf[free] = finding;
-	}
-
-	// Phase 2 runs only for findings that found nothing free, where the choice
-	// is between displacing an incumbent and rejecting the whole review.
-	// Augmenting from a greedy initial matching still yields a maximum matching,
-	// and Kuhn's invariant holds: a finding that cannot augment now never can,
-	// so a failure here means no complete matching exists at all.
-	for (const finding of unplaced) {
-		if (!assign(finding, new Array<boolean>(candidates.length).fill(false))) {
-			return undefined;
-		}
-	}
-
-	const matched = new Array<number>(criticFindings.length).fill(-1);
-	for (let candidate = 0; candidate < ownerOf.length; candidate++) {
-		const owner = ownerOf[candidate];
-		if (owner >= 0) matched[owner] = candidate;
-	}
-	return matched;
 }
 
 function takeResidual(
@@ -640,21 +476,52 @@ function takeResidual(
 	return matched;
 }
 
-function assertCriticSubset(
-	critic: RawReview,
+function parseCriticReview(
+	raw: unknown,
+	candidates: ReadonlyMap<string, Finding>,
 	candidate: RawReview,
 ): RawReview {
-	const matched = matchCriticFindings(critic.findings, candidate.findings);
-	if (!matched) {
-		throw new Error(
-			"malformed critic output: finding was not in the candidate review",
-		);
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw) ||
+		Object.keys(raw).length !== 4 ||
+		!("summary" in raw) || !("decisions" in raw) ||
+		!("checked" in raw) || !("residual_risks" in raw) ||
+		!Array.isArray(raw.decisions)) {
+		throw new Error("malformed critic output: expected summary, decisions, checked, residual_risks");
 	}
-	const findings: Finding[] = critic.findings.map((finding, index) => ({
-		...candidate.findings[matched[index]],
-		severity: finding.severity,
-		confidence: finding.confidence,
-	}));
+	const critic = parseUsableReview("critic")({
+		summary: raw.summary,
+		findings: [],
+		checked: raw.checked,
+		residual_risks: raw.residual_risks,
+	});
+	const seen = new Set<string>();
+	const findings: Finding[] = [];
+	for (const decision of raw.decisions) {
+		if (typeof decision !== "object" || decision === null || Array.isArray(decision) ||
+			!("ref" in decision) || typeof decision.ref !== "string" ||
+			!("action" in decision)) {
+			throw new Error("malformed critic output: invalid decision");
+		}
+		const source = candidates.get(decision.ref);
+		if (!source || seen.has(decision.ref)) {
+			throw new Error("malformed critic output: unknown or duplicate ref");
+		}
+		seen.add(decision.ref);
+		if (decision.action === "drop" && Object.keys(decision).length === 2) continue;
+		if (decision.action !== "keep" || Object.keys(decision).length !== 4 ||
+			!("severity" in decision) || !("confidence" in decision) ||
+			(decision.severity !== "P0" && decision.severity !== "P1" &&
+				decision.severity !== "P2" && decision.severity !== "P3") ||
+			typeof decision.confidence !== "number" || !Number.isFinite(decision.confidence) ||
+			decision.confidence < 0 || decision.confidence > 1) {
+			throw new Error("malformed critic output: invalid keep/drop decision");
+		}
+		const pair = normalizeFinding({ ...source, severity: decision.severity, confidence: decision.confidence });
+		findings.push({ ...source, severity: pair.severity, confidence: pair.confidence });
+	}
+	if (seen.size !== candidates.size) {
+		throw new Error("malformed critic output: missing candidate decision");
+	}
 
 	const residualBag = bagByKey(candidate.residual_risks, (risk) =>
 		residualSubsetKey(risk.text),
@@ -687,26 +554,29 @@ function restoreRequiredResiduals(
 	current: readonly ResidualRisk[],
 	required: readonly ResidualRisk[],
 ): ResidualRisk[] {
-	const restored = [...current];
-	const available = bagByKey(restored, (risk) => residualSubsetKey(risk.text));
-	for (const risk of required) {
-		if (!takeResidual(available, risk)) restored.push(risk);
+	const restored = new Map<string, ResidualRisk>();
+	for (const risk of [...current, ...required]) {
+		const key = residualSubsetKey(risk.text);
+		if (!restored.has(key) || risk.blocks) restored.set(key, risk);
 	}
-	return restored;
+	return [...restored.values()];
 }
 
 async function runCritic(
 	candidate: RawReview,
 	patchText: string,
 	run: ReviewRun,
+	requiredResiduals: readonly ResidualRisk[] = [],
 ): Promise<PromptResult<RawReview>> {
 	const { bundle } = run;
 	run.onProgress?.({ stage: "critic", findings: candidate.findings.length });
-	const criticPrompt = loadPrompt("critic.md")
-		.replace("{{FINDINGS}}", () => JSON.stringify(candidate, null, 2))
-		.replace("{{PATCH}}", () => patchText)
-		.replace("{{BASE}}", bundle.baseSha)
-		.replace("{{HEAD}}", bundle.headSha);
+	const candidates = new Map(candidate.findings.map((finding, index) => [`f${index}`, finding]));
+	const criticPrompt = fillPrompt(loadPrompt("critic.md"), {
+		FINDINGS: JSON.stringify({ ...candidate, findings: [...candidates].map(([ref, finding]) => ({ ref, ...finding })) }, null, 2),
+		PATCH: patchText,
+		BASE: bundle.baseSha,
+		HEAD: bundle.headSha,
+	});
 	const result = await runJsonPrompt(
 		{
 			label: "critic",
@@ -715,11 +585,30 @@ async function runCritic(
 			passIndex: 0,
 			maxAttempts: 3,
 			parse: (raw: unknown) =>
-				assertCriticSubset(parseUsableReview("critic")(raw), candidate),
+				parseCriticReview(raw, candidates, candidate),
 		},
 		run,
 	);
-	return result;
+	return {
+		...result,
+		value: {
+			...result.value,
+			residual_risks: restoreRequiredResiduals(
+				result.value.residual_risks,
+				requiredResiduals,
+			),
+		},
+	};
+}
+
+function externalPremiseRisks(findings: readonly Finding[]): ResidualRisk[] {
+	const risks = findings.flatMap((finding) =>
+		(finding.externalClaims ?? []).filter((claim) => claim.necessary).map((claim) => ({
+			text: `Unverified external premise for ${finding.file}:${finding.lineStart} (${finding.title}): ${claim.claim} [${claim.source.url}]`,
+			blocks: true,
+		})),
+	);
+	return [...new Map(risks.map((risk) => [risk.text, risk])).values()];
 }
 
 function toReviewResult(
@@ -730,31 +619,46 @@ function toReviewResult(
 	coverage?: string,
 ): ReviewResult {
 	const { bundle } = run;
-	const verdict = deriveVerdict(raw.findings, raw.residual_risks);
+	const quoteBundle = run.snapshot ? {
+		...bundle,
+		repoPath: run.snapshot.repoPath,
+		headSha: run.snapshot.expectedHeadSha,
+		baseSha: run.snapshot.expectedBaseSha ?? bundle.baseSha,
+	} : bundle;
+	const unverified = externalPremiseRisks(candidateFindings ?? raw.findings);
+	const residualRisks = restoreRequiredResiduals(raw.residual_risks, unverified);
+	const findings = raw.findings.filter((finding) => !finding.externalClaims?.some((claim) => claim.necessary));
+	const verdict = deriveVerdict(findings, residualRisks);
 	// Output-side diagnostics: derived at result assembly, never model input.
 	const callouts = scopeCallouts(bundle.changedFiles);
 	// Only files in the diff: a pointer elsewhere in the repository is not a
 	// gap in this review's coverage. An unfinished scan is, since the diff may
 	// touch pointers the sandbox never probed.
-	const coverageGaps: CoverageGap[] = bundle.changedFiles
-		.filter((file) => run.lfs.pointerFiles.has(file.path))
-		.map((file) => ({ kind: "lfs_pointer_only", file: file.path }));
+	const paths = new Set([...bundle.changedFiles.map((file) => file.path), ...(bundle.binaryFiles ?? [])]);
+	const coverageGaps: CoverageGap[] = [...paths]
+		.filter((file) => run.lfs.pointerFiles.has(file))
+		.map((file) => ({ kind: "lfs_pointer_only", file }));
+	const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)].filter((file) => !run.lfs.pointerFiles.has(file));
 	if (run.lfs.scanIncomplete) coverageGaps.push({ kind: "lfs_scan_incomplete" });
 	return {
 		schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 		verdict,
+		runtime: run.runtime,
 		summary,
-		findings: raw.findings,
+		// After the verdict on purpose: the quote check may relocate or
+		// annotate a finding, never decide pass/fail.
+		findings: checkQuotes(findings, quoteBundle, run.reviewDeadlineMs),
 		checked: raw.checked,
-		residualRisks: raw.residual_risks,
+		residualRisks,
 		baseSha: bundle.baseSha,
 		headSha: bundle.headSha,
 		...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 		...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+		...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 		...(coverageGaps.length > 0 ? { coverageGaps } : {}),
 		...(run.stats.length > 0 ? { stats: [...run.stats] } : {}),
 		totalDurationMs: Date.now() - run.startedAt,
-		...(coverage ? { coverage } : {}),
+		...(coverage ? { coverage: bundle.binaryFiles?.length ? `${coverage}; binary file contents excluded (see Not reviewed)` : coverage } : {}),
 		...(evalTraceOn() && candidateFindings ? { candidateFindings } : {}),
 		...(evalTraceOn() && run.failedRawOutputs.length > 0
 			? { failedRawOutputs: [...run.failedRawOutputs] }
@@ -803,9 +707,11 @@ async function drainTraceDeliveries(
 async function reviewSmall(run: ReviewRun): Promise<ReviewResult> {
 	const { bundle } = run;
 	const { patch, ...meta } = bundle;
-	const reviewPrompt = loadPrompt("review.md")
-		.replace("{{BUNDLE}}", () => JSON.stringify(meta, null, 2))
-		.replace("{{PATCH}}", () => patch);
+	delete meta.binaryFiles;
+	const reviewPrompt = fillPrompt(loadPrompt("review.md"), {
+		BUNDLE: JSON.stringify(meta, null, 2),
+		PATCH: patch,
+	});
 	run.onProgress?.({ stage: "review", files: bundle.changedFiles.length });
 	const candidate = await runJsonPrompt(
 		{
@@ -853,9 +759,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		focus: bundle.focus,
 		deep: bundle.deep,
 	};
-	const mapPrompt = loadPrompt("map.md").replace("{{BUNDLE}}", () =>
-		JSON.stringify(mapBundle, null, 2),
-	);
+	const mapPrompt = fillPrompt(loadPrompt("map.md"), {
+		BUNDLE: JSON.stringify(mapBundle, null, 2),
+	});
 	run.onProgress?.({ stage: "map", files: bundle.changedFiles.length });
 	const mapResult = await runJsonPrompt(
 		{
@@ -896,6 +802,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		throw new Error("map pass produced no changed-file hotspots");
 	}
 
+	const literalContext = await run.literalContext();
 	const agents = bundle.agentsMd;
 	let deepDone = 0;
 	let deepFailed = 0;
@@ -924,6 +831,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	// AFTER the first rejection — the per-pass snapshot attached inside
 	// runJsonPrompt is stale by then.
 	let passes;
+	const deepFailures: unknown[] = [];
 	try {
 		passes = await mapLimit(
 			hotspots,
@@ -931,19 +839,19 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			countDeepPass(async (h, passIndex) => {
 				const hotspot = {
 					...h,
+					literalContext: hotspotLiteralContext(literalContext, h),
 					...(bundle.untrackedSkipped?.length
 						? { untrackedSkipped: bundle.untrackedSkipped }
 						: {}),
 				};
-				const deepPrompt = loadPrompt("deep.md")
-					.replace("{{AGENTS}}", () => agents)
-					.replace("{{PR_META}}", () =>
-						JSON.stringify(bundle.prMeta, null, 2),
-					)
-					.replace("{{HOTSPOT}}", () => JSON.stringify(hotspot, null, 2))
-					.replace("{{FOCUS}}", bundle.focus ?? "(none)")
-					.replace("{{BASE}}", bundle.baseSha)
-					.replace("{{HEAD}}", bundle.headSha);
+				const deepPrompt = fillPrompt(loadPrompt("deep.md"), {
+					AGENTS: agents,
+					PR_META: JSON.stringify(bundle.prMeta, null, 2),
+					HOTSPOT: JSON.stringify(hotspot, null, 2),
+					FOCUS: bundle.focus ?? "(none)",
+					BASE: bundle.baseSha,
+					HEAD: bundle.headSha,
+				});
 				try {
 					const res = await runJsonPrompt(
 						{
@@ -970,9 +878,10 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 						residuals: res.value.residual_risks,
 					};
 				} catch (e) {
+					deepFailures.push(e);
 					if (isRunnerSafetyError(e)) throw e;
 					const failure = findRunnerFailure(e);
-					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
+					if (failure?.kind === "quota_exhausted" || failure?.kind === "cancelled" || failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).
@@ -993,14 +902,15 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 			}),
 		);
 	} catch (err) {
-		attachRunRaws(err, run);
-		throw err;
+		const fatal = findRunnerFailure(err)?.kind === "quota_exhausted"
+			? deepFailures.find((failure) => findRunnerFailure(failure)?.kind !== "quota_exhausted") ?? err : err;
+		attachRunRaws(fatal, run);
+		throw fatal;
 	}
 	const all = passes.flatMap((p) => p.findings);
 	const checked = passes.flatMap((p) => p.checked);
-	const residuals = passes.flatMap((p) => p.residuals);
-
 	const merged = dedup(all);
+	const residuals = [...passes.flatMap((p) => p.residuals), ...externalPremiseRisks(merged)];
 	run.onProgress?.({ stage: "dedup", before: all.length, after: merged.length });
 	const candidateMerged: RawReview = {
 		summary: mapResult.value.summary,
@@ -1012,15 +922,9 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 		candidateMerged,
 		bundle.patchStat || "(see git diff --stat; repo at HEAD)",
 		run,
+		passes.filter((pass) => !pass.ok).flatMap((pass) => pass.residuals),
 	);
-	const blockingResiduals = residuals.filter((risk) => risk.blocks);
-	const final = {
-		...pruned.value,
-		residual_risks: restoreRequiredResiduals(
-			pruned.value.residual_risks,
-			blockingResiduals,
-		),
-	};
+	const final = pruned.value;
 	// Compute coverage from the hotspots whose deep pass actually SUCCEEDED
 	// (includes the tail backstop). A failed pass's files were not reviewed —
 	// counting them (or their hotspot) would make the coverage line overstate
@@ -1050,7 +954,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 // Markdown). classify.ts rule order already routes workflow yml to
 // "workflow", so CI files can never ride this path. Executable files under
 // a docs/ directory are not classified "docs" (Markdown extension required).
-function isDocsOnlyFastPath(bundle: Bundle): boolean {
+export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
@@ -1064,11 +968,34 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
 // only threshold owners.
-export function reviewPlan(bundle: Bundle): {
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
 	readonly docsOnlyFastPath: boolean;
+	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
+	readonly capability: ReturnType<typeof runnerReviewCapability> | {
+		readonly runner: null;
+		readonly capability: "unresolved";
+		readonly detail: string;
+	} | null;
 } {
+	try { resolveRunner(runnerOptions); }
+	catch (error) { if (!(error instanceof RunnerSelectionError)) throw error; }
+	if (bundle.untrackedSkipped?.length) {
+		const omitted = bundle.untrackedSkipped.slice(0, 10)
+			.map((file) => `${JSON.stringify(file.path.slice(0, 240))} (${file.reason})`).join(", ");
+		throw new Error(`Untracked file contents omitted: ${omitted}${bundle.untrackedSkipped.length > 10 ? "; additional files omitted" : ""}. Stage these files or reduce their size before reviewing.`);
+	}
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	const binaryOnlyFastPath = !bundle.patch.trim() && Boolean(bundle.binaryFiles?.length);
+	let capability: ReturnType<typeof reviewPlan>["capability"] = null;
+	if (!docsOnlyFastPath && !binaryOnlyFastPath) {
+		try {
+			capability = runnerReviewCapability(resolveRunner(runnerOptions));
+		} catch (error) {
+			if (!(error instanceof RunnerSelectionError)) throw error;
+			capability = { runner: null, capability: "unresolved", detail: error.message };
+		}
+	}
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1077,7 +1004,9 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
-		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		binaryOnlyFastPath,
+		largePath: docsOnlyFastPath || binaryOnlyFastPath ? false : bundle.deep || isLarge(bundle),
+		capability,
 	};
 }
 
@@ -1088,16 +1017,35 @@ export async function review(
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
-	const plan = reviewPlan(bundle);
+	const plan = reviewPlan(bundle, runnerOptions);
+	if (plan.binaryOnlyFastPath) {
+		const files = [...new Set(bundle.binaryFiles)];
+		return {
+			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
+			verdict: "pass",
+			summary: "No text patch to review; model review skipped.",
+			findings: [],
+			checked: [],
+			residualRisks: [],
+			baseSha: bundle.baseSha,
+			headSha: bundle.headSha,
+			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
+			unreviewedBinaryFiles: files,
+			coverage: "No text patch reviewed; binary file contents excluded (see Not reviewed)",
+			totalDurationMs: Date.now() - startedAt,
+		};
+	}
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
 		// Docs-only input produces no callouts today, but compute it the same
 		// way so the rule stays uniform if classification changes.
 		const callouts = scopeCallouts(bundle.changedFiles);
+		const unreviewedBinaryFiles = [...new Set(bundle.binaryFiles)];
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
+			docsOnlyFastPath: true,
 			summary: `Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
 			findings: [],
 			checked: [`FAST_PATH docs-only files=[${paths}]`],
@@ -1106,56 +1054,129 @@ export async function review(
 			headSha: bundle.headSha,
 			...(bundle.reviewTarget ? { reviewTarget: bundle.reviewTarget } : {}),
 			...(callouts.length > 0 ? { scopeCallouts: callouts } : {}),
+			...(unreviewedBinaryFiles.length > 0 ? { unreviewedBinaryFiles } : {}),
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
-		throw new Error(
-			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
-		);
-	}
+	return reviewRoutes(bundle, [runnerOptions], onTrace, onProgress, startedAt);
+}
 
-	// Read only past the docs-only short-circuit, for the same reason
-	// reviewPlan() defers isLarge(): the fast path runs no model pipeline and
-	// never consumes reviewDeadlineMs, so an invalid NEEDLEFISH_REVIEW_TIMEOUT_MS
-	// must not turn a docs-only review that would have passed into a throw.
-	const reviewTimeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
-	const reviewDeadlineMs = reviewTimeout
-		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
-		: undefined;
+export async function reviewWithConnections(
+	bundle: Bundle,
+	routes: readonly [RunnerOptions, ...RunnerOptions[]],
+	onTrace?: ReviewTraceObserver,
+	onProgress?: ReviewProgressObserver,
+): Promise<ReviewResult> {
+	const plan = reviewPlan(bundle, routes[0]);
+	if (plan.docsOnlyFastPath || plan.binaryOnlyFastPath) return review(bundle, routes[0], onTrace, onProgress);
+	return reviewRoutes(bundle, routes, onTrace, onProgress, Date.now());
+}
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerOptions.connectionAuth !== undefined && evalTraceOn())
-		? { failed: onTrace === undefined, pending: new Set() }
-		: undefined;
-	const run: ReviewRun = {
-		bundle,
-		runnerOptions,
-		stats: [],
-		failedRawOutputs: [],
-		rawOutputs: [],
-		lfs: { pointerFiles: new Set(), scanIncomplete: false },
-		...(onTrace && traceHealth
-			? {
-					onTrace: wrapTraceObserver(onTrace, traceHealth),
-				}
-			: {}),
-		...(traceHealth ? { traceHealth } : {}),
-		...(onProgress ? { onProgress } : {}),
-		startedAt,
-		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),
+export function reviewBudgetMs(routeCount: number, explicit?: number): number | null {
+	if (explicit !== undefined) return parsePositiveInteger(String(explicit), "reviewBudgetMs");
+	const timeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
+	if (routeCount > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
+	return timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
+}
+
+async function reviewRoutes(
+	bundle: Bundle,
+	routes: readonly [RunnerOptions, ...RunnerOptions[]],
+	onTrace: ReviewTraceObserver | undefined,
+	onProgress: ReviewProgressObserver | undefined,
+	startedAt: number,
+): Promise<ReviewResult> {
+	const budget = reviewBudgetMs(routes.length, routes[0].reviewBudgetMs);
+	const deadline = budget === null ? undefined : performance.now() + budget;
+	const select = (options: RunnerOptions) => {
+		const plan = reviewPlan(bundle, options);
+		if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") throw new Error(plan.capability.detail);
+		return { config: resolveRunnerConfig(options), plan };
+	};
+	const firstSelection = select(routes[0]);
+	const selections = [firstSelection, ...routes.slice(1).map(select)];
+	const outputGuards = selections.flatMap(({config}) => config.connectionAuth
+		? [selections.length > 1 && config.connectionAuth instanceof AcpEnvironmentAuth ? config.connectionAuth.orderedOutputGuard() : config.connectionAuth] : []);
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
+		? { failed: onTrace === undefined, pending: new Set() } : undefined;
+	const failedRawOutputs: string[] = [];
+	const rawOutputs: string[] = [];
+	const tmp = await createManagedTempDirectory();
+	let snapshot: RunnerSandbox | undefined;
+	let activeRun: ReviewRun | undefined;
+	let literalContext: Promise<LargeLiteralContext> | undefined;
+	const cancellation = new AbortController();
+	const detachCancellation = registerTerminationFinalizer(async () => { cancellation.abort(); });
+	let selectedRunner = firstSelection.config.runner;
+	const screenError = (error: unknown) => {
+		attachRunRaws(error, {
+			failedRawOutputs: [...failedRawOutputs, ...(activeRun?.failedRawOutputs ?? [])],
+			rawOutputs: [...rawOutputs, ...(activeRun?.rawOutputs ?? [])],
+			...(traceHealth ? {traceHealth} : {}),
+		});
+		if (error instanceof Error && outputGuards.length) error.message = isRunnerSafetyError(error)
+			? "Needlefish withheld review sandbox diagnostic because it may contain a selected connection credential."
+			: outputGuards.reduce((message, guard) => guard.screenDiagnostic(message), error.message);
+		return error;
+	};
+	const assertSnapshotClean = (retainMetadata = true) => {
+		try { if (snapshot) assertRunnerSandboxClean(selectedRunner, snapshot.repoPath, snapshot.expectedHeadSha, retainMetadata); }
+		catch (error) { throw screenError(error); }
 	};
 	try {
-		const result = await (plan.largePath
-			? reviewLarge(run)
-			: reviewSmall(run));
-		await drainTraceDeliveries(traceHealth);
-		onProgress?.({ stage: "done", durationMs: Date.now() - startedAt });
-		return traceHealth?.failed
-			? { ...result, traceDeliveryFailed: true }
-			: result;
-	} catch (err) {
-		await drainTraceDeliveries(traceHealth);
-		attachRunRaws(err, run);
-		throw err;
+		assertRunnerSchedulingAllowed();
+		if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
+		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, ...(deadline === undefined ? {} : { remainingReviewMs: () => Math.floor(deadline - performance.now()) }), tmp });
+		const capturedSnapshot = { ...snapshot, expectedBaseSha: snapshot.expectedBaseSha ?? bundle.baseSha };
+		for (const [routeIndex, {config, plan}] of selections.entries()) {
+			selectedRunner = config.runner;
+			assertRunnerSchedulingAllowed();
+			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
+			prepareReviewRuntime(config);
+			const run: ReviewRun = {
+				literalContext: () => literalContext ??= collectLargeLiteralContext({
+					bundle, snapshot: capturedSnapshot,
+					abortSignal: cancellation.signal,
+					...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
+				}),
+				bundle, snapshot, runnerConfig: config, runtime: reviewRuntime(config, budget), outputGuards,
+				stats: [], failedRawOutputs: [], rawOutputs: [], lfs: { pointerFiles: new Set(), scanIncomplete: false }, startedAt,
+				...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
+				...(traceHealth ? { traceHealth } : {}),
+				...(onTrace && traceHealth ? { onTrace: wrapTraceObserver((event) => onTrace(selections.length > 1 ? Object.freeze({ ...event, routeIndex }) : event), traceHealth) } : {}),
+				...(onProgress ? {onProgress} : {}),
+			};
+			activeRun = run;
+			try {
+				const result = await (plan.largePath ? reviewLarge(run) : reviewSmall(run));
+				await drainTraceDeliveries(traceHealth);
+				await completeReviewRuntime(config, tmp, deadline);
+				const final = { ...result, runtime: reviewRuntime(config, budget),
+					...(failedRawOutputs.length ? {failedRawOutputs: [...failedRawOutputs, ...run.failedRawOutputs]} : {}),
+					...(rawOutputs.length ? {rawOutputs: [...rawOutputs, ...run.rawOutputs]} : {}),
+					...(traceHealth?.failed ? {traceDeliveryFailed: true} : {}),
+				};
+				for (const guard of outputGuards) guard.assertOutputSafe(JSON.stringify(final));
+				onProgress?.({stage:"done",durationMs:Date.now()-startedAt});
+				return final;
+			} catch (error) {
+				await drainTraceDeliveries(traceHealth);
+				failedRawOutputs.push(...run.failedRawOutputs);
+				rawOutputs.push(...run.rawOutputs);
+				activeRun = undefined;
+				attachRunRaws(error, {...run, failedRawOutputs, rawOutputs});
+				assertSnapshotClean();
+				if (findRunnerFailure(error)?.kind !== "quota_exhausted" || routeIndex === selections.length - 1) throw error;
+			}
+		}
+		throw new Error("No review connection selected.");
+	} catch (error) {
+		throw screenError(error);
+	} finally {
+		detachCancellation();
+		try { assertSnapshotClean(false); }
+		finally {
+			await disposeManagedTempDirectory(tmp).catch((error: unknown) => { throw screenError(error); });
+		}
 	}
 }

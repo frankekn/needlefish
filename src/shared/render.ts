@@ -8,6 +8,48 @@ const SEV_ORDER: Record<Severity, number> = {
 	P3: 3,
 };
 
+function evidenceSummary(finding: Finding): string {
+	const sources = finding.evidence?.sources;
+	if (!sources) return "";
+	const code = sources.some((source) => source.status === "source_present");
+	const external = sources.some((source) => source.status === "unverified_external_claim");
+	return `${code ? "Code source present" : "Code source unverified"}${external ? "; external premise unverified" : ""}.`;
+}
+
+export function quoteNote(finding: Finding): string | null {
+	const notes: string[] = [];
+	const summary = evidenceSummary(finding);
+	if (summary) notes.push(`_${summary}_`);
+	const check = finding.quoteCheck;
+	if (check?.status === "moved") notes.push(`_Location corrected from ${codeSpan(check.from)}: the quoted source was found here._`);
+	if (check?.status === "not_found") notes.push(`_Location unverified: the quoted source could not verify the cited location in ${codeSpan(finding.file)}._`);
+	if (check?.status === "unchecked") notes.push("_Location unverified: the quoted source could not be verified at this HEAD location._");
+	return notes.join("\n\n") || null;
+}
+
+export function sourceDetails(finding: Finding): string | null {
+	if (!finding.evidence) return null;
+	const lines = ["<details><summary>Source evidence</summary>", "",
+		"Tool reading unknown. Source presence does not verify the bug.", ""];
+	for (const source of finding.evidence.sources) {
+		if (source.sourceType === "git_blob") {
+			lines.push(`- ${codeSpan(source.status)} ${codeSpan(`${source.revision ?? "uncaptured"}:${source.file}:${source.lineStart}-${source.lineEnd}`)}${source.status === "source_present" ? ` SHA-256 ${codeSpan(source.contentDigest)}` : ""}`);
+		} else lines.push(`- ${codeSpan(source.status)} ${codeSpan(source.claim)} ${codeSpan(source.source.url)}`);
+	}
+	lines.push("", "</details>");
+	return lines.join("\n");
+}
+
+// A path is model output: a fence longer than any backtick run inside keeps
+// it one inert code span, so it cannot open a link or a new paragraph.
+function codeSpan(text: string): string {
+	// Every whitespace run, bare CR included, so no line break can end the span.
+	const flat = text.replace(/\s+/g, " ");
+	const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((run) => run.length));
+	const fence = "`".repeat(longest + 1);
+	return longest > 0 ? `${fence} ${flat} ${fence}` : `${fence}${flat}${fence}`;
+}
+
 const SEVERITY_LABEL: Record<Severity, string> = {
 	P0: "🔴 P0",
 	P1: "🟠 P1",
@@ -37,7 +79,7 @@ export function priorFateParts(fates: PriorFateCounts): string[] {
 const VERDICT_HEADLINE: Record<Verdict, string> = {
 	pass: "LGTM ✅",
 	changes_requested: "CHANGES REQUESTED ⚠️",
-	needs_human: "NEEDS HUMAN 👀",
+	needs_human: "REVIEW INCOMPLETE. HUMAN CONFIRMATION REQUIRED",
 };
 
 export function renderMarkdown(
@@ -54,6 +96,7 @@ export function renderMarkdown(
 		// becomes model input on the next run. Check summaries are not read
 		// back (normalizePrMeta keeps only name/status/conclusion).
 		omitCoverageGaps?: boolean;
+		omitRuntime?: boolean;
 	},
 ): string {
 	const lines: string[] = [];
@@ -90,7 +133,7 @@ export function renderMarkdown(
 		headlineReplaced = true;
 	} else if (result.verdict === "needs_human" && blockingResiduals.length > 0) {
 		const text = truncate(oneLine(blockingResiduals[0].text), 160);
-		lines.push(`NEEDS HUMAN 👀 — ${text}`);
+		lines.push(`${VERDICT_HEADLINE.needs_human} — ${text}`);
 		headlineReplaced = true;
 	} else {
 		lines.push(
@@ -101,6 +144,13 @@ export function renderMarkdown(
 	// When the headline carried the reason, the summary first-sentence goes on
 	// its own line so the information is not lost.
 	if (headlineReplaced && summary) lines.push(summary);
+	if (result.verdict === "needs_human") {
+		lines.push("Cannot determine whether this change is safe. Retry the review or ask a maintainer to confirm the unreviewed scope.");
+	}
+
+	if (result.docsOnlyFastPath) {
+		lines.push("Model review skipped by policy for this docs-only change.");
+	}
 
 	const nitCount = findings.length - blockingCount;
 	const findingCounts: string[] = [];
@@ -136,6 +186,15 @@ export function renderMarkdown(
 	const pointerOnly = coverageGaps.flatMap((gap) =>
 		gap.kind === "lfs_pointer_only" ? [gap.file] : [],
 	);
+	const pointerPaths = new Set(pointerOnly);
+	const binaryFiles = opts?.omitCoverageGaps
+		? []
+		: [...new Set(result.unreviewedBinaryFiles ?? [])].filter((file) => !pointerPaths.has(file));
+	if (binaryFiles.length > 0) {
+		lines.push("");
+		lines.push("**Not reviewed (non-blocking):** these changed files were skipped as binary. Their contents are not covered by this review. Ask a maintainer to check them.");
+		for (const file of binaryFiles) lines.push(`- ${oneLine(file)}`);
+	}
 	if (pointerOnly.length > 0) {
 		lines.push("");
 		lines.push(
@@ -180,7 +239,7 @@ export function renderMarkdown(
 				? " <sub>(inline comment)</sub>"
 				: "";
 			lines.push(
-				`| ${index + 1} | ${SEVERITY_LABEL[finding.severity]} | ${tableText(finding.title)}${inlineMarker} | ${tableLocation(finding, opts?.repoSlug, result.headSha)} |`,
+				`| ${index + 1} | ${SEVERITY_LABEL[finding.severity]} | ${tableText(finding.title)}${inlineMarker}${finding.evidence ? `<br><sub>${evidenceSummary(finding)}</sub>` : ""} | ${tableLocation(finding, opts?.repoSlug, result.headSha)} |`,
 			);
 		});
 
@@ -204,6 +263,13 @@ export function renderMarkdown(
 				if (finding.validation) {
 					lines.push("");
 					lines.push(`**Validation:** ${finding.validation}`);
+				}
+				const details = sourceDetails(finding);
+				if (details) lines.push("", details);
+				const note = quoteNote(finding);
+				if (note) {
+					lines.push("");
+					lines.push(note);
 				}
 			});
 			lines.push("");
@@ -273,6 +339,14 @@ export function renderMarkdown(
 		lines.push(`<sub>${parts.join(" · ")}</sub>`);
 	}
 
+	if (result.runtime && !opts?.omitRuntime) {
+		const runtime = result.runtime;
+		const version = runtime.coreVersion.status === "unknown" ? "unknown" : runtime.coreVersion.value;
+		lines.push("", `Tool ${version} · AI service ${runtime.runner} · ${runtime.qualification.matchStatus === "tested" ? "Configuration matches an evaluated version." : "Configuration not qualified against an evaluation report."}`,
+			"", "<details>", "<summary>Runtime technical data</summary>", "", "```json",
+			JSON.stringify(runtime, null, 2), "```", "", "</details>");
+	}
+
 	let output = `${lines.join("\n").trim()}\n`;
 	if (opts?.stateMarker) output += `\n${opts.stateMarker}\n`;
 	return output;
@@ -293,7 +367,7 @@ function firstSentence(summary: string): string {
 }
 
 function oneLine(text: string): string {
-	return text.replace(/\s*\r?\n\s*/g, " ");
+	return text.replace(/\s*[\r\n]+\s*/g, " ");
 }
 
 function truncate(text: string, max: number): string {
@@ -327,13 +401,16 @@ function tableLocation(
 	headSha?: string,
 ): string {
 	if (!finding.file) return "—";
+	const source = finding.evidence?.sources.find((entry) => entry.sourceType === "git_blob" && entry.status === "source_present");
+	if (source?.sourceType === "git_blob" && source.revision) headSha = source.revision;
+	const file = source?.sourceType === "git_blob" && source.revision ? source.file : finding.file;
 	const location = tableText(plainLocation(finding));
-	if (!repoSlug || !headSha || !isRepoRelativePath(finding.file)) {
+	if (!repoSlug || !headSha || !isRepoRelativePath(file)) {
 		return `\`${location}\``;
 	}
 	// encodeURIComponent leaves ( ) unescaped; an unescaped ) ends the
 	// markdown link early.
-	const encodedPath = finding.file
+	const encodedPath = file
 		.split("/")
 		.map(
 			(segment) =>

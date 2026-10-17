@@ -1,5 +1,6 @@
 import type {
   Category,
+  ExternalClaim,
   Finding,
   Hotspot,
   MapResult,
@@ -199,6 +200,30 @@ function parseReplacement(raw: unknown): Finding["replacement"] | undefined {
   return { lines };
 }
 
+// Optional and never a reason to reject a review: a missing or unusable quote
+// only means the location is not checked (issue #240).
+function parseQuote(raw: unknown): string | undefined {
+  if (typeof raw !== "string" || /[\r\n\0]/.test(raw)) return undefined;
+  const quote = raw.trim();
+  return quote && quote.length <= 500 ? quote : undefined;
+}
+
+export function parseExternalClaims(raw: unknown): readonly ExternalClaim[] {
+  if (!Array.isArray(raw)) throw new Error("externalClaims not an array");
+  return raw.map((item): ExternalClaim => {
+    if (!isRecord(item) || typeof item.claim !== "string" || !item.claim.trim() ||
+      typeof item.necessary !== "boolean" || !isRecord(item.source) ||
+      item.source.type !== "external" || typeof item.source.url !== "string") {
+      throw new Error("externalClaims requires claim, necessary, and external source URL");
+    }
+    const url = new URL(item.source.url);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) {
+      throw new Error("externalClaims source must be an HTTP URL without credentials");
+    }
+    return { claim: item.claim.trim(), necessary: item.necessary, source: { type: "external", url: url.href } };
+  });
+}
+
 export function normalizeFinding(raw: unknown): Finding {
   const record = requireRecord(raw, "malformed finding");
   const severity = parseSeverity(record.severity);
@@ -231,6 +256,8 @@ export function normalizeFinding(raw: unknown): Finding {
     throw new Error("malformed finding: blocking finding has low confidence");
   }
   const replacement = parseReplacement(record.replacement);
+  const quote = parseQuote(record.quote);
+  const externalClaims = record.externalClaims === undefined ? undefined : parseExternalClaims(record.externalClaims);
   return {
     severity,
     category,
@@ -245,6 +272,8 @@ export function normalizeFinding(raw: unknown): Finding {
     consumerFile: record.consumerFile ? asString(record.consumerFile) || undefined : undefined,
     consumerLine: record.consumerLine ? Number(record.consumerLine) || undefined : undefined,
     ...(replacement ? { replacement } : {}),
+    ...(quote ? { quote } : {}),
+    ...(externalClaims ? { externalClaims } : {}),
   };
 }
 

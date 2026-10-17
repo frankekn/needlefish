@@ -87,7 +87,8 @@ needlefish verdict ~/.cache/needlefish/<repo>/last-review.json
 `render` runs the file through the same `renderMarkdown` used for stdout, PR
 review bodies, and check summaries. `verdict` recomputes the verdict from the
 cached findings through `deriveVerdict`, prints the stored and derived
-verdicts, and exits 1 when they differ (e.g. an edited cache).
+verdicts, and exits 1 when they differ (e.g. an edited cache). Both cached
+commands exit 1 for `changes_requested` or `needs_human`.
 
 ### Machine interface
 
@@ -105,6 +106,8 @@ changelog entry.
 | `prNumber` | Optional PR number, present in GitHub mode and for `needlefish pr`. |
 | `prBaseSha` | Optional PR base branch tip; `baseSha` is always the merge base. |
 | `scopeCallouts` | Optional non-blocking callouts naming dependency/schema/workflow/config/public-api files present in the diff, derived from the changed-file list. |
+| `docsOnlyFastPath` | Optional pipeline-generated flag that all model calls were skipped by docs-only policy. |
+| `unreviewedBinaryFiles` | Optional list of repo-relative paths Git classified as binary, including attribute-marked files skipped in uncommitted mode. Their contents were not reviewed. Paths also reported as LFS pointer gaps are omitted. Fast paths do not scan for LFS pointers and retain Git's binary classification. Output-only and non-blocking. |
 | `coverageGaps` | Optional list of `{ kind: "lfs_pointer_only", file }` entries (changed files the review sandbox could only check out as Git LFS pointer stubs, so their contents were not reviewed), followed by at most one `{ kind: "lfs_scan_incomplete" }` entry when the sandbox could not determine whether changed files are pointer stubs (Git LFS use or the pointer list could not be established). Reported by the sandbox, never by the model; does not affect the verdict. |
 | `findings[]` | Finding objects with `severity`, `title`, `category`, `file`, `lineStart`, `lineEnd`, `confidence`, `whyItBreaks`, `suggestedFix`, and `validation`. |
 | `findings[].consumerFile` | Optional downstream file affected by the finding. |
@@ -122,6 +125,15 @@ matches `schemaVersion`. The schema allows unknown properties, so a validator
 keeps working when a release adds a field. Two rules are not expressible in
 the schema: a finding's `lineEnd` is never below its `lineStart`, and
 `stats[].usage.totalTokens` is at least `inputTokens + outputTokens`.
+External source URLs in `externalClaims` and `evidence.sources` use a structural
+schema constraint for normalized HTTP(S) URLs. It requires a nonempty host,
+balanced IP-literal brackets, no userinfo, and an optional decimal port from
+0 through 65535 without leading zeros. The normalizer serializes URLs with
+WHATWG `URL.href`, including IDNA hostnames and normalized ports. Full IP and
+IDNA validity remain parser checks. For example, `https://[:::]/` passes the
+structural schema but the persisted parser rejects it. Schema validation alone
+does not establish full admission; consumers must also apply WHATWG URL parsing
+and reject non-HTTP(S) schemes and credentials.
 `--dry-run --json` prints a different summary object that this schema does
 not describe.
 
@@ -132,8 +144,25 @@ fallback consumes this result, never review prose. Blocking verdicts still
 exit 1; skips keep the existing `needlefish-skip` line.
 
 Same-head dedupe requires a trusted receipt and a completed verdict check.
-Receipts are written after delivery; failed, missing, terminated, or superseded
-checks do not let old receipts suppress recovery.
+Receipts are written after delivery. Missing checks, infrastructure failures,
+terminations, and superseded checks do not let old receipts suppress recovery. A same-head skip keeps the
+completed verdict's exit status. Legacy neutral `needs_human` checks trigger a
+full re-review when that head is triggered again. After upgrading, manually
+re-run open PRs with legacy neutral `needs_human` checks. Existing checks are
+not updated automatically, and neutral checks can still satisfy branch protection.
+
+Review commands exit 0 only for `pass`. `changes_requested`, `needs_human`,
+and execution failures exit 1, including `--json` output. `needs_human` means
+review incomplete or human confirmation required. It does not claim a code
+defect. Retry the review or ask a maintainer to check the unreviewed scope.
+Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
+pass by policy with an explicit "Model review skipped
+by policy" notice. No model has reviewed that change.
+
+Untracked files omitted by the 200 KiB per-file or 1 MiB total content limit
+prevent review, including docs-only policy skips.
+The command exits 1 without writing a new review result. Stage the omitted
+files to include their Git diff, or reduce their size before reviewing.
 
 ### Base detection
 
@@ -162,8 +191,15 @@ review with the full rendered review body, plus the authoritative
 | -------------------- | ------------------- | --------- |
 | pass                 | COMMENT             | success   |
 | changes_requested    | COMMENT             | failure   |
-| needs_human          | COMMENT             | neutral   |
+| needs_human          | COMMENT             | failure   |
 | run failed           | (none)              | failure   |
+
+To block incomplete reviews, set the existing `Needlefish` check as required
+in the consumer repository. No strict flag or new service is needed. Needlefish
+does not change branch protection. On upgrade, `needs_human` changes from
+`neutral` to `failure`; workflows that accepted it must now retry or obtain
+human confirmation. Superseded and policy-skipped checks keep their existing
+neutral status.
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
 the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking
@@ -254,6 +290,7 @@ jobs:
     uses: ./.github/workflows/needlefish-review-local.yml
     with:
       pr_number: ${{ inputs.pr_number || github.event.pull_request.number }}
+      recheck: ${{ inputs.recheck || false }}
       runner: codex
       model: gpt-5.6-terra
       codex_reasoning_effort: xhigh
@@ -263,6 +300,20 @@ jobs:
 The caller must retain `workflow_dispatch.inputs.pr_number`, `actions: write`,
 and a run name ending in ` PR #<number>` for bounded reconciliation. Reconcile
 runs on GitHub-hosted Ubuntu independently of the review runner.
+Automatic dispatches use bounded recovery. To force a full manual review, declare
+an optional boolean `workflow_dispatch.inputs.recheck` with default `false` in
+the caller and forward it through `with.recheck` as shown above.
+
+For direct CLI use with a custom GitHub App, provide its installation token as
+`GH_TOKEN` and set `NEEDLEFISH_CHECK_APP_ID` to that App's numeric ID.
+Use the ID from its GitHub App settings or the `app.id` field of a check created
+by that App. The pin validates check ownership; it does not select or mint a token.
+The bundled reusable workflow uses `secrets.GITHUB_TOKEN` and does not accept a
+custom App token. It clears `NEEDLEFISH_CHECK_APP_ID` for review and reconciliation,
+so repository variables and runner environment pins cannot override its GitHub
+Actions identity. Custom App pins apply only to direct CLI use, where a mismatched
+token and App pin fails closed.
+Without a pin, new checks and recovery accept only GitHub Actions checks.
 Set the repository variable `NEEDLEFISH_RUNS_ON` to an operator-owned runner
 label when direct PR triggers should use a dedicated fleet; otherwise the
 workflow keeps the `self-hosted` default. Explicit `runs_on` inputs still win.
@@ -354,11 +405,11 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
-The `openai` HTTP runner has no repository-reading tools. Use a tool-capable
-CLI runner for large or deep reviews. The unreleased source rejects `--deep`
-and automatically large HTTP reviews before any request. Published v0.4.10
-does not guarantee that refusal. Small full-diff reviews and docs-only skips
-remain supported.
+The `openai` HTTP runner has no repository-reading tools. The unreleased
+source rejects every model-backed review, including small diffs and `--deep`,
+before any HTTP request. Docs-only reviews still use the fast path without a
+model call. Disabling that fast path also requires repository-reading tools.
+Published v0.4.10 does not guarantee that refusal.
 
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads
@@ -376,29 +427,86 @@ blank (values are trimmed):
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
+All `*_BIN` executables must come from trusted operator-controlled paths.
+Codex and Grok resolve path-like relative `CODEX_BIN` and `GROK_BIN`
+against Needlefish's caller working directory. Detection and doctor use that same directory. The caller
+directory must be trusted; launching Needlefish from a PR-controlled checkout
+does not make its relative executable safe. Other CLI runners still resolve
+relative commands from the target clone at launch. Use absolute trusted paths
+for those runners. Bare executable names continue to use `PATH`.
+
+Cleanup is not an OS security boundary against an actor running as the same
+user. Such an actor can race pathname deletion by moving unrelated data into
+an owned temporary tree. Node does not provide atomic inode-conditional
+unlink or directory removal. Do not run an actively hostile CLI under the
+maintainer's account.
+
 ### How each runner is launched
 
 - **Codex:** `--ignore-user-config --ignore-rules
   --dangerously-bypass-approvals-and-sandbox`, so its inspection commands are
   not blocked by execpolicy rules, approval prompts, or the host sandbox.
+  Codex starts in a managed empty directory beside the throwaway clone,
+  outside the target repository and its controlled ancestors. Its prompt
+  names the clone's absolute path for `git -C` and file inspection.
+  This keeps the target's `.agents/skills`, `.codex/skills`, project config
+  and hooks out of native startup discovery. `-c project_doc_max_bytes=0`
+  also disables `AGENTS.md` and `AGENTS.override.md` discovery. Review
+  policy comes only from the merge-base copy in the bundle. A configured
+  `NEEDLEFISH_TMPDIR` inside the target repository is rejected.
+  Verified with Codex CLI 0.163.0 using prompt input, native skills/config/hooks
+  introspection and a session shell command that reads the target Git history.
+  Explicitly reading an instruction file still exposes its text as untrusted
+  data; this is not an OS sandbox.
   Reasoning effort defaults to `medium`; set `CODEX_REASONING_EFFORT=high` to
   restore the old default, or `xhigh` for the highest-effort mode.
 - **Claude Code:** `--dangerously-skip-permissions`, `--safe-mode`, and
-  `--no-session-persistence`.
+  `--no-session-persistence`. With Claude Code 2.1.301, a local API canary
+  verified that safe mode excludes root `CLAUDE.md`, nested `CLAUDE.md`
+  loaded during file reads, and project skill catalogs while retaining the
+  built-in Read tool. The control run without safe mode loaded all three.
 - **Grok:** `--always-approve --permission-mode bypassPermissions --no-plan
-  --sandbox off`.
+  --sandbox off`. Grok starts in the same managed empty sibling directory
+  as Codex. Its prompt file names the throwaway clone's absolute path for
+  `git -C` and file inspection. Local API probes with Grok 1.0.60 excluded
+  full target `AGENTS.md`, `CLAUDE.md`, and native rule bodies at startup and
+  after bounded ordinary-file reads and shell inspection. The trusted target
+  control loaded those bodies. Ordinary-file `read_file` still added target
+  skill catalogs in a later request. This is a startup boundary, not complete
+  loader isolation or a model-quality qualification.
 - **opencode:** `--auto` in headless mode, with an inline `permission:
-  "allow"` override for its global and build-agent permissions.
-- **pi:** `--no-session --mode text --provider openai-codex --thinking
-  <level>` and its default full toolset.
+  "allow"` override for its global and build-agent permissions. Project
+  instruction and plugin isolation is not established by those flags.
+- **pi:** `--no-session --no-context-files --no-approve --mode text
+  --provider openai-codex --thinking <level>` and its default full toolset.
+  `--no-context-files --no-approve` keep the PR head's `AGENTS.md`,
+  `CLAUDE.md`, and project-local skills out of its instructions. Offline RPC
+  canaries on pi 1.3.0 also verified that `--no-approve` blocks project
+  extensions, settings-specified extensions and prompt templates. The older
+  pi 1.2.0 canary record covers context files and skills only; it does not
+  establish those extra resource boundaries for that version.
 - **ACP:** a JSON-RPC 2.0 Agent Client Protocol process over stdio from
   `NEEDLEFISH_ACP_BIN`. On timeout Needlefish sends `session/cancel`, then
   applies the same process-group kill path as the CLI runners. When the prompt
   response includes token usage, review stats retain its input/output totals.
+  Project-instruction discovery depends on the configured ACP server and has
+  not been verified here.
 
-Every CLI runner executes inside a **throwaway clean clone** at the review
-head commit, with GitHub tokens stripped and the expected `HEAD` fixed. After
-each successful model call, Needlefish re-checks the clone with `git status
+Instruction-boundary Class R gates and policy holdouts must use a verified
+runner/version. Unverified runner boundaries are not accepted as equivalent.
+Quoted locations without verified HEAD evidence, including base-only matches
+and uncommitted `WORKING` heads, are marked `unchecked`. Findings marked
+`unchecked` or `not_found` appear in the review body with a location caveat,
+without a RIGHT-side inline comment. GitHub suggestions require a matched
+HEAD quote; base-only matches and relocated findings discard the replacement.
+Findings without a quote retain diff-based inline eligibility. The Class R gate
+must record the fraction of findings posted inline to check for a drop under
+this conservative policy.
+
+Every CLI runner inspects a **throwaway clean clone** at the review head
+commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex
+and Grok start in their empty sibling directory. Other CLI runners start in
+the clone. After each successful model call, Needlefish re-checks the clone with `git status
 --porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
 not move, and rejects any worktree mutation. The clone carries no remote: its
 `origin` (which would point at the original repository on the same
@@ -431,6 +539,25 @@ include those same names in `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` — for example
 configuration does not prove authentication. Alternatively, set
 `NEEDLEFISH_ACP_AUTH_FILES` to comma-separated HOME-relative credential
 files; Needlefish copies only those files into the disposable runner HOME.
+
+## Runtime metadata
+
+Review JSON and cached results include optional, output-only `runtime` metadata.
+Docs-only fast-path reviews omit it because no model runner is selected or called.
+It records the runner, public model selector, effort, prompt hash and timeout
+resolved for that review. `known` describes an observed invocation value, not a
+provider's resolved model identity. Release manifest source SHAs are
+`operator_attested`. For self-managed releases, this is the base commit before
+the operator's patch, not an exact identifier for the installed code.
+Unavailable versions and launcher identities stay `unknown`.
+ACP model and effort stay unknown because the protocol does not select them.
+The metadata contains no environment dump, private endpoint or launcher path.
+
+Runtime metadata currently reports `unqualified`. It does not establish an exact
+match with an evaluation report. Missing metadata does not block a review, and
+older cached results remain readable. Local Markdown and GitHub check summaries
+show the tool and service plus expandable technical data. GitHub review bodies
+omit runtime data because later reviews read those bodies as model input.
 
 ## Development
 
@@ -483,17 +610,28 @@ recheck` / `@needlefish explain` comments exist in this repository's
 `.github/workflows/commands.yml`; the published composite action does not
 install that workflow.
 
+Native Codex quota classification is verified against CLI 0.163 JSON events.
+Other versions are not qualified for automatic quota fallback. Unknown event
+schemas fail closed and attach `unrecognized_codex_event_schema` as private failure
+trace metadata, leaving raw transcripts unchanged. They do not cause a fallback based on quota-like text. A singleton
+deep review also fails on quota exhaustion or cancellation; it does not convert
+these failures into a blocking residual.
+
 ## Doctor and GitHub setup details
 
-`npx needlefish doctor` checks Node, the
-selected runner CLI and its version, whether that CLI reports itself logged
+`npx needlefish doctor` checks Node, the git repo, and the detected base ref.
+With ordinary runner selection, it also checks the selected CLI version and
+whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
 uses; an env credential the review accepts, such as `OPENAI_API_KEY` for
-opencode, passes without probing), the git repo, and the detected base ref,
-in seconds and with no model call. Every failed check prints its fix; `--json` gives the same report to
+opencode, passes without probing). It makes no model call.
+`doctor --connection` checks the named connection configuration and executable
+availability. It does not probe the CLI version, account identity, or login
+state; these remain `unknown`. Every failed check prints its fix; `--json` gives the same report to
 scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
-reported as `unknown` and does not fail the exit code.
+reported as `unknown` and does not fail the exit code. Each runner status
+command has a 10-second hard timeout. A timed-out login check is `unknown`.
 
 Preview the hosted workflow from this source checkout:
 
@@ -583,3 +721,9 @@ and
 [RESULTS_HISTORY.md](https://github.com/frankekn/needlefish/blob/main/eval/RESULTS_HISTORY.md);
 raw reports under
 [eval/results/](https://github.com/frankekn/needlefish/tree/main/eval/results).
+
+## Source preview runner capability
+
+The `openai` HTTP runner has no repository-reading tools. Model reviews fail before any request. Docs-only reviews remain supported. ACP repository capability stays unknown until observed; protocol initialization does not prove tool access.
+
+See [named connections](https://github.com/frankekn/needlefish/blob/main/docs/connections.md) for explicit credential-source selection.

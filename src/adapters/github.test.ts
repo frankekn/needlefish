@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import { NO_AGENTS } from "../shared/repo.js";
 import { runGithub } from "./github";
@@ -57,7 +57,8 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       "const fs = require('node:fs');",
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
-      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write('{}'); process.exit(0); }",
+      "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
+      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/7') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
@@ -88,7 +89,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
       "const match = input.match(/\"repoPath\":\\s*\"([^\"]+)\"/);",
       `if (match && !fs.existsSync(${JSON.stringify(promptRepoPath)})) fs.writeFileSync(${JSON.stringify(promptRepoPath)}, match[1]);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -153,14 +154,14 @@ test("runGithub skips closed PRs before review", async (t) => {
   assert.deepEqual(ghCalls, ["api repos/frankekn/needlefish/pulls/8"]);
 });
 
-// Issue #211, PR #224 critic: a committed `AGENTS.md` symlink must not make
-// GitHub mode read the runner's filesystem, and its link text must not pass
-// as fake policy. An absolute target is not repo policy, so the bundle must
-// carry the no-AGENTS.md sentinel and the secret's contents must be absent.
-test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target", async (t) => {
+// Runs runGithub over a two-commit PR (base on main, then feature) and returns
+// every prompt the stub runner received plus the bundle's agentsMd value.
+async function githubAgentsMd(
+  t: TestContext,
+  prepare: { readonly base: (repo: string, tmp: string) => void; readonly feature: (repo: string) => void },
+): Promise<{ readonly prompts: string; readonly agentsMd: string }> {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-github-symlink-test-"));
   const repo = initRepo(tmp);
-  const secretPath = path.join(tmp, "runner-secret.txt");
   const fakeBin = path.join(tmp, "bin");
   const gh = path.join(fakeBin, "gh");
   const claude = path.join(fakeBin, "claude");
@@ -192,11 +193,12 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  writeFileSync(secretPath, "SECRET-TOKEN-xyz\n");
   gitText(["branch", "-M", "main"], repo);
+  prepare.base(repo, tmp);
+  commitAll(repo, "base");
   const baseSha = headSha(repo);
   gitText(["checkout", "-b", "feature"], repo);
-  symlinkSync(secretPath, path.join(repo, "AGENTS.md"));
+  prepare.feature(repo);
   writeFileSync(path.join(repo, "README.md"), "feature\n");
   commitAll(repo, "feature");
   const targetHeadSha = headSha(repo);
@@ -208,7 +210,8 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
       "#!/usr/bin/env node",
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
-      "if (args.includes('--input')) { process.stdout.write('{}'); process.exit(0); }",
+      "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
+      "if (args.includes('--input')) { process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/9') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
@@ -237,7 +240,7 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
       "const fs = require('node:fs');",
       "const input = fs.readFileSync(0, 'utf8');",
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -252,8 +255,35 @@ test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target",
   await runGithub(repo, 9, { timeoutMs: 1000 });
 
   const prompts = readFileSync(promptPath, "utf8");
-  assert.equal(prompts.includes("SECRET-TOKEN-xyz"), false);
-  const agentsMd = /"agentsMd":\s*"([^"]+)"/.exec(prompts);
+  const agentsMd = /"agentsMd":\s*"((?:[^"\\]|\\.)*)"/.exec(prompts);
   assert.ok(agentsMd, "no agentsMd value reached the model prompt");
-  assert.equal(agentsMd[1], NO_AGENTS);
+  return { prompts, agentsMd: JSON.parse(`"${agentsMd[1]}"`) as string };
+}
+
+// Issue #211, PR #224 critic: a committed `AGENTS.md` symlink must not make
+// GitHub mode read the runner's filesystem, and its link text must not pass
+// as fake policy. An absolute target is not repo policy, so the bundle must
+// carry the no-AGENTS.md sentinel and the secret's contents must be absent.
+// The link sits in the base commit because policy is read at the merge base.
+test("runGithub reads a symlinked AGENTS.md as a Git blob, not the link target", async (t) => {
+  const { prompts, agentsMd } = await githubAgentsMd(t, {
+    base: (repo, tmp) => {
+      const secretPath = path.join(tmp, "runner-secret.txt");
+      writeFileSync(secretPath, "SECRET-TOKEN-xyz\n");
+      symlinkSync(secretPath, path.join(repo, "AGENTS.md"));
+    },
+    feature: () => {},
+  });
+  assert.equal(prompts.includes("SECRET-TOKEN-xyz"), false);
+  assert.equal(agentsMd, NO_AGENTS);
+});
+
+// Issue #240: a PR must not rewrite the policy it is reviewed under. Its own
+// AGENTS.md edit reaches the model only as diff content.
+test("runGithub reads AGENTS.md at the merge base, not the PR head", async (t) => {
+  const { agentsMd } = await githubAgentsMd(t, {
+    base: (repo) => writeFileSync(path.join(repo, "AGENTS.md"), "BASE-POLICY-SENTINEL\n"),
+    feature: (repo) => writeFileSync(path.join(repo, "AGENTS.md"), "HEAD-POLICY-SENTINEL\n"),
+  });
+  assert.equal(agentsMd, "BASE-POLICY-SENTINEL");
 });

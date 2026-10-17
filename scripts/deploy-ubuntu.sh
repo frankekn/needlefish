@@ -50,7 +50,7 @@ else
 	node - "$tmp/repo/release.json" "$sha" "$version" "$NEEDLEFISH_REPO_URL" "$deployed_at" "$node_version" <<'NODE'
 const fs = require("node:fs");
 const [path, sha, version, repoUrl, deployedAt, node] = process.argv.slice(2);
-fs.writeFileSync(path, `${JSON.stringify({ sha, version, repoUrl, deployedAt, node }, null, 2)}\n`);
+fs.writeFileSync(path, `${JSON.stringify({ sha, version, repoUrl, deployedAt, node, runtimePublication: JSON.parse(fs.readFileSync("runtime-publication.json", "utf8")) }, null, 2)}\n`);
 NODE
 	"$tmp/repo/bin/needlefish" --version
 	if ! mv "$tmp/repo" "$release"; then
