@@ -174,14 +174,15 @@ extension DesktopCLI {
                 throw DesktopError.invalidOutput
             }
         }
-        guard output.status == 0 else {
+        if output.status != 0 {
             if let response = try? JSONDecoder().decode(ConnectionsResponse.self, from: output.stdout), !response.ok {
                 _ = try response.validated(status: output.status)
             }
-            throw DesktopError.command
+            guard output.status == 1 else { throw DesktopError.command }
         }
         do {
             let result = try JSONDecoder().decode(Result.self, from: output.stdout).validated()
+            guard output.status == 0 || result.verdict != .pass else { throw DesktopError.command }
             let displayed = [result.summary, result.coverage ?? ""] + result.findings.flatMap {
                 [$0.severity, $0.title, $0.file, $0.whyItBreaks, $0.suggestedFix]
             } + result.residualRisks.map(\.text)
@@ -193,7 +194,8 @@ extension DesktopCLI {
                 }
             }
             return result
-        } catch { throw DesktopError.invalidOutput }
+        } catch let error as DesktopError { throw error }
+        catch { throw DesktopError.invalidOutput }
     }
 }
 
