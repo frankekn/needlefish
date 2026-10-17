@@ -19,7 +19,7 @@ final class DesktopTests: XCTestCase {
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         return Runtime(node: "/bin/sh", cli: script.path, codex: script.path, git: "/usr/bin/git", development: true)
     }
-    let doctorJSON = #"{"schemaVersion":1,"repoRoot":"/test/project","checks":[{"name":"node","status":"ok","detail":"v24"},{"name":"runner","status":"ok","detail":"codex"},{"name":"auth","status":"ok","detail":"logged in"},{"name":"git","status":"ok","detail":"repo"},{"name":"base","status":"ok","detail":"changes"}]}"#
+    let doctorJSON = #"{"schemaVersion":1,"repoRoot":"/test/project","checks":[{"name":"node","status":"ok","detail":"v24"},{"name":"runner","status":"ok","detail":"codex"},{"name":"capability","status":"ok","detail":"repositoryRead"},{"name":"auth","status":"ok","detail":"logged in"},{"name":"git","status":"ok","detail":"repo"},{"name":"base","status":"ok","detail":"changes"}]}"#
     let scopeJSON = #"{"mode":"uncommitted","changedFiles":[{"path":"src/example.ts"}],"patchBytes":20,"untrackedSkipped":[]}"#
     func resultJSON(_ verdict: String) -> String {
         let severity = verdict == "pass" ? "P3" : "P2"
@@ -28,7 +28,7 @@ final class DesktopTests: XCTestCase {
     func testDoctorUsesSharedJSONAndExactArguments() async throws {
         let runtime = try fixture("[ \"$*\" = 'doctor --repo /test/project --runner codex --json' ] || exit 3\nprintf '%s' '\(doctorJSON)'")
         let report = try await DesktopCLI(runtime: runtime).doctor(repo: URL(fileURLWithPath: "/test/project"), command: Command())
-        XCTAssertEqual(report.checks.map(\.name), ["node", "runner", "auth", "git", "base"])
+        XCTAssertEqual(report.checks.map(\.name), ["node", "runner", "capability", "auth", "git", "base"])
         XCTAssertEqual(report.ready, true)
     }
     func testNotRepoDoesNotInitializeProject() async throws {
@@ -38,7 +38,7 @@ final class DesktopTests: XCTestCase {
         let report = try await DesktopCLI(runtime: runtime).doctor(repo: URL(fileURLWithPath: "/test/project"), command: Command())
         XCTAssertEqual(report.repoAvailable, false)
         XCTAssertEqual(report.ready, false)
-        XCTAssertEqual(report.checks[3].explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
+        XCTAssertEqual(report.checks.first { $0.name == "git" }?.explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
     }
     func testFailedOrUnknownGitCannotSupplyRepositoryRoot() throws {
         for status in ["fail", "unknown"] {
@@ -64,7 +64,7 @@ final class DesktopTests: XCTestCase {
         let json = doctorJSON.replacingOccurrences(of: #""base","status":"ok""#, with: #""base","status":"fail""#)
         let report = try JSONDecoder().decode(Doctor.self, from: Data(json.utf8)).validated()
         XCTAssertEqual(report.ready, true)
-        XCTAssertEqual(report.checks[4].explanation, "此介面只檢查未提交變更，不需要分支基準。 / This view reviews uncommitted changes only; no branch base is required.")
+        XCTAssertEqual(report.checks.first { $0.name == "base" }?.explanation, "此介面只檢查未提交變更，不需要分支基準。 / This view reviews uncommitted changes only; no branch base is required.")
     }
     func testMalformedDoctorIsRejected() throws {
         let data = Data(#"{"schemaVersion":1,"checks":[]}"#.utf8)
@@ -704,7 +704,7 @@ final class OnboardingTests: XCTestCase {
                 } else {
                     guard case .diagnosis(let report) = model.state else { return XCTFail("Non-repository diagnosis must remain available") }
                     XCTAssertEqual(report.scopeReady, false)
-                    XCTAssertEqual(report.checks[3].explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
+                    XCTAssertEqual(report.checks.first { $0.name == "git" }?.explanation, "無法讀取 Git 專案。請選擇正確資料夾。不會自動初始化或修改專案。 / Choose a Git project.")
                 }
             }
         }
@@ -741,7 +741,7 @@ final class OnboardingTests: XCTestCase {
         model.diagnose()
         try await waitForIdle(model)
         guard case .diagnosis(let report) = model.state else { return XCTFail("Expected old Git diagnosis") }
-        XCTAssertEqual(report.checks[3].explanation, "Git 版本過舊。請升級至 Git 2.41 以上，再重新診斷。 / Upgrade Git to 2.41 or later, then check again.")
+        XCTAssertEqual(report.checks.first { $0.name == "git" }?.explanation, "Git 版本過舊。請升級至 Git 2.41 以上，再重新診斷。 / Upgrade Git to 2.41 or later, then check again.")
         XCTAssertEqual(report.scopeReady, false)
         XCTAssertEqual(model.repo?.path, "/selected/folder")
     }
@@ -1000,5 +1000,820 @@ final class GithubCredentialBoundaryTests: XCTestCase {
         guard case .status(let result) = model.state else { return XCTFail("Known setup must accept the separate secret action") }
         XCTAssertEqual(result.secret, "present")
         XCTAssertEqual(result.authentication, "unknown")
+    }
+}
+
+@MainActor
+final class AdvancedConnectionsTests: XCTestCase {
+    let fixture = DesktopTests()
+    func ownedTemporary() throws -> URL {
+        let root = try fixture.temporary()
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+    func cliFixture(_ body: String) throws -> Runtime {
+        let runtime = try fixture.fixture(body)
+        let root = URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return runtime
+    }
+    let raw = #"{"version":1,"connections":[{"id":"agent","adapter":"acp","model":"requested-model","launch":{"command":"/test/agent","args":["--model","{model}"]},"auth":{"env":{"AGENT_TOKEN":"SHARED_TOKEN"}}},{"id":"proxy","adapter":"codex","model":"requested-model","auth":{"route":{"kind":"cliproxyapi","baseUrl":"http://localhost:1234/v1"},"env":{"CODEX_PROXY_API_KEY":"SHARED_TOKEN"}}}]}"#
+    func response(_ json: String) throws -> ConnectionsResponse { try JSONDecoder().decode(ConnectionsResponse.self, from: Data(json.utf8)).validated(status: 0) }
+    func loaded() throws -> AdvancedConnections {
+        let model = AdvancedConnections()
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        return model
+    }
+    func row(_ id: String, readiness: String = "local-available") -> String {
+        "{\"id\":\"\(id)\",\"adapter\":\"codex\",\"requestedModel\":\"requested-model\",\"route\":\"cliproxyapi\",\"credentialSource\":\"reference-configured\",\"providerAccount\":\"unknown\",\"authentication\":\"unknown\",\"readiness\":\"\(readiness)\",\"qualification\":\"unqualified\"}"
+    }
+    func inspect(_ model: AdvancedConnections, readiness: String = "local-available") throws {
+        try model.inspected(response("{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:old\",\"connections\":[\(model.selection.map { row($0, readiness: readiness) }.joined(separator: ","))]}"))
+    }
+    func testRawDraftPreservesPlaceholderRouteAndSourceNames() throws {
+        let model = try loaded()
+        model.change(.init(id: "extra", adapter: "codex", model: "other"), replacing: nil)
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: model.request("apply")) as? [String: Any])
+        XCTAssertEqual(request["expectedRevision"] as? String, "sha256:old")
+        let doc = try XCTUnwrap(request["document"] as? [String: Any])
+        let profiles = try XCTUnwrap(doc["connections"] as? [[String: Any]])
+        XCTAssertEqual((profiles[0]["launch"] as? [String: Any])?["args"] as? [String], ["--model", "{model}"])
+        XCTAssertEqual((profiles[0]["auth"] as? [String: Any])?["env"] as? [String: String], ["AGENT_TOKEN": "SHARED_TOKEN"])
+        XCTAssertNil((profiles[0]["auth"] as? [String: Any])?["kind"])
+        XCTAssertEqual(model.selection, [])
+    }
+    func testConflictRetainsDraftRequiresReloadAndExplicitReapply() throws {
+        let model = try loaded()
+        model.change(.init(id: "new", adapter: "codex", model: "other"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "revision_conflict"))
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "new"])
+        XCTAssertEqual(model.draftState, .conflict)
+        XCTAssertThrowsError(try model.request("apply"))
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy"])
+        model.reapply()
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "new"])
+        XCTAssertEqual(model.baseRevision, "sha256:new")
+        XCTAssertTrue(model.dirty)
+    }
+    func testCleanConflictReloadCannotReapplyStaleConfiguration() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.select("proxy"); model.budget = "1000"
+            try inspect(model)
+            XCTAssertFalse(model.dirty)
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertEqual(model.draftState, code == "revision_conflict" ? .conflict : .reloadRequired)
+            XCTAssertThrowsError(try model.request("apply"))
+            XCTAssertEqual(model.message, code == "revision_conflict"
+                ? "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration."
+                : "保存狀態未知。請重新載入確認，不能直接重試保存。 / Save state unknown. Reload to inspect before retrying.")
+            let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+            XCTAssertFalse(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.model), ["other-editor-model", "other-editor-model"])
+            XCTAssertFalse(model.dirty)
+            XCTAssertEqual(model.baseRevision, "sha256:new")
+        }
+    }
+    func testDirtyConflictsKeepOnlyActualUnsavedDraftForExplicitReapply() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.change(.init(id: "unsaved", adapter: "codex", model: "my-model"), replacing: nil)
+            model.failed(ConnectionsFailure(code: code))
+            XCTAssertEqual(model.message, code == "revision_conflict"
+                ? "設定已由別處更改。草稿保留。重新載入後，明確選擇重套草稿。 / Configuration changed. Draft retained. Reload before explicitly reapplying."
+                : "保存狀態未知。草稿保留。請重新載入確認，再明確選擇重套草稿。 / Save state unknown. Draft retained. Reload before explicitly reapplying.")
+            XCTAssertFalse(model.canReapply)
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+            XCTAssertTrue(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "unsaved"])
+            XCTAssertTrue(model.dirty)
+            XCTAssertFalse(model.canReapply)
+            XCTAssertEqual(model.baseRevision, "sha256:new")
+        }
+    }
+    func testRetainedDraftSurvivesRepeatedCleanConflicts() throws {
+        for firstCode in ["revision_conflict", "save_state_unknown"] {
+            for secondCode in ["revision_conflict", "save_state_unknown"] {
+                let model = try loaded()
+                model.change(.init(id: "unsaved", adapter: "codex", model: "my-original-model"), replacing: nil)
+                model.failed(ConnectionsFailure(code: firstCode))
+                let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+                try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+                XCTAssertFalse(model.dirty)
+                XCTAssertTrue(model.canReapply)
+                model.failed(ConnectionsFailure(code: secondCode))
+                XCTAssertFalse(model.canReapply)
+                XCTAssertTrue(model.message?.contains("Draft retained") == true)
+                XCTAssertThrowsError(try model.request("apply"))
+                let latest = raw.replacingOccurrences(of: "requested-model", with: "latest-editor-model")
+                try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(latest)}"))
+                XCTAssertTrue(model.canReapply)
+                model.reapply()
+                XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "unsaved"])
+                XCTAssertEqual(model.document.connections.map(\.model), ["requested-model", "requested-model", "my-original-model"])
+                XCTAssertEqual(model.baseRevision, "sha256:latest")
+                XCTAssertTrue(model.dirty)
+                XCTAssertFalse(model.canReapply)
+            }
+        }
+    }
+    func testReapplyPreservesNewerDirtyDraftUntilReload() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.change(.init(id: "first", adapter: "codex", model: "first-model"), replacing: nil)
+            model.failed(ConnectionsFailure(code: code))
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+            model.change(.init(id: "second", adapter: "codex", model: "second-model"), replacing: nil)
+            XCTAssertFalse(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
+            XCTAssertEqual(model.document.connections.last?.model, "second-model")
+            XCTAssertTrue(model.dirty)
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
+            XCTAssertTrue(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "first"])
+            XCTAssertEqual(model.document.connections.last?.model, "first-model")
+            XCTAssertEqual(model.baseRevision, "sha256:latest")
+        }
+    }
+    func testNewDirtyDraftReplacesRetainedDraft() throws {
+        let model = try loaded()
+        model.change(.init(id: "first", adapter: "codex", model: "first-model"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "revision_conflict"))
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+        model.change(.init(id: "second", adapter: "codex", model: "second-model"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "save_state_unknown"))
+        try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
+        model.reapply()
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
+        XCTAssertEqual(model.document.connections.last?.model, "second-model")
+        XCTAssertFalse(model.canReapply)
+    }
+    func testSaveAndResetConsumeRetainedDraft() throws {
+        for action in ["save", "reset"] {
+            let model = try loaded()
+            model.change(.init(id: "unsaved", adapter: "codex", model: "my-model"), replacing: nil)
+            model.failed(ConnectionsFailure(code: "revision_conflict"))
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+            XCTAssertTrue(model.canReapply)
+            if action == "save" {
+                try model.saved(response("{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:saved\",\"connections\":[\(row("agent")),\(row("proxy"))]}"))
+            } else { model.reset() }
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
+            XCTAssertFalse(model.canReapply)
+            model.failed(ConnectionsFailure(code: "revision_conflict"))
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy"])
+            XCTAssertFalse(model.dirty)
+        }
+    }
+    func testCleanInspectAndReviewConflictsReloadWithoutOfferingReapply() async throws {
+        for operation in ["inspect", "review"] {
+            let runtime = try cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(fixture.doctorJSON)'
+            else cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":false,"code":"revision_conflict"}'; exit 1
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            owner.diagnose()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+            owner.connections.select("proxy"); owner.connections.budget = "1000"
+            if operation == "inspect" { owner.prepareConnections() }
+            else {
+                try inspect(owner.connections)
+                owner.connections.credentialMode = "session"
+                owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+                owner.consentUsesConnections = true
+                owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(fixture.scopeJSON.utf8)))
+                owner.trusted = true; owner.accepted = true
+                XCTAssertTrue(owner.canReview)
+                owner.review()
+            }
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            guard case .message(let message) = owner.state else { return XCTFail("Conflict must request reload") }
+            XCTAssertEqual(message, "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration.")
+            XCTAssertEqual(owner.connections.message, message)
+            XCTAssertEqual(owner.connections.draftState, .conflict)
+            XCTAssertEqual(owner.connections.secrets, [:])
+            let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+            XCTAssertFalse(owner.connections.canReapply)
+            owner.connections.reapply()
+            XCTAssertEqual(owner.connections.document.connections.map(\.model), ["other-editor-model", "other-editor-model"])
+        }
+    }
+    func testInspectAndReviewConflictPreserveEarlierUnsavedDraft() async throws {
+        for operation in ["inspect", "review"] {
+            let runtime = try cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(fixture.doctorJSON)'
+            else cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":false,"code":"revision_conflict"}'; exit 1
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            owner.diagnose()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+            owner.connections.change(.init(id: "unsaved", adapter: "codex", model: "my-original-model"), replacing: nil)
+            owner.connections.failed(ConnectionsFailure(code: "revision_conflict"))
+            let reloaded = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(reloaded)}"))
+            owner.connections.select("proxy"); owner.connections.budget = "1000"
+            if operation == "inspect" { owner.prepareConnections() }
+            else {
+                try inspect(owner.connections)
+                owner.connections.credentialMode = "session"
+                owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+                owner.consentUsesConnections = true
+                owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(fixture.scopeJSON.utf8)))
+                owner.trusted = true; owner.accepted = true
+                XCTAssertTrue(owner.canReview)
+                owner.review()
+            }
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            guard case .message(let message) = owner.state else { return XCTFail("Conflict must request reload") }
+            XCTAssertEqual(message, "設定已由別處更改。草稿保留。重新載入後，明確選擇重套草稿。 / Configuration changed. Draft retained. Reload before explicitly reapplying.")
+            XCTAssertEqual(owner.connections.message, message)
+            XCTAssertEqual(owner.connections.draftState, .conflict)
+            XCTAssertEqual(owner.connections.secrets, [:])
+            let current = raw.replacingOccurrences(of: "requested-model", with: "other-editor-model")
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(current)}"))
+            XCTAssertTrue(owner.connections.canReapply)
+            owner.connections.reapply()
+            XCTAssertEqual(owner.connections.document.connections.map(\.model), ["requested-model", "requested-model", "my-original-model"])
+        }
+    }
+    func testOrderDistinctReferencesAndDeletionInvalidateReadiness() throws {
+        let model = try loaded()
+        model.select("proxy"); model.select("agent"); model.select("proxy")
+        XCTAssertEqual(model.selection, ["proxy", "agent"])
+        XCTAssertEqual(model.sourceRefs, ["SHARED_TOKEN"])
+        model.move("agent", by: -1)
+        XCTAssertEqual(model.selection, ["agent", "proxy"])
+        model.budget = "1000"
+        model.credentialMode = "session"; model.secrets["SHARED_TOKEN"] = "offline-only-value"
+        try inspect(model)
+        XCTAssertTrue(model.ready)
+        model.delete("agent")
+        XCTAssertEqual(model.selection, ["proxy"])
+        XCTAssertNil(model.inspection)
+        XCTAssertFalse(model.ready)
+    }
+    func testDeletedAndDuplicateNamesCannotProduceReadyReview() throws {
+        let model = try loaded()
+        model.select("absent")
+        XCTAssertFalse(model.validSelection)
+        model.remove("absent")
+        model.select("proxy")
+        model.change(.init(id: "proxy", adapter: "codex", model: "duplicate"), replacing: nil)
+        XCTAssertTrue(model.dirty)
+        XCTAssertFalse(model.ready)
+    }
+    func testUnknownAuthIsNotLoginButKnownLocalBlockCannotStart() throws {
+        let model = try loaded(); model.select("proxy"); model.budget = "1000"
+        try inspect(model, readiness: "local-blocked")
+        XCTAssertFalse(model.ready)
+        try inspect(model)
+        XCTAssertFalse(model.ready)
+        XCTAssertEqual(model.inspection?.first?.authentication, "unknown")
+        model.credentialMode = "session"
+        XCTAssertFalse(model.ready)
+        model.secrets["SHARED_TOKEN"] = "offline-only-value"
+        XCTAssertTrue(model.ready)
+        model.clearSecrets()
+        XCTAssertFalse(model.ready)
+    }
+    func testBudgetIsExplicitBoundedAndConfigurationFailuresAreCanned() throws {
+        let model = try loaded()
+        XCTAssertNil(model.budgetMs)
+        for value in ["0", "-1", "2147483648", "not-a-number"] { model.budget = value; XCTAssertNil(model.budgetMs) }
+        model.budget = "2147483647"; XCTAssertEqual(model.budgetMs, 2147483647)
+        model.failed(ConnectionsFailure(code: "configuration_unavailable"))
+        XCTAssertEqual(model.message, ConnectionsFailure(code: "configuration_unavailable").localizedDescription)
+    }
+    func testInspectionMustMatchExactRevisionAndOrder() throws {
+        let model = try loaded(); model.select("proxy"); model.select("agent")
+        for (revision, ids) in [("sha256:new", ["proxy", "agent"]), ("sha256:old", ["agent", "proxy"])] {
+            let json = "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"\(revision)\",\"connections\":[\(ids.map { row($0) }.joined(separator: ","))]}"
+            XCTAssertThrowsError(try model.inspected(response(json)))
+        }
+        XCTAssertNil(model.inspection)
+    }
+    func testExistingReviewFailuresKeepTheirStructuredRecovery() async throws {
+        for mode in ["existing", "session"] {
+            for code in ["revision_conflict", "invalid_request"] {
+                let runtime = try cliFixture("cat >/dev/null; printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"\(code)\"}'; exit 1")
+                do {
+                    _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "old", ids: ["proxy"], budgetMs: 1000, mode: mode, sources: [:], command: Command())
+                    XCTFail("Structured failure must stay incomplete")
+                } catch let error as ConnectionsFailure {
+                    XCTAssertEqual(error.code, code)
+                } catch { XCTFail("Expected structured recovery, got \(error)") }
+            }
+        }
+    }
+    func testBlockedInspectionStaysEditableUntilRunnerIsAvailable() async throws {
+        let root = try ownedTemporary()
+        let blocked = root.appendingPathComponent("blocked")
+        try Data().write(to: blocked)
+        let doctor = #"{"schemaVersion":1,"repoRoot":"/project","checks":[{"name":"node","status":"ok","detail":"offline"},{"name":"runner","status":"ok","detail":"offline"},{"name":"capability","status":"ok","detail":"offline"},{"name":"auth","status":"ok","detail":"offline"},{"name":"git","status":"ok","detail":"offline"},{"name":"base","status":"ok","detail":"offline"}]}"#
+        let runtime = try cliFixture("""
+        if [ "$1" = doctor ]; then printf '%s' '\(doctor)'
+        elif [ "$1" = connections ]; then
+          cat >/dev/null
+          if [ -f '\(blocked.path)' ]; then printf '%s' '{"schemaVersion":1,"ok":true,"revision":"sha256:old","connections":[\(row("proxy", readiness: "local-blocked"))]}'
+          else printf '%s' '{"schemaVersion":1,"ok":true,"revision":"sha256:old","connections":[\(row("proxy"))]}'
+          fi
+        else printf '%s' '{"mode":"uncommitted","changedFiles":[{"path":"app.ts"}],"patchBytes":42,"untrackedSkipped":[]}'
+        fi
+        """)
+        let owner = Onboarding(runtime: runtime)
+        owner.repo = URL(fileURLWithPath: "/project")
+        try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        owner.connections.select("proxy"); owner.connections.budget = "1000"
+        owner.connections.credentialMode = "session"; owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+        owner.prepareConnections()
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case .message(let message) = owner.state else { return XCTFail("Blocked connection must not enter consent") }
+        XCTAssertTrue(message.contains("proxy")); XCTAssertTrue(message.contains("local-blocked"))
+        XCTAssertEqual(owner.connections.draftState, .editing)
+        XCTAssertFalse(owner.canReview)
+        try FileManager.default.removeItem(at: blocked)
+        owner.prepareConnections()
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case .consent = owner.state else { return XCTFail("Available runner must permit consent") }
+        owner.trusted = true; owner.accepted = true
+        XCTAssertTrue(owner.canReview)
+        XCTAssertNil(owner.connections.message)
+        XCTAssertEqual(owner.connections.inspection?.first?.qualification, "unqualified")
+    }
+    func testNoviceScopeFailureDoesNotChangeAdvancedDraftOrSecrets() async throws {
+        let runtime = try cliFixture("exit 1")
+        let owner = Onboarding(runtime: runtime)
+        owner.repo = URL(fileURLWithPath: "/project")
+        try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        owner.connections.message = "existing advanced message"
+        owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+        owner.prepare()
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard case .message = owner.state else { return XCTFail("Failed novice command must report incomplete") }
+        XCTAssertEqual(owner.connections.message, "existing advanced message")
+        XCTAssertEqual(owner.connections.secrets["SHARED_TOKEN"], "offline-only-value")
+        XCTAssertEqual(owner.connections.document.connections.map(\.id), ["agent", "proxy"])
+    }
+    func testSessionReviewUsesOnlyBoundedAnonymousInputAndExactContract() async throws {
+        let root = try ownedTemporary()
+        let capture = root.appendingPathComponent("fake-input.json")
+        let runtime = try cliFixture("[ \"$*\" = 'connections review --json' ] || exit 3\ncat > '\(capture.path)'\nprintf '%s' '\(fixture.resultJSON("needs_human"))'")
+        let result = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "sha256:exact", ids: ["proxy", "agent"], budgetMs: 1200, mode: "session", sources: ["SHARED_TOKEN": "offline-only-value"], command: Command())
+        XCTAssertEqual(result.verdict.rawValue, "needs_human")
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        XCTAssertEqual(Set(request.keys), Set(["repo", "scope", "expectedRevision", "ids", "budgetMs", "credentialMode", "sources"]))
+        XCTAssertEqual(request["repo"] as? String, "/project")
+        XCTAssertEqual(request["scope"] as? String, "local-uncommitted")
+        XCTAssertEqual(request["ids"] as? [String], ["proxy", "agent"])
+        XCTAssertEqual(request["sources"] as? [String: String], ["SHARED_TOKEN": "offline-only-value"])
+        XCTAssertEqual(request["budgetMs"] as? Int, 1200)
+        XCTAssertNil(runtime.environment(temporary: root)["SHARED_TOKEN"])
+    }
+    func testNonzeroMalformedAndEchoedSessionOutputRemainIncomplete() async throws {
+        let secret = "offline-only-value"
+        for body in ["cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; exit 1", "cat >/dev/null; printf invalid", "cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; printf '\(secret)' >&2"] {
+            let runtime = try cliFixture(body)
+            do {
+                _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+                XCTFail("Must remain incomplete")
+            } catch { XCTAssertFalse(error.localizedDescription.contains(secret)) }
+        }
+    }
+    func testOversizeInputIsRejectedBeforeSpawn() async throws {
+        let root = try ownedTemporary()
+        let marker = root.appendingPathComponent("spawned")
+        let runtime = try cliFixture("touch '\(marker.path)'")
+        do {
+            _ = try await Command().run(runtime.command([]), environment: [:], temporary: root.appendingPathComponent("invocation"), timeout: 1, input: Data(repeating: 65, count: 131073))
+            XCTFail("Must reject input")
+        } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+    }
+    func testInputSentCallbackHappensBeforeResult() async throws {
+        let root = try ownedTemporary()
+        let marker = root.appendingPathComponent("sent")
+        let runtime = try cliFixture("cat >/dev/null\nsleep 0.2\n[ -f '\(marker.path)' ] || exit 3\nprintf completed")
+        let output = try await DesktopCLI(runtime: runtime).call([], command: Command(), input: Data("{}".utf8), inputSent: { try? Data("cleared".utf8).write(to: marker) })
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(String(decoding: output.stdout, as: UTF8.self), "completed")
+    }
+    func testNoviceReadyIsUnchangedAndAdvancedChangesInvalidateConsent() throws {
+        let owner = Onboarding(runtime: nil)
+        owner.trusted = true; owner.accepted = true
+        XCTAssertFalse(owner.canReview)
+        owner.consentUsesConnections = true
+        owner.state = .consent(try JSONDecoder().decode(Scope.self, from: Data(fixture.scopeJSON.utf8)))
+        owner.invalidateConnectionConsent()
+        XCTAssertFalse(owner.trusted)
+        XCTAssertFalse(owner.accepted)
+        guard case .message = owner.state else { return XCTFail("Must require a new inspection") }
+    }
+}
+
+private final class InputAllocationOwner: Sendable {}
+
+private final class InputOwnershipProbe: @unchecked Sendable {
+    weak var owner: InputAllocationOwner?
+    func makeInput(count: Int = 32_768) -> Data {
+        let owner = InputAllocationOwner()
+        self.owner = owner
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: count, alignment: 1)
+        bytes.initializeMemory(as: UInt8.self, repeating: 65, count: count)
+        return Data(bytesNoCopy: bytes, count: count, deallocator: .custom { [owner] bytes, _ in
+            withExtendedLifetime(owner) { bytes.deallocate() }
+        })
+    }
+}
+
+final class AdvancedInputDeadlineTests: XCTestCase {
+    func testOutputLimitReleasesInputBeforeSignallingWithoutCompletion() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-output-limit-" + UUID().uuidString)
+        let probe = InputOwnershipProbe()
+        let command = Command(signalGroup: { group, signal in
+            XCTAssertNil(probe.owner, "Release pending bytes before terminating the owned group")
+            return kill(group, signal)
+        })
+        do {
+            _ = try await command.run(["/bin/sh", "-c", "/bin/dd if=/dev/zero bs=65536 count=129 2>/dev/null; cat >/dev/null; sleep 30"],
+                environment: ["PATH": "/usr/bin:/bin"], temporary: root, timeout: 30, input: probe.makeInput(count: 131_072),
+                inputSent: { XCTFail("Output failure cannot signal input completion") })
+            XCTFail("Expected output limit failure")
+        } catch { XCTAssertEqual(error as? DesktopError, .outputLimit) }
+        XCTAssertNil(probe.owner)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testInputBackingReleasedBeforeCallbackWhileChildIsHeld() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-release-" + UUID().uuidString)
+        let marker = root.appendingPathComponent("callback")
+        let probe = InputOwnershipProbe()
+        let output = try await Command().run(["/bin/sh", "-c", "cat; while [ ! -f '\(marker.path)' ]; do sleep 0.02; done; printf held-child-completed"],
+            environment: ["PATH": "/usr/bin:/bin"], temporary: root, timeout: 5, input: probe.makeInput(), inputSent: {
+                XCTAssertNil(probe.owner, "Command must release the backing allocation before inputSent")
+                try? Data("continue".utf8).write(to: marker)
+            })
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(output.stdout, Data(repeating: 65, count: 32_768) + Data("held-child-completed".utf8))
+        XCTAssertNil(probe.owner)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testInputBackingReleasedOnEveryIncompleteOutcome() async throws {
+        let cases: [(String, [String], TimeInterval, DesktopError)] = [
+            ("epipe", ["/bin/sh", "-c", "exec 0<&-; sleep 0.2"], 5, .command),
+            ("partial", ["/usr/bin/true"], 5, .command),
+            ("timeout", ["/bin/sleep", "30"], 0.15, .timeout),
+            ("spawn", ["/no-such-owned-input-executable"], 1, .command),
+            ("cancel", ["/bin/sleep", "30"], 30, .cancelled),
+        ]
+        for (name, arguments, timeout, expected) in cases {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-\(name)-" + UUID().uuidString)
+            let probe = InputOwnershipProbe()
+            let command = Command(signalGroup: { group, signal in
+                XCTAssertNil(probe.owner, "Release pending bytes before terminating the owned group")
+                return kill(group, signal)
+            })
+            let task = Task {
+                try await command.run(arguments, environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                      timeout: timeout, input: probe.makeInput(), inputSent: { XCTFail("Incomplete input cannot signal completion") })
+            }
+            if name == "cancel" {
+                try await Task.sleep(for: .milliseconds(150))
+                command.cancel()
+            }
+            do { _ = try await task.value; XCTFail("Expected \(name) failure") }
+            catch { XCTAssertEqual(error as? DesktopError, expected) }
+            XCTAssertNil(probe.owner)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+        }
+    }
+    func testUnreadInputHasItsOwnDeadlineAndLeavesNoGroup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-advanced-input-deadline-" + UUID().uuidString)
+        let started = Date()
+        do {
+            _ = try await Command().run(["/bin/sleep", "30"], environment: [:], temporary: root, timeout: 30,
+                                        input: Data(repeating: 65, count: 131072))
+            XCTFail("Unread input must time out")
+        } catch { XCTAssertEqual(error as? DesktopError, .timeout) }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+}
+
+@MainActor
+final class AdvancedBoundaryRegressionTests: XCTestCase {
+    func testSelectedRoutesOwnAvailabilityWithoutBundledCodexGate() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        for (adapter, failure, readiness, scopeFails, allowsConsent) in [
+            ("acp", "runner", "local-available", false, true),
+            ("acp", "capability", "local-available", false, true),
+            ("codex", "runner", "local-blocked", false, false),
+            ("acp", "runner", "local-blocked", false, false),
+            ("acp", "node", "local-available", false, false),
+            ("acp", "git", "local-available", false, false),
+            ("acp", "runner", "local-available", true, false)
+        ] {
+            var doctor = fixture.doctorJSON.replacingOccurrences(of: "\"\(failure)\",\"status\":\"ok\"", with: "\"\(failure)\",\"status\":\"fail\"")
+            if failure == "git" { doctor = doctor.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "") }
+            let row = "{\"id\":\"selected\",\"adapter\":\"\(adapter)\",\"requestedModel\":\"offline-model\",\"route\":\"\(adapter == "acp" ? "opaque" : "ambient")\",\"credentialSource\":\"ambient\",\"providerAccount\":\"unknown\",\"authentication\":\"unknown\",\"readiness\":\"\(readiness)\",\"qualification\":\"unqualified\"}"
+            let runtime = try maker.cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(doctor)'
+            elif [ "$1" = connections ]; then cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":true,"revision":"missing","connections":[\(row)]}'
+            else \(scopeFails ? "exit 1" : "printf '%s' '" + fixture.scopeJSON + "'")
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/test/project")
+            let launch = adapter == "acp" ? ",\"launch\":{\"command\":\"/offline/agent\",\"args\":[]}" : ""
+            try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":{\"version\":1,\"connections\":[{\"id\":\"selected\",\"adapter\":\"\(adapter)\",\"model\":\"offline-model\"\(launch)}]}}"))
+            owner.connections.select("selected"); owner.connections.budget = "1000"
+            owner.prepareConnections()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            if allowsConsent {
+                guard case .consent = owner.state else { XCTFail("Available ACP must reach consent with Codex \(failure) failure"); continue }
+                XCTAssertFalse(owner.canReview)
+                owner.trusted = true; owner.accepted = true
+                XCTAssertTrue(owner.canReview)
+                XCTAssertFalse(try XCTUnwrap(owner.diagnosis).scopeReady)
+                XCTAssertFalse(try XCTUnwrap(owner.diagnosis).ready)
+            } else {
+                guard case .message = owner.state else { XCTFail("Unavailable route/repository/scope must stay blocked"); continue }
+                owner.trusted = true; owner.accepted = true
+                XCTAssertFalse(owner.canReview)
+            }
+        }
+    }
+    func testRepositoryScopeRequiresValidatedNodeAndGitChecks() throws {
+        let fixture = DesktopTests()
+        let decoder = JSONDecoder()
+        let report = try decoder.decode(Doctor.self, from: Data(fixture.doctorJSON.utf8)).validated()
+        XCTAssertTrue(report.repositoryScopeReady)
+        for name in ["node", "git"] {
+            let json = fixture.doctorJSON.replacingOccurrences(of: "\"\(name)\",\"status\":\"ok\"", with: "\"\(name)\",\"status\":\"fail\"")
+            let unavailable = try decoder.decode(Doctor.self, from: Data(json.utf8))
+            XCTAssertFalse(unavailable.repositoryScopeReady)
+        }
+        XCTAssertFalse(Doctor(schemaVersion: 1, repoRoot: nil, checks: []).repositoryScopeReady)
+        for json in [
+            fixture.doctorJSON.replacingOccurrences(of: #"{"name":"node","status":"ok","detail":"v24"},"#, with: ""),
+            fixture.doctorJSON.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "")
+        ] { XCTAssertThrowsError(try decoder.decode(Doctor.self, from: Data(json.utf8)).validated()) }
+    }
+    func testCurrentSixCheckDoctorContractIsAcceptedAndCapabilityStillGates() throws {
+        let fixture = DesktopTests()
+        let json = fixture.doctorJSON
+        let report = try JSONDecoder().decode(Doctor.self, from: Data(json.utf8)).validated()
+        XCTAssertTrue(report.ready)
+        let unknown = json.replacingOccurrences(of: #""capability","status":"ok""#, with: #""capability","status":"unknown""#)
+        let unavailable = try JSONDecoder().decode(Doctor.self, from: Data(unknown.utf8)).validated()
+        XCTAssertFalse(unavailable.ready)
+        XCTAssertFalse(unavailable.scopeReady)
+    }
+    func testKnownMissingAmbientCodexBlocksWithoutTreatingUnknownAsLogin() async throws {
+        let fixture = DesktopTests()
+        for status in ["fail", "unknown"] {
+            let json = fixture.doctorJSON.replacingOccurrences(of: #""auth","status":"ok""#, with: "\"auth\",\"status\":\"\(status)\"")
+            let runtime = try fixture.fixture("printf '%s' '\(json)'")
+            addTeardownBlock { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/test/project")
+            owner.diagnose()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            guard case .diagnosis = owner.state else { return XCTFail("Expected the current doctor contract") }
+            let document = #"{"schemaVersion":1,"ok":true,"baseRevision":"missing","document":{"version":1,"connections":[{"id":"native","adapter":"codex","model":"requested-model"}]}}"#
+            try owner.connections.load(JSONDecoder().decode(ConnectionsResponse.self, from: Data(document.utf8)).validated(status: 0))
+            owner.connections.select("native")
+            owner.consentUsesConnections = true
+            XCTAssertEqual(owner.knownMissingAmbientCodexAuth, status == "fail")
+            owner.connections.credentialMode = "session"
+            XCTAssertFalse(owner.knownMissingAmbientCodexAuth)
+        }
+    }
+    func testConflictFreezesProfileDraftUntilReload() throws {
+        let model = try AdvancedConnectionsTests().loaded()
+        model.change(.init(id: "retained", adapter: "codex", model: "requested"), replacing: nil)
+        model.failed(ConnectionsFailure(code: "revision_conflict"))
+        model.change(.init(id: "lost-edit", adapter: "codex", model: "requested"), replacing: nil)
+        model.delete("agent")
+        XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+        XCTAssertEqual(model.draftState, .conflict)
+    }
+    func testAmbiguousApplyRequiresReloadButValidationFailureDoesNot() async throws {
+        let fixture = DesktopTests()
+        for (scenario, tail) in [
+            ("malformed", "printf truncated"),
+            ("missing_fields", "printf '%s' '{\"schemaVersion\":1,\"ok\":true}'"),
+            ("unknown_code", "printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"unrecognized\"}'"),
+            ("nonzero", "exit 1"), ("cancelled", "sleep 30"),
+            ("validation", "printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"invalid_configuration\"}'; exit 1")
+        ] {
+            let root = try fixture.temporary()
+            addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+            let marker = root.appendingPathComponent("committed")
+            let body = "cat >/dev/null; " + (scenario == "validation" ? "" : "printf committed > '\(marker.path)'; ") + tail
+            let runtime = try fixture.fixture(body)
+            addTeardownBlock { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let command = Command()
+            let model = try AdvancedConnectionsTests().loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "requested"), replacing: nil)
+            let input = try model.request("apply")
+            let task = Task { try await DesktopCLI(runtime: runtime).connections("apply", repo: root, command: command, input: input) }
+            if scenario == "cancelled" {
+                for _ in 0..<100 {
+                    if FileManager.default.fileExists(atPath: marker.path) { break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), "committed")
+                command.cancel()
+            }
+            do { _ = try await task.value; XCTFail("Must remain an incomplete save") }
+            catch {
+                model.failed(error)
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, scenario == "validation" ? "invalid_configuration" : "save_state_unknown")
+            }
+            XCTAssertEqual(model.draftState, scenario == "validation" ? .editing : .reloadRequired)
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+            if scenario != "validation" { XCTAssertThrowsError(try model.request("apply")) }
+        }
+    }
+    func testApplyDescriptorIdentityMustMatchWholeDraftBeforeSavedState() throws {
+        let maker = AdvancedConnectionsTests()
+        for ids in [[], ["agent"], ["proxy", "agent"], ["agent", "agent"], ["agent", "proxy", "extra"], ["agent", "proxy"]] {
+            let model = try maker.loaded()
+            var profile = model.document.connections[1]
+            profile.model = "updated-model"
+            model.change(profile, replacing: "proxy")
+            let json = "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(ids.map { maker.row($0) }.joined(separator: ","))]}"
+            let response = try maker.response(json)
+            if ids == ["agent", "proxy"] {
+                try model.saved(response)
+                XCTAssertEqual(model.baseRevision, "sha256:new")
+                XCTAssertFalse(model.dirty)
+            } else {
+                do { try model.saved(response); XCTFail("Partial descriptor success must remain unknown") }
+                catch {
+                    XCTAssertEqual((error as? ConnectionsFailure)?.code, "save_state_unknown")
+                    model.failed(error)
+                }
+                XCTAssertEqual(model.baseRevision, "sha256:old")
+                XCTAssertEqual(model.draftState, .reloadRequired)
+                XCTAssertTrue(model.dirty)
+            }
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy"])
+            XCTAssertEqual(model.document.connections[1].model, "updated-model")
+        }
+    }
+    func testPercentEncodedCredentialsCannotReachRawOrDisplayedOutput() async throws {
+        let fixture = DesktopTests()
+        for (secret, variants) in [
+            ("token/part", ["token%2Fpart", "token%2fpart", "%74oken%2Fpart", "to%6ben%2fpart", #"token\u00252Fpart"#, "%GG token%2Fpart %", "%fftoken%2Fpart"]),
+            ("鑰/匙", ["%E9%91%B0%2f%E5%8C%99", "%GG %e9%91%b0/%e5%8c%99 %"])
+        ] {
+            for variant in variants {
+                for channel in ["summary", "stderr"] {
+                    if channel == "stderr" && variant.contains(#"\u0025"#) { continue }
+                    let root = try fixture.temporary()
+                    defer { try? FileManager.default.removeItem(at: root) }
+                    let input = root.appendingPathComponent("input.json")
+                    let json = fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: channel == "summary" ? variant : "Safe complete result")
+                    let body = "cat > '\(input.path)'; printf '%s' '\(json)'" + (channel == "stderr" ? "; printf '%s' '\(variant)' >&2" : "")
+                    let runtime = try fixture.fixture(body)
+                    defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+                    do {
+                        _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: root, revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+                        XCTFail("Encoded credential accepted in \(channel): \(variant)")
+                    } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
+                    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: input)) as? [String: Any])
+                    XCTAssertEqual(request["sources"] as? [String: String], ["SHARED_TOKEN": secret])
+                }
+            }
+        }
+        let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: "Valid URL https://example.test/a%2fb %GG 鑰匙"))'")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        let valid = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": "token/part"], command: Command())
+        XCTAssertEqual(valid.summary, "Valid URL https://example.test/a%2fb %GG 鑰匙")
+        XCTAssertEqual(valid.verdict.rawValue, "pass")
+    }
+    func testMixedOrUnknownApplyEnvelopesRequireReloadAndRetainDraft() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        let success = "\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(maker.row("agent")),\(maker.row("proxy")),\(maker.row("retained"))]"
+        let failure = #""schemaVersion":1,"ok":false,"code":"invalid_configuration""#
+        let extraFields = [#""revision":null"#, #""revision":"sha256:new""#, #""connections":null"#, #""connections":[]"#, #""baseRevision":null"#, #""baseRevision":"missing""#, #""document":null"#, #""document":{"version":1,"connections":[]}"#, #""unexpected":null"#]
+        let bodies = extraFields.map { "{" + failure + "," + $0 + "}" } + [
+            "{" + success + #","code":null}"#, "{" + success + #","code":"cancelled"}"#,
+            "{" + success + #","issues":null}"#, "{" + success + #","issues":[]}"#,
+            "{" + success + #","unexpected":null}"#, "{" + success + #","baseRevision":null}"#,
+            #"{"schemaVersion":1,"ok":false,"code":"cancelled","connections":null}"#
+        ]
+        for json in bodies {
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let model = try maker.loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
+            do {
+                let response = try await DesktopCLI(runtime: runtime).connections("apply", repo: URL(fileURLWithPath: "/project"), command: Command(), input: model.request("apply"))
+                try model.saved(response)
+                XCTFail("Mixed envelope accepted: \(json)")
+            } catch {
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, "save_state_unknown", json)
+                model.failed(error)
+            }
+            XCTAssertEqual(model.draftState, .reloadRequired, json)
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+            XCTAssertEqual(model.document.connections.last?.model, "unsaved-model")
+            XCTAssertEqual(model.baseRevision, "sha256:old")
+            XCTAssertThrowsError(try model.request("apply"))
+        }
+    }
+    func testValidConnectionsEnvelopeVariantsStayUsable() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        for code in ["invalid_configuration", "cancelled"] {
+            let json = "{\"schemaVersion\":1,\"ok\":false,\"code\":\"\(code)\",\"issues\":[]}"
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'; exit 1")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let model = try maker.loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
+            do {
+                _ = try await DesktopCLI(runtime: runtime).connections("apply", repo: URL(fileURLWithPath: "/project"), command: Command(), input: model.request("apply"))
+                XCTFail("Known precommit failure must throw")
+            } catch {
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, code)
+                model.failed(error)
+            }
+            XCTAssertEqual(model.draftState, .editing)
+            XCTAssertEqual(model.document.connections.last?.model, "unsaved-model")
+            XCTAssertNoThrow(try model.request("apply"))
+        }
+        for (operation, json) in [
+            ("edit", "{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":\(maker.raw)}"),
+            ("validate", "{\"schemaVersion\":1,\"ok\":true,\"connections\":[\(maker.row("proxy"))]}"),
+            ("apply", "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(maker.row("agent")),\(maker.row("proxy"))]}")
+        ] {
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+            let response = try await DesktopCLI(runtime: runtime).connections(operation, repo: URL(fileURLWithPath: "/project"), command: Command(), input: Data("{}".utf8))
+            XCTAssertTrue(response.ok)
+            if operation == "edit" { XCTAssertEqual(response.document?.connections.map(\.id), ["agent", "proxy"]) }
+            else { XCTAssertEqual(response.connections?.map(\.id), operation == "apply" ? ["agent", "proxy"] : ["proxy"]) }
+        }
+    }
+    func testUnicodeEscapedCredentialCannotReachDisplayedResult() async throws {
+        let fixture = DesktopTests()
+        let secret = "offline-only-value"
+        let escaped = secret.utf16.map { String(format: "\\u%04x", $0) }.joined()
+        let response = fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: escaped)
+        let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(response)'")
+        addTeardownBlock { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
+        do {
+            _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+            XCTFail("Unicode-escaped credential must remain incomplete")
+        } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
     }
 }
