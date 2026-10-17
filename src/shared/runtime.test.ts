@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
@@ -45,7 +45,7 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.deepEqual(acp.effort, { status: "unknown" });
   assert.deepEqual(acp.qualification, { matchStatus: "unqualified" });
   assert.equal(acp.reviewBudgetMs, 30000);
-  assert.deepEqual(reviewRuntime(resolveRunnerConfig({ runner: "opencode", model: "provider/model#low", reasoningEffort: "high" }), null).model, { status: "known", value: "provider/model#high" });
+  assert.throws(() => resolveRunnerConfig({ runner: "opencode", model: "provider/model#low", reasoningEffort: "high" }), /OpenCode reviews are temporarily disabled/);
   assert.throws(() => parseReviewRuntime({ ...acp, qualification: { matchStatus: "tested" } }), /qualification/);
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
 });
@@ -76,7 +76,7 @@ test("effective config preserves bound auth methods and the frozen parsed ACP la
 });
 
 test("model selectors retain safe punctuation without relaxing other runtime identities", () => {
-  const runtime = reviewRuntime(resolveRunnerConfig({ runner: "opencode", model: "provider/model@2026-01-01#high" }), null);
+  const runtime = reviewRuntime(resolveRunnerConfig({ runner: "codex", model: "provider/model@2026-01-01#high" }), null);
   assert.deepEqual(runtime.model, { status: "known", value: "provider/model@2026-01-01#high" });
   assert.deepEqual(parseReviewRuntime(JSON.parse(JSON.stringify(runtime))).model,
     { status: "known", value: "provider/model@2026-01-01#high" });
@@ -220,7 +220,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
   assert.equal(nextCodex.callTimeoutMs, 45000);
 });
 
-test("OpenCode review retains its initial idle timeout across both passes", async (t) => {
+test("suspended OpenCode rejects a review before invoking its executable", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-runtime-opencode-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const repo = initRepo(tmp);
@@ -234,12 +234,11 @@ test("OpenCode review retains its initial idle timeout across both passes", asyn
   ].join("\n"));
   chmodSync(bin, 0o755);
   environment(t, { OPENCODE_BIN: bin, OPENCODE_IDLE_TIMEOUT_MS: "1500", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1" });
-  const result = await review({
+  await assert.rejects(review({
     repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +",
     changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null,
-  }, { runner: "opencode", timeoutMs: 5000 }, undefined, () => { process.env.OPENCODE_IDLE_TIMEOUT_MS = "1"; });
-  assert.equal(result.verdict, "pass");
-  assert.equal(readFileSync(calls, "utf8"), "called\ncalled\n");
+  }, { runner: "opencode", timeoutMs: 5000 }), /OpenCode reviews are temporarily disabled/);
+  assert.equal(existsSync(calls), false);
 });
 
 for (const namedLaunch of [false, true]) {
