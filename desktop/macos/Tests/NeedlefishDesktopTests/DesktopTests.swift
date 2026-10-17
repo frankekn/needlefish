@@ -1146,14 +1146,20 @@ final class AdvancedConnectionsTests: XCTestCase {
         owner.connections.select("proxy"); owner.connections.budget = "1000"
         owner.connections.credentialMode = "session"; owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
         owner.prepareConnections()
-        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         guard case .message(let message) = owner.state else { return XCTFail("Blocked connection must not enter consent") }
         XCTAssertTrue(message.contains("proxy")); XCTAssertTrue(message.contains("local-blocked"))
         XCTAssertEqual(owner.connections.draftState, .editing)
         XCTAssertFalse(owner.canReview)
         try FileManager.default.removeItem(at: blocked)
         owner.prepareConnections()
-        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         guard case .consent = owner.state else { return XCTFail("Available runner must permit consent") }
         owner.trusted = true; owner.accepted = true
         XCTAssertTrue(owner.canReview)
@@ -1168,7 +1174,10 @@ final class AdvancedConnectionsTests: XCTestCase {
         owner.connections.message = "existing advanced message"
         owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
         owner.prepare()
-        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<100 {
+            if !owner.busy { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
         guard case .message = owner.state else { return XCTFail("Failed novice command must report incomplete") }
         XCTAssertEqual(owner.connections.message, "existing advanced message")
         XCTAssertEqual(owner.connections.secrets["SHARED_TOKEN"], "offline-only-value")
