@@ -268,10 +268,10 @@ final class AdvancedConnections: ObservableObject {
         invalidate(); clearSecrets()
     }
     func reapply() {
-        guard let retainedDraft, draftState == .editing else { return }
+        guard canReapply, let retainedDraft else { return }
         document = retainedDraft; self.retainedDraft = nil; invalidate(); message = "已重套草稿，尚未保存。 / Draft reapplied, not saved."
     }
-    var canReapply: Bool { retainedDraft != nil && draftState == .editing }
+    var canReapply: Bool { retainedDraft != nil && draftState == .editing && !dirty }
     func inspected(_ response: ConnectionsResponse) throws {
         guard let revision = response.revision, revision == baseRevision, let rows = response.connections,
               rows.map(\.id) == selection else { throw ConnectionsFailure(code: "revision_conflict") }

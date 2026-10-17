@@ -44,13 +44,16 @@ final class Command: @unchecked Sendable {
     func cancel() { lock.withLock { cancelled = true } }
 
     func run(_ arguments: [String], environment: [String: String], temporary: URL,
-             timeout: TimeInterval, input: Data? = nil, inputSent: @escaping @Sendable () async -> Void = {}, progress: @escaping @Sendable (String) async -> Void = { _ in }) async throws -> CommandOutput {
+             timeout: TimeInterval, input: consuming Data? = nil, inputSent: @escaping @Sendable () async -> Void = {}, progress: @escaping @Sendable (String) async -> Void = { _ in }) async throws -> CommandOutput {
         if let input, input.count > 128 * 1024 { throw DesktopError.invalidOutput }
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        let inputCount = input?.count
+        var pendingInput = consume input
         let result: Swift.Result<CommandOutput, Error>
         do {
             result = .success(try await Task.detached { [self] in
+                defer { pendingInput = nil }
                 var stdout = try CapturedStream()
                 var stderr = try CapturedStream()
                 defer {
@@ -59,7 +62,7 @@ final class Command: @unchecked Sendable {
                     try? stderr.pipe.fileHandleForReading.close()
                     try? stderr.pipe.fileHandleForWriting.close()
                 }
-                let stdin = input.map { _ in Pipe() }
+                let stdin = inputCount.map { _ in Pipe() }
                 defer {
                     try? stdin?.fileHandleForReading.close()
                     try? stdin?.fileHandleForWriting.close()
@@ -107,12 +110,12 @@ final class Command: @unchecked Sendable {
                 try? stdout.pipe.fileHandleForWriting.close()
                 try? stderr.pipe.fileHandleForWriting.close()
                 try? stdin?.fileHandleForReading.close()
-                var pendingInput = input
                 var inputOffset = 0
                 var inputClosed = false
                 var status: Int32 = 0
                 do {
                     defer {
+                        pendingInput = nil
                         var info = siginfo_t()
                         var observed: Int32
                         repeat { observed = waitid(P_PID, id_t(child), &info, WEXITED | WNOWAIT | WNOHANG) }
@@ -143,15 +146,19 @@ final class Command: @unchecked Sendable {
                             try? stdin.fileHandleForWriting.close()
                             pendingInput = nil
                         }
-                        if let stdin, let input = pendingInput, !inputClosed {
-                            if inputOffset < input.count {
-                                let count = input.withUnsafeBytes { bytes in
-                                    Darwin.write(stdin.fileHandleForWriting.fileDescriptor, bytes.baseAddress!.advanced(by: inputOffset), min(4096, input.count - inputOffset))
+                        if let stdin, let inputCount, !inputClosed {
+                            if inputOffset < inputCount {
+                                let count = pendingInput!.withUnsafeBytes { bytes in
+                                    Darwin.write(stdin.fileHandleForWriting.fileDescriptor, bytes.baseAddress!.advanced(by: inputOffset), min(4096, inputCount - inputOffset))
                                 }
                                 if count > 0 { inputOffset += count }
-                                else if count < 0 && errno != EAGAIN && errno != EINTR { failure = .command; inputClosed = true; try? stdin.fileHandleForWriting.close() }
+                                else if count < 0 && errno != EAGAIN && errno != EINTR {
+                                    failure = .command; inputClosed = true
+                                    try? stdin.fileHandleForWriting.close()
+                                    pendingInput = nil
+                                }
                             }
-                            if inputOffset == input.count {
+                            if inputOffset == inputCount {
                                 inputClosed = true
                                 try? stdin.fileHandleForWriting.close()
                                 pendingInput = nil
@@ -169,6 +176,9 @@ final class Command: @unchecked Sendable {
                         if wasCancelled { failure = .cancelled }
                         if Date() >= deadline && failure == nil { failure = .timeout }
                         if failure != nil {
+                            pendingInput = nil
+                            inputClosed = true
+                            try? stdin?.fileHandleForWriting.close()
                             // The CLI owns detached runner cleanup. Allow its termination finalizer to finish.
                             if let stopDate {
                                 if Date().timeIntervalSince(stopDate) > 12 { _ = signalGroup(-child, SIGKILL) }
@@ -192,7 +202,7 @@ final class Command: @unchecked Sendable {
                     if wasCancelled { failure = .cancelled }
                     if let failure { throw failure }
                 }
-                if let input, inputOffset != input.count { throw DesktopError.command }
+                if let inputCount, inputOffset != inputCount { throw DesktopError.command }
                 while try stdout.drain() {}
                 while try stderr.drain() {}
                 let code: Int32 = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)

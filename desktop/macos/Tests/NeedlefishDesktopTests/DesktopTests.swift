@@ -1480,6 +1480,35 @@ final class AdvancedInputDeadlineTests: XCTestCase {
         XCTAssertNil(probe.owner)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
+    func testInputBackingReleasedOnEveryIncompleteOutcome() async throws {
+        let cases: [(String, [String], TimeInterval, DesktopError)] = [
+            ("epipe", ["/bin/sh", "-c", "exec 0<&-; sleep 0.2"], 5, .command),
+            ("partial", ["/usr/bin/true"], 5, .command),
+            ("timeout", ["/bin/sleep", "30"], 0.15, .timeout),
+            ("spawn", ["/no-such-owned-input-executable"], 1, .command),
+            ("cancel", ["/bin/sleep", "30"], 30, .cancelled),
+        ]
+        for (name, arguments, timeout, expected) in cases {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-\(name)-" + UUID().uuidString)
+            let probe = InputOwnershipProbe()
+            let command = Command(signalGroup: { group, signal in
+                XCTAssertNil(probe.owner, "Release pending bytes before terminating the owned group")
+                return kill(group, signal)
+            })
+            let task = Task {
+                try await command.run(arguments, environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                      timeout: timeout, input: probe.makeInput(), inputSent: { XCTFail("Incomplete input cannot signal completion") })
+            }
+            if name == "cancel" {
+                try await Task.sleep(for: .milliseconds(150))
+                command.cancel()
+            }
+            do { _ = try await task.value; XCTFail("Expected \(name) failure") }
+            catch { XCTAssertEqual(error as? DesktopError, expected) }
+            XCTAssertNil(probe.owner)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+        }
+    }
     func testUnreadInputHasItsOwnDeadlineAndLeavesNoGroup() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-advanced-input-deadline-" + UUID().uuidString)
         let started = Date()
