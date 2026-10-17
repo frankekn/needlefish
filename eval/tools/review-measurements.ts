@@ -100,6 +100,15 @@ function jobCheckId(value: unknown, repository: string): number | null {
   } catch { return null; }
 }
 
+function workflowPathMatches(value: unknown, expected: string): boolean {
+  if (value === expected) return true;
+  if (typeof value !== "string" || !value.startsWith(`${expected}@`)) return false;
+  const ref = value.slice(expected.length + 1);
+  return ref.length > 0 && ref !== "@" && !/[~^:?*[\]\\]/.test(ref) && !Array.from(ref).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127) &&
+    !ref.includes("..") && !ref.includes("//") && !ref.includes("@{") && !ref.endsWith(".") &&
+    ref.split("/").every(part => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
+}
+
 export function collectReviewMeasurements(query: MeasurementQuery, githubRead: GithubRead = readGithubMeasurement): MeasurementCollection {
   validateMeasurementQuery(query);
   const diagnostics: { checkRunId: number | null; reason: string }[] = [];
@@ -168,7 +177,7 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
         }
         const sourceRun = runs.get(key) ?? null;
         const workflowRepository = sourceRun && object(sourceRun.repository)?.full_name;
-        if (!sourceRun || !id(sourceRun.id) || String(sourceRun.id) !== workflow.runId || sourceRun.run_attempt !== workflow.runAttempt || sourceRun.workflow_id !== query.workflowId || sourceRun.path !== query.workflowPath || (typeof workflowRepository !== "string" || workflowRepository.toLowerCase() !== query.repository.toLowerCase())) binding = unknown("workflow_binding_conflict");
+        if (!sourceRun || !id(sourceRun.id) || String(sourceRun.id) !== workflow.runId || sourceRun.run_attempt !== workflow.runAttempt || sourceRun.workflow_id !== query.workflowId || !workflowPathMatches(sourceRun.path, query.workflowPath) || (typeof workflowRepository !== "string" || workflowRepository.toLowerCase() !== query.repository.toLowerCase())) binding = unknown("workflow_binding_conflict");
         else {
           run = sourceRun;
           if (!jobs.has(key)) jobs.set(key, pages(`repos/${query.repository}/actions/runs/${workflow.runId}/attempts/${workflow.runAttempt}/jobs`, "jobs", check.id));
@@ -204,7 +213,7 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
       durations: {
         pipelineMs: pipeline.status === "observed" ? { status: "observed", valueMs: pipeline.elapsedMs, clock: "producer_monotonic" } : unknown("missing_monotonic_capture"),
         jobQueueMs: !bound ? unknown("unbound_job") : job?.status !== "in_progress" && job?.status !== "completed" ? unknown("job_not_started") : utcDuration(job.created_at, job.started_at),
-        workflowCreatedToTerminalMs: bound ? utcDuration(run?.created_at, terminal) : unknown("unbound_workflow"),
+        workflowCreatedToTerminalMs: !bound ? unknown("unbound_workflow") : run?.run_attempt !== 1 ? unknown("rerun_attempt_created_at") : utcDuration(run?.created_at, terminal),
         triggerToTerminalMs: unknown("missing_trusted_event_time"), pushToTerminalMs: unknown("missing_trusted_push_time"),
       },
     });

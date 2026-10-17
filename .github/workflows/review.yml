@@ -182,14 +182,25 @@ jobs:
           elif [ "$trusted_author" != true ] && [ -z "$ALLOW_UNTRUSTED_AUTHOR" ]; then
             skip=true
             skip_reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
+            random="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+            invocation="${random:0:8}-${random:8:4}-4${random:13:3}-8${random:17:3}-${random:20:12}"
+            measurement=$(jq -cn --arg repository "$REPO" --arg pr "$PR_NUM" --arg head "$head" \
+              --arg invocation "$invocation" \
+              --arg run "${GITHUB_RUN_ID:-}" --arg attempt "${GITHUB_RUN_ATTEMPT:-}" --arg job "${GITHUB_JOB:-}" '
+              {schemaVersion: 1, invocationId: $invocation, repository: $repository, prNumber: ($pr | tonumber), targetHeadSha: $head,
+               workflow: (if ($run | test("^[1-9][0-9]{0,19}$")) and ($attempt | test("^[1-9][0-9]{0,8}$")) and ($job | test("^[A-Za-z_][A-Za-z0-9_-]{0,99}$"))
+                 then {status: "recorded", runId: $run, runAttempt: ($attempt | tonumber), jobKey: $job} else {status: "unknown"} end),
+               execution: {ordinal: 1, role: "unknown"}, summaryReviewId: null, inlineReviewIds: [],
+               runtime: {status: "unknown"}, pipeline: {status: "unknown"}, outcome: "skipped", verdict: null, delivery: "not_applicable"}')
             gh api -X POST "repos/$REPO/check-runs" \
               -f name="Needlefish" \
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
               -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
-                --arg run "$GITHUB_RUN_ID" --arg round "skip-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                --arg run "${GITHUB_RUN_ID:-}" --arg round "$(jq -r .invocationId <<<"$measurement")" \
                 '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
+              -f "output[text]=$measurement" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi

@@ -5241,7 +5241,7 @@ for (const failure of ["review404", "early", "stored5xx", "metadata", "marker", 
     }
     const writes = measurementWrites(readPosts(fixture.postLog)); const final = writes.at(-1); assert.ok(final);
     if (failure === "early" || failure === "review404") {
-      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.verdict, null); assert.equal(final.measurement.delivery, "posting_failed");
+      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.verdict, null); assert.equal(final.measurement.delivery, failure === "early" ? "not_applicable" : "posting_failed");
       if (failure === "early") { assert.equal(runnerInvocationCount(fixture), 0); assert.deepEqual(final.measurement.pipeline, { status: "unknown" }); }
     } else if (failure === "stale" || failure === "untrusted") {
       assert.equal(final.measurement.outcome, failure === "stale" ? "superseded" : "skipped"); assert.equal(final.measurement.delivery, "not_applicable");
@@ -5328,7 +5328,7 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1]
     assert.equal(JSON.stringify(posts).includes(firstKey), false); assert.equal(JSON.stringify(posts).includes(secondKey), false);
     assert.equal((run.stdout + run.stderr).includes(firstKey), false); assert.equal((run.stdout + run.stderr).includes(secondKey), false);
     if (leak) {
-      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.delivery, "posting_failed");
+      assert.equal(final.measurement.outcome, "operational_failure"); assert.equal(final.measurement.delivery, "not_applicable");
       assert.deepEqual(final.measurement.runtime, { status: "unknown" });
       assert.equal(posts.filter((post) => post.args.includes("POST") && post.args.includes("repos/frankekn/needlefish/pulls/304/reviews")).length, 0);
     } else {
@@ -5340,3 +5340,25 @@ fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1]
     }
   });
 }
+
+test("measurement runner failure is not a posting failure", (t) => {
+  const fixture = setupFixture(t, { prNumber: 305, rawReview: defaultRawReview(), runnerExit: { code: 1, stderr: "429 Too Many Requests" } }); measurementActions(t);
+  const run = spawnGithubCli(fixture, 305);
+  assert.equal(run.status, 1, run.stderr);
+  const final = measurementWrites(readPosts(fixture.postLog)).at(-1); assert.ok(final);
+  assert.equal(final.measurement.outcome, "operational_failure");
+  assert.equal(final.measurement.delivery, "not_applicable");
+  assert.deepEqual(final.measurement.runtime, { status: "unknown" });
+  assert.equal(final.measurement.pipeline.status, "observed");
+});
+
+test("measurement preposting state probe failure is not a posting failure", (t) => {
+  const fixture = setupFixture(t, { prNumber: 306, rawReview: defaultRawReview(), failPullReadsFrom: 2 }); measurementActions(t);
+  const run = spawnGithubCli(fixture, 306);
+  assert.equal(run.status, 1, run.stderr);
+  const final = measurementWrites(readPosts(fixture.postLog)).at(-1); assert.ok(final);
+  assert.equal(final.measurement.outcome, "operational_failure");
+  assert.equal(final.measurement.delivery, "not_applicable");
+  assert.equal(final.measurement.runtime.status, "recorded");
+  assert.equal(final.measurement.pipeline.status, "observed");
+});

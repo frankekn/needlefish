@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ReviewRuntime, RuntimeValue } from "../shared/runtime.js";
+import { parseRuntimeValue, type ReviewRuntime, type RuntimeValue } from "../shared/runtime.js";
 import { isRunnerName } from "../shared/runner.js";
 import type { Verdict } from "../shared/schema.js";
 
@@ -96,13 +96,11 @@ function positiveId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function runtimeValue(value: unknown): RuntimeValue {
+function runtimeValue(value: unknown, kind: "identity" | "model" = "identity"): RuntimeValue {
   const row = object(value);
   if (row.status === "unknown") { keys(row, ["status"]); return { status: "unknown" }; }
   keys(row, ["status", "value"]);
-  if ((row.status !== "known" && row.status !== "operator_attested") ||
-      typeof row.value !== "string" || row.value.length === 0 || row.value.length > 160 || Array.from(row.value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw new Error("invalid measurement runtime value");
-  return { status: row.status, value: row.value };
+  return parseRuntimeValue(row, kind);
 }
 
 export function parseMeasurement(text: string): MeasurementV1 {
@@ -134,7 +132,7 @@ export function parseMeasurement(text: string): MeasurementV1 {
     keys(runtime, ["status", "runner", "model", "effort", "coreVersion", "qualification"]);
     const qualification = object(runtime.qualification); keys(qualification, ["matchStatus"]);
     if (runtime.status !== "recorded" || typeof runtime.runner !== "string" || !isRunnerName(runtime.runner) || qualification.matchStatus !== "unqualified") throw new Error("invalid measurement runtime");
-    parsedRuntime = { status: "recorded", runner: runtime.runner, model: runtimeValue(runtime.model), effort: runtimeValue(runtime.effort), coreVersion: runtimeValue(runtime.coreVersion), qualification: { matchStatus: "unqualified" } };
+    parsedRuntime = { status: "recorded", runner: runtime.runner, model: runtimeValue(runtime.model, "model"), effort: runtimeValue(runtime.effort), coreVersion: runtimeValue(runtime.coreVersion), qualification: { matchStatus: "unqualified" } };
   }
   const pipeline = object(row.pipeline);
   let parsedPipeline: MeasurementPipeline;
