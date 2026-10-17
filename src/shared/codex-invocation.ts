@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, type BigIntStats } from "node:fs";
 import path from "node:path";
 import { envFlagOn } from "./env.js";
+import { RunnerFailure } from "./runner-failure.js";
 import { runnerEnvironmentAttestationError } from "./runner-attestation.js";
 import type { EffectiveRunnerConfig } from "./codex.js";
 import { resolveRunnerBinary } from "./runner-detection.js";
@@ -97,7 +98,7 @@ function assertCapturedExecutable(capture: Capture): void {
   if (capture.artifact === undefined) return;
   try { if (sameCapturedArtifact(capture, capture.command)) return; } catch { /* Missing or unreadable executable is also drift. */ }
   capture.drifted = true;
-  throw new Error("captured Codex executable changed; resolve the runner again before invoking it");
+  throw new RunnerFailure("startup_failed", "captured Codex executable changed; resolve the runner again before invoking it");
 }
 
 export function prepareCapturedCodexHome(config: EffectiveRunnerConfig, tmp: string): string | undefined {
