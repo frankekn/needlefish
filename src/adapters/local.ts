@@ -286,8 +286,9 @@ function capturedPatchMetadata(cwd: string, baseSha: string, patch: string): {
     GIT_TERMINAL_PROMPT: "0",
     GIT_NO_LAZY_FETCH: "1",
   });
-  const objectFormat = runText("git", ["rev-parse", "--show-object-format"], { cwd, env });
-  const objects = runText("git", ["rev-parse", "--path-format=absolute", "--git-path", "objects"], {
+  const sourceGit = ["-c", `safe.directory=${cwd}`];
+  const objectFormat = runText("git", [...sourceGit, "rev-parse", "--show-object-format"], { cwd, env });
+  const objects = runText("git", [...sourceGit, "rev-parse", "--path-format=absolute", "--git-path", "objects"], {
     cwd, env, preserveOutput: true,
   }).replace(/\n$/, "");
   if ([...objects].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
