@@ -1409,6 +1409,41 @@ final class AdvancedConnectionsTests: XCTestCase {
         XCTAssertEqual(request["budgetMs"] as? Int, 1200)
         XCTAssertNil(runtime.environment(temporary: root)["SHARED_TOKEN"])
     }
+    func testCompletedNonpassReviewsPreserveResultsWithExitOne() async throws {
+        for mode in ["existing", "session"] {
+            for verdict in ["needs_human", "changes_requested"] {
+                let json = fixture.resultJSON(verdict).replacingOccurrences(of: #""residualRisks":[]"#, with: #""residualRisks":[{"text":"Manual validation required","blocks":true}],"coverage":"Reviewed changed lines""#)
+                let runtime = try cliFixture("cat >/dev/null; printf '%s' '\(json)'; exit 1")
+                do {
+                    let result = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "sha256:exact", ids: ["proxy"], budgetMs: 1000, mode: mode, sources: mode == "session" ? ["SHARED_TOKEN": "offline-only-value"] : [:], command: Command())
+                    XCTAssertEqual(result.verdict.rawValue, verdict)
+                    XCTAssertEqual(result.summary, "Review complete")
+                    XCTAssertEqual(result.findings.count, 1)
+                    XCTAssertEqual(result.findings.first?.severity, "P2")
+                    XCTAssertEqual(result.findings.first?.title, "Empty list fails")
+                    XCTAssertEqual(result.findings.first?.file, "example.ts")
+                    XCTAssertEqual(result.findings.first?.lineStart, 8)
+                    XCTAssertEqual(result.findings.first?.whyItBreaks, "Missing first item")
+                    XCTAssertEqual(result.findings.first?.suggestedFix, "Check the list")
+                    XCTAssertEqual(result.residualRisks.count, 1)
+                    XCTAssertEqual(result.residualRisks.first?.text, "Manual validation required")
+                    XCTAssertEqual(result.residualRisks.first?.blocks, true)
+                    XCTAssertEqual(result.coverage, "Reviewed changed lines")
+                } catch { XCTFail("Completed \(mode) \(verdict) exit 1 must preserve its result, got \(error)") }
+            }
+        }
+    }
+    func testNonpassReviewWithExitTwoRemainsIncomplete() async throws {
+        for mode in ["existing", "session"] {
+            for verdict in ["needs_human", "changes_requested"] {
+                let runtime = try cliFixture("cat >/dev/null; printf '%s' '\(fixture.resultJSON(verdict))'; exit 2")
+                do {
+                    _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "sha256:exact", ids: ["proxy"], budgetMs: 1000, mode: mode, sources: [:], command: Command())
+                    XCTFail("Exit 2 must remain incomplete")
+                } catch { XCTAssertEqual(error as? DesktopError, .command) }
+            }
+        }
+    }
     func testNonzeroMalformedAndEchoedSessionOutputRemainIncomplete() async throws {
         let secret = "offline-only-value"
         for body in ["cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; exit 1", "cat >/dev/null; printf invalid", "cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass"))'; printf '\(secret)' >&2"] {
