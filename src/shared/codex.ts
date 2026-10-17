@@ -1,3 +1,5 @@
+import { findDuplicateJsonKey } from "./json-keys.js";
+import { collectCodexToolReceipts, type CodexToolTrace } from "./codex-tool-receipts.js";
 import {
 	existsSync,
 	copyFileSync,
@@ -564,6 +566,7 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	readonly onNativeToolTrace?: (trace: CodexToolTrace, runnerAttempt: number) => void | Promise<void>;
 	// Called once per sandbox. Output-only metadata for the human-facing
 	// result; the runner already gets the same facts in its prompt.
 	readonly onLfsReport?: (report: LfsSandboxReport) => void;
@@ -813,6 +816,9 @@ async function runCodexOnce(
 		if (isRunnerSafetyError(error)) throw error;
 		throw asRunnerOperationalError(error);
 	}
+	let nativeResult: RunnerProcessResult | undefined;
+	let nativeFailure: unknown;
+	let nativeAccepted = false;
 	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
@@ -865,6 +871,7 @@ async function runCodexOnce(
 		let result: RunnerResult;
 		try {
 			result = await runRunner(runner, invocation);
+			if (runner === "codex") nativeResult = result.res;
 		} catch (error) {
 			if (isRunnerSafetyError(error)) throw error;
 			throw asRunnerOperationalError(error);
@@ -959,12 +966,34 @@ async function runCodexOnce(
 				.join("\n");
 			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) guard.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
+			nativeAccepted = true;
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
 		}
+	} catch (error) {
+		nativeFailure = error;
+		throw error;
 	} finally {
+		if (runner === "codex" && opts.onNativeToolTrace) {
+			const invocation: CodexToolTrace["invocation"] =
+				nativeFailure instanceof RunnerWorktreeChangedError ? "integrity_failed" :
+				nativeResult?.error instanceof RunnerTimeoutError || nativeResult?.error instanceof RunnerIdleTimeoutError ? "timeout" :
+				nativeResult?.error ? "process_error" : nativeResult?.signal ? "signal" :
+				nativeResult && nativeResult.status !== 0 ? "exit_nonzero" :
+				nativeAccepted ? "accepted" : nativeResult ? "output_rejected" : "unknown";
+			const collected = collectCodexToolReceipts(nativeResult?.stdout);
+			const collection: CodexToolTrace["collection"] = ["timeout", "signal", "process_error"].includes(invocation)
+				? Object.freeze({ ...collected, status: "incomplete", gaps: Object.freeze([...collected.gaps, "process_interrupted" as const]) }) : collected;
+			try { await opts.onNativeToolTrace(Object.freeze({
+				adapter: "codex", transport: "exec_jsonl_stdout", protocol: "rust-v0.163.0",
+				toolRead: "unknown", invocation,
+				collection,
+			}), runnerAttempt); } catch {
+				// review() records observer health; telemetry must not alter runner admission.
+			}
+		}
 		await disposeManagedTempDirectory(tmp);
 	}
 }
@@ -1247,58 +1276,6 @@ function unparseableOutputError(text: string): Error {
 	return new Error(
 		`no JSON object found in codex output${cause ? `; likely cause: ${cause}` : ""}. ${MALFORMED_OUTPUT_NEXT_STEP}`,
 	);
-}
-
-// JSON.parse collapses a duplicated member key silently (last value wins), so
-// a response repeating `"findings"` (findings, then []) loses the findings and
-// normalizes to a pass. Reject duplicates anywhere instead of trusting the
-// collapsed object. The reviver cannot detect this (V8 calls it once per
-// collapsed key), so this scanner walks the text: in JSON that has already
-// parsed, the first token after `{` or `,` inside an object is a member name,
-// so a string in that position is a key and duplicate keys fail the set check.
-// Keys are compared decoded, matching what JSON.parse collided.
-function findDuplicateJsonKey(source: string): string | undefined {
-	type Scope = { isObject: true; keys: Set<string> } | { isObject: false };
-	const stack: Scope[] = [];
-	let nextIsKey = false;
-	for (let i = 0; i < source.length; ) {
-		const ch = source[i];
-		if (ch === '"') {
-			// Skip to the closing quote, stepping over escape pairs so `\"`
-			// and braces inside strings do not shift the structural scan.
-			let end = i + 1;
-			while (end < source.length) {
-				if (source[end] === "\\") end += 2;
-				else if (source[end] === '"') break;
-				else end += 1;
-			}
-			const top = stack[stack.length - 1];
-			if (top !== undefined && top.isObject && nextIsKey) {
-				const key = JSON.parse(source.slice(i, end + 1)) as string;
-				if (top.keys.has(key)) return key;
-				top.keys.add(key);
-			}
-			nextIsKey = false;
-			i = end + 1;
-			continue;
-		}
-		if (ch === "{") {
-			stack.push({ isObject: true, keys: new Set() });
-			nextIsKey = true;
-		} else if (ch === "[") {
-			stack.push({ isObject: false });
-			nextIsKey = false;
-		} else if (ch === "}" || ch === "]") {
-			stack.pop();
-			nextIsKey = false;
-		} else if (ch === ",") {
-			nextIsKey = stack[stack.length - 1]?.isObject === true;
-		} else if (ch === ":") {
-			nextIsKey = false;
-		}
-		i += 1;
-	}
-	return undefined;
 }
 
 // Complete response, duplicated member key: model-side contract failure, so

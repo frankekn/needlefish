@@ -129,11 +129,14 @@ test("review preserves deep evidence through tail coverage", async (t) => {
 	assert.deepEqual(
 		events.map((event) => [event.passKind, event.surface]),
 		[
+			["map", "native_tool_receipts"],
 			["map", "raw_success"],
 			["map", "candidate_review_text"],
+			["deep", "native_tool_receipts"],
 			["deep", "raw_success"],
 			["deep", "candidate_finding"],
 			["deep", "candidate_review_text"],
+			["critic", "native_tool_receipts"],
 			["critic", "raw_success"],
 			["critic", "final_finding"],
 			["critic", "final_review_text"],
@@ -1198,6 +1201,7 @@ test("review isolates trace observers across concurrent deep passes and classifi
 			"process.stdin.on('data', (chunk) => { input += chunk; });",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			"  process.stdout.write(\"{\\\"type\\\": \\\"item.completed\\\", \\\"item\\\": {\\\"id\\\": \\\"item_0\\\", \\\"type\\\": \\\"command_execution\\\", \\\"command\\\": \\\"fixture command\\\", \\\"aggregated_output\\\": \\\"private output\\\", \\\"exit_code\\\": 0, \\\"status\\\": \\\"completed\\\"}}\\n{\\\"type\\\": \\\"turn.completed\\\", \\\"usage\\\": {\\\"input_tokens\\\": 1, \\\"cached_input_tokens\\\": 0, \\\"output_tokens\\\": 1, \\\"reasoning_output_tokens\\\": 0}}\\n\");",
 			"  if (input.includes('review-MAP pass')) {",
 			`    fs.appendFileSync(${JSON.stringify(calls)}, 'map\\n');`,
 			"    const hotspot = (name, file) => ({ name, files: [file], why: 'changed', risk: 'high', edges: [] });",
@@ -1332,6 +1336,14 @@ test("review isolates trace observers across concurrent deep passes and classifi
 			`${marker} must retain source index ${passIndex}`,
 		);
 	}
+	const nativeTraces = events.filter(event => event.surface === "native_tool_receipts");
+	assert.deepEqual(nativeTraces.map(event => [event.passKind, event.passIndex, event.promptAttempt, event.runnerAttempt]).sort(), [
+		["map", 0, 1, 1], ["deep", 0, 1, 1], ["deep", 1, 1, 1], ["deep", 2, 1, 1],
+		["critic", 0, 1, 1], ["critic", 0, 2, 1], ["critic", 0, 3, 1],
+	].sort());
+	for (const event of nativeTraces) assert.deepEqual(event.toolTrace.collection.receipts, [
+		{ kind: "command_completed", itemId: "item_0", result: { kind: "exit_zero" } },
+	]);
 	const deepFindingEvent = events.find(
 		(event) =>
 			event.surface === "candidate_finding" &&
