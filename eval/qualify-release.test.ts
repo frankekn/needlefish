@@ -110,6 +110,7 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
       versionLabelPublic: isPublicAttestationLabel("codex-cli 1.2.3", process.env), nativeProbes, diagnosticProbe: { status: probe.status, signal: probe.signal, errorCode: probe.error && "code" in probe.error ? probe.error.code : undefined, expectedVersion: probe.stdout?.trim() === "codex-cli 1.2.3" } }));
   }
   assert.deepEqual(exact.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
+  assert.deepEqual(nativeProbes, [{ status: 0, signal: null, expectedVersion: true }]);
   assert.equal(exact.verdict, "pass");
   const inheritedEffort = await review(bundle, { runner: "codex", model: "public-model", timeoutMs: 10000 });
   assert.deepEqual(inheritedEffort.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });

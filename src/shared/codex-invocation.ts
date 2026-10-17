@@ -149,7 +149,7 @@ export async function probeCapturedCodex(config: EffectiveRunnerConfig, publicDi
     const command = capturedCodexCommand(config);
     const timeoutMs = Math.min(config.timeoutMs, 2000, reviewDeadlineMs === undefined ? Infinity : Math.floor(reviewDeadlineMs - performance.now()));
     if (timeoutMs <= 0) return;
-    const result = await runManagedRunnerProcess({ command, args: ["--version"], repoPath: tmp, timeoutMs, timeoutKillSignal: "SIGKILL", onSpawn: controller => controller.child.stdin.end(""), env: { PATH: capture.environment.PATH, HOME: tmp, USERPROFILE: tmp } });
+    const result = await runManagedRunnerProcess({ command, args: ["--version"], repoPath: tmp, timeoutMs, timeoutKillSignal: "SIGKILL", onSpawn: controller => controller.endStdin(), env: { PATH: capture.environment.PATH, HOME: tmp, USERPROFILE: tmp } });
     const version = result.stdout.trim();
     if (result.status === 0 && !result.error && /^codex-cli \d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?$/.test(version) && isPublicAttestationLabel(version, capture.environment)) capture.runnerVersion = version.slice("codex-cli ".length);
   } catch { /* Optional metadata cannot fail a successful review. */ }
