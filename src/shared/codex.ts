@@ -1098,7 +1098,9 @@ function exhaustedCodexMessage(message: string): boolean {
 
 export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
 	if (status === null || !Number.isInteger(status) || status <= 0) return false;
+	let turnFailed = false;
 	for (const line of stdout.split(/\r?\n/).filter((line) => line.trim())) {
+		if (turnFailed) return false;
 		let envelope: unknown;
 		try { envelope = JSON.parse(line); } catch { return false; }
 		if (!isRecord(envelope)) return false;
@@ -1109,6 +1111,8 @@ export function nativeCodexQuotaExhausted(stdout: string, status: number | null)
 		if (isRecord(envelope.item) && envelope.item.type === "error" &&
 			(typeof envelope.item.message !== "string" || !/^Model metadata for `[^`\r\n]+` not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(envelope.item.message))) return false;
 		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
+		if (envelope.type === "turn.completed") return false;
+		turnFailed = envelope.type === "turn.failed";
 	}
 	let terminal = false;
 	for (const event of codexEvents(stdout)) {
