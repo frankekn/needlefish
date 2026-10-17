@@ -118,7 +118,7 @@ export function runnerEnvironmentAttestationError(
     return "public runner-environment attestation cannot contain duplicate keys";
   }
   const environment = new Map(pairs);
-  if ([...environment.values()].includes("<required>")) {
+  if ([...environment.values()].some((value) => value === "<required>" || value === "<redacted>")) {
     return "public lanes cannot contain redacted runner-environment values";
   }
   if (
