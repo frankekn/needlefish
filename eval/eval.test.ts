@@ -10,11 +10,11 @@ import { aggregateDefectClassMetrics, aggregateMustFindHitRates, cheatAlert, com
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import { hasConsistentCheatDetection, runnerEnvironmentAttestationError } from "./shared/report-integrity";
 import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
 import { RunnerOperationalError } from "../src/shared/codex";
-import type { Expected, FixtureSpec, Report } from "./shared/types";
+import { ANTICHEAT_VERSION, type Expected, type FixtureSpec, type Report } from "./shared/types";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import renameSourceIntoDocs from "./fixtures/rename-source-into-docs/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
@@ -1599,6 +1599,29 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("renderResults rejects a current report without runner environment identity", () => {
+  const spec = holdoutSpec("results-environment-boundary", false);
+  const complete = { ...resumeReport(spec, {
+    anticheatVersion: ANTICHEAT_VERSION, effort: "xhigh", model: "controlled-model",
+    provider: "controlled-provider", route: "controlled-route", runnerVersion: "controlled-version",
+    runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
+  }), privateEnvironment: false };
+  assert.equal(runnerEnvironmentAttestationError(complete), null);
+  const missingEnvironment = { ...complete };
+  Reflect.deleteProperty(missingEnvironment, "runnerEnvironment");
+  const original = JSON.stringify(missingEnvironment);
+  const alone = renderResults([spec], [{ stem: "missing-environment", report: missingEnvironment }]);
+  assert.match(alone, /No guarded report qualifies as a baseline/);
+  assert.match(alone.split("\n").find(line => line.includes("missing-environment |")) ?? "", /🚫.*n\/a/);
+  const paired = renderResults([spec], [
+    { stem: "missing-environment", report: missingEnvironment },
+    { stem: "controlled", report: complete },
+  ]);
+  assert.match(paired, /Baseline = controlled/);
+  assert.doesNotMatch(paired, /Baseline = missing-environment/);
+  assert.equal(JSON.stringify(missingEnvironment), original);
 });
 
 test("renderResults withholds secondary metrics for malformed per-draw cheat detection", () => {

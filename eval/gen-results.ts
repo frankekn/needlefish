@@ -43,6 +43,7 @@ export interface NamedReport {
 // cheatDetectedCount fails the === 0 check — fail closed, never grandfather.
 function guarded(r: Report & ReportAttestation): boolean {
   return (
+    typeof r.runnerEnvironment === "string" &&
     comparisonEnvironmentError(r) === null &&
     r.anticheatVersion === ANTICHEAT_VERSION &&
     hasCurrentScorer(r) &&

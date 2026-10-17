@@ -4,12 +4,14 @@ root=$(git rev-parse --show-toplevel)
 head=$(git rev-parse HEAD)
 seen=0
 while read -r local_ref local_sha remote_ref remote_sha; do
-  for ref in "$local_ref" "$remote_ref"; do
-    case "$ref" in
-      refs/heads/*) ;;
-      *) echo "Needlefish gate blocked: push a branch ref." >&2; exit 1 ;;
-    esac
-  done
+  case "$local_ref" in
+    HEAD|refs/heads/*) ;;
+    *) echo "Needlefish gate blocked: push a branch ref." >&2; exit 1 ;;
+  esac
+  case "$remote_ref" in
+    refs/heads/*) ;;
+    *) echo "Needlefish gate blocked: push a branch ref." >&2; exit 1 ;;
+  esac
   if [ "$local_sha" != "$head" ]; then
     echo "Needlefish gate blocked: push only the checked-out HEAD with this hook." >&2
     exit 1
