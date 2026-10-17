@@ -129,8 +129,12 @@ final class Onboarding: ObservableObject {
         task = Task {
             do { state = try await work(DesktopCLI(runtime: runtime), command) }
             catch {
-                if usesConnections { self.connections.failed(error) }
-                state = .message((error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.command.localizedDescription)
+                if usesConnections {
+                    self.connections.failed(error)
+                    state = .message(self.connections.message ?? DesktopError.command.localizedDescription)
+                } else {
+                    state = .message((error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.command.localizedDescription)
+                }
             }
             operation = nil
             code = nil

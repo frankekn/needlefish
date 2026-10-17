@@ -94,9 +94,9 @@ struct ConnectionsFailure: Error, LocalizedError {
     var issues: [ConnectionIssue] = []
     var errorDescription: String? {
         switch code {
-        case "revision_conflict": "設定已由別處更改。草稿保留。重新載入後，明確選擇重套草稿。 / Configuration changed. Draft retained. Reload before explicitly reapplying."
+        case "revision_conflict": "設定已由別處更改。請重新載入目前設定。 / Configuration changed. Reload the current configuration."
         case "configuration_unavailable": "無法開啟設定。請先由安裝管理者建立由你擁有的安全設定目錄，再重新載入。 / Configuration unavailable. Ask the installer to prepare a safe user-owned configuration directory, then reload."
-        case "save_state_unknown": "保存狀態未知。草稿保留。請重新載入確認，不能直接重試保存。 / Save state unknown. Reload to inspect before retrying."
+        case "save_state_unknown": "保存狀態未知。請重新載入確認，不能直接重試保存。 / Save state unknown. Reload to inspect before retrying."
         case "config_busy": "另一個操作正在保存設定。請稍後重新載入。 / Configuration busy. Reload shortly."
         case "invalid_configuration":
             if issues.contains(where: { $0.field == "id" && $0.code == "duplicate_id" }) {
@@ -255,10 +255,16 @@ final class AdvancedConnections: ObservableObject {
         invalidate(); clearSecrets(); message = "已保存。請重新檢查順序與範圍。 / Saved. Inspect the selection and scope again."
     }
     func failed(_ error: Error) {
-        if let failure = error as? ConnectionsFailure, ["revision_conflict", "save_state_unknown"].contains(failure.code) {
-            retainedDraft = document; draftState = failure.code == "revision_conflict" ? .conflict : .reloadRequired
-        }
         message = (error as? ConnectionsFailure)?.localizedDescription ?? (error as? DesktopError)?.localizedDescription ?? DesktopError.invalidOutput.localizedDescription
+        if let failure = error as? ConnectionsFailure, ["revision_conflict", "save_state_unknown"].contains(failure.code) {
+            retainedDraft = dirty ? document : nil
+            draftState = failure.code == "revision_conflict" ? .conflict : .reloadRequired
+            if retainedDraft != nil {
+                message = failure.code == "revision_conflict"
+                    ? "設定已由別處更改。草稿保留。重新載入後，明確選擇重套草稿。 / Configuration changed. Draft retained. Reload before explicitly reapplying."
+                    : "保存狀態未知。草稿保留。請重新載入確認，再明確選擇重套草稿。 / Save state unknown. Draft retained. Reload before explicitly reapplying."
+            }
+        }
         invalidate(); clearSecrets()
     }
     func reapply() {
