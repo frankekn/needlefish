@@ -1,0 +1,43 @@
+import type { FixtureSpec } from "../../shared/types";
+// Sealed before any model answers. Final Class R gate only.
+const spec: FixtureSpec = {
+ id: "holdout-source-consumer-contract-v3", kind: "positive", tier: 3, holdout: true,
+ defectClass: "cross-file-source-proof-with-unverified-doc",
+ description: "Page size now returns milliseconds while the unchanged allocator uses the result as an item count. A vendor URL does not establish units; the repository producer and consumer prove a thousandfold over-allocation.",
+ baseFiles: {
+  "src/page.ts": `// Pagination reference: https://spec.example.invalid/pages
+/** Returns the configured item count for one page. */
+export function pageSize(itemsPerPage: number): number { return itemsPerPage; }
+`,
+  "src/allocate.ts": `import { pageSize } from "./page";
+export function allocate(): string[] { return new Array<string>(pageSize(20)).fill(""); }
+`,
+ },
+ headFiles: {"src/page.ts": `// Pagination reference: https://spec.example.invalid/pages
+/** Returns the configured item count for one page. */
+export function pageSize(itemsPerPage: number): number { return itemsPerPage * 1000; }
+`},
+ expected: {verdict: "changes_requested", mustFind: [{
+  file: "src/page.ts", lineRange: [3, 3],
+  facts: [
+   {
+    id: "producer-scales-item-count",
+    meaning: "pageSize multiplies the configured item count by 1000.",
+    alternatives: [{ allOf: ["pageSize|itemsPerPage", "multipl|scal|\\*", "1000|1,000|thousand"] }],
+   },
+   {
+    id: "allocator-consumes-scaled-count",
+    meaning: "The allocator uses pageSize as an array element count and creates 20,000 entries instead of 20.",
+    alternatives: [
+     { allOf: ["new\\s+Array(?:<[^>]*>)?\\s*\\(\\s*pageSize\\("] },
+     { allOf: [
+      "allocat|new\\s+Array",
+      "(?:uses?|consum\\w*|pass\\w*|receiv\\w*).{0,80}(?:pageSize|returned (?:value|count))|(?:pageSize|returned (?:value|count)).{0,80}(?:used|consumed|passed|received)",
+      "(?:array|element|item|slot).{0,20}(?:count|length)|(?:to|into|for|by)\\s+(?:new\\s+)?Array\\b",
+     ] },
+    ],
+   },
+  ],
+ }], anchorFile: "src/page.ts", anchorLineRange: [3,3]},
+};
+export default spec;

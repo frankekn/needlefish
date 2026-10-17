@@ -1005,10 +1005,14 @@ test("runGithub appends a suggestion block when replacement validates", async (t
 	assert.ok(reviewPost);
 	const payload = parseReviewPayload(reviewPost.payload);
 	assert.equal(payload.comments.length, 1);
+	assert.equal(payload.commit_id, fixture.headSha);
 	const comment = payload.comments[0];
+	assert.equal(comment.path, "README.md");
+	assert.equal(comment.line, 1);
+	assert.equal(comment.side, "RIGHT");
 	assert.equal(
 		String(comment.body),
-		"**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n```suggestion\nfixed\n```\n\n<!-- needlefish-finding -->",
+		`**P2** bug\n\nbreaks\n\n**Fix:** fix\n\n**Validate:** test\n\n_Code source present._\n\n<details><summary>Source evidence</summary>\n\nTool reading unknown. Source presence does not verify the bug.\n\n- \`source_present\` \`${fixture.headSha}:README.md:1-1\` SHA-256 \`5deb4d2a23e582e2f4b365a587ce699895733c505c2bce793f7bbd8f70ed6ecc\`\n\n</details>\n\n\`\`\`suggestion\nfixed\n\`\`\`\n\n<!-- needlefish-finding -->`,
 	);
 });
 

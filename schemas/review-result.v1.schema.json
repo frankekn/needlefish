@@ -167,6 +167,30 @@
           },
           "if": { "properties": { "status": { "const": "moved" } }, "required": ["status"] },
           "then": { "required": ["from"], "properties": { "from": {} } }
+        },
+        "externalClaims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/externalClaim"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "required": [
+            "toolRead",
+            "sources"
+          ],
+          "properties": {
+            "toolRead": {
+              "const": "unknown"
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/sourceEvidence"
+              }
+            }
+          }
         }
       },
       "if": {
@@ -246,6 +270,142 @@
         "inputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
         "outputTokens": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
       }
+    },
+    "externalClaim": {
+      "type": "object",
+      "required": [
+        "claim",
+        "necessary",
+        "source"
+      ],
+      "properties": {
+        "claim": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "necessary": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "type",
+            "url"
+          ],
+          "properties": {
+            "type": {
+              "const": "external"
+            },
+            "url": {
+              "type": "string",
+              "description": "Structural HTTP(S) URL contract for normalized output: nonempty host, bracketed IP literal, no userinfo, and an optional decimal port from 0 through 65535 without leading zeros. This does not validate full IP or IDNA semantics; the persisted parser must also validate with WHATWG URL and reject credentials. Schema validation alone is not full admission.",
+              "pattern": "^https?://(?:[^\\s:/?#@\\[\\]\\\\]+|\\[[0-9A-Fa-f:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#].*)?$"
+            }
+          }
+        }
+      }
+    },
+    "sourceEvidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "sourceType",
+            "revision",
+            "file",
+            "lineStart",
+            "lineEnd",
+            "status"
+          ],
+          "properties": {
+            "sourceType": {
+              "const": "git_blob"
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "lineStart": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "lineEnd": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "status": {
+              "enum": [
+                "source_present",
+                "source_unverified"
+              ]
+            },
+            "contentDigest": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "source_present"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "contentDigest"
+            ],
+            "properties": {
+              "contentDigest": {},
+              "revision": {
+                "type": "string"
+              },
+              "lineStart": {
+                "type": "integer"
+              },
+              "lineEnd": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/externalClaim"
+            },
+            {
+              "type": "object",
+              "required": [
+                "sourceType",
+                "status"
+              ],
+              "properties": {
+                "sourceType": {
+                  "const": "external"
+                },
+                "status": {
+                  "const": "unverified_external_claim"
+                }
+              }
+            }
+          ]
+        }
+      ]
     }
   }
 }

@@ -2736,6 +2736,76 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 	}
 });
 
+test("review preserves human risk for required external premises after critic pruning and accepts independent code", async (t) => {
+	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-external-evidence-"));
+	const repo = initRepo(tmp);
+	const bin = path.join(tmp, "codex-bin.js");
+	const previous = { bin: process.env.CODEX_BIN, retry: process.env.CODEX_RETRY_MS };
+	t.after(() => {
+		if (previous.bin === undefined) delete process.env.CODEX_BIN;
+		else process.env.CODEX_BIN = previous.bin;
+		if (previous.retry === undefined) delete process.env.CODEX_RETRY_MS;
+		else process.env.CODEX_RETRY_MS = previous.retry;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+	mkdirSync(path.join(repo, "src"));
+	writeFileSync(path.join(repo, "src/app.ts"), "export const limit = 10;\n");
+	writeFileSync(path.join(repo, "src/consumer.ts"), "import { limit } from './app';\nexport const total = limit * 2;\n");
+	commitAll(repo, "base");
+	const baseSha = headSha(repo);
+	writeFileSync(path.join(repo, "src/app.ts"), "export const limit = -1;\n");
+	commitAll(repo, "negative limit");
+	process.env.CODEX_BIN = bin;
+	process.env.CODEX_RETRY_MS = "1";
+	for (const scenario of ["pruned", "kept", "independent", "code-only", "deep-external-first", "deep-pruned", "deep-duplicate-premises", "deep-code-first", "deep-external-first-pruned", "deep-code-first-pruned", "deep-distinct-premises", "deep-independent-p1", "deep-external-p1", "deep-fuzzy-pruned", "deep-pipe-pruned", "deep-downgraded-pruned"]) {
+		const candidate = {
+			severity: "P2", category: "bug", title: scenario === "deep-fuzzy-pruned" ? "Shared diagnostic for changed allocation arithmetic and limit: vendor" : scenario === "deep-pipe-pruned" ? "Shared diagnostic|allocation" : "Restore positive limit", file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			quote: "export const limit = -1;", confidence: 0.9, whyItBreaks: scenario === "deep-fuzzy-pruned" ? "The changed allocation path has a behavior change when this value reaches the downstream consumer: vendor requirement" : scenario === "deep-pipe-pruned" ? "consumer arithmetic changed" : "Negative limit makes total negative in src/consumer.ts:2",
+			suggestedFix: "Restore positive limit", validation: "Inspect consumer arithmetic", consumerFile: "src/consumer.ts", consumerLine: 2,
+			...(scenario === "code-only" ? {} : { externalClaims: [{ claim: "Vendor specification forbids negative limits", necessary: scenario !== "independent",
+				source: { type: "external", url: "https://spec.example.invalid/reference" } }] }),
+		};
+		writeFileSync(bin, ["#!/usr/bin/env node", "const fs = require('node:fs');", "let input = '';",
+			"process.stdin.setEncoding('utf8');", "process.stdin.on('data', chunk => { input += chunk; });", "process.stdin.on('end', () => {",
+			`const candidate = ${JSON.stringify(candidate)};`,
+			`const scenario = ${JSON.stringify(scenario)};`,
+			"if (input.includes('review-MAP pass')) { const names = ['deep-pruned', 'deep-duplicate-premises', 'deep-distinct-premises', 'deep-downgraded-pruned'].includes(scenario) ? ['externalpass', 'externalpass2'] : scenario.startsWith('deep-external-first') || scenario === 'deep-external-p1' ? ['externalpass', 'codepass'] : ['codepass', 'externalpass']; fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary: 'map', hotspots: names.map(name => ({name, files:['src/app.ts'], why:'limit', risk:'high', edges:[]}))})); return; }",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass')) delete candidate.externalClaims;",
+			"if (input.includes('doing a DEEP review') && input.includes('externalpass2') && scenario === 'deep-distinct-premises') candidate.externalClaims[0].claim = 'Vendor specification requires positive totals';",
+			"if (input.includes('doing a DEEP review') && ((input.includes('externalpass') && scenario === 'deep-external-p1') || (input.includes('codepass') && scenario === 'deep-independent-p1'))) candidate.severity = 'P1';",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass') && scenario === 'deep-fuzzy-pruned') { candidate.title = candidate.title.replace('vendor', 'local'); candidate.whyItBreaks = candidate.whyItBreaks.replace('vendor requirement', 'local arithmetic'); }",
+			"if (input.includes('doing a DEEP review') && input.includes('codepass') && scenario === 'deep-pipe-pruned') { candidate.title = 'Shared diagnostic'; candidate.whyItBreaks = 'allocation|consumer arithmetic changed'; }",
+			"const critic = input.includes('adversarial critic');",
+			"if (critic && scenario === 'deep-independent-p1') candidate.severity = 'P1';",
+			`const findings = critic && ${JSON.stringify(scenario)}.endsWith('pruned') ? [] : [critic ? { ...candidate, title: 'Keep the arithmetic positive' } : candidate];`,
+			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: critic && scenario === 'deep-downgraded-pruned' ? [{ text: 'Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]', blocks: false }] : [] };",
+			"fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(output));", "});"].join("\n"));
+		chmodSync(bin, 0o755);
+		const result = await review({ repoPath: repo, baseSha, headSha: headSha(repo), patch: "-export const limit = 10;\n+export const limit = -1;",
+			patchStat: "src/app.ts | 2 +-", changedFiles: [{ path: "src/app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: scenario.startsWith("deep-"), focus: null });
+		if (scenario.endsWith("first-pruned")) {
+			assert.equal(result.verdict, "pass", scenario);
+			assert.deepEqual(result.findings, []);
+			assert.deepEqual(result.residualRisks, []);
+		} else if (scenario.endsWith("pruned") || scenario === "kept" || scenario === "deep-duplicate-premises" || scenario === "deep-distinct-premises") {
+			assert.equal(result.verdict, "needs_human", scenario);
+			assert.deepEqual(result.findings, []);
+			assert.deepEqual(result.residualRisks, [
+				{ text: `Unverified external premise for src/app.ts:1 (${candidate.title}): Vendor specification forbids negative limits [https://spec.example.invalid/reference]`, blocks: true },
+				...(scenario === "deep-distinct-premises" ? [{ text: "Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification requires positive totals [https://spec.example.invalid/reference]", blocks: true }] : []),
+			]);
+		} else {
+			assert.equal(result.verdict, "changes_requested", scenario);
+			assert.equal(result.findings[0].title, "Restore positive limit");
+			assert.equal(result.findings[0].severity, scenario === "deep-independent-p1" ? "P1" : "P2");
+			assert.equal(result.findings[0].consumerFile, "src/consumer.ts");
+			assert.equal(result.findings[0].evidence?.toolRead, "unknown");
+			assert.equal(result.findings[0].evidence?.sources[0].status, "source_present");
+			assert.deepEqual(result.residualRisks, []);
+		}
+	}
+});
+
 test("review bounds quote finalization by its shared deadline without changing the verdict", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-quote-deadline-"));
 	const repo = initRepo(tmp);
@@ -2743,7 +2813,7 @@ test("review bounds quote finalization by its shared deadline without changing t
 	mkdirSync(shimDir);
 	const bin = path.join(shimDir, "codex.cjs");
 	const gitShim = path.join(shimDir, "git");
-	const calls = path.join(tmp, "grep-calls");
+	const calls = path.join(tmp, "blob-calls");
 	const realGit = execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim() + "/git";
 	const finding = {
 		severity: "P2", title: "Bug", category: "bug", file: "app.ts", lineStart: 1, lineEnd: 1,
@@ -2763,8 +2833,8 @@ test("review bounds quote finalization by its shared deadline without changing t
 		`#!${process.execPath}`,
 		"const fs = require('node:fs'); const { spawnSync } = require('node:child_process');",
 		"const args = process.argv.slice(2);",
-		"if (args.includes('grep')) {",
-		`  fs.appendFileSync(${JSON.stringify(calls)}, 'grep');`,
+		"if (args.includes('cat-file')) {",
+		`  fs.appendFileSync(${JSON.stringify(calls)}, 'cat-file');`,
 		"  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);",
 		"}",
 		`const result = spawnSync(${JSON.stringify(realGit)}, args, { encoding: 'utf8' });`,
@@ -2792,6 +2862,6 @@ test("review bounds quote finalization by its shared deadline without changing t
 	assert.equal(result.findings.length, 1);
 	assert.deepEqual(result.findings[0].quoteCheck, { status: "unchecked" });
 	assert.equal(result.findings[0].replacement, undefined);
-	assert.equal(readFileSync(calls, "utf8"), "grep");
+	assert.equal(readFileSync(calls, "utf8"), "cat-file");
 	assert.ok(Date.now() - startedAt < 2600, "post-model quote work exceeded the review budget");
 });

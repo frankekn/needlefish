@@ -7,9 +7,11 @@ import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import { commitAll, gitText, initRepo } from "./codex-runner-test-fixtures";
 import { parseReviewResult } from "./review-result";
+import { normalizeFinding } from "./normalize";
 import { RUNNERS, type RunStat, type RunUsage } from "./runner";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
+	serializeReviewResult,
 	type CalloutSurface,
 	type Category,
 	type CoverageGap,
@@ -201,6 +203,7 @@ test("--json docs-only fast-path output validates against the published schema",
 // cached results) must agree on every mutation of a real output. The two
 // cross-field rules JSON Schema cannot express (lineEnd >= lineStart,
 // usage total >= input + output) are parser-only and not listed here.
+// URL semantic validation has its own explicit schema/parser boundary test.
 test("schema agrees with parseReviewResult on accepted and rejected shapes", (t) => {
 	const tmp = withTmp(t);
 	const real = asObject(
@@ -211,6 +214,13 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 	type Mutation = (result: JsonObject, finding: JsonObject, stat: JsonObject) => void;
 	const cases: readonly (readonly [string, boolean, Mutation])[] = [
 		["unchanged", true, () => {}],
+		["declared external premise", true, (_r, f) => { f.externalClaims = [{ claim: "Vendor syntax exists", necessary: true, source: { type: "external", url: "https://spec.example.invalid/reference" } }]; }],
+		["external premise missing necessity", false, (_r, f) => { f.externalClaims = [{ claim: "Vendor syntax exists", source: { type: "external", url: "https://spec.example.invalid/reference" } }]; }],
+		["source evidence", true, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1, contentDigest: "c".repeat(64) }] }; }],
+		["invented tool observation", false, (_r, f) => { f.evidence = { toolRead: "tool_observed", sources: [] }; }],
+		["unverified external evidence", true, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "external", status: "unverified_external_claim", claim: "Vendor syntax exists", necessary: true, source: { type: "external", url: "https://spec.example.invalid/reference" } }] }; }],
+		["source present without digest", false, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1 }] }; }],
+		["source present at symbolic ref", false, (_r, f) => { f.evidence = { toolRead: "unknown", sources: [{ sourceType: "git_blob", status: "source_present", revision: "HEAD", file: "src/app.ts", lineStart: 1, lineEnd: 1, contentDigest: "c".repeat(64) }] }; }],
 		["PR context fields", true, (r) => Object.assign(r, { prNumber: 7, prBaseSha: "c".repeat(40) })],
 		["unknown additive field", true, (r) => { r.futureField = { any: "shape" }; }],
 		["negative consumerLine", true, (_r, f) => { f.consumerLine = -3; }],
@@ -325,6 +335,8 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 			replacement: "optional",
 			quote: "optional",
 			quoteCheck: "optional",
+			externalClaims: "optional",
+			evidence: "optional",
 		},
 		"$defs",
 		"finding",
@@ -441,4 +453,66 @@ test("schema enums match the runtime value sets", (t) => {
 		assert.ok(parses(variant), `parseReviewResult rejects ${JSON.stringify(variant).slice(0, 200)}`);
 		assert.equal(schemaErrors(variant), "");
 	}
+});
+
+function externalUrlResult(url: string): ReviewResult {
+	const claim = { claim: "Reference contract", necessary: true, source: { type: "external" as const, url } };
+	return {
+		schemaVersion: 1, verdict: "changes_requested", summary: "External premise",
+		baseSha: "a".repeat(40), headSha: "b".repeat(40), checked: [], residualRisks: [],
+		findings: [{ ...STUB_REVIEW.findings[0], severity: "P1", category: "bug", externalClaims: [claim],
+			evidence: { toolRead: "unknown", sources: [{ ...claim, sourceType: "external", status: "unverified_external_claim" }] },
+		}],
+	};
+}
+
+test("public URL structure rejects malformed authority and ports without optional format validators", () => {
+	for (const url of [
+		"https://[::1", "https://example.com:bad/", "https://example.com:65536/",
+		"https://example.com:99999/", "https://example.com:-1/", "https://:443/",
+		"https://[]/", "https://[::1]]/", "https://user:password@example.com/", "file:///tmp/spec",
+	]) {
+		const result = externalUrlResult(url);
+		assert.equal(validate(result), false, url);
+		assert.equal(parses(result), false, url);
+	}
+});
+
+test("normalized external URLs survive serialization, the public schema, and persisted parsing", () => {
+	const urls: readonly (readonly [string, string])[] = [
+		["https://EXAMPLE.com", "https://example.com/"],
+		["http://localhost/spec", "http://localhost/spec"],
+		["https://127.0.0.1/", "https://127.0.0.1/"],
+		["https://0x7f000001/", "https://127.0.0.1/"],
+		["https://[::1]/", "https://[::1]/"],
+		["https://[2001:0db8:0:0:0:0:0:1]:443/a", "https://[2001:db8::1]/a"],
+		["https://[::ffff:192.0.2.1]/", "https://[::ffff:c000:201]/"],
+		["https://例え.テスト/資料", "https://xn--r8jz45g.xn--zckzah/%E8%B3%87%E6%96%99"],
+		["https://example.com:0/", "https://example.com:0/"],
+		["https://example.com:65535/", "https://example.com:65535/"],
+		["http://example.com:00080/", "http://example.com/"],
+		["https://example.com:00444/", "https://example.com:444/"],
+		["https://example.com/?a=1#section", "https://example.com/?a=1#section"],
+		["https://example.com/a%2Fb?q=%40%20#%23", "https://example.com/a%2Fb?q=%40%20#%23"],
+		["https://example.com/?a=\\value#\\fragment", "https://example.com/?a=\\value#\\fragment"],
+	];
+	for (const [input, expected] of urls) {
+		const result = externalUrlResult(input);
+		const normalized = normalizeFinding(result.findings[0]);
+		assert.equal(normalized.externalClaims?.[0]?.source.url, expected, input);
+		const claim = normalized.externalClaims?.[0];
+		assert.ok(claim);
+		const generated: ReviewResult = { ...result, findings: [{ ...normalized,
+			evidence: { toolRead: "unknown", sources: [{ ...claim, sourceType: "external", status: "unverified_external_claim" }] },
+		}] };
+		const wire: unknown = JSON.parse(serializeReviewResult(generated));
+		assert.equal(schemaErrors(wire), "", input);
+		assert.deepEqual(parseReviewResult(wire), generated, input);
+	}
+});
+
+test("public URL structure does not replace persisted WHATWG semantic validation", () => {
+	const result = externalUrlResult("https://[:::]/");
+	assert.equal(validate(result), true);
+	assert.equal(parses(result), false);
 });
