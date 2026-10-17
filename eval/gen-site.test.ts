@@ -147,6 +147,20 @@ test("renderSite rejects a reproduction command that overwrites its raw report",
   );
 });
 
+for (const placeholder of ["<redacted>", "<required>"]) {
+  test(`renderSite rejects an unusable reproduction argument ${placeholder}`, () => {
+    const { manifest, lanes } = setup();
+    const unusable = lanes.map((lane) => ({
+      ...lane,
+      report: {
+        ...lane.report,
+        reproductionCommand: `node --import tsx eval/run.ts --runner codex --public-launcher-artifact '${placeholder}' --report eval/reports/${path.basename(lane.config.report)}`,
+      },
+    }));
+    assert.throws(() => renderSite(manifest, unusable, canonical), /reproduction command cannot contain private or required placeholders/);
+  });
+}
+
 test("renderSite rejects a lane that requires private environment values", () => {
   const { manifest, lanes } = setup();
   assert.throws(

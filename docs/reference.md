@@ -224,17 +224,18 @@ The setup preview in this reference uses this repo's composite action on GitHub-
 | -------- | --------- |
 | codex    | `CODEX_AUTH_JSON` (contents of a logged-in `~/.codex/auth.json`) or `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY` |
-| opencode | provider key for the chosen model (e.g. `OPENAI_API_KEY`) |
 | pi       | `PI_AUTH_JSON` (contents of a logged-in `~/.pi/agent/auth.json`) |
 
-The hosted install step only accepts `codex`, `claude`, `opencode`, or `pi`.
-`grok` and `acp` are CLI runners and `openai` is HTTP — the hosted action
-installs none of them, and passing `runner: grok` (or `openai` / `acp`) fails
-that install step; use the self-hosted workflow below for these CLI runners. Claude's
-auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) and opencode's
-`OPENAI_API_KEY` are allowlisted through to the runner subprocess; other
-providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
-[subprocess environment](#subprocess-environment)).
+The hosted install step only accepts `codex`, `claude`, or `pi`.
+OpenCode reviews are temporarily disabled because startup configuration isolation
+is incomplete. Passing `runner: opencode` fails before installation. See
+[issue #207](https://github.com/frankekn/needlefish/issues/207).
+`grok` and `acp` are CLI runners and `openai` is HTTP. The hosted action
+installs none of them, and passing `runner: grok`, `openai`, or `acp` fails
+that install step. Use the self-hosted workflow below for these CLI runners.
+Claude's auth vars (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`) are
+allowlisted through to the runner subprocess. See
+[subprocess environment](#subprocess-environment).
 
 **Inputs** (all optional): `pr_number` (defaults to the event PR), `runner`
 (default `codex`), `model`, `timeout_ms`, `codex_reasoning_effort`,
@@ -244,7 +245,7 @@ providers' keys need `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR` (see
 
 **Runner versions:** when `runner_version` is omitted, the action installs
 the latest release of the selected runner's CLI (`@openai/codex`,
-`@anthropic-ai/claude-code`, `@opencode/cli`, or
+`@anthropic-ai/claude-code`, or
 `@earendil-works/pi-coding-agent`). Pass an explicit version to pin one.
 
 **Cost and behavior:**
