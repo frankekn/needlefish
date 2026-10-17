@@ -148,6 +148,8 @@ export async function createManagedTempDirectory(): Promise<string> {
 
   const owner = await ensureProcessOwner(root);
   const staging = mkdtempSync(path.join(root, STAGING_PREFIX));
+  let directory = staging;
+  let descriptor: number | undefined;
   try {
     assertRunnerSchedulingAllowed();
     writeFileSync(path.join(staging, OWNER_FILE), `${JSON.stringify(owner.metadata)}\n`, {
@@ -156,12 +158,26 @@ export async function createManagedTempDirectory(): Promise<string> {
     const suffix = path.basename(staging).slice(STAGING_PREFIX.length);
     const managed = path.join(root, `${MANAGED_PREFIX}${suffix}`);
     renameSync(staging, managed);
-    const descriptor = openSync(managed, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    directory = managed;
+    descriptor = openSync(managed, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     managedDirectories.set(managed, { descriptor, owner: Buffer.from(`${JSON.stringify(owner.metadata)}\n`) });
     activeTempDirectories.add(managed);
     return managed;
   } catch (error) {
-    await rm(staging, { recursive: true, force: true });
+    activeTempDirectories.delete(directory);
+    managedDirectories.delete(directory);
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch (cleanupError) {
+        warnCleanupFailure(`temp directory descriptor ${directory}`, cleanupError);
+      }
+    }
+    try {
+      await rm(directory, { recursive: true, force: true });
+    } catch (cleanupError) {
+      warnCleanupFailure(`temp directory ${directory}`, cleanupError);
+    }
     throw error;
   }
 }
