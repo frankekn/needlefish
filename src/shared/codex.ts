@@ -536,6 +536,8 @@ export function prepareEphemeralHome(
 	return home;
 }
 
+export type RunnerDiagnostic = "unrecognized_codex_event_schema";
+
 export interface CodexOptions extends RunnerOptions {
 	readonly effectiveConfig?: EffectiveRunnerConfig;
 	readonly outputGuards?: readonly ConnectionOutputGuard[];
@@ -551,6 +553,7 @@ export interface CodexOptions extends RunnerOptions {
 	readonly onFailedAttempt?: (
 		runnerAttempt: number,
 		raw: string | undefined,
+		diagnostic?: RunnerDiagnostic,
 	) => void;
 	// Called with the captured stdout of every failed attempt (runner crash or
 	// nonzero exit) — the eval canary scan must see output a runner emitted
@@ -738,7 +741,10 @@ export async function runCodex(
 				err instanceof Error
 					? (err as Error & { rawOutput?: string }).rawOutput
 					: undefined;
-			opts.onFailedAttempt?.(attempt, raw);
+			const diagnostic: unknown = err instanceof Error
+				? Object.getOwnPropertyDescriptor(err, "runnerDiagnostic")?.value : undefined;
+			opts.onFailedAttempt?.(attempt, raw,
+				diagnostic === "unrecognized_codex_event_schema" ? diagnostic : undefined);
 			if (raw) {
 				// Hand the failed attempt's stdout to the caller's accumulator now:
 				// a successful retry discards this error object, and the canary
@@ -877,6 +883,12 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
+			if (runner === "codex" && [...codexEvents(result.res.stdout)].some(event => event === null)) {
+				Object.defineProperty(err, "runnerDiagnostic", {
+					value: "unrecognized_codex_event_schema" satisfies RunnerDiagnostic,
+					configurable: true,
+				});
+			}
 			if (raw) {
 				Object.defineProperty(err, "rawOutput", {
 					value: raw,
