@@ -1042,6 +1042,78 @@ final class AdvancedConnectionsTests: XCTestCase {
         XCTAssertNil((profiles[0]["auth"] as? [String: Any])?["kind"])
         XCTAssertEqual(model.selection, [])
     }
+    func testDirtyDraftCannotBeReplacedByLoad() throws {
+        for operation in ["add", "edit", "delete"] {
+            let model = try loaded()
+            if operation == "delete" { model.delete("agent") }
+            else { model.change(.init(id: operation == "add" ? "new" : "agent", adapter: "codex", model: "unsaved-model"), replacing: operation == "edit" ? "agent" : nil) }
+            let draft = model.document
+            XCTAssertThrowsError(try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}")))
+            XCTAssertEqual(model.document, draft, operation)
+            XCTAssertEqual(model.baseRevision, "sha256:old", operation)
+            XCTAssertTrue(model.dirty, operation)
+        }
+    }
+    func testLoadActionPreservesDirtyDraftAndAllowsRecovery() async throws {
+        for scenario in ["add", "edit", "delete", "clean", "revision_conflict", "save_state_unknown"] {
+            let trace = try ownedTemporary().appendingPathComponent("calls")
+            let runtime = try cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(fixture.doctorJSON)'
+            else printf '%s\\n' "$*" >> '\(trace.path)'; printf '%s' '{"schemaVersion":1,"ok":true,"baseRevision":"sha256:new","document":\(raw)}'
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/project")
+            owner.diagnose()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+            owner.connections.select("proxy"); owner.connections.budget = "1000"
+            try inspect(owner.connections)
+            if scenario == "delete" { owner.connections.delete("agent") }
+            else if scenario != "clean" {
+                owner.connections.change(.init(id: scenario == "edit" ? "agent" : "unsaved", adapter: "codex", model: "unsaved-model"), replacing: scenario == "edit" ? "agent" : nil)
+            }
+            let recovery = ["revision_conflict", "save_state_unknown"].contains(scenario)
+            if recovery { owner.connections.failed(ConnectionsFailure(code: scenario)) }
+            let draft = owner.connections.document
+            let message = owner.connections.message
+            owner.connectionOperation("edit")
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(owner.busy)
+            if scenario == "clean" || recovery {
+                XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), "connections edit --json --repo /test/project\n", scenario)
+                XCTAssertEqual(owner.connections.document.connections.map(\.id), ["agent", "proxy"], scenario)
+                XCTAssertEqual(owner.connections.baseRevision, "sha256:new", scenario)
+                XCTAssertNil(owner.connections.inspection)
+                XCTAssertEqual(owner.connections.secrets, [:])
+                if recovery {
+                    owner.connectionOperation("edit")
+                    for _ in 0..<100 {
+                        if !owner.busy { break }
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
+                    XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), String(repeating: "connections edit --json --repo /test/project\n", count: 2))
+                    XCTAssertTrue(owner.connections.canReapply)
+                    owner.connections.reapply()
+                    XCTAssertEqual(owner.connections.document, draft, scenario)
+                    XCTAssertTrue(owner.connections.dirty)
+                }
+            } else {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: trace.path), scenario)
+                XCTAssertEqual(owner.connections.document, draft, scenario)
+                XCTAssertEqual(owner.connections.baseRevision, "sha256:old", scenario)
+                XCTAssertEqual(owner.connections.message, message, scenario)
+                XCTAssertTrue(owner.connections.dirty, scenario)
+            }
+        }
+    }
     func testConflictRetainsDraftRequiresReloadAndExplicitReapply() throws {
         let model = try loaded()
         model.change(.init(id: "new", adapter: "codex", model: "other"), replacing: nil)
@@ -1133,11 +1205,14 @@ final class AdvancedConnectionsTests: XCTestCase {
             XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
             XCTAssertEqual(model.document.connections.last?.model, "second-model")
             XCTAssertTrue(model.dirty)
+            XCTAssertThrowsError(try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}")))
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
+            model.failed(ConnectionsFailure(code: code))
             try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
             XCTAssertTrue(model.canReapply)
             model.reapply()
-            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "first"])
-            XCTAssertEqual(model.document.connections.last?.model, "first-model")
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
+            XCTAssertEqual(model.document.connections.last?.model, "second-model")
             XCTAssertEqual(model.baseRevision, "sha256:latest")
         }
     }
