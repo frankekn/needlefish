@@ -1,7 +1,7 @@
 import { runCodex } from "../shared/codex.js";
 import type { RunnerOptions } from "../shared/runner.js";
 import type { Bundle } from "../shared/schema.js";
-import { loadPrompt } from "./prompts.js";
+import { fillPrompt, loadPrompt } from "./prompts.js";
 
 // Untrusted comment text becomes a plain search key: strip everything but
 // word chars and light punctuation so it cannot smuggle markup or newlines.
@@ -35,10 +35,11 @@ export async function explainFinding(
   const { patch, ...meta } = bundle;
   delete meta.binaryFiles;
   const context = latestReview ? { ...meta, latestReview } : meta;
-  const prompt = loadPrompt("explain.md")
-    .replace("{{FINDING_KEY}}", () => key)
-    .replace("{{BUNDLE}}", () => JSON.stringify(context, null, 2))
-    .replace("{{PATCH}}", () => patch);
+  const prompt = fillPrompt(loadPrompt("explain.md"), {
+    FINDING_KEY: key,
+    BUNDLE: JSON.stringify(context, null, 2),
+    PATCH: patch,
+  });
   const out = await runCodex(prompt, {
     repoPath: bundle.repoPath,
     targetHeadSha: bundle.headSha,

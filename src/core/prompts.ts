@@ -14,6 +14,12 @@ export function loadPrompt(name: PromptFile): string {
   );
 }
 
+export function fillPrompt(template: string, values: Readonly<Record<string, string>>): string {
+  return template.replace(/\{\{([A-Z_]+)\}\}/g, (token: string, key: string) =>
+    Object.hasOwn(values, key) ? values[key] : token,
+  );
+}
+
 function findPackageRoot(startDir: string): string {
   let dir = startDir;
   while (true) {
