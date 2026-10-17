@@ -491,8 +491,8 @@ install that workflow.
 
 Native Codex quota classification is verified against CLI 0.163 JSON events.
 Other versions are not qualified for automatic quota fallback. Unknown event
-schemas fail closed and add `unrecognized codex event schema` to private failure
-output. They do not cause a fallback based on quota-like text. A singleton
+schemas fail closed and attach `unrecognized_codex_event_schema` as private failure
+trace metadata, leaving raw transcripts unchanged. They do not cause a fallback based on quota-like text. A singleton
 deep review also fails on quota exhaustion or cancellation; it does not convert
 these failures into a blocking residual.
 
