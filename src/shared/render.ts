@@ -367,7 +367,7 @@ function firstSentence(summary: string): string {
 }
 
 function oneLine(text: string): string {
-	return text.replace(/\s*\r?\n\s*/g, " ");
+	return text.replace(/\s*[\r\n]+\s*/g, " ");
 }
 
 function truncate(text: string, max: number): string {

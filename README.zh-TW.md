@@ -81,7 +81,7 @@ Dry-run JSON 的格式不同。欄位與 outcome 詳見
 | 現象 | 處理方式 |
 | --- | --- |
 | Node 或 Git 檢查失敗 | 安裝 Node 20 以上或 Git 2.41 以上，再執行 `doctor`。 |
-| 找不到 runner | 安裝並登入 `codex`、`claude` 或 `opencode`，或明確指定已設定的 runner。 |
+| 找不到 runner | 安裝並登入 `codex` 或 `claude`，或明確指定已設定的 runner。 |
 | 登入、供應商、額度或網路錯誤 | 閱讀 runner 診斷，確認該供應商的登入與帳戶狀態。`doctor` 不證明額度或連線可用。 |
 | 資料夾不是 Git repo | 選擇 repo 根目錄。只有確定要建立新 repo 時才執行 `git init`。 |
 | 無法解析 base ref | Fetch 所需基準，再指定 `--base <ref>`。 |
