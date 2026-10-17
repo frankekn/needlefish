@@ -1121,6 +1121,26 @@ final class AdvancedConnectionsTests: XCTestCase {
             }
         }
     }
+    func testReapplyPreservesNewerDirtyDraftUntilReload() throws {
+        for code in ["revision_conflict", "save_state_unknown"] {
+            let model = try loaded()
+            model.change(.init(id: "first", adapter: "codex", model: "first-model"), replacing: nil)
+            model.failed(ConnectionsFailure(code: code))
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:new\",\"document\":\(raw)}"))
+            model.change(.init(id: "second", adapter: "codex", model: "second-model"), replacing: nil)
+            XCTAssertFalse(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "second"])
+            XCTAssertEqual(model.document.connections.last?.model, "second-model")
+            XCTAssertTrue(model.dirty)
+            try model.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:latest\",\"document\":\(raw)}"))
+            XCTAssertTrue(model.canReapply)
+            model.reapply()
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "first"])
+            XCTAssertEqual(model.document.connections.last?.model, "first-model")
+            XCTAssertEqual(model.baseRevision, "sha256:latest")
+        }
+    }
     func testNewDirtyDraftReplacesRetainedDraft() throws {
         let model = try loaded()
         model.change(.init(id: "first", adapter: "codex", model: "first-model"), replacing: nil)
@@ -1430,7 +1450,36 @@ final class AdvancedConnectionsTests: XCTestCase {
     }
 }
 
+private final class InputAllocationOwner: Sendable {}
+
+private final class InputOwnershipProbe: @unchecked Sendable {
+    weak var owner: InputAllocationOwner?
+    func makeInput() -> Data {
+        let owner = InputAllocationOwner()
+        self.owner = owner
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: 32_768, alignment: 1)
+        bytes.initializeMemory(as: UInt8.self, repeating: 65, count: 32_768)
+        return Data(bytesNoCopy: bytes, count: 32_768, deallocator: .custom { [owner] bytes, _ in
+            withExtendedLifetime(owner) { bytes.deallocate() }
+        })
+    }
+}
+
 final class AdvancedInputDeadlineTests: XCTestCase {
+    func testInputBackingReleasedBeforeCallbackWhileChildIsHeld() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-input-release-" + UUID().uuidString)
+        let marker = root.appendingPathComponent("callback")
+        let probe = InputOwnershipProbe()
+        let output = try await Command().run(["/bin/sh", "-c", "cat; while [ ! -f '\(marker.path)' ]; do sleep 0.02; done; printf held-child-completed"],
+            environment: ["PATH": "/usr/bin:/bin"], temporary: root, timeout: 5, input: probe.makeInput(), inputSent: {
+                XCTAssertNil(probe.owner, "Command must release the backing allocation before inputSent")
+                try? Data("continue".utf8).write(to: marker)
+            })
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(output.stdout, Data(repeating: 65, count: 32_768) + Data("held-child-completed".utf8))
+        XCTAssertNil(probe.owner)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
     func testUnreadInputHasItsOwnDeadlineAndLeavesNoGroup() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-advanced-input-deadline-" + UUID().uuidString)
         let started = Date()
