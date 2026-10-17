@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -282,3 +283,62 @@ process.exit(result.status ?? 1);
     assert.deepEqual(directoryBytes(repo), before);
   });
 }
+
+const presentationConfigs = [
+  { name: "noprefix", entries: [["diff.noprefix", "true"]] },
+  { name: "custom prefixes", entries: [["diff.srcPrefix", "before/tree/"], ["diff.dstPrefix", "after/tree/"]] },
+  { name: "mnemonic prefixes", entries: [["diff.mnemonicPrefix", "true"]] },
+  { name: "forced color", entries: [["color.ui", "always"]] },
+];
+
+for (const config of presentationConfigs) {
+  for (const state of ["tracked", "untracked", "unborn"]) {
+    for (const name of [".claude/README.md", "prompts/docs/guide.md", "README.md"]) {
+      test(`captured paths ignore ${config.name}, ${state}, ${name}`, t => {
+        const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-prefix-"));
+        t.after(() => rmSync(tmp, { recursive: true, force: true }));
+        const repo = state === "unborn" ? path.join(tmp, "repo") : initRepo(tmp);
+        if (state === "unborn") {
+          mkdirSync(repo);
+          gitText(["init", "--quiet"], repo);
+        }
+        const file = path.join(repo, name);
+        mkdirSync(path.dirname(file), { recursive: true });
+        if (state === "tracked") {
+          writeFileSync(file, "before\n");
+          commitAll(repo, "prefix baseline");
+        } else if (name === "README.md" && state === "untracked") {
+          gitText(["rm", "README.md"], repo);
+          commitAll(repo, "remove tracked readme");
+        }
+        for (const [key, value] of config.entries) gitText(["config", key, value], repo);
+        writeFileSync(file, "after\n");
+        const { bundle } = diffBundle(repo, { localMode: "uncommitted" });
+        assert.deepEqual(bundle.changedFiles.map(file => file.path), [name]);
+        assert.equal(isDocsOnlyFastPath(bundle), name === "README.md");
+        assert.equal(bundle.patch.includes(String.fromCharCode(27)), false);
+        assert.equal(bundle.patchStat.includes(String.fromCharCode(27)), false);
+        assert.equal(bundle.patch.includes(`+++ b/${name}\n`), true);
+        assert.match(bundle.patch, /\+after\n/);
+      });
+    }
+  }
+}
+
+test("explicit presentation defaults preserve tracked and untracked patch bytes", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-default-prefix-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  for (const [key, value] of [["diff.noprefix", "false"], ["diff.mnemonicPrefix", "false"], ["color.ui", "false"]]) {
+    gitText(["config", key, value], repo);
+  }
+  writeFileSync(path.join(repo, "README.md"), "after\n");
+  const oldTracked = spawnSync("git", ["diff", "--no-textconv", "--no-ext-diff", "HEAD"], { cwd: repo, encoding: "utf8" });
+  assert.equal(oldTracked.status, 0);
+  assert.equal(diffBundle(repo, { localMode: "uncommitted" }).bundle.patch, oldTracked.stdout);
+  gitText(["checkout", "--", "README.md"], repo);
+  writeFileSync(path.join(repo, "new.md"), "new content\n");
+  const oldUntracked = spawnSync("git", ["diff", "--no-index", "--no-color", "--no-textconv", "--no-ext-diff", "--", "/dev/null", "new.md"], { cwd: repo, encoding: "utf8" });
+  assert.equal(oldUntracked.status, 1);
+  assert.equal(diffBundle(repo, { localMode: "uncommitted" }).bundle.patch, oldUntracked.stdout);
+});
