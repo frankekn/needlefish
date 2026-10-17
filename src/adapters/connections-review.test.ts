@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import { commitAll, initRepo } from "../shared/codex-runner-test-fixtures.js";
 import { parseArgs } from "../cli/args.js";
+import { parseReviewResult } from "../shared/review-result.js";
 
 const firstKey = "fake-session-first-%41-value";
 const secondKey = "fake-session-second-%42-value";
@@ -46,7 +47,8 @@ function respond(prompt,repo){
  if(mode==='invalid')return 'invalid JSON';
  const secret=mode==='cross-key'?${JSON.stringify(secondKey)}:${JSON.stringify(firstKey)};
  const summary=mode==='leak'||mode==='cross-key'?Array.from(Buffer.from(secret)).map(byte=>'%'+byte.toString(16).padStart(2,'0')).join(''):mode==='literal-leak'?secret:mode==='json-leak'?Array.from(secret).map(char=>'\\\\u'+char.charCodeAt(0).toString(16).padStart(4,'0')).join(''):model+' clean';
- return JSON.stringify({summary,...(stage==='critic'?{decisions:[]}:{findings:[]}),checked:['FILES inspected=[app.ts]'],residual_risks:[]});
+ const findings=mode==='changes_requested'?[{severity:'P2',title:'Changed value breaks caller',category:'bug',file:'app.ts',lineStart:1,lineEnd:1,confidence:0.9,whyItBreaks:'Caller requires the original value.',suggestedFix:'Preserve value.',validation:'test'}]:[];
+ return JSON.stringify({summary,...(stage==='critic'?{decisions:findings.map(f=>({ref:'f0',action:'keep',severity:f.severity,confidence:f.confidence}))}:{findings}),checked:['FILES inspected=[app.ts]'],residual_risks:mode==='needs_human'?[{text:'Unresolved review coverage',blocks:true}]:[]});
 }
 if(adapter==='codex'){
  const prompt=fs.readFileSync(0,'utf8'),repo=JSON.parse(prompt.slice('The repository to inspect is '.length,prompt.indexOf('. Your startup directory'))),out=respond(prompt,repo);
@@ -105,6 +107,23 @@ test("selected session credentials bind once without global env writes and cache
   assert.equal((result.stdout + readFileSync(f.cache()[0], "utf8")).includes(firstKey), false);
   assert.equal("providerAccount" in output, false);
 });
+
+for (const [verdict, status] of [["pass", 0], ["needs_human", 1], ["changes_requested", 1]] as const) {
+  test(`completed session ${verdict} preserves the full result and final cache with exit ${status}`, t => {
+    const f = fixture(t, verdict), result = f.run();
+    assert.equal(result.stderr, "");
+    const output = JSON.parse(result.stdout), parsed = parseReviewResult(output);
+    assert.deepEqual(parsed, output);
+    assert.equal(parsed.verdict, verdict); assert.equal(parsed.summary, "first clean");
+    assert.equal(parsed.findings.length, verdict === "changes_requested" ? 1 : 0);
+    assert.deepEqual(parsed.residualRisks, verdict === "needs_human" ? [{ text: "Unresolved review coverage", blocks: true }] : []);
+    assert.equal("ok" in output, false);
+    assert.deepEqual(f.rows().map(row => row.stage), ["review", "critic"]);
+    assert.deepEqual(JSON.parse(readFileSync(f.envReceipt, "utf8")), { unchanged: true, cacheWrites: 1 });
+    assert.equal(f.cache().length, 1); assert.deepEqual(JSON.parse(readFileSync(f.cache()[0], "utf8")), output);
+    assert.equal(result.status, status, result.stderr);
+  });
+}
 
 for (const [name, modify, code] of [
   ["extra reference", (r: ReturnType<typeof fixture>["request"]) => ({ ...r, sources: { ...r.sources, UNUSED_REF: secondKey } }), "invalid_request"],
