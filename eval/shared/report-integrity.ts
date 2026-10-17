@@ -1,5 +1,6 @@
 import { scorerHash } from "./scorer-hash";
 import type { Report } from "./types";
+import { isPublicAttestationLabel, publicRuntimeIdentityFromReport } from "./runtime-identity";
 
 export interface ReportAttestation {
   readonly provider?: string;
@@ -7,6 +8,24 @@ export interface ReportAttestation {
   readonly runnerVersion?: string;
   readonly runnerEnvironment?: string;
   readonly privateEnvironment?: boolean;
+  readonly publicEnvironmentAttestation?: unknown;
+}
+
+export function comparisonEnvironmentError(report: ReportAttestation & { readonly runner?: Report["runner"] }): string | null {
+  if ([report.provider, report.route, report.runnerVersion].some((value) => typeof value === "string" && !isPublicAttestationLabel(value, process.env))) return "private runner environment identity";
+  if (report.privateEnvironment === true) return "private runner environment identity";
+  if (report.runnerEnvironment === undefined) return report.runner === "acp" ? "unknown runner environment identity" : null;
+  let pairs: unknown;
+  try { pairs = JSON.parse(report.runnerEnvironment); } catch { return "unknown runner environment identity"; }
+  if (!Array.isArray(pairs) || pairs.some((entry) => !Array.isArray(entry) || entry.length !== 2 || entry.some((value) => typeof value !== "string"))) return "unknown runner environment identity";
+  if (pairs.some((entry) => entry[1] === "<required>" || entry[1] === "<redacted>")) return "private runner environment identity";
+  if (report.runner === "acp" || pairs.some((entry) => entry[0] === "ACP_PUBLIC_RUNTIME")) {
+    try {
+      const identity = publicRuntimeIdentityFromReport(report);
+      if ([identity.launcherDigest, identity.harnessVersion, identity.authSource].some((value) => value.status === "unknown")) return "unknown runner environment identity";
+    } catch { return "unknown runner environment identity"; }
+  }
+  return null;
 }
 
 const RUNNER_MODEL_ENV: Partial<Record<Report["runner"], string>> = {
@@ -64,7 +83,7 @@ export function hasCurrentScorer(report: Report): boolean {
 }
 
 export function runnerEnvironmentAttestationError(
-  report: Report & ReportAttestation,
+  report: Pick<Report, "runner" | "model" | "effort"> & ReportAttestation,
 ): string | null {
   if (
     ![report.provider, report.route, report.runnerVersion].every(
@@ -73,6 +92,7 @@ export function runnerEnvironmentAttestationError(
   ) {
     return "public lanes require attested provider, route, and runner version";
   }
+  if ([report.provider, report.route, report.runnerVersion].some((value) => typeof value === "string" && !isPublicAttestationLabel(value, process.env))) return "public lanes require public provider, route, and runner version labels";
   if (report.privateEnvironment !== false || typeof report.runnerEnvironment !== "string") {
     return "public lanes require a public runner-environment attestation";
   }
@@ -98,7 +118,7 @@ export function runnerEnvironmentAttestationError(
     return "public runner-environment attestation cannot contain duplicate keys";
   }
   const environment = new Map(pairs);
-  if ([...environment.values()].includes("<required>")) {
+  if ([...environment.values()].some((value) => value === "<required>" || value === "<redacted>")) {
     return "public lanes cannot contain redacted runner-environment values";
   }
   if (
@@ -106,6 +126,14 @@ export function runnerEnvironmentAttestationError(
     environment.get("NEEDLEFISH_EVAL_TRACE") !== "1"
   ) {
     return "public lanes require guarded runner-environment attestation";
+  }
+  if (report.runner === "acp") {
+    try {
+      const identity = publicRuntimeIdentityFromReport(report);
+      if ([identity.launcherDigest, identity.harnessVersion, identity.authSource].some((value) => value.status === "unknown")) return "public ACP lanes require complete public launcher, harness and auth-source identities";
+    } catch {
+      return "public ACP lanes require a valid public runtime identity";
+    }
   }
   if (!hasResolvedModelIdentity(report)) {
     return "public lanes require a resolved model and effort identity";
