@@ -1693,7 +1693,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             owner.diagnose()
             for _ in 0..<100 { if !owner.busy { break }; try await Task.sleep(for: .milliseconds(20)) }
             if scenario == "clean" {
-                XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), "doctor --json --repo /project\n")
+                XCTAssertEqual(try String(contentsOf: trace, encoding: .utf8), "doctor --repo /project --runner codex --json\n")
                 XCTAssertEqual(owner.connections.draftState, .unloaded)
                 XCTAssertFalse(owner.trusted)
             } else {
