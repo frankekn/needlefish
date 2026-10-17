@@ -8,7 +8,7 @@ import { review } from "../core/review.js";
 import type { Bundle } from "./schema.js";
 import { localDryRun, localPrDryRun } from "../adapters/local.js";
 import { runCodex, RunnerOperationalError } from "./codex.js";
-import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures.js";
+import { commitAll, gitText, headSha, initRepo } from "./codex-runner-test-fixtures.js";
 import { resolveRunner, requireRunnerCommand } from "./runner-detection.js";
 import { captureEnv, restoreEnv } from "./runner-test-fixtures.js";
 import { spawnRunnerProcess } from "./runner-process.js";
@@ -16,14 +16,41 @@ import { spawnRunnerProcess } from "./runner-process.js";
 test("opencode fails closed before any review, dry-run or direct launch can execute plugins", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-opencode-isolation-"));
   const repo = initRepo(tmp);
+  const baseSha = headSha(repo);
+  const baseRefName = gitText(["branch", "--show-current"], repo);
+  gitText(["checkout", "-b", "feature"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 1;\n");
+  commitAll(repo, "feature");
+  const prHeadSha = headSha(repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 2;\n");
   const marker = path.join(tmp, "launched");
   const bin = path.join(tmp, "opencode");
-  const previous = captureEnv(["OPENCODE_BIN", "NEEDLEFISH_RUNNER", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH"]);
+  const previous = captureEnv(["PATH", "OPENCODE_BIN", "NEEDLEFISH_RUNNER", "NEEDLEFISH_RUNNER_ENV_PASSTHROUGH"]);
   t.after(() => { restoreEnv(previous); rmSync(tmp, { recursive: true, force: true }); });
+  const gh = path.join(tmp, "gh");
+  writeFileSync(gh, [
+    "#!/usr/bin/env node",
+    "const args = process.argv.slice(2);",
+    "if (args[0] !== 'pr' || args[1] !== 'view' || args[2] !== '1') process.exit(2);",
+    `process.stdout.write(JSON.stringify(${JSON.stringify({
+      number: 1, title: "fixture", body: "", comments: [], reviews: [], statusCheckRollup: [],
+      baseRefOid: baseSha, headRefOid: prHeadSha, baseRefName, headRefName: "feature",
+    })}));`,
+  ].join("\n"));
+  chmodSync(gh, 0o755);
+  process.env.PATH = `${tmp}:${process.env.PATH ?? ""}`;
   writeFileSync(bin, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
   chmodSync(bin, 0o755);
   process.env.OPENCODE_BIN = bin;
   process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH = "OPENCODE_CONFIG_CONTENT,OPENCODE_CONFIG_PROJECT_DISABLE";
+  const local = localDryRun(repo, { runner: "codex" });
+  assert.equal(local.mode, "uncommitted");
+  assert.equal(local.bundle.headSha, "WORKING");
+  assert.match(local.bundle.patch, /\+export const value = 2;/);
+  const pr = localPrDryRun(repo, 1, { runner: "codex" });
+  assert.equal(pr.bundle.baseSha, baseSha);
+  assert.equal(pr.bundle.headSha, prHeadSha);
+  assert.match(pr.bundle.patch, /\+export const value = 1;/);
   const blocked = /OpenCode reviews are temporarily disabled.*issue #207/;
   for (const fromEnv of [false, true]) {
     if (fromEnv) process.env.NEEDLEFISH_RUNNER = "opencode";
