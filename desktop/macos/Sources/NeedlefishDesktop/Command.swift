@@ -138,6 +138,9 @@ final class Command: @unchecked Sendable {
                             _ = try stderr.drain()
                         } catch {
                             failure = error as? DesktopError ?? .command
+                            pendingInput = nil
+                            inputClosed = true
+                            try? stdin?.fileHandleForWriting.close()
                             _ = signalGroup(-child, SIGKILL)
                         }
                         if let stdin, !inputClosed, Date() >= inputDeadline {
@@ -146,7 +149,7 @@ final class Command: @unchecked Sendable {
                             try? stdin.fileHandleForWriting.close()
                             pendingInput = nil
                         }
-                        if let stdin, let inputCount, !inputClosed {
+                        if let stdin, let inputCount, !inputClosed, failure == nil {
                             if inputOffset < inputCount {
                                 let count = pendingInput!.withUnsafeBytes { bytes in
                                     Darwin.write(stdin.fileHandleForWriting.fileDescriptor, bytes.baseAddress!.advanced(by: inputOffset), min(4096, inputCount - inputOffset))
