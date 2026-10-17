@@ -48,6 +48,10 @@ test("runLocal reviews staged unstaged and untracked changes when working tree i
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   gitText(["branch", "-M", "main"], repo);
+  gitText(["config", "diff.noprefix", "true"], repo);
+  gitText(["config", "diff.srcPrefix", "before/tree/"], repo);
+  gitText(["config", "diff.dstPrefix", "after/tree/"], repo);
+  gitText(["config", "color.ui", "always"], repo);
   const base = headSha(repo);
   writeFileSync(join(repo, "README.md"), "fixture\nunstaged\n");
   writeFileSync(join(repo, "staged.ts"), "export const staged = 1;\n");
@@ -66,6 +70,7 @@ test("runLocal reviews staged unstaged and untracked changes when working tree i
   assert.match(prompts, /diff --git a\/src\/new\.ts b\/src\/new\.ts/);
   assert.match(prompts, /\+export const untracked = 1;/);
   assert.equal(prompts.includes('"untrackedSkipped"'), false);
+  assert.equal(prompts.includes(String.fromCharCode(27)), false);
   const cache = readFileSync(join(tmp, "cache", "last-review.json"), "utf8");
   assert.match(cache, /"headSha": "WORKING"/);
 });

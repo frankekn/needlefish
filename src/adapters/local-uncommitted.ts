@@ -37,7 +37,7 @@ function gitNewFileDiff(
 ): { readonly patch: string; readonly insertions: number } {
   // Repository attributes stay on for eol and encoding conversions; textconv
   // and external diff drivers would rewrite or replace the patch.
-  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--no-textconv", "--no-ext-diff", "--", "/dev/null", filePath], {
+  const res = spawnSync("git", ["diff", "--no-index", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-textconv", "--no-ext-diff", "--", "/dev/null", filePath], {
     cwd,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 64,

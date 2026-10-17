@@ -167,7 +167,7 @@ export function hasHeadCommit(cwd: string): boolean {
 // work tree side needs its eol, working-tree-encoding and clean-filter
 // conversions, including ones the uncommitted change itself adds. Textconv
 // and external diff drivers stay off: they would rewrite or replace the patch.
-const UNCOMMITTED_DIFF = ["diff", "--no-textconv", "--no-ext-diff"];
+const UNCOMMITTED_DIFF = ["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-textconv", "--no-ext-diff"];
 
 function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[], baseSha: string): string[] {
   const args = [...UNCOMMITTED_DIFF, ...extraArgs, baseSha];

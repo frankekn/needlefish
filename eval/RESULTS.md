@@ -2356,7 +2356,5 @@ live canary ran for this implementation.
 
 ### Captured local patch metadata, 2026-10-18
 
-- gateClass: R. NOT_RUN. Local uncommitted classification and stat now derive from the captured patch artifact; omitted binary paths also participate in classification.
+- gateClass: R, NOT_RUN. Local uncommitted `changedFiles` and `patchStat` now come from native Git forward/reverse `apply --numstat -z` and `apply --stat` over the captured patch. Omitted binary paths and dirty-only gitlinks participate in classification; source object-store and replacement lookups are not needed. Tracked and untracked producers pin `a/` and `b/` prefixes and disable color so user presentation settings cannot alter captured paths or patch payloads.
 - No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.
-
-- Native Git forward/reverse `apply --numstat -z` and `apply --stat` supersede tree materialization for the same captured patch. Dirty-only gitlinks participate in classification; source object-store and replacement lookups are no longer needed. gateClass: R, NOT_RUN.
