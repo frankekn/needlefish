@@ -50,6 +50,9 @@ npx needlefish
 
 `doctor` checks the environment without a model call. It prints a fix for each
 failed check. An `unknown` authentication result does not prove model access.
+Each runner status command has a 10-second hard timeout. A timed-out login
+check is `unknown`. Interrupted diagnostics clean up their probe processes
+and temporary directory.
 `--dry-run` shows the review scope without a model call or cache write.
 The final command sends the diff and inspected repository context to the selected
 model provider.
