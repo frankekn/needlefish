@@ -326,7 +326,10 @@ struct ContentView: View {
             }
             if let repo = model.repo { Text("專案 / Project: " + repo.lastPathComponent).textSelection(.enabled) }
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) { stateView }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 14) {
+                    stateView
+                    if let message = model.diagnosisDraftMessage { Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
             DisclosureGroup("進階連線 / Advanced connections") {
                 ScrollView { AdvancedConnectionsView(owner: model, model: model.connections) }.frame(maxHeight: 380)
@@ -341,7 +344,6 @@ struct ContentView: View {
                     Button("移除安裝資料 / Remove installations", action: model.uninstall)
                 }.disabled(model.busy)
             }
-            if let message = model.diagnosisDraftMessage { Text(message).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             HStack {
                 Button("選擇資料夾 / Choose folder", action: model.selectFolder).disabled(!model.canDiagnose)
                 Button("離線範例 / Offline example", action: model.demo).disabled(model.localBusy)
