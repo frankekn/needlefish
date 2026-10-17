@@ -315,11 +315,12 @@ function capturedPatchMetadata(patch: string): {
 
 function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: string): Bundle {
   const headExists = baseSha !== EMPTY_BASE_SHA;
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
   const trackedBinaryPaths = headExists
-    ? binaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", baseSha], cwd, { preserveOutput: true }))
+    ? binaryPathsFromNumstat(runText("git", [...UNCOMMITTED_DIFF, "--numstat", "-z", baseSha], { cwd, env, preserveOutput: true }))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths, baseSha), cwd, { preserveOutput: true })
+    ? runText("git", trackedDiffArgs([], trackedBinaryPaths, baseSha), { cwd, env, preserveOutput: true })
     : "";
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
@@ -375,7 +376,9 @@ export function localDiffMode(
 export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   const root = resolveRepoRoot(cwd);
   const headExists = hasHeadCommit(root);
-  const dirty = git(["status", "--porcelain"], root).trim() !== "";
+  const dirty = runText("git", ["status", "--porcelain"], {
+    cwd: root, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+  }).trim() !== "";
   const mode = localDiffMode(headExists, dirty, opts.localMode);
   const bundle = mode === "uncommitted" ? uncommittedDiffBundle(root, opts, headExists) : branchDiffBundle(root, opts);
   return { bundle, mode };

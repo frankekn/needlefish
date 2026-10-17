@@ -6,6 +6,7 @@ import test from "node:test";
 import { review } from "../core/review.js";
 import { prDiffFromShas } from "../shared/repo.js";
 import { runLocal } from "./local.js";
+import { writeFakeClaude } from "./local-uncommitted-test-fixtures.js";
 import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures.js";
 import { renderMarkdown } from "../shared/render.js";
 import { parseReviewResult } from "../shared/review-result.js";
@@ -100,8 +101,8 @@ test("docs fast path retains non-blocking binary coverage and old v1 results rem
   assert.deepEqual(unreviewedBinaryFiles, ["docs/notes.md"]);
 });
 
-for (const fastPath of ["binary-only", "docs-only"] as const) {
-  test(`${fastPath} fast path discloses attribute-classified pointers without a runner`, async (t) => {
+for (const binaryOnly of [true, false]) {
+  test(`${binaryOnly ? "binary-only skips the runner" : "mixed docs and binary invokes the runner"} and discloses attribute-classified pointers`, async (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-binary-pointer-"));
     const repo = initRepo(tmp);
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -110,21 +111,37 @@ for (const fastPath of ["binary-only", "docs-only"] as const) {
     writeFileSync(path.join(repo, file), "old contents\n");
     commitAll(repo, "base");
     writeFileSync(path.join(repo, file), `version https://git-lfs.github.com/spec/v1\noid sha256:${"a".repeat(64)}\nsize 123\n`);
-    if (fastPath === "docs-only") writeFileSync(path.join(repo, "README.md"), "New notes\n");
+    if (!binaryOnly) writeFileSync(path.join(repo, "README.md"), "New notes\n");
 
     const previous = process.env.CODEX_BIN;
+    const previousClaude = process.env.CLAUDE_BIN;
+    const promptPath = path.join(tmp, "prompts.txt");
+    const claude = path.join(tmp, "claude-bin.cjs");
+    if (!binaryOnly) writeFakeClaude(claude, promptPath);
+    process.env.CLAUDE_BIN = claude;
     process.env.CODEX_BIN = path.join(tmp, "must-not-run");
     t.after(() => {
       if (previous === undefined) delete process.env.CODEX_BIN;
       else process.env.CODEX_BIN = previous;
+      if (previousClaude === undefined) delete process.env.CLAUDE_BIN;
+      else process.env.CLAUDE_BIN = previousClaude;
     });
     const result = await runLocal(repo, {
-      localMode: "uncommitted", runner: "codex", cacheDir: path.join(tmp, "cache"),
+      localMode: "uncommitted", runner: binaryOnly ? "codex" : "claude", cacheDir: path.join(tmp, "cache"),
     });
     assert.equal(result.verdict, "pass");
-    assert.match(result.summary, /model review skipped/);
-    assert.deepEqual(result.unreviewedBinaryFiles, [file]);
-    assert.equal(result.coverageGaps, undefined);
+    if (binaryOnly) {
+      assert.match(result.summary, /model review skipped/);
+      assert.deepEqual(result.unreviewedBinaryFiles, [file]);
+      assert.equal(result.coverageGaps, undefined);
+    } else {
+      assert.equal(result.summary, "ok");
+      assert.match(readFileSync(promptPath, "utf8"), /\+New notes/);
+      assert.deepEqual(result.findings, []);
+      assert.deepEqual(result.residualRisks, []);
+      assert.equal(result.unreviewedBinaryFiles, undefined);
+      assert.deepEqual(result.coverageGaps, [{ kind: "lfs_pointer_only", file }]);
+    }
     assert.match(renderMarkdown(result), /Not reviewed \(non-blocking\)/);
   });
 }
