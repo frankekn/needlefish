@@ -70,7 +70,7 @@ test("unqualified 429 wrapper cannot establish native quota",()=>{
   assert.equal(nativeCodexQuotaExhausted(event("unexpected status 429 Too Many Requests: insufficient credits, url: https://provider.invalid/v1/responses"),1),false);
 });
 
-test("unknown native schema is marked only in private failure output",async(t)=>{
+test("unknown native schema has a private diagnostic without modifying raw streams",async(t)=>{
   const tmp=mkdtempSync(path.join(os.tmpdir(),"needlefish-quota-schema-"));
   const repo=initRepo(tmp),bin=path.join(tmp,"codex.cjs");
   const previous={...process.env};
@@ -78,12 +78,21 @@ test("unknown native schema is marked only in private failure output",async(t)=>
   writeFileSync(bin,'#!/usr/bin/env node\nrequire("node:fs").readFileSync(0);console.log(JSON.stringify({type:"future.event",message:"insufficient credits"}));console.log(JSON.stringify({type:"turn.failed",error:{message:"insufficient credits"}}));process.exit(1);');
   chmodSync(bin,0o755);
   process.env.CODEX_BIN=bin;process.env.NEEDLEFISH_NO_RETRY="1";
-  await assert.rejects(runCodex("review",{runner:"codex",repoPath:repo,targetHeadSha:headSha(repo)}),error=>{
+  const failedAttempts: unknown[] = [], failedRaws: string[] = [];
+  await assert.rejects(runCodex("review",{runner:"codex",repoPath:repo,targetHeadSha:headSha(repo),
+    onFailedAttempt: (attempt, raw, diagnostic) => { failedAttempts.push({ attempt, raw, diagnostic }); },
+    onFailedRaw: raw => { failedRaws.push(raw); },
+  }),error=>{
     assert.ok(error instanceof Error);
     assert.notEqual(findRunnerFailure(error)?.kind,"quota_exhausted");
-    assert.match(String(Reflect.get(error,"rawOutput")),/unrecognized codex event schema/);
+    assert.equal(Reflect.get(error,"runnerDiagnostic"),"unrecognized_codex_event_schema");
+    assert.equal(Reflect.get(error,"rawOutput"),'{"type":"future.event","message":"insufficient credits"}\n{"type":"turn.failed","error":{"message":"insufficient credits"}}\n');
+    assert.equal(Object.getOwnPropertyDescriptor(error,"runnerDiagnostic")?.enumerable,false);
     assert.doesNotMatch(error.message,/unrecognized codex event schema/);
-    assert.doesNotMatch(JSON.stringify(error),/unrecognized codex event schema/);
+    assert.doesNotMatch(JSON.stringify(error),/unrecognized[_ ]codex[_ ]event[_ ]schema/);
     return true;
   });
+  const raw = '{"type":"future.event","message":"insufficient credits"}\n{"type":"turn.failed","error":{"message":"insufficient credits"}}\n';
+  assert.deepEqual(failedAttempts, [{ attempt: 1, raw, diagnostic: "unrecognized_codex_event_schema" }]);
+  assert.deepEqual(failedRaws, [raw]);
 });
