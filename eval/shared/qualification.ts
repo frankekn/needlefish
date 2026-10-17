@@ -1,3 +1,4 @@
+import { measureIndependentQuality } from "./quality-oracle";
 import { isCompleteReport } from "./report-completeness";
 import { matchesSpec } from "./score";
 import type { DrawFinding, DrawResult, Expected, FixtureSpec, MatchSpec, Report } from "./types";
@@ -219,6 +220,7 @@ export function evaluatePhaseTwoQualification(
   campaign: { readonly broad: Report; readonly deep: Report },
   specs: readonly FixtureSpec[],
   policy: PhaseTwoQualificationPolicy,
+  oracle?: unknown,
 ): PhaseTwoQualificationResult {
   if (
     !Number.isInteger(policy.broadDraws) || policy.broadDraws < 1 ||
@@ -297,8 +299,7 @@ export function evaluatePhaseTwoQualification(
       return sum + observedSubsetPassRate(draws.filter((draw) => draw.score.recall).length, draws.length, policy.consistencyK);
     }, 0), tierOneSpecs.length),
   };
-  const actionablePrecision: QualityRate = { status: "unknown", reason: "independent actionable TP/FP adjudication is absent" };
-  const severityCalibration: QualityRate = { status: "unknown", reason: "gold severity labels are absent" };
+  const { actionablePrecision, severityCalibration } = measureIndependentQuality(campaign, specs, oracle);
   const reasons = [...checkPhaseTwoFixturePlan(specs).errors];
   for (const [name, value] of Object.entries(policy.floors)) {
     if (value === null) reasons.push(`unset floor: ${name}`);

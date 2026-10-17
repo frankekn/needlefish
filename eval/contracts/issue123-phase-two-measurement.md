@@ -51,8 +51,8 @@ required evidence produces `status: "unknown"`, never a perfect score.
   finding. Honeypots and parity fixtures are outside these proxy denominators.
 - The proxy is not actionable precision. It does not independently adjudicate
   legitimate sibling defects or the actionability of unmatched findings.
-  `mayFind` does not create a required-gold TP. `actionablePrecision` remains
-  unknown until a separately reviewed TP/FP adjudication contract exists.
+  `mayFind` does not create a required-gold TP. Independent adjudication,
+  described below, supplies `actionablePrecision` through an optional oracle.
 - `negativeFalsePositiveDrawRate` uses the existing negative score's
   `falsePositive` flag, divided by negative broad draws. It is a per-draw rate,
   not a population false-positive PR rate.
@@ -62,17 +62,79 @@ required evidence produces `status: "unknown"`, never a perfect score.
   deep Tier-1 fixtures. Here `h_i` is the number of recalled draws and `n_i` is
   the complete deep draw count. It describes observed all-success subsets.
   It does not cube aggregate recall or claim independent population trials.
-- `severityCalibration` remains unknown because `Expected` has no independent
-  gold severity labels. Matching a P1 finding does not establish severity
-  calibration.
+- `severityCalibration` compares the predicted severity of each independently
+  actionable broad finding with its predeclared accepted gold severities.
+  Matching a P1 finding does not establish severity calibration.
+
+## Independent quality oracle
+
+The optional fourth argument to `evaluatePhaseTwoQualification` is external
+oracle data. It follows `PhaseTwoQualityOracle` in
+`eval/shared/quality-oracle.ts`. The evaluator validates its version and shape
+with the existing Ajv dependency. Invalid data rejects the input. Partial
+adjudication produces unknown metrics and prevents eligibility.
+
+The version 1 contract contains these fields:
+
+- `schemaVersion` is `1`.
+- `identity` contains `broadSha256`, `deepSha256`, and `fixtureSetSha256`.
+  `phaseTwoOracleIdentity(campaign, specs)` computes SHA-256 of `JSON.stringify`
+  of each complete report and the supplied fixture array. Array and object key
+  order are significant. These hashes identify parsed values, not original
+  JSON file bytes. A change to any report or fixture value requires a new oracle
+  binding. Hash equality does not establish source authenticity.
+- `adjudication` records an independent `author`, an external evidence
+  `provenance`, and `rows`. Every row identifies an exact broad `fixtureId`,
+  zero-based `draw`, and zero-based `findingIndex` in that draw's findings array.
+  Its `decision` is `actionable`, `false_positive`, or `unresolved`. An actionable
+  row has a fixture-scoped `defectId`. An unresolved row has a `reason`.
+- `severityGold` is `null` when absent. Otherwise it records its independent
+  `author`, external evidence `provenance`, UTC `frozenAt`, and `labels`.
+  Each label identifies `fixtureId` and `defectId` and lists nonempty, unique
+  `acceptedSeverities` from P0 through P3. The freeze time precedes both report
+  creation times. Duplicate or foreign gold identities reject the input.
+
+Actionable precision is the number of independently actionable findings over
+all findings from positive and negative broad draws. Every severity, including
+P3, enters this denominator so a prediction cannot avoid adjudication by being
+downgraded. Honeypots and parity fixtures stay outside these quality rates.
+Each finding needs exactly one adjudication. Missing findings, missing rows,
+or unresolved decisions make both quality metrics unknown. Foreign fixtures,
+wrong reports, duplicate rows, and invalid draw or finding indices reject the
+input. Within one draw, two actionable rows cannot claim the same defect.
+An independent adjudicator can mark a duplicate report as a false positive.
+
+Severity calibration is the number of actionable findings whose actual predicted
+severity belongs to the independent accepted label set, divided by all actionable
+findings. False positives do not enter this denominator. A legitimate sibling
+defect can be independently actionable even if `Expected.mustFind` and
+`Expected.mayFind` omit it. Without a predeclared severity label for that defect,
+actionable precision is measured but severity calibration remains unknown.
+Abstentions add no emitted findings or perfect samples. Zero emitted findings
+make precision unknown. Zero actionable findings make calibration unknown.
+
+The oracle is evaluator-only. None of its identities, labels, provenance, or
+adjudications enter model input. Model output, a required-gold match, a
+`mayFind` match, and a predicted severity cannot author independent truth.
+The recorded author, provenance, and timestamp are claims, not authentication
+or proof of blind authoring. Campaign admission must independently review and
+retain the source evidence, freeze gold before model execution, and author
+adjudication without relying on model or proxy assertions. The creation-time
+check alone cannot prove that ordering.
+
+This path adds measurement capability only. It selects no production floors,
+alters no existing fixtures or reports, and does not qualify the running frozen
+4f95 campaign for this new Class R source. Independent review, real oracle
+source evidence, owner-approved risk and quality points, and a suitable full
+Class R campaign remain required before promotion.
 
 ## Eligibility
 
 All floors are explicit caller inputs. `null` means unset and prevents
 eligibility. No numerical production floor is selected here. Unknown required
 metrics also prevent eligibility, even if all supplied thresholds are zero.
-Consequently this implementation cannot qualify a lane while actionable
-adjudication and severity labels remain absent.
+A lane cannot qualify while actionable adjudication or severity labels remain
+absent. Existing three-argument calls keep their previous unknown metrics.
 
 The existing Phase 2 fixture-plan check still requires at least 15 Tier-1
 fixtures, at least five families, and at least two fixtures per family. It
