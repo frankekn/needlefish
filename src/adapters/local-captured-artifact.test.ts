@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -135,7 +135,7 @@ process.exit(result.status ?? 1);
 
 test("captured artifact retains the resolved source checkout's protected ownership allowance", t => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-safe-directory-"));
-  const repo = initRepo(tmp);
+  const repo = realpathSync(initRepo(tmp));
   writeFileSync(path.join(repo, "README.md"), "changed\n");
   const config = path.join(tmp, "global.gitconfig");
   gitText(["config", "--file", config, "safe.directory", repo], repo);
