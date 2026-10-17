@@ -56,7 +56,7 @@ three commands must exit 0. Other nonzero codes block delivery.
 
 The whole gate has a 20-minute deadline and an 8,000,000-byte output limit.
 The limit counts the combined raw stdout and stderr bytes from review, verdict,
-and render. Each child has closed stdin. Reading the temporary result file does
+render, and Git verification. Every child shares the deadline and has closed stdin. Reading the temporary result file does
 not add pipe output. The gate retains at most 16,384 characters of CLI stderr
 for diagnostics, within the same byte budget. To choose another deadline, set
 `NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS` to an integer from 1 through 2,147,483,647

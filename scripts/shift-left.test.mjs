@@ -233,6 +233,29 @@ test("real CLI docs-only artifact passes the gate with its skip notice and no ru
   assert.equal(existsSync(runnerLog), false);
 });
 
+for (const probe of [1, 5]) {
+  test(`whole-gate deadline covers Git probe ${probe}`, (t) => {
+    const f = setup(t);
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const counter = join(f.dir, "git-probes");
+    writeFileSync(join(f.dir, "bin/git"), `#!${process.execPath}
+const fs = require('node:fs');
+const cp = require('node:child_process');
+const count = fs.existsSync(${JSON.stringify(counter)}) ? Number(fs.readFileSync(${JSON.stringify(counter)}, 'utf8')) + 1 : 1;
+fs.writeFileSync(${JSON.stringify(counter)}, String(count));
+function git() { const r = cp.spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), { stdio: 'inherit' }); process.exitCode = r.status ?? 1; }
+if (count === ${probe}) setTimeout(git, 1800); else git();
+`);
+    chmodSync(join(f.dir, "bin/git"), 0o755);
+    const result = f.run(f.base, 0, { NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: "1500" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /deadline expired/);
+    if (probe === 1) assert.equal(existsSync(f.log), false);
+    else assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+  });
+}
+
 test("base movement during rendering blocks the stale review", (t) => {
   const f = setup(t);
   f.git("update-ref", "refs/heads/review-base", f.head);
@@ -437,13 +460,13 @@ for (const [name, checked] of [
 
 test("whole-gate output cap includes stderr and permits the nearby lower total", (t) => {
   const f = setup(t);
-  const raw = { ...f.base, checked: ["c".repeat(3_999_700)] };
+  const raw = { ...f.base, checked: ["c".repeat(3_999_500)] };
   const passed = f.run(raw);
   assert.equal(passed.error, undefined);
   assert.equal(passed.status, 0, passed.stderr);
   assert.match(passed.stdout, /LGTM/);
   assert.equal(passed.stderr, "");
-  const totalBytes = Buffer.byteLength(JSON.stringify(raw)) + Buffer.byteLength(passed.stdout) + Buffer.byteLength("stored:  pass\nderived: pass\n");
+  const totalBytes = Buffer.byteLength(JSON.stringify(raw)) + Buffer.byteLength(passed.stdout) + Buffer.byteLength("stored:  pass\nderived: pass\n") + 6 * 41;
   assert.ok(totalBytes <= 8_000_000);
   assert.ok(totalBytes + 1000 > 8_000_000);
   const blocked = f.run(raw, 0, { FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "d".repeat(1000) });
