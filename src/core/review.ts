@@ -1253,7 +1253,8 @@ export async function reviewWithConnections(
 	return reviewRoutes(bundle, routes, onTrace, onProgress, Date.now());
 }
 
-export function reviewBudgetMs(routeCount: number): number | null {
+export function reviewBudgetMs(routeCount: number, explicit?: number): number | null {
+	if (explicit !== undefined) return parsePositiveInteger(String(explicit), "reviewBudgetMs");
 	const timeout = process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS;
 	if (routeCount > 1 && !timeout) throw new Error("Ordered connections require NEEDLEFISH_REVIEW_TIMEOUT_MS for one shared review budget.");
 	return timeout ? parsePositiveInteger(timeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS") : null;
@@ -1266,7 +1267,7 @@ async function reviewRoutes(
 	onProgress: ReviewProgressObserver | undefined,
 	startedAt: number,
 ): Promise<ReviewResult> {
-	const budget = reviewBudgetMs(routes.length);
+	const budget = reviewBudgetMs(routes.length, routes[0].reviewBudgetMs);
 	const deadline = budget === null ? undefined : performance.now() + budget;
 	const select = (options: RunnerOptions) => {
 		const plan = reviewPlan(bundle, options);

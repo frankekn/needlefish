@@ -19,77 +19,112 @@ export interface Connection {
   readonly auth?: ConnectionAuthSpec;
 }
 
+export interface ConnectionsDocument {
+  readonly version: 1;
+  readonly connections: readonly {
+    readonly id: string;
+    readonly adapter: RunnerName;
+    readonly model?: string;
+    readonly launch?: AcpLaunchSpec;
+    readonly auth?: { readonly env: AuthEnvironmentReferences; readonly route?: CodexAuthRoute };
+  }[];
+}
+
+export function parseConnections(raw: unknown): readonly Connection[] {
+  return validateConnectionsDocument(raw).connections;
+}
+
+export class ConnectionsDocumentError extends Error {
+  constructor(message: string, readonly field: string, readonly issueCode: string) { super(message); }
+}
+
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`Invalid connections configuration: ${label} must be an object.`);
+    throw new ConnectionsDocumentError(`Invalid connections configuration: ${label} must be an object.`, label, "expected_object");
   }
   return value as Record<string, unknown>;
 }
 
 function onlyKeys(value: Record<string, unknown>, keys: readonly string[], label: string): void {
   if (Object.keys(value).some((key) => !keys.includes(key))) {
-    throw new Error(`Invalid connections configuration: unsupported field in ${label}. OAuth profiles are not supported in this version.`);
+    throw new ConnectionsDocumentError(`Invalid connections configuration: unsupported field in ${label}. OAuth profiles are not supported in this version.`, label, "unsupported_field");
   }
 }
 
 function text(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim() || value !== value.trim() || Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
-    throw new Error(`Invalid connections configuration: ${label} must be non-empty text without control characters or surrounding whitespace.`);
+    throw new ConnectionsDocumentError(`Invalid connections configuration: ${label} must be non-empty text without control characters or surrounding whitespace.`, label, "invalid_text");
   }
   return value;
 }
 
-export function parseConnections(raw: unknown): readonly Connection[] {
+export function validateConnectionsDocument(raw: unknown): { readonly document: ConnectionsDocument; readonly connections: readonly Connection[] } {
   const config = record(raw, "root");
   onlyKeys(config, ["version", "connections"], "root");
   if (config.version !== 1 || !Array.isArray(config.connections)) {
-    throw new Error("Invalid connections configuration: expected version 1 and a connections array.");
+    throw new ConnectionsDocumentError("Invalid connections configuration: expected version 1 and a connections array.", "root", "invalid_document");
   }
   const ids = new Set<string>();
-  return Object.freeze(config.connections.map((value): Connection => {
+  const documents: ConnectionsDocument["connections"][number][] = [];
+  const connections = Object.freeze(config.connections.map((value): Connection => {
     const entry = record(value, "connection");
     onlyKeys(entry, ["id", "adapter", "model", "launch", "auth"], "connection");
     const id = text(entry.id, "id");
-    if (ids.has(id)) throw new Error("Invalid connections configuration: duplicate connection id.");
+    if (ids.has(id)) throw new ConnectionsDocumentError("Invalid connections configuration: duplicate connection id.", "id", "duplicate_id");
     ids.add(id);
     const adapter = text(entry.adapter, "adapter");
-    if (!isRunnerName(adapter)) throw new Error("Unknown connection adapter. Use an existing CLI adapter or acp for a custom agent.");
+    if (!isRunnerName(adapter)) throw new ConnectionsDocumentError("Unknown connection adapter. Use an existing CLI adapter or acp for a custom agent.", "adapter", "unknown_adapter");
     let auth: Connection["auth"];
     if (entry.auth !== undefined) {
-      if (adapter !== "acp" && adapter !== "codex") throw new Error("Connection auth is supported only by the acp and codex adapters.");
+      if (adapter !== "acp" && adapter !== "codex") throw new ConnectionsDocumentError("Connection auth is supported only by the acp and codex adapters.", "auth", "unsupported_auth");
       const spec = record(entry.auth, "auth");
       onlyKeys(spec, adapter === "codex" ? ["env", "route"] : ["env"], "auth");
-      if (adapter === "codex") {
-        const route = parseCodexRoute(spec.route);
-        auth = Object.freeze({ kind: "codex-env", env: parseCodexAuthEnvironment(spec.env, route), route });
-      } else auth = Object.freeze({ kind: "acp-env", env: parseAuthEnvironment(spec.env) });
+      try {
+        if (adapter === "codex") {
+          const route = parseCodexRoute(spec.route);
+          auth = Object.freeze({ kind: "codex-env", env: parseCodexAuthEnvironment(spec.env, route), route });
+        } else auth = Object.freeze({ kind: "acp-env", env: parseAuthEnvironment(spec.env) });
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        throw new ConnectionsDocumentError(error.message, "auth", "invalid_auth");
+      }
     }
     const model = entry.model === undefined ? undefined : text(entry.model, "model");
     let launch: AcpLaunchSpec | undefined;
+    let rawLaunch: AcpLaunchSpec | undefined;
     if (adapter === "acp") {
-      launch = parseAcpLaunch(entry.launch, model);
+      const parsed = parseAcpLaunch(entry.launch, model);
+      launch = parsed.execution;
+      rawLaunch = parsed.document;
     } else {
-      if (entry.launch !== undefined) throw new Error("launch is only supported by the acp adapter.");
-      if (model === undefined) throw new Error("Set a model for a named CLI connection; ambient model settings are not inherited.");
+      if (entry.launch !== undefined) throw new ConnectionsDocumentError("launch is only supported by the acp adapter.", "launch", "unsupported_launch");
+      if (model === undefined) throw new ConnectionsDocumentError("Set a model for a named CLI connection; ambient model settings are not inherited.", "model", "missing_model");
     }
+    documents.push(Object.freeze({ id, adapter, ...(model === undefined ? {} : { model }),
+      ...(rawLaunch ? { launch: rawLaunch } : {}),
+      ...(auth ? { auth: Object.freeze({ env: auth.env, ...(auth.kind === "codex-env" ? { route: auth.route } : {}) }) } : {}) }));
     return Object.freeze({ id, adapter, ...(model === undefined ? {} : { model }), ...(launch ? { launch } : {}), ...(auth ? { auth } : {}) });
   }));
+  return Object.freeze({ document: Object.freeze({ version: 1, connections: Object.freeze(documents) }), connections });
 }
 
-function parseAcpLaunch(raw: unknown, model: string | undefined): AcpLaunchSpec {
+function parseAcpLaunch(raw: unknown, model: string | undefined): { readonly document: AcpLaunchSpec; readonly execution: AcpLaunchSpec } {
   const spec = record(raw, "ACP launch");
   onlyKeys(spec, ["command", "args"], "ACP launch");
   const command = text(spec.command, "ACP command");
-  if (!path.isAbsolute(command)) throw new Error("ACP command must be an absolute executable path, not a shell command.");
+  if (!path.isAbsolute(command)) throw new ConnectionsDocumentError("ACP command must be an absolute executable path, not a shell command.", "launch.command", "invalid_command");
   if (!Array.isArray(spec.args) || !spec.args.every((arg) => typeof arg === "string" && !arg.includes("\0"))) {
-    throw new Error("ACP args must be an array of strings without NUL bytes.");
+    throw new ConnectionsDocumentError("ACP args must be an array of strings without NUL bytes.", "launch.args", "invalid_args");
   }
   const args = spec.args as string[];
   const slots = args.filter((arg) => arg === "{model}").length;
   if (args.some((arg) => arg.includes("{model}") && arg !== "{model}") || slots !== (model === undefined ? 0 : 1)) {
-    throw new Error("ACP model selection requires exactly one whole {model} argument and a model; omit both to use the agent default.");
+    throw new ConnectionsDocumentError("ACP model selection requires exactly one whole {model} argument and a model; omit both to use the agent default.", "launch.args", "invalid_model_slot");
   }
-  return Object.freeze({ command, args: Object.freeze(args.map((arg) => arg === "{model}" ? model! : arg)) });
+  return Object.freeze({
+    document: Object.freeze({ command, args: Object.freeze([...args]) }),
+    execution: Object.freeze({ command, args: Object.freeze(args.map((arg) => arg === "{model}" ? model! : arg)) }),
+  });
 }
 
 export function connectionsFile(env: NodeJS.ProcessEnv = process.env): string {
@@ -101,7 +136,7 @@ export function connectionsFile(env: NodeJS.ProcessEnv = process.env): string {
   return file;
 }
 
-function targetRoot(repoPath: string): string {
+export function targetRoot(repoPath: string): string {
   const start = realpathSync(repoPath);
   // Cover invocation from a project subdirectory, including Git worktrees
   // whose .git is a file. This is only a conservative config trust check;
@@ -144,6 +179,7 @@ function readConnections(file: string, repoPath: string): readonly Connection[] 
 
 export function resolveConnectionRoutes<T extends RunnerOptions>(
   opts: T, repoPath: string, env: NodeJS.ProcessEnv = process.env, bindCredentials = true,
+  captured?: { readonly connections: readonly Connection[]; readonly encodedOutputGuard: boolean },
 ): readonly [T, ...T[]] {
   if (opts.connections === undefined) return [opts];
   const [first, ...rest] = opts.connections;
@@ -153,7 +189,7 @@ export function resolveConnectionRoutes<T extends RunnerOptions>(
   if (opts.runner !== undefined || opts.model !== undefined || opts.acpLaunch !== undefined || opts.connectionAuth !== undefined) {
     throw new Error("--connection cannot be combined with --runner, --model or separate ACP launch/auth.");
   }
-  const connections = readConnections(connectionsFile(env), repoPath);
+  const connections = captured?.connections ?? readConnections(connectionsFile(env), repoPath);
   const select = (id: string): Connection => {
     const connection = connections.find(entry => entry.id === id);
     if (!connection) throw new Error("Selected connection was not found. Check --connection against your user connections.json.");
@@ -162,7 +198,7 @@ export function resolveConnectionRoutes<T extends RunnerOptions>(
   const selected: readonly [Connection, ...Connection[]] = [select(first), ...rest.map(select)];
   const resolve = (connection: Connection): T => {
     const connectionAuth = connection.auth && bindCredentials
-      ? connection.auth.kind === "codex-env" ? new CodexEnvironmentAuth(connection.auth.env, connection.auth.route, env) : new AcpEnvironmentAuth(connection.auth.env, env)
+      ? connection.auth.kind === "codex-env" ? new CodexEnvironmentAuth(connection.auth.env, connection.auth.route, env) : new AcpEnvironmentAuth(connection.auth.env, env, captured?.encodedOutputGuard)
       : undefined;
     connectionAuth?.assertCompatible(connection.adapter, env);
     return Object.freeze({

@@ -381,12 +381,15 @@ export interface LocalOptions extends RunnerOptions {
 export async function runLocal(
   cwd: string,
   opts: LocalOptions,
-  onProgress?: ReviewProgressObserver
+  onProgress?: ReviewProgressObserver,
+  prepared?: { readonly routes: readonly [RunnerOptions, ...RunnerOptions[]]; readonly signal?: AbortSignal },
 ): Promise<ReviewResult> {
+  prepared?.signal?.throwIfAborted();
   const { bundle } = diffBundle(cwd, opts);
   const plan = reviewPlan(bundle, opts);
-  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !plan.docsOnlyFastPath && !plan.binaryOnlyFastPath);
+  const resolvedOpts = prepared?.routes ?? resolveConnectionRoutes(opts, bundle.repoPath, process.env, !plan.docsOnlyFastPath && !plan.binaryOnlyFastPath);
   const result = await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress);
+  prepared?.signal?.throwIfAborted();
   writeCache(bundle.repoPath, opts, result);
   return result;
 }

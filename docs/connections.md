@@ -344,3 +344,129 @@ This preview does not qualify any provider, credential store or production insta
 認證、取消、timeout、隔離故障、一般 429 與 ACP 錯誤文字都不會觸發備援。
 所有選定密鑰共同保護公開輸出，每個子程序只收到自己那條連線的密鑰。
 全部額度耗盡就失敗，不寫部分 cache、不貼部分 review。正式 Class R 尚未完成。
+
+## Machine editor
+
+`needlefish connections <operation> --json [--repo <path>]` manages the same
+operator configuration. The commands never run a model, login command, or
+version probe. They do not bind credentials. Authentication and account identity
+remain `unknown`, and qualification remains `unqualified`.
+
+| Operation | Input through stdin | Success fields |
+| --- | --- | --- |
+| `list` | None | `revision`, `connections` descriptors |
+| `edit` | None | `baseRevision`, validated raw `document` |
+| `validate` | `{"document": <version-1 document>}` | `connections` descriptors |
+| `apply` | `{"expectedRevision": "missing or sha256:…", "document": <version-1 document>}` | `revision`, `connections` descriptors |
+| `inspect` | `{"ids": ["first", "second"]}` | `revision`, ordered descriptors with local executable availability |
+
+Every response includes `schemaVersion: 1` and `ok`. Errors exit with code 1 and
+return a fixed `code`. Invalid documents can include `issues` with fixed `field`
+and `code` values. Parser messages, input fragments, executable paths, endpoint
+URLs, and credential references do not appear in errors or catalog descriptors.
+`edit` returns the local raw document, including paths and credential reference
+names. Keep this response out of logs, exports, and review prompts. Arbitrary
+text entered into profile fields is not certified safe to publish.
+
+Requests must finish within five seconds and contain at most 128 KiB of JSON.
+Documents must fit the existing 64 KiB configuration limit. `validate` writes
+nothing. Add, edit, and delete profiles by changing the complete `document` from
+`edit`, then use one `apply`. Preserve ACP `{model}` arguments and raw `auth.env`
+and `auth.route` fields. Parsed execution objects contain internal `auth.kind`
+and substituted arguments, so they are not an editable document.
+
+A missing file has revision `missing`. The configuration parent directory must
+already exist and belong to the current user. A missing parent returns
+`configuration_unavailable` and writes nothing. Existing invalid configurations are errors and
+cannot be overwritten by an apply. Files must be regular, user-owned, outside the
+reviewed repository, and have no extra hard links. Configuration directories and
+files must not permit writes by other users. Canonical ancestors must belong to
+the current user or root. Writable ancestors require sticky-directory protection.
+The editor rejects a symlink file
+or configuration parent. These editor restrictions do not change the existing
+read-only `--connection` resolver.
+
+Apply locks the canonical configuration path with an exclusive `.lock` file.
+It compares the exact original byte revision, writes a same-directory exclusive
+0600 temporary file, syncs the file, checks the revision again, renames it, and
+syncs the directory. It then removes its lock and syncs that directory again
+before reporting success. `revision_conflict`
+requires a reload and an explicit draft
+reapply. `config_busy` never removes an existing lock, even if it appears stale.
+A failure before rename preserves the original file. `save_state_unknown` means
+rename completed but durability or cleanup failed. Reload before any retry.
+Cancellation before rename discards the temporary file. Cancellation after a
+successful rename reports the saved result or `save_state_unknown`.
+
+The lock coordinates writers using these commands. External editors do not
+honor the lock. The final revision check detects some external changes, but it
+cannot provide an atomic filesystem compare-and-swap against external writers.
+
+`inspect` checks executable availability without executing it. HTTP runners with
+no repository capability remain blocked. This check does not verify credentials,
+provider identity, delivered model, independent accounts, or release gates.
+Ordered IDs affect only this request. No fallback or account fields are added to
+the stored version-1 document. Session credentials, review ingress, and the
+advanced desktop interface are separate work.
+
+The fixed error codes are `invalid_request`, `input_too_large`, `input_timeout`,
+`invalid_configuration`, `unsafe_configuration`, `configuration_unavailable`,
+`revision_conflict`, `config_busy`, `save_failed`, `save_state_unknown`, and
+`cancelled`.
+
+## Session-only machine review
+
+`needlefish connections review --json` accepts one bounded JSON request through
+stdin. It uses the existing local-uncommitted adapter, whole-review session,
+quota-only fallback, fixed source snapshot and final cache writer. The request
+contains every selection input. `--repo` and review options on argv are rejected.
+
+```json
+{
+  "repo": "/absolute/path/to/project",
+  "scope": "local-uncommitted",
+  "expectedRevision": "sha256:<exact raw-byte revision from connections list>",
+  "ids": ["account-a", "account-b"],
+  "budgetMs": 120000,
+  "credentialMode": "session",
+  "sources": {"ACCOUNT_A_KEY": "<session value>", "ACCOUNT_B_KEY": "<session value>"}
+}
+```
+
+The existing trusted configuration parent must already exist. The raw revision
+must match before source collection or model execution. Later edits to the
+configuration or credential sources do not change the captured selection.
+`ids` is a nonempty, unique ordered list. `budgetMs` is an explicit integer from
+1 through 2147483647 for the whole model review, shared across fallback routes.
+It overrides the ambient review budget for this request. Collection and finalizer
+time are outside this model budget. The per-call timeout remains unchanged.
+
+In `session` mode every selected route must have explicit `auth.env` references.
+`sources` must contain exactly their distinct source names. Missing, additional
+or duplicate JSON keys are rejected. The same source reference shared by selected
+routes takes one value. No missing value falls back to an ambient source. In
+`existing` mode `sources` must be `{}` and the existing auth owner captures the
+selected ambient references. Auth-free routes keep their existing credential
+policy only in `existing` mode. Neither mode proves account identity or provider
+authentication, and runtime qualification remains unqualified.
+
+Session values bind once through a local environment object and the existing
+private auth owner. They do not enter global `process.env`, argv, the configuration,
+public results, diagnostics or cache. All selected credentials screen runner
+output, including literal, JSON-escaped and percent-encoded complete values.
+Singleton ACP session reviews use the same encoded guard as ordered ACP reviews.
+Existing CLI caller defaults remain unchanged. The existing unrestricted-agent
+trust boundary and limits of complete-value credential screening still apply.
+
+Input has a 128 KiB and five-second limit. Invalid JSON and request errors return
+only the existing `{schemaVersion:1,ok:false,code}` machine envelope. Errors never
+quote an input fragment or secret. A successful response is the existing final
+`ReviewResult`, with no extra account/auth claim. Invalid, cancelled and incomplete
+reviews return a nonzero status and never save a partial result. SIGINT and SIGTERM
+use the existing lifecycle owner to drain runner groups. A closed stdout pipe
+fails without a raw EPIPE diagnostic.
+
+Session credentials are not persisted. Request buffers and references are released
+on completion or cancellation. JavaScript strings and JSON parsing can leave
+copies until garbage collection, so this is not a physical memory zeroization
+claim. This source preview has no GUI, OAuth store or provider qualification.

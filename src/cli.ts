@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { ConnectionsError, readConnectionsRequest, runConnections, runConnectionsReview } from "./adapters/connections.js";
 import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
 import { renderDoctorReport, runDoctor, serializeDoctorReport } from "./adapters/doctor.js";
 import { runGithubExplain } from "./adapters/explain.js";
@@ -31,6 +32,32 @@ async function main() {
   const command = parseArgs(process.argv.slice(2));
 
   switch (command.kind) {
+    case "connections": {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      const outputError = () => { controller.abort(); process.exitCode = 1; };
+      process.stdout.on("error", outputError);
+      process.once("SIGINT", cancel);
+      process.once("SIGTERM", cancel);
+      try {
+        let request = command.operation === "list" || command.operation === "edit" ? undefined : await readConnectionsRequest(process.stdin, controller.signal, 5000, command.operation === "review");
+        const pending = command.operation === "review"
+          ? runConnectionsReview(request, process.env, controller.signal)
+          : runConnections(command.operation, command.repo ?? process.cwd(), request, process.env, controller.signal);
+        request = undefined;
+        const result = await pending;
+        const output = "ok" in result ? JSON.stringify(result) + "\n" : serializeReviewResult(result);
+        await new Promise<void>((resolve, reject) => process.stdout.write(output, error => error ? reject(error) : resolve()));
+        if ("ok" in result && !result.ok) process.exitCode = 1;
+      } catch (error) {
+        if (!process.stdout.destroyed) process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
+        process.exitCode = 1;
+      } finally {
+        process.off("SIGINT", cancel);
+        process.off("SIGTERM", cancel);
+      }
+      return;
+    }
     case "version":
       process.stdout.write(`needlefish ${VERSION}\n`);
       return;
@@ -136,6 +163,11 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (process.argv[2] === "connections") {
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: "invalid_request" }) + "\n");
+    process.exitCode = 1;
+    return;
+  }
   process.stderr.write(`needlefish: ${err instanceof Error ? err.message : err}\n`);
   process.exitCode = 1;
 });
