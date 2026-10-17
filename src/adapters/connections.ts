@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { accessSync, constants, statSync, type Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { hostname } from "node:os";
+import { RUNNER_DEFINITIONS } from "../shared/runner.js";
 import type { Readable } from "node:stream";
 import { ConnectionsDocumentError, connectionsFile, targetRoot, validateConnectionsDocument, resolveConnectionRoutes, type Connection } from "../shared/connections.js";
 import { runLocal } from "./local.js";
@@ -125,6 +127,8 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
   let committed = false;
   try {
     lockIdentity = await lock.stat();
+    await lock.writeFile(JSON.stringify({ pid: process.pid, hostname: hostname(), createdAt: new Date().toISOString() }) + "\n");
+    await lock.sync();
     if ((await snapshot(loc)).revision !== raw.expectedRevision) fail("revision_conflict");
     cancelled(signal);
     temporary = path.join(loc.parent, `.connections-${randomUUID()}.tmp`);
@@ -148,12 +152,16 @@ async function apply(repo: string, env: NodeJS.ProcessEnv, raw: Record<string, u
     try {
       try { if (temporary) await fs.unlink(temporary); }
       finally {
-        try { await lock.close(); } finally {
-          if (lockIdentity) {
-            const currentLock = await fs.lstat(lockPath);
-            if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail(committed ? "save_state_unknown" : "save_failed");
-            await fs.unlink(lockPath);
-            await syncDirectory(loc.parent);
+        try { lockIdentity ??= await lock.stat(); }
+        finally {
+          try { await lock.close(); }
+          finally {
+            if (lockIdentity) {
+              const currentLock = await fs.lstat(lockPath);
+              if (currentLock.dev !== lockIdentity.dev || currentLock.ino !== lockIdentity.ino) fail(committed ? "save_state_unknown" : "save_failed");
+              await fs.unlink(lockPath);
+              await syncDirectory(loc.parent);
+            }
           }
         }
       }
@@ -192,7 +200,7 @@ export async function runConnections(operation: Exclude<ConnectionsOperation, "r
       if (connection.launch) {
         try { accessSync(connection.launch.command, constants.X_OK); available = statSync(connection.launch.command).isFile(); } catch { available = false; }
       } else available = resolveRunnerBinary(connection.adapter)?.path !== undefined;
-      return { ...descriptor, readiness: available && runnerReviewCapability(connection.adapter).capability !== "promptOnly" ? "local-available" : "local-blocked" };
+      return { ...descriptor, readiness: available && RUNNER_DEFINITIONS[connection.adapter].reviewUnavailableReason === undefined && runnerReviewCapability(connection.adapter).capability !== "promptOnly" ? "local-available" : "local-blocked" };
     });
     return { schemaVersion: 1, ok: true, revision: current.revision, connections: rows };
   } catch (error) {
@@ -246,9 +254,9 @@ async function prepareSessionReview(request: unknown, env: NodeJS.ProcessEnv, si
     localEnv = { ...env, ...parsed.credentials.sources };
   }
   const opts = { localMode: "uncommitted" as const, connections: parsed.ids, reviewBudgetMs: parsed.budgetMs };
-  const routes = resolveConnectionRoutes(opts, parsed.repo, localEnv, true, { connections: current.parsed.connections, encodedOutputGuard: true });
+  const resolveRoutes = (bindCredentials: boolean) => resolveConnectionRoutes(opts, parsed.repo, localEnv, bindCredentials, { connections: current.parsed.connections, encodedOutputGuard: true });
   cancelled(signal);
-  return { repo: parsed.repo, opts, routes };
+  return { repo: parsed.repo, opts, resolveRoutes };
 }
 
 export async function runConnectionsReview(request: unknown, env: NodeJS.ProcessEnv = process.env, signal?: AbortSignal) {
@@ -257,7 +265,7 @@ export async function runConnectionsReview(request: unknown, env: NodeJS.Process
     request = undefined;
     cancelled(signal);
     await initializeTempLifecycle();
-    return await runLocal(prepared.repo, prepared.opts, undefined, { routes: prepared.routes, signal });
+    return await runLocal(prepared.repo, prepared.opts, undefined, { resolveRoutes: prepared.resolveRoutes, signal });
   } catch (error) {
     return { schemaVersion: 1, ok: false, code: signal?.aborted ? "cancelled" : error instanceof ConnectionsError ? error.code : "review_incomplete" };
   }

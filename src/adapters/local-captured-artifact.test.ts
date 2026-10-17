@@ -1,0 +1,417 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { isDocsOnlyFastPath } from "../core/review.js";
+import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures.js";
+import { diffBundle } from "./local.js";
+
+function directoryBytes(root: string): readonly unknown[] {
+  return readdirSync(root).sort().map(name => {
+    const file = path.join(root, name);
+    const stat = lstatSync(file);
+    return [name, stat.mode, stat.isDirectory() ? directoryBytes(file) : stat.isSymbolicLink() ? readlinkSync(file) : readFileSync(file).toString("base64")];
+  });
+}
+
+test("captured artifact classifies mode, deletion, copy destination and quoted tracked paths without source writes", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'nf-artifact-"colon:-'));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const names = ["mode.ts", "delete.ts", "copy.ts", "space name.ts", 'quote".ts', "tab\t.ts", "line\n.ts", "新功能.ts", "back\\slash.ts"];
+  for (const name of names) writeFileSync(path.join(repo, name), "export const value = 1;\n");
+  commitAll(repo, "artifact baseline");
+  chmodSync(path.join(repo, "mode.ts"), 0o755);
+  rmSync(path.join(repo, "delete.ts"));
+  gitText(["config", "diff.renames", "copies"], repo);
+  writeFileSync(path.join(repo, "destination.ts"), readFileSync(path.join(repo, "copy.ts")));
+  gitText(["add", "destination.ts"], repo);
+  for (const name of names.slice(3)) writeFileSync(path.join(repo, name), "export const value = 2;\n");
+  const before = directoryBytes(repo);
+  const scratchBefore = readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-"));
+  const { bundle } = diffBundle(repo, { localMode: "uncommitted" });
+  assert.deepEqual(bundle.changedFiles.map(file => file.path).sort(), [...names.filter(name => name !== "copy.ts"), "destination.ts"].sort());
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.match(bundle.patch, /old mode 100644\nnew mode 100755/);
+  assert.match(bundle.patchStat, /mode\.ts/);
+  assert.deepEqual(directoryBytes(repo), before);
+  assert.deepEqual(readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-")), scratchBefore);
+});
+
+test("omitted source binaries prevent a docs-only classification", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-binary-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  writeFileSync(path.join(repo, "source.ts"), Buffer.from([0, 1]));
+  commitAll(repo, "binary base");
+  writeFileSync(path.join(repo, "source.ts"), Buffer.from([0, 2]));
+  writeFileSync(path.join(repo, "README.md"), "docs changed\n");
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.binaryFiles, ["source.ts"]);
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md", "source.ts"]);
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.equal(bundle.patch.includes("source.ts"), false);
+});
+
+test("private artifact ignores source diff drivers and hooks while preserving symlink and submodule deltas", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-config-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  symlinkSync("README.md", path.join(repo, "source.ts"));
+  gitText(["add", "source.ts"], repo);
+  const original = gitText(["rev-parse", "HEAD"], repo);
+  gitText(["update-index", "--add", "--cacheinfo", `160000,${original},submodule`], repo);
+  gitText(["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "link baseline"], repo);
+  const next = gitText(["rev-parse", "HEAD"], repo);
+  gitText(["update-index", "--cacheinfo", `160000,${next},submodule`], repo);
+  rmSync(path.join(repo, "source.ts"));
+  symlinkSync("missing-target", path.join(repo, "source.ts"));
+  const marker = path.join(tmp, "executed");
+  const command = `touch '${marker}'; exit 1`;
+  writeFileSync(path.join(repo, ".gitattributes"), "* diff=hostile filter=hostile\n");
+  gitText(["config", "filter.hostile.clean", `case "$PWD" in *needlefish-captured-patch-*) ${command};; esac; cat`], repo);
+  gitText(["config", "filter.hostile.required", "true"], repo);
+  gitText(["config", "diff.hostile.command", command], repo);
+  gitText(["config", "diff.hostile.textconv", command], repo);
+  gitText(["config", "core.hooksPath", path.join(tmp, "hooks")], repo);
+  mkdirSync(path.join(tmp, "hooks"));
+  writeFileSync(path.join(tmp, "hooks", "post-index-change"), `#!/bin/sh\n${command}\n`, { mode: 0o755 });
+  const overrides = {
+    GIT_DIR: path.join(repo, ".git"),
+    GIT_WORK_TREE: repo,
+    GIT_INDEX_FILE: path.join(repo, ".git", "index"),
+    GIT_OBJECT_DIRECTORY: path.join(repo, ".git", "objects"),
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "core.hooksPath",
+    GIT_CONFIG_VALUE_0: path.join(tmp, "hooks"),
+  };
+  const previous = Object.keys(overrides).map(key => [key, process.env[key]] as const);
+  Object.assign(process.env, overrides);
+  t.after(() => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path).sort(), [".gitattributes", "source.ts", "submodule"]);
+  assert.match(bundle.patch, /Subproject commit/);
+  assert.equal(existsSync(marker), false);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("unappliable captured binary blocks fail closed and remove private scratch", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-failure-"));
+  const repo = initRepo(tmp);
+  writeFileSync(path.join(repo, "README.md"), "changed\n");
+  const bin = path.join(tmp, "bin");
+  mkdirSync(bin);
+  const wrapper = path.join(bin, "git");
+  writeFileSync(wrapper, `#!/usr/bin/env node
+const cp = require('node:child_process');
+const args = process.argv.slice(2);
+const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
+process.stdout.write(result.stdout ?? '');
+if (args.includes('diff') && !args.some(arg => ['--numstat', '--stat', '--name-only', '--no-index'].includes(arg))) {
+  process.stdout.write('diff --git a/source.ts b/source.ts\\nindex 1111111..2222222 100644\\nBinary files a/source.ts and b/source.ts differ\\n');
+}
+process.stderr.write(result.stderr ?? '');
+process.exit(result.status ?? 1);
+`);
+  chmodSync(wrapper, 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}:${previous ?? ""}`;
+  t.after(() => { process.env.PATH = previous; rmSync(tmp, { recursive: true, force: true }); });
+  const before = directoryBytes(repo);
+  const scratchBefore = readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-"));
+  assert.throws(() => diffBundle(repo, {}), /binary or malformed path metadata/);
+  assert.deepEqual(directoryBytes(repo), before);
+  assert.deepEqual(readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-")), scratchBefore);
+});
+
+test("captured artifact retains the resolved source checkout's protected ownership allowance", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-safe-directory-"));
+  const repo = initRepo(tmp);
+  writeFileSync(path.join(repo, "README.md"), "changed\n");
+  const config = path.join(tmp, "global.gitconfig");
+  gitText(["config", "--file", config, "safe.directory", repo], repo);
+  const bin = path.join(tmp, "bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "git"), `#!/usr/bin/env node
+const cp = require('node:child_process');
+const env = {...process.env};
+if (process.cwd() === ${JSON.stringify(repo)}) env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+const result = cp.spawnSync('/usr/bin/git', process.argv.slice(2), {encoding:'utf8', env});
+process.stdout.write(result.stdout ?? '');
+process.stderr.write(result.stderr ?? '');
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+  const previousPath = process.env.PATH;
+  const previousConfig = process.env.GIT_CONFIG_GLOBAL;
+  process.env.PATH = `${bin}:${previousPath ?? ""}`;
+  process.env.GIT_CONFIG_GLOBAL = config;
+  t.after(() => {
+    process.env.PATH = previousPath;
+    if (previousConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = previousConfig;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  process.env.GIT_CONFIG_GLOBAL = os.devNull;
+  assert.throws(() => diffBundle(repo, {}), /dubious ownership/);
+  process.env.GIT_CONFIG_GLOBAL = config;
+  assert.equal(gitText(["rev-parse", "--show-toplevel"], repo), repo);
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /\+changed/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("dirty-only submodule paths remain classified beside docs", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-dirty-submodule-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const childRoot = path.join(tmp, "child");
+  mkdirSync(childRoot);
+  const child = initRepo(childRoot);
+  gitText(["-c", "protocol.file.allow=always", "submodule", "add", child, "source-module"], repo);
+  commitAll(repo, "submodule base");
+  writeFileSync(path.join(repo, "source-module", "README.md"), "dirty module\n");
+  writeFileSync(path.join(repo, "README.md"), "docs\n");
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md", "source-module"]);
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.match(bundle.patch, /-dirty/);
+  assert.match(bundle.patchStat, /source-module/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("captured patch metadata does not depend on the source object-store environment", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-object-store-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const objects = path.join(tmp, "objects");
+  renameSync(path.join(repo, ".git", "objects"), objects);
+  mkdirSync(path.join(repo, ".git", "objects"));
+  const previous = process.env.GIT_OBJECT_DIRECTORY;
+  process.env.GIT_OBJECT_DIRECTORY = objects;
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_OBJECT_DIRECTORY;
+    else process.env.GIT_OBJECT_DIRECTORY = previous;
+  });
+  writeFileSync(path.join(repo, "README.md"), "external objects docs\n");
+  const before = directoryBytes(tmp);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /external objects docs/);
+  assert.deepEqual(directoryBytes(tmp), before);
+});
+
+test("captured patch metadata retains the source replacement preimage", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-replace-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  const original = gitText(["rev-parse", "HEAD"], repo);
+  writeFileSync(path.join(repo, "README.md"), "replacement base\n");
+  commitAll(repo, "replacement");
+  const replacement = gitText(["rev-parse", "HEAD"], repo);
+  gitText(["update-ref", "HEAD", original], repo);
+  gitText(["replace", original, replacement], repo);
+  writeFileSync(path.join(repo, "README.md"), "replacement change\n");
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /-replacement base\n\+replacement change/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
+
+test("SHA256 source with internal TMPDIR keeps native metadata isolated from target config", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-sha256-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = path.join(tmp, "repo");
+  mkdirSync(repo);
+  gitText(["init", "--object-format=sha256"], repo);
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 1;\n");
+  commitAll(repo, "sha256 base");
+  writeFileSync(path.join(repo, "app.ts"), "export const value = 2;\n");
+  const scratch = path.join(repo, "scratch");
+  mkdirSync(scratch);
+  const previous = process.env.TMPDIR;
+  process.env.TMPDIR = scratch;
+  t.after(() => {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+  });
+  gitText(["config", "apply.ignoreWhitespace", "invalid"], repo);
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["app.ts"]);
+  assert.equal(isDocsOnlyFastPath(bundle), false);
+  assert.match(bundle.patch, /\+export const value = 2;/);
+  assert.deepEqual(directoryBytes(repo), before);
+  assert.deepEqual(readdirSync(scratch), []);
+});
+
+for (const metadata of ["1\t0\tREADME.md", "x\t0\tREADME.md\0", "1\t0\t\0", "README.md\0"]) {
+  test(`malformed native path metadata fails closed ${JSON.stringify(metadata)}`, t => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-patch-malformed-metadata-"));
+    const repo = initRepo(tmp);
+    writeFileSync(path.join(repo, "README.md"), "changed\n");
+    const bin = path.join(tmp, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "git"), `#!/usr/bin/env node
+const cp = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('apply') && args.includes('--numstat')) {
+  process.stdout.write(${JSON.stringify(metadata)});
+  process.exit(0);
+}
+const result = cp.spawnSync('/usr/bin/git', args, {encoding:'utf8'});
+process.stdout.write(result.stdout ?? '');
+process.stderr.write(result.stderr ?? '');
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+    const previous = process.env.PATH;
+    process.env.PATH = `${bin}:${previous ?? ""}`;
+    t.after(() => { process.env.PATH = previous; rmSync(tmp, { recursive: true, force: true }); });
+    const before = directoryBytes(repo);
+    assert.throws(() => diffBundle(repo, {}), /malformed path metadata/);
+    assert.deepEqual(directoryBytes(repo), before);
+  });
+}
+
+const presentationConfigs = [
+  { name: "noprefix", entries: [["diff.noprefix", "true"]] },
+  { name: "custom prefixes", entries: [["diff.srcPrefix", "before/tree/"], ["diff.dstPrefix", "after/tree/"]] },
+  { name: "mnemonic prefixes", entries: [["diff.mnemonicPrefix", "true"]] },
+  { name: "forced color", entries: [["color.ui", "always"]] },
+];
+
+for (const config of presentationConfigs) {
+  for (const state of ["tracked", "untracked", "unborn"]) {
+    for (const name of [".claude/README.md", "prompts/docs/guide.md", "README.md"]) {
+      test(`captured paths ignore ${config.name}, ${state}, ${name}`, t => {
+        const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-prefix-"));
+        t.after(() => rmSync(tmp, { recursive: true, force: true }));
+        const repo = state === "unborn" ? path.join(tmp, "repo") : initRepo(tmp);
+        if (state === "unborn") {
+          mkdirSync(repo);
+          gitText(["init", "--quiet"], repo);
+        }
+        const file = path.join(repo, name);
+        mkdirSync(path.dirname(file), { recursive: true });
+        if (state === "tracked") {
+          writeFileSync(file, "before\n");
+          commitAll(repo, "prefix baseline");
+        } else if (name === "README.md" && state === "untracked") {
+          gitText(["rm", "README.md"], repo);
+          commitAll(repo, "remove tracked readme");
+        }
+        for (const [key, value] of config.entries) gitText(["config", key, value], repo);
+        writeFileSync(file, "after\n");
+        const { bundle } = diffBundle(repo, { localMode: "uncommitted" });
+        assert.deepEqual(bundle.changedFiles.map(file => file.path), [name]);
+        assert.equal(isDocsOnlyFastPath(bundle), name === "README.md");
+        assert.equal(bundle.patch.includes(String.fromCharCode(27)), false);
+        assert.equal(bundle.patchStat.includes(String.fromCharCode(27)), false);
+        assert.equal(bundle.patch.includes(`+++ b/${name}\n`), true);
+        assert.match(bundle.patch, /\+after\n/);
+      });
+    }
+  }
+}
+
+test("explicit presentation defaults preserve tracked and untracked patch bytes", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-default-prefix-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  for (const [key, value] of [["diff.noprefix", "false"], ["diff.mnemonicPrefix", "false"], ["color.ui", "false"]]) {
+    gitText(["config", key, value], repo);
+  }
+  writeFileSync(path.join(repo, "README.md"), "after\n");
+  const oldTracked = spawnSync("git", ["diff", "--no-textconv", "--no-ext-diff", "HEAD"], { cwd: repo, encoding: "utf8" });
+  assert.equal(oldTracked.status, 0);
+  assert.equal(diffBundle(repo, { localMode: "uncommitted" }).bundle.patch, oldTracked.stdout);
+  gitText(["checkout", "--", "README.md"], repo);
+  writeFileSync(path.join(repo, "new.md"), "new content\n");
+  const oldUntracked = spawnSync("git", ["diff", "--no-index", "--no-color", "--no-textconv", "--no-ext-diff", "--", "/dev/null", "new.md"], { cwd: repo, encoding: "utf8" });
+  assert.equal(oldUntracked.status, 1);
+  assert.equal(diffBundle(repo, { localMode: "uncommitted" }).bundle.patch, oldUntracked.stdout);
+});
+
+for (const flagged of [false, true]) {
+  for (const mode of ["uncommitted", "branch"] as const) {
+    for (const surface of ["API", "CLI"]) {
+      test(`stale stat cache preserves source index and hooks for ${flagged ? "flagged" : "ordinary"} ${mode} ${surface}`, t => {
+        const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-stale-index-"));
+        t.after(() => rmSync(tmp, { recursive: true, force: true }));
+        const repo = initRepo(tmp);
+        const lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n";
+        for (const file of ["app.ts", "staged.ts", "assumed.ts", "skipped.ts"]) writeFileSync(path.join(repo, file), lines);
+        commitAll(repo, "base");
+        const base = gitText(["rev-parse", "HEAD"], repo);
+        if (mode === "branch") {
+          writeFileSync(path.join(repo, "branch.ts"), "committed branch change\n");
+          commitAll(repo, "branch change");
+        }
+        if (flagged) {
+          gitText(["update-index", "--assume-unchanged", "assumed.ts"], repo);
+          gitText(["update-index", "--skip-worktree", "skipped.ts"], repo);
+        }
+        writeFileSync(path.join(repo, "staged.ts"), lines.replace("five", "staged"));
+        gitText(["add", "staged.ts"], repo);
+        writeFileSync(path.join(repo, "app.ts"), lines.replace("five", "changed"));
+        utimesSync(path.join(repo, "README.md"), new Date(1000), new Date(1000));
+        const hooks = path.join(tmp, "hooks");
+        mkdirSync(hooks);
+        const marker = path.join(tmp, "hook-ran");
+        writeFileSync(path.join(hooks, "post-index-change"), `#!/bin/sh\nprintf ran >> '${marker}'\n`, { mode: 0o755 });
+        const overrides = {
+          GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "core.hooksPath", GIT_CONFIG_VALUE_0: hooks,
+          GIT_CONFIG_KEY_1: "diff.context", GIT_CONFIG_VALUE_1: "1",
+        };
+        const previous = Object.keys(overrides).map(key => [key, process.env[key]] as const);
+        Object.assign(process.env, overrides);
+        t.after(() => {
+          for (const [key, value] of previous) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+          }
+        });
+        const observe = (args: string[]) => {
+          const result = spawnSync("git", args, { cwd: repo, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, encoding: "utf8" });
+          assert.equal(result.status, 0, result.stderr);
+          return result.stdout;
+        };
+        const stage = observe(["ls-files", "--stage", "-z"]);
+        const flags = observe(["ls-files", "-v", "-z"]);
+        const before = directoryBytes(repo);
+        const envBefore = { ...process.env };
+        assert.equal(existsSync(marker), false);
+        const bundle = surface === "API" ? diffBundle(repo, { localMode: mode, base }).bundle : (() => {
+          const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--repo", repo, `--${mode}`, "--base", base, "--dry-run", "--print-bundle"], { cwd: process.cwd(), env: process.env, encoding: "utf8" });
+          assert.equal(result.status, 0, result.stderr);
+          return JSON.parse(result.stdout);
+        })();
+        if (mode === "uncommitted") {
+          assert.equal(Buffer.byteLength(bundle.patch), 277);
+          assert.equal(createHash("sha256").update(bundle.patch).digest("hex"), "67a38431fce162eba4db8fdcadc2b6483ed4b688646018f72aaec852cd3ca2e6");
+          assert.deepEqual(bundle.changedFiles.map((file: { path: string }) => file.path), ["app.ts", "staged.ts"]);
+        } else {
+          assert.match(bundle.patch, /\+committed branch change/);
+          assert.deepEqual(bundle.changedFiles.map((file: { path: string }) => file.path), ["branch.ts"]);
+        }
+        assert.deepEqual({ ...process.env }, envBefore);
+        assert.equal(existsSync(marker), false, "source reads must not execute post-index-change");
+        assert.deepEqual(directoryBytes(repo), before, "all source bytes, including the raw index, must remain unchanged");
+        assert.equal(observe(["ls-files", "--stage", "-z"]), stage);
+        assert.equal(observe(["ls-files", "-v", "-z"]), flags);
+      });
+    }
+  }
+}

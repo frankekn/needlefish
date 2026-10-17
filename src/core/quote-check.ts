@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { Bundle, Finding } from "../shared/schema.js";
+import type { Bundle, Finding, SourceEvidence } from "../shared/schema.js";
 
 // A quote this short ("}", "return x;") matches too many lines to say
 // anything about where a finding belongs.
@@ -11,24 +13,27 @@ interface Hit {
 	readonly text: string;
 }
 
-function gitOutput(repoPath: string, args: readonly string[], deadlineMs?: number, allowNoMatch = false): string | null {
+function gitRead(repoPath: string, args: readonly string[], deadlineMs?: number, allowNoMatch = false): Buffer | null {
 	const timeout = Math.floor(Math.min(10_000, deadlineMs === undefined ? 10_000 : deadlineMs - performance.now()));
 	if (timeout <= 0) return null;
-	const res = spawnSync("git", ["--no-replace-objects", ...args], { cwd: repoPath, encoding: "utf8", maxBuffer: 1024 * 1024 * 16, timeout });
+	const res = spawnSync("git", ["--no-replace-objects", ...args], { cwd: repoPath, maxBuffer: 1024 * 1024 * 16, timeout });
 	if (res.error || (res.status !== 0 && !(allowNoMatch && res.status === 1))) return null;
 	if (deadlineMs !== undefined && performance.now() >= deadlineMs) return null;
 	return res.stdout;
 }
 
-// Fixed-string search of one tree. null means verification failed;
+function gitOutput(repoPath: string, args: readonly string[], deadlineMs?: number, allowNoMatch = false): string | null {
+	return gitRead(repoPath, args, deadlineMs, allowNoMatch)?.toString("utf8") ?? null;
+}
+
+// Fixed-string search of one tree. null means git failed (unknown ref, such as
+// the uncommitted-mode WORKING sentinel), which leaves the finding unchecked;
 // exit 1 is git grep's "no match".
-function grepAt(repoPath: string, ref: string, quote: string, file: string | undefined, deadlineMs?: number): Hit[] | null {
-	// spawnSync throws, rather than fails, on a NUL in argv; file is model output.
-	if (quote.includes("\0") || file?.includes("\0")) return null;
+function grepAt(repoPath: string, ref: string, quote: string, deadlineMs?: number): Hit[] | null {
+	// spawnSync throws, rather than fails, on a NUL in model output.
+	if (quote.includes("\0")) return null;
 	const out = gitOutput(repoPath,
-		// The cited file is model output: match it as a literal path, never a
-		// glob or pathspec magic such as `*` or `:(top)`.
-		["--literal-pathspecs", "grep", "-F", "-n", "-z", "-I", "--no-color", "--no-textconv", "-e", quote, ref, "--", ...(file ? [file] : [])],
+		["--literal-pathspecs", "grep", "-F", "-n", "-z", "-I", "--no-color", "--no-textconv", "-e", quote, ref, "--"],
 		deadlineMs, true,
 	);
 	if (out === null) return null;
@@ -79,42 +84,83 @@ function basePath(bundle: Bundle, file: string, deadlineMs?: number): string | n
 	return /^R\d+$/.test(fields[0]) && fields.length === 4 && fields[2] === file ? fields[1] : file;
 }
 
+function safePath(file: string): boolean {
+	return !!file && !/[\\\0]/.test(file) && !path.posix.isAbsolute(file) &&
+		!path.win32.isAbsolute(file) && !file.split("/").some((part) => part === "." || part === ".." || !part);
+}
+
 function fixedRevision(revision: string): boolean {
 	return /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(revision);
 }
 
+type GitEvidence = Extract<SourceEvidence, { sourceType: "git_blob" }>;
+
+function unverifiedSource(finding: Finding, revision: string): GitEvidence {
+	return { sourceType: "git_blob", revision: fixedRevision(revision) ? revision : null, file: finding.file,
+		lineStart: finding.lineStart, lineEnd: finding.lineEnd, status: "source_unverified" };
+}
+
+// null means the Git read failed; absent files and mismatched quotes are unverified.
+function sourceAt(finding: Finding, repoPath: string, revision: string, deadlineMs?: number): GitEvidence | null {
+	if (!fixedRevision(revision)) return null;
+	const unverified = unverifiedSource(finding, revision);
+	if (!safePath(finding.file) || !finding.quote ||
+		!Number.isInteger(finding.lineStart) || !Number.isInteger(finding.lineEnd)) return unverified;
+	const entry = gitOutput(repoPath, ["--literal-pathspecs", "ls-tree", "-z", revision, "--", finding.file], deadlineMs);
+	if (entry === null) return null;
+	// A symlink is a blob too, but its text is a target path, not source code.
+	const match = /^(100644|100755) blob ([a-f0-9]+)\t/.exec(entry);
+	if (!match) return unverified;
+	const blob = gitRead(repoPath, ["cat-file", "blob", match[2]], deadlineMs);
+	if (blob === null) return null;
+	const lines = blob.toString("utf8").split("\n");
+	if (lines.at(-1) === "") lines.pop();
+	if (finding.lineStart < 1 || finding.lineEnd < finding.lineStart || finding.lineEnd > lines.length ||
+		lines[finding.lineStart - 1]?.trim() !== finding.quote.trim()) return unverified;
+	return { ...unverified, revision, status: "source_present",
+		contentDigest: createHash("sha256").update(blob).digest("hex") };
+}
+
+function withSource(finding: Finding, source: GitEvidence): Finding {
+	return { ...finding, evidence: { toolRead: "unknown", sources: [source] } };
+}
+
 function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>, deadlineMs?: number): Finding {
 	const quote = finding.quote?.trim();
-	if (!quote) return finding;
+	if (!quote) return { ...finding, replacement: undefined };
 	const unchecked: Finding = { ...finding, replacement: undefined, quoteCheck: { status: "unchecked" } };
-	if (!fixedRevision(bundle.headSha) || !fixedRevision(bundle.baseSha) || quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
-	const citedHits = grepAt(bundle.repoPath, bundle.headSha, quote, finding.file, deadlineMs);
-	if (!citedHits) return unchecked;
-	const atLocation = (hit: Hit) => hit.text.trim() === quote && hit.line === finding.lineStart;
-	if (citedHits.some(atLocation)) return { ...finding, quoteCheck: { status: "matched" } };
-	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote, undefined, deadlineMs);
+	if (!safePath(finding.file) || !fixedRevision(bundle.headSha) || !fixedRevision(bundle.baseSha) ||
+		!Number.isInteger(finding.lineStart) || !Number.isInteger(finding.lineEnd) ||
+		quote.replace(/\s/g, "").length < MIN_QUOTE_CHARS) return unchecked;
+	const head = sourceAt(finding, bundle.repoPath, bundle.headSha, deadlineMs);
+	if (!head) return unchecked;
+	if (head.status === "source_present") return withSource({ ...finding, quoteCheck: { status: "matched" } }, head);
+	const headHits = grepAt(bundle.repoPath, bundle.headSha, quote, deadlineMs);
 	if (!headHits) return unchecked;
 	const wholeHits = headHits.filter((hit) => hit.text.trim() === quote);
 	const [hit] = wholeHits;
 	if (wholeHits.length === 1 && changed.has(hit.file)) {
 		const changedLine = isChangedLine(bundle, hit, deadlineMs);
 		if (changedLine === null) return unchecked;
-		if (!changedLine) return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
-		return {
-			...finding,
-			file: hit.file,
-			lineStart: hit.line,
-			lineEnd: hit.line,
-			replacement: undefined,
-			quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
-		};
+		if (changedLine) {
+			const relocated: Finding = {
+				...finding,
+				file: hit.file,
+				lineStart: hit.line,
+				lineEnd: hit.line,
+				replacement: undefined,
+				quoteCheck: { status: "moved", from: `${finding.file}:${finding.lineStart}` },
+			};
+			const source = sourceAt(relocated, bundle.repoPath, bundle.headSha, deadlineMs);
+			return source?.status === "source_present" ? withSource(relocated, source) : unchecked;
+		}
 	}
 	// A BASE match cannot verify the finding's HEAD coordinates.
 	const oldPath = basePath(bundle, finding.file, deadlineMs);
 	if (oldPath === null) return unchecked;
-	const baseHits = grepAt(bundle.repoPath, bundle.baseSha, quote, oldPath, deadlineMs);
-	if (!baseHits) return unchecked;
-	if (baseHits.some(atLocation)) return unchecked;
+	const base = sourceAt({ ...finding, file: oldPath }, bundle.repoPath, bundle.baseSha, deadlineMs);
+	if (!base) return unchecked;
+	if (base.status === "source_present") return withSource(unchecked, base);
 	return { ...finding, replacement: undefined, quoteCheck: { status: "not_found" } };
 }
 
@@ -123,5 +169,9 @@ function checkOne(finding: Finding, bundle: Bundle, changed: ReadonlySet<string>
 export function checkQuotes(findings: readonly Finding[], bundle: Bundle, deadlineMs?: number): Finding[] {
 	const changed = new Set(bundle.changedFiles.map((file) => file.path));
 	const quoteDeadline = deadlineMs ?? performance.now() + 10_000;
-	return findings.map((finding) => checkOne(finding, bundle, changed, quoteDeadline));
+	return findings.map((finding) => {
+		const checked = checkOne({ ...finding, evidence: undefined }, bundle, changed, quoteDeadline);
+		return { ...checked, evidence: { toolRead: "unknown", sources: [checked.evidence?.sources[0] ?? unverifiedSource(checked, bundle.headSha),
+			...(finding.externalClaims ?? []).map((claim): SourceEvidence => ({ ...claim, sourceType: "external", status: "unverified_external_claim" }))] } };
+	});
 }

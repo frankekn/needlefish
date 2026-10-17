@@ -63,6 +63,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       if (mode === 'split-thought-failure') { process.stdout.write('', () => process.exit(1)); return; }
     }
     const map = JSON.stringify(request.params).includes('review-MAP pass');
+    const critic = JSON.stringify(request.params).includes('adversarial critic');
     if (mode.startsWith('deep-') && !map && prior === 1) {
       if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
       process.stderr.write(process.env.AGENT_API_KEY + '\\n');
@@ -83,7 +84,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
-      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : critic ? ${JSON.stringify(JSON.stringify({summary:'Checked source',checked:['source.ts'],decisions:[],residual_risks:[]}))} : ${JSON.stringify(reviewJson)};
       if (mode === 'explain-json-escaped') output = 'Credential note ' + JSON.stringify(process.env.AGENT_API_KEY);
       if (mode.startsWith('explain-escaped')) {
         const escaped = Array.from(process.env.AGENT_API_KEY).map((c,i) => mode.endsWith('-mixed') && i % 2 === 0 ? c : '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
@@ -95,7 +96,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
         process.stdout.write(text.replace(process.env.AGENT_API_KEY, escaped) + '\\n');
       }
       if (mode.startsWith('leak') && (!mode.endsWith('-once') || prior === 0)) {
-        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],findings:[],residual_risks:[]});
+        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],...(critic?{decisions:[]}:{findings:[]}),residual_risks:[]});
         if (mode.startsWith('leak-fenced')) {
           const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
           output = '\x60\x60\x60json\\n' + output.replace(process.env.AGENT_API_KEY, escaped) + '\\n\x60\x60\x60';
@@ -312,10 +313,11 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--input')) {
   fs.appendFileSync(${JSON.stringify(writes)}, fs.readFileSync(0,'utf8') + '\\n');
-  process.stdout.write('{"id":1}');
+  process.stdout.write('{"id":1,"app":{"id":15368,"slug":"github-actions"}}');
 } else if (args[1] === 'repos/frankekn/needlefish/pulls/7') {
   process.stdout.write(${JSON.stringify(JSON.stringify({ state: "open", author_association: "MEMBER", user: { login: "author", type: "User" }, head: { sha: f.head }, base: { sha: f.base } }))});
 } else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
+else if (args.some(arg => arg.includes('/check-runs?'))) process.stdout.write('[{"check_runs":[]}]');
 else if (args.includes('--paginate')) process.stdout.write('[[]]');
 else process.stdout.write('[]');
 `);
@@ -327,6 +329,7 @@ else process.stdout.write('[]');
     assert.equal(result.status, 1);
     const outbound = readFileSync(writes, "utf8");
     assert.match(outbound, /withheld.*credential/);
+    assert.equal(f.records().length, 1, "the selected agent must run before its output is withheld");
     assert.doesNotMatch(result.stdout + result.stderr + outbound, /TEST-ACCOUNT|\\u0054/);
     assert.ok(!(result.stdout + result.stderr + outbound).includes(credential));
     assert.ok(!(result.stdout + result.stderr + outbound).includes("\\u"));

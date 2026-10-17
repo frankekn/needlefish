@@ -4,6 +4,8 @@ import path from "node:path";
 import test from "node:test";
 import type { DrawResult, FixtureKind, Report } from "./shared/types";
 import { scorerHash } from "./shared/scorer-hash";
+import { comparisonEnvironmentError, runnerEnvironmentAttestationError } from "./shared/report-integrity";
+import { matchQualifiedConfiguration } from "./shared/runtime-qualification";
 import { displayedMetrics, operationalFailures, tierRecall } from "./shared/publication";
 import {
   balancedReviewAccuracy,
@@ -95,7 +97,11 @@ function setup(): { manifest: LeaderboardManifest; lanes: Lane[] } {
 test("renderSite publishes comparable lanes and blocked routes", () => {
   const { manifest, lanes } = setup();
   const html = renderSite(manifest, lanes, canonical);
+  const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, /Current leaderboard/);
+  assert.ok(html.includes(`<!-- runtime-publication:begin -->\n<p>Package ${releaseVersion} uses auto-detect.`));
+  assert.match(html, /Auto-detection tries codex, claude in order\. Codex defaults to medium effort\./);
+  assert.match(html, /Benchmark selection does not establish what any host has deployed\.<\/p>\n<!-- runtime-publication:end -->/);
   assert.match(html, /Candidate A/);
   assert.match(html, /test-runner 1\.0\.0/);
   assert.match(html, /Test subscription/);
@@ -117,7 +123,6 @@ test("renderSite publishes comparable lanes and blocked routes", () => {
   assert.match(html, /aria-label="Qualified model leaderboard" tabindex="0"/);
   assert.match(html, /Scroll horizontally to see every column/);
   assert.match(html, /Below gate: Tier-1 miss/);
-  const releaseVersion = String(JSON.parse(readFileSync("package.json", "utf8")).version);
   assert.match(html, new RegExp(`Release ${releaseVersion.replaceAll(".", "\\.")} is blocked`));
   assert.match(html, /Tier-2/);
   assert.match(html, /Tier-3/);
@@ -268,19 +273,40 @@ test("renderSite requires Pi auth-store identity or an explicit legacy exception
   assert.match(renderSite(manifest, excepted, canonical), /Auth identity.*Legacy exception/s);
 });
 
-test("renderSite rejects redacted public environment values", () => {
+test("public environment without private placeholders remains admitted and matches exactly", () => {
   const { manifest, lanes } = setup();
-  assert.throws(
-    () => renderSite(
-      manifest,
-      lanes.map((lane, index) => index === 0
-        ? { ...lane, report: { ...lane.report, runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"],["TOKEN","<required>"]]' } }
-        : lane),
-      canonical,
-    ),
-    /public lanes cannot contain redacted runner-environment values/,
-  );
+  assert.equal(comparisonEnvironmentError(report), null);
+  assert.equal(runnerEnvironmentAttestationError(report), null);
+  assert.equal(matchQualifiedConfiguration(report, report), "exact");
+  assert.match(renderSite(manifest, lanes, canonical), /Current leaderboard/);
 });
+
+for (const placeholder of ["<required>", "<redacted>"]) {
+  test("public lane admission rejects private environment placeholder " + placeholder, () => {
+    const { manifest, lanes } = setup();
+    const privateReport = {
+      ...report,
+      runnerEnvironment: JSON.stringify([
+        ["NEEDLEFISH_EPHEMERAL_HOME", "1"],
+        ["NEEDLEFISH_EVAL_TRACE", "1"],
+        ["PRIVATE_CONFIG", placeholder],
+      ]),
+    };
+    assert.equal(comparisonEnvironmentError(privateReport), "private runner environment identity");
+    assert.equal(runnerEnvironmentAttestationError(privateReport), "public lanes cannot contain redacted runner-environment values");
+    assert.equal(matchQualifiedConfiguration(privateReport, privateReport), "unknown");
+    assert.equal(matchQualifiedConfiguration(privateReport, report), "unknown");
+    assert.equal(matchQualifiedConfiguration(report, privateReport), "unknown");
+    assert.throws(
+      () => renderSite(
+        manifest,
+        lanes.map((lane, index) => index === 0 ? { ...lane, report: privateReport } : lane),
+        canonical,
+      ),
+      /public lanes cannot contain redacted runner-environment values/,
+    );
+  });
+}
 
 test("renderSite rejects duplicate public environment keys", () => {
   const { manifest, lanes } = setup();

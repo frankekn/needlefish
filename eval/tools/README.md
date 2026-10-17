@@ -106,3 +106,45 @@ and two explicit non-holdout large fixtures, then prints the paired 7-versus-3
 schedule. It has no model execution mode. The [study protocol](../campaigns/deep-concurrency-v1.md)
 defines resource admission, stopping, failure denominators, and evidence needed
 before any timing conclusion. The study remains `NOT_RUN`.
+
+## Historical review measurements
+
+Adoption measurement joins are opt-in. Supply the exact workflow file, producer
+job key and Jobs API display name. The collector resolves that file's workflow
+ID through a read-only API call. It never guesses a job name from a key.
+
+```bash
+pnpm exec tsx eval/tools/adoption.ts owner/name --json \
+  --measurement-workflow .github/workflows/review.yml \
+  --measurement-job-key review --measurement-job-name review
+pnpm exec tsx eval/tools/adoption-weekly.ts /tmp/needlefish-weekly \
+  --measurement-workflow .github/workflows/review.yml \
+  --measurement-job-key review --measurement-job-name review
+```
+
+Without these options, adoption rows and report tables retain their existing
+format. With them, each finding gains a `measurement` union. Its original comment
+database ID, original commit SHA and original review database ID are read from
+GitHub. Only one complete, producer-attested receipt whose `inlineReviewIds`
+contains that original review can join. Summary review IDs never identify a
+finding round because the summary may be edited by later rounds. Legacy rows,
+inaccessible identities, partial collections and conflicting receipts remain
+in the adoption denominator with an explicit unknown reason. The original
+severity, category, fate and author are unchanged.
+
+Joined rows preserve the receipt's runtime provenance, unknown dispatcher role
+and unqualified status. Producer-attested does not mean platform-attested or
+qualified. The report groups adoption and latency by repository, lane, severity
+and category. Latency samples count each check once in a group, even when one
+review produced several findings. Pipeline monotonic duration, job queue time
+and workflow-created-to-terminal time have separate columns. Push-to-terminal
+and trigger-to-terminal times remain unknown. Unknown durations are never zero.
+
+Measurement reads share a ceiling of 100 API requests per repository collection,
+three pages per head and a 30-second, 2-MiB bound per REST response. No API write,
+new credential source or model call is introduced. The scheduled weekly workflow
+supplies the explicit contract for this repository's `review.yml` / `review` job.
+It retains its existing token and permissions. If that token cannot read checks
+or Actions metadata, the weekly artifact is partial with unknown measurements.
+The weekly JSON parser preserves the join and checks its original identity,
+receipt and clocks. Metadata records the finding denominator and unknown count.

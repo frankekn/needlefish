@@ -41,6 +41,7 @@ function fixture(t: TestContext, adapter: "acp" | "claude" = "acp", options: Fix
   const messages = path.join(dir, "client.jsonl");
   const binary = path.join(dir, "agent with spaces");
   const response = JSON.stringify({ summary: "fixture review completed", findings: [], checked: ["app.ts"], residual_risks: [] });
+  const criticResponse = JSON.stringify({ summary: "fixture review completed", decisions: [], checked: ["app.ts"], residual_risks: [] });
   const capture = `
 fs.appendFileSync(${JSON.stringify(launches)}, JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME}) + '\\n');
 function capture(prompt) {
@@ -75,7 +76,7 @@ lines.on('line', line => {
     setTimeout(() => process.exit(0), 25);
   } else if (m.method === 'session/prompt') {
     capture(m.params.prompt[0].text);
-    const update = {jsonrpc:'2.0',method:'session/update',params:{sessionId:'fixture-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:${JSON.stringify(response)}}}}};
+    const update = {jsonrpc:'2.0',method:'session/update',params:{sessionId:'fixture-session',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:m.params.prompt[0].text.includes('adversarial critic')?${JSON.stringify(criticResponse)}:${JSON.stringify(response)}}}}};
     if (scenario === 'permission') {
       const permission = {jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId:'fixture-session',toolCall:{toolCallId:'tool',title:${JSON.stringify(PRIVATE_TEXT)}},options:[{optionId:'allow',name:'Allow',kind:'allow_once'}]}};
       process.stdout.write([permission, update, {jsonrpc:'2.0',id:m.id,result:promptResult}].map(JSON.stringify).join('\\n') + '\\n');
@@ -89,8 +90,8 @@ lines.on('line', line => {
 ` : `#!/usr/bin/env node
 const fs = require('node:fs');
 ${capture}
-capture(fs.readFileSync(0,'utf8'));
-process.stdout.write(${JSON.stringify(response)});
+const prompt=fs.readFileSync(0,'utf8');capture(prompt);
+process.stdout.write(prompt.includes('adversarial critic')?${JSON.stringify(criticResponse)}:${JSON.stringify(response)});
 `);
   chmodSync(binary, 0o755);
   const args = options.noModel ? [] : ["acp", "--model", "{model}", "literal $(touch should-not-exist)"];
@@ -106,11 +107,12 @@ process.stdout.write(${JSON.stringify(response)});
   writeFileSync(path.join(bin, "gh"), `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args[0] === 'api') {
-  if (args.includes('--input')) { require('node:fs').readFileSync(0, 'utf8'); process.stdout.write('{"id":1}'); }
+  if (args.includes('--input')) { require('node:fs').readFileSync(0, 'utf8'); process.stdout.write('{"id":1,"app":{"id":15368,"slug":"github-actions"}}'); }
   else if (args[1] === 'repos/frankekn/needlefish/pulls/7') process.stdout.write(${JSON.stringify(JSON.stringify({
     state: options.github === "closed" ? "closed" : "open", head: { sha: head }, base: { sha: base },
     author_association: options.github === "untrusted" ? "NONE" : "MEMBER", user: { login: "author", type: "User" },
   }))});
+  else if (args.some(arg => arg.includes('/check-runs?'))) process.stdout.write('[{"check_runs":[]}]');
   else if (args.includes('--paginate')) process.stdout.write('[[]]');
   else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
   else process.exit(2);
@@ -190,9 +192,22 @@ test("active GitHub review validates its connection with a single-line CLI error
   writeFileSync(f.file, "{");
   const result = f.run(["--github", "--pr", "7"]);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^needlefish: [^\n]+\n$/);
-  assert.match(result.stderr, /connections/i);
+  assert.equal(result.stderr, "needlefish review failed: Connections file is not valid JSON. Check its syntax; do not store credentials in it.\n");
   assert.equal(f.launches().length, 0);
+});
+
+test("active GitHub named connection reaches review and critic with the selected model", (t) => {
+  const f = fixture(t, "acp", { github: "active" });
+  const result = f.run(["--github", "--pr", "7"]);
+  assert.equal(result.status, 0, result.stderr);
+  const calls = f.calls();
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.ok(call.argv.includes("chosen-model"));
+    assert.equal(call.githubToken, false);
+    assert.equal(call.ghToken, false);
+    assert.equal(call.configVisible, false);
+  }
 });
 
 for (const adapter of ["claude", "acp"] as const) {

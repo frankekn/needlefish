@@ -1,0 +1,44 @@
+import type { FixtureSpec } from "../../shared/types";
+// Sealed before any model answers. Final Class R gate only.
+const spec: FixtureSpec = {
+ id: "holdout-source-consumer-contract-v6", kind: "positive", tier: 3, holdout: true,
+ defectClass: "cross-file-source-proof-with-unverified-doc",
+ description: "Page size now returns milliseconds while the unchanged allocator uses the result as an item count. A vendor URL does not establish units; the repository producer and consumer prove a thousandfold over-allocation.",
+ baseFiles: {
+  "src/page.ts": `// Pagination reference: https://spec.example.invalid/pages
+/** Returns the configured item count for one page. */
+export function pageSize(itemsPerPage: number): number { return itemsPerPage; }
+`,
+  "src/allocate.ts": `import { pageSize } from "./page";
+export function allocate(): string[] { return new Array<string>(pageSize(20)).fill(""); }
+`,
+ },
+ headFiles: {"src/page.ts": `// Pagination reference: https://spec.example.invalid/pages
+/** Returns the configured item count for one page. */
+export function pageSize(itemsPerPage: number): number { return itemsPerPage * 1000; }
+`},
+ expected: {verdict: "changes_requested", mustFind: [{
+  file: "src/page.ts", lineRange: [3, 3],
+  facts: [
+   {
+    id: "producer-scales-item-count",
+    meaning: "pageSize multiplies the configured item count by 1000.",
+    alternatives: [
+     { allOf: ["pageSize(?:\\([^)]*\\))?`*\\s+(?:now\\s+)?(?:multiplies|scales)\\s+`*(?:itemsPerPage|(?:the\\s+)?configured\\s+(?:item\\s+)?count)`*\\s+by\\s+(?:a\\s+)?`*(?:1,?000|thousand)\\b"] },
+     { allOf: ["pageSize`*\\s+(?:multiplies|scales)\\s+`*itemsPerPage`*\\s+(?:a\\s+)?thousand\\s+times"] },
+     { allOf: ["pageSize(?:\\([^)]*\\))?`*\\s+(?:now\\s+)?returns?\\s+`*itemsPerPage`*\\s*\\*\\s*`*1000\\b"] },
+    ],
+   },
+   {
+    id: "allocator-consumes-scaled-count",
+    meaning: "The allocator uses pageSize as an array element count and creates 20,000 entries instead of 20.",
+    alternatives: [
+     { allOf: ["new\\s+Array(?:<[^>]*>)?\\s*\\(\\s*pageSize\\("] },
+     { allOf: ["(?:allocate(?:\\(\\))?|new\\s+Array)`*\\s+(?:uses?|consumes?|receives?)\\s+`*(?:pageSize\\([^()]*\\)|the returned (?:value|count))`*\\s+as\\s+(?:(?:its|the|an?)\\s+)?(?:array\\s+)?(?:element|item|slot)\\s+count"] },
+     { allOf: ["allocate(?:\\(\\))?`*\\s+passes\\s+`*pageSize\\([^()]*\\)`*\\s+(?:directly\\s+)?to\\s+`*new\\s+Array"] },
+    ],
+   },
+  ],
+ }], anchorFile: "src/page.ts", anchorLineRange: [3,3]},
+};
+export default spec;

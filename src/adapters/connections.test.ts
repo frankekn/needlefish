@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
+import { once } from "node:events";
 import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { test } from "node:test";
@@ -347,4 +348,62 @@ test("missing dot-segment paths cannot redirect writes to an existing sibling", 
   const file = `${f.root}/missing/../../${path.basename(sibling)}/connections.json`;
   error(await runConnections("apply", f.repo, { expectedRevision: "missing", document }, { NEEDLEFISH_CONNECTIONS_FILE: file }), "configuration_unavailable");
   assert.deepEqual(await fs.readdir(sibling), []);
+});
+
+test("inspect reports a present but suspended OpenCode binary as blocked", async t => {
+  const f = await fixture(t);
+  const binary = path.join(f.root, "opencode");
+  await fs.writeFile(binary, "#!/bin/sh\nexit 99\n", { mode: 0o700 });
+  const previous = process.env.OPENCODE_BIN;
+  process.env.OPENCODE_BIN = binary;
+  t.after(() => { if (previous === undefined) delete process.env.OPENCODE_BIN; else process.env.OPENCODE_BIN = previous; });
+  const doc = { version: 1, connections: [{ id: "suspended", adapter: "opencode", model: "fake-model" }] };
+  success(await f.run("apply", { expectedRevision: "missing", document: doc }));
+  const result = success(await f.run("inspect", { ids: ["suspended"] }));
+  assert.ok("connections" in result);
+  assert.equal(result.connections?.[0]?.readiness, "local-blocked");
+});
+
+test("terminated apply exposes non-secret lock ownership and permits explicit stopped-writer recovery", async t => {
+  const f = await fixture(t);
+  const script = `import fs from 'node:fs/promises';import {runConnections} from ${JSON.stringify(new URL('./connections.ts', import.meta.url).href)};
+const open=fs.open;fs.open=async(...args)=>{const h=await open(...args);if(String(args[0]).endsWith('.tmp'))h.writeFile=async()=>{process.stdout.write('paused\\n');await new Promise(()=>setInterval(()=>{},1000));};return h;};
+await runConnections('apply',${JSON.stringify(f.repo)},{expectedRevision:'missing',document:${JSON.stringify(document)}},${JSON.stringify(f.env)});`;
+  const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+  t.after(() => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch (e) { if (!hasProcessCode(e, "ESRCH")) throw e; } } });
+  const ready = await Promise.race([once(child.stdout, "data"), once(child, "exit").then(() => { throw new Error("writer exited before pause"); })]);
+  assert.equal(String(ready[0]), "paused\n");
+  const metadata = JSON.parse(await fs.readFile(`${f.file}.lock`, "utf8"));
+  assert.deepEqual(Object.keys(metadata).sort(), ["createdAt", "hostname", "pid"]);
+  assert.equal(metadata.pid, child.pid);
+  assert.equal(metadata.hostname, os.hostname());
+  assert.equal(new Date(metadata.createdAt).toISOString(), metadata.createdAt);
+  error(await f.run("apply", { expectedRevision: "missing", document }), "config_busy");
+  assert.equal(JSON.parse(await fs.readFile(`${f.file}.lock`, "utf8")).pid, child.pid);
+  const exited = once(child, "exit");
+  assert.ok(child.pid);
+  process.kill(-child.pid, "SIGKILL");
+  await exited;
+  error(await f.run("apply", { expectedRevision: "missing", document }), "config_busy");
+  await fs.unlink(`${f.file}.lock`);
+  success(await f.run("apply", { expectedRevision: "missing", document }));
+  assert.equal(await fs.readFile(f.file, "utf8"), JSON.stringify(document) + "\n");
+});
+function hasProcessCode(error: unknown, code: string): boolean { return error instanceof Error && "code" in error && error.code === code; }
+
+test("a transient initial lock stat failure still removes its own lock", async t => {
+  const f = await fixture(t), open = fs.open;
+  const mocked = t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await open(...args);
+    if (String(args[0]).endsWith(".lock")) {
+      const stat = handle.stat.bind(handle);
+      let first = true;
+      t.mock.method(handle, "stat", async () => { if (first) { first = false; throw new Error("initial stat failed"); } return stat(); });
+    }
+    return handle;
+  });
+  error(await f.run("apply", { expectedRevision: "missing", document }), "save_failed");
+  await assert.rejects(fs.stat(`${f.file}.lock`), { code: "ENOENT" });
+  mocked.mock.restore();
+  success(await f.run("apply", { expectedRevision: "missing", document }));
 });

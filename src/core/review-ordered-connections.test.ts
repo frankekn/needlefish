@@ -129,7 +129,7 @@ if(mode.startsWith('cross-key-')&&model==='second'){
 if(mode==='auth'||mode==='unknown'){console.log(JSON.stringify({type:'turn.failed',error:{message:mode==='auth'?'401 unauthorized':'429 Too Many Requests'}}));process.exit(1);}
 if(mode==='slow-quota'&&model==='second')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500);
 const finding={severity:'P2',title:'first contaminated',category:'bug',file:'app.ts',lineStart:1,lineEnd:1,confidence:0.9,whyItBreaks:'first contaminated',suggestedFix:'fix',validation:'test'};
-const out=stage==='map'?{summary:'mapped',hotspots:mode.startsWith('mixed-')?['quota','sibling','queued'].map(name=>({name,files:['app.ts'],why:'changed',risk:'high',edges:[]})):[{name:'app',files:['app.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:model==='second'?'second clean':'first contaminated',findings:mode==='blocking'?[finding]:[],checked:['FILES inspected=[app.ts]'],residual_risks:mode==='needs-human'?[{text:'unresolved',blocks:true}]:[]};
+const out=stage==='map'?{summary:'mapped',hotspots:mode.startsWith('mixed-')?['quota','sibling','queued'].map(name=>({name,files:['app.ts'],why:'changed',risk:'high',edges:[]})):[{name:'app',files:['app.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:model==='second'?'second clean':'first contaminated',...(stage==='critic'?{decisions:mode==='blocking'?[{ref:'f0',action:'keep',severity:'P2',confidence:0.9}]:[]}:{findings:mode==='blocking'?[finding]:[]}),checked:['FILES inspected=[app.ts]'],residual_risks:mode==='needs-human'?[{text:'unresolved',blocks:true}]:[]};
 fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify(out));
 `);
   chmodSync(bin,0o755);

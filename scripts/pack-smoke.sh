@@ -21,8 +21,11 @@ node_bin=$(command -v node)
 ln -s "$node_bin" "$fakebin/node"
 cat > "$fakebin/claude" <<'SH'
 #!/bin/sh
-cat >/dev/null
-printf '{"summary":"pack smoke ok","findings":[],"checked":["stub runner"],"residual_risks":[]}'
+prompt=$(cat)
+case "$prompt" in
+  *'adversarial critic'*) printf '{"summary":"pack smoke ok","decisions":[],"checked":["stub runner"],"residual_risks":[]}' ;;
+  *) printf '{"summary":"pack smoke ok","findings":[],"checked":["stub runner"],"residual_risks":[]}' ;;
+esac
 SH
 chmod +x "$fakebin/claude"
 

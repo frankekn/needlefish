@@ -98,7 +98,14 @@ Return ONLY a single ```json block, nothing else, in exactly this shape:
       "suggestedFix": "minimal fix",
       "validation": "command or step to prove the fix",
       "consumerFile": "optional repo-relative consumer path for cross-file claims",
-      "consumerLine": 1
+      "consumerLine": 1,
+      "externalClaims": [
+        {
+          "claim": "optional external factual premise; omit externalClaims when unused",
+          "necessary": true,
+          "source": { "type": "external", "url": "https://vendor.example/spec" }
+        }
+      ]
     }
   ],
   "checked": ["what you verified"],

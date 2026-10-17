@@ -5,6 +5,29 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-16 PR255 runner cleanup 離線 D gate
+
+`OFFLINE_D_GATE_PASS`。實際 source head 為
+`9ad9e7d829f3d70e64d4230bd166dbaa2c399309`，gateClass `D`。
+Codex CLI `0.163.0`、`gpt-5.6-terra`、`high`，預宣告 drift subset 與全部
+honeypots 各跑 x3。9/9 draws 完成，18 次 runner 呼叫，兩項 positive 各 3/3。
+Malformed output、operational failure 與 cheat detection 均為 0。
+Raw bait exposure 1，沒有 structured adoption 或 final marker escape。
+同一 source 的 resident property 與 drift replay 通過 14/14。
+
+原始報告 SHA-256 為
+`e0f8c545be08000aa3e91076bcb933b5c687e205dde9ccfa9b838ea1ea0daf8e`。
+本次只發布既有報告，沒有重跑模型，也沒有沿用 superseded `b61b5df` draws。
+執行時 source proof 記錄前後各 236 檔逐 byte 一致。
+文件發布 head 與 model-run head 分開識別，離線 verifier 會檢查 source 未變。
+合併後的 source 不受此歷史 gate 認證；目前 head 的離線資格仍待更新。
+
+Live canary 與 automatic rollback 仍為 `PENDING_NOT_AUTHORIZED`。
+這不是完整 D certification、全 fixture recall、merge-ready 或正式環境 delivery 證據。
+Windows descendant cleanup 與強 PGID generation isolation 未在此證明。
+
+- [原始 x3 報告](results/2026-10-16-pr255-9ad9e7d-offline-d-x3.json)
+- [預宣告、來源、property output 與離線檢查](evidence/2026-10-16-pr255-offline-d/README.md)
 
 ## 2026-10-16 Closure Class R x1 diagnostics
 
@@ -2280,3 +2303,58 @@ Each study records one bait exposure without adoption or escape. Reports retain 
 - **PR #255 proxy offline Class D study.** The same `6032f98` source completed nine draws and 19 native calls, but its status is `INVALID_OFFLINE_D_GATE`. The capacity observer paused the eval parent for 40.372 seconds. One intermediate critic contract error required a re-ask despite zero final malformed draws. Both positive fixtures scored 3/3; those counts cannot qualify the invalid measurement. Raw bait exposures were two, with zero adoption, escape, or cheat detection. The resident suite recorded 14/14 passes.
 
 The lane was Codex 0.163.0, CLIProxyAPI, `gpt-5.6-terra/high` on Ubuntu Node 26.8.2. Proxy service version remains unknown. The earlier native offline pass does not transfer to this provider. Both owned roots and processes were cleared, with the existing installation pointers unchanged. This archive does not certify GitHub posting, fleet deployment, production rollout, or either source's full Class D gate. It preserves failures and superseded windows without new trials or replacement draws.
+
+## 2026-10-16 public runtime identity contract
+
+Gate class **R**, pending. The issue149 publication follow-up adds provenance-aware
+ACP launcher/harness/auth-source metadata, conservative exact configuration
+matching and a public distribution map. It does not run a model campaign or
+certify a runtime. Existing reports and model inputs remain unchanged.
+
+New eval reports omit private config/auth digests. Reports requiring those files
+remain private and cannot resume across processes or enter the public leaderboard.
+Existing publication refusals remain in force. Exact identity correspondence alone
+is not evidence that a report passed its quality gate. Production results remain
+`unqualified` until a complete matching qualification artifact is available.
+
+## 2026-10-17 integrated PR #256 Class R failure
+
+Gate class **R**, `CLASS_R_FAIL`. The [aggregate evidence](evidence/2026-10-17-r256-integrated/summary.json) records candidate `6d41f5295006996c9e3159e611134784f5e0e8e2` against baseline `40409c68b7a3700840f7699d77dc1611f3365712`. Each side completed the full 93-fixture set three times, including 17 sealed holdouts, followed by the preregistered divergent union confirmation. The lane was native Codex 0.163.0, `gpt-5.6-terra/high`, OpenAI ChatGPT.
+
+Candidate primary recall was 164/189, below 0.89. Noise was 16/189, above 0.05. Pooled negative false positives were 4/84, above the limit of two. Candidate Tier1 recall was 21/21. Baseline recall was 166/189, noise was 19/189, pooled false positives were 6/84, and Tier1 recall was 20/21. The baseline also failed; its failure does not qualify the candidate.
+
+All 714 fixed primary and confirmation slots completed with 1,493 native attempts and no runner retries. There were 25 intermediate output admission or subset rejections followed by same-prompt re-asks. Final invalid, operational failure, and cheat counts were zero. Source and dependency inventories did not drift. Confirmation preserves the original primary failures and does not replace their denominators. The summary includes the four original report SHA256 digests and setup-manifest digest; the original reports and raw attempts remain archived separately.
+
+A post-hoc audit found a shared caller defect that reprocessed literal template tokens inside critic candidate JSON on both sources. This local fix addresses that general input-construction defect without changing prompt wording, matching, scoring, or the owner-approved model-residual critic policy in #220. It neither rescues this failed campaign nor proves a cause for the aggregate quality differences. The changed model inputs require a new complete Class R gate on the new source. No new campaign ran for this fix.
+
+PR #256 is not merged into main. It and dependent qualification work remain unqualified and must not be promoted from Draft on these results. This entry records the failure before delivery; it does not claim that the failed source shipped.
+
+
+## 2026-10-18 critic decision ledger
+
+Gate class **R**, `NOT_RUN`. The private critic protocol now requires one explicit
+keep/drop decision per candidate ref and materializes findings from the original
+candidate, changing model inputs and output admission. The critic rules now
+require an explicit drop decision instead of deleting or omitting a candidate.
+Local behavior tests do not certify model quality or semantic ref attribution.
+The separately authored sealed holdout commit `72e2f0a` is integrated in source
+`bd3d2691892f92ae42d9ded4a5196bc74fc6d9fa`. The verified catalog has 109 fixtures,
+including 29 holdouts, with `fixtureSetHash: b4fcef1900ab9475`,
+`scorerHash: 8bbc6152d8b45a43`, and `anticheatVersion: 2`. This wording change
+leaves fixture bytes unchanged. The revised `promptHash` is `9c53ddecdcd71c16`,
+computed with `src/shared/prompt-hash.ts`. The production-lane full Class R x3
+gate, sealed holdouts and mechanical confirmation remain required.
+
+The valid source `95d0a9002cdf282aa8e823f6d5f2868358f1a125` Class D study
+remains **FAIL**. It completed 9/9 slots and 19 native calls with one intermediate
+critic identity rejection when lineStart moved from 83 to 86. The same-prompt
+re-ask succeeded, with zero final invalid outputs, recall 1 and noise 0. That
+success does not erase the zero-intermediate-error gate failure. The earlier
+INVALID campaign and partial studies remain unchanged. No new R/D campaign or
+live canary ran for this implementation.
+
+
+### Captured local patch metadata, 2026-10-18
+
+- gateClass: R, NOT_RUN. Local uncommitted `changedFiles` and `patchStat` now come from native Git forward/reverse `apply --numstat -z` and `apply --stat` over the captured patch. Omitted binary paths and dirty-only gitlinks participate in classification; source object-store and replacement lookups are not needed. Tracked and untracked producers pin `a/` and `b/` prefixes and disable color so user presentation settings cannot alter captured paths or patch payloads.
+- No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.

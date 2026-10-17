@@ -125,7 +125,7 @@ readline.createInterface({input:process.stdin}).on('line',(line) => {
     }
     const value = phase === 'map'
       ? {summary:'mapped',hotspots:Array.from({length:3},(_,i)=>({name:'surface-'+i,files:['src/f'+i+'.ts'],risk:'high',why:'changed source',edges:[]}))}
-      : {summary:'reviewed',findings:[],checked:['source checked'],residual_risks:[]};
+      : {summary:'reviewed',...(phase==='critic'?{decisions:[]}:{findings:[]}),checked:['source checked'],residual_risks:[]};
     setTimeout(() => {
       if (phase === 'map') fs.writeFileSync(mapped,'done');
       if (phase === 'deep') process.stderr.write('late-sibling-transcript\n');

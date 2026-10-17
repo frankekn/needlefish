@@ -1,3 +1,6 @@
+import { captureCodexInvocation, capturedCodexEnvironment, prepareCapturedCodexHome, capturedCodexCommand, checkCodexInvocation } from "./codex-invocation.js";
+import { findDuplicateJsonKey } from "./json-keys.js";
+import { collectCodexToolReceipts, type CodexToolTrace } from "./codex-tool-receipts.js";
 import {
 	existsSync,
 	copyFileSync,
@@ -96,15 +99,16 @@ export function buildRunnerEnv(
 	ghConfigDir: string,
 	ephemeralHome?: string,
 	connectionAuth?: RunnerOptions["connectionAuth"],
+	sourceEnvironment: RunnerEnvironment = process.env,
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
-	const extra = connectionAuth ? [] : (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+	const extra = connectionAuth ? [] : (sourceEnvironment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
 	for (const name of [...allowed, ...extra]) {
-		const value = process.env[name];
+		const value = sourceEnvironment[name];
 		if (value !== undefined) env[name] = value;
 	}
 	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
@@ -118,7 +122,7 @@ export function buildRunnerEnv(
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
-		if (runner === "codex" && connectionAuth) env.CODEX_HOME = path.join(ephemeralHome, ".codex");
+		if (runner === "codex") env.CODEX_HOME = path.join(ephemeralHome, ".codex");
 		if (connectionAuth) {
 			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
 			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
@@ -564,6 +568,7 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	readonly onNativeToolTrace?: (trace: CodexToolTrace, runnerAttempt: number) => void | Promise<void>;
 	// Called once per sandbox. Output-only metadata for the human-facing
 	// result; the runner already gets the same facts in its prompt.
 	readonly onLfsReport?: (report: LfsSandboxReport) => void;
@@ -592,6 +597,7 @@ interface RunnerAttemptResult {
 }
 
 interface RunnerInvocation {
+	readonly codexCommand?: string;
 	readonly acpLaunch?: AcpLaunchSpec;
 	readonly initializeTimeoutMs: number;
 	readonly openCodeIdleTimeoutMs: number;
@@ -671,7 +677,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			throw new Error("timeoutMs requires a positive safe integer");
 		}
 		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
-		return Object.freeze({
+		const config: EffectiveRunnerConfig = Object.freeze({
 			runner,
 			connectionAuth: opts.connectionAuth,
 			acpLaunch: opts.acpLaunch,
@@ -685,6 +691,8 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			codexProxy: runner === "codex" && !(opts.connectionAuth instanceof CodexEnvironmentAuth) ? resolveCodexProxyConfig() : undefined,
 			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
 		});
+		captureCodexInvocation(config);
+		return config;
 	} catch (error) {
 		throw asRunnerOperationalError(error);
 	}
@@ -813,6 +821,9 @@ async function runCodexOnce(
 		if (isRunnerSafetyError(error)) throw error;
 		throw asRunnerOperationalError(error);
 	}
+	let nativeResult: RunnerProcessResult | undefined;
+	let nativeFailure: unknown;
+	let nativeAccepted = false;
 	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
@@ -820,15 +831,18 @@ async function runCodexOnce(
 		const ghConfigDir = path.join(tmp, "gh-empty");
 		const { invocation, sandbox } = (() => {
 			try {
+				const codexCommand = runner === "codex" ? capturedCodexCommand(config) : undefined;
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth);
+				const ephemeralHome = runner === "codex" && !config.connectionAuth
+					? prepareCapturedCodexHome(config, tmp) : prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth, capturedCodexEnvironment(config));
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
 					repoPath: opts.repoPath,
 					prompt,
 					targetHeadSha: opts.targetHeadSha,
+					remainingReviewMs: () => remainingReviewMs(opts.reviewDeadlineMs),
 					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
 					...(opts.snapshot ? { snapshot: opts.snapshot } : {}),
@@ -837,6 +851,7 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
+						...(codexCommand ? { codexCommand } : {}),
 						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
 						initializeTimeoutMs: config.acpInitializeTimeoutMs,
 						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
@@ -864,7 +879,12 @@ async function runCodexOnce(
 		});
 		let result: RunnerResult;
 		try {
-			result = await runRunner(runner, invocation);
+			try {
+				if (runner === "codex") capturedCodexCommand(config);
+				result = await runRunner(runner, invocation);
+			}
+			finally { checkCodexInvocation(config, invocation.codexCommand, invocation.env.HOME); }
+			if (runner === "codex") nativeResult = result.res;
 		} catch (error) {
 			if (isRunnerSafetyError(error)) throw error;
 			throw asRunnerOperationalError(error);
@@ -959,12 +979,34 @@ async function runCodexOnce(
 				.join("\n");
 			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) guard.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
+			nativeAccepted = true;
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
 		}
+	} catch (error) {
+		nativeFailure = error;
+		throw error;
 	} finally {
+		if (runner === "codex" && opts.onNativeToolTrace) {
+			const invocation: CodexToolTrace["invocation"] =
+				nativeFailure instanceof RunnerWorktreeChangedError ? "integrity_failed" :
+				nativeResult?.error instanceof RunnerTimeoutError || nativeResult?.error instanceof RunnerIdleTimeoutError ? "timeout" :
+				nativeResult?.error ? "process_error" : nativeResult?.signal ? "signal" :
+				nativeResult && nativeResult.status !== 0 ? "exit_nonzero" :
+				nativeAccepted ? "accepted" : nativeResult ? "output_rejected" : "unknown";
+			const collected = collectCodexToolReceipts(nativeResult?.stdout);
+			const collection: CodexToolTrace["collection"] = ["timeout", "signal", "process_error"].includes(invocation)
+				? Object.freeze({ ...collected, status: "incomplete", gaps: Object.freeze([...collected.gaps, "process_interrupted" as const]) }) : collected;
+			try { await opts.onNativeToolTrace(Object.freeze({
+				adapter: "codex", transport: "exec_jsonl_stdout", protocol: "rust-v0.163.0",
+				toolRead: "unknown", invocation,
+				collection,
+			}), runnerAttempt); } catch {
+				// review() records observer health; telemetry must not alter runner admission.
+			}
+		}
 		await disposeManagedTempDirectory(tmp);
 	}
 }
@@ -1249,58 +1291,6 @@ function unparseableOutputError(text: string): Error {
 	);
 }
 
-// JSON.parse collapses a duplicated member key silently (last value wins), so
-// a response repeating `"findings"` (findings, then []) loses the findings and
-// normalizes to a pass. Reject duplicates anywhere instead of trusting the
-// collapsed object. The reviver cannot detect this (V8 calls it once per
-// collapsed key), so this scanner walks the text: in JSON that has already
-// parsed, the first token after `{` or `,` inside an object is a member name,
-// so a string in that position is a key and duplicate keys fail the set check.
-// Keys are compared decoded, matching what JSON.parse collided.
-function findDuplicateJsonKey(source: string): string | undefined {
-	type Scope = { isObject: true; keys: Set<string> } | { isObject: false };
-	const stack: Scope[] = [];
-	let nextIsKey = false;
-	for (let i = 0; i < source.length; ) {
-		const ch = source[i];
-		if (ch === '"') {
-			// Skip to the closing quote, stepping over escape pairs so `\"`
-			// and braces inside strings do not shift the structural scan.
-			let end = i + 1;
-			while (end < source.length) {
-				if (source[end] === "\\") end += 2;
-				else if (source[end] === '"') break;
-				else end += 1;
-			}
-			const top = stack[stack.length - 1];
-			if (top !== undefined && top.isObject && nextIsKey) {
-				const key = JSON.parse(source.slice(i, end + 1)) as string;
-				if (top.keys.has(key)) return key;
-				top.keys.add(key);
-			}
-			nextIsKey = false;
-			i = end + 1;
-			continue;
-		}
-		if (ch === "{") {
-			stack.push({ isObject: true, keys: new Set() });
-			nextIsKey = true;
-		} else if (ch === "[") {
-			stack.push({ isObject: false });
-			nextIsKey = false;
-		} else if (ch === "}" || ch === "]") {
-			stack.pop();
-			nextIsKey = false;
-		} else if (ch === ",") {
-			nextIsKey = stack[stack.length - 1]?.isObject === true;
-		} else if (ch === ":") {
-			nextIsKey = false;
-		}
-		i += 1;
-	}
-	return undefined;
-}
-
 // Complete response, duplicated member key: model-side contract failure, so
 // it stays unclassified like invalid JSON (no likely-cause token) and keeps
 // the shared malformed-output next step.
@@ -1469,7 +1459,7 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const command = requireRunnerCommand("codex");
+	const command = invocation.codexCommand ?? requireRunnerCommand("codex");
 	const reasoningEffort = invocation.reasoningEffort;
 	const serviceTier = invocation.codexServiceTier;
 	const args = [

@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test, { type TestContext } from "node:test";
 import { commitAll, initRepo } from "../shared/codex-runner-test-fixtures.js";
 import { parseArgs } from "../cli/args.js";
+import { parseReviewResult } from "../shared/review-result.js";
 
 const firstKey = "fake-session-first-%41-value";
 const secondKey = "fake-session-second-%42-value";
@@ -46,7 +47,8 @@ function respond(prompt,repo){
  if(mode==='invalid')return 'invalid JSON';
  const secret=mode==='cross-key'?${JSON.stringify(secondKey)}:${JSON.stringify(firstKey)};
  const summary=mode==='leak'||mode==='cross-key'?Array.from(Buffer.from(secret)).map(byte=>'%'+byte.toString(16).padStart(2,'0')).join(''):mode==='literal-leak'?secret:mode==='json-leak'?Array.from(secret).map(char=>'\\\\u'+char.charCodeAt(0).toString(16).padStart(4,'0')).join(''):model+' clean';
- return JSON.stringify({summary,findings:[],checked:['FILES inspected=[app.ts]'],residual_risks:[]});
+ const findings=mode==='changes_requested'?[{severity:'P2',title:'Changed value breaks caller',category:'bug',file:'app.ts',lineStart:1,lineEnd:1,confidence:0.9,whyItBreaks:'Caller requires the original value.',suggestedFix:'Preserve value.',validation:'test'}]:[];
+ return JSON.stringify({summary,...(stage==='critic'?{decisions:findings.map(f=>({ref:'f0',action:'keep',severity:f.severity,confidence:f.confidence}))}:{findings}),checked:['FILES inspected=[app.ts]'],residual_risks:mode==='needs_human'?[{text:'Unresolved review coverage',blocks:true}]:[]});
 }
 if(adapter==='codex'){
  const prompt=fs.readFileSync(0,'utf8'),repo=JSON.parse(prompt.slice('The repository to inspect is '.length,prompt.indexOf('. Your startup directory'))),out=respond(prompt,repo);
@@ -105,6 +107,23 @@ test("selected session credentials bind once without global env writes and cache
   assert.equal((result.stdout + readFileSync(f.cache()[0], "utf8")).includes(firstKey), false);
   assert.equal("providerAccount" in output, false);
 });
+
+for (const [verdict, status] of [["pass", 0], ["needs_human", 1], ["changes_requested", 1]] as const) {
+  test(`completed session ${verdict} preserves the full result and final cache with exit ${status}`, t => {
+    const f = fixture(t, verdict), result = f.run();
+    assert.equal(result.stderr, "");
+    const output = JSON.parse(result.stdout), parsed = parseReviewResult(output);
+    assert.deepEqual(parsed, output);
+    assert.equal(parsed.verdict, verdict); assert.equal(parsed.summary, "first clean");
+    assert.equal(parsed.findings.length, verdict === "changes_requested" ? 1 : 0);
+    assert.deepEqual(parsed.residualRisks, verdict === "needs_human" ? [{ text: "Unresolved review coverage", blocks: true }] : []);
+    assert.equal("ok" in output, false);
+    assert.deepEqual(f.rows().map(row => row.stage), ["review", "critic"]);
+    assert.deepEqual(JSON.parse(readFileSync(f.envReceipt, "utf8")), { unchanged: true, cacheWrites: 1 });
+    assert.equal(f.cache().length, 1); assert.deepEqual(JSON.parse(readFileSync(f.cache()[0], "utf8")), output);
+    assert.equal(result.status, status, result.stderr);
+  });
+}
 
 for (const [name, modify, code] of [
   ["extra reference", (r: ReturnType<typeof fixture>["request"]) => ({ ...r, sources: { ...r.sources, UNUSED_REF: secondKey } }), "invalid_request"],
@@ -197,15 +216,22 @@ test("machine stdin rejects duplicate encoded references, invalid JSON and byte 
 });
 
 test("machine stdin timeout and cancellation emit only canned errors", { timeout: 15000 }, async t => {
-  const f = fixture(t);
+  const f = fixture(t), ready = path.join(f.root, "stdin-ready"), preload = path.join(f.root, "stdin-preload.cjs");
+  writeFileSync(preload, `const fs=require('node:fs');if(process.env.TEST_SLOW_STDIN_STARTUP==='1')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,750);process.stdin.once('resume',()=>fs.writeFileSync(${JSON.stringify(ready)},JSON.stringify({SIGINT:process.listenerCount('SIGINT'),SIGTERM:process.listenerCount('SIGTERM')})));`);
   for (const signal of [undefined, "SIGINT", "SIGTERM"] as const) {
-    const child = spawn(process.execPath, f.args, { env: f.env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--require", preload, ...f.args], { env: { ...f.env, TEST_SLOW_STDIN_STARTUP: signal ? "1" : "0" }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = ""; child.stdout.on("data", chunk => stdout += String(chunk)); child.stderr.on("data", chunk => stderr += String(chunk));
     const exit = new Promise<number | null>(resolve => child.once("exit", resolve));
     t.after(() => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error; } } });
+    rmSync(ready, { force: true });
     child.stdin.write('{"private":"fake-not-finished');
-    if (signal) { await delay(250); assert.ok(child.pid); process.kill(child.pid, signal); }
-    assert.equal(await exit, 1, stderr); assert.equal(stderr, "");
+    if (signal) {
+      for (let i = 0; i < 150 && !existsSync(ready); i++) await delay(20);
+      assert.equal(existsSync(ready), true, stderr);
+      assert.deepEqual(JSON.parse(readFileSync(ready, "utf8")), { SIGINT: 1, SIGTERM: 1 });
+      assert.ok(child.pid); process.kill(child.pid, signal);
+    }
+    assert.equal(await exit, 1, JSON.stringify({ signal: child.signalCode, stderr })); assert.equal(stderr, "");
     assert.deepEqual(JSON.parse(stdout), { schemaVersion: 1, ok: false, code: signal ? "cancelled" : "input_timeout" });
     assert.ok(child.pid); assert.equal(alive(-child.pid), false);
   }
@@ -251,4 +277,22 @@ for (const mode of ["safe", "leak"]) {
       assert.equal(result.stdout.includes(firstKey), false); assert.deepEqual(JSON.parse(readFileSync(f.cache()[0], "utf8")), output);
     }
   });
+}
+
+for (const kind of ["docs", "binary"] as const) {
+  for (const credentialMode of ["existing", "session"] as const) {
+    test(`${kind}-only session ingress skips missing credentials and source capture (${credentialMode})`, t => {
+      const f = fixture(t);
+      writeFileSync(path.join(f.repo, "app.ts"), "export const value = 1;\n");
+      writeFileSync(path.join(f.repo, kind === "docs" ? "README.md" : "image.bin"), kind === "docs" ? "Updated docs\n" : Buffer.from([0, 1, 2]));
+      const result = f.run({ ...f.request, credentialMode, sources: credentialMode === "session" ? { FIRST_REF: "" } : {} }, { FIRST_REF: "" });
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      const output = JSON.parse(result.stdout);
+      assert.equal(output.verdict, "pass");
+      assert.equal(output.docsOnlyFastPath, kind === "docs" ? true : undefined);
+      assert.deepEqual(f.rows(), []);
+      assert.deepEqual(existsSync(f.managed) ? readdirSync(f.managed).filter(name => name !== ".needlefish-sweep.lock") : [], []);
+      assert.equal(f.cache().length, 1);
+    });
+  }
 }

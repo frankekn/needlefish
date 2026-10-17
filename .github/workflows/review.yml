@@ -13,8 +13,13 @@ on:
       pr_number:
         description: PR number to review (manual trigger; bypasses pull_request webhook)
         required: true
+      recheck:
+        description: Force a full review even when this head was already reviewed
+        type: boolean
+        required: false
+        default: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         required: false
         default: codex
       model:
@@ -24,7 +29,7 @@ on:
         description: Optional per-call timeout in milliseconds
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         required: false
       codex_reasoning_effort:
         description: "Codex reasoning effort: medium, high, or xhigh"
@@ -51,8 +56,13 @@ on:
         description: PR number (optional; defaults to the event PR)
         type: string
         required: false
+      recheck:
+        description: Force a full review even when this head was already reviewed
+        type: boolean
+        required: false
+        default: false
       runner:
-        description: "Model runner: codex, claude, opencode, grok, or pi"
+        description: "Model runner: codex, claude, grok, or pi. OpenCode is temporarily disabled (#207)."
         type: string
         required: false
         default: codex
@@ -65,7 +75,7 @@ on:
         type: string
         required: false
       idle_timeout_ms:
-        description: Optional opencode inactivity timeout in milliseconds
+        description: Reserved while OpenCode reviews are disabled (#207)
         type: string
         required: false
       codex_reasoning_effort:
@@ -172,11 +182,25 @@ jobs:
           elif [ "$trusted_author" != true ] && [ -z "$ALLOW_UNTRUSTED_AUTHOR" ]; then
             skip=true
             skip_reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
+            random="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+            invocation="${random:0:8}-${random:8:4}-4${random:13:3}-8${random:17:3}-${random:20:12}"
+            measurement=$(jq -cn --arg repository "$REPO" --arg pr "$PR_NUM" --arg head "$head" \
+              --arg invocation "$invocation" \
+              --arg run "${GITHUB_RUN_ID:-}" --arg attempt "${GITHUB_RUN_ATTEMPT:-}" --arg job "${GITHUB_JOB:-}" '
+              {schemaVersion: 1, invocationId: $invocation, repository: $repository, prNumber: ($pr | tonumber), targetHeadSha: $head,
+               workflow: (if ($run | test("^[1-9][0-9]{0,19}$")) and ($attempt | test("^[1-9][0-9]{0,8}$")) and ($job | test("^[A-Za-z_][A-Za-z0-9_-]{0,99}$"))
+                 then {status: "recorded", runId: $run, runAttempt: ($attempt | tonumber), jobKey: $job} else {status: "unknown"} end),
+               execution: {ordinal: 1, role: "unknown"}, summaryReviewId: null, inlineReviewIds: [],
+               runtime: {status: "unknown"}, pipeline: {status: "unknown"}, outcome: "skipped", verdict: null, delivery: "not_applicable"}')
             gh api -X POST "repos/$REPO/check-runs" \
               -f name="Needlefish" \
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "${GITHUB_RUN_ID:-}" --arg round "$(jq -r .invocationId <<<"$measurement")" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
+              -f "output[text]=$measurement" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish runs model CLIs unrestricted on trusted runners, so it reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $skip_reason. A maintainer who has read this PR can review it by running the review workflow manually with allow_untrusted_author: true." >/dev/null
           fi
@@ -327,9 +351,25 @@ jobs:
           PI_AUTH_MODE: proxy
           # npm-global bin is not on the runner service PATH.
           PI_BIN: /home/termtek/.npm-global/bin/pi
-          NEEDLEFISH_RECHECK_INPUT: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          NEEDLEFISH_CHECK_APP_ID: ""
+          NEEDLEFISH_RECHECK_INPUT: ${{ inputs.recheck && '1' || '' }}
           NEEDLEFISH_ALLOW_UNTRUSTED_AUTHOR: ${{ inputs.allow_untrusted_author && '1' || '' }}
         run: |
+          if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$GITHUB_REPOSITORY/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$PR_HEAD_SHA" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "${GITHUB_RUN_ID:-}" --arg round "runner-unavailable-${GITHUB_RUN_ID:-}-${GITHUB_RUN_ATTEMPT:-}" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null || true
+            echo "$summary" >&2
+            exit 1
+          fi
           if [ -z "${NEEDLEFISH_BIN:-}" ] || [ ! -x "$NEEDLEFISH_BIN" ]; then
             echo "Selected self-managed Needlefish is unavailable. Reinstall the local bundle on this runner." >&2
             exit 1
@@ -425,7 +465,22 @@ jobs:
                   const checks = JSON.parse(input).check_runs;
                   const previous = process.env.NEEDLEFISH_PREVIOUS_CHECK_ID ?? "";
                   if (!/^[0-9]+$/.test(previous)) process.exit(1);
-                  const check = checks.filter(c => c.id > Number(previous) && c.name === "Needlefish" && c.external_id === process.env.GITHUB_RUN_ID && c.app?.slug === "github-actions").sort((a, b) => b.id - a.id)[0];
+                  const appIdInput = process.env.NEEDLEFISH_CHECK_APP_ID || "";
+                  const appId = appIdInput ? Number(appIdInput) : null;
+                  if (appIdInput && (!/^[1-9][0-9]*$/.test(appIdInput) || !Number.isSafeInteger(appId))) process.exit(1);
+                  const currentRun = externalId => {
+                    if (externalId === process.env.GITHUB_RUN_ID) return true;
+                    try {
+                      const round = JSON.parse(externalId);
+                      return round?.v === 2 && round.runId === process.env.GITHUB_RUN_ID && round.prNumber === Number(process.env.PR_NUM);
+                    } catch { return false; }
+                  };
+                  const check = checks.filter(c =>
+                    c.id > Number(previous) &&
+                    c.name === "Needlefish" &&
+                    currentRun(c.external_id) &&
+                    (appId === null ? c.app?.slug === "github-actions" : c.app?.id === appId)
+                  ).sort((a, b) => b.id - a.id)[0];
                   const prefix = "Review errored and did NOT pass this PR.\n\n```\n";
                   const error = check?.output?.summary?.startsWith(prefix) ? check.output.summary.slice(prefix.length).split("\n")[0] : "";
                   const failed = check?.status === "completed" && check.conclusion === "failure" && check.output.title === "Needlefish: review failed";
@@ -478,6 +533,8 @@ jobs:
           PR_NUM: ${{ inputs.pr_number || github.event.inputs.pr_number || github.event.pull_request.number }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           RUN_ID: ${{ github.run_id }}
+          NEEDLEFISH_CHECK_APP_ID: ""
+          NEEDLEFISH_RUNNER_INPUT: ${{ inputs.runner || github.event.inputs.runner || 'codex' }}
         run: |
           set -eu
           if [ -z "$PR_NUM" ]; then
@@ -506,6 +563,9 @@ jobs:
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$RUN_ID" --arg round "retry-required-$RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
               -f "output[title]=Needlefish: caller retry required" \
               -f "output[summary]=$summary" >/dev/null
           }
@@ -513,9 +573,41 @@ jobs:
           # every review check is named "Needlefish", so the retry cap below would
           # otherwise never see more than one failure and could never trip.
           runs_url="repos/$REPO/commits/$head/check-runs?check_name=Needlefish&per_page=100&filter=all"
-          valid=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
+          app_id="${NEEDLEFISH_CHECK_APP_ID:-}"
+          if [ -n "$app_id" ] && { [[ ! "$app_id" =~ ^[1-9][0-9]*$ ]] || [ "${#app_id}" -gt 16 ] || [ "$app_id" -gt 9007199254740991 ]; }; then
+            echo "::error::NEEDLEFISH_CHECK_APP_ID must be a positive safe integer"
+            exit 1
+          fi
+          app_filter='.app.slug == "github-actions"'
+          if [ -n "$app_id" ]; then app_filter=".app.id == $app_id"; fi
+          owned_checks=$(gh api "$runs_url" --jq "[
+            .check_runs[]
+            | select(.name == \"Needlefish\" and ($app_filter))
+            | ((.external_id // \"\" | fromjson?) // null) as \$round
+            | select(if (\$round | type) == \"object\" then
+                (\$round.v == 2 and \$round.prNumber == $PR_NUM
+                  and (\$round.roundId | type) == \"string\" and (\$round.roundId | length) > 0
+                  and (\$round.runId | type) == \"string\")
+              else ((.external_id // \"\") | test(\"^[1-9][0-9]*$\")) end)
+          ]")
+          valid=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "success" or .conclusion == "neutral" or (.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$") | not)))] | length')
           if [ "$valid" -gt 0 ]; then
             echo "head $head already has a terminal Needlefish verdict; nothing to reconcile"
+            exit 0
+          fi
+          if [ "${NEEDLEFISH_RUNNER_INPUT:-}" = "opencode" ]; then
+            summary="OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose another runner explicitly; see issue #207."
+            gh api -X POST "repos/$REPO/check-runs" \
+              -f name="Needlefish" \
+              -f head_sha="$head" \
+              -f status="completed" \
+              -f conclusion="failure" \
+              -f external_id="$(jq -cn --argjson pr "$PR_NUM" \
+                --arg run "$RUN_ID" --arg round "runner-unavailable-$RUN_ID-$GITHUB_RUN_ATTEMPT" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
+              -f "output[title]=Needlefish: runner unavailable" \
+              -f "output[summary]=$summary" >/dev/null
+            echo "$summary"
             exit 0
           fi
           workflow_file="${WORKFLOW_REF#"$REPO/.github/workflows/"}"
@@ -546,7 +638,7 @@ jobs:
             echo "a $workflow_file run for PR #$PR_NUM is still active or queued; letting it finish"
             exit 0
           fi
-          infra_fails=$(gh api "$runs_url" --jq '[.check_runs[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
+          infra_fails=$(printf '%s' "$owned_checks" | jq '[.[] | select(.conclusion == "failure" and ((.output.title // "") | test("^Needlefish: review (failed|terminated)$")))] | length')
           if [ "$infra_fails" -ge 2 ]; then
             echo "::error::head $head has $infra_fails infra-failed reviews; retry cap reached, not re-dispatching"
             exit 0

@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,6 +5,8 @@ import { resolveConnectionOptions } from "../shared/connections.js";
 import type { RunnerOptions } from "../shared/runner.js";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
 import { git, gitSupportsAttrSource } from "../shared/repo.js";
+import { runManagedRunnerProcess } from "../shared/runner-process.js";
+import { registerTerminationFinalizer } from "../shared/temp-lifecycle.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
@@ -63,14 +64,16 @@ type ProbeResult =
   | { readonly kind: "exited"; readonly status: number; readonly stdout: string; readonly stderr: string }
   | { readonly kind: "failed"; readonly reason: string };
 
-function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): ProbeResult {
-  const res = spawnSync(command, [...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: PROBE_TIMEOUT_MS,
-    maxBuffer: 1024 * 1024,
+async function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): Promise<ProbeResult> {
+  const res = await runManagedRunnerProcess({
+    command,
+    args,
+    repoPath: cwd,
+    timeoutMs: PROBE_TIMEOUT_MS,
+    timeoutKillSignal: "SIGKILL",
+    maxCombinedBufferBytes: 1024 * 1024,
     env: buildRunnerEnv(runner, path.join(os.tmpdir(), "needlefish-doctor-gh-empty")),
+    onSpawn: (controller) => controller.endStdin(),
   });
   if (res.error) {
     const code = "code" in res.error ? res.error.code : undefined;
@@ -104,7 +107,7 @@ type RunnerSelection =
   | { readonly kind: "http"; readonly runner: RunnerName }
   | { readonly kind: "unavailable" };
 
-function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
+async function selectRunner(explicit: RunnerName | undefined, probeCwd: string): Promise<{ readonly check: DoctorCheck; readonly selection: RunnerSelection }> {
   const envRunner = process.env.NEEDLEFISH_RUNNER;
   let runner: RunnerName | undefined = explicit;
   if (runner === undefined && envRunner) {
@@ -123,10 +126,12 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
   }
   if (runner === undefined) {
     for (const candidate of RUNNER_CATALOG) {
-      if (!("autoDetect" in candidate)) continue;
+      if (!("autoDetect" in candidate) || "reviewUnavailableReason" in candidate) continue;
       const binary = resolveRunnerBinary(candidate.name);
       if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected", probeCwd);
     }
+    const unavailable = RUNNER_CATALOG.find((candidate) => "reviewUnavailableReason" in candidate && resolveRunnerBinary(candidate.name)?.path !== undefined);
+    if (unavailable !== undefined) return selectRunner(unavailable.name, probeCwd);
     const [summary, ...installLines] = NO_AUTO_DETECTED_RUNNER_MESSAGE.split("\n");
     return {
       check: { name: "runner", status: "fail", detail: summary, fix: installLines.join("\n") },
@@ -134,6 +139,12 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
     };
   }
   const definition = RUNNER_DEFINITIONS[runner];
+  if (definition.reviewUnavailableReason !== undefined) {
+    return {
+      check: { name: "runner", status: "fail", detail: definition.reviewUnavailableReason, fix: "Set --runner or NEEDLEFISH_RUNNER to codex or claude; see issue #207." },
+      selection: { kind: "unavailable" },
+    };
+  }
   if (definition.bin === undefined) {
     return {
       check: { name: "runner", status: "ok", detail: `${runner} (HTTP runner, no CLI)` },
@@ -170,14 +181,14 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
   return cliRunnerCheck(runner, { ...binary, path: binary.path }, explicit === undefined ? "NEEDLEFISH_RUNNER" : "--runner", probeCwd);
 }
 
-function cliRunnerCheck(
+async function cliRunnerCheck(
   runner: RunnerName,
   binary: ResolvedRunnerBinary & { readonly path: string },
   source: string,
   probeCwd: string,
-): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
+): Promise<{ readonly check: DoctorCheck; readonly selection: RunnerSelection }> {
   // An ACP agent is a JSON-RPC process; `--version` is not part of that contract.
-  const version = runner === "acp" ? undefined : probe(runner, binary.path, ["--version"], probeCwd);
+  const version = runner === "acp" ? undefined : await probe(runner, binary.path, ["--version"], probeCwd);
   const versionText =
     version === undefined
       ? ""
@@ -202,7 +213,7 @@ function capabilityCheck(selection: RunnerSelection): DoctorCheck {
   };
 }
 
-function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
+async function authCheck(selection: RunnerSelection, probeCwd: string): Promise<DoctorCheck> {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
   }
@@ -230,7 +241,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
     };
   }
   const fix = `Run \`${login.command}\`.`;
-  const result = probe(runner, selection.binary.path, login.status.args, probeCwd);
+  const result = await probe(runner, selection.binary.path, login.status.args, probeCwd);
   const probeCommand = `${selection.binary.command} ${login.status.args.join(" ")}`;
   if (result.kind === "failed") {
     return { name: "auth", status: "unknown", detail: `${runner}: \`${probeCommand}\` ${result.reason}` };
@@ -335,12 +346,14 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
   }
 }
 
-export function runDoctor(opts: DoctorOptions): DoctorReport {
+export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   const repo = path.resolve(opts.repo);
   const selected = opts.connection === undefined ? undefined
     : resolveConnectionOptions<RunnerOptions>({ connections: [opts.connection], runner: opts.runner }, repo);
   if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
+  const cleanup = (): void => rmSync(probeCwd, { recursive: true, force: true });
+  const unregisterCleanup = registerTerminationFinalizer(async () => cleanup());
   let checks: readonly DoctorCheck[];
   let repoRoot: string | undefined;
   try {
@@ -350,7 +363,7 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
       selection: selectedBinary?.path === undefined
         ? { kind: "unavailable" } satisfies RunnerSelection
         : { kind: "cli", runner: "codex", binary: { ...selectedBinary, path: selectedBinary.path } } satisfies RunnerSelection,
-    } : selectRunner(opts.runner, probeCwd);
+    } : await selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
     repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
@@ -359,12 +372,13 @@ export function runDoctor(opts: DoctorOptions): DoctorReport {
       capabilityCheck(runner.selection),
       selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
         ? "codex: credential source chosen; provider account identity unknown; login state not probed"
-        : "codex: named connection chosen; provider account identity unknown; login state not probed" } : authCheck(runner.selection, probeCwd),
+        : "codex: named connection chosen; provider account identity unknown; login state not probed" } : await authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
     ];
   } finally {
-    rmSync(probeCwd, { recursive: true, force: true });
+    unregisterCleanup();
+    cleanup();
   }
   return {
     schemaVersion: 1,

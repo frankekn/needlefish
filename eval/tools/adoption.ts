@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeTitle, parseState } from "../../src/adapters/github";
+import { enrichAdoptionRows, findingIdentity, measurementOptions, renderMeasurementReport, type FindingIdentity, type FindingMeasurement, type MeasurementContract } from "./adoption-measurements.js";
 
 export type Fate = "addressed" | "kept" | "pending" | "abandoned";
 
@@ -17,12 +18,14 @@ export interface AdoptionRow {
   readonly path: string;
   readonly created: string;
   readonly author: string | null;
+  readonly measurement?: FindingMeasurement;
 }
 
 export interface CliArgs {
   readonly repos: readonly string[];
   readonly since: string | null;
   readonly json: boolean;
+  readonly measurements?: MeasurementContract;
 }
 
 const USAGE = `Usage: npx tsx eval/tools/adoption.ts owner/name [owner/name ...] [--since YYYY-MM-DD] [--json]
@@ -34,6 +37,9 @@ abandoned. Reads GitHub through \`gh api graphql\`.
 
   --since  only count finding threads created on or after this UTC date
   --json   print the raw per-thread rows as JSON instead of the Markdown report
+  --measurement-workflow PATH  opt in to output-only measurement collection
+  --measurement-job-key KEY    exact producer workflow job key
+  --measurement-job-name NAME  exact Jobs API display name
   --help   print this message and exit
 `;
 
@@ -42,6 +48,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs | { readonly help
   const repos: string[] = [];
   let since: string | null = null;
   let json = false;
+  const measurementFlags: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--json") {
@@ -52,6 +59,10 @@ export function parseCliArgs(argv: readonly string[]): CliArgs | { readonly help
         throw new Error(`--since must be a YYYY-MM-DD date, got: ${value ?? "(missing)"}`);
       }
       since = value;
+    } else if (["--measurement-workflow", "--measurement-job-key", "--measurement-job-name"].includes(arg)) {
+      const value = argv[++i];
+      if (!value) throw new Error("missing measurement option");
+      measurementFlags.push(arg, value);
     } else if (arg.startsWith("--")) {
       throw new Error(`unknown option: ${arg}`);
     } else if (/^[\w.-]+\/[\w.-]+$/.test(arg)) {
@@ -61,7 +72,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs | { readonly help
     }
   }
   if (repos.length === 0) throw new Error("at least one owner/name repository is required");
-  return { repos, since, json };
+  return { repos, since, json, ...(measurementFlags.length ? { measurements: measurementOptions(measurementFlags) } : {}) };
 }
 
 export interface FindingHeader {
@@ -93,6 +104,7 @@ export interface ThreadNode {
   readonly body: string;
   readonly createdAt: string;
   readonly author: string | null;
+  readonly identity?: FindingIdentity | null;
 }
 
 export interface PrNode {
@@ -152,6 +164,7 @@ function parseThread(raw: unknown): ThreadNode | null {
     body: str(comment, "body", "comment"),
     createdAt: str(comment, "createdAt", "comment"),
     author,
+    identity: findingIdentity(comment),
   };
 }
 
@@ -213,7 +226,7 @@ function stateCategories(reviewBodies: readonly string[]): Map<string, Set<strin
   return categories;
 }
 
-export function rowsFromPr(repo: string, pr: PrNode, since: string | null): AdoptionRow[] {
+export function rowsFromPr(repo: string, pr: PrNode, since: string | null, captureIdentity = false): AdoptionRow[] {
   const categories = stateCategories(pr.reviewBodies);
   const rows: AdoptionRow[] = [];
   for (const thread of pr.threads) {
@@ -232,6 +245,7 @@ export function rowsFromPr(repo: string, pr: PrNode, since: string | null): Adop
       path: thread.path,
       created: thread.createdAt,
       author: thread.author,
+      ...(captureIdentity ? { measurement: { status: "unknown" as const, identity: thread.identity ?? null, reason: "not_collected" } } : {}),
     });
   }
   return rows;
@@ -300,6 +314,7 @@ export function renderReport(rows: readonly AdoptionRow[], since: string | null)
     ...table("By severity", tally(rows, (r) => r.severity), byName),
     ...table("By category", tally(rows, (r) => r.category), byTotal),
     ...table("By ISO week", tally(rows, (r) => isoWeek(r.created)), byName),
+    ...renderMeasurementReport(rows),
   ].join("\n");
 }
 
@@ -316,7 +331,7 @@ const QUERY = `query($owner: String!, $name: String!, $after: String) {
           pageInfo { hasNextPage }
           nodes {
             isOutdated isResolved path
-            comments(first: 1) { nodes { author { login } body createdAt } }
+            comments(first: 1) { nodes { author { login } body createdAt databaseId originalCommit { oid } pullRequestReview { databaseId } } }
           }
         }
       }
@@ -417,7 +432,7 @@ function historyBodies(repo: string, pr: PrNode): string[] {
   return bodies;
 }
 
-function recoverCategories(repo: string, pr: PrNode, since: string | null): AdoptionRow[] {
+function recoverCategories(repo: string, pr: PrNode, since: string | null, captureIdentity: boolean): AdoptionRow[] {
   const [owner, name] = repo.split("/");
   const reviewBodies = [...pr.reviewBodies];
   const stateReviewIds = [...pr.stateReviewIds];
@@ -437,13 +452,13 @@ function recoverCategories(repo: string, pr: PrNode, since: string | null): Adop
   }
   const complete = { ...pr, reviewBodies, stateReviewIds };
   reviewBodies.push(...historyBodies(repo, complete));
-  return rowsFromPr(repo, complete, since);
+  return rowsFromPr(repo, complete, since, captureIdentity);
 }
 
 // PRs are paged by last update, newest first. A thread created on or after
 // --since bumps its PR's updatedAt past --since, so the first older PR ends
 // the scan without missing any thread in the window.
-function collect(repo: string, since: string | null): AdoptionRow[] {
+function collect(repo: string, since: string | null, captureIdentity: boolean): AdoptionRow[] {
   const rows: AdoptionRow[] = [];
   let after: string | null = null;
   for (;;) {
@@ -456,9 +471,9 @@ function collect(repo: string, since: string | null): AdoptionRow[] {
       const needsState = pr.threads.some((thread) =>
         (since === null || thread.createdAt >= since) && parseFindingHeader(thread.body)?.category === null);
       if (needsState) {
-        rows.push(...recoverCategories(repo, pr, since));
+        rows.push(...recoverCategories(repo, pr, since, captureIdentity));
       } else {
-        rows.push(...rowsFromPr(repo, pr, since));
+        rows.push(...rowsFromPr(repo, pr, since, captureIdentity));
       }
     }
     if (page.endCursor === null) return rows;
@@ -472,9 +487,11 @@ function main(): void {
     process.stdout.write(USAGE);
     return;
   }
+  const deadline = performance.now() + 9 * 60 * 1000;
   const rows: AdoptionRow[] = [];
   for (const repo of parsed.repos) {
-    const got = collect(repo, parsed.since);
+    const collected = collect(repo, parsed.since, parsed.measurements !== undefined);
+    const got = parsed.measurements ? enrichAdoptionRows(collected, parsed.measurements, undefined, deadline) : collected;
     process.stderr.write(`adoption: ${repo}: ${got.length} finding threads\n`);
     rows.push(...got);
   }

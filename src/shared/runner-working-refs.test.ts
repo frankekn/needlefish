@@ -7,8 +7,9 @@ import { buildUntrackedPatch } from "../adapters/local-uncommitted.js";
 import { commitAll, gitText, headSha, initRepo } from "./codex-runner-test-fixtures.js";
 import { prepareRunnerSandbox, assertRunnerSandboxClean } from "./runner-sandbox.js";
 
+for (const config of ["diff.noprefix", "diff.mnemonicPrefix", "diff.srcPrefix", "color.ui"]) {
 for (const unborn of [false, true]) {
-  test(`working review refs expose the exact diff (${unborn ? "unborn" : "committed"} baseline)`, (t) => {
+  test(`working review refs expose the exact diff with ${config} (${unborn ? "unborn" : "committed"} baseline)`, (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-refs-"));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
     const repo = unborn ? path.join(tmp, "source") : initRepo(tmp);
@@ -16,6 +17,7 @@ for (const unborn of [false, true]) {
       mkdirSync(repo);
       gitText(["init", "--quiet"], repo);
     }
+    gitText(["config", config, config === "diff.srcPrefix" ? "before/tree/" : config === "color.ui" ? "always" : "true"], repo);
     const base = unborn ? "EMPTY" : headSha(repo);
     const content = "export const value = 2;\n";
     if (!unborn) gitText(["tag", "WORKING"], repo);
@@ -35,6 +37,7 @@ for (const unborn of [false, true]) {
     assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
     assert.equal(gitText(["status", "--porcelain"], repo), unborn ? "" : "?? app.ts");
   });
+}
 }
 
 test("working sandbox uses the captured baseline when source HEAD moves", (t) => {

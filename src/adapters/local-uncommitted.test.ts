@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { runLocal } from "./local";
+import { localDryRun, runLocal } from "./local";
 import { buildUntrackedPatch } from "./local-uncommitted";
 import { fakeClaudeEnv, installFakeClaude, writeFakeClaude } from "./local-uncommitted-test-fixtures";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
@@ -47,6 +48,10 @@ test("runLocal reviews staged unstaged and untracked changes when working tree i
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
   gitText(["branch", "-M", "main"], repo);
+  gitText(["config", "diff.noprefix", "true"], repo);
+  gitText(["config", "diff.srcPrefix", "before/tree/"], repo);
+  gitText(["config", "diff.dstPrefix", "after/tree/"], repo);
+  gitText(["config", "color.ui", "always"], repo);
   const base = headSha(repo);
   writeFileSync(join(repo, "README.md"), "fixture\nunstaged\n");
   writeFileSync(join(repo, "staged.ts"), "export const staged = 1;\n");
@@ -65,6 +70,7 @@ test("runLocal reviews staged unstaged and untracked changes when working tree i
   assert.match(prompts, /diff --git a\/src\/new\.ts b\/src\/new\.ts/);
   assert.match(prompts, /\+export const untracked = 1;/);
   assert.equal(prompts.includes('"untrackedSkipped"'), false);
+  assert.equal(prompts.includes(String.fromCharCode(27)), false);
   const cache = readFileSync(join(tmp, "cache", "last-review.json"), "utf8");
   assert.match(cache, /"headSha": "WORKING"/);
 });
@@ -112,7 +118,7 @@ test("runLocal skips tracked binary files while reviewing uncommitted text chang
   assert.match(prompts, /diff --git a\/src\/untracked\.ts b\/src\/untracked\.ts/);
   assert.equal(prompts.includes("diff --git a/tracked image.bin"), false);
   assert.equal(prompts.includes("Binary files"), false);
-  assert.equal(prompts.includes('"path": "tracked image.bin"'), false);
+  assert.equal(prompts.includes('"path": "tracked image.bin"'), true);
 });
 
 // The exclude pathspec for a skipped binary file is matched literally: with
@@ -142,7 +148,7 @@ test("runLocal excludes only the exact binary path, not glob matches, when revie
   assert.match(prompts, /\+text two/);
   assert.match(prompts, /diff --git a\/keep\.ts b\/keep\.ts/);
   assert.equal(prompts.includes('"path": "ab.png"'), true);
-  assert.equal(prompts.includes('"path": "a[b].png"'), false);
+  assert.equal(prompts.includes('"path": "a[b].png"'), true);
   assert.equal(prompts.includes("Binary files"), false);
 });
 
@@ -181,7 +187,7 @@ test("runLocal reports a skipped dangling symlink when no reviewable uncommitted
   );
 });
 
-test("runLocal reports skipped tracked binary files when no reviewable uncommitted patch remains", async (t) => {
+test("runLocal reports binary-only tracked changes as coverage gaps", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-only-"));
   const repo = initRepo(tmp);
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -191,13 +197,14 @@ test("runLocal reports skipped tracked binary files when no reviewable uncommitt
   commitAll(repo, "base");
   writeFileSync(join(repo, "tracked image.bin"), Buffer.from([0, 9, 2, 3]));
 
-  await assert.rejects(
-    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-    /No uncommitted changes to review\. Skipped files: tracked image\.bin \(binary\)\./
-  );
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.unreviewedBinaryFiles, ["tracked image.bin"]);
+  assert.match(result.summary, /model review skipped/);
+  assert.deepEqual(JSON.parse(readFileSync(join(tmp, "cache", "last-review.json"), "utf8")).unreviewedBinaryFiles, ["tracked image.bin"]);
 });
 
-test("runLocal reports skipped tracked binary renames with spaces when no reviewable patch remains", async (t) => {
+test("runLocal reports binary-only tracked renames with spaces as coverage gaps", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-rename-"));
   const repo = initRepo(tmp);
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -208,45 +215,93 @@ test("runLocal reports skipped tracked binary renames with spaces when no review
   commitAll(repo, "base");
   gitText(["mv", "old image.bin", "new image.bin"], repo);
 
-  await assert.rejects(
-    () => runLocal(repo, { cacheDir: join(tmp, "cache") }),
-    /No uncommitted changes to review\. Skipped files: old image\.bin \(binary\), new image\.bin \(binary\)\./
-  );
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.deepEqual(result.unreviewedBinaryFiles, ["old image.bin", "new image.bin"]);
 });
 
-test("runLocal threads size-cap-skipped untracked files into large-path deep prompts", async (t) => {
+test("runLocal reports binary-only untracked changes as coverage gaps", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-untracked-binary-only-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  writeFileSync(join(repo, "new image.bin"), Buffer.from([0, 1, 2, 3]));
+
+  const dryRun = localDryRun(repo, { deep: true });
+  assert.equal(dryRun.bundle.patch, "");
+  assert.equal(dryRun.binaryOnlyFastPath, true);
+  assert.equal(dryRun.largePath, false);
+
+  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
+  assert.equal(result.verdict, "pass");
+  assert.deepEqual(result.unreviewedBinaryFiles, ["new image.bin"]);
+  assert.match(result.summary, /model review skipped/);
+});
+
+for (const tracked of [false, true]) {
+  for (const diagnostic of ["dangling", "empty"] as const) {
+    test(`runLocal reports binary coverage with a ${diagnostic} diagnostic, tracked=${tracked}`, async (t) => {
+      const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-diagnostic-"));
+      const repo = initRepo(tmp);
+      t.after(() => rmSync(tmp, { recursive: true, force: true }));
+      const { promptPath } = installFakeClaude(t, tmp);
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+      if (tracked) {
+        commitAll(repo, "binary base");
+        writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+      }
+      if (diagnostic === "dangling") symlinkSync("missing", join(repo, "source.ts"));
+      else writeFileSync(join(repo, "source.ts"), "");
+      const cacheDir = join(tmp, "cache");
+
+      const dryRun = localDryRun(repo, {});
+      assert.equal(dryRun.binaryOnlyFastPath, true);
+      const result = await runLocal(repo, { cacheDir });
+      assert.equal(result.verdict, "pass");
+      assert.deepEqual(result.unreviewedBinaryFiles, ["asset.bin"]);
+      assert.equal(result.summary, "No text patch to review; model review skipped.");
+      assert.match(result.reviewTarget ?? "", /Skipped untracked files: .*source\.ts/);
+      assert.equal(existsSync(promptPath), false);
+      assert.deepEqual(JSON.parse(readFileSync(join(cacheDir, "last-review.json"), "utf8")).unreviewedBinaryFiles, ["asset.bin"]);
+    });
+  }
+
+  test(`runLocal rejects binary-only review with size-capped source, tracked=${tracked}`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-binary-skipped-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const { promptPath } = installFakeClaude(t, tmp);
+    writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+    if (tracked) {
+      commitAll(repo, "binary base");
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+    }
+    writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+    const cacheDir = join(tmp, "cache");
+
+    await assert.rejects(
+      () => runLocal(repo, { cacheDir }),
+      /Untracked file contents omitted.*source\.ts.*per_file_cap/s,
+    );
+    assert.equal(existsSync(promptPath), false);
+    assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
+  });
+}
+
+test("runLocal refuses capped content even when a deep runner could report success", async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "needlefish-local-caps-"));
   const repo = initRepo(tmp);
   const { promptPath } = installFakeClaude(t, tmp);
-  const previousLargePatchChars = process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
-  process.env.NEEDLEFISH_LARGE_PATCH_CHARS = "1";
-  t.after(() => {
-    if (previousLargePatchChars === undefined) delete process.env.NEEDLEFISH_LARGE_PATCH_CHARS;
-    else process.env.NEEDLEFISH_LARGE_PATCH_CHARS = previousLargePatchChars;
-    rmSync(tmp, { recursive: true, force: true });
-  });
-
-  gitText(["branch", "-M", "main"], repo);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
   writeFileSync(join(repo, "reviewed.md"), "review me\n");
   writeFileSync(join(repo, "image.png"), Buffer.from([0, 1, 2, 3]));
   writeFileSync(join(repo, "empty.txt"), "");
   writeFileSync(join(repo, "large.md"), "x".repeat(201 * 1024));
 
-  const result = await runLocal(repo, { cacheDir: join(tmp, "cache") });
-
-  const reviewTarget = result.reviewTarget ?? "";
-  assert.match(reviewTarget, /Skipped untracked files:/);
-  assert.match(reviewTarget, /image\.png \(binary\)/);
-  assert.match(reviewTarget, /empty\.txt \(empty\)/);
-  assert.match(reviewTarget, /large\.md \(over 200KB\)/);
-
-  const prompts = readFileSync(promptPath, "utf8");
-  assert.equal(prompts.includes("diff --git a/large.md b/large.md"), false);
-  const deepPrompt = prompts
-    .split("\n---PROMPT---\n")
-    .find((prompt) => prompt.includes("doing a DEEP review"));
-  assert.ok(deepPrompt, "expected the large path to run a deep pass");
-  assert.match(deepPrompt, /"untrackedSkipped": \[\n\s+\{\n\s+"path": "large\.md",\n\s+"bytes": 205824,\n\s+"reason": "per_file_cap"/);
+  const collected = buildUntrackedPatch(repo, ["reviewed.md", "image.png", "empty.txt", "large.md"]);
+  assert.deepEqual(collected.untrackedSkipped, [{ path: "large.md", bytes: 205824, reason: "per_file_cap" }]);
+  assert.deepEqual(collected.binaryFiles, ["image.png"]);
+  await assert.rejects(() => runLocal(repo, { cacheDir: join(tmp, "cache"), deep: true }), /Untracked file contents omitted.*large\.md.*per_file_cap/s);
+  assert.equal(existsSync(promptPath), false);
 });
 
 test("buildUntrackedPatch records subsequent total-cap overflows", (t) => {
@@ -530,4 +585,91 @@ test("runLocal keeps the removed source path when a tracked file is renamed into
   const prompts = readFileSync(promptPath, "utf8");
   assert.equal(prompts.includes('"path": ".github/workflows/ci.yml"'), true);
   assert.equal(prompts.includes('"path": "docs/ci-notes.md"'), true);
+});
+
+for (const binary of [false, true]) {
+  test(`docs-only review rejects size-capped untracked source, tracked binary=${binary}`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-docs-omission-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const { promptPath } = installFakeClaude(t, tmp);
+    delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    if (binary) {
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 1]));
+      commitAll(repo, "binary base");
+      writeFileSync(join(repo, "asset.bin"), Buffer.from([0, 2]));
+    }
+    writeFileSync(join(repo, "README.md"), "Updated documentation\n");
+    writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+    const cacheDir = join(tmp, "cache");
+
+    await assert.rejects(() => runLocal(repo, { cacheDir }), /Untracked file contents omitted.*source\.ts.*per_file_cap/s);
+    assert.equal(existsSync(promptPath), false);
+    assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
+  });
+}
+
+test("docs-only review rejects total-capped untracked source", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-docs-total-omission-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const { promptPath } = installFakeClaude(t, tmp);
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  for (let index = 0; index < 6; index++) {
+    writeFileSync(join(repo, `cap-${index}.md`), "x".repeat(190 * 1024));
+  }
+  writeFileSync(join(repo, "source.ts"), "x".repeat(190 * 1024));
+
+  await assert.rejects(() => runLocal(repo, { cacheDir: join(tmp, "cache") }), /Untracked file contents omitted.*source\.ts.*total_cap/s);
+  assert.equal(existsSync(promptPath), false);
+});
+
+test("source review rejects capped contents before creating a misleading pass cache", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-source-omission-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const { promptPath } = installFakeClaude(t, tmp);
+  writeFileSync(join(repo, "app.ts"), "export const changed = 1;\n");
+  writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+  const cacheDir = join(tmp, "cache");
+  await assert.rejects(() => runLocal(repo, { cacheDir }), /Untracked file contents omitted.*source\.ts.*per_file_cap/s);
+  assert.equal(existsSync(promptPath), false);
+  assert.equal(existsSync(join(cacheDir, "last-review.json")), false);
+});
+
+for (const diagnostic of ["empty", "dangling"] as const) {
+  test(`docs-only retains its policy skip with only a ${diagnostic} diagnostic`, async (t) => {
+    const tmp = mkdtempSync(join(tmpdir(), "needlefish-docs-diagnostic-"));
+    const repo = initRepo(tmp);
+    t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    const { promptPath } = installFakeClaude(t, tmp);
+    delete process.env.NEEDLEFISH_NO_FAST_PATH;
+    writeFileSync(join(repo, "README.md"), "Updated documentation\n");
+    if (diagnostic === "empty") writeFileSync(join(repo, "source.ts"), "");
+    else symlinkSync("missing-source", join(repo, "source.ts"));
+    const cacheDir = join(tmp, "cache");
+    const result = await runLocal(repo, { cacheDir });
+    assert.equal(result.verdict, "pass");
+    assert.equal(result.docsOnlyFastPath, true);
+    assert.deepEqual(result.residualRisks, []);
+    assert.equal(existsSync(promptPath), false);
+    assert.match(readFileSync(join(cacheDir, "last-review.json"), "utf8"), /"docsOnlyFastPath": true/);
+  });
+}
+
+test("capped input leaves a previously completed cache unchanged", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "needlefish-omission-cache-"));
+  const repo = initRepo(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  installFakeClaude(t, tmp);
+  delete process.env.NEEDLEFISH_NO_FAST_PATH;
+  writeFileSync(join(repo, "README.md"), "Updated documentation\n");
+  const cacheDir = join(tmp, "cache");
+  const complete = await runLocal(repo, { cacheDir });
+  assert.equal(complete.verdict, "pass");
+  const cachePath = join(cacheDir, "last-review.json");
+  const before = readFileSync(cachePath, "utf8");
+  writeFileSync(join(repo, "source.ts"), "x".repeat(201 * 1024));
+  await assert.rejects(() => runLocal(repo, { cacheDir }), /Untracked file contents omitted/);
+  assert.equal(readFileSync(cachePath, "utf8"), before);
 });

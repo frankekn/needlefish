@@ -46,6 +46,8 @@ export interface UntrackedSkippedFile {
 }
 
 export interface Bundle {
+	// Collection diagnostics only. Omitted from all model prompts.
+	readonly binaryFiles?: readonly string[];
 	readonly repoPath: string;
 	readonly baseSha: string;
 	readonly headSha: string;
@@ -65,6 +67,32 @@ export type QuoteCheck =
 	| { readonly status: "matched" | "not_found" | "unchecked" }
 	| { readonly status: "moved"; readonly from: string };
 
+export interface ExternalClaim {
+	readonly claim: string;
+	readonly necessary: boolean;
+	readonly source: { readonly type: "external"; readonly url: string };
+}
+
+export type SourceEvidence =
+	| {
+		readonly sourceType: "git_blob";
+		readonly file: string;
+		readonly lineStart: number;
+		readonly lineEnd: number;
+	} & (
+		| { readonly status: "source_present"; readonly revision: string; readonly contentDigest: string }
+		| { readonly status: "source_unverified"; readonly revision: string | null }
+	)
+	| ExternalClaim & {
+		readonly sourceType: "external";
+		readonly status: "unverified_external_claim";
+	};
+
+export interface FindingEvidence {
+	readonly toolRead: "unknown";
+	readonly sources: readonly SourceEvidence[];
+}
+
 export interface Finding {
 	readonly severity: Severity;
 	readonly title: string;
@@ -81,6 +109,8 @@ export interface Finding {
 	readonly replacement?: { readonly lines: readonly string[] };
 	readonly quote?: string;
 	readonly quoteCheck?: QuoteCheck;
+	readonly externalClaims?: readonly ExternalClaim[];
+	readonly evidence?: FindingEvidence;
 }
 
 export interface ResidualRisk {
@@ -103,12 +133,9 @@ export interface ScopeCallout {
 	readonly files: readonly string[];
 }
 
-// Content the review could not read. Output-only: reported by the runner
-// sandbox, never derived from model text. lfs_pointer_only names a changed
-// file checked out as a pointer stub; lfs_scan_incomplete means the sandbox
-// could not establish whether changed files are pointer stubs (LFS use or
-// the pointer list unknown), so more changed files may be unread than are
-// named.
+// LFS content the review could not read. Output-only, derived from runner
+// sandbox diagnostics, never model text. A pointer elsewhere in the repo is
+// not a gap for this diff.
 export type CoverageGap =
 	| { readonly kind: "lfs_pointer_only"; readonly file: string }
 	| { readonly kind: "lfs_scan_incomplete" };
@@ -121,6 +148,7 @@ export interface RawReview {
 }
 
 export interface ReviewResult {
+	readonly docsOnlyFastPath?: boolean;
 	readonly schemaVersion: typeof REVIEW_RESULT_SCHEMA_VERSION;
 	readonly verdict: Verdict;
 	readonly summary: string;
@@ -137,10 +165,10 @@ export interface ReviewResult {
 	// Non-blocking, path-derived file-surface callouts. Output-only: computed
 	// from changedFiles at result assembly, never part of the model bundle.
 	readonly scopeCallouts?: readonly ScopeCallout[];
-	// Changed files the sandbox could only check out as Git LFS pointer stubs,
-	// in changed-file order, one entry per file across every pass, followed by
-	// one lfs_scan_incomplete entry when any pass could not finish the scan.
-	// Output-only.
+	// Output-only binary paths. Kept outside coverageGaps so v1 readers that
+	// validate its closed LFS union still accept this additive field.
+	readonly unreviewedBinaryFiles?: readonly string[];
+	// Changed Git LFS pointer stubs and an optional incomplete-scan marker.
 	readonly coverageGaps?: readonly CoverageGap[];
 	readonly runtime?: ReviewRuntime;
 	readonly stats?: readonly RunStat[];

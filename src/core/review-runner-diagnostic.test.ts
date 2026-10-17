@@ -19,7 +19,7 @@ test("unknown runner schema diagnostic stays separate from every raw transcript"
   const output = "output CANARY-FILE";
   writeFileSync(bin, `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.readFileSync(0);
+const input=fs.readFileSync(0,"utf8");
 fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], ${JSON.stringify(output)});
 process.stdout.write(${JSON.stringify(stdout)});
 process.stderr.write(${JSON.stringify(stderr)});
@@ -44,8 +44,11 @@ process.exit(1);
     const raw = `${output}\n${stdout}\n${stderr}`;
     assert.deepEqual(Reflect.get(error, "rawOutputs"), [raw]);
     assert.equal(Reflect.get(error, "rawOutput"), raw);
-    assert.deepEqual(events.map(event => ({ content: event.content, diagnostic: Reflect.get(event, "diagnostic"), surface: event.surface, outcome: event.outcome, runnerAttempt: event.runnerAttempt })), [{ content: raw, diagnostic: "unrecognized_codex_event_schema", surface: "raw_failure", outcome: "runner_failed", runnerAttempt: 1 }]);
-    assert.equal(Object.isFrozen(events[0]), true);
+    assert.deepEqual(events.map(event => ({ content: event.content, diagnostic: Reflect.get(event, "diagnostic"), surface: event.surface, outcome: event.outcome, runnerAttempt: event.runnerAttempt })), [
+      { content: "", diagnostic: undefined, surface: "native_tool_receipts", outcome: "runner_failed", runnerAttempt: 1 },
+      { content: raw, diagnostic: "unrecognized_codex_event_schema", surface: "raw_failure", outcome: "runner_failed", runnerAttempt: 1 },
+    ]);
+    for (const event of events) assert.equal(Object.isFrozen(event), true);
     return error.message;
   };
   assert.equal(await run(false), await run(true));
@@ -60,7 +63,7 @@ test("private diagnostic observer failure preserves the retried review verdict",
   t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
   writeFileSync(bin, `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.readFileSync(0);
+const input=fs.readFileSync(0,"utf8");
 const calls = ${JSON.stringify(calls)};
 const count = Number(fs.readFileSync(calls, "utf8")) + 1;
 fs.writeFileSync(calls, String(count));
@@ -68,7 +71,7 @@ if (count === 1) {
   process.stdout.write('{"type":"future.event","message":"insufficient credits"}\\n');
   process.exit(1);
 }
-fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], JSON.stringify({ summary: "clean", findings: [], checked: ["source reviewed"], residual_risks: [] }));
+fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], JSON.stringify({ summary: "clean", ...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked: ["source reviewed"], residual_risks: [] }));
 `);
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;

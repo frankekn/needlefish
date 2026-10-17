@@ -23,7 +23,8 @@
     "prompts/review.md",
     "schemas/review-result.v1.schema.json",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "runtime-publication.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -31,7 +32,7 @@
     "prepublishOnly": "pnpm build && pnpm test",
     "pack:smoke": "sh scripts/pack-smoke.sh",
     "review": "tsx src/cli.ts",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && node scripts/runtime-publication.mjs",
     "lint": "eslint src eval",
     "test": "node scripts/test.mjs"
   },

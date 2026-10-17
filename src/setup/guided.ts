@@ -201,12 +201,38 @@ export function inspectGithubSetup(requestedRepository: string, deadline = perfo
   };
 }
 
+function requireSafeUpgrade(deadline: number, repository: string, defaultBranch: string): void {
+  const branch = encodeURIComponent(defaultBranch);
+  const protection = api(deadline, `repos/${repository}/branches/${branch}/protection/required_status_checks`, undefined, undefined, true);
+  const classic = protection === undefined ? [] : [
+    ...array(object(protection).contexts ?? []).map(string),
+    ...array(object(protection).checks ?? []).map(check => string(object(check).context)),
+  ];
+  const rules: Json[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const rows = array(required(deadline, `repos/${repository}/rules/branches/${branch}?per_page=100&page=${page}`));
+    if (rows.length > 100) throw new Error("GitHub returned an invalid branch rules page. Nothing was written.");
+    rules.push(...rows);
+    if (rows.length < 100) break;
+    if (page === 10) throw new Error("GitHub branch rule pagination limit reached. Nothing was written. Ask a maintainer to inspect the workflow migration.");
+  }
+  const requiredChecks = rules.flatMap(value => {
+    const rule = object(value);
+    return rule.type === "required_status_checks"
+      ? array(object(rule.parameters ?? null).required_status_checks ?? null).map(check => string(object(check).context)) : [];
+  });
+  if ([...classic, ...requiredChecks].includes("Needlefish")) {
+    throw new Error("An upgrade with a required Needlefish check needs manual migration. Nothing was written. Preserve required checks and ask a maintainer to plan and independently review the workflow migration on a separate branch. The reserved setup branch is not reviewed and cannot satisfy that required check.");
+  }
+}
+
 function createSetupPr(deadline: number, repository: string) {
   const status = inspectGithubSetup(repository, deadline);
   if (!status.admin) throw new Error("A repository administrator must enable setup. Ask the repository owner to grant admin access or perform setup.");
   if (!status.actions) throw new Error(status.actionsReason);
   if (status.conflict) throw new Error(status.conflict);
   if (status.phase === "merged") return status;
+  if (status.currentWorkflow === PREVIOUS_GITHUB_WORKFLOW) requireSafeUpgrade(deadline, status.repository, status.defaultBranch);
   const endpoint = `repos/${status.repository}`;
   let branchHead = status.branchHead;
   if (branchHead === null) {
@@ -215,6 +241,7 @@ function createSetupPr(deadline: number, repository: string) {
     const inspected = inspectWorkflows(deadline, status.repository, parent);
     if (inspected.conflict) throw new Error(inspected.conflict);
     if (inspected.existing?.content === GITHUB_WORKFLOW) throw new Error("The selected revision already contains the current setup workflow. Nothing was written. Refresh status before retrying.");
+    if (status.currentWorkflow !== PREVIOUS_GITHUB_WORKFLOW && inspected.existing?.content === PREVIOUS_GITHUB_WORKFLOW) requireSafeUpgrade(deadline, status.repository, status.defaultBranch);
     const commit = object(required(deadline, `${endpoint}/git/commits/${parent}`));
     const tree = object(required(deadline, `${endpoint}/git/trees`, { base_tree: string(object(commit.tree ?? null).sha),
       tree: [{ path: PATH, mode: "100644", type: "blob", content: GITHUB_WORKFLOW }] }, "POST"));

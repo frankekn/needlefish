@@ -57,7 +57,8 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       "const fs = require('node:fs');",
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
-      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write('{}'); process.exit(0); }",
+      "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
+      "if (args.includes('--input')) { fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/7') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
@@ -88,7 +89,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
       "const match = input.match(/\"repoPath\":\\s*\"([^\"]+)\"/);",
       `if (match && !fs.existsSync(${JSON.stringify(promptRepoPath)})) fs.writeFileSync(${JSON.stringify(promptRepoPath)}, match[1]);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -209,7 +210,8 @@ async function githubAgentsMd(
       "#!/usr/bin/env node",
       "const args = process.argv.slice(2);",
       "if (args[0] !== 'api') process.exit(2);",
-      "if (args.includes('--input')) { process.stdout.write('{}'); process.exit(0); }",
+      "if (args.some(a => /\\/commits\\/.*\\/check-runs/.test(a))) { process.stdout.write(JSON.stringify([{ check_runs: [] }])); process.exit(0); }",
+      "if (args.includes('--input')) { process.stdout.write(JSON.stringify(args.includes('POST') && args.some(a => a.endsWith('/check-runs')) ? { id: 1, app: { id: 15368, slug: 'github-actions' } } : {})); process.exit(0); }",
       `if (args[1] === 'repos/frankekn/needlefish/pulls/9') { process.stdout.write(${JSON.stringify(
         JSON.stringify({
           state: "open",
@@ -238,7 +240,7 @@ async function githubAgentsMd(
       "const fs = require('node:fs');",
       "const input = fs.readFileSync(0, 'utf8');",
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);

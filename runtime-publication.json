@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "packageVersion": "0.4.10",
+  "packageDefault": {
+    "selection": "auto-detect",
+    "runnerPriority": [
+      "codex",
+      "claude"
+    ],
+    "codexEffort": "medium"
+  },
+  "benchmarkSelected": {
+    "report": "results/2026-09-09-pi-deepseek-v41-flash-high-x3.json"
+  },
+  "recommendedInstallation": {
+    "selection": "operator-selected",
+    "identity": "unknown",
+    "qualification": "unqualified"
+  }
+}
