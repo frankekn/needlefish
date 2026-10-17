@@ -58,7 +58,7 @@ process.stdin.on('end', () => {
   const kind = input.includes('adversarial critic') ? 'critic' : input.includes('review-MAP pass') ? 'map' : input.includes('doing a DEEP review') ? 'deep' : ${JSON.stringify(mode === "explain" ? "explain" : "review")};
   fs.writeFileSync(${JSON.stringify(tmp)} + '/' + kind + '.txt', input);
   const out = process.argv[process.argv.indexOf('--output-last-message') + 1];
-  fs.writeFileSync(out, kind === 'map' ? ${JSON.stringify(JSON.stringify(map))} : kind === 'explain' ? 'Explanation preserved.' : ${JSON.stringify(JSON.stringify(candidate))});
+  fs.writeFileSync(out, kind === 'map' ? ${JSON.stringify(JSON.stringify(map))} : kind === 'explain' ? 'Explanation preserved.' : kind === 'critic' ? JSON.stringify({summary:'reviewed',decisions:[{ref:'f0',action:'keep',severity:'P2',confidence:0.9}],checked:['checked'],residual_risks:[]}) : ${JSON.stringify(JSON.stringify(candidate))});
 });
 `);
       chmodSync(bin, 0o755);
@@ -116,9 +116,10 @@ process.stdin.on('end', () => {
           assert.equal(prompt, loadPrompt("deep.md").replace("{{AGENTS}}", () => text).replace("{{PR_META}}", () => JSON.stringify(bundle.prMeta, null, 2)).replace("{{HOTSPOT}}", () => JSON.stringify(deepHotspot, null, 2)).replace("{{FOCUS}}", text).replace("{{BASE}}", bundle.baseSha).replace("{{HEAD}}", bundle.headSha));
         }
       }
-      const criticCandidate = mode === "large"
+      const rawCriticCandidate = mode === "large"
         ? { ...candidate, summary: text, checked: [`[one surface] ${candidateText}`, ...candidate.checked] }
         : candidate;
+      const criticCandidate = { ...rawCriticCandidate, findings: rawCriticCandidate.findings.map((finding, index) => ({ ref: `f${index}`, ...finding })) };
       const critic = captured("critic");
       assert.deepEqual(JSON.parse(between(critic, "# Candidate findings\n", "\n# Diff stat")), criticCandidate);
       const criticPatch = mode === "small" ? patch : bundle.patchStat;

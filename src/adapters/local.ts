@@ -292,8 +292,8 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  const binaryOnly = trackedBinaryPaths.length + untracked.binaryFiles.length > 0;
-  if (!patch.trim() && !binaryOnly) {
+  const hasBinary = trackedBinaryPaths.length + untracked.binaryFiles.length > 0;
+  if (!patch.trim() && !hasBinary) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);

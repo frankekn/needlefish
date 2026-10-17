@@ -34,7 +34,8 @@ function compile(file: string, capture: string, version = "1.2.3", failProbe = f
   const source = `${file}.c`;
   const answer = JSON.stringify({ summary: "ok", findings: [], checked: ["source checked"], residual_risks: [] });
   const event = `${JSON.stringify({ type: "item.completed", item: { id: "answer", type: "agent_message", text: answer } })}\n`;
-  writeFileSync(source, `#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <signal.h>\nint main(int argc,char **argv){if(argc==2 && !strcmp(argv[1],"--version")){FILE *v=fopen(${JSON.stringify(capture)},"a");fprintf(v,"VERSION_PROBE=${version}\\nVERSION_PID=%ld\\n",(long)getpid());fclose(v);signal(SIGTERM,SIG_IGN);usleep(${versionDelayMs}*1000);puts("codex-cli ${version}");return ${failProbe ? 1 : 0};}FILE *f=fopen(${JSON.stringify(capture)},"a");fprintf(f,"EXECUTABLE_VERSION=${version}\\n");int c;while((c=getchar())!=EOF)fputc(c,f);fputs("\\nCALL_END\\n",f);for(int i=1;i<argc;i++)fprintf(f,"ARGV=%s\\n",argv[i]);fprintf(f,"HOME=%s\\n",getenv("HOME"));fprintf(f,"PASSTHROUGH=%s\\n",getenv("NF_PRIVATE_SENTINEL")?getenv("NF_PRIVATE_SENTINEL"):"absent");char authpath[4096];if(getenv("CODEX_HOME"))snprintf(authpath,sizeof(authpath),"%s/auth.json",getenv("CODEX_HOME"));else snprintf(authpath,sizeof(authpath),"%s/.codex/auth.json",getenv("HOME"));FILE *a=fopen(authpath,"r");if(a){fputs("AUTH=",f);while((c=fgetc(a))!=EOF)fputc(c,f);fputc('\\n',f);fclose(a);}fclose(f);fputs(${JSON.stringify(event)},stdout);return 0;}\n`);
+  const criticEvent = `${JSON.stringify({ type: "item.completed", item: { id: "answer", type: "agent_message", text: JSON.stringify({ summary: "ok", decisions: [], checked: ["source checked"], residual_risks: [] }) } })}\n`;
+  writeFileSync(source, `#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <signal.h>\nint main(int argc,char **argv){if(argc==2 && !strcmp(argv[1],"--version")){FILE *v=fopen(${JSON.stringify(capture)},"a");fprintf(v,"VERSION_PROBE=${version}\\nVERSION_PID=%ld\\n",(long)getpid());fclose(v);signal(SIGTERM,SIG_IGN);usleep(${versionDelayMs}*1000);puts("codex-cli ${version}");return ${failProbe ? 1 : 0};}FILE *f=fopen(${JSON.stringify(capture)},"a");fprintf(f,"EXECUTABLE_VERSION=${version}\\n");int c;char *prompt=NULL;size_t promptSize=0;FILE *promptStream=open_memstream(&prompt,&promptSize);while((c=getchar())!=EOF){fputc(c,f);fputc(c,promptStream);}fclose(promptStream);int critic=strstr(prompt,"adversarial critic")!=NULL;free(prompt);fputs("\\nCALL_END\\n",f);for(int i=1;i<argc;i++)fprintf(f,"ARGV=%s\\n",argv[i]);fprintf(f,"HOME=%s\\n",getenv("HOME"));fprintf(f,"PASSTHROUGH=%s\\n",getenv("NF_PRIVATE_SENTINEL")?getenv("NF_PRIVATE_SENTINEL"):"absent");char authpath[4096];if(getenv("CODEX_HOME"))snprintf(authpath,sizeof(authpath),"%s/auth.json",getenv("CODEX_HOME"));else snprintf(authpath,sizeof(authpath),"%s/.codex/auth.json",getenv("HOME"));FILE *a=fopen(authpath,"r");if(a){fputs("AUTH=",f);while((c=fgetc(a))!=EOF)fputc(c,f);fputc('\\n',f);fclose(a);}fclose(f);fputs(critic?${JSON.stringify(criticEvent)}:${JSON.stringify(event)},stdout);return 0;}\n`);
   const built = spawnSync("cc", [source, "-o", file], { encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
 }
@@ -254,12 +255,10 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   compile(next, capture, "3.0.0");
   writeFileSync(capture, "");
   let replaced = false;
-  const mutation = await review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 }, undefined, () => { if (!replaced && readFileSync(capture, "utf8").includes("CALL_END")) { replaced = true; copyFileSync(next, bin); } });
-  assert.equal(mutation.verdict, "pass");
+  await assert.rejects(review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 }, undefined, () => { if (!replaced && readFileSync(capture, "utf8").includes("CALL_END")) { replaced = true; copyFileSync(next, bin); } }), /captured Codex executable changed/);
   const mutatedCalls = readFileSync(capture, "utf8");
   assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=1.2.3/g) ?? []).length, 1);
-  assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=3.0.0/g) ?? []).length, 1);
-  assert.deepEqual(mutation.runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
+  assert.equal((mutatedCalls.match(/EXECUTABLE_VERSION=3.0.0/g) ?? []).length, 0);
   writeFileSync(bin, `#!/bin/sh\nif [ "$1" = --version ]; then echo codex-cli 1.2.3; exit 0; fi\nexec ${JSON.stringify(next)} "$@"\n`);
   chmodSync(bin, 0o755);
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });

@@ -89,7 +89,7 @@ test("runGithub normalizes relative repo paths before building prompts", async (
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
       "const match = input.match(/\"repoPath\":\\s*\"([^\"]+)\"/);",
       `if (match && !fs.existsSync(${JSON.stringify(promptRepoPath)})) fs.writeFileSync(${JSON.stringify(promptRepoPath)}, match[1]);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -240,7 +240,7 @@ async function githubAgentsMd(
       "const fs = require('node:fs');",
       "const input = fs.readFileSync(0, 'utf8');",
       `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);

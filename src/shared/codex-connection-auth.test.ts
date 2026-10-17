@@ -60,7 +60,7 @@ if(mode==='failed-raw'){process.stdout.write(key);process.exit(1)}
 if(mode==='stderr')process.stderr.write(key);
 if(mode==='escaped-stderr')process.stderr.write(JSON.stringify(key));
 const prompt=fs.readFileSync(0,'utf8');
-const result=prompt.includes('review-MAP pass')?{summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:'Checked source',checked:['source.ts'],findings:[],residual_risks:[]};
+const result=prompt.includes('review-MAP pass')?{summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}:{summary:'Checked source',checked:['source.ts'],...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}),residual_risks:[]};
 if(mode==='percent-summary')result.summary=leak;
 const output=mode==='percent-summary'?JSON.stringify(result):mode==='decoded'?JSON.stringify({summary:key}):mode==='review'?JSON.stringify(result):'{}';
 if(mode==='escaped-stderr')process.stderr.write(key.split('').map(c=>String.fromCharCode(92)+'u'+c.charCodeAt(0).toString(16).padStart(4,'0')).join(''));
@@ -390,7 +390,7 @@ const prompt=fs.readFileSync(0,'utf8'),args=process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(path.join(f.root, "calls.jsonl"))},JSON.stringify({args,cwd:process.cwd(),env:process.env,files:fs.readdirSync(process.env.CODEX_HOME)})+'\\n');
 const independent=${JSON.stringify(independent)},premise=${JSON.stringify(premise)};
 const critic=prompt.includes('adversarial critic');
-const result=prompt.includes('review-MAP pass')?{summary:'Mapped source',hotspots:[{name:'source',files:['source.ts'],why:'changed value',risk:'high',edges:[]}]}:{summary:'Reviewed source',checked:['source.ts'],findings:critic?[independent]:[independent,premise],residual_risks:critic?[{text:${JSON.stringify(risk)},blocks:false},...${JSON.stringify(modelFinal)}]:[{text:${JSON.stringify(risk)},blocks:false},${JSON.stringify(modelRisk)}]};
+const result=prompt.includes('review-MAP pass')?{summary:'Mapped source',hotspots:[{name:'source',files:['source.ts'],why:'changed value',risk:'high',edges:[]}]}:{summary:'Reviewed source',checked:['source.ts'],...(critic?{decisions:[{ref:'f0',action:'keep',severity:independent.severity,confidence:independent.confidence},{ref:'f1',action:'drop'}]}:{findings:[independent,premise]}),residual_risks:critic?[{text:${JSON.stringify(risk)},blocks:false},...${JSON.stringify(modelFinal)}]:[{text:${JSON.stringify(risk)},blocks:false},${JSON.stringify(modelRisk)}]};
 fs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(result));
 `);
     const selection = f.select();

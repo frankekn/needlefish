@@ -32,7 +32,7 @@ if(m.method==='session/prompt'){
  if(mode.endsWith('stdout'))send({method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text}}}});
  if(mode.startsWith('failed-')){process.stdout.write('',()=>process.exit(1));return;}
  const summary=['structured','mixed','safe','replacement-safe'].includes(mode)?text:'safe completed';
- send({method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify({summary,findings:[],checked:['app.ts'],residual_risks:[]})}}}});
+ send({method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify({summary,...(m.params.prompt[0].text.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['app.ts'],residual_risks:[]})}}}});
  send({id:m.id,result:{stopReason:'end_turn'}});
 }});
 `);chmodSync(bin,0o755);

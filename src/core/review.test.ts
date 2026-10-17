@@ -65,7 +65,7 @@ test("review preserves deep evidence through tail coverage", async (t) => {
 			"  }",
 			"  if (input.includes('adversarial critic')) {",
 			"    if (!input.includes(evidence)) { process.stderr.write('missing deep evidence'); process.exit(1); }",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic kept blocker', findings: [finding], checked: [evidence], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic kept blocker', decisions: [{ref:'f0',action:'keep',severity:finding.severity,confidence:finding.confidence}], checked: [evidence], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -374,7 +374,7 @@ test("review keeps deep failure residuals after critic pruning", async (t) => {
 			"    return;",
 			"  }",
 			"  if (input.includes('adversarial critic')) {",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic pruned', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic pruned', decisions: [], checked: ['critic checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -451,7 +451,7 @@ test("review treats a degenerate deep response as a failed pass", async (t) => {
 			"    return;",
 			"  }",
 			"  if (input.includes('adversarial critic')) {",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic pruned', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic pruned', decisions: [], checked: ['critic checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -520,7 +520,7 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`  const calls = ${JSON.stringify(calls)};`,
-			"  const review = { summary: 'clean', findings: [], checked: ['looked at diff'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked at diff'], residual_risks: [] };",
 			"  if (input.includes('adversarial critic')) {",
 			"    fs.appendFileSync(calls, 'critic\\n');",
 			"    fs.writeFileSync(out, JSON.stringify(review));",
@@ -820,12 +820,12 @@ test("a status-0 runner's stdout and stderr reach the canary scan alongside its 
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
-			"process.stdin.resume();",
+			"let input = ''; process.stdin.on('data', chunk => input += chunk);",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			"  process.stdout.write('stream noise CANARY-STDOUT-OK');",
 			"  process.stderr.write('stream noise CANARY-STDERR-OK');",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -1061,7 +1061,7 @@ test("terminal error carries failed raws from earlier passes whose retry succeed
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`  const calls = ${JSON.stringify(calls)};`,
-			"  const review = { summary: 'clean', findings: [], checked: ['looked at diff'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked at diff'], residual_risks: [] };",
 			// Critic fails all three attempts with clean malformed text — the terminal
 			// rejection must still expose the review pass's contaminated attempt.
 			"  if (input.includes('adversarial critic')) {",
@@ -1139,11 +1139,11 @@ test("review does not re-ask after a runner safety error", async (t) => {
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
-			"process.stdin.resume();",
+			"let input = ''; process.stdin.on('data', chunk => input += chunk);",
 			"process.stdin.on('end', () => {",
 			`  fs.appendFileSync(${JSON.stringify(calls)}, 'review\\n');`,
 			"  fs.writeFileSync('runner-wrote.txt', 'dirty');",
-			"  process.stdout.write(JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"  process.stdout.write(JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -1226,8 +1226,7 @@ test("review isolates trace observers across concurrent deep passes and classifi
 			"    const candidate = input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat'));",
 			"    if (candidate.includes('observer-mutated')) { process.stderr.write('observer mutated critic input'); process.exit(1); }",
 			"    const parsed = JSON.parse(candidate);",
-			"    const finding = { severity: 'P2', title: 'critic-only marker', category: 'bug', file: 'src/a.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
-			"    fs.writeFileSync(out, JSON.stringify({ ...parsed, summary: 'critic-only marker', findings: [finding] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic-only marker', decisions: [...parsed.findings.map(f => ({ref:f.ref,action:'drop'})), {ref:'f99',action:'keep',severity:'P2',confidence:0.9}], checked: parsed.checked, residual_risks: parsed.residual_risks }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -1267,7 +1266,7 @@ test("review isolates trace observers across concurrent deep passes and classifi
 	);
 	assert.match(
 		baseline.message,
-		/malformed critic output: finding was not in the candidate review/,
+		/malformed critic output: unknown or duplicate ref/,
 	);
 	const baselineCalls = readFileSync(calls, "utf8").trim().split("\n");
 	assert.equal(
@@ -1418,7 +1417,7 @@ test("review feeds the diff as raw text, not escaped bundle JSON", async (t) => 
 			"process.stdin.on('data', (chunk) => { input += chunk; });",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] };",
 			"  if (input.includes('adversarial critic')) {",
 			"    fs.writeFileSync(out, JSON.stringify(review));",
 			"    return;",
@@ -1486,7 +1485,7 @@ test("review large thresholds are env-overridable", async (t) => {
 			"    return;",
 			"  }",
 			"  if (input.includes('adversarial critic')) {",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic done', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic done', decisions: [], checked: ['critic checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  process.stderr.write('unexpected prompt');",
@@ -1624,7 +1623,7 @@ test("review does not fast-path policy markdown or executable files under docs p
 			"process.stdin.on('data', (chunk) => { input += chunk; });",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] };",
 			"  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
 			"  fs.writeFileSync(out, JSON.stringify(review));",
 			"});",
@@ -1769,7 +1768,7 @@ test("review mixed docs+source bundle still invokes the model", async (t) => {
 			"process.stdin.on('data', (chunk) => { input += chunk; });",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] };",
 			"  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
 			"  fs.writeFileSync(out, JSON.stringify(review));",
 			"});",
@@ -1834,7 +1833,7 @@ test("review NEEDLEFISH_NO_FAST_PATH disables docs-only fast path", async (t) =>
 			"process.stdin.on('data', (chunk) => { input += chunk; });",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  const review = { summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] };",
+			"  const review = { summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] };",
 			"  fs.appendFileSync(" + JSON.stringify(calls) + ", 'x\\n');",
 			"  fs.writeFileSync(out, JSON.stringify(review));",
 			"});",
@@ -1898,7 +1897,7 @@ function writeEchoCriticBin(bin: string): void {
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			"  const finding = { severity: 'P2', title: 'Echo bug', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [finding], checked: ['looked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [{ref:'f0',action:'keep',severity:finding.severity,confidence:finding.confidence}] } : { findings: [finding] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -2020,7 +2019,7 @@ test("review traces prompt and runner attempts through candidate and final surfa
 			"    fs.appendFileSync(calls, 'critic\\n');",
 			"    const critics = fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line === 'critic').length;",
 			"    if (critics === 1) process.exit(4);",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'final review marker', findings: [], checked: ['final checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'final review marker', decisions: [{ref:'f0',action:'drop'}], checked: ['final checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  fs.appendFileSync(calls, 'review\\n');",
@@ -2167,12 +2166,12 @@ test("review awaits and isolates async observer errors from small review semanti
 		[
 			"#!/usr/bin/env node",
 			"const fs = require('node:fs');",
-			"process.stdin.resume();",
+			"let input = ''; process.stdin.on('data', chunk => input += chunk);",
 			"process.stdin.on('end', () => {",
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
 			`  fs.appendFileSync(${JSON.stringify(calls)}, 'call\\n');`,
 			"  const finding = { severity: 'P2', title: 'production finding', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' };",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [finding], checked: ['checked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [{ref:'f0',action:'keep',severity:finding.severity,confidence:finding.confidence}] } : { findings: [finding] }), checked: ['checked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -2375,7 +2374,7 @@ test("review traces one parse-failed raw event for an empty successful runner at
 			`  const calls = ${JSON.stringify(calls)};`,
 			"  if (input.includes('adversarial critic')) {",
 			"    fs.appendFileSync(calls, 'critic\\n');",
-			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic clean', findings: [], checked: ['critic checked'], residual_risks: [] }));",
+			"    fs.writeFileSync(out, JSON.stringify({ summary: 'critic clean', decisions: [], checked: ['critic checked'], residual_risks: [] }));",
 			"    return;",
 			"  }",
 			"  const reviewCalls = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\\n').filter((line) => line.startsWith('review')).length : 0;",
@@ -2537,7 +2536,7 @@ test("review attaches scope callouts without touching verdict or prompt", async 
 			"process.stdin.on('end', () => {",
 			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -2629,7 +2628,7 @@ test("review reports changed LFS pointer files as one coverage gap without touch
 			"process.stdin.on('end', () => {",
 			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -2722,7 +2721,7 @@ test("review reports an unfinished LFS scan as one coverage gap without touching
 			"process.stdin.on('end', () => {",
 			`  fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
 			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
-			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', findings: [], checked: ['looked'], residual_risks: [] }));",
+			"  fs.writeFileSync(out, JSON.stringify({ summary: 'clean', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['looked'], residual_risks: [] }));",
 			"});",
 		].join("\n"),
 	);
@@ -2795,8 +2794,8 @@ test("review preserves human risk for required external premises after critic pr
 			"if (input.includes('doing a DEEP review') && input.includes('codepass') && scenario === 'deep-pipe-pruned') { candidate.title = 'Shared diagnostic'; candidate.whyItBreaks = 'allocation|consumer arithmetic changed'; }",
 			"const critic = input.includes('adversarial critic');",
 			"if (critic && scenario === 'deep-independent-p1') candidate.severity = 'P1';",
-			`const findings = critic && ${JSON.stringify(scenario)}.endsWith('pruned') ? [] : [critic ? { ...candidate, title: 'Keep the arithmetic positive' } : candidate];`,
-			"const output = { summary: 'reviewed limit arithmetic', findings, checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: critic && scenario === 'deep-downgraded-pruned' ? [{ text: 'Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]', blocks: false }] : [] };",
+			"const prune = critic && scenario.endsWith('pruned');",
+			"const output = { summary: 'reviewed limit arithmetic', ...(critic ? {decisions:JSON.parse(input.slice(input.indexOf('# Candidate findings')+'# Candidate findings'.length,input.indexOf('# Diff stat'))).findings.map(f => prune ? {ref:f.ref,action:'drop'} : {ref:f.ref,action:'keep',severity:candidate.severity,confidence:candidate.confidence})} : {findings:[candidate]}), checked: ['EVIDENCE finding:Restore positive limit changed=src/app.ts:1 effect=negative total'], residual_risks: critic && scenario === 'deep-downgraded-pruned' ? [{ text: 'Unverified external premise for src/app.ts:1 (Restore positive limit): Vendor specification forbids negative limits [https://spec.example.invalid/reference]', blocks: false }] : [] };",
 			"fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(output));", "});"].join("\n"));
 		chmodSync(bin, 0o755);
 		const result = await review({ repoPath: repo, baseSha, headSha: headSha(repo), patch: "-export const limit = 10;\n+export const limit = -1;",
@@ -2843,8 +2842,8 @@ test("review bounds quote finalization by its shared deadline without changing t
 	writeFileSync(bin, [
 		`#!${process.execPath}`,
 		"const fs = require('node:fs');",
-		"process.stdin.resume(); process.stdin.on('end', () => {",
-		`  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify({ summary: "Found bug", findings: [finding], checked: ["Checked app.ts"], residual_risks: [] }))});`,
+		"let input = ''; process.stdin.on('data', chunk => input += chunk); process.stdin.on('end', () => {",
+		`  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify(input.includes('adversarial critic') ? {summary:"Found bug",decisions:[{ref:"f0",action:"keep",severity:"P2",confidence:0.9}],checked:["Checked app.ts"],residual_risks:[]} : ${JSON.stringify({ summary: "Found bug", findings: [finding], checked: ["Checked app.ts"], residual_risks: [] })}));`,
 		"});",
 	].join("\n"));
 	writeFileSync(gitShim, [

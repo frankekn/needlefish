@@ -63,6 +63,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       if (mode === 'split-thought-failure') { process.stdout.write('', () => process.exit(1)); return; }
     }
     const map = JSON.stringify(request.params).includes('review-MAP pass');
+    const critic = JSON.stringify(request.params).includes('adversarial critic');
     if (mode.startsWith('deep-') && !map && prior === 1) {
       if (mode === 'deep-nonzero-once') { process.stderr.write(process.env.AGENT_API_KEY, () => process.exit(1)); return; }
       process.stderr.write(process.env.AGENT_API_KEY + '\\n');
@@ -83,7 +84,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     if (mode === 'auth-error') {
       send({id:request.id,error:{code:-32000,message:'auth rejected TEST-ACCOUNT-A'}});
     } else {
-      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : ${JSON.stringify(reviewJson)};
+      let output = map ? JSON.stringify({summary:'mapped',hotspots:[{name:'source',files:['source.ts'],why:'changed',risk:'high',edges:[]}]}) : critic ? ${JSON.stringify(JSON.stringify({summary:'Checked source',checked:['source.ts'],decisions:[],residual_risks:[]}))} : ${JSON.stringify(reviewJson)};
       if (mode === 'explain-json-escaped') output = 'Credential note ' + JSON.stringify(process.env.AGENT_API_KEY);
       if (mode.startsWith('explain-escaped')) {
         const escaped = Array.from(process.env.AGENT_API_KEY).map((c,i) => mode.endsWith('-mixed') && i % 2 === 0 ? c : '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
@@ -95,7 +96,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
         process.stdout.write(text.replace(process.env.AGENT_API_KEY, escaped) + '\\n');
       }
       if (mode.startsWith('leak') && (!mode.endsWith('-once') || prior === 0)) {
-        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],findings:[],residual_risks:[]});
+        output = JSON.stringify({summary:process.env.AGENT_API_KEY,checked:['source.ts'],...(critic?{decisions:[]}:{findings:[]}),residual_risks:[]});
         if (mode.startsWith('leak-fenced')) {
           const escaped = Array.from(process.env.AGENT_API_KEY).map(c => '\\\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')).join('');
           output = '\x60\x60\x60json\\n' + output.replace(process.env.AGENT_API_KEY, escaped) + '\\n\x60\x60\x60';

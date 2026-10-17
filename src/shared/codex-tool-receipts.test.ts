@@ -110,7 +110,7 @@ test("runner retries keep failed and successful native receipts separate", async
 });
 
 test("real core keeps prompt reasks separate and exposes receipts only through private trace", async (t) => {
-	const f = fixture(t, `${emit} const counter=process.argv[1]+'.count';const n=fs.existsSync(counter)?Number(fs.readFileSync(counter,'utf8')):0;fs.writeFileSync(counter,String(n+1));fs.writeFileSync(out,n===0?'malformed':${JSON.stringify(JSON.stringify(cleanReview))});`);
+	const f = fixture(t, `${emit} const counter=process.argv[1]+'.count';const n=fs.existsSync(counter)?Number(fs.readFileSync(counter,'utf8')):0;fs.writeFileSync(counter,String(n+1));fs.writeFileSync(out,n===0?'malformed':(input.includes('adversarial critic')?${JSON.stringify(JSON.stringify({summary:'clean review',decisions:[],checked:['src/app.ts'],residual_risks:[]}))}:${JSON.stringify(JSON.stringify(cleanReview))}));`);
 	const events: ReviewTraceEvent[] = [];
 	const result = await review(f.bundle, {}, event => { events.push(event); });
 	const receipts = events.filter(event => event.surface === "native_tool_receipts");
@@ -122,7 +122,7 @@ test("real core keeps prompt reasks separate and exposes receipts only through p
 });
 
 test("observer failure records health without retrying or changing public result bytes", async (t) => {
-	const f = fixture(t, `${emit} fs.writeFileSync(out,${JSON.stringify(JSON.stringify(cleanReview))});`);
+	const f = fixture(t, `${emit} fs.writeFileSync(out,(input.includes('adversarial critic')?${JSON.stringify(JSON.stringify({summary:'clean review',decisions:[],checked:['src/app.ts'],residual_risks:[]}))}:${JSON.stringify(JSON.stringify(cleanReview))}));`);
 	const before = await review(f.bundle);
 	const healthy = await review(f.bundle, {}, () => {});
 	const failed = await review(f.bundle, {}, async event => { if(event.surface === "native_tool_receipts") throw new Error("private observer failed"); });
@@ -174,7 +174,7 @@ test("signal failure cannot become an accepted lifecycle", async (t) => {
 });
 
 test("ordered routes bind receipts to their invocation instead of reusing item IDs", async (t) => {
-	const f = fixture(t, `${emit} if(process.argv.includes('route-one')) { process.stdout.write(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})+'\\n');process.exitCode=1;} else fs.writeFileSync(out,${JSON.stringify(JSON.stringify(cleanReview))});`);
+	const f = fixture(t, `${emit} if(process.argv.includes('route-one')) { process.stdout.write(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})+'\\n');process.exitCode=1;} else fs.writeFileSync(out,(input.includes('adversarial critic')?${JSON.stringify(JSON.stringify({summary:'clean review',decisions:[],checked:['src/app.ts'],residual_risks:[]}))}:${JSON.stringify(JSON.stringify(cleanReview))}));`);
 	const prev = captureEnv(["NEEDLEFISH_REVIEW_TIMEOUT_MS"]);
 	t.after(() => restoreEnv(prev));
 	process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "10000";

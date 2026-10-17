@@ -165,7 +165,7 @@ test("a review freezes effective calls, round-trips runtime and keeps it out of 
     `fs.appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ args: process.argv.slice(2), prompt }) + '\\n');`,
     "console.log(JSON.stringify({type:'thread.started',thread_id:'frozen'}));",
     "console.log(JSON.stringify({type:'turn.started'}));",
-    "console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_message',text:JSON.stringify({ summary: 'ok', findings: [], checked: ['source checked'], residual_risks: [] })}}));",
+    "console.log(JSON.stringify({type:'item.completed',item:{id:'answer',type:'agent_message',text:JSON.stringify({ summary: 'ok', ...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked: ['source checked'], residual_risks: [] })}}));",
     "console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1,reasoning_output_tokens:0}}));",
   ].join("\n"));
   chmodSync(bin, 0o755);
@@ -265,7 +265,7 @@ for (const namedLaunch of [false, true]) {
       "  if (request.method === 'initialize') result = { protocolVersion: 1, agentCapabilities: {} };",
       "  if (request.method === 'session/new') result = { sessionId: 'sess' };",
       "  if (request.method === 'session/prompt') {",
-      "    const text = JSON.stringify({ summary: 'ok', findings: [], checked: ['ACP reviewed'], residual_risks: [] });",
+      "    const text = JSON.stringify({ summary: 'ok', ...(request.params.prompt[0].text.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked: ['ACP reviewed'], residual_risks: [] });",
       "    send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'sess', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } } } });",
       "    result = { stopReason: 'end_turn' };",
       "  }",
@@ -317,11 +317,11 @@ for (const scenario of [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
       "const path = require('node:path');",
-      "fs.readFileSync(0, 'utf8');",
+      "const prompt = fs.readFileSync(0, 'utf8');",
       "const authFile = path.join(process.env.HOME, '.pi', 'agent', 'auth.json');",
       "const auth = fs.existsSync(authFile) ? JSON.parse(fs.readFileSync(authFile, 'utf8')) : null;",
       `fs.appendFileSync(${JSON.stringify(capture)}, JSON.stringify({ args: process.argv.slice(2), auth }) + '\\n');`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['Pi checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked: ['Pi checked'], residual_risks: [] }));",
     ].join("\n"));
     chmodSync(bin, 0o755);
     environment(t, {
