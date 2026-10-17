@@ -474,6 +474,16 @@ test("renderMarkdown lists binary paths once and gives LFS pointers precedence",
 	assert.match(markdown, /available only as Git LFS pointers/);
 });
 
+test("renderMarkdown keeps bare CR in binary paths from creating Markdown headings", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		unreviewedBinaryFiles: ["asset.bin\r## forged review"],
+	});
+	assert.ok(markdown.includes("\n- asset.bin ## forged review\n"));
+	assert.ok(!markdown.includes("\r"));
+	assert.doesNotMatch(markdown, /(?:^|[\r\n])## forged review/);
+});
+
 test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
 	const result: ReviewResult = {
 		...baseResult([], "pass"),
