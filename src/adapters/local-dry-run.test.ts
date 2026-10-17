@@ -428,3 +428,31 @@ for (const docs of [false, true]) {
     }
   });
 }
+
+for (const docs of [false, true]) {
+  for (const supported of [false, true]) {
+    test(`named ${supported ? "Codex" : "suspended"} connection owns ${docs ? "docs" : "source"} selection over ambient OpenCode`, (t) => {
+      const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+      const bin = path.join(fixture.fakeBin, "codex.cjs");
+      writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require('node:fs');fs.readFileSync(0,'utf8');fs.writeFileSync(${JSON.stringify(fixture.marker)},'called');fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'selected clean',findings:[],checked:['checked'],residual_risks:[]}));\n`);
+      chmodSync(bin, 0o755);
+      const config = path.join(fixture.tmp, "connections.json");
+      writeFileSync(config, JSON.stringify({ version: 1, connections: [{ id: "selected", adapter: supported ? "codex" : "opencode", model: "fixture" }] }));
+      const result = runCli(fixture, ["--repo", fixture.repo, "--connection", "selected", "--json"], {
+        NEEDLEFISH_RUNNER: "opencode", OPENCODE_BIN: path.join(fixture.fakeBin, "claude"), CODEX_BIN: bin, NEEDLEFISH_CONNECTIONS_FILE: config,
+      });
+      if (supported) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(parseJsonObject(result.stdout).verdict, "pass");
+        assert.equal(existsSync(fixture.marker), !docs);
+        assert.equal(existsSync(cacheFile(fixture)), true);
+      } else {
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+        assert.equal(result.stdout, "");
+        assert.equal(existsSync(fixture.marker), false);
+        assert.equal(existsSync(cacheFile(fixture)), false);
+      }
+    });
+  }
+}

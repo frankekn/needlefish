@@ -1788,7 +1788,7 @@ export async function runGithub(
 			agentsMd: readAgentsAt(repoPath, mergeBase),
 		});
 
-		const resolvedOpts = resolveConnectionRoutes(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles.length));
+		const resolvedOpts = resolveConnectionRoutes(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles?.length));
 		reviewPlan(bundle, resolvedOpts[0]);
 
 		// Scope and base-tip fields are attached after review(): anything on

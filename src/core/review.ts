@@ -1249,7 +1249,7 @@ export async function reviewWithConnections(
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const plan = reviewPlan(bundle, routes[0]);
-	if (plan.docsOnlyFastPath || plan.binaryOnlyFastPath) return review(bundle, {}, onTrace, onProgress);
+	if (plan.docsOnlyFastPath || plan.binaryOnlyFastPath) return review(bundle, routes[0], onTrace, onProgress);
 	return reviewRoutes(bundle, routes, onTrace, onProgress, Date.now());
 }
 
