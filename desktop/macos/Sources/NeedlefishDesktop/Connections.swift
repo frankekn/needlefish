@@ -395,14 +395,19 @@ struct AdvancedConnectionsView: View {
     @ViewBuilder
     private var profileRows: some View {
         ForEach(Array(model.document.connections.enumerated()), id: \.offset) { _, profile in
-            HStack {
-                Text(profile.id + " · " + profile.adapter + " · " + (profile.model ?? "agent default"))
-                Spacer()
-                Button("編輯 / Edit " + profile.id) { originalID = profile.id; editing = profile }.focused($profileFocus, equals: "edit-" + profile.id)
-                Button("刪除 / Delete " + profile.id) { deleting = profile }
-                Button("加入順序 / Select " + profile.id) { model.select(profile.id) }.disabled(model.selection.contains(profile.id))
-            }.disabled(owner.busy || model.draftState != .editing)
+            profileRow(profile)
         }
+    }
+
+    private func profileRow(_ profile: RawConnection) -> some View {
+        let summary: String = profile.id + " · " + profile.adapter + " · " + (profile.model ?? "agent default")
+        return HStack {
+            Text(summary)
+            Spacer()
+            Button("編輯 / Edit " + profile.id) { originalID = profile.id; editing = profile }.focused($profileFocus, equals: "edit-" + profile.id)
+            Button("刪除 / Delete " + profile.id) { deleting = profile }
+            Button("加入順序 / Select " + profile.id) { model.select(profile.id) }.disabled(model.selection.contains(profile.id))
+        }.disabled(owner.busy || model.draftState != .editing)
     }
 
     @ViewBuilder
