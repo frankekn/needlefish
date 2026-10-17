@@ -98,6 +98,7 @@ struct Doctor: Decodable, Sendable {
         }
         return self
     }
+    var repositoryScopeReady: Bool { checks.contains { $0.name == "node" && $0.status == .ok } && repoAvailable }
     var scopeReady: Bool { checks.filter { !["base", "auth"].contains($0.name) }.allSatisfy { $0.status == .ok } }
     var ready: Bool { checks.filter { $0.name != "base" }.allSatisfy { $0.status == .ok } }
     var repoAvailable: Bool { checks.contains { $0.name == "git" && $0.status == .ok } }

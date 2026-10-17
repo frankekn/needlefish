@@ -15,7 +15,7 @@ final class Onboarding: ObservableObject {
     @Published private(set) var diagnosis: Doctor?
     @Published var consentUsesConnections = false
     let connections = AdvancedConnections()
-    var canReview: Bool { trusted && accepted && (consentUsesConnections ? connections.ready && diagnosis?.scopeReady == true && !knownMissingAmbientCodexAuth : diagnosis?.ready == true) }
+    var canReview: Bool { trusted && accepted && (consentUsesConnections ? connections.ready && diagnosis?.repositoryScopeReady == true && !knownMissingAmbientCodexAuth : diagnosis?.ready == true) }
     var knownMissingAmbientCodexAuth: Bool {
         guard consentUsesConnections, connections.credentialMode == "existing",
               diagnosis?.checks.first(where: { $0.name == "auth" })?.status == .fail else { return false }
@@ -216,7 +216,7 @@ final class Onboarding: ObservableObject {
         start("正在檢查連線與本機範圍，沒有模型呼叫。 / Inspecting connections and scope. No model call.", usesConnections: true) { cli, command in
             let report = try await cli.doctor(repo: repo, command: command)
             self.diagnosis = report
-            guard report.scopeReady else { throw DesktopError.scopeCollection }
+            guard report.repositoryScopeReady else { throw DesktopError.scopeCollection }
             let response = try await cli.connections("inspect", repo: repo, command: command, input: self.connections.request("inspect"))
             try self.connections.inspected(response)
             let unavailable = (self.connections.inspection ?? []).filter { $0.readiness != "local-available" }
