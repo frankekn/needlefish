@@ -1112,6 +1112,67 @@ final class AdvancedConnectionsTests: XCTestCase {
         }
         XCTAssertNil(model.inspection)
     }
+    func testExistingReviewFailuresKeepTheirStructuredRecovery() async throws {
+        for mode in ["existing", "session"] {
+            for code in ["revision_conflict", "invalid_request"] {
+                let runtime = try cliFixture("cat >/dev/null; printf '%s' '{\"schemaVersion\":1,\"ok\":false,\"code\":\"\(code)\"}'; exit 1")
+                do {
+                    _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "old", ids: ["proxy"], budgetMs: 1000, mode: mode, sources: [:], command: Command())
+                    XCTFail("Structured failure must stay incomplete")
+                } catch let error as ConnectionsFailure {
+                    XCTAssertEqual(error.code, code)
+                } catch { XCTFail("Expected structured recovery, got \(error)") }
+            }
+        }
+    }
+    func testBlockedInspectionStaysEditableUntilRunnerIsAvailable() async throws {
+        let root = try ownedTemporary()
+        let blocked = root.appendingPathComponent("blocked")
+        try Data().write(to: blocked)
+        let doctor = #"{"schemaVersion":1,"repoRoot":"/project","checks":[{"name":"node","status":"ok","detail":"offline"},{"name":"runner","status":"ok","detail":"offline"},{"name":"capability","status":"ok","detail":"offline"},{"name":"auth","status":"ok","detail":"offline"},{"name":"git","status":"ok","detail":"offline"},{"name":"base","status":"ok","detail":"offline"}]}"#
+        let runtime = try cliFixture("""
+        if [ "$1" = doctor ]; then printf '%s' '\(doctor)'
+        elif [ "$1" = connections ]; then
+          cat >/dev/null
+          if [ -f '\(blocked.path)' ]; then printf '%s' '{"schemaVersion":1,"ok":true,"revision":"sha256:old","connections":[\(row("proxy", readiness: "local-blocked"))]}'
+          else printf '%s' '{"schemaVersion":1,"ok":true,"revision":"sha256:old","connections":[\(row("proxy"))]}'
+          fi
+        else printf '%s' '{"mode":"uncommitted","changedFiles":[{"path":"app.ts"}],"patchBytes":42,"untrackedSkipped":[]}'
+        fi
+        """)
+        let owner = Onboarding(runtime: runtime)
+        owner.repo = URL(fileURLWithPath: "/project")
+        try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        owner.connections.select("proxy"); owner.connections.budget = "1000"
+        owner.connections.credentialMode = "session"; owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+        owner.prepareConnections()
+        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .message(let message) = owner.state else { return XCTFail("Blocked connection must not enter consent") }
+        XCTAssertTrue(message.contains("proxy")); XCTAssertTrue(message.contains("local-blocked"))
+        XCTAssertEqual(owner.connections.draftState, .editing)
+        XCTAssertFalse(owner.canReview)
+        try FileManager.default.removeItem(at: blocked)
+        owner.prepareConnections()
+        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .consent = owner.state else { return XCTFail("Available runner must permit consent") }
+        owner.trusted = true; owner.accepted = true
+        XCTAssertTrue(owner.canReview)
+        XCTAssertEqual(owner.connections.inspection?.first?.qualification, "unqualified")
+    }
+    func testNoviceScopeFailureDoesNotChangeAdvancedDraftOrSecrets() async throws {
+        let runtime = try cliFixture("exit 1")
+        let owner = Onboarding(runtime: runtime)
+        owner.repo = URL(fileURLWithPath: "/project")
+        try owner.connections.load(response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"sha256:old\",\"document\":\(raw)}"))
+        owner.connections.message = "existing advanced message"
+        owner.connections.secrets["SHARED_TOKEN"] = "offline-only-value"
+        owner.prepare()
+        while owner.busy { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .message = owner.state else { return XCTFail("Failed novice command must report incomplete") }
+        XCTAssertEqual(owner.connections.message, "existing advanced message")
+        XCTAssertEqual(owner.connections.secrets["SHARED_TOKEN"], "offline-only-value")
+        XCTAssertEqual(owner.connections.document.connections.map(\.id), ["agent", "proxy"])
+    }
     func testSessionReviewUsesOnlyBoundedAnonymousInputAndExactContract() async throws {
         let root = try ownedTemporary()
         let capture = root.appendingPathComponent("fake-input.json")
