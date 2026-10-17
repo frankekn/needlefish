@@ -98,8 +98,12 @@ const stage=prompt.includes('review-MAP pass')?'map':prompt.includes('doing a DE
 const source=fs.readFileSync(path.join(repo,'app.ts'),'utf8');
 fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({model,stage,cwd:repo,source,contaminated:prompt.includes('first contaminated'),keyMatches:!process.env.CODEX_API_KEY||process.env.CODEX_API_KEY===(model==='first'?'private-first-fixture':'private-second-fixture')})+'\\n');
 const mode=${JSON.stringify(mode)};
+if(mode==='later-capture-config'&&model==='second'){
+ const capture=fs.readdirSync(${JSON.stringify(managed)}).map(name=>path.join(${JSON.stringify(managed)},name,'runner-repo')).find(dir=>fs.existsSync(dir)&&fs.realpathSync(dir)!==fs.realpathSync(repo));
+ fs.appendFileSync(path.join(capture,'.git/config'),'\\n[alias]\\n owned-mutation = status\\n');
+}
 if(mode==='cross-key'){process.stdout.write('private-second-fixture');process.exit(1);}
-if((model==='first'&&(stage===mode||(mode==='committed-review'&&stage==='review')||mode==='all-quota'||mode==='trace-fail'||mode==='slow-quota'||mode==='capture-safety'||mode.startsWith('cross-key-')))||mode==='all-quota'){
+if((model==='first'&&(stage===mode||(mode==='committed-review'&&stage==='review')||mode==='all-quota'||mode==='trace-fail'||mode==='slow-quota'||mode==='capture-safety'||mode==='later-capture-config'||mode.startsWith('cross-key-')))||mode==='all-quota'){
  fs.writeFileSync(${JSON.stringify(path.join(repo,"app.ts"))},'source changed after quota\\n');
  fs.rmSync(${JSON.stringify(path.join(repo,".git"))},{recursive:true,force:true});
  if(mode==='slow-quota')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500);
@@ -171,4 +175,24 @@ test("immutable HEAD source survives original Git removal between ordered routes
   assert.equal(result.headSha,f.bundle.headSha);
   assert.ok(f.rows().every(row=>row.source === "export const value = 2;\n"));
   assert.equal(existsSync(path.join(f.repo,".git")),false);
+});
+
+ test("later route cannot mutate shared snapshot Git metadata after quota",async(t)=>{
+  const f=fixture(t,"later-capture-config");
+  await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first"},{runner:"codex",model:"second"}]),error=>{
+    assert.ok(error instanceof Error);
+    assert.equal(error.name,"RunnerWorktreeChangedError");
+    assert.match(error.message,/config or hooks changed/);
+    return true;
+  });
+  assert.ok(f.rows().some(row=>row.model === "second"));
+});
+
+test("singleton deep quota remains terminal without critic or residual",async(t)=>{
+  const f=fixture(t,"deep");
+  await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first"}]),error=>{
+    assert.equal(findRunnerFailure(error)?.kind,"quota_exhausted");
+    return true;
+  });
+  assert.deepEqual(f.rows().map(row=>row.stage),["map","deep"]);
 });
