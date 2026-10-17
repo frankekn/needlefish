@@ -23,5 +23,5 @@
 ## ANTI-PATTERNS
 
 - Do not skip changed files because the map pass missed them.
-- Do not drop blocking residual risks after critic pruning.
+- Preserve blocking deep-pass infrastructure-failure residuals after critic pruning. Model-authored residuals follow the critic's keep, downgrade, or omit decision on both paths (#220).
 - Do not add target-repo-specific review heuristics here.
