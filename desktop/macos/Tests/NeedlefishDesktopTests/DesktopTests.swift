@@ -1540,6 +1540,67 @@ final class AdvancedInputDeadlineTests: XCTestCase {
 
 @MainActor
 final class AdvancedBoundaryRegressionTests: XCTestCase {
+    func testSelectedRoutesOwnAvailabilityWithoutBundledCodexGate() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        for (adapter, failure, readiness, scopeFails, allowsConsent) in [
+            ("acp", "runner", "local-available", false, true),
+            ("acp", "capability", "local-available", false, true),
+            ("codex", "runner", "local-blocked", false, false),
+            ("acp", "runner", "local-blocked", false, false),
+            ("acp", "node", "local-available", false, false),
+            ("acp", "git", "local-available", false, false),
+            ("acp", "runner", "local-available", true, false)
+        ] {
+            var doctor = fixture.doctorJSON.replacingOccurrences(of: "\"\(failure)\",\"status\":\"ok\"", with: "\"\(failure)\",\"status\":\"fail\"")
+            if failure == "git" { doctor = doctor.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "") }
+            let row = "{\"id\":\"selected\",\"adapter\":\"\(adapter)\",\"requestedModel\":\"offline-model\",\"route\":\"\(adapter == "acp" ? "opaque" : "ambient")\",\"credentialSource\":\"ambient\",\"providerAccount\":\"unknown\",\"authentication\":\"unknown\",\"readiness\":\"\(readiness)\",\"qualification\":\"unqualified\"}"
+            let runtime = try maker.cliFixture("""
+            if [ "$1" = doctor ]; then printf '%s' '\(doctor)'
+            elif [ "$1" = connections ]; then cat >/dev/null; printf '%s' '{"schemaVersion":1,"ok":true,"revision":"missing","connections":[\(row)]}'
+            else \(scopeFails ? "exit 1" : "printf '%s' '" + fixture.scopeJSON + "'")
+            fi
+            """)
+            let owner = Onboarding(runtime: runtime)
+            owner.repo = URL(fileURLWithPath: "/test/project")
+            let launch = adapter == "acp" ? ",\"launch\":{\"command\":\"/offline/agent\",\"args\":[]}" : ""
+            try owner.connections.load(maker.response("{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":{\"version\":1,\"connections\":[{\"id\":\"selected\",\"adapter\":\"\(adapter)\",\"model\":\"offline-model\"\(launch)}]}}"))
+            owner.connections.select("selected"); owner.connections.budget = "1000"
+            owner.prepareConnections()
+            for _ in 0..<100 {
+                if !owner.busy { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            if allowsConsent {
+                guard case .consent = owner.state else { XCTFail("Available ACP must reach consent with Codex \(failure) failure"); continue }
+                XCTAssertFalse(owner.canReview)
+                owner.trusted = true; owner.accepted = true
+                XCTAssertTrue(owner.canReview)
+                XCTAssertFalse(try XCTUnwrap(owner.diagnosis).scopeReady)
+                XCTAssertFalse(try XCTUnwrap(owner.diagnosis).ready)
+            } else {
+                guard case .message = owner.state else { XCTFail("Unavailable route/repository/scope must stay blocked"); continue }
+                owner.trusted = true; owner.accepted = true
+                XCTAssertFalse(owner.canReview)
+            }
+        }
+    }
+    func testRepositoryScopeRequiresValidatedNodeAndGitChecks() throws {
+        let fixture = DesktopTests()
+        let decoder = JSONDecoder()
+        let report = try decoder.decode(Doctor.self, from: Data(fixture.doctorJSON.utf8)).validated()
+        XCTAssertTrue(report.repositoryScopeReady)
+        for name in ["node", "git"] {
+            let json = fixture.doctorJSON.replacingOccurrences(of: "\"\(name)\",\"status\":\"ok\"", with: "\"\(name)\",\"status\":\"fail\"")
+            let unavailable = try decoder.decode(Doctor.self, from: Data(json.utf8))
+            XCTAssertFalse(unavailable.repositoryScopeReady)
+        }
+        XCTAssertFalse(Doctor(schemaVersion: 1, repoRoot: nil, checks: []).repositoryScopeReady)
+        for json in [
+            fixture.doctorJSON.replacingOccurrences(of: #"{"name":"node","status":"ok","detail":"v24"},"#, with: ""),
+            fixture.doctorJSON.replacingOccurrences(of: #""repoRoot":"/test/project","#, with: "")
+        ] { XCTAssertThrowsError(try decoder.decode(Doctor.self, from: Data(json.utf8)).validated()) }
+    }
     func testCurrentSixCheckDoctorContractIsAcceptedAndCapabilityStillGates() throws {
         let fixture = DesktopTests()
         let json = fixture.doctorJSON
