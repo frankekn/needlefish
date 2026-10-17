@@ -39,13 +39,14 @@ test("NEEDLEFISH_TMPDIR overrides the ambient temp root", (t) => {
   assert.equal(resolveNeedlefishTempRoot(), path.resolve("relative", "scratch"));
 });
 
-for (const failure of ["marker", "rename", "open", "map registration", "active registration"] as const) {
+for (const failure of ["marker", "rename", "open", "map registration", "active registration", "cleanup", "descriptor reuse"] as const) {
   test(`failed managed allocation cleans its directory and descriptor after ${failure}`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
     const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
     const receipt = path.join(root, "allocation.json");
     const owner = spawnModule(`
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 const { createManagedTempDirectory, disposeManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
@@ -59,8 +60,12 @@ const originalWrite = fs.writeFileSync;
 const originalRename = fs.renameSync;
 const originalSet = Map.prototype.set;
 const originalAdd = Set.prototype.add;
+const originalRm = fsp.rm;
 let allocated;
 let descriptor;
+let replacementDescriptor;
+let registeredMap;
+let registeredSet;
 let injected;
 const fail = () => { injected = new Error("forced allocation failure"); throw injected; };
 fs.writeFileSync = (target, ...args) => {
@@ -82,7 +87,7 @@ fs.renameSync = (source, target) => {
 };
 fs.openSync = (target, ...args) => {
   if (target === allocated) {
-    if (${JSON.stringify(failure)} === "open") {
+    if (["open", "cleanup"].includes(${JSON.stringify(failure)})) {
       try { return originalOpen(path.join(target, ".needlefish-owner.json"), ...args); }
       catch (error) { injected = error; throw error; }
     }
@@ -93,13 +98,27 @@ fs.openSync = (target, ...args) => {
 };
 Map.prototype.set = function (key, value) {
   const result = originalSet.call(this, key, value);
-  if (${JSON.stringify(failure)} === "map registration" && key === allocated) fail();
+  if (key === allocated) {
+    registeredMap = this;
+    if (${JSON.stringify(failure)} === "map registration") fail();
+  }
   return result;
 };
 Set.prototype.add = function (value) {
   const result = originalAdd.call(this, value);
-  if (${JSON.stringify(failure)} === "active registration" && value === allocated) fail();
+  if (value === allocated) {
+    registeredSet = this;
+    if (["active registration", "descriptor reuse"].includes(${JSON.stringify(failure)})) fail();
+  }
   return result;
+};
+fsp.rm = async (target, options) => {
+  if (target === allocated && ${JSON.stringify(failure)} === "descriptor reuse") {
+    replacementDescriptor = originalOpen("/dev/null", fs.constants.O_RDONLY);
+    assert.equal(replacementDescriptor, descriptor, "cleanup must release the descriptor before awaiting removal");
+  }
+  await originalRm(target, options);
+  if (target === allocated && ${JSON.stringify(failure)} === "cleanup") throw new Error("forced cleanup error");
 };
 syncBuiltinESMExports();
 let caught;
@@ -109,20 +128,27 @@ fs.writeFileSync = originalWrite;
 fs.renameSync = originalRename;
 Map.prototype.set = originalSet;
 Set.prototype.add = originalAdd;
+fsp.rm = originalRm;
 syncBuiltinESMExports();
 assert.equal(caught, injected);
 assert.ok(caught instanceof Error);
 if (${JSON.stringify(failure)} === "open") assert.equal(caught.code, "ENOTDIR");
 assert.equal(typeof allocated, "string");
+assert.equal(registeredMap?.has(allocated) ?? false, false, "failed allocation must leave no descriptor registration");
+assert.equal(registeredSet?.has(allocated) ?? false, false, "failed allocation must leave no active registration");
 assert.equal(fs.existsSync(allocated), false, "failed allocation directory must be removed");
 assert.deepEqual(fs.readdirSync(${JSON.stringify(root)}).filter((name) => /^(needlefish-managed-|\\.needlefish-staging-)/.test(name)), []);
+if (replacementDescriptor !== undefined) {
+  assert.equal(fs.fstatSync(replacementDescriptor).isCharacterDevice(), true, "cleanup must not close a reused descriptor");
+  fs.closeSync(replacementDescriptor);
+}
 if (descriptor !== undefined) assert.throws(() => fs.fstatSync(descriptor), { code: "EBADF" });
 assert.equal(fs.readdirSync("/proc/self/fd").length, before, "failed allocation must not leak a descriptor");
 await assert.rejects(disposeManagedTempDirectory(allocated), /temp directory is not registered/);
 const next = await createManagedTempDirectory();
 assert.equal(fs.existsSync(path.join(next, ".needlefish-owner.json")), true);
 await disposeManagedTempDirectory(next);
-originalWrite(${JSON.stringify(receipt)}, JSON.stringify({ failure: ${JSON.stringify(failure)}, code: caught.code ?? null, descriptor: descriptor ?? null, before, after: fs.readdirSync("/proc/self/fd").length }));
+originalWrite(${JSON.stringify(receipt)}, JSON.stringify({ failure: ${JSON.stringify(failure)}, code: caught.code ?? null, directory: allocated, descriptor: descriptor ?? null, before, after: fs.readdirSync("/proc/self/fd").length }));
 `, root);
     let stderr = "";
     owner.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
@@ -136,6 +162,7 @@ originalWrite(${JSON.stringify(receipt)}, JSON.stringify({ failure: ${JSON.strin
     const result: unknown = JSON.parse(readFileSync(receipt, "utf8"));
     assert.ok(typeof result === "object" && result !== null && "failure" in result);
     assert.equal(result.failure, failure);
+    t.diagnostic(JSON.stringify(result));
   });
 }
 
