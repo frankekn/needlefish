@@ -308,6 +308,10 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
   prompt response 若包含 token usage，review stats 會保留 input／output 總量。
 
+清理程序不是防範同一使用者程序的 OS 安全邊界。這類程序可在刪除路徑時，
+把無關資料移入自有暫存樹。Node 沒有依 inode 身分原子判定的 unlink 或
+目錄刪除操作。不要用維護者帳戶執行主動攻擊的 CLI。
+
 每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
 行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
 Needlefish 會用 `git status
@@ -389,12 +393,19 @@ cached-result `render`／`verdict` 診斷。
 explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
 布的 composite action 不會安裝該 workflow。
 
+原生 Codex 額度分類已驗證 CLI 0.163 的 JSON events。其他版本尚未取得
+自動額度 fallback 資格。未知 event schema 保留失敗，並在私有失敗輸出加入
+`unrecognized codex event schema`，不依額度字樣切換路由。單一路由的 deep
+review 遇到額度耗盡或取消也會失敗，不會改成 blocking residual。
+
 ## Doctor 與 GitHub 設定細節
 
-`npx needlefish doctor` 不呼叫模型，會檢查 Node、所選 runner CLI 與版本、
-Git repo 與偵測到的基準 ref。認證檢查使用 runner 的狀態指令及與審查相同
+`npx needlefish doctor` 不呼叫模型，會檢查 Node、Git repo 與偵測到的基準 ref。
+一般 runner 選擇會另檢查 CLI 版本。認證檢查使用 runner 的狀態指令及與審查相同
 的環境變數 allowlist。審查接受的環境憑證，例如 opencode 的
-`OPENAI_API_KEY`，不另行探測即可通過。失敗項目會列出修正方式。
+`OPENAI_API_KEY`，不另行探測即可通過。
+`doctor --connection` 檢查具名連線設定與執行檔是否可用，不探測 CLI 版本、
+帳戶身分或登入狀態。這些項目保留為 `unknown`。失敗項目會列出修正方式。
 `--json` 提供相同報告。任何檢查失敗時 exit code 為 1，否則為 0。
 無法判定的檢查列為 `unknown`，不造成非零 exit code，也不證明模型可用。
 

@@ -242,7 +242,8 @@ function severSourceRemote(sandboxPath: string): void {
 export function assertRunnerSandboxClean(
   runner: RunnerName,
   repoPath: string,
-  expectedHeadSha: string
+  expectedHeadSha: string,
+  retainMetadata = false
 ): void {
   const metadataKey = path.resolve(repoPath);
   try {
@@ -306,7 +307,7 @@ export function assertRunnerSandboxClean(
       throw new RunnerWorktreeChangedError(runner, status.slice(0, 2000));
     }
   } finally {
-    sandboxGitMetadata.delete(metadataKey);
+    if (!retainMetadata) sandboxGitMetadata.delete(metadataKey);
   }
 }
 

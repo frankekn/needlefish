@@ -1,7 +1,7 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { reviewWithConnections, reviewPlan } from "../core/review.js";
+import { reviewWithConnections, reviewPlan, isDocsOnlyFastPath } from "../core/review.js";
 import { reviewExitCode } from "../core/verdict.js";
 import { RunnerOperationalError } from "../shared/codex.js";
 import {
@@ -1788,8 +1788,8 @@ export async function runGithub(
 			agentsMd: readAgentsAt(repoPath, mergeBase),
 		});
 
-		const plan = reviewPlan(bundle, opts);
-		const resolvedOpts = resolveConnectionRoutes(opts, repoPath, process.env, !plan.docsOnlyFastPath && !plan.binaryOnlyFastPath);
+		const resolvedOpts = resolveConnectionRoutes(opts, repoPath, process.env, !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles.length));
+		reviewPlan(bundle, resolvedOpts[0]);
 
 		// Scope and base-tip fields are attached after review(): anything on
 		// the bundle reaches the model via {{BUNDLE}}, so human-facing surface

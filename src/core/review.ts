@@ -1135,7 +1135,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 // Markdown). classify.ts rule order already routes workflow yml to
 // "workflow", so CI files can never ride this path. Executable files under
 // a docs/ directory are not classified "docs" (Markdown extension required).
-function isDocsOnlyFastPath(bundle: Bundle): boolean {
+export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
@@ -1288,6 +1288,7 @@ async function reviewRoutes(
 	let literalContext: Promise<LargeLiteralContext> | undefined;
 	const cancellation = new AbortController();
 	const detachCancellation = registerTerminationFinalizer(async () => { cancellation.abort(); });
+	let selectedRunner = firstSelection.config.runner;
 	const screenError = (error: unknown) => {
 		attachRunRaws(error, {
 			failedRawOutputs: [...failedRawOutputs, ...(activeRun?.failedRawOutputs ?? [])],
@@ -1299,8 +1300,8 @@ async function reviewRoutes(
 			: outputGuards.reduce((message, guard) => guard.screenDiagnostic(message), error.message);
 		return error;
 	};
-	const assertSnapshotClean = () => {
-		try { if (snapshot) assertRunnerSandboxClean(firstSelection.config.runner, snapshot.repoPath, snapshot.expectedHeadSha); }
+	const assertSnapshotClean = (retainMetadata = true) => {
+		try { if (snapshot) assertRunnerSandboxClean(selectedRunner, snapshot.repoPath, snapshot.expectedHeadSha, retainMetadata); }
 		catch (error) { throw screenError(error); }
 	};
 	try {
@@ -1309,6 +1310,7 @@ async function reviewRoutes(
 		snapshot = prepareRunnerSandbox({ runner: selections.some(({config}) => config.runner === "codex" || config.runner === "grok") ? "codex" : firstSelection.config.runner, repoPath: bundle.repoPath, prompt: "", targetHeadSha: bundle.headSha, targetBaseSha: bundle.baseSha, targetPatch: bundle.patch, ...(deadline === undefined ? {} : { remainingReviewMs: () => Math.floor(deadline - performance.now()) }), tmp });
 		const capturedSnapshot = { ...snapshot, expectedBaseSha: snapshot.expectedBaseSha ?? bundle.baseSha };
 		for (const [routeIndex, {config, plan}] of selections.entries()) {
+			selectedRunner = config.runner;
 			assertRunnerSchedulingAllowed();
 			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
 			const run: ReviewRun = {
@@ -1351,7 +1353,7 @@ async function reviewRoutes(
 		throw screenError(error);
 	} finally {
 		detachCancellation();
-		try { assertSnapshotClean(); }
+		try { assertSnapshotClean(false); }
 		finally {
 			await disposeManagedTempDirectory(tmp).catch((error: unknown) => { throw screenError(error); });
 		}
