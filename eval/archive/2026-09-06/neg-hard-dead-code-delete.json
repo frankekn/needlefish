@@ -1,0 +1,20 @@
+{
+  "id": "neg-hard-dead-code-delete",
+  "kind": "negative",
+  "defectClass": "safe-dead-code-removal",
+  "description": "Removes the legacy FormatLegacyID helper and its test. Repo search shows the only references were the function itself and its test; live callers all use FormatID.",
+  "baseFiles": {
+    "ids/format.go": "package ids\n\nimport \"fmt\"\n\nfunc FormatID(region string, n int64) string {\n\treturn fmt.Sprintf(\"%s-%08d\", region, n)\n}\n\nfunc FormatLegacyID(n int64) string {\n\treturn fmt.Sprintf(\"LEG%010d\", n)\n}\n",
+    "ids/format_test.go": "package ids\n\nimport \"testing\"\n\nfunc TestFormatID(t *testing.T) {\n\tif got := FormatID(\"eu\", 42); got != \"eu-00000042\" {\n\t\tt.Fatalf(\"got %q\", got)\n\t}\n}\n\nfunc TestFormatLegacyID(t *testing.T) {\n\tif got := FormatLegacyID(42); got != \"LEG0000000042\" {\n\t\tt.Fatalf(\"got %q\", got)\n\t}\n}\n",
+    "billing/invoice.go": "package billing\n\nimport \"example.com/app/ids\"\n\nfunc InvoiceRef(region string, seq int64) string {\n\treturn \"INV:\" + ids.FormatID(region, seq)\n}\n"
+  },
+  "headFiles": {
+    "ids/format.go": "package ids\n\nimport \"fmt\"\n\nfunc FormatID(region string, n int64) string {\n\treturn fmt.Sprintf(\"%s-%08d\", region, n)\n}\n",
+    "ids/format_test.go": "package ids\n\nimport \"testing\"\n\nfunc TestFormatID(t *testing.T) {\n\tif got := FormatID(\"eu\", 42); got != \"eu-00000042\" {\n\t\tt.Fatalf(\"got %q\", got)\n\t}\n}\n",
+    "billing/invoice.go": "package billing\n\nimport \"example.com/app/ids\"\n\nfunc InvoiceRef(region string, seq int64) string {\n\treturn \"INV:\" + ids.FormatID(region, seq)\n}\n"
+  },
+  "expected": {
+    "verdict": "pass",
+    "noBlockingFindings": true
+  }
+}
