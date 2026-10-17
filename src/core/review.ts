@@ -1333,7 +1333,7 @@ async function reviewRoutes(
 			try {
 				const result = await (plan.largePath ? reviewLarge(run) : reviewSmall(run));
 				await drainTraceDeliveries(traceHealth);
-				await completeReviewRuntime(config, tmp);
+				await completeReviewRuntime(config, tmp, deadline);
 				const final = { ...result, runtime: reviewRuntime(config, budget),
 					...(failedRawOutputs.length ? {failedRawOutputs: [...failedRawOutputs, ...run.failedRawOutputs]} : {}),
 					...(rawOutputs.length ? {rawOutputs: [...rawOutputs, ...run.rawOutputs]} : {}),

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import childProcess, { spawnSync } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +16,9 @@ import { review } from "../src/core/review";
 import { commitAll, headSha, initRepo, isolateCodexTestHome } from "../src/shared/codex-runner-test-fixtures";
 import { parseReviewResult } from "../src/shared/review-result";
 import { parseQualificationProof } from "../src/shared/qualification-proof";
-import { parseReviewRuntime } from "../src/shared/runtime";
+import { completeReviewRuntime, parseReviewRuntime, prepareReviewRuntime, reviewRuntime } from "../src/shared/runtime";
+import { resolveRunnerConfig } from "../src/shared/codex";
+import { isPublicAttestationLabel } from "../src/shared/public-runtime-identity";
 import { renderMarkdown } from "../src/shared/render";
 import { serializeReviewResult, type Bundle, type Finding } from "../src/shared/schema";
 
@@ -27,11 +30,11 @@ const draws: DrawResult[] = specs.flatMap(spec => Array.from({ length: 3 }, (_, 
   return { fixtureId: spec.id, draw, calls: 2, retries: 0, durationMs: 1, findings: drawFindings(findings), matchEvidence: matchEvidence(findings, spec.expected), score: score({ verdict: spec.expected.verdict, findings }, spec.expected, spec.id, undefined, "synthetic-canary", undefined, [{ surface: "final_finding", passKind: "critic", passIndex: 0, promptAttempt: 1, runnerAttempt: 1, outcome: "parsed", finding, content: JSON.stringify(findings) }]) };
 }));
 
-function compile(file: string, capture: string, version = "1.2.3", failProbe = false): void {
+function compile(file: string, capture: string, version = "1.2.3", failProbe = false, versionDelayMs = 0): void {
   const source = `${file}.c`;
   const answer = JSON.stringify({ summary: "ok", findings: [], checked: ["source checked"], residual_risks: [] });
   const event = `${JSON.stringify({ type: "item.completed", item: { id: "answer", type: "agent_message", text: answer } })}\n`;
-  writeFileSync(source, `#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\nint main(int argc,char **argv){if(argc==2 && !strcmp(argv[1],"--version")){puts("codex-cli ${version}");return ${failProbe ? 1 : 0};}FILE *f=fopen(${JSON.stringify(capture)},"a");fprintf(f,"EXECUTABLE_VERSION=${version}\\n");int c;while((c=getchar())!=EOF)fputc(c,f);fputs("\\nCALL_END\\n",f);for(int i=1;i<argc;i++)fprintf(f,"ARGV=%s\\n",argv[i]);fprintf(f,"HOME=%s\\n",getenv("HOME"));fprintf(f,"PASSTHROUGH=%s\\n",getenv("NF_PRIVATE_SENTINEL")?getenv("NF_PRIVATE_SENTINEL"):"absent");char authpath[4096];if(getenv("CODEX_HOME"))snprintf(authpath,sizeof(authpath),"%s/auth.json",getenv("CODEX_HOME"));else snprintf(authpath,sizeof(authpath),"%s/.codex/auth.json",getenv("HOME"));FILE *a=fopen(authpath,"r");if(a){fputs("AUTH=",f);while((c=fgetc(a))!=EOF)fputc(c,f);fputc('\\n',f);fclose(a);}fclose(f);fputs(${JSON.stringify(event)},stdout);return 0;}\n`);
+  writeFileSync(source, `#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <unistd.h>\n#include <signal.h>\nint main(int argc,char **argv){if(argc==2 && !strcmp(argv[1],"--version")){FILE *v=fopen(${JSON.stringify(capture)},"a");fprintf(v,"VERSION_PROBE=${version}\\nVERSION_PID=%ld\\n",(long)getpid());fclose(v);signal(SIGTERM,SIG_IGN);usleep(${versionDelayMs}*1000);puts("codex-cli ${version}");return ${failProbe ? 1 : 0};}FILE *f=fopen(${JSON.stringify(capture)},"a");fprintf(f,"EXECUTABLE_VERSION=${version}\\n");int c;while((c=getchar())!=EOF)fputc(c,f);fputs("\\nCALL_END\\n",f);for(int i=1;i<argc;i++)fprintf(f,"ARGV=%s\\n",argv[i]);fprintf(f,"HOME=%s\\n",getenv("HOME"));fprintf(f,"PASSTHROUGH=%s\\n",getenv("NF_PRIVATE_SENTINEL")?getenv("NF_PRIVATE_SENTINEL"):"absent");char authpath[4096];if(getenv("CODEX_HOME"))snprintf(authpath,sizeof(authpath),"%s/auth.json",getenv("CODEX_HOME"));else snprintf(authpath,sizeof(authpath),"%s/.codex/auth.json",getenv("HOME"));FILE *a=fopen(authpath,"r");if(a){fputs("AUTH=",f);while((c=fgetc(a))!=EOF)fputc(c,f);fputc('\\n',f);fclose(a);}fclose(f);fputs(${JSON.stringify(event)},stdout);return 0;}\n`);
   const built = spawnSync("cc", [source, "-o", file], { encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr);
 }
@@ -79,8 +82,35 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   commitAll(repo, "source");
   const bundle: Bundle = { repoPath: repo, baseSha: headSha(repo), headSha: headSha(repo), patch: "short", patchStat: "app.ts | 1 +", changedFiles: [{ path: "app.ts", surface: "source" }], agentsMd: "(none)", prMeta: null, deep: false, focus: null };
   const run = () => review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 });
-  const exact = await run();
+  const nativeProbes: { status: number | null; signal: NodeJS.Signals | null; expectedVersion: boolean; errorCode?: unknown; stdinErrorCode?: unknown }[] = [];
+  const spawn = childProcess.spawn;
+  const observedSpawn = t.mock.method(childProcess, "spawn", (...args: Parameters<typeof childProcess.spawn>) => {
+    const child = spawn(...args);
+    if (args[0] === bin && args[1]?.length === 1 && args[1][0] === "--version") {
+      const observation: (typeof nativeProbes)[number] = { status: null, signal: null, expectedVersion: false };
+      nativeProbes.push(observation);
+      let stdout = "";
+      child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+      child.on("error", error => { observation.errorCode = "code" in error ? error.code : "unknown"; });
+      child.stdin?.on("error", error => { observation.stdinErrorCode = "code" in error ? error.code : "unknown"; });
+      child.on("close", (status, signal) => { observation.status = status; observation.signal = signal; observation.expectedVersion = stdout.trim() === "codex-cli 1.2.3"; });
+    }
+    return child;
+  });
+  syncBuiltinESMExports();
+  const exact = await run().finally(() => { observedSpawn.mock.restore(); syncBuiltinESMExports(); });
+  if (exact.runtime?.qualification.matchStatus !== "tested") {
+    const versionProbes = (readFileSync(capture, "utf8").match(/VERSION_PROBE/g) ?? []).length;
+    const probe = spawnSync(bin, ["--version"], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: tmp, USERPROFILE: tmp }, timeout: 2000 });
+    t.diagnostic(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch, fixture: bin,
+      fixtureDigest: `sha256:${createHash("sha256").update(readFileSync(bin)).digest("hex")}`,
+      reportEnvironment: emitted.runnerEnvironment, proofIdentity: proof.identity, runtime: exact.runtime,
+      reviewCalls: (readFileSync(capture, "utf8").match(/CALL_END/g) ?? []).length,
+      versionProbes,
+      versionLabelPublic: isPublicAttestationLabel("codex-cli 1.2.3", process.env), nativeProbes, diagnosticProbe: { status: probe.status, signal: probe.signal, errorCode: probe.error && "code" in probe.error ? probe.error.code : undefined, expectedVersion: probe.stdout?.trim() === "codex-cli 1.2.3" } }));
+  }
   assert.deepEqual(exact.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
+  assert.deepEqual(nativeProbes, [{ status: 0, signal: null, expectedVersion: true }]);
   assert.equal(exact.verdict, "pass");
   const inheritedEffort = await review(bundle, { runner: "codex", model: "public-model", timeoutMs: 10000 });
   assert.deepEqual(inheritedEffort.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
@@ -257,6 +287,28 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
   writeFileSync(releaseFile, JSON.stringify({ sha: emitted.gitSha, qualification: { ...proof, reportSha256: "bad" } }));
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "report_not_admitted" });
+  writeFileSync(releaseFile, JSON.stringify({ sha: emitted.gitSha, qualification: proof }));
+  compile(bin, capture, "1.2.3", false, 5000);
+  writeFileSync(capture, "");
+  const started = performance.now();
+  const bounded = await review(bundle, { runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000, reviewBudgetMs: 1500 });
+  const elapsed = performance.now() - started;
+  assert.equal(bounded.verdict, "pass");
+  assert.deepEqual(bounded.findings, exact.findings);
+  assert.deepEqual(bounded.checked, ["source checked"]);
+  assert.deepEqual(bounded.runtime?.qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
+  assert.equal((readFileSync(capture, "utf8").match(/CALL_END/g) ?? []).length, 2);
+  assert.equal((readFileSync(capture, "utf8").match(/VERSION_PROBE/g) ?? []).length, 1);
+  const heldProbe = /VERSION_PID=(\d+)/.exec(readFileSync(capture, "utf8"));
+  assert.ok(heldProbe);
+  assert.throws(() => process.kill(Number(heldProbe[1]), 0), { code: "ESRCH" });
+  assert.ok(elapsed < 1900, `metadata probe exceeded the shared review budget (${elapsed}ms)`);
+  writeFileSync(capture, "");
+  const expiredConfig = resolveRunnerConfig({ runner: "codex", model: "public-model", reasoningEffort: "high", timeoutMs: 10000 });
+  prepareReviewRuntime(expiredConfig);
+  await completeReviewRuntime(expiredConfig, tmp, performance.now() - 1);
+  assert.deepEqual(reviewRuntime(expiredConfig, 1).qualification, { matchStatus: "unqualified", reason: "unknown_identity" });
+  assert.equal(readFileSync(capture, "utf8"), "");
   const legacy = { ...exact }; delete legacy.runtime;
   assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
   assert.throws(() => parseReviewRuntime({ ...exact.runtime, runnerVersion: { status: "unknown" } }), /complete public/);
