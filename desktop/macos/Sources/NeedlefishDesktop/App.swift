@@ -198,7 +198,7 @@ final class Onboarding: ObservableObject {
     }
 
     func connectionOperation(_ operation: String) {
-        guard !busy, let repo else { return }
+        guard !busy, let repo, operation != "edit" || connections.canLoad else { return }
         invalidateConnectionConsent()
         start("正在處理連線設定，沒有模型呼叫。 / Managing connections. No model call.", usesConnections: true) { cli, command in
             let input = operation == "edit" ? nil : try self.connections.request(operation)

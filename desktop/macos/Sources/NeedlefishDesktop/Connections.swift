@@ -215,6 +215,7 @@ final class AdvancedConnections: ObservableObject {
     @Published var message: String?
     private var retainedDraft: ConnectionsDocument?
     var dirty: Bool { document != savedDocument }
+    var canLoad: Bool { draftState != .editing || !dirty }
     private var savedDocument = ConnectionsDocument()
     var budgetMs: Int? { guard let value = Int(budget), (1...2147483647).contains(value) else { return nil }; return value }
     var validSelection: Bool { !selection.isEmpty && Set(selection).count == selection.count && selection.allSatisfy { id in document.connections.contains { $0.id == id } } }
@@ -228,7 +229,7 @@ final class AdvancedConnections: ObservableObject {
         selection = []; draftState = .unloaded; retainedDraft = nil; message = nil; invalidate(); clearSecrets()
     }
     func load(_ response: ConnectionsResponse) throws {
-        guard let document = response.document, let revision = response.baseRevision, document.version == 1 else { throw DesktopError.invalidOutput }
+        guard canLoad, let document = response.document, let revision = response.baseRevision, document.version == 1 else { throw DesktopError.invalidOutput }
         self.document = document; savedDocument = document; baseRevision = revision; draftState = .editing
         selection = selection.filter { id in document.connections.contains { $0.id == id } }
         invalidate(); clearSecrets(); message = nil
@@ -402,7 +403,7 @@ struct AdvancedConnectionsView: View {
     @ViewBuilder
     private var profileActions: some View {
         HStack {
-            Button("載入連線 / Load connections") { owner.connectionOperation("edit") }.disabled(owner.repo == nil || owner.busy)
+            Button("載入連線 / Load connections") { owner.connectionOperation("edit") }.disabled(owner.repo == nil || owner.busy || !model.canLoad)
             Button("新增連線 / Add connection") { originalID = nil; editing = .init(id: "", adapter: "codex", model: "gpt-5.6-sol") }.focused($profileFocus, equals: "add").disabled(model.baseRevision == nil || owner.busy || model.draftState != .editing)
             Button("保存全部草稿 / Save all drafts") { owner.connectionOperation("apply") }.disabled(owner.busy || model.draftState != .editing || !model.dirty)
             if model.canReapply { Button("明確重套草稿 / Reapply retained draft", action: model.reapply).disabled(owner.busy) }
