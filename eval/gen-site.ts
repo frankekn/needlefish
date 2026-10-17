@@ -525,6 +525,9 @@ function validateLane(lane: Lane): void {
   if (!reproductionCommand.trim()) {
     fail("reproduction command is required");
   }
+  if (reproductionCommand.includes("<redacted>") || reproductionCommand.includes("<required>")) {
+    fail("reproduction command cannot contain private or required placeholders");
+  }
   const reproductionReport = `eval/reports/${path.basename(config.report)}`;
   if (!reproductionCommand.endsWith(`--report ${reproductionReport}`)) {
     fail(`reproduction command must write to ${reproductionReport}`);

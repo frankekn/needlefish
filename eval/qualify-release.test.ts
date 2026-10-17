@@ -82,10 +82,11 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   const external = writeReport(externalArgs, draws, specs);
   assert.equal(external.reproductionCommand.includes("'<redacted>'"), true);
   assert.equal(JSON.stringify(external).includes(externalBin), false);
+  const sourceSha = emitted.gitSha;
   const externalBytes = readFileSync(externalArgs.report, "utf8");
   const externalLane = { ...lane, report: "results/native-external.json" };
   assert.throws(() => validateComparability([parseLane(externalLane, externalBytes)], externalLane.report, fixtureClassifications(specs)), /reproduction command cannot contain private or required placeholders/);
-  assert.throws(() => createQualificationProof(externalBytes, externalLane, fixtureClassifications(specs), emitted.gitSha), /refused/);
+  assert.throws(() => createQualificationProof(externalBytes, externalLane, fixtureClassifications(specs), sourceSha), /refused/);
   process.env.CODEX_BIN = bin;
   const proof = createQualificationProof(bytes, lane, fixtureClassifications(specs), emitted.gitSha);
   assert.equal(proof.reportSha256, createHash("sha256").update(bytes).digest("hex"));
