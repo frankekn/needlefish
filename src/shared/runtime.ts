@@ -76,7 +76,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseRuntimeValue(value: unknown, kind: "identity" | "model" = "identity"): RuntimeValue {
+export function parseRuntimeValue(value: unknown, kind: "identity" | "model" = "identity"): RuntimeValue {
   if (!isRecord(value)) throw new Error("identity is not an object");
   if (value.status === "unknown") return { status: "unknown" };
   if ((value.status === "known" || value.status === "operator_attested") && typeof value.value === "string") {

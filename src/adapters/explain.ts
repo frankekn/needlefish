@@ -8,7 +8,7 @@ import {
 } from "../shared/outbound-screen.js";
 import { ghText } from "../shared/repo.js";
 import type { RunnerOptions } from "../shared/runner.js";
-import { findPreviousReview } from "./github.js";
+import { configuredCheckAppId, findPreviousReview } from "./github.js";
 import { prDiffBundle } from "./local.js";
 
 // The explanation is model text posted publicly and outside ghPost, so it
@@ -33,6 +33,7 @@ export async function runGithubExplain(
   findingKey: string,
   opts: RunnerOptions
 ): Promise<void> {
+  const expectedAppId = configuredCheckAppId();
   if ((opts.connections?.length ?? 0) > 1) throw new Error("explain accepts only one --connection; ordered fallback requires a whole review.");
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY not set (must run in Actions)");
@@ -40,7 +41,7 @@ export async function runGithubExplain(
   const { bundle } = prDiffBundle(repoPath, prNumber, opts);
   // Same trusted resolver as re-review: only a state marker written by the
   // identity this run posts as names the findings.
-  const latestReview = findPreviousReview(repo, prNumber)?.state ?? null;
+  const latestReview = findPreviousReview(repo, prNumber, expectedAppId)?.state ?? null;
   const explanation = screenExplanation(
     await explainFinding(bundle, findingKey, resolveConnectionOptions(opts, bundle.repoPath), latestReview),
     process.env

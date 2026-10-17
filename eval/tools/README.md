@@ -98,3 +98,11 @@ and a new output directory:
 ```sh
 pnpm exec tsx eval/tools/adoption-weekly.ts /tmp/needlefish-adoption-weekly
 ```
+
+## Deep concurrency preregistration
+
+`pnpm exec tsx eval/tools/deep-concurrency.ts --plan` verifies the fixed source
+and two explicit non-holdout large fixtures, then prints the paired 7-versus-3
+schedule. It has no model execution mode. The [study protocol](../campaigns/deep-concurrency-v1.md)
+defines resource admission, stopping, failure denominators, and evidence needed
+before any timing conclusion. The study remains `NOT_RUN`.

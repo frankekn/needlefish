@@ -14,6 +14,7 @@ import path from "node:path";
 import test from "node:test";
 import { review } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
+import { renderMarkdown } from "../shared/render.js";
 import { classifySurface } from "../shared/classify";
 import { commitAll, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import type { Bundle } from "../shared/schema";
@@ -1560,6 +1561,8 @@ test("review docs-only fast path skips all model calls", async (t) => {
 		const result = await review(bundle);
 
 		assert.equal(result.verdict, "pass");
+		assert.equal(result.docsOnlyFastPath, true);
+		assert.match(renderMarkdown(result), /Model review skipped by policy/);
 		assert.deepEqual(result.findings, []);
 		assert.deepEqual(result.residualRisks, []);
 		assert.match(

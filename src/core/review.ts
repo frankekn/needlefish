@@ -1149,6 +1149,7 @@ export async function review(
 		return {
 			schemaVersion: REVIEW_RESULT_SCHEMA_VERSION,
 			verdict: "pass",
+			docsOnlyFastPath: true,
 			summary: `Docs-only change (${bundle.changedFiles.length} file(s)); model review skipped.`,
 			findings: [],
 			checked: [`FAST_PATH docs-only files=[${paths}]`],

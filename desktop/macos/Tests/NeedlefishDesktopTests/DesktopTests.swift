@@ -785,6 +785,7 @@ final class OnboardingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let model = Onboarding()
         model.state = .busy("Review in progress")
+        model.demo()
         model.saveDiagnostics("diagnostic preview", to: root)
         guard case .busy(let label) = model.state else { return XCTFail("Export must preserve the active operation") }
         XCTAssertEqual(label, "Review in progress")
@@ -819,6 +820,139 @@ final class OnboardingTests: XCTestCase {
     }
 }
 
+final class GithubSetupTests: XCTestCase {
+    func testAnonymousInputPipeWritesExactBytesAndRemovesTemporaryDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-input-" + UUID().uuidString)
+        let input = Data(repeating: 65, count: 16_384)
+        let result = try await Command().run(["/usr/bin/wc", "-c"], environment: ["PATH": "/usr/bin:/bin"],
+                                            temporary: root, timeout: 5, input: input)
+        XCTAssertEqual(result.status, 0)
+        XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines), "16384")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testClosedChildInputDoesNotSignalTheApp() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-epipe-" + UUID().uuidString)
+        do {
+            _ = try await Command().run(["/bin/sh", "-c", "exec 0<&-; sleep 0.2"], environment: ["PATH": "/usr/bin:/bin"],
+                                        temporary: root, timeout: 5, input: Data(repeating: 65, count: 100_000))
+            XCTFail("Closed pipe must fail")
+        } catch { XCTAssertEqual(error as? DesktopError, .command) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testInputWriterCanBeCancelledWithoutAReader() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-cancel-" + UUID().uuidString)
+        let command = Command()
+        let task = Task {
+            try await command.run(["/bin/sleep", "30"], environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                  timeout: 30, input: Data(repeating: 65, count: 100_000))
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        command.cancel()
+        do { _ = try await task.value; XCTFail("Must cancel") }
+        catch { XCTAssertEqual(error as? DesktopError, .cancelled) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testSuccessfulChildCannotSilentlyDropInput() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-short-input-" + UUID().uuidString)
+        do {
+            _ = try await Command().run(["/usr/bin/true"], environment: ["PATH": "/usr/bin:/bin"], temporary: root,
+                                        timeout: 5, input: Data(repeating: 65, count: 100_000))
+            XCTFail("Incomplete input must fail")
+        } catch { XCTAssertEqual(error as? DesktopError, .command) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+    func testGitHubDeviceCodeDoesNotConfuseCodexLogin() {
+        XCTAssertEqual(githubDeviceCode("! First copy your one-time code: AB12-CD34\nhttps://github.com/login/device"), "AB12-CD34")
+        XCTAssertNil(githubDeviceCode("AB12-CD34"))
+        XCTAssertNil(githubDeviceCode("password: controlled-placeholder"))
+    }
+    func testSetupProtocolCannotClaimCredentialMetadataAsAuthentication() throws {
+        let json = #"{"schemaVersion":1,"repository":"owner/repo","admin":true,"actions":true,"phase":"merged","conflict":null,"secret":"present","authentication":"unknown","firstReview":"not_verified","prUrl":null,"workflow":"test","disclosure":"test","settingsUrl":"https://github.com/owner/repo/settings/actions","removal":"test"}"#
+        let report = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.utf8)).validated()
+        XCTAssertEqual(report.phase, .merged)
+        for bad in [json.replacingOccurrences(of: "unknown", with: "passed"), json.replacingOccurrences(of: "not_verified", with: "completed"), json.replacingOccurrences(of: "https://github.com/owner/repo/settings/actions", with: "https://attacker.invalid")] {
+            XCTAssertThrowsError(try JSONDecoder().decode(GithubSetupStatus.self, from: Data(bad.utf8)).validated())
+        }
+    }
+}
+
+@MainActor
+final class GithubSetupOwnershipTests: XCTestCase {
+    func testGitHubOperationPreservesOfflineDemoAndDiagnosticExport() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-local-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("cli")
+        let ready = root.appendingPathComponent("ready")
+        let release = root.appendingPathComponent("release")
+        let calls = root.appendingPathComponent("calls")
+        try """
+        printf '%s\n' "$*" >> '\(calls.path)'
+        printf ready > '\(ready.path)'
+        while [ ! -f '\(release.path)' ]; do sleep 0.01; done
+        printf '%s' '{"schemaVersion":1,"repositories":[{"name":"owner/offline-fixture"}]}'
+        """.write(to: script, atomically: true, encoding: .utf8)
+        let model = Onboarding(runtime: Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true))
+        model.githubSetup.load()
+        defer { model.cancel() }
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: ready.path) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(try String(contentsOf: ready, encoding: .utf8), "ready")
+        XCTAssertEqual(model.busy, true)
+        XCTAssertEqual(model.localBusy, false)
+        model.demo()
+        if case .result(let result, let demo) = model.state {
+            XCTAssertEqual(demo, true)
+            XCTAssertEqual(result.summary, "離線範例。沒有讀取你的專案，也沒有呼叫 AI。 / Offline example. Your project was not reviewed.")
+        } else { XCTFail("Offline demo must remain available during GitHub setup") }
+        let destination = root.appendingPathComponent("diagnostics.txt")
+        model.saveDiagnostics("diagnostic preview", to: destination)
+        XCTAssertEqual(try? String(contentsOf: destination, encoding: .utf8), "diagnostic preview")
+        if case .message(let message) = model.state {
+            XCTAssertEqual(message, "已匯出診斷。 / Diagnostics exported.")
+        } else { XCTFail("Diagnostic export must report its result during GitHub setup") }
+        model.login()
+        XCTAssertEqual(try String(contentsOf: calls, encoding: .utf8), "setup github repositories --json\n")
+        XCTAssertEqual(model.githubSetup.busy, true)
+        XCTAssertEqual(model.canCancel, true)
+        try "release".write(to: release, atomically: true, encoding: .utf8)
+        for _ in 0..<100 {
+            if !model.busy { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.busy, false)
+        if case .repositories(let repositories) = model.githubSetup.state {
+            XCTAssertEqual(repositories.map(\.name), ["owner/offline-fixture"])
+        } else { XCTFail("Local actions must not cancel or replace GitHub setup") }
+        if case .message(let message) = model.state {
+            XCTAssertEqual(message, "已匯出診斷。 / Diagnostics exported.")
+        } else { XCTFail("GitHub completion must preserve the independent local result") }
+    }
+    func testGitHubCommandMakesParentBusyAndQuitCancelsItsOwnedGroup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-owner-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("cli")
+        try "sleep 30\n".write(to: script, atomically: true, encoding: .utf8)
+        let runtime = Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true)
+        let model = Onboarding(runtime: runtime)
+        model.githubSetup.load()
+        XCTAssertTrue(model.busy)
+        XCTAssertTrue(model.canCancel)
+        model.cancel()
+        for _ in 0..<100 {
+            if !model.canCancel { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(model.canCancel)
+        guard case .error(let message) = model.githubSetup.state else { return XCTFail("Cancellation must be visible") }
+        XCTAssertEqual(message, DesktopError.cancelled.localizedDescription)
+    }
+}
+
 private final class SignalObservations: @unchecked Sendable {
     struct Observation {
         let pid: pid_t
@@ -832,5 +966,39 @@ private final class SignalObservations: @unchecked Sendable {
     var values: [Observation] { lock.withLock { stored } }
     func append(pid: pid_t, signal: Int32, observed: Int32, error: Int32, exited: pid_t) {
         lock.withLock { stored.append(Observation(pid: pid, signal: signal, observed: observed, error: error, exited: exited)) }
+    }
+}
+
+@MainActor
+final class GithubCredentialBoundaryTests: XCTestCase {
+    func testConflictBlocksCredentialCommandAndKnownSetupAcceptsStdin() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("nf-github-boundary-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let json = #"{"schemaVersion":1,"repository":"owner/repo","admin":true,"actions":true,"phase":"preview","conflict":null,"secret":"present","authentication":"unknown","firstReview":"not_verified","prUrl":null,"workflow":"test","disclosure":"test","settingsUrl":"https://github.com/owner/repo/settings/actions","removal":"test"}"#
+        let ready = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.utf8)).validated()
+        let conflicted = try JSONDecoder().decode(GithubSetupStatus.self, from: Data(json.replacingOccurrences(of: "\"preview\"", with: "\"conflict\"").replacingOccurrences(of: "\"conflict\":null", with: "\"conflict\":\"Unrecognized workflow\"").utf8)).validated()
+        let script = root.appendingPathComponent("cli")
+        let input = root.appendingPathComponent("synthetic-input")
+        try "[ \"$*\" = 'setup github set-secret --repository owner/repo --json --confirm --replace-secret' ] || exit 3\ncat > '\(input.path)'\nprintf '%s' '\(json)'\n".write(to: script, atomically: true, encoding: .utf8)
+        let model = GithubSetup(runtime: Runtime(node: "/bin/sh", cli: script.path, codex: "/usr/bin/true", git: "/usr/bin/git", development: true))
+        model.state = .status(conflicted)
+        model.consent = true
+        model.replace = true
+        model.credential = "controlled-test-input"
+        model.secret(conflicted)
+        XCTAssertFalse(model.busy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: input.path))
+        model.state = .status(ready)
+        model.secret(ready)
+        for _ in 0..<100 {
+            if !model.busy { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertEqual(try String(contentsOf: input, encoding: .utf8), "controlled-test-input")
+        XCTAssertEqual(model.credential, "")
+        guard case .status(let result) = model.state else { return XCTFail("Known setup must accept the separate secret action") }
+        XCTAssertEqual(result.secret, "present")
+        XCTAssertEqual(result.authentication, "unknown")
     }
 }
