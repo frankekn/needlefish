@@ -134,7 +134,7 @@ process.stdin.on('end',()=>{
  const stage=input.includes('review-MAP pass')?'map':input.includes('doing a DEEP review')?'deep':input.includes('adversarial critic')?'critic':'small';
  fs.appendFileSync(${JSON.stringify(prompts)},JSON.stringify({stage,input})+'\\n');
  if(stage==='map') { fs.writeFileSync(${JSON.stringify(path.join(bundle.repoPath, "new.ts"))},'AMBIENT_MUTATION'); fs.writeFileSync(out,JSON.stringify({summary:'mapped',hotspots:[{name:'main',files:['new.ts'],why:'changed',risk:'high',edges:[]}]})); }
- else fs.writeFileSync(out,JSON.stringify({summary:'clean',findings:[],checked:['FILES inspected=[new.ts]'],residual_risks:[]}));
+ else fs.writeFileSync(out,JSON.stringify({summary:'clean',...(stage==='critic'?{decisions:[]}:{findings:[]}),checked:['FILES inspected=[new.ts]'],residual_risks:[]}));
 });
 `);
     chmodSync(bin, 0o755);

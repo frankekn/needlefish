@@ -169,7 +169,7 @@ process.stdin.on('end', () => {
   release();
  } else if (input.includes('adversarial critic')) {
   log({kind:'critic'});
-  answer({summary:'checked', findings:[], checked:['all changed files'], residual_risks:[]});
+  answer({summary:'checked', decisions:[], checked:['all changed files'], residual_risks:[]});
  } else { process.stderr.write('unexpected prompt'); process.exit(1); }
 });
 `);

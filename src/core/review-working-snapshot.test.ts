@@ -60,7 +60,7 @@ process.stdin.on('end', () => {
   }
   process.stdout.write(JSON.stringify(map
     ? {summary:'mapped',hotspots:[{name:'app',files:['app.ts'],risk:'high',why:'changed',edges:[]},{name:'other',files:['other.ts'],risk:'low',why:'changed',edges:[]}]}
-    : {summary:'inspected',findings:[],checked:['FILES inspected=[app.ts,other.ts]'],residual_risks:[]}));
+    : {summary:'inspected',...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['FILES inspected=[app.ts,other.ts]'],residual_risks:[]}));
 });
 `);
       chmodSync(bin, 0o755);
@@ -166,7 +166,7 @@ const git=args=>cp.execFileSync('git',args,{encoding:'utf8'}).trim();
 fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({prompt,head:git(['rev-parse','HEAD']),base:git(['rev-parse','HEAD^']),source:fs.readFileSync('app.ts','utf8')})+'\\n');
 fs.rmSync(${JSON.stringify(path.join(repo, ".git"))},{recursive:true,force:true});
 fs.writeFileSync(${JSON.stringify(path.join(repo, "app.ts"))},'source changed after capture\\n');
-process.stdout.write(${JSON.stringify(JSON.stringify({ summary: "captured quotes", findings, checked: ["app.ts"], residual_risks: [] }))});
+process.stdout.write((prompt.includes('adversarial critic') ? ${JSON.stringify(JSON.stringify({summary:'captured quotes',decisions:findings.map((f,index)=>({ref:`f${index}`,action:'keep',severity:f.severity,confidence:f.confidence})),checked:['app.ts'],residual_risks:[]}))} : ${JSON.stringify(JSON.stringify({ summary: "captured quotes", findings, checked: ["app.ts"], residual_risks: [] }))}));
 `);
       chmodSync(bin, 0o755);
       Object.assign(process.env, { CLAUDE_BIN: bin, NEEDLEFISH_NO_RETRY: "1", NEEDLEFISH_REVIEW_TIMEOUT_MS: "15000" });

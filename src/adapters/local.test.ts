@@ -100,8 +100,9 @@ test("runLocal normalizes relative repo paths before building prompts", async (t
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(promptPath)}, fs.readFileSync(0, 'utf8'));`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8');",
+      `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
@@ -135,9 +136,9 @@ test("local --json writes pure ReviewResult JSON matching the cache", (t) => {
     bin,
     [
       "#!/usr/bin/env node",
-      "process.stdin.resume();",
+      "let input = ''; process.stdin.on('data', chunk => input += chunk);",
       "process.stdin.on('end', () => {",
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
   );
@@ -227,9 +228,9 @@ test("local --pr records the PR base tip as prBaseSha, distinct from the merge b
     path.join(fakeBin, "claude"),
     [
       "#!/usr/bin/env node",
-      "process.stdin.resume();",
+      "let input = ''; process.stdin.on('data', chunk => input += chunk);",
       "process.stdin.on('end', () => {",
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
   );
@@ -346,8 +347,9 @@ test("local pr prompts keep human PR discussion and drop Needlefish's own review
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, input);`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(path.join(fakeBin, "gh"), 0o755);
@@ -416,9 +418,10 @@ test("progress leaves model prompts and the cached result unchanged", async (t) 
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
+      "const input = fs.readFileSync(0, 'utf8');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, input);`,
       "const finding = { severity: 'P2', title: 'Bug', category: 'bug', file: 'src/app.ts', lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'test' };",
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [finding], checked: ['checked'], residual_risks: [] }));",
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [{ref:'f0',action:'keep',severity:finding.severity,confidence:finding.confidence}] } : { findings: [finding] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
@@ -465,9 +468,9 @@ test("local review prints no progress when stderr is not a TTY", (t) => {
     bin,
     [
       "#!/usr/bin/env node",
-      "process.stdin.resume();",
+      "let input = ''; process.stdin.on('data', chunk => input += chunk);",
       "process.stdin.on('end', () => {",
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
   );
@@ -564,8 +567,9 @@ function setupNestedFixture(t: TestContext): NestedFixture {
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(promptPath)}, fs.readFileSync(0, 'utf8'));`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8');",
+      `fs.appendFileSync(${JSON.stringify(promptPath)}, input);`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
@@ -754,9 +758,9 @@ test("runLocalPr from a nested directory resolves root refs and the root cache s
     path.join(fakeBin, "claude"),
     [
       "#!/usr/bin/env node",
-      "process.stdin.resume();",
+      "let input = ''; process.stdin.on('data', chunk => input += chunk);",
       "process.stdin.on('end', () => {",
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
   );
@@ -842,8 +846,9 @@ test("branch and PR modes read AGENTS.md at the merge base, not the head", async
     [
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(promptLog)}, fs.readFileSync(0, 'utf8'));`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8');",
+      `fs.appendFileSync(${JSON.stringify(promptLog)}, input);`,
+      "process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(path.join(fakeBin, "gh"), 0o755);

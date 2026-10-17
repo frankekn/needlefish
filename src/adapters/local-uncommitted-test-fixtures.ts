@@ -55,7 +55,7 @@ export function writeFakeClaude(bin: string, promptPath: string): void {
       "    process.stdout.write(JSON.stringify({ summary: 'mapped', hotspots: [] }));",
       "    return;",
       "  }",
-      "  process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "  process.stdout.write(JSON.stringify({ summary: 'ok', ...(prompt.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
       "});",
     ].join("\n")
   );

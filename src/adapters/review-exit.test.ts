@@ -51,6 +51,10 @@ process.stdin.on('end', () => {
   if (prompt.includes('doing a DEEP review') && prompt.includes('"name": "auth"')) {
     process.stdout.write('not json'); return;
   }
+  if (prompt.includes('adversarial critic')) {
+    const candidate=JSON.parse(prompt.slice(prompt.indexOf('# Candidate findings')+'# Candidate findings'.length,prompt.indexOf('# Diff stat')));
+    process.stdout.write(JSON.stringify({summary:candidate.summary,decisions:candidate.findings.map(({ref,severity,confidence})=>({ref,action:'keep',severity,confidence})),checked:candidate.checked,residual_risks:candidate.residual_risks})); return;
+  }
   process.stdout.write(${JSON.stringify(JSON.stringify(review))});
 });
 `);

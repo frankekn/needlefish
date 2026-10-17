@@ -25,6 +25,7 @@ const STUB = [
 	"  if (input.includes('review-MAP pass')) body = { summary: 'mapped', hotspots: [{ name: 'a', files: ['src/a.ts'], why: 'w', risk: 'high', edges: [] }] };",
 	"  else if (input.includes('doing a DEEP review') && input.includes('tail-coverage')) body = 'not json';",
 	"  else if (input.includes('doing a DEEP review')) body = { summary: 'deep', findings: [finding, finding], checked: ['c'], residual_risks: [] };",
+	"  else if (input.includes('adversarial critic')) body = { summary: 'ok', decisions: [{ref:'f0',action:'keep',severity:finding.severity,confidence:finding.confidence}], checked: ['c'], residual_risks: [] };",
 	"  else body = { summary: 'ok', findings: [finding], checked: ['c'], residual_risks: [] };",
 	"  fs.writeFileSync(out, typeof body === 'string' ? body : JSON.stringify(body));",
 	"});",

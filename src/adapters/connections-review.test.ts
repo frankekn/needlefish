@@ -46,7 +46,7 @@ function respond(prompt,repo){
  if(mode==='invalid')return 'invalid JSON';
  const secret=mode==='cross-key'?${JSON.stringify(secondKey)}:${JSON.stringify(firstKey)};
  const summary=mode==='leak'||mode==='cross-key'?Array.from(Buffer.from(secret)).map(byte=>'%'+byte.toString(16).padStart(2,'0')).join(''):mode==='literal-leak'?secret:mode==='json-leak'?Array.from(secret).map(char=>'\\\\u'+char.charCodeAt(0).toString(16).padStart(4,'0')).join(''):model+' clean';
- return JSON.stringify({summary,findings:[],checked:['FILES inspected=[app.ts]'],residual_risks:[]});
+ return JSON.stringify({summary,...(stage==='critic'?{decisions:[]}:{findings:[]}),checked:['FILES inspected=[app.ts]'],residual_risks:[]});
 }
 if(adapter==='codex'){
  const prompt=fs.readFileSync(0,'utf8'),repo=JSON.parse(prompt.slice('The repository to inspect is '.length,prompt.indexOf('. Your startup directory'))),out=respond(prompt,repo);

@@ -576,7 +576,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			`    fs.appendFileSync(${JSON.stringify(promptLog)}, input + '\\n<<<PROMPT-END>>>\\n');`,
 			opts.runnerExit?.codexEvents
 				? `    process.stdout.write(JSON.stringify({type: 'turn.failed', error: {message: ${JSON.stringify(opts.runnerExit.stderr)}}}) + '\\n');`
-				: `    process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
+				: `    if(input.includes('adversarial critic')) { const candidate=JSON.parse(input.slice(input.indexOf('# Candidate findings')+'# Candidate findings'.length,input.indexOf('# Diff stat'))); process.stdout.write(JSON.stringify({summary:candidate.summary,decisions:candidate.findings.map(({ref,severity,confidence})=>({ref,action:'keep',severity,confidence})),checked:candidate.checked,residual_risks:candidate.residual_risks})); } else process.stdout.write(fs.readFileSync(${JSON.stringify(reviewOutputFile)}, 'utf8'));`,
 			opts.runnerExit?.echoPrompt ? "    process.stderr.write(input + '\\n');" : "",
 			opts.runnerExit
 				? `    process.stderr.write(${JSON.stringify(opts.runnerExit.stderr)}); process.exitCode = ${opts.runnerExit.code};`
@@ -5325,7 +5325,7 @@ for (const stale of [false, true]) {
 const fs=require('node:fs');const input=fs.readFileSync(0,'utf8');const model=process.argv[process.argv.indexOf('-m')+1];
 fs.appendFileSync(${JSON.stringify(fixture.runnerLog)},model+'\\n');
 if(model==='first'){fs.writeFileSync(${JSON.stringify(config)},'configuration changed after selection');console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}}));process.exit(1);}
-fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'second complete',findings:[],checked:['checked'],residual_risks:[]}));
+fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'second complete',...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['checked'],residual_risks:[]}));
 `);
     chmodSync(binary,0o755);
     setEnvForTest(t,"CODEX_BIN",binary);setEnvForTest(t,"NEEDLEFISH_CONNECTIONS_FILE",config);setEnvForTest(t,"NEEDLEFISH_REVIEW_TIMEOUT_MS","15000");
@@ -5364,12 +5364,12 @@ for (const leak of [false, true]) {
     ] }));
     writeFileSync(binary, `#!/usr/bin/env node
 const fs = require('node:fs'); const model = process.argv[process.argv.indexOf('-m') + 1];
-fs.readFileSync(0, 'utf8');
+const input=fs.readFileSync(0, 'utf8');
 const expected = model === 'first' ? ${JSON.stringify(firstKey)} : ${JSON.stringify(secondKey)};
 if (process.env.CODEX_API_KEY !== expected) process.exit(8);
 fs.appendFileSync(${JSON.stringify(fixture.runnerLog)}, model + '\\n');
 if (model === 'first') { fs.writeFileSync(${JSON.stringify(config)}, 'changed after capture'); console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})); process.exit(1); }
-fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary:${JSON.stringify(leak ? firstKey : "selected final review")}, findings:[], checked:['checked'], residual_risks:[]}));
+fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary:${JSON.stringify(leak ? firstKey : "selected final review")}, ...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked:['checked'], residual_risks:[]}));
 `);
     chmodSync(binary, 0o755);
     setEnvForTest(t, "MEASUREMENT_FIRST_KEY", firstKey); setEnvForTest(t, "MEASUREMENT_SECOND_KEY", secondKey);

@@ -67,7 +67,7 @@ function setupDryRunFixture(
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
       `fs.writeFileSync(${JSON.stringify(marker)}, 'called');`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -434,7 +434,7 @@ for (const docs of [false, true]) {
     test(`named ${supported ? "Codex" : "suspended"} connection owns ${docs ? "docs" : "source"} selection over ambient OpenCode`, (t) => {
       const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
       const bin = path.join(fixture.fakeBin, "codex.cjs");
-      writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require('node:fs');fs.readFileSync(0,'utf8');fs.writeFileSync(${JSON.stringify(fixture.marker)},'called');fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'selected clean',findings:[],checked:['checked'],residual_risks:[]}));\n`);
+      writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require('node:fs');const input=fs.readFileSync(0,'utf8');fs.writeFileSync(${JSON.stringify(fixture.marker)},'called');fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'selected clean',...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['checked'],residual_risks:[]}));\n`);
       chmodSync(bin, 0o755);
       const config = path.join(fixture.tmp, "connections.json");
       writeFileSync(config, JSON.stringify({ version: 1, connections: [{ id: "selected", adapter: supported ? "codex" : "opencode", model: "fixture" }] }));

@@ -35,7 +35,7 @@ process.stdin.on('end', () => {
   const count = fs.readFileSync(calls, 'utf8').trim().split('\\n').length;
   const value = phase === 'map'
     ? { summary: 'mapped', hotspots: Array.from({ length: 6 }, (_, i) => ({ name: 'surface-' + i, files: ['src/f' + i + '.ts'], risk: 'high', why: 'changed source', edges: [] })) }
-    : { summary: 'reviewed', findings: [], checked: ['source checked'], residual_risks: [] };
+    : { summary: 'reviewed', ...(phase === 'critic' ? { decisions: [] } : { findings: [] }), checked: ['source checked'], residual_risks: [] };
   setTimeout(() => fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(behavior)} === 'repair' && count === 1 ? 'invalid JSON' : JSON.stringify(value)), ${JSON.stringify(behavior)} === 'slow' ? 400 : 0);
 });
 `);

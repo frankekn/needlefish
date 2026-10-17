@@ -30,7 +30,7 @@ process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => prompt += chunk);
 process.stdin.on('end', () => {
   fs.appendFileSync(${JSON.stringify(promptLog)}, prompt + '\\n<<<END>>>\\n');
-  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary:'checked source', findings:[], checked:['source reviewed'], residual_risks:[]}));
+  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], JSON.stringify({summary:'checked source', ...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked:['source reviewed'], residual_risks:[]}));
 });
 `);
     chmodSync(bin, 0o755);

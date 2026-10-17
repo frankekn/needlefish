@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { review } from "./review";
+import type { ReviewTraceEvent } from "./review-trace.js";
 import { headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import type { Bundle } from "../shared/schema";
 
@@ -96,6 +97,7 @@ function smallPathBin(
 		"  if (input.includes('adversarial critic')) {",
 		"    fs.appendFileSync(calls, 'critic\\n');",
 		"    const parsed = JSON.parse(input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat')));",
+		"    const ledger = { summary: parsed.summary, decisions: parsed.findings.map(({ ref, severity, confidence }) => ({ ref, action: 'keep', severity, confidence })), checked: parsed.checked, residual_risks: parsed.residual_risks };",
 		`    ${criticJs}`,
 		"    return;",
 		"  }",
@@ -128,6 +130,7 @@ function largePathBin(calls: string, deepJson: unknown, criticJs: string): strin
 		"  if (input.includes('adversarial critic')) {",
 		"    fs.appendFileSync(calls, 'critic\\n');",
 		"    const parsed = JSON.parse(input.slice(input.indexOf('# Candidate findings') + '# Candidate findings'.length, input.indexOf('# Diff stat')));",
+		"    const ledger = { summary: parsed.summary, decisions: parsed.findings.map(({ ref, severity, confidence }) => ({ ref, action: 'keep', severity, confidence })), checked: parsed.checked, residual_risks: parsed.residual_risks };",
 		`    ${criticJs}`,
 		"    return;",
 		"  }",
@@ -137,551 +140,107 @@ function largePathBin(calls: string, deepJson: unknown, criticJs: string): strin
 	].join("\n");
 }
 
-const ECHO = "fs.writeFileSync(out, JSON.stringify(parsed));";
-const PRUNE_FINDINGS =
-	"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [] }));";
+const ECHO = "fs.writeFileSync(out, JSON.stringify(ledger));";
+const PRUNE_FINDINGS = "fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: parsed.findings.map(({ ref }) => ({ ref, action: 'drop' })) }));";
 
-test("critic subset: small path rejects a critic-only finding", async (t) => {
-	const { repo, calls } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview(),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ severity: 'P0', title: 'critic-only marker', category: 'security', file: 'src/invented.ts', lineStart: 99, lineEnd: 99, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' }] }));",
-		),
-	);
-
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: finding was not in the candidate review/,
-	);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"review",
-		"critic",
-		"critic",
-		"critic",
-	]);
-});
-
-test("critic subset: small path accepts a valid third response", async (t) => {
-	const { repo, calls } = installStub(
-		t,
-		(log) =>
-			smallPathBin(
-				log,
-				candidateReview(),
-				"const criticCalls = fs.readFileSync(calls, 'utf8').trim().split('\\n').filter((line) => line === 'critic').length; const invented = { ...parsed.findings[0], file: 'src/invented.ts' }; fs.writeFileSync(out, JSON.stringify(criticCalls < 3 ? { ...parsed, findings: [invented] } : parsed));",
-			),
-		{ evalTrace: true },
-	);
-
-	const result = await review(makeBundle(repo, false));
-
-	assert.equal(result.findings.length, 1);
-	assert.equal(result.findings[0]?.file, FINDING.file);
-	assert.equal(result.findings[0]?.title, FINDING.title);
-	assert.equal(result.failedRawOutputs?.length, 2);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"review",
-		"critic",
-		"critic",
-		"critic",
-	]);
-});
-
-test("critic subset: small path drops a critic-only residual by restoring the candidate list", async (t) => {
-	const { repo, calls } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [] }),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: 'invented block', blocks: true }] }));",
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.residualRisks, []);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"review",
-		"critic",
-	]);
-});
-
-test("critic subset: small path accepts deleting all findings", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(log, candidateReview(), PRUNE_FINDINGS),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.findings, []);
-});
-
-test("critic subset: small path accepts downward severity correction without rewritten content", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview(),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, severity: "P3", validation: "rewritten-validation" })) }));',
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.verdict, "pass");
-	assert.equal(result.findings.length, 1);
-	assert.equal(result.findings[0]?.severity, "P3");
-	assert.equal(result.findings[0]?.title, "Echo bug");
-	assert.equal(result.findings[0]?.whyItBreaks, "breaks");
-	assert.equal(result.findings[0]?.suggestedFix, "fix");
-	assert.equal(
-		result.findings[0]?.validation,
-		"pnpm test",
-		"candidate content must be preserved; only severity/confidence may change",
-	);
-});
-
-test("critic subset: small path accepts upward severity correction", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({
-				findings: [{ ...FINDING, severity: "P3" }],
-			}),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, severity: "P2" })) }));',
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.verdict, "changes_requested");
-	assert.equal(result.findings[0]?.severity, "P2");
-	assert.equal(result.findings[0]?.title, "Echo bug");
-});
-
-const PARAPHRASE_CRITIC =
-	'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, title: "paraphrased title", whyItBreaks: "paraphrased why", suggestedFix: "paraphrased fix", lineStart: f.lineStart + 2, lineEnd: f.lineStart + 6, validation: "paraphrased validation", confidence: 0.8 })) }));';
-
-function assertCandidateContentRestored(
-	finding: typeof FINDING,
-	candidate: typeof FINDING,
-): void {
-	assert.equal(finding.title, candidate.title);
-	assert.equal(finding.whyItBreaks, candidate.whyItBreaks);
-	assert.equal(finding.suggestedFix, candidate.suggestedFix);
-	assert.equal(finding.lineStart, candidate.lineStart);
-	assert.equal(finding.lineEnd, candidate.lineEnd);
-	assert.equal(finding.validation, candidate.validation);
-	assert.equal(finding.file, candidate.file);
-	assert.equal(finding.category, candidate.category);
-}
-
-test("critic subset: small path accepts a paraphrased finding and restores candidate content", async (t) => {
-	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(log, candidateReview({ findings: [candidate] }), PARAPHRASE_CRITIC),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 1);
-	assert.equal(result.verdict, "changes_requested");
-	const finding = result.findings[0]!;
-	assertCandidateContentRestored(finding, candidate);
-	assert.equal(finding.severity, "P2");
-	assert.equal(finding.confidence, 0.8);
-	assert.notEqual(finding.title, "paraphrased title");
-	assert.notEqual(finding.whyItBreaks, "paraphrased why");
-	assert.notEqual(finding.suggestedFix, "paraphrased fix");
-});
-
-test("critic subset: large path accepts a paraphrased finding and restores candidate content", async (t) => {
-	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
-	const { repo } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({ findings: [candidate], summary: "deep h1" }),
-			PARAPHRASE_CRITIC,
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.findings.length, 1);
-	const finding = result.findings[0]!;
-	assertCandidateContentRestored(finding, candidate);
-	assert.equal(finding.confidence, 0.8);
-});
-
-test("critic subset: small path rejects lineStart drift outside the ±2 window", async (t) => {
-	const candidate = { ...FINDING, lineStart: 10, lineEnd: 20 };
-	const { repo, calls } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [candidate] }),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, lineStart: 13 })) }));',
-		),
-	);
-
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: finding was not in the candidate review/,
-	);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"review",
-		"critic",
-		"critic",
-		"critic",
-	]);
-});
-
-// Two candidates equidistant (±2) from the critic's anchor: line distance
-// alone cannot tell them apart, so only the critic's words can. Without the
-// overlap tie-break the earlier candidate in array order wins and its content
-// is shown under the critic's severity.
-const LOOP_BOUND = {
-	...FINDING,
-	title: "Off-by-one loop bound",
-	whyItBreaks: "the loop bound is off by one",
-	suggestedFix: "start at zero",
-	lineStart: 50,
-	lineEnd: 50,
-};
-const NULL_CHECK = {
-	...FINDING,
-	title: "Missing null check",
-	whyItBreaks: "the returned value is never null checked",
-	suggestedFix: "check for null",
-	lineStart: 54,
-	lineEnd: 54,
-};
-
-// Anchored at 52 — delta 2 to both candidates. Built from candidate[0]
-// (LOOP_BOUND) so every field except the paraphrased text points at the wrong
-// candidate: the tie can only be resolved from title/whyItBreaks.
-const NULL_CHECK_PARAPHRASE =
-	"{ ...parsed.findings[0], title: 'null check missing on the returned value', whyItBreaks: 'the value returned is never checked for null', lineStart: 52, lineEnd: 52, severity: 'P1' }";
-const LOOP_BOUND_PARAPHRASE =
-	"{ ...parsed.findings[1], title: 'loop bound is off by one', whyItBreaks: 'the bound of the loop is off by one', lineStart: 52, lineEnd: 52, severity: 'P3' }";
-
-test("critic subset: small path matches an equidistant tie by content, not candidate order", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 1);
-	const finding = result.findings[0]!;
-	assertCandidateContentRestored(finding, NULL_CHECK);
-	assert.notEqual(
-		finding.title,
-		LOOP_BOUND.title,
-		"the tie must not be resolved by candidate array order",
-	);
-	assert.equal(finding.severity, "P1");
-});
-
-test("critic subset: small path keeps both equidistant candidates paired with their own severity", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}, ${LOOP_BOUND_PARAPHRASE}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 2);
-	assert.equal(result.verdict, "changes_requested");
-	const nullCheck = result.findings.find((f) => f.title === NULL_CHECK.title);
-	const loopBound = result.findings.find((f) => f.title === LOOP_BOUND.title);
-	assert.ok(nullCheck, "the null-check candidate must survive");
-	assert.ok(loopBound, "the loop-bound candidate must survive");
-	assert.equal(nullCheck!.severity, "P1");
-	assert.equal(nullCheck!.lineStart, NULL_CHECK.lineStart);
-	assert.equal(loopBound!.severity, "P3");
-	assert.equal(loopBound!.lineStart, LOOP_BOUND.lineStart);
-});
-
-test("critic subset: large path matches an equidistant tie by content, not candidate order", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({
-				findings: [LOOP_BOUND, NULL_CHECK],
-				summary: "deep h1",
-			}),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.findings.length, 1);
-	const finding = result.findings[0]!;
-	assertCandidateContentRestored(finding, NULL_CHECK);
-	assert.notEqual(finding.title, LOOP_BOUND.title);
-	assert.equal(finding.severity, "P1");
-});
-
-// The tie-break must never decide admission. Wholly disjoint wording on both
-// tied candidates has to keep matching (candidate order is the fallback),
-// otherwise the 2026-08-22 paraphrase-rejection regression is back.
-test("critic subset: small path still accepts a tie whose paraphrase shares no words", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 52, lineEnd: 52 }] }));",
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 1);
-	assert.ok(
-		[LOOP_BOUND.title, NULL_CHECK.title].includes(result.findings[0]!.title),
-		"a candidate must still be matched when content gives no signal",
-	);
-});
-
-// Greedy consumption rejected this: the 52-anchored finding took the line-50
-// candidate (equal distance, no content signal), leaving the 50-anchored
-// finding with nothing inside ±2 — a false rejection of a real review, even
-// though the complete assignment 52→54, 50→50 exists.
-const ZERO_OVERLAP_AT_52 =
-	"{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 52, lineEnd: 52, severity: 'P0' }";
-const ZERO_OVERLAP_AT_50 =
-	"{ ...parsed.findings[0], title: 'yyy www', whyItBreaks: 'yyy www', lineStart: 50, lineEnd: 50, severity: 'P3' }";
-
-test("critic subset: small path accepts an order that only a complete matching can satisfy", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_50}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 2);
-	const at52 = result.findings[0]!;
-	const at50 = result.findings[1]!;
-	assert.equal(
-		at50.lineStart,
-		LOOP_BOUND.lineStart,
-		"the 50-anchored finding must take the only candidate it is eligible for",
-	);
-	assert.equal(
-		at52.lineStart,
-		NULL_CHECK.lineStart,
-		"the 52-anchored finding must yield line 50 rather than reject the review",
-	);
-});
-
-test("critic subset: large path accepts an order that only a complete matching can satisfy", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({
-				findings: [LOOP_BOUND, NULL_CHECK],
-				summary: "deep h1",
-			}),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_50}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.findings.length, 2);
-	assert.equal(result.findings[1]!.lineStart, LOOP_BOUND.lineStart);
-	assert.equal(result.findings[0]!.lineStart, NULL_CHECK.lineStart);
-});
-
-// Only an augmenting path saves this one. The 52-anchored finding's words
-// point at the line-54 candidate and it takes it; the 56-anchored finding is
-// eligible for line 54 and nothing else, so it must displace the incumbent
-// onto line 50 — its own second choice, and still a candidate it was eligible
-// for. Preference is sacrificed here only because the alternative is throwing
-// away a real review.
-const NULL_CHECK_PARAPHRASE_AT_52 =
-	"{ ...parsed.findings[0], title: 'null check missing on the returned value', whyItBreaks: 'the value returned is never checked for null', lineStart: 52, lineEnd: 52, severity: 'P1' }";
-const ZERO_OVERLAP_AT_56 =
-	"{ ...parsed.findings[0], title: 'zzz qqq', whyItBreaks: 'zzz qqq', lineStart: 56, lineEnd: 56, severity: 'P0' }";
-
-test("critic subset: small path displaces a preferred match rather than rejecting the review", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [${NULL_CHECK_PARAPHRASE_AT_52}, ${ZERO_OVERLAP_AT_56}] }));`,
-		),
-	);
-
-	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 2);
-	const displaced = result.findings[0]!;
-	const constrained = result.findings[1]!;
-	assert.equal(
-		constrained.lineStart,
-		NULL_CHECK.lineStart,
-		"the finding eligible for only one candidate must get it",
-	);
-	assert.equal(
-		displaced.lineStart,
-		LOOP_BOUND.lineStart,
-		"the displaced finding takes the remaining eligible candidate",
-	);
-	assert.equal(displaced.severity, "P1");
-	assert.equal(constrained.severity, "P0");
-});
-
-// Both findings sit at 52, so both are eligible for both candidates with the
-// same preference (equal distance, no shared words). Nothing but the
-// algorithm's own processing order can decide who gets which — and that order
-// must come from the findings themselves, not from the order the critic
-// happened to emit them in.
-const ZERO_OVERLAP_AT_52_ALT =
-	"{ ...parsed.findings[0], title: 'yyy www', whyItBreaks: 'yyy www', lineStart: 52, lineEnd: 52, severity: 'P3' }";
-const PERMUTATION_ORDERS = [
-	{
-		name: "as emitted",
-		js: `[${ZERO_OVERLAP_AT_52}, ${ZERO_OVERLAP_AT_52_ALT}]`,
-	},
-	{
-		name: "reversed",
-		js: `[${ZERO_OVERLAP_AT_52_ALT}, ${ZERO_OVERLAP_AT_52}]`,
-	},
-] as const;
-
-for (const { name, js } of PERMUTATION_ORDERS) {
-	test(`critic subset: assignment is invariant under critic finding order (${name})`, async (t) => {
-		const { repo } = installStub(t, (log) =>
-			smallPathBin(
-				log,
-				candidateReview({ findings: [LOOP_BOUND, NULL_CHECK] }),
-				`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: ${js} }));`,
-			),
-		);
-
-		const result = await review(makeBundle(repo, false));
-		assert.equal(result.findings.length, 2);
-		const p0 = result.findings.find((f) => f.severity === "P0");
-		const p3 = result.findings.find((f) => f.severity === "P3");
-		assert.ok(p0 && p3, "both critic findings must survive");
-		assert.equal(
-			p0!.lineStart,
-			LOOP_BOUND.lineStart,
-			"the same finding owns the line-50 candidate in either emission order",
-		);
-		assert.equal(
-			p3!.lineStart,
-			NULL_CHECK.lineStart,
-			"the same finding owns the line-54 candidate in either emission order",
-		);
+for (const deep of [false, true]) {
+	const lane = deep ? "large" : "small";
+	const bin = deep ? largePathBin : smallPathBin;
+	for (const [label, changes, expected] of [
+		["downgrade", { severity: "P3", confidence: 0 }, "pass"],
+		["upgrade", { severity: "P0", confidence: 1 }, "changes_requested"],
+		["blocking confidence boundary", { severity: "P2", confidence: 0.7 }, "changes_requested"],
+	] as const) {
+		test(`critic ledger: ${lane} ${label} preserves candidate content`, async (t) => {
+			const { repo } = installStub(t, log => bin(log, candidateReview(),
+				`fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: ledger.decisions.map(d => ({ ...d, ...${JSON.stringify(changes)} })) }));`));
+			const result = await review(makeBundle(repo, deep));
+			assert.equal(result.verdict, expected);
+			const { evidence, replacement, ...finding } = result.findings[0];
+			assert.deepEqual(finding, { ...FINDING, ...changes, consumerFile: undefined, consumerLine: undefined });
+			assert.equal(evidence?.toolRead, "unknown");
+			assert.equal(replacement, undefined);
+			assert.equal("ref" in result.findings[0], false);
+			assert.equal("decisions" in result, false);
+		});
+	}
+	test(`critic ledger: ${lane} explicit prune preserves candidate trace`, async (t) => {
+		const { repo } = installStub(t, log => bin(log, candidateReview(), PRUNE_FINDINGS), { evalTrace: true });
+		const result = await review(makeBundle(repo, deep));
+		assert.equal(result.verdict, "pass");
+		assert.deepEqual(result.findings, []);
+		assert.equal(result.candidateFindings?.[0]?.title, FINDING.title);
+		assert.equal("ref" in (result.candidateFindings?.[0] ?? {}), false);
+		assert.match(result.rawOutputs?.at(-1) ?? "", /"decisions"/);
+	});
+	test(`critic ledger: ${lane} empty candidate accepts empty ledger`, async (t) => {
+		const { repo } = installStub(t, log => bin(log, candidateReview({ findings: [] }), ECHO));
+		assert.deepEqual((await review(makeBundle(repo, deep))).findings, []);
+	});
+	test(`critic ledger: ${lane} reordered same-location candidates retain decision pairing`, async (t) => {
+		const second = { ...FINDING, title: "Second bug", whyItBreaks: "different failure", severity: "P3" };
+		const { repo } = installStub(t, log => bin(log, candidateReview({ findings: [FINDING, second] }),
+			"fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: [{ ref: 'f1', action: 'keep', severity: 'P0', confidence: 1 }, { ref: 'f0', action: 'keep', severity: 'P3', confidence: 0 }] }));"));
+		const result = await review(makeBundle(repo, deep));
+		assert.deepEqual(result.findings.map(f => [f.title, f.severity, f.confidence, f.lineStart]), [["Second bug", "P0", 1, 1], ["Echo bug", "P3", 0, 1]]);
+	});
+	for (const [label, output] of [
+		["unknown ref", "{ ...ledger, decisions: [{ ...ledger.decisions[0], ref: 'f99' }] }"],
+		["duplicate ref", "{ ...ledger, decisions: [...ledger.decisions, ledger.decisions[0]] }"],
+		["missing ref", "{ ...ledger, decisions: [] }"],
+		["legacy findings", "parsed"],
+		["mixed findings", "{ ...ledger, findings: [] }"],
+		["extra envelope key", "{ ...ledger, extra: true }"],
+		["missing envelope key", "{ decisions: ledger.decisions, checked: ['looked'], residual_risks: [] }"],
+		["null envelope", "null"],
+		["array envelope", "[]"],
+		["non-array decisions", "{ ...ledger, decisions: {} }"],
+		["missing ref field", "{ ...ledger, decisions: [{ action: 'drop' }] }"],
+		["missing action field", "{ ...ledger, decisions: [{ ref: 'f0' }] }"],
+		["array decision", "{ ...ledger, decisions: [[]] }"],
+		["null decision", "{ ...ledger, decisions: [null] }"],
+		["invalid action", "{ ...ledger, decisions: [{ ref: 'f0', action: 'maybe' }] }"],
+		["drop with severity", "{ ...ledger, decisions: [{ ref: 'f0', action: 'drop', severity: 'P3' }] }"],
+		["rewritten location", "{ ...ledger, decisions: [{ ...ledger.decisions[0], lineStart: 86 }] }"],
+		["rewritten content", "{ ...ledger, decisions: [{ ...ledger.decisions[0], title: 'rewritten' }] }"],
+		["missing confidence", "{ ...ledger, decisions: [{ ref: 'f0', action: 'keep', severity: 'P2' }] }"],
+		["lowercase severity", "{ ...ledger, decisions: [{ ...ledger.decisions[0], severity: 'p2' }] }"],
+		["invalid severity", "{ ...ledger, decisions: [{ ...ledger.decisions[0], severity: 'P9' }] }"],
+		["string confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], confidence: '0.9' }] }"],
+		["negative confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], confidence: -0.1 }] }"],
+		["excess confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], confidence: 1.1 }] }"],
+		["nonfinite confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], confidence: Infinity }] }"],
+		["low P0 confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], severity: 'P0', confidence: 0.69 }] }"],
+		["low P1 confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], severity: 'P1', confidence: 0.69 }] }"],
+		["low blocking confidence", "{ ...ledger, decisions: [{ ...ledger.decisions[0], confidence: 0.69 }] }"],
+	] as const) {
+		test(`critic ledger: ${lane} rejects ${label} after three raw attempts`, async (t) => {
+			const { repo, calls } = installStub(t, log => bin(log, candidateReview(), `fs.writeFileSync(out, JSON.stringify(${output}));`), { evalTrace: true });
+			const events: ReviewTraceEvent[] = [];
+			await assert.rejects(review(makeBundle(repo, deep), {}, event => { events.push(event); }), error => {
+				assert.ok(error instanceof Error);
+				assert.match(error.message, label === "null envelope" || label === "array envelope"
+					? /no JSON object found in codex output/
+					: /malformed (critic output|finding)/);
+				assert.ok("rawOutputs" in error && Array.isArray(error.rawOutputs));
+				assert.ok(error.rawOutputs.length >= 3);
+				return true;
+			});
+			assert.equal(events.filter(event => event.passKind === "critic" && event.outcome === "parse_failed").length, 3);
+			assert.equal(readFileSync(calls, "utf8").split("\n").filter(line => line === "critic").length, 3);
+		});
+	}
+	test(`critic ledger: ${lane} accepts third response and retains rejected raws`, async (t) => {
+		const { repo, calls } = installStub(t, log => bin(log, candidateReview(),
+			"const n = fs.readFileSync(calls, 'utf8').split('\\n').filter(line => line === 'critic').length; fs.writeFileSync(out, JSON.stringify(n < 3 ? { ...ledger, decisions: [] } : ledger));"), { evalTrace: true });
+		const result = await review(makeBundle(repo, deep));
+		assert.equal(result.findings[0]?.title, FINDING.title);
+		assert.equal(result.failedRawOutputs?.length, 2);
+		assert.equal(readFileSync(calls, "utf8").split("\n").filter(line => line === "critic").length, 3);
 	});
 }
 
-const IDENTITY_REJECT_MUTATIONS = [
-	{ field: "file", value: "src/other.ts" },
-	{ field: "category", value: "security" },
-] as const;
-
-for (const { field, value } of IDENTITY_REJECT_MUTATIONS) {
-	test(`critic subset: small path rejects a rewritten ${field}`, async (t) => {
-		const { repo, calls } = installStub(t, (log) =>
-			smallPathBin(
-				log,
-				candidateReview(),
-				`fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f) => ({ ...f, ${field}: ${JSON.stringify(value)} })) }));`,
-			),
-		);
-
-		await assert.rejects(
-			() => review(makeBundle(repo, false)),
-			/malformed critic output: finding was not in the candidate review/,
-		);
-		assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-			"review",
-			"critic",
-			"critic",
-			"critic",
-		]);
-	});
-}
-
-test("critic subset: small path allows two findings that share a loosened key", async (t) => {
-	const first = {
-		...FINDING,
-		title: "First bug",
-		whyItBreaks: "why one",
-		suggestedFix: "fix one",
-	};
-	const second = {
-		...FINDING,
-		title: "Second bug",
-		whyItBreaks: "why two",
-		suggestedFix: "fix two",
-	};
-	const pair = candidateReview({ findings: [first, second] });
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			pair,
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: parsed.findings.map((f, i) => ({ ...f, title: "para " + i, whyItBreaks: "para why " + i, suggestedFix: "para fix " + i })) }));',
-		),
-	);
-	const kept = await review(makeBundle(repo, false));
-	assert.equal(kept.findings.length, 2);
-	assert.equal(kept.verdict, "changes_requested");
-	assert.deepEqual(
-		kept.findings.map((f) => f.title).sort(),
-		["First bug", "Second bug"],
-	);
-	assert.deepEqual(
-		kept.findings.map((f) => f.whyItBreaks).sort(),
-		["why one", "why two"],
-	);
-	assert.ok(kept.findings.every((f) => !f.title.startsWith("para ")));
-});
-
-test("critic subset: small path rejects a third copy of a duplicate loosened-key finding", async (t) => {
-	const first = { ...FINDING, title: "First bug" };
-	const second = { ...FINDING, title: "Second bug" };
-	const pair = candidateReview({ findings: [first, second] });
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			pair,
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [...parsed.findings, parsed.findings[0]] }));",
-		),
-	);
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: finding was not in the candidate review/,
-	);
-});
-
-test("critic subset: small path allows two identical findings that share a key", async (t) => {
-	const pair = candidateReview({ findings: [FINDING, FINDING] });
-	const { repo } = installStub(t, (log) => smallPathBin(log, pair, ECHO));
-	const kept = await review(makeBundle(repo, false));
-	assert.equal(kept.findings.length, 2);
-	assert.equal(kept.verdict, "changes_requested");
-});
-
-test("critic subset: small path rejects a third copy of a duplicate-key finding", async (t) => {
-	const pair = candidateReview({ findings: [FINDING, FINDING] });
-	const { repo } = installStub(t, (log) =>
-		smallPathBin(
-			log,
-			pair,
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [...parsed.findings, parsed.findings[0]] }));",
-		),
-	);
-	await assert.rejects(
-		() => review(makeBundle(repo, false)),
-		/malformed critic output: finding was not in the candidate review/,
-	);
-});
-
-test("critic subset: small path restores the candidate list on a blocking upgrade", async (t) => {
+test("critic ledger: small path restores the candidate list on a blocking upgrade", async (t) => {
 	const { repo } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -689,7 +248,7 @@ test("critic subset: small path restores the candidate list on a blocking upgrad
 				findings: [],
 				residual_risks: [{ text: "maybe later", blocks: false }],
 			}),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "maybe later", blocks: true }] }));',
+			'fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: [{ text: "maybe later", blocks: true }] }));',
 		),
 	);
 
@@ -704,7 +263,7 @@ for (const deep of [false, true]) {
 	const pipeline = deep ? largePathBin : smallPathBin;
 	const lane = deep ? "large" : "small";
 	for (const action of ["keep", "downgrade", "omit"]) {
-		test(`critic subset: ${lane} path permits model residual ${action}`, async (t) => {
+		test(`critic ledger: ${lane} path permits model residual ${action}`, async (t) => {
 			const expected = action === "omit" ? [] : [
 				{ text: "need human", blocks: action === "keep" },
 			];
@@ -714,7 +273,7 @@ for (const deep of [false, true]) {
 					findings: [],
 					residual_risks: [{ text: "need human", blocks: true }],
 				}),
-				`fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: ${JSON.stringify(expected)} }));`,
+				`fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: ${JSON.stringify(expected)} }));`,
 			));
 			const result = await review(makeBundle(repo, deep));
 			assert.equal(result.verdict, action === "keep" ? "needs_human" : "pass");
@@ -722,7 +281,7 @@ for (const deep of [false, true]) {
 		});
 	}
 
-	test(`critic subset: ${lane} path consolidates duplicate residual text`, async (t) => {
+	test(`critic ledger: ${lane} path consolidates duplicate residual text`, async (t) => {
 		const { repo } = installStub(t, (log) => pipeline(
 			log,
 			candidateReview({ findings: [], residual_risks: [
@@ -738,11 +297,11 @@ for (const deep of [false, true]) {
 }
 
 for (const action of ["keep", "downgrade", "omit"]) {
-	test(`critic subset: deep infrastructure failure survives critic ${action}`, async (t) => {
+	test(`critic ledger: deep infrastructure failure survives critic ${action}`, async (t) => {
 		const { repo } = installStub(t, (log) => largePathBin(
 			log,
 			null,
-			`fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: ${action === "omit" ? "[]" : `parsed.residual_risks.map(risk => ({ ...risk, blocks: ${action === "keep"} }))`} }));`,
+			`fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: ${action === "omit" ? "[]" : `parsed.residual_risks.map(risk => ({ ...risk, blocks: ${action === "keep"} }))`} }));`,
 		));
 		const result = await review(makeBundle(repo, true));
 		assert.equal(result.verdict, "needs_human");
@@ -752,13 +311,13 @@ for (const action of ["keep", "downgrade", "omit"]) {
 	});
 }
 
-test("critic subset: a model residual cannot hide a same-text infrastructure failure", async (t) => {
+test("critic ledger: a model residual cannot hide a same-text infrastructure failure", async (t) => {
 	const failureText = 'deep review of "h1" failed (malformed review output: summary missing or not a string); 1 file(s) not deep-reviewed';
 	const model = candidateReview({ findings: [], residual_risks: [{ text: failureText, blocks: false }] });
 	const { repo } = installStub(t, (log) => largePathBin(
 		log,
 		model,
-		"fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: parsed.residual_risks.map(risk => ({ ...risk, blocks: false })) }));",
+		"fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: parsed.residual_risks.map(risk => ({ ...risk, blocks: false })) }));",
 	).replace(
 		"hotspots: [{ name: 'h1', files: ['src/app.ts'], why: 'changed', risk: 'high', edges: [] }]",
 		"hotspots: ['h1', 'h2'].map(name => ({ name, files: ['src/app.ts'], why: 'changed', risk: 'high', edges: [] }))",
@@ -772,7 +331,7 @@ test("critic subset: a model residual cannot hide a same-text infrastructure fai
 });
 
 for (const deep of [false, true]) {
-	test(`critic subset: ${deep ? "large" : "small"} critic infrastructure failure rejects`, async (t) => {
+	test(`critic ledger: ${deep ? "large" : "small"} critic infrastructure failure rejects`, async (t) => {
 		const pipeline = deep ? largePathBin : smallPathBin;
 		const { repo } = installStub(t, (log) => pipeline(log, candidateReview({ findings: [] }),
 			"process.stderr.write('critic unavailable'); process.exit(3);",
@@ -781,7 +340,7 @@ for (const deep of [false, true]) {
 	});
 }
 
-test("critic subset: map infrastructure failure rejects before critic", async (t) => {
+test("critic ledger: map infrastructure failure rejects before critic", async (t) => {
 	const { repo, calls } = installStub(t, (log) => largePathBin(log, candidateReview(), ECHO).replace(
 		"if (input.includes('review-MAP pass')) {",
 		"if (input.includes('review-MAP pass')) { process.stderr.write('map unavailable'); process.exit(3);",
@@ -790,7 +349,7 @@ test("critic subset: map infrastructure failure rejects before critic", async (t
 	assert.equal(existsSync(calls), false);
 });
 
-test("critic subset: small path accepts residual case/whitespace drift and restores candidate text", async (t) => {
+test("critic ledger: small path accepts residual case/whitespace drift and restores candidate text", async (t) => {
 	const { repo } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -798,7 +357,7 @@ test("critic subset: small path accepts residual case/whitespace drift and resto
 				findings: [],
 				residual_risks: [{ text: "Need human", blocks: false }],
 			}),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "NEED   human", blocks: false }] }));',
+			'fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: [{ text: "NEED   human", blocks: false }] }));',
 		),
 	);
 
@@ -809,7 +368,7 @@ test("critic subset: small path accepts residual case/whitespace drift and resto
 	]);
 });
 
-test("critic subset: small path restores candidate residuals on wording drift", async (t) => {
+test("critic ledger: small path restores candidate residuals on wording drift", async (t) => {
 	const { repo } = installStub(t, (log) =>
 		smallPathBin(
 			log,
@@ -817,7 +376,7 @@ test("critic subset: small path restores candidate residuals on wording drift", 
 				findings: [],
 				residual_risks: [{ text: "Need human", blocks: false }],
 			}),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: "Need a human reviewer", blocks: false }] }));',
+			'fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: [{ text: "Need a human reviewer", blocks: false }] }));',
 		),
 	);
 
@@ -827,7 +386,7 @@ test("critic subset: small path restores candidate residuals on wording drift", 
 	]);
 });
 
-test("critic subset: a late residual mismatch restores the complete candidate list", async (t) => {
+test("critic ledger: a late residual mismatch restores the complete candidate list", async (t) => {
 	const candidateResiduals = [
 		{ text: "first", blocks: false },
 		{ text: "second", blocks: true },
@@ -836,7 +395,7 @@ test("critic subset: a late residual mismatch restores the complete candidate li
 		smallPathBin(
 			log,
 			candidateReview({ findings: [], residual_risks: candidateResiduals }),
-			'fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [parsed.residual_risks[0], { text: "invented", blocks: false }] }));',
+			'fs.writeFileSync(out, JSON.stringify({ ...ledger, residual_risks: [parsed.residual_risks[0], { text: "invented", blocks: false }] }));',
 		),
 	);
 
@@ -845,111 +404,50 @@ test("critic subset: a late residual mismatch restores the complete candidate li
 	assert.deepEqual(result.residualRisks, candidateResiduals);
 });
 
-test("critic subset: large path rejects a critic-only finding", async (t) => {
-	const { repo, calls } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({ summary: "deep h1" }),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, findings: [{ severity: 'P0', title: 'critic-only marker', category: 'security', file: 'src/invented.ts', lineStart: 99, lineEnd: 99, confidence: 0.9, whyItBreaks: 'breaks', suggestedFix: 'fix', validation: 'pnpm test' }] }));",
-		),
-	);
 
-	await assert.rejects(
-		() => review(makeBundle(repo, true)),
-		/malformed critic output: finding was not in the candidate review/,
-	);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"map",
-		"deep",
-		"critic",
-		"critic",
-		"critic",
-	]);
-});
+for (const deep of [false, true]) {
+	test(`critic ledger: ${deep ? "large" : "small"} materialized traces preserve every model-admitted candidate field`, async (t) => {
+		const candidate = {
+			...FINDING,
+			consumerFile: "src/consumer.ts", consumerLine: 7,
+			quote: "const value = changed();",
+			replacement: { lines: ["const value = fixed();"] },
+			externalClaims: [{ claim: "Optional external context", necessary: false, source: { type: "external", url: "https://spec.example.invalid/reference" } }],
+		};
+		const pipeline = deep ? largePathBin : smallPathBin;
+		const events: ReviewTraceEvent[] = [];
+		const { repo } = installStub(t, log => pipeline(log, candidateReview({ findings: [candidate] }),
+			"fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: [{ ref: 'f0', action: 'keep', severity: 'P1', confidence: 0.8 }] }));"));
+		const result = await review(makeBundle(repo, deep), {}, event => { events.push(event); });
+		const materialized = events.filter(event => event.surface === "final_finding");
+		assert.equal(materialized.length, 1);
+		assert.deepEqual(JSON.parse(materialized[0].content), { ...candidate, severity: "P1", confidence: 0.8 });
+		assert.equal(result.verdict, "changes_requested");
+		assert.equal("ref" in result.findings[0], false);
+		assert.equal("decisions" in result, false);
+		assert.ok(events.some(event => event.surface === "raw_success" && event.passKind === "critic" && event.content.includes('"decisions"')));
+		assert.equal(materialized[0].content.includes('"ref"'), false);
+	});
+	test(`critic ledger: ${deep ? "large" : "small"} interleaves keep/drop in output order`, async (t) => {
+		const candidates = ["First", "Second", "Third"].map(title => ({ ...FINDING, title }));
+		const pipeline = deep ? largePathBin : smallPathBin;
+		const { repo } = installStub(t, log => pipeline(log, candidateReview({ findings: candidates }),
+			"fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: [{ref:'f2',action:'keep',severity:'P1',confidence:0.8},{ref:'f0',action:'drop'},{ref:'f1',action:'keep',severity:'P3',confidence:1}] }));"));
+		const result = await review(makeBundle(repo, deep));
+		assert.deepEqual(result.findings.map(f => [f.title, f.severity, f.confidence]), [["Third", "P1", 0.8], ["Second", "P3", 1]]);
+	});
+}
 
-test("critic subset: large path drops a critic-only residual by restoring the candidate list", async (t) => {
-	const { repo, calls } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({ findings: [], summary: "deep h1" }),
-			"fs.writeFileSync(out, JSON.stringify({ ...parsed, residual_risks: [{ text: 'invented block', blocks: true }] }));",
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.residualRisks, []);
-	assert.deepEqual(readFileSync(calls, "utf8").trim().split("\n"), [
-		"map",
-		"deep",
-		"critic",
-	]);
-});
-
-test("critic subset: large path does not duplicate a retained blocking residual", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({
-				findings: [],
-				summary: "deep h1",
-				residual_risks: [{ text: "Need human", blocks: true }],
-			}),
-			ECHO,
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.verdict, "needs_human");
-	assert.deepEqual(result.residualRisks, [
-		{ text: "Need human", blocks: true },
-	]);
-});
-
-test("critic subset: large path accepts prune of candidate findings", async (t) => {
-	const { repo } = installStub(t, (log) =>
-		largePathBin(
-			log,
-			candidateReview({ summary: "deep h1" }),
-			PRUNE_FINDINGS,
-		),
-	);
-
-	const result = await review(makeBundle(repo, true));
-	assert.equal(result.verdict, "pass");
-	assert.deepEqual(result.findings, []);
-});
-
-test("critic subset: small path eval trace still records candidateFindings after prune", async (t) => {
-	const { repo } = installStub(
-		t,
-		(log) => smallPathBin(log, candidateReview(), PRUNE_FINDINGS),
-		{ evalTrace: true },
-	);
-
+test("critic ledger: small identical candidates retain separate refs", async (t) => {
+	const { repo } = installStub(t, log => smallPathBin(log, candidateReview({ findings: [FINDING, FINDING] }),
+		"fs.writeFileSync(out, JSON.stringify({ ...ledger, decisions: [{ref:'f1',action:'keep',severity:'P0',confidence:1},{ref:'f0',action:'keep',severity:'P3',confidence:0}] }));"));
 	const result = await review(makeBundle(repo, false));
-	assert.equal(result.findings.length, 0);
-	assert.ok(result.candidateFindings);
-	assert.equal(result.candidateFindings!.length, 1);
-	assert.equal(result.candidateFindings![0]?.title, "Echo bug");
-	assert.equal(result.candidateFindings![0]?.severity, "P2");
+	assert.deepEqual(result.findings.map(f => [f.title, f.severity]), [["Echo bug", "P0"], ["Echo bug", "P3"]]);
 });
 
-test("critic subset: large path eval trace still records candidateFindings after prune", async (t) => {
-	const { repo } = installStub(
-		t,
-		(log) =>
-			largePathBin(
-				log,
-				candidateReview({ summary: "deep h1" }),
-				PRUNE_FINDINGS,
-			),
-		{ evalTrace: true },
-	);
-
+test("critic ledger: large refs are assigned after candidate deduplication", async (t) => {
+	const { repo } = installStub(t, log => largePathBin(log, candidateReview({ findings: [FINDING, FINDING] }),
+		"if (parsed.findings.length !== 1 || parsed.findings[0].ref !== 'f0') process.exit(2); fs.writeFileSync(out, JSON.stringify(ledger));"));
 	const result = await review(makeBundle(repo, true));
-	assert.equal(result.findings.length, 0);
-	assert.ok(result.candidateFindings);
-	assert.equal(result.candidateFindings!.length, 1);
-	assert.equal(result.candidateFindings![0]?.title, "Echo bug");
+	assert.deepEqual(result.findings.map(f => [f.title, f.lineStart]), [["Echo bug", 1]]);
 });

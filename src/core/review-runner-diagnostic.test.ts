@@ -19,7 +19,7 @@ test("unknown runner schema diagnostic stays separate from every raw transcript"
   const output = "output CANARY-FILE";
   writeFileSync(bin, `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.readFileSync(0);
+const input=fs.readFileSync(0,"utf8");
 fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], ${JSON.stringify(output)});
 process.stdout.write(${JSON.stringify(stdout)});
 process.stderr.write(${JSON.stringify(stderr)});
@@ -63,7 +63,7 @@ test("private diagnostic observer failure preserves the retried review verdict",
   t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
   writeFileSync(bin, `#!/usr/bin/env node
 const fs = require("node:fs");
-fs.readFileSync(0);
+const input=fs.readFileSync(0,"utf8");
 const calls = ${JSON.stringify(calls)};
 const count = Number(fs.readFileSync(calls, "utf8")) + 1;
 fs.writeFileSync(calls, String(count));
@@ -71,7 +71,7 @@ if (count === 1) {
   process.stdout.write('{"type":"future.event","message":"insufficient credits"}\\n');
   process.exit(1);
 }
-fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], JSON.stringify({ summary: "clean", findings: [], checked: ["source reviewed"], residual_risks: [] }));
+fs.writeFileSync(process.argv[process.argv.indexOf("--output-last-message") + 1], JSON.stringify({ summary: "clean", ...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}), checked: ["source reviewed"], residual_risks: [] }));
 `);
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;

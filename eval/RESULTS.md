@@ -2328,3 +2328,22 @@ All 714 fixed primary and confirmation slots completed with 1,493 native attempt
 A post-hoc audit found a shared caller defect that reprocessed literal template tokens inside critic candidate JSON on both sources. This local fix addresses that general input-construction defect without changing prompt wording, matching, scoring, or the owner-approved model-residual critic policy in #220. It neither rescues this failed campaign nor proves a cause for the aggregate quality differences. The changed model inputs require a new complete Class R gate on the new source. No new campaign ran for this fix.
 
 PR #256 is not merged into main. It and dependent qualification work remain unqualified and must not be promoted from Draft on these results. This entry records the failure before delivery; it does not claim that the failed source shipped.
+
+
+## 2026-10-18 critic decision ledger
+
+Gate class **R**, `NOT_RUN`. The private critic protocol now requires one explicit
+keep/drop decision per candidate ref and materializes findings from the original
+candidate, changing model inputs and output admission. Local behavior tests do
+not certify model quality or semantic ref attribution. A separately authored
+sealed holdout awaits integration after the prompt freeze. No fixture count or
+hash is declared before that integration. The production-lane full Class R x3
+gate, sealed holdouts and mechanical confirmation remain required.
+
+The valid source `95d0a9002cdf282aa8e823f6d5f2868358f1a125` Class D study
+remains **FAIL**. It completed 9/9 slots and 19 native calls with one intermediate
+critic identity rejection when lineStart moved from 83 to 86. The same-prompt
+re-ask succeeded, with zero final invalid outputs, recall 1 and noise 0. That
+success does not erase the zero-intermediate-error gate failure. The earlier
+INVALID campaign and partial studies remain unchanged. No new R/D campaign or
+live canary ran for this implementation.

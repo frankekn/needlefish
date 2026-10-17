@@ -31,7 +31,7 @@ process.stdin.on('end', () => {
   const head = prompt.match(/^HEAD: (.+)$/m)?.[1];
   const diff = cp.spawnSync('git', ['diff', base + '..' + head, '--', 'app.ts'], {encoding:'utf8'});
   if (diff.status !== 0 || !diff.stdout.includes('+export const answer = 42;')) process.exit(1);
-  process.stdout.write(JSON.stringify({summary:'inspected',findings:[],checked:['app.ts new answer=42 verified via diff'],residual_risks:[]}));
+  process.stdout.write(JSON.stringify({summary:'inspected',...(prompt.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['app.ts new answer=42 verified via diff'],residual_risks:[]}));
 });
 `);
     chmodSync(bin, 0o755);
