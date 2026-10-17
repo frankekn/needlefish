@@ -22,6 +22,7 @@ import json
 from pathlib import Path
 import sys
 import time
+from urllib.parse import quote
 root = Path(__file__).resolve().parent
 docfile = root / "document.json"
 document = json.loads(docfile.read_text())
@@ -53,6 +54,8 @@ elif sys.argv[1] == "connections":
         document = request["document"]
         docfile.write_text(json.dumps(document))
         revision = "sha256:" + hashlib.sha256(docfile.read_bytes()).hexdigest()
+        if (root / "apply-mixed-output").exists():
+            emit({"schemaVersion": 1, "ok": False, "code": "invalid_configuration", "revision": None, "connections": rows()}); sys.exit(1)
         if (root / "apply-invalid-output").exists():
             print("truncated", flush=True); sys.exit(0)
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows()})
@@ -60,7 +63,10 @@ elif sys.argv[1] == "connections":
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows(request["ids"])})
     elif operation == "review":
         time.sleep(30 if (root / "slow-review").exists() else 1)
-        emit({"schemaVersion": 1, "verdict": "needs_human", "summary": "OFFLINE UI TEST. No actual review.", "findings": [], "residualRisks": [{"text": "Offline fixture requires human inspection.", "blocks": True}]})
+        summary = "OFFLINE UI TEST. No actual review."
+        if (root / "review-percent-output").exists():
+            summary += " " + quote(next(iter(request["sources"].values())), safe="")
+        emit({"schemaVersion": 1, "verdict": "needs_human", "summary": summary, "findings": [], "residualRisks": [{"text": "Offline fixture requires human inspection.", "blocks": True}]})
     else:
         emit({"schemaVersion": 1, "ok": True, "revision": revision, "connections": rows()})
 else:

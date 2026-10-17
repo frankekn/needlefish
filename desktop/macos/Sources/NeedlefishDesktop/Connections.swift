@@ -45,6 +45,37 @@ struct ConnectionsResponse: Decodable, Sendable {
     let baseRevision: String?
     let document: ConnectionsDocument?
     let connections: [ConnectionDescriptor]?
+    private struct Field: CodingKey, ExpressibleByStringLiteral {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringLiteral value: String) { stringValue = value }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+    }
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: Field.self)
+        schemaVersion = try fields.decode(Int.self, forKey: "schemaVersion")
+        ok = try fields.decode(Bool.self, forKey: "ok")
+        let keys = Set(fields.allKeys.map(\.stringValue))
+        if ok {
+            guard keys == ["schemaVersion", "ok", "connections"] ||
+                    keys == ["schemaVersion", "ok", "revision", "connections"] ||
+                    keys == ["schemaVersion", "ok", "baseRevision", "document"] else { throw DesktopError.invalidOutput }
+        } else {
+            guard keys.isSubset(of: ["schemaVersion", "ok", "code", "issues"]), keys.contains("code") else { throw DesktopError.invalidOutput }
+        }
+        code = try fields.decodeIfPresent(String.self, forKey: "code")
+        issues = try fields.decodeIfPresent([ConnectionIssue].self, forKey: "issues")
+        revision = try fields.decodeIfPresent(String.self, forKey: "revision")
+        baseRevision = try fields.decodeIfPresent(String.self, forKey: "baseRevision")
+        document = try fields.decodeIfPresent(ConnectionsDocument.self, forKey: "document")
+        connections = try fields.decodeIfPresent([ConnectionDescriptor].self, forKey: "connections")
+        if ok {
+            guard (connections != nil || document != nil),
+                  (!keys.contains("revision") || revision != nil),
+                  (!keys.contains("baseRevision") || baseRevision != nil && document != nil) else { throw DesktopError.invalidOutput }
+        }
+    }
     func validated(status: Int32) throws -> Self {
         guard schemaVersion == 1 else { throw DesktopError.invalidOutput }
         if !ok {
@@ -76,6 +107,32 @@ struct ConnectionsFailure: Error, LocalizedError {
         default: "連線操作未完成。請檢查欄位與本機設定後重試。未顯示原始輸出。 / Connection operation incomplete. Check fields and local configuration."
         }
     }
+}
+
+private func percentDecoded(_ text: String) -> String {
+    let bytes = Array(text.utf8)
+    var decoded = [UInt8]()
+    decoded.reserveCapacity(bytes.count)
+    var index = 0
+    func hex(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 48...57: byte - 48
+        case 65...70: byte - 55
+        case 97...102: byte - 87
+        default: nil
+        }
+    }
+    while index < bytes.count {
+        if bytes[index] == 37, index + 2 < bytes.count,
+           let high = hex(bytes[index + 1]), let low = hex(bytes[index + 2]) {
+            decoded.append(high * 16 + low)
+            index += 3
+        } else {
+            decoded.append(bytes[index])
+            index += 1
+        }
+    }
+    return String(decoding: decoded, as: UTF8.self)
 }
 
 extension DesktopCLI {
@@ -110,10 +167,10 @@ extension DesktopCLI {
         let output = try await call(["connections", "review", "--json"], command: command,
                                     timeout: Double(budgetMs) / 1000 + 10 * 60, input: input, inputSent: inputSent)
         let text = String(decoding: output.stdout + output.stderr, as: UTF8.self)
+        let canonicalText = percentDecoded(text)
         for value in sources.values where !value.isEmpty {
             let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self).dropFirst().dropLast()
-            let percent = value.utf8.map { String(format: "%%%02X", $0) }.joined()
-            guard !text.contains(value), !text.contains(json), !text.lowercased().contains(percent.lowercased()) else {
+            guard !text.contains(value), !text.contains(json), !canonicalText.contains(value) else {
                 throw DesktopError.invalidOutput
             }
         }
@@ -123,9 +180,10 @@ extension DesktopCLI {
             let displayed = [result.summary, result.coverage ?? ""] + result.findings.flatMap {
                 [$0.severity, $0.title, $0.file, $0.whyItBreaks, $0.suggestedFix]
             } + result.residualRisks.map(\.text)
+            let canonicalDisplayed = displayed.map(percentDecoded)
             for value in sources.values where !value.isEmpty {
-                let percent = value.utf8.map { String(format: "%%%02X", $0) }.joined().lowercased()
-                guard displayed.allSatisfy({ !$0.contains(value) && !$0.lowercased().contains(percent) }) else {
+                guard !displayed.contains(where: { $0.contains(value) }),
+                      !canonicalDisplayed.contains(where: { $0.contains(value) }) else {
                     throw DesktopError.invalidOutput
                 }
             }

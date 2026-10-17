@@ -1301,10 +1301,12 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
                 for channel in ["summary", "stderr"] {
                     if channel == "stderr" && variant.contains(#"\u0025"#) { continue }
                     let root = try fixture.temporary()
+                    defer { try? FileManager.default.removeItem(at: root) }
                     let input = root.appendingPathComponent("input.json")
                     let json = fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: channel == "summary" ? variant : "Safe complete result")
                     let body = "cat > '\(input.path)'; printf '%s' '\(json)'" + (channel == "stderr" ? "; printf '%s' '\(variant)' >&2" : "")
                     let runtime = try fixture.fixture(body)
+                    defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
                     do {
                         _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: root, revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
                         XCTFail("Encoded credential accepted in \(channel): \(variant)")
@@ -1315,6 +1317,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             }
         }
         let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: "Valid URL https://example.test/a%2fb %GG 鑰匙"))'")
+        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
         let valid = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": "token/part"], command: Command())
         XCTAssertEqual(valid.summary, "Valid URL https://example.test/a%2fb %GG 鑰匙")
         XCTAssertEqual(valid.verdict.rawValue, "pass")
@@ -1333,6 +1336,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
         ]
         for json in bodies {
             let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
             let model = try maker.loaded()
             model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
             do {
@@ -1356,6 +1360,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
         for code in ["invalid_configuration", "cancelled"] {
             let json = "{\"schemaVersion\":1,\"ok\":false,\"code\":\"\(code)\",\"issues\":[]}"
             let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'; exit 1")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
             let model = try maker.loaded()
             model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
             do {
@@ -1375,6 +1380,7 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             ("apply", "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(maker.row("agent")),\(maker.row("proxy"))]}")
         ] {
             let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: runtime.cli).deletingLastPathComponent()) }
             let response = try await DesktopCLI(runtime: runtime).connections(operation, repo: URL(fileURLWithPath: "/project"), command: Command(), input: Data("{}".utf8))
             XCTAssertTrue(response.ok)
             if operation == "edit" { XCTAssertEqual(response.document?.connections.map(\.id), ["agent", "proxy"]) }
