@@ -92,10 +92,9 @@ export function prepareCapturedCodexHome(config: EffectiveRunnerConfig, tmp: str
   if (!capture || config.connectionAuth || !capture.ephemeralHome) return undefined;
   if (!capture.filesReadable || capture.requiredAuth && !capture.authFiles.has("auth.json")) throw new Error("NEEDLEFISH_EPHEMERAL_HOME=1 but required auth source is missing or unreadable (runner codex). Refusing to fall back to the real HOME.");
   const home = path.join(tmp, "home");
-  mkdirSync(home, { recursive: true, mode: 0o700 });
+  mkdirSync(path.join(home, ".codex"), { recursive: true, mode: 0o700 });
   for (const [relative, bytes] of capture.authFiles) {
     const destination = path.join(home, ".codex", relative);
-    mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
     writeFileSync(destination, bytes, { mode: 0o600 });
   }
   return home;
