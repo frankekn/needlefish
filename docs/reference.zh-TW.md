@@ -427,6 +427,25 @@ workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
 以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
 份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
 
+## 公開 native 評測的重現條件
+
+公開 native Codex report 在 `runnerEnvironment` 的 `CODEX_PUBLIC_NATIVE`
+記錄指定執行檔的完整 SHA-256。若設定了 `CODEX_BIN`，該欄也記錄相同 digest。
+Qualification proof 保留這份 environment。Runtime qualification 會計算實際
+設定的 native 執行檔 digest，再與 proof 的身份比對。同一路徑的檔案若換了
+內容，即使版本字串相同，也不能符合原 proof。
+
+重現需要 checkout report 的 `gitSha`，並由 operator 在
+`reproductionCommand` 的路徑提供 native 執行檔。該檔案的 SHA-256 必須與
+report 相同。只有 source checkout 不會包含這個 artifact，指令也不會下載
+它。`--public-launcher-artifact` 必須指向實際設定的 Codex 執行檔。其他已記錄的
+設定也必須相同。
+
+Digest 只識別該檔案，不證明其間接載入的程式碼或 provider 執行檔身份。
+Report 的版本、provider 與 route 由 operator 宣告。Runtime native Codex
+比對還會執行 `--version`，並檢查其支援的 provider 與 route。
+缺漏或私有身份仍不具資格。
+
 ## 歷史 benchmark 記錄
 
 以下解讀保留歷史實驗記錄，不代表目前 production lane 的選擇。來源與日期以各連結報告為準。
