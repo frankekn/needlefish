@@ -197,15 +197,22 @@ test("machine stdin rejects duplicate encoded references, invalid JSON and byte 
 });
 
 test("machine stdin timeout and cancellation emit only canned errors", { timeout: 15000 }, async t => {
-  const f = fixture(t);
+  const f = fixture(t), ready = path.join(f.root, "stdin-ready"), preload = path.join(f.root, "stdin-preload.cjs");
+  writeFileSync(preload, `const fs=require('node:fs');if(process.env.TEST_SLOW_STDIN_STARTUP==='1')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,750);process.stdin.once('resume',()=>fs.writeFileSync(${JSON.stringify(ready)},JSON.stringify({SIGINT:process.listenerCount('SIGINT'),SIGTERM:process.listenerCount('SIGTERM')})));`);
   for (const signal of [undefined, "SIGINT", "SIGTERM"] as const) {
-    const child = spawn(process.execPath, f.args, { env: f.env, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--require", preload, ...f.args], { env: { ...f.env, TEST_SLOW_STDIN_STARTUP: signal ? "1" : "0" }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = ""; child.stdout.on("data", chunk => stdout += String(chunk)); child.stderr.on("data", chunk => stderr += String(chunk));
     const exit = new Promise<number | null>(resolve => child.once("exit", resolve));
     t.after(() => { if (child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch (error) { if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error; } } });
+    rmSync(ready, { force: true });
     child.stdin.write('{"private":"fake-not-finished');
-    if (signal) { await delay(250); assert.ok(child.pid); process.kill(child.pid, signal); }
-    assert.equal(await exit, 1, stderr); assert.equal(stderr, "");
+    if (signal) {
+      for (let i = 0; i < 150 && !existsSync(ready); i++) await delay(20);
+      assert.equal(existsSync(ready), true, stderr);
+      assert.deepEqual(JSON.parse(readFileSync(ready, "utf8")), { SIGINT: 1, SIGTERM: 1 });
+      assert.ok(child.pid); process.kill(child.pid, signal);
+    }
+    assert.equal(await exit, 1, JSON.stringify({ signal: child.signalCode, stderr })); assert.equal(stderr, "");
     assert.deepEqual(JSON.parse(stdout), { schemaVersion: 1, ok: false, code: signal ? "cancelled" : "input_timeout" });
     assert.ok(child.pid); assert.equal(alive(-child.pid), false);
   }
