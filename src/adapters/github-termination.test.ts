@@ -158,6 +158,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 	const runnerCount = path.join(tmp, "runner-count");
 	const runner = path.join(tmp, "claude.cjs");
 	const output = JSON.stringify({ summary: "reviewed", findings: [], checked: ["checked"], residual_risks: [] });
+	const criticOutput = JSON.stringify({ summary: "reviewed", decisions: [], checked: ["checked"], residual_risks: [] });
 	writeFileSync(
 		runner,
 		[
@@ -165,7 +166,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			"const fs = require('node:fs');",
 			`const count = fs.existsSync(${JSON.stringify(runnerCount)}) ? Number(fs.readFileSync(${JSON.stringify(runnerCount)}, 'utf8')) : 0;`,
 			`fs.writeFileSync(${JSON.stringify(runnerCount)}, String(count + 1));`,
-			`const output = ${JSON.stringify(output)};`,
+			`const output = count === 0 ? ${JSON.stringify(output)} : ${JSON.stringify(criticOutput)};`,
 			"process.stdin.resume();",
 			`if (count === 0 && ${JSON.stringify(opts.reviewPassAnswers === true)}) { process.stdin.on('end', () => { process.stdout.write(output); process.exit(0); }); return; }`,
 			`if (${JSON.stringify(opts.runnerIgnoresTerm === true)}) process.on('SIGTERM', () => {});`,
