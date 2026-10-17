@@ -292,8 +292,7 @@ function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: stri
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  const binaryOnly = trackedBinaryPaths.length + untracked.binaryFiles.length > 0
-    && untracked.skipped.length === untracked.binaryFiles.length;
+  const binaryOnly = trackedBinaryPaths.length + untracked.binaryFiles.length > 0;
   if (!patch.trim() && !binaryOnly) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";

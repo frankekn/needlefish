@@ -52,26 +52,34 @@ def sandbox_connect(host, port):
     return int(result.stdout.strip())
 
 
-def native_run(codex, port, root):
+def sandbox_run(codex, args, root, prompt=None):
     home = root / "codex_home"
     home.mkdir()
-    last_message = root / "missing_parent" / "out.txt"
-    env = {"PATH": os.environ["PATH"], "CODEX_HOME": str(home), "NF_PROOF_KEY": "local-placeholder", "LANG": "en_US.UTF-8"}
-    provider = f'model_providers.proof={{name="Local Proof",base_url="http://127.0.0.1:{port}/v1",env_key="NF_PROOF_KEY",wire_api="responses"}}'
-    command = ["sandbox-exec", "-p", POLICY, codex, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "-C", str(root), "-m", "proof-model", "-c", 'model_provider="proof"', "-c", provider, "-s", "read-only", "--output-last-message", str(last_message), "-"]
+    env = {"PATH": os.environ["PATH"], "HOME": str(root), "CODEX_HOME": str(home), "NF_PROOF_KEY": "local-placeholder", "LANG": "en_US.UTF-8"}
+    command = ["sandbox-exec", "-p", POLICY, codex, *args]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, start_new_session=True)
     try:
-        stdout, stderr = process.communicate("Reply OK.\n", timeout=30)
+        stdout, stderr = process.communicate(prompt, timeout=30)
     finally:
-        if process.poll() is None:
+        try:
             os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
-    return process.returncode, [json.loads(line) for line in stdout.splitlines()], stderr, last_message.exists()
+        except ProcessLookupError:
+            pass
+        process.wait()
+    return process.returncode, stdout, stderr
+
+
+def native_run(codex, port, root):
+    last_message = root / "missing_parent" / "out.txt"
+    provider = f'model_providers.proof={{name="Local Proof",base_url="http://127.0.0.1:{port}/v1",env_key="NF_PROOF_KEY",wire_api="responses"}}'
+    args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "-C", str(root), "-m", "proof-model", "-c", 'model_provider="proof"', "-c", provider, "-s", "read-only", "--output-last-message", str(last_message), "-"]
+    exit_code, stdout, stderr = sandbox_run(codex, args, root, "Reply OK.\n")
+    return exit_code, [json.loads(line) for line in stdout.splitlines()], stderr, last_message.exists()
 
 
 def main():
     codex = shutil.which("codex")
-    assert codex and subprocess.run([codex, "--version"], capture_output=True, text=True, check=True).stdout.strip() == "codex-cli 0.163.0"
+    assert codex
     with HTTPServer(("127.0.0.1", 0), Provider) as server:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -79,6 +87,9 @@ def main():
             assert sandbox_connect("127.0.0.1", server.server_port) == 0
             assert sandbox_connect("1.1.1.1", 443) == errno.EPERM
             print("network: localhost allowed; external egress denied")
+            with tempfile.TemporaryDirectory(prefix="codex-native-version-") as temp:
+                exit_code, version, _ = sandbox_run(codex, ["--version"], pathlib.Path(temp))
+            assert exit_code == 0 and version.strip() == "codex-cli 0.163.0"
             for name, (body, phrase) in CASES.items():
                 Provider.success = False
                 Provider.body = json.dumps(body).encode()

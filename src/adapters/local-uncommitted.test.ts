@@ -254,7 +254,7 @@ for (const tracked of [false, true]) {
       assert.equal(result.verdict, "pass");
       assert.deepEqual(result.unreviewedBinaryFiles, ["asset.bin"]);
       assert.equal(result.summary, "No text patch to review; model review skipped.");
-      assert.match(result.reviewTarget ?? "", /Skipped untracked files: source\.ts/);
+      assert.match(result.reviewTarget ?? "", /Skipped untracked files: .*source\.ts/);
       assert.equal(existsSync(promptPath), false);
       assert.deepEqual(JSON.parse(readFileSync(join(cacheDir, "last-review.json"), "utf8")).unreviewedBinaryFiles, ["asset.bin"]);
     });
