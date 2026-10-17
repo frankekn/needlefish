@@ -943,7 +943,7 @@ export function findPreviousReview(
 		const id = item.id;
 		if (typeof id !== "number") continue;
 		if (expectedAppId !== null) {
-			if (state.v !== 2 || state.delivery.appId !== expectedAppId ||
+			if (state.v !== 2 || state.headSha !== stringField(item, "commit_id") || state.delivery.appId !== expectedAppId ||
 				nestedString(item, "user", "type") !== "Bot") continue;
 			const checks = readCheckRuns(repo, state.headSha);
 			if (completedCheckVerdict(state, checks, prNumber) === null) continue;

@@ -540,6 +540,7 @@ function setupFixture(t: TestContext, opts: FixtureOptions): Fixture {
 			// checks verbatim so the completion-aware same-head gate can read
 			// status/conclusion/output.title. Reads are never logged as posts.
 			`if (args.some(a => a.startsWith('repos/frankekn/needlefish/commits/') && a.includes('/check-runs'))) {`,
+			   `  if (args.some(a => a.includes("/commits/" + "e".repeat(40) + "/check-runs"))) { process.stderr.write("unknown commit"); process.exit(1); }`,
 			   `  const readCountPath = checksStatePath + ".reads"; const readCount = (fs.existsSync(readCountPath) ? Number(fs.readFileSync(readCountPath, 'utf8')) : 0) + 1; fs.writeFileSync(readCountPath, String(readCount));`,
    `  if (${JSON.stringify(opts.failCheckRunReads === true)} === true || ${JSON.stringify(opts.failCheckRunReadsOn ?? [])}.includes(readCount)) { process.stderr.write('simulated check-run read failure'); process.exit(1); }`,
 			`  if (${opts.failPreviousHeadCheckReads === true} && args.some(a => a.includes(${JSON.stringify(`/commits/${baseTipSha}/check-runs`)}))) { process.stderr.write("simulated prior-head check read failure"); process.exit(1); }`,
@@ -5051,7 +5052,7 @@ for (const storedReviewPost5xx of [false, true]) {
 	});
 }
 
-for (const mutation of ["actions-bot", "self-user", "other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round"]) {
+for (const mutation of ["actions-bot", "self-user", "other-bot", "user-type", "wrong-app", "missing-slug", "invalid-slug", "wrong-round", "missing-commit", "wrong-commit"]) {
 	test(`pinned custom App rejects receipt identity ${mutation}`, (t) => {
 		const fixture = setupFixture(t, { prNumber: 151, rawReview: defaultRawReview(), customCheckAppId: 4812,
 			authorLogin: mutation === "self-user" ? "review-pat" : "private-review-app[bot]", failUserApi: mutation !== "self-user" });
@@ -5070,6 +5071,8 @@ for (const mutation of ["actions-bot", "self-user", "other-bot", "user-type", "w
 		if (mutation === "wrong-app") checks[0].app = { id: 9999, slug: "private-review-app" };
 		if (mutation === "missing-slug") checks[0].app = { id: 4812 };
 		if (mutation === "invalid-slug") checks[0].app = { id: 4812, slug: "private-review-app[bot]" };
+		if (mutation === "missing-commit") Reflect.deleteProperty(reviews[0], "commit_id");
+		if (mutation === "wrong-commit") reviews[0].commit_id = fixture.baseTipSha;
 		if (mutation === "wrong-round") checks[0].external_id = JSON.stringify({ v: 2, prNumber: 151, roundId: "other", runId: "" });
 		writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
 		writeFileSync(fixture.checksState, JSON.stringify(checks));
@@ -5078,6 +5081,58 @@ for (const mutation of ["actions-bot", "self-user", "other-bot", "user-type", "w
 		assert.doesNotMatch(result.stdout, /"reason":"same_head"/);
 		assert.equal(runnerInvocationCount(fixture), 4);
 		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title, "Needlefish: changes_requested — bug");
+	});
+}
+
+test("pinned custom App ignores a forged nonexistent marker head before reading checks", (t) => {
+	const fixture = setupFixture(t, { prNumber: 252, rawReview: defaultRawReview(), customCheckAppId: 4812,
+		authorLogin: "private-review-app[bot]", failUserApi: true });
+	const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+	process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+	t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+	assert.equal(spawnGithubCli(fixture, 252).status, 1);
+	const reviews: unknown = parseJson(readFileSync(fixture.reviewsState, "utf8"));
+	assert.ok(Array.isArray(reviews) && isRecordLike(reviews[0]));
+	const trusted = parseState(String(reviews[0].body));
+	assert.ok(trusted?.v === 2);
+	const fakeHead = "e".repeat(40);
+	reviews.push({ id: 999, commit_id: fixture.headSha,
+		body: `# Needlefish review\n\n${renderState(fakeHead, [], trusted.delivery)}\n`,
+		user: { login: "untrusted-review-app[bot]", type: "Bot" } });
+	writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
+	const result = spawnGithubCli(fixture, 252);
+	assert.equal(result.status, 1, result.stderr);
+	assert.match(result.stdout, /"reason":"same_head"/);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/252/reviews")).length, 1);
+});
+
+for (const unreadable of [false, true]) {
+	test(`pinned custom App binds a prior-head receipt with history unreadable ${unreadable}`, (t) => {
+		const fixture = setupFixture(t, { prNumber: 253, rawReview: defaultRawReview(), customCheckAppId: 4812,
+			authorLogin: "private-review-app[bot]", failUserApi: true, failPreviousHeadCheckReads: unreadable });
+		const old = process.env.NEEDLEFISH_CHECK_APP_ID;
+		process.env.NEEDLEFISH_CHECK_APP_ID = "4812";
+		t.after(() => { if (old === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID; else process.env.NEEDLEFISH_CHECK_APP_ID = old; });
+		assert.equal(spawnGithubCli(fixture, 253).status, 1);
+		const reviews: unknown = parseJson(readFileSync(fixture.reviewsState, "utf8"));
+		const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+		assert.ok(Array.isArray(reviews) && isRecordLike(reviews[0]));
+		assert.ok(Array.isArray(checks) && isRecordLike(checks[0]));
+		const state = parseState(String(reviews[0].body));
+		assert.ok(state?.v === 2);
+		reviews[0].commit_id = fixture.baseTipSha;
+		reviews[0].body = `# Needlefish review\n\n${renderState(fixture.baseTipSha, [mkFinding({ title: "bug", lineStart: 1 })], state.delivery)}\n`;
+		checks[0].head_sha = fixture.baseTipSha;
+		writeFileSync(fixture.reviewsState, JSON.stringify(reviews));
+		writeFileSync(fixture.checksState, JSON.stringify(checks));
+		const result = spawnGithubCli(fixture, 253);
+		assert.equal(result.status, 1, result.stderr);
+		assert.equal(runnerInvocationCount(fixture), unreadable ? 2 : 4);
+		assert.equal(lastCheckCompletion(readPosts(fixture.postLog)).output?.title,
+			unreadable ? "Needlefish: review failed" : "Needlefish: changes_requested — bug");
+		if (unreadable) assert.match(result.stderr, /Prior review identity is unreadable/);
+		else assert.equal(readPosts(fixture.postLog).filter(p => p.args.includes("PUT") && p.args.includes("repos/frankekn/needlefish/pulls/253/reviews/1")).length, 3);
 	});
 }
 

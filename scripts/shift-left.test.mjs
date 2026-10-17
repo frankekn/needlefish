@@ -144,6 +144,9 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
   writeFileSync(hook, text);
   for (const [ref, sha, remoteRef, expected] of [
     ["refs/heads/topic", f.head, "refs/heads/topic", 0],
+    ["HEAD", f.head, "refs/heads/topic", 0],
+    ["HEAD", "0".repeat(40), "refs/heads/topic", 1],
+    ["HEAD", f.head, "refs/tags/topic", 1],
     ["refs/heads/topic", "0".repeat(40), "refs/heads/topic", 1],
     ["refs/tags/topic", f.head, "refs/heads/topic", 1],
     ["refs/heads/topic", f.head, "refs/tags/topic", 1],
@@ -164,6 +167,27 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
   }
 });
 
+
+test("detached HEAD branch push runs the installed gate", (t) => {
+  const f = setup(t);
+  writeFileSync(f.fixture, JSON.stringify(f.base));
+  f.git("checkout", "--detach", "-q", f.head);
+  const remote = join(f.dir, "remote.git");
+  execFileSync("git", ["init", "--bare", "-q", remote]);
+  f.git("remote", "add", "origin", remote);
+  f.git("config", "core.hooksPath", ".needlefish/shift-left");
+  const hook = join(f.repo, ".needlefish/shift-left/pre-push");
+  writeFileSync(hook, readFileSync(hook, "utf8").replace("review-gate.mjs origin/main", "review-gate.mjs HEAD"));
+  chmodSync(hook, 0o755);
+  const result = spawnSync("git", ["push", "origin", "HEAD:refs/heads/topic"], {
+    cwd: f.repo, env: f.env, encoding: "utf8", timeout: 20000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /LGTM/);
+  assert.equal(execFileSync("git", ["--git-dir", remote, "rev-parse", "refs/heads/topic"], { encoding: "utf8" }).trim(), f.head);
+  assert.deepEqual(readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse)[0],
+    ["--repo", realpathSync(f.repo), "--branch", "--base", "HEAD", "--json"]);
+});
 
 test("documented review syntax reaches the real CLI dry-run without a model", (t) => {
   const f = setup(t);
