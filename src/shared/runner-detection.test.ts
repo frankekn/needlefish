@@ -92,7 +92,10 @@ test("runCodex spawns a padded CODEX_BIN trimmed, the way detection resolved it"
   mkdirSync(fakeBin);
   for (const name of ["codex", "claude"]) {
     const file = path.join(fakeBin, name);
-    writeFileSync(file, ["#!/bin/sh", `cat > ${JSON.stringify(inputPath)}`, `printf '{"runner":"${name}"}'`].join("\n"));
+    const output = name === "codex"
+      ? JSON.stringify({ type: "item.completed", item: { id: "final", type: "agent_message", text: '{"runner":"codex"}' } })
+      : '{"runner":"claude"}';
+    writeFileSync(file, ["#!/bin/sh", `cat > ${JSON.stringify(inputPath)}`, `printf '%s' '${output}'`].join("\n"));
     chmodSync(file, 0o755);
   }
   clearRunnerEnv(`/usr/bin:/bin:/usr/sbin:/sbin`);
@@ -122,7 +125,8 @@ test("runCodex treats an empty CODEX_BIN as unset and spawns codex from PATH", a
 
   mkdirSync(fakeBin);
   const codex = path.join(fakeBin, "codex");
-  writeFileSync(codex, ["#!/bin/sh", "cat > /dev/null", `printf '{"runner":"codex"}'`].join("\n"));
+  const outputEvent = JSON.stringify({ type: "item.completed", item: { id: "final", type: "agent_message", text: '{"runner":"codex"}' } });
+  writeFileSync(codex, ["#!/bin/sh", "cat > /dev/null", `printf '%s' '${outputEvent}'`].join("\n"));
   chmodSync(codex, 0o755);
   clearRunnerEnv(`${fakeBin}:/usr/bin:/bin:/usr/sbin:/sbin`);
   process.env.CODEX_BIN = "";
