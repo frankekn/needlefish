@@ -874,6 +874,8 @@ async function runCodexOnce(
 		const withRunnerOutput = (err: Error): Error => {
 			const raw = [
 				...new Set([result.out, result.res.stdout, result.res.stderr]),
+				...(runner === "codex" && [...codexEvents(result.res.stdout)].some(event => event === null)
+					? ["Needlefish: unrecognized codex event schema"] : []),
 			]
 				.filter(Boolean)
 				.join("\n");
