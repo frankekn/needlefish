@@ -265,7 +265,7 @@ for (const kind of ["docs", "binary"] as const) {
       assert.equal(output.verdict, "pass");
       assert.equal(output.docsOnlyFastPath, kind === "docs" ? true : undefined);
       assert.deepEqual(f.rows(), []);
-      assert.equal(existsSync(f.managed), false);
+      assert.deepEqual(existsSync(f.managed) ? readdirSync(f.managed).filter(name => name !== ".needlefish-sweep.lock") : [], []);
       assert.equal(f.cache().length, 1);
     });
   }

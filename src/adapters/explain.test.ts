@@ -96,7 +96,7 @@ test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`
     baseRefName: "main",
     headRefName: "feature",
   };
-  const reviewsPage = [[{ id: 1, body: reviewBody, user: { login, type: "Bot" } }]];
+  const reviewsPage = [[{ id: 1, commit_id: head, body: reviewBody, user: { login, type: "Bot" } }]];
   const checks = [{ check_runs: [{ id: 1, head_sha: head, app: { id: appId, slug: "private-review-app" },
     name: "Needlefish", status: "completed", conclusion: "failure", output: { title: "Needlefish: changes_requested" },
     external_id: JSON.stringify({ v: 2, prNumber: 9, roundId: "explain-fixture", runId: "fixture" }),
