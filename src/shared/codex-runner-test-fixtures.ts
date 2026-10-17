@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import fs, { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import type { TestContext } from "node:test";
 import path from "node:path";
 
 export function readStringArray(file: string): readonly string[] {
@@ -48,4 +50,34 @@ export function commitAll(repo: string, message: string): void {
 
 export function headSha(repo: string): string {
   return gitText(["rev-parse", "HEAD"], repo);
+}
+
+export function isolateCodexTestHome(t: TestContext, root: string): void {
+  const names = ["HOME", "USERPROFILE", "CODEX_HOME", "TMPDIR", "TEMP", "TMP"] as const;
+  const previous = names.map(name => [name, process.env[name]] as const);
+  process.env.HOME = root;
+  process.env.USERPROFILE = root;
+  process.env.TMPDIR = root;
+  process.env.TEMP = root;
+  process.env.TMP = root;
+  delete process.env.CODEX_HOME;
+  const original = fs.readFileSync;
+  const guarded = t.mock.method(fs, "readFileSync", (...args: Parameters<typeof fs.readFileSync>) => {
+    const file = args[0];
+    const filename = file instanceof URL ? file.pathname : typeof file === "string" ? file : undefined;
+    if (filename && ["auth.json", "config.toml"].includes(path.basename(filename))) {
+      const relative = path.relative(root, path.resolve(filename));
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error("Codex test attempted to read auth/config outside its owned root");
+    }
+    return original(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    guarded.mock.restore();
+    syncBuiltinESMExports();
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
 }

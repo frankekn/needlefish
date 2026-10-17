@@ -1,3 +1,4 @@
+import { captureCodexInvocation, capturedCodexEnvironment, prepareCapturedCodexHome, capturedCodexCommand, checkCodexInvocation } from "./codex-invocation.js";
 import { findDuplicateJsonKey } from "./json-keys.js";
 import { collectCodexToolReceipts, type CodexToolTrace } from "./codex-tool-receipts.js";
 import {
@@ -98,15 +99,16 @@ export function buildRunnerEnv(
 	ghConfigDir: string,
 	ephemeralHome?: string,
 	connectionAuth?: RunnerOptions["connectionAuth"],
+	sourceEnvironment: RunnerEnvironment = process.env,
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
-	const extra = connectionAuth ? [] : (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+	const extra = connectionAuth ? [] : (sourceEnvironment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
 	for (const name of [...allowed, ...extra]) {
-		const value = process.env[name];
+		const value = sourceEnvironment[name];
 		if (value !== undefined) env[name] = value;
 	}
 	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
@@ -120,7 +122,7 @@ export function buildRunnerEnv(
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
-		if (runner === "codex" && connectionAuth) env.CODEX_HOME = path.join(ephemeralHome, ".codex");
+		if (runner === "codex") env.CODEX_HOME = path.join(ephemeralHome, ".codex");
 		if (connectionAuth) {
 			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
 			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
@@ -595,6 +597,7 @@ interface RunnerAttemptResult {
 }
 
 interface RunnerInvocation {
+	readonly codexCommand?: string;
 	readonly acpLaunch?: AcpLaunchSpec;
 	readonly initializeTimeoutMs: number;
 	readonly openCodeIdleTimeoutMs: number;
@@ -674,7 +677,7 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			throw new Error("timeoutMs requires a positive safe integer");
 		}
 		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
-		return Object.freeze({
+		const config: EffectiveRunnerConfig = Object.freeze({
 			runner,
 			connectionAuth: opts.connectionAuth,
 			acpLaunch: opts.acpLaunch,
@@ -688,6 +691,8 @@ export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig 
 			codexProxy: runner === "codex" && !(opts.connectionAuth instanceof CodexEnvironmentAuth) ? resolveCodexProxyConfig() : undefined,
 			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
 		});
+		captureCodexInvocation(config);
+		return config;
 	} catch (error) {
 		throw asRunnerOperationalError(error);
 	}
@@ -827,8 +832,9 @@ async function runCodexOnce(
 		const { invocation, sandbox } = (() => {
 			try {
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth);
+				const ephemeralHome = runner === "codex" && !config.connectionAuth
+					? prepareCapturedCodexHome(config, tmp) : prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth, capturedCodexEnvironment(config));
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
@@ -844,6 +850,7 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
+						...(runner === "codex" ? { codexCommand: capturedCodexCommand(config) } : {}),
 						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
 						initializeTimeoutMs: config.acpInitializeTimeoutMs,
 						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
@@ -871,7 +878,8 @@ async function runCodexOnce(
 		});
 		let result: RunnerResult;
 		try {
-			result = await runRunner(runner, invocation);
+			try { result = await runRunner(runner, invocation); }
+			finally { checkCodexInvocation(config, invocation.codexCommand, invocation.env.HOME); }
 			if (runner === "codex") nativeResult = result.res;
 		} catch (error) {
 			if (isRunnerSafetyError(error)) throw error;
@@ -1447,7 +1455,7 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const command = requireRunnerCommand("codex");
+	const command = invocation.codexCommand ?? requireRunnerCommand("codex");
 	const reasoningEffort = invocation.reasoningEffort;
 	const serviceTier = invocation.codexServiceTier;
 	const args = [

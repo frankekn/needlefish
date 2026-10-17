@@ -53,10 +53,10 @@ function autoDetectRunner(): RunnerName {
  * no CLI (openai) or its override is required and unset (acp). Detection, the
  * doctor, and every spawn site share this command spelling.
  */
-export function runnerCommand(runner: RunnerName): string | undefined {
+export function runnerCommand(runner: RunnerName, environment: Readonly<NodeJS.ProcessEnv> = process.env): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  const command = process.env[bin.env]?.trim() || bin.fallback;
+  const command = environment[bin.env]?.trim() || bin.fallback;
   return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
 }
 
@@ -79,21 +79,21 @@ export function requireRunnerCommand(runner: RunnerName): string {
 }
 
 /** Undefined when the runner has no executable to resolve: an HTTP runner, or a bin env that is required but unset. */
-export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | undefined {
-  const command = runnerCommand(runner);
+export function resolveRunnerBinary(runner: RunnerName, environment: Readonly<NodeJS.ProcessEnv> = process.env): ResolvedRunnerBinary | undefined {
+  const command = runnerCommand(runner, environment);
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
     return { command, path: executableExists(command) ? command : undefined };
   }
-  return { command, path: findOnPath(command) };
+  return { command, path: findOnPath(command, environment) };
 }
 
-function findOnPath(command: string): string | undefined {
-  const pathValue = process.env.PATH;
+function findOnPath(command: string, environment: Readonly<NodeJS.ProcessEnv>): string | undefined {
+  const pathValue = environment.PATH;
   if (!pathValue) return undefined;
   for (const dir of pathValue.split(path.delimiter)) {
     if (!dir) continue;
-    for (const executableName of executableNames(command)) {
+    for (const executableName of executableNames(command, process.platform, environment.PATHEXT)) {
       const candidate = path.join(dir, executableName);
       if (executableExists(candidate)) return candidate;
     }

@@ -5,11 +5,13 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { review } from "../core/review";
 import { promptHash } from "./prompt-hash";
-import { resolveRunnerConfig } from "./codex";
+import { buildRunnerEnv, resolveRunnerConfig } from "./codex";
+import { capturedCodexEnvironment, codexAuthRoot, prepareCapturedCodexHome, publicNativeCodexDigest } from "./codex-invocation";
+import { codexPublicEnvironment } from "./codex-public-environment";
 import { AcpEnvironmentAuth } from "./connection-auth";
 import { parseConnections } from "./connections";
 import { ConnectionCredentialLeakError } from "./runner-failure";
-import { commitAll, headSha, initRepo } from "./codex-runner-test-fixtures";
+import { commitAll, headSha, initRepo, isolateCodexTestHome } from "./codex-runner-test-fixtures";
 import { renderMarkdown } from "./render";
 import { parseReviewResult } from "./review-result";
 import { parseReviewRuntime, reviewRuntime, sourceShaFromRelease } from "./runtime";
@@ -350,3 +352,69 @@ for (const scenario of [
     }
   });
 }
+
+test("Codex capture preserves Windows case-insensitive PATH and declared passthrough", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-native-path-casing-"));
+  isolateCodexTestHome(t, tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  assert.ok(platform);
+  Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+  t.after(() => Object.defineProperty(process, "platform", platform));
+  environment(t, { PATH: undefined, Path: "C:\\tools", CODEX_BIN: "/missing-codex", NEEDLEFISH_EPHEMERAL_HOME: undefined, NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "MiXeD_KEY", MiXeD_KEY: undefined, MIXED_KEY: "synthetic-case-control", CODEX_PROXY_BASE_URL: undefined, CODEX_PROXY_API_KEY: undefined, NEEDLEFISH_CODEX_PROXY_REQUIRED: undefined });
+  const config = resolveRunnerConfig({ runner: "codex" });
+  const child = buildRunnerEnv("codex", "/empty-gh", undefined, undefined, capturedCodexEnvironment(config));
+  assert.equal(child.PATH, "C:\\tools");
+  assert.equal(child.MiXeD_KEY, "synthetic-case-control");
+  assert.equal(JSON.stringify(config).includes("synthetic-case-control"), false);
+});
+
+for (const windows of [false, true]) {
+  test(`native Codex artifact and API-key passthrough respect platform casing windows=${windows}`, t => {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-native-casing-"));
+    isolateCodexTestHome(t, tmp);
+    const platform = Object.getOwnPropertyDescriptor(process, "platform");
+    assert.ok(platform);
+    t.after(() => { Object.defineProperty(process, "platform", platform); rmSync(tmp, { recursive: true, force: true }); });
+    const binary = path.join(tmp, "codex.exe");
+    writeFileSync(binary, "MZsynthetic-native-artifact");
+    chmodSync(binary, 0o755);
+    Object.defineProperty(process, "platform", { ...platform, value: windows ? "win32" : "darwin" });
+    assert.equal(codexAuthRoot({ HOME: "synthetic-home", USERPROFILE: "synthetic-profile" }), path.join(windows ? "synthetic-profile" : "synthetic-home", ".codex"));
+    if (windows) assert.match(publicNativeCodexDigest(binary, { Codex_Bin: binary }), /^sha256:[a-f0-9]{64}$/);
+    else assert.throws(() => publicNativeCodexDigest(binary, { Codex_Bin: binary }), /configured readable/);
+    environment(t, { HOME: tmp, USERPROFILE: tmp, CODEX_BIN: binary, CODEX_HOME: undefined, NEEDLEFISH_EPHEMERAL_HOME: "1", NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "codex_api_key", CODEX_API_KEY: "synthetic-case-auth", codex_api_key: undefined, CODEX_PROXY_BASE_URL: undefined, CODEX_PROXY_API_KEY: undefined, NEEDLEFISH_CODEX_PROXY_REQUIRED: undefined });
+    const config = resolveRunnerConfig({ runner: "codex" });
+    if (windows) {
+      const home = prepareCapturedCodexHome(config, tmp);
+      assert.equal(home, path.join(tmp, "home"));
+      const child = buildRunnerEnv("codex", path.join(tmp, "gh"), home, undefined, capturedCodexEnvironment(config));
+      assert.equal(child.codex_api_key, "synthetic-case-auth");
+      assert.equal(child.CODEX_HOME, path.join(tmp, "home", ".codex"));
+    } else assert.throws(() => prepareCapturedCodexHome(config, tmp), /required auth source/);
+  });
+}
+
+test("Codex fixture rejects auth/config reads outside its owned root", t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "nf-native-home-guard-"));
+  isolateCodexTestHome(t, root);
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(path.join(root, "auth.json"), "synthetic-owned-auth");
+  assert.equal(readFileSync(path.join(root, "auth.json"), "utf8"), "synthetic-owned-auth");
+  for (const filename of ["auth.json", "config.toml"]) assert.throws(() => readFileSync(path.join(root, "..", "outside-owned-control", filename)), { message: "Codex test attempted to read auth/config outside its owned root" });
+});
+
+test("Codex public projection omits unused homes and withholds unsafe selectors", t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "nf-native-projection-"));
+  isolateCodexTestHome(t, root);
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const project = (environment: NodeJS.ProcessEnv) => codexPublicEnvironment(environment, null, null, `sha256:${"a".repeat(64)}`);
+  assert.equal(project({ CODEX_HOME: root }), project({}));
+  assert.equal(project({ CODEX_HOME: root, NEEDLEFISH_RUNNER_ENV_PASSTHROUGH: "CODEX_HOME" }).includes('["CODEX_HOME","<required>"]'), true);
+  for (const value of ["https://example.invalid/private", "synthetic-private-token"]) {
+    const actual = project({ CODEX_MODEL: value, CODEX_API_KEY: "synthetic-private-token" });
+    assert.equal(actual.includes(value), false);
+    assert.equal(actual.includes('["CODEX_MODEL","<required>"]'), true);
+  }
+  assert.equal(project({ CODEX_MODEL: "public-model" }).includes('["CODEX_MODEL","public-model"]'), true);
+});
