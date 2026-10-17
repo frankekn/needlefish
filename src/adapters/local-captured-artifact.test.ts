@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -342,3 +343,75 @@ test("explicit presentation defaults preserve tracked and untracked patch bytes"
   assert.equal(oldUntracked.status, 1);
   assert.equal(diffBundle(repo, { localMode: "uncommitted" }).bundle.patch, oldUntracked.stdout);
 });
+
+for (const flagged of [false, true]) {
+  for (const mode of ["uncommitted", "branch"] as const) {
+    for (const surface of ["API", "CLI"]) {
+      test(`stale stat cache preserves source index and hooks for ${flagged ? "flagged" : "ordinary"} ${mode} ${surface}`, t => {
+        const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-stale-index-"));
+        t.after(() => rmSync(tmp, { recursive: true, force: true }));
+        const repo = initRepo(tmp);
+        const lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n";
+        for (const file of ["app.ts", "staged.ts", "assumed.ts", "skipped.ts"]) writeFileSync(path.join(repo, file), lines);
+        commitAll(repo, "base");
+        const base = gitText(["rev-parse", "HEAD"], repo);
+        if (mode === "branch") {
+          writeFileSync(path.join(repo, "branch.ts"), "committed branch change\n");
+          commitAll(repo, "branch change");
+        }
+        if (flagged) {
+          gitText(["update-index", "--assume-unchanged", "assumed.ts"], repo);
+          gitText(["update-index", "--skip-worktree", "skipped.ts"], repo);
+        }
+        writeFileSync(path.join(repo, "staged.ts"), lines.replace("five", "staged"));
+        gitText(["add", "staged.ts"], repo);
+        writeFileSync(path.join(repo, "app.ts"), lines.replace("five", "changed"));
+        utimesSync(path.join(repo, "README.md"), new Date(1000), new Date(1000));
+        const hooks = path.join(tmp, "hooks");
+        mkdirSync(hooks);
+        const marker = path.join(tmp, "hook-ran");
+        writeFileSync(path.join(hooks, "post-index-change"), `#!/bin/sh\nprintf ran >> '${marker}'\n`, { mode: 0o755 });
+        const overrides = {
+          GIT_CONFIG_COUNT: "2", GIT_CONFIG_KEY_0: "core.hooksPath", GIT_CONFIG_VALUE_0: hooks,
+          GIT_CONFIG_KEY_1: "diff.context", GIT_CONFIG_VALUE_1: "1",
+        };
+        const previous = Object.keys(overrides).map(key => [key, process.env[key]] as const);
+        Object.assign(process.env, overrides);
+        t.after(() => {
+          for (const [key, value] of previous) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+          }
+        });
+        const observe = (args: string[]) => {
+          const result = spawnSync("git", args, { cwd: repo, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, encoding: "utf8" });
+          assert.equal(result.status, 0, result.stderr);
+          return result.stdout;
+        };
+        const stage = observe(["ls-files", "--stage", "-z"]);
+        const flags = observe(["ls-files", "-v", "-z"]);
+        const before = directoryBytes(repo);
+        const envBefore = { ...process.env };
+        assert.equal(existsSync(marker), false);
+        const bundle = surface === "API" ? diffBundle(repo, { localMode: mode, base }).bundle : (() => {
+          const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "--repo", repo, `--${mode}`, "--base", base, "--dry-run", "--print-bundle"], { cwd: process.cwd(), env: process.env, encoding: "utf8" });
+          assert.equal(result.status, 0, result.stderr);
+          return JSON.parse(result.stdout);
+        })();
+        if (mode === "uncommitted") {
+          assert.equal(Buffer.byteLength(bundle.patch), 277);
+          assert.equal(createHash("sha256").update(bundle.patch).digest("hex"), "67a38431fce162eba4db8fdcadc2b6483ed4b688646018f72aaec852cd3ca2e6");
+          assert.deepEqual(bundle.changedFiles.map((file: { path: string }) => file.path), ["app.ts", "staged.ts"]);
+        } else {
+          assert.match(bundle.patch, /\+committed branch change/);
+          assert.deepEqual(bundle.changedFiles.map((file: { path: string }) => file.path), ["branch.ts"]);
+        }
+        assert.deepEqual({ ...process.env }, envBefore);
+        assert.equal(existsSync(marker), false, "source reads must not execute post-index-change");
+        assert.deepEqual(directoryBytes(repo), before, "all source bytes, including the raw index, must remain unchanged");
+        assert.equal(observe(["ls-files", "--stage", "-z"]), stage);
+        assert.equal(observe(["ls-files", "-v", "-z"]), flags);
+      });
+    }
+  }
+}
