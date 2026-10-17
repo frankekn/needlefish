@@ -17,7 +17,7 @@ import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
 import { AcpEnvironmentAuth } from "../shared/connection-auth.js";
-import { reviewRuntime } from "../shared/runtime.js";
+import { reviewRuntime, prepareReviewRuntime, completeReviewRuntime } from "../shared/runtime.js";
 import {
 	assertRunnerSandboxClean,
 	prepareRunnerSandbox,
@@ -1315,6 +1315,7 @@ async function reviewRoutes(
 			selectedRunner = config.runner;
 			assertRunnerSchedulingAllowed();
 			if (deadline !== undefined && performance.now() >= deadline) throw new Error("Needlefish review deadline exceeded");
+			prepareReviewRuntime(config);
 			const run: ReviewRun = {
 				literalContext: () => literalContext ??= collectLargeLiteralContext({
 					bundle, snapshot: capturedSnapshot,
@@ -1332,7 +1333,8 @@ async function reviewRoutes(
 			try {
 				const result = await (plan.largePath ? reviewLarge(run) : reviewSmall(run));
 				await drainTraceDeliveries(traceHealth);
-				const final = { ...result,
+				await completeReviewRuntime(config, tmp);
+				const final = { ...result, runtime: reviewRuntime(config, budget),
 					...(failedRawOutputs.length ? {failedRawOutputs: [...failedRawOutputs, ...run.failedRawOutputs]} : {}),
 					...(rawOutputs.length ? {rawOutputs: [...rawOutputs, ...run.rawOutputs]} : {}),
 					...(traceHealth?.failed ? {traceDeliveryFailed: true} : {}),

@@ -195,15 +195,50 @@
           "maximum": 9007199254740991
         },
         "qualification": {
-          "type": "object",
-          "required": [
-            "matchStatus"
-          ],
-          "properties": {
-            "matchStatus": {
-              "const": "unqualified"
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "matchStatus"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "matchStatus": {
+                  "const": "unqualified"
+                },
+                "reason": {
+                  "enum": [
+                    "missing_report",
+                    "report_not_admitted",
+                    "quality_gate_failed",
+                    "different_configuration",
+                    "unknown_identity"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "matchStatus",
+                "policyVersion",
+                "reportId"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "matchStatus": {
+                  "const": "tested"
+                },
+                "policyVersion": {
+                  "const": "public-leaderboard-interim-v1"
+                },
+                "reportId": {
+                  "type": "string",
+                  "pattern": "^results/[A-Za-z0-9._-]+\\.json$"
+                }
+              }
             }
-          }
+          ]
         }
       }
     },

@@ -342,7 +342,7 @@ export function renderMarkdown(
 	if (result.runtime && !opts?.omitRuntime) {
 		const runtime = result.runtime;
 		const version = runtime.coreVersion.status === "unknown" ? "unknown" : runtime.coreVersion.value;
-		lines.push("", `Tool ${version} · AI service ${runtime.runner} · Configuration not qualified against an evaluation report.`,
+		lines.push("", `Tool ${version} · AI service ${runtime.runner} · ${runtime.qualification.matchStatus === "tested" ? "Configuration matches an evaluated version." : "Configuration not qualified against an evaluation report."}`,
 			"", "<details>", "<summary>Runtime technical data</summary>", "", "```json",
 			JSON.stringify(runtime, null, 2), "```", "", "</details>");
 	}

@@ -84,7 +84,7 @@ test("eval identity freezes launcher bytes, keeps private refusals and matches c
   assert.equal(matchQualifiedConfiguration({ ...publicReport, runnerEnvironment: "[]" }, publicReport), "unknown");
   writeFileSync(file, "#!/bin/sh\nexit 1\n");
   assert.throws(() => runnerEnvironment(args), /environment changed during the eval run/);
-  assert.throws(() => parseArgs(["--runner", "codex", "--public-launcher-artifact", file]), /requires --runner acp/);
+  assert.throws(() => parseArgs(["--runner", "pi", "--public-launcher-artifact", file]), /requires --runner acp/);
 });
 
 test("eval metadata labels reject private URLs and home paths before reports or diagnostics", () => {

@@ -1,3 +1,5 @@
+import { codexPublicEnvironment } from "../src/shared/codex-public-environment.js";
+import { codexAuthRoot, codexInvocationEnvironment, publicNativeCodexDigest } from "../src/shared/codex-invocation.js";
 import {
 	existsSync,
 	readFileSync,
@@ -127,7 +129,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	const route = attestationValue("--route");
 	const runnerVersion = attestationValue("--runner-version");
 	const publicLauncherArtifact = attestationValue("--public-launcher-artifact");
-	if (publicLauncherArtifact !== null && runner !== "acp") throw new Error("--public-launcher-artifact requires --runner acp");
+	if (publicLauncherArtifact !== null && runner !== "acp" && runner !== "codex") throw new Error("--public-launcher-artifact requires --runner acp or codex");
 	const attestation = [provider, route, runnerVersion];
 	if (
 		attestation.some((value) => value !== null) &&
@@ -646,13 +648,14 @@ const PATH_INVOCATION_ENV = new Set([
 ]);
 const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
 	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-	codex: ["CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY"],
+	codex: ["CODEX_HOME", "CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY"],
 	opencode: ["OPENAI_API_KEY", "XDG_CONFIG_HOME", "XDG_DATA_HOME"],
 	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
 	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
 };
 
 function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
+	const source = args.runner === "codex" ? codexInvocationEnvironment({ ...process.env, ...args.env }) : { ...process.env, ...args.env };
 	const effective: Record<string, string> = {};
 	for (const key of [
 		...COMMON_PUBLIC_INVOCATION_ENV,
@@ -660,7 +663,7 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
 		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
 	]) {
-		const value = args.env[key] ?? process.env[key];
+		const value = source[key];
 		if (value !== undefined) effective[key] = value;
 	}
 	for (const key of ["HOME", "USERPROFILE"] as const) {
@@ -683,7 +686,7 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		.flatMap((value) => value.split(","))
 		.map((name) => name.trim())
 		.filter(Boolean)) {
-		const value = args.env[key] ?? process.env[key];
+		const value = source[key];
 		if (value !== undefined) effective[key] = value;
 	}
 	return effective;
@@ -721,6 +724,15 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 						})() : null]]
 					: [];
 	const privateIdentities: [string, string][] = [];
+	if (args.runner === "codex" && args.publicLauncherArtifact !== null) {
+		const authRoot = codexAuthRoot({ ...process.env, ...args.env });
+		for (const relative of ["auth.json", "config.toml"]) {
+			const file = authRoot ? path.join(authRoot, relative) : undefined;
+			try { privateIdentities.push([relative, file && existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : "missing"]); }
+			catch { throw new Error("private Codex invocation source is unreadable"); }
+		}
+	}
+
 	const identities = files.map(([key, file]): [string, string] => {
 		if (file === null || !existsSync(file)) return [key, "missing"];
 		try {
@@ -776,7 +788,9 @@ export function runnerEnvironment(args: RunArgs): string {
 	if (args.runner === "acp") {
 		configIdentities.push(["ACP_PUBLIC_RUNTIME", JSON.stringify(acpRuntimeIdentity(args.publicLauncherArtifact, { ...process.env, ...args.env }, args.runnerVersion))]);
 	}
-	const current = JSON.stringify(
+	const current = args.runner === "codex" && args.publicLauncherArtifact !== null
+		? codexPublicEnvironment(codexInvocationEnvironment({ ...process.env, ...args.env }), args.model, args.effort, publicNativeCodexDigest(args.publicLauncherArtifact, { ...process.env, ...args.env }))
+		: JSON.stringify(
 		[
 			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
 				const publicValue = publicInvocationEnvValue(key, value);
@@ -801,6 +815,7 @@ export function runnerEnvironment(args: RunArgs): string {
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
+	if (args.runner === "codex" && args.publicLauncherArtifact !== null) return Object.hasOwn(args.env, "HOME") || Object.hasOwn(args.env, "USERPROFILE") || runnerEnvironment(args).includes('"<required>"') || runnerEnvironment(args).includes('"<redacted>"');
 	if (piUsesAuthStore(args) || runnerConfigIdentities(args).some(([, value]) => value === "<required>")) return true;
 	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
 		const publicValue = publicInvocationEnvValue(key, value);
@@ -846,7 +861,8 @@ function reportInvocation(
 		a.localeCompare(b),
 	)) {
 		const publicValue = publicInvocationEnvValue(key, value);
-		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>") {
+		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>" &&
+			(args.runner !== "codex" || args.publicLauncherArtifact === null || isPublicAttestationLabel(publicValue, { ...process.env, ...args.env }))) {
 			values.push("--env", `${key}=${publicValue}`);
 		}
 	}

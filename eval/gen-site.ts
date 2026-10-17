@@ -1,3 +1,4 @@
+import type { RuntimeConfigurationQualification } from "../src/shared/qualification-proof.js";
 import { matchQualifiedConfiguration, type RuntimeConfigurationIdentity } from "./shared/runtime-qualification";
 import runtimePublication from "../runtime-publication.json";
 import { siteRuntimePublicationBlock } from "../scripts/runtime-publication.mjs";
@@ -494,10 +495,13 @@ function readPackageVersion(): string {
 }
 
 export function readLane(config: LaneConfig): Lane {
-  const reportPath = path.join(EVAL_DIR, config.report);
+  return parseLane(config, readFileSync(path.join(EVAL_DIR, config.report), "utf8"));
+}
+
+export function parseLane(config: LaneConfig, reportBytes: string): Lane {
   return {
     config,
-    report: JSON.parse(readFileSync(reportPath, "utf8")) as PublishedReport,
+    report: JSON.parse(reportBytes) as PublishedReport,
   };
 }
 
@@ -941,9 +945,7 @@ export function qualifies(report: PublishedReport): boolean {
   );
 }
 
-export type RuntimeConfigurationQualification =
-  | { readonly matchStatus: "tested"; readonly policyVersion: "public-leaderboard-interim-v1"; readonly reportId: string }
-  | { readonly matchStatus: "unqualified"; readonly reason: "missing_report" | "report_not_admitted" | "quality_gate_failed" | "different_configuration" | "unknown_identity" };
+export type { RuntimeConfigurationQualification } from "../src/shared/qualification-proof.js";
 
 export function qualifyRuntimeConfiguration(
   actual: RuntimeConfigurationIdentity,
