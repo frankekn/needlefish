@@ -130,3 +130,41 @@ process.exit(result.status ?? 1);
   assert.deepEqual(directoryBytes(repo), before);
   assert.deepEqual(readdirSync(os.tmpdir()).filter(name => name.startsWith("needlefish-captured-patch-")), scratchBefore);
 });
+
+test("captured artifact retains the resolved source checkout's protected ownership allowance", t => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "nf-artifact-safe-directory-"));
+  const repo = initRepo(tmp);
+  writeFileSync(path.join(repo, "README.md"), "changed\n");
+  const config = path.join(tmp, "global.gitconfig");
+  gitText(["config", "--file", config, "safe.directory", repo], repo);
+  const bin = path.join(tmp, "bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "git"), `#!/usr/bin/env node
+const cp = require('node:child_process');
+const env = {...process.env};
+if (process.cwd() === ${JSON.stringify(repo)}) env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1';
+const result = cp.spawnSync('/usr/bin/git', process.argv.slice(2), {encoding:'utf8', env});
+process.stdout.write(result.stdout ?? '');
+process.stderr.write(result.stderr ?? '');
+process.exit(result.status ?? 1);
+`, { mode: 0o755 });
+  const previousPath = process.env.PATH;
+  const previousConfig = process.env.GIT_CONFIG_GLOBAL;
+  process.env.PATH = `${bin}:${previousPath ?? ""}`;
+  process.env.GIT_CONFIG_GLOBAL = config;
+  t.after(() => {
+    process.env.PATH = previousPath;
+    if (previousConfig === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+    else process.env.GIT_CONFIG_GLOBAL = previousConfig;
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  process.env.GIT_CONFIG_GLOBAL = os.devNull;
+  assert.throws(() => diffBundle(repo, {}), /dubious ownership/);
+  process.env.GIT_CONFIG_GLOBAL = config;
+  assert.equal(gitText(["rev-parse", "--show-toplevel"], repo), repo);
+  const before = directoryBytes(repo);
+  const { bundle } = diffBundle(repo, {});
+  assert.deepEqual(bundle.changedFiles.map(file => file.path), ["README.md"]);
+  assert.match(bundle.patch, /\+changed/);
+  assert.deepEqual(directoryBytes(repo), before);
+});
