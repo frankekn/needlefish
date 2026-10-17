@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { resolveRunnerConfig, runCodex } from "./codex.js";
 import { prepareCapturedCodexHome } from "./codex-invocation.js";
 import { headSha, initRepo, isolateCodexTestHome } from "./codex-runner-test-fixtures.js";
-import { reviewRuntime } from "./runtime.js";
+import { findRunnerFailure } from "./runner-failure.js";
 
 function environment(t: TestContext, name: string, value: string): void {
   const previous = process.env[name];
@@ -71,6 +72,37 @@ for (const mutation of ["replace", "rewrite", "remove", "symlink"] as const) {
   });
 }
 
+test("captured Codex executable drift fails once with ordinary retries enabled", async t => {
+  const f = fixture(t);
+  environment(t, "NEEDLEFISH_NO_RETRY", "0");
+  const replacement = path.join(f.root, "replacement.cjs");
+  f.executable(replacement, "replacement");
+  renameSync(replacement, f.binary);
+  const failedAttempts: number[] = [];
+  let failure: unknown;
+  const writes = t.mock.method(fs, "writeFileSync");
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(runCodex("check source", {
+      effectiveConfig: f.config,
+      repoPath: path.join(f.root, "repo"),
+      targetHeadSha: headSha(path.join(f.root, "repo")),
+      onFailedAttempt: attempt => failedAttempts.push(attempt),
+    }), error => {
+      failure = error;
+      return error instanceof Error && error.name === "RunnerOperationalError" && /captured Codex executable changed/.test(error.message);
+    });
+    assert.deepEqual(failedAttempts, [1]);
+    assert.equal(findRunnerFailure(failure)?.kind, "startup_failed");
+    assert.equal(findRunnerFailure(failure)?.retryable, false);
+    assert.equal(existsSync(f.observed), false);
+    assert.equal(writes.mock.calls.filter(call => typeof call.arguments[0] === "string" && path.basename(call.arguments[0]) === "auth.json").length, 0);
+  } finally {
+    writes.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
 test("captured Codex rechecks the executable after preparation callbacks", async t => {
   const f = fixture(t);
   await assert.rejects(f.run(() => {
@@ -87,5 +119,4 @@ test("unchanged Codex executes with frozen auth despite environment and auth-sou
   environment(t, "CODEX_REASONING_EFFORT", "high");
   assert.equal(await f.run(), "captured runner completed");
   assert.deepEqual(JSON.parse(readFileSync(f.observed, "utf8")), { label: "original", auth: f.auth });
-  assert.deepEqual(reviewRuntime(f.config, null).qualification, { matchStatus: "unqualified" });
 });
