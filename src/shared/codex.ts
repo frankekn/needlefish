@@ -831,6 +831,7 @@ async function runCodexOnce(
 		const ghConfigDir = path.join(tmp, "gh-empty");
 		const { invocation, sandbox } = (() => {
 			try {
+				const codexCommand = runner === "codex" ? capturedCodexCommand(config) : undefined;
 				mkdirSync(ghConfigDir, { recursive: true });
 				const ephemeralHome = runner === "codex" && !config.connectionAuth
 					? prepareCapturedCodexHome(config, tmp) : prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
@@ -850,7 +851,7 @@ async function runCodexOnce(
 				return {
 					sandbox,
 					invocation: {
-						...(runner === "codex" ? { codexCommand: capturedCodexCommand(config) } : {}),
+						...(codexCommand ? { codexCommand } : {}),
 						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
 						initializeTimeoutMs: config.acpInitializeTimeoutMs,
 						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
@@ -878,7 +879,10 @@ async function runCodexOnce(
 		});
 		let result: RunnerResult;
 		try {
-			try { result = await runRunner(runner, invocation); }
+			try {
+				if (runner === "codex") capturedCodexCommand(config);
+				result = await runRunner(runner, invocation);
+			}
 			finally { checkCodexInvocation(config, invocation.codexCommand, invocation.env.HOME); }
 			if (runner === "codex") nativeResult = result.res;
 		} catch (error) {

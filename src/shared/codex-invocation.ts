@@ -87,9 +87,24 @@ export function capturedCodexEnvironment(config: EffectiveRunnerConfig): Readonl
   return captures.get(config)?.environment;
 }
 
+function sameCapturedArtifact(capture: Capture, file: string): boolean {
+  const current = statSync(file, { bigint: true });
+  const original = capture.artifact;
+  return original !== undefined && current.dev === original.dev && current.ino === original.ino && current.size === original.size && current.mtimeNs === original.mtimeNs && current.ctimeNs === original.ctimeNs && current.mode === original.mode;
+}
+
+function assertCapturedExecutable(capture: Capture): void {
+  if (capture.artifact === undefined) return;
+  try { if (sameCapturedArtifact(capture, capture.command)) return; } catch { /* Missing or unreadable executable is also drift. */ }
+  capture.drifted = true;
+  throw new Error("captured Codex executable changed; resolve the runner again before invoking it");
+}
+
 export function prepareCapturedCodexHome(config: EffectiveRunnerConfig, tmp: string): string | undefined {
   const capture = captures.get(config);
-  if (!capture || config.connectionAuth || !capture.ephemeralHome) return undefined;
+  if (!capture) return undefined;
+  assertCapturedExecutable(capture);
+  if (config.connectionAuth || !capture.ephemeralHome) return undefined;
   if (!capture.filesReadable || capture.requiredAuth && !capture.authFiles.has("auth.json")) throw new Error("NEEDLEFISH_EPHEMERAL_HOME=1 but required auth source is missing or unreadable (runner codex). Refusing to fall back to the real HOME.");
   const home = path.join(tmp, "home");
   mkdirSync(path.join(home, ".codex"), { recursive: true, mode: 0o700 });
@@ -106,12 +121,7 @@ export function checkCodexInvocation(config: EffectiveRunnerConfig, actualComman
   try {
     const trackedNames = [...CODEX_PUBLIC_ENV, "HOME", "USERPROFILE", "CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY", ...(capture.environment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "").split(",").map(name => name.trim()).filter(Boolean)];
     if (trackedNames.some(name => process.env[name] !== capture.environment[name])) capture.drifted = true;
-    const sameArtifact = (file: string): boolean => {
-      const current = statSync(file, { bigint: true });
-      const original = capture.artifact;
-      return original !== undefined && current.dev === original.dev && current.ino === original.ino && current.size === original.size && current.mtimeNs === original.mtimeNs && current.ctimeNs === original.ctimeNs && current.mode === original.mode;
-    };
-    if (!sameArtifact(capture.command) || actualCommand !== undefined && !sameArtifact(actualCommand)) capture.drifted = true;
+    if (!sameCapturedArtifact(capture, capture.command) || actualCommand !== undefined && !sameCapturedArtifact(capture, actualCommand)) capture.drifted = true;
     for (const [relative, bytes] of capture.authFiles) {
       if (!capture.authRoot || !readFileSync(path.join(capture.authRoot, relative)).equals(bytes) || actualHome !== undefined && capture.ephemeralHome && !readFileSync(path.join(actualHome, ".codex", relative)).equals(bytes)) capture.drifted = true;
     }
@@ -126,6 +136,7 @@ export function checkCodexInvocation(config: EffectiveRunnerConfig, actualComman
 export function capturedCodexCommand(config: EffectiveRunnerConfig): string {
   const capture = captures.get(config);
   if (!capture) throw new Error("missing Codex invocation capture");
+  assertCapturedExecutable(capture);
   checkCodexInvocation(config);
   return capture.command;
 }
