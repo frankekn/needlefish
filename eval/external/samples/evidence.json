@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-10-16T11:48:58.768157+00:00",
+  "evidenceKind": "derived_metadata_only_raw_responses_not_retained",
+  "sourceEvidenceHashes": {
+    "sample-pr-metadata.json": "5c8107c23ad65d18a130e93d596160cdd424eefc7d271cc2b95b7efbe9f38bd4",
+    "swr-compare-metadata.json": "934e8495206341345552aef3fec300814c67bb271300d23735eb9148bb043b2d",
+    "swr-range-metadata.json": "c7da1bb553cc5b7b57430e2cc1872c4b24e73f1664e506ebbf5712d5a50d97cd",
+    "martian-gold-metadata.json": "a7719f3670d871ce601ab3c4ec9afc3b0b138a57f40e85a6b3c4e15e93f8642b"
+  },
+  "pytest3248": {
+    "commitURL": "https://api.github.com/repos/pytest-dev/pytest/commits/6e14585ca20d27db81f122d2c3a76135e4192fc4",
+    "commitResponseSHA256": "f1cbdd0aec18778e734bc402c050745fa3e7b973219582f1635bc51114c95c2f",
+    "datasetHeadSHA": "6e14585ca20d27db81f122d2c3a76135e4192fc4",
+    "parents": [
+      "053fc118b7af3b77c42daddd6ceacd13394cf64a"
+    ],
+    "sourceBaseComparison": {
+      "url": "https://api.github.com/repos/pytest-dev/pytest/compare/dae74b674ecb660082271d8bbe0e42ccb925eaa5...6e14585ca20d27db81f122d2c3a76135e4192fc4",
+      "status": 200,
+      "bytes": 17587,
+      "sha256FetchedBytes": "636279fd455b85f18483f490aed11234021fa91e25b913ead3cd7cb12d982bee",
+      "comparisonStatus": "diverged",
+      "aheadBy": 1,
+      "behindBy": 5,
+      "baseCommit": "dae74b674ecb660082271d8bbe0e42ccb925eaa5",
+      "mergeBaseCommit": "053fc118b7af3b77c42daddd6ceacd13394cf64a",
+      "commits": [
+        "6e14585ca20d27db81f122d2c3a76135e4192fc4"
+      ],
+      "fileCount": 3
+    }
+  },
+  "martianCalcom8087": {
+    "prURL": "https://github.com/calcom/cal.diy/pull/8087",
+    "apiResponseSHA256": "bb2355ebfff8c9139ff596d6cf6c042bbf7ad1ec24c91e3354d41c1151c0bde5",
+    "historicalEquivalence": "unknown"
+  }
+}

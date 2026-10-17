@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { ConnectionsError, readConnectionsRequest, runConnections } from "./adapters/connections.js";
 import { runCachedRender, runCachedVerdict } from "./adapters/cached.js";
 import { renderDoctorReport, runDoctor, serializeDoctorReport } from "./adapters/doctor.js";
 import { runGithubExplain } from "./adapters/explain.js";
@@ -15,6 +16,7 @@ import {
 import { parseArgs, USAGE } from "./cli/args.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
+import { runGuidedGithubSetup } from "./setup/guided.js";
 import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
 import { readFileSync } from "node:fs";
 
@@ -29,6 +31,25 @@ async function main() {
   const command = parseArgs(process.argv.slice(2));
 
   switch (command.kind) {
+    case "connections": {
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      process.once("SIGINT", cancel);
+      process.once("SIGTERM", cancel);
+      try {
+        const request = command.operation === "list" || command.operation === "edit" ? undefined : await readConnectionsRequest(process.stdin, controller.signal);
+        const result = await runConnections(command.operation, command.repo ?? process.cwd(), request, process.env, controller.signal);
+        process.stdout.write(JSON.stringify(result) + "\n");
+        if (!result.ok) process.exitCode = 1;
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: error instanceof ConnectionsError ? error.code : "invalid_request" }) + "\n");
+        process.exitCode = 1;
+      } finally {
+        process.off("SIGINT", cancel);
+        process.off("SIGTERM", cancel);
+      }
+      return;
+    }
     case "version":
       process.stdout.write(`needlefish ${VERSION}\n`);
       return;
@@ -58,6 +79,18 @@ async function main() {
       return;
     }
     case "setup-github": {
+      if (command.action) {
+        try {
+          const result = await runGuidedGithubSetup({ action: command.action, confirm: command.confirm === true,
+            replaceSecret: command.replaceSecret === true, ...(command.repository ? { repository: command.repository } : {}) });
+          process.stdout.write(JSON.stringify(result, null, command.json ? undefined : 2) + "\n");
+        } catch (error) {
+          if (!command.json) throw error;
+          process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "error", message: error instanceof Error ? error.message : "GitHub setup failed. Retry after checking your connection." }) + "\n");
+          process.exitCode = 1;
+        }
+        return;
+      }
       const plan = planGithubSetup(command.repo ?? process.cwd());
       process.stdout.write(renderGithubSetup(plan));
       if (plan.kind === "conflict") process.exitCode = 1;
@@ -123,6 +156,11 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (process.argv[2] === "connections") {
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, code: "invalid_request" }) + "\n");
+    process.exitCode = 1;
+    return;
+  }
   process.stderr.write(`needlefish: ${err instanceof Error ? err.message : err}\n`);
   process.exitCode = 1;
 });
