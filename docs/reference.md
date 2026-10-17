@@ -376,6 +376,12 @@ blank (values are trimmed):
 | `acp` | `NEEDLEFISH_ACP_BIN` (required) | — |
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
+Cleanup is not an OS security boundary against an actor running as the same
+user. Such an actor can race pathname deletion by moving unrelated data into
+an owned temporary tree. Node does not provide atomic inode-conditional
+unlink or directory removal. Do not run an actively hostile CLI under the
+maintainer's account.
+
 ### How each runner is launched
 
 - **Codex:** `--ignore-user-config --ignore-rules
@@ -483,14 +489,24 @@ recheck` / `@needlefish explain` comments exist in this repository's
 `.github/workflows/commands.yml`; the published composite action does not
 install that workflow.
 
+Native Codex quota classification is verified against CLI 0.163 JSON events.
+Other versions are not qualified for automatic quota fallback. Unknown event
+schemas fail closed and attach `unrecognized_codex_event_schema` as private failure
+trace metadata, leaving raw transcripts unchanged. They do not cause a fallback based on quota-like text. A singleton
+deep review also fails on quota exhaustion or cancellation; it does not convert
+these failures into a blocking residual.
+
 ## Doctor and GitHub setup details
 
-`npx needlefish doctor` checks Node, the
-selected runner CLI and its version, whether that CLI reports itself logged
+`npx needlefish doctor` checks Node, the git repo, and the detected base ref.
+With ordinary runner selection, it also checks the selected CLI version and
+whether that CLI reports itself logged
 in (via its own status command, under the same environment allowlist a review
 uses; an env credential the review accepts, such as `OPENAI_API_KEY` for
-opencode, passes without probing), the git repo, and the detected base ref,
-in seconds and with no model call. Every failed check prints its fix; `--json` gives the same report to
+opencode, passes without probing). It makes no model call.
+`doctor --connection` checks the named connection configuration and executable
+availability. It does not probe the CLI version, account identity, or login
+state; these remain `unknown`. Every failed check prints its fix; `--json` gives the same report to
 scripts and agents. The exit code is 1 when any check fails and 0 otherwise;
 a check the doctor cannot decide (a runner CLI with no status command) is
 reported as `unknown` and does not fail the exit code.
