@@ -1291,6 +1291,96 @@ final class AdvancedBoundaryRegressionTests: XCTestCase {
             XCTAssertEqual(model.document.connections[1].model, "updated-model")
         }
     }
+    func testPercentEncodedCredentialsCannotReachRawOrDisplayedOutput() async throws {
+        let fixture = DesktopTests()
+        for (secret, variants) in [
+            ("token/part", ["token%2Fpart", "token%2fpart", "%74oken%2Fpart", "to%6ben%2fpart", #"token\u00252Fpart"#, "%GG token%2Fpart %", "%fftoken%2Fpart"]),
+            ("鑰/匙", ["%E9%91%B0%2f%E5%8C%99", "%GG %e9%91%b0/%e5%8c%99 %"])
+        ] {
+            for variant in variants {
+                for channel in ["summary", "stderr"] {
+                    if channel == "stderr" && variant.contains(#"\u0025"#) { continue }
+                    let root = try fixture.temporary()
+                    let input = root.appendingPathComponent("input.json")
+                    let json = fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: channel == "summary" ? variant : "Safe complete result")
+                    let body = "cat > '\(input.path)'; printf '%s' '\(json)'" + (channel == "stderr" ? "; printf '%s' '\(variant)' >&2" : "")
+                    let runtime = try fixture.fixture(body)
+                    do {
+                        _ = try await DesktopCLI(runtime: runtime).connectionReview(repo: root, revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": secret], command: Command())
+                        XCTFail("Encoded credential accepted in \(channel): \(variant)")
+                    } catch { XCTAssertEqual(error as? DesktopError, .invalidOutput) }
+                    let request = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: input)) as? [String: Any])
+                    XCTAssertEqual(request["sources"] as? [String: String], ["SHARED_TOKEN": secret])
+                }
+            }
+        }
+        let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(fixture.resultJSON("pass").replacingOccurrences(of: "Review complete", with: "Valid URL https://example.test/a%2fb %GG 鑰匙"))'")
+        let valid = try await DesktopCLI(runtime: runtime).connectionReview(repo: URL(fileURLWithPath: "/project"), revision: "missing", ids: ["proxy"], budgetMs: 1000, mode: "session", sources: ["SHARED_TOKEN": "token/part"], command: Command())
+        XCTAssertEqual(valid.summary, "Valid URL https://example.test/a%2fb %GG 鑰匙")
+        XCTAssertEqual(valid.verdict.rawValue, "pass")
+    }
+    func testMixedOrUnknownApplyEnvelopesRequireReloadAndRetainDraft() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        let success = "\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(maker.row("agent")),\(maker.row("proxy")),\(maker.row("retained"))]"
+        let failure = #""schemaVersion":1,"ok":false,"code":"invalid_configuration""#
+        let extraFields = [#""revision":null"#, #""revision":"sha256:new""#, #""connections":null"#, #""connections":[]"#, #""baseRevision":null"#, #""baseRevision":"missing""#, #""document":null"#, #""document":{"version":1,"connections":[]}"#, #""unexpected":null"#]
+        let bodies = extraFields.map { "{" + failure + "," + $0 + "}" } + [
+            "{" + success + #","code":null}"#, "{" + success + #","code":"cancelled"}"#,
+            "{" + success + #","issues":null}"#, "{" + success + #","issues":[]}"#,
+            "{" + success + #","unexpected":null}"#, "{" + success + #","baseRevision":null}"#,
+            #"{"schemaVersion":1,"ok":false,"code":"cancelled","connections":null}"#
+        ]
+        for json in bodies {
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            let model = try maker.loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
+            do {
+                let response = try await DesktopCLI(runtime: runtime).connections("apply", repo: URL(fileURLWithPath: "/project"), command: Command(), input: model.request("apply"))
+                try model.saved(response)
+                XCTFail("Mixed envelope accepted: \(json)")
+            } catch {
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, "save_state_unknown", json)
+                model.failed(error)
+            }
+            XCTAssertEqual(model.draftState, .reloadRequired, json)
+            XCTAssertEqual(model.document.connections.map(\.id), ["agent", "proxy", "retained"])
+            XCTAssertEqual(model.document.connections.last?.model, "unsaved-model")
+            XCTAssertEqual(model.baseRevision, "sha256:old")
+            XCTAssertThrowsError(try model.request("apply"))
+        }
+    }
+    func testValidConnectionsEnvelopeVariantsStayUsable() async throws {
+        let fixture = DesktopTests()
+        let maker = AdvancedConnectionsTests()
+        for code in ["invalid_configuration", "cancelled"] {
+            let json = "{\"schemaVersion\":1,\"ok\":false,\"code\":\"\(code)\",\"issues\":[]}"
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'; exit 1")
+            let model = try maker.loaded()
+            model.change(.init(id: "retained", adapter: "codex", model: "unsaved-model"), replacing: nil)
+            do {
+                _ = try await DesktopCLI(runtime: runtime).connections("apply", repo: URL(fileURLWithPath: "/project"), command: Command(), input: model.request("apply"))
+                XCTFail("Known precommit failure must throw")
+            } catch {
+                XCTAssertEqual((error as? ConnectionsFailure)?.code, code)
+                model.failed(error)
+            }
+            XCTAssertEqual(model.draftState, .editing)
+            XCTAssertEqual(model.document.connections.last?.model, "unsaved-model")
+            XCTAssertNoThrow(try model.request("apply"))
+        }
+        for (operation, json) in [
+            ("edit", "{\"schemaVersion\":1,\"ok\":true,\"baseRevision\":\"missing\",\"document\":\(maker.raw)}"),
+            ("validate", "{\"schemaVersion\":1,\"ok\":true,\"connections\":[\(maker.row("proxy"))]}"),
+            ("apply", "{\"schemaVersion\":1,\"ok\":true,\"revision\":\"sha256:new\",\"connections\":[\(maker.row("agent")),\(maker.row("proxy"))]}")
+        ] {
+            let runtime = try fixture.fixture("cat >/dev/null; printf '%s' '\(json)'")
+            let response = try await DesktopCLI(runtime: runtime).connections(operation, repo: URL(fileURLWithPath: "/project"), command: Command(), input: Data("{}".utf8))
+            XCTAssertTrue(response.ok)
+            if operation == "edit" { XCTAssertEqual(response.document?.connections.map(\.id), ["agent", "proxy"]) }
+            else { XCTAssertEqual(response.connections?.map(\.id), operation == "apply" ? ["agent", "proxy"] : ["proxy"]) }
+        }
+    }
     func testUnicodeEscapedCredentialCannotReachDisplayedResult() async throws {
         let fixture = DesktopTests()
         let secret = "offline-only-value"
