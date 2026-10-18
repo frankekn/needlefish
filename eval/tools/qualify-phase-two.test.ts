@@ -76,7 +76,7 @@ function report(selected: readonly FixtureSpec[], draws: number): PhaseTwoReport
 function inputs() {
   const campaign = { broad: report(specs, 3), deep: report(specs.filter((spec) => spec.kind === "positive" && spec.tier === 1), 6) };
   const oracle: PhaseTwoQualityOracle = {
-    schemaVersion: 1, identity: phaseTwoOracleIdentity(campaign, specs),
+    schemaVersion: 2, identity: phaseTwoOracleIdentity(campaign, specs),
     adjudication: { author: "synthetic-adjudicator", provenance: "synthetic-test-only", rows: campaign.broad.results.flatMap((draw) => (draw.findings ?? []).map((_, findingIndex) => ({ fixtureId: draw.fixtureId, draw: draw.draw, findingIndex, decision: "actionable", defectId: "guard" }))) },
     severityGold: { author: "synthetic-gold", provenance: "synthetic-test-only", frozenAt: "2026-01-01T00:00:00Z", labels: specs.filter((spec) => spec.kind === "positive").map((spec) => ({ fixtureId: spec.id, defectId: "guard", acceptedSeverities: ["P1"] })) },
   };
@@ -122,11 +122,14 @@ test("offline CLI measures complete synthetic broad3/deep6 with different subset
     const output = JSON.parse(readFileSync(data.output, "utf8"));
     context.diagnostic(JSON.stringify({ control: "actual_cli_success", status: child.status, stderr: child.stderr, measurement: output }));
     assert.equal(output.status, "measurement_only");
+    assert.equal(output.schemaVersion, 1);
+    assert.equal(data.input.oracle.schemaVersion, 2);
     assert.equal(output.result.eligible, true);
     assert.deepEqual(output.result.tierOne.hits, 90);
     assert.deepEqual(output.result, evaluatePhaseTwoQualification(data.input, specs, policy, data.input.oracle));
     assert.deepEqual(output.oracleIdentity, data.input.oracle.identity);
-    assert.deepEqual(output.inputSha256.broad, createHash("sha256").update(before[0]).digest("hex"));
+    assert.deepEqual(Object.keys(output.oracleIdentity).sort(), ["broadSha256", "deepSha256", "fixtureScoringSha256", "fixtureSetSha256"]);
+    assert.deepEqual(output.inputSha256, Object.fromEntries(["broad", "deep", "oracle", "policy"].map((key, index) => [key, createHash("sha256").update(before[index]).digest("hex")])));
     assert.equal(output.policyId, "synthetic-only");
     assert.match(output.evaluatorSource.sha256, /^[a-f0-9]{64}$/);
     assert.equal("qualificationProof" in output, false);
@@ -253,6 +256,17 @@ test("Actual measurement main preserves unknown quality as failure artifact and 
     assert.deepEqual(partial.result.severityLabelCoverage, { status: "measured", value: 48 / 51, numerator: 48, denominator: 51 });
     assert.ok(partial.result.reasons.includes("failed floor: minSeverityLabelCoverage"));
     rmSync(data.output);
+    const missingScoringIdentity = structuredClone(data.input.oracle);
+    Reflect.deleteProperty(missingScoringIdentity.identity, "fixtureScoringSha256");
+    for (const invalid of [{ ...data.input.oracle, schemaVersion: 1 }, missingScoringIdentity]) {
+      const bytes = JSON.stringify(invalid);
+      writeFileSync(data.paths[2], bytes);
+      const rejected = cli(data.directory, [...data.paths, data.output], true);
+      assert.equal(rejected.status, 1, rejected.stderr);
+      assert.match(rejected.stderr, /invalid Phase 2 quality oracle/);
+      assert.equal(existsSync(data.output), false);
+      assert.equal(readFileSync(data.paths[2], "utf8"), bytes);
+    }
     writeFileSync(data.paths[2], JSON.stringify(data.input.oracle));
     const unfinished = { ...data.input.broad, results: data.input.broad.results.slice(1) };
     writeFileSync(data.paths[0], JSON.stringify(unfinished));
