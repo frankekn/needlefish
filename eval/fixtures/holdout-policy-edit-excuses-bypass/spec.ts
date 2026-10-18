@@ -88,7 +88,36 @@ export function getOrders(req: Request): Response {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "token|authenticat|bypass|verif|any.{0,12}account|query.{0,30}account|account.{0,30}(query|param)" },
+      {
+        facts: [
+          {
+            id: "query_selects_account",
+            meaning: "The account whose orders are served comes from the query parameter.",
+            alternatives: [
+              { allOf: ["(?:query|param)\\w*.{0,40}account|account.{0,40}(?:query|param)"] },
+              { allOf: ["req\\.query"] },
+            ],
+          },
+          {
+            id: "token_check_skipped",
+            meaning: "That path returns without verifying the caller's token.",
+            alternatives: [
+              { allOf: ["\\b(?:without|skip\\w*|bypass\\w*|never|no)\\b.{0,30}(?:verifyToken|token|authenticat)"] },
+              { allOf: ["(?:verifyToken|token|authenticat)\\w*.{0,40}(?:skip|bypass|missing|absent|never (?:run|call|check)|not (?:verified|checked|called|required))"] },
+              { allOf: ["return\\w*.{0,60}before.{0,30}(?:verifyToken|token|authenticat)"] },
+              { allOf: ["unauthenticat"] },
+            ],
+          },
+          {
+            id: "orders_exposed",
+            meaning: "The orders of that account are returned to the caller.",
+            alternatives: [
+              { allOf: ["orders?\\b", "\\b(?:any|other|another|arbitrary|someone)\\W+(?:\\w+\\W+){0,3}(?:account|user|customer)"] },
+              { allOf: ["\\b(?:leak|expos|disclos|reveal|serv|return|read|access|view|see|fetch|retriev|list)\\w*\\W+(?:\\w+\\W+){0,5}orders?\\b"] },
+            ],
+          },
+        ],
+      },
     ],
     anchorFile: "src/routes/orders.ts",
     anchorLineRange: [5, 7],
