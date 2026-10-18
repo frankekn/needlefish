@@ -128,8 +128,9 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 若要擋下未完成的審查，請在 consumer repo 把既有的 `Needlefish` check 設為
 required，不需要 strict flag 或新服務；Needlefish 不會修改 branch
 protection。升級後 `needs_human` 從 `neutral` 改為 `failure`，原本接受它
-的 workflow 現在必須重試或取得人工確認。superseded 與 policy-skipped 的
-check 維持原本的 neutral。
+的 workflow 現在必須重試或取得人工確認。superseded 與 untrusted-author
+skipped 的 check 維持原本的 neutral。docs-only policy skip 以成功的 `pass`
+check 完成。
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
 event：`GITHUB_TOKEN` bot 無法正式 approve PR，而 sticky 的 blocking

@@ -187,8 +187,9 @@ To block incomplete reviews, set the existing `Needlefish` check as required
 in the consumer repository. No strict flag or new service is needed. Needlefish
 does not change branch protection. On upgrade, `needs_human` changes from
 `neutral` to `failure`; workflows that accepted it must now retry or obtain
-human confirmation. Superseded and policy-skipped checks keep their existing
-neutral status.
+human confirmation. Superseded and untrusted-author skipped checks keep their
+existing neutral status. Docs-only policy skips complete as successful `pass`
+checks.
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
 the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking
