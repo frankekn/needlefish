@@ -113,7 +113,7 @@ test("seven slow hotspots across three workers stop within the pipeline budget",
   const f = fixture(t, "slow");
   process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "1500";
   const started = performance.now();
-  await assert.rejects(review(f.bundle, { timeoutMs: 450 }), /deadline|ETIMEDOUT/);
+  await assert.rejects(review(f.bundle, { timeoutMs: 5000 }), /deadline|ETIMEDOUT/);
   assert.ok(performance.now() - started < 2500, "shared deadline plus process cleanup grace");
   assert.ok(f.calls().filter((phase) => phase === "deep").length >= 3, "exercise concurrent deep workers");
   assert.ok(!f.calls().includes("critic"), "expired work must not receive a fresh critic allowance");

@@ -174,7 +174,9 @@ test("signal failure cannot become an accepted lifecycle", async (t) => {
 });
 
 test("ordered routes bind receipts to their invocation instead of reusing item IDs", async (t) => {
-	const f = fixture(t, `${emit} if(process.argv.includes('route-one')) { process.stdout.write(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})+'\\n');process.exitCode=1;} else fs.writeFileSync(out,(input.includes('adversarial critic')?${JSON.stringify(JSON.stringify({summary:'clean review',decisions:[],checked:['src/app.ts'],residual_risks:[]}))}:${JSON.stringify(JSON.stringify(cleanReview))}));`);
+	const f = fixture(t, `process.stdout.write(${JSON.stringify(stream(command("item.started"), command()))});
+		if(process.argv.includes('route-one')) { process.stdout.write(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}})+'\\n');process.exitCode=1;}
+		else { process.stdout.write(${JSON.stringify(stream(terminal))}); fs.writeFileSync(out,(input.includes('adversarial critic')?${JSON.stringify(JSON.stringify({summary:'clean review',decisions:[],checked:['src/app.ts'],residual_risks:[]}))}:${JSON.stringify(JSON.stringify(cleanReview))})); }`);
 	const prev = captureEnv(["NEEDLEFISH_REVIEW_TIMEOUT_MS"]);
 	t.after(() => restoreEnv(prev));
 	process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "10000";
@@ -184,6 +186,14 @@ test("ordered routes bind receipts to their invocation instead of reusing item I
 	assert.deepEqual(events.filter(event => event.surface === "native_tool_receipts").map(event => [event.routeIndex, event.passKind, event.toolTrace.invocation]), [
 		[0, "review", "exit_nonzero"], [1, "review", "accepted"], [1, "critic", "accepted"],
 	]);
+	for (const event of events) {
+		if (event.surface !== "native_tool_receipts") continue;
+		assert.equal(event.toolTrace.collection.status, "observed");
+		assert.deepEqual(event.toolTrace.collection.receipts, [
+			{ kind: "command_started", itemId: "item_0" },
+			{ kind: "command_completed", itemId: "item_0", result: { kind: "exit_zero" } },
+		]);
+	}
 });
 
 

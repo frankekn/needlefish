@@ -601,10 +601,20 @@ test("prepareRunnerSandbox discloses an LFS pointer whose pathname is not valid 
   // longer opens — so the probe would read nothing, call it "not a pointer",
   // and drop it from the notice without a word.
   const rawName = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("-blob.bin", "utf8")]);
+  let unsupportedPath = false;
   const { repo, sandboxTmp } = makeLfsRepo(t, (r) => {
     writeFileSync(path.join(r, ".gitattributes"), "*.bin filter=lfs -text\n");
-    writeFileSync(Buffer.concat([Buffer.from(`${r}/`, "utf8"), rawName]), LFS_POINTER_BODY);
+    try {
+      writeFileSync(Buffer.concat([Buffer.from(`${r}/`, "utf8"), rawName]), LFS_POINTER_BODY);
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EILSEQ") throw error;
+      unsupportedPath = true;
+    }
   });
+  if (unsupportedPath) {
+    t.skip("filesystem rejects non-UTF-8 pathnames");
+    return;
+  }
 
   const sandbox = prepareRunnerSandbox({
     runner: "claude",

@@ -65,10 +65,15 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   Object.assign(process.env, { CODEX_BIN: bin, HOME: home, NEEDLEFISH_EPHEMERAL_HOME: "1", NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_NO_RETRY: "1", CODEX_REASONING_EFFORT: "high" });
   const reportFile = path.join(tmp, "native-control.json");
   const args = parseArgs(["--runner", "codex", "--model", "public-model", "--effort", "high", "--draws", "3", "--provider", "OpenAI Codex", "--route", "Codex native", "--runner-version", "1.2.3", "--public-launcher-artifact", bin, "--report", reportFile]);
+  const nativeBytes = readFileSync(bin);
+  const nativeDigest = `sha256:${createHash("sha256").update(nativeBytes).digest("hex")}`;
   const emitted = writeReport(args, draws, specs);
   assert.equal(emitted.privateEnvironment, false);
   const bytes = readFileSync(reportFile, "utf8");
   assert.deepEqual(JSON.parse(bytes), emitted);
+  const reportEnvironment: unknown = JSON.parse(emitted.runnerEnvironment);
+  assert.ok(Array.isArray(reportEnvironment));
+  assert.deepEqual(reportEnvironment.filter(entry => Array.isArray(entry) && ["CODEX_BIN", "CODEX_PUBLIC_NATIVE"].includes(entry[0])), [["CODEX_BIN", nativeDigest], ["CODEX_PUBLIC_NATIVE", nativeDigest]]);
   const lane: LaneConfig = { report: "results/native-control.json", name: "Native control", runner: "codex", model: "public-model", effort: "high", status: "Candidate" };
   assert.ok(emitted.gitSha);
   validateManifest({ updated: emitted.createdAt.slice(0,10), baseline: lane.report, lanes: [lane], blocked: [] });
@@ -89,6 +94,7 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   assert.throws(() => createQualificationProof(externalBytes, externalLane, fixtureClassifications(specs), sourceSha), /refused/);
   process.env.CODEX_BIN = bin;
   const proof = createQualificationProof(bytes, lane, fixtureClassifications(specs), emitted.gitSha);
+  assert.equal(proof.identity.runnerEnvironment, emitted.runnerEnvironment);
   assert.equal(proof.reportSha256, createHash("sha256").update(bytes).digest("hex"));
   assert.throws(() => createQualificationProof(bytes, lane, fixtureClassifications(specs), "f".repeat(40)), /exact release/);
   assert.throws(() => createQualificationProof(bytes, lane, { ...fixtureClassifications(specs), fixtureSetHash: "stale" }, emitted.gitSha!), /refused/);
@@ -129,6 +135,7 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   }
   assert.deepEqual(exact.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
   assert.deepEqual(nativeProbes, [{ status: 0, signal: null, expectedVersion: true }]);
+  assert.deepEqual(exact.runtime?.launcherDigest, { status: "known", value: nativeDigest });
   assert.equal(exact.verdict, "pass");
   const inheritedEffort = await review(bundle, { runner: "codex", model: "public-model", timeoutMs: 10000 });
   assert.deepEqual(inheritedEffort.runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
@@ -235,6 +242,15 @@ test("real report writer and admission proof reach actual CLI/core with exact, d
   writeFileSync(releaseFile, JSON.stringify({ sha: emitted.gitSha, qualification: fullProof }));
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "different_configuration" });
   writeFileSync(releaseFile, JSON.stringify({ sha: emitted.gitSha, qualification: proof }));
+  compile(bin, path.join(tmp, "same-version-capture.txt"));
+  const replacementDigest = `sha256:${createHash("sha256").update(readFileSync(bin)).digest("hex")}`;
+  assert.notEqual(replacementDigest, nativeDigest);
+  const sameVersionReplacement = await run();
+  assert.deepEqual(sameVersionReplacement.runtime?.runnerVersion, { status: "known", value: "1.2.3" });
+  assert.deepEqual(sameVersionReplacement.runtime?.qualification, { matchStatus: "unqualified", reason: "different_configuration" });
+  if (evidenceDirectory) writeFileSync(path.join(evidenceDirectory, "same-version-replacement.json"), JSON.stringify({ nativeDigest, replacementDigest, result: sameVersionReplacement }, null, 2));
+  writeFileSync(bin, nativeBytes);
+  assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "tested", policyVersion: proof.policyVersion, reportId: lane.report });
   compile(bin, capture, "2.0.0");
   assert.deepEqual((await run()).runtime?.qualification, { matchStatus: "unqualified", reason: "different_configuration" });
   compile(bin, capture, "1.2.3", true);

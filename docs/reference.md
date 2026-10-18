@@ -655,6 +655,25 @@ protection. Once enabled, findings arrive as
 inline review comments anchored to the diff; pushes update the same review in
 place (fresh / still-open / no longer reported) instead of stacking new ones.
 
+## Public native evaluation reproduction
+
+A public native Codex report records the supplied executable's full SHA-256
+in `runnerEnvironment`, under `CODEX_PUBLIC_NATIVE` and, when set, `CODEX_BIN`.
+The qualification proof preserves that environment. Runtime qualification
+hashes the configured native executable and compares its identity with the proof.
+Different bytes at the same path cannot match, even with the same version string.
+
+Reproduction requires a checkout of the report's `gitSha` and an operator-supplied
+native executable at the path in `reproductionCommand`. Its SHA-256 must match
+the report. The source checkout alone does not contain that artifact. The command
+does not download it. `--public-launcher-artifact` must identify the configured
+Codex executable. The other recorded configuration values must also match.
+
+The digest identifies that file only. It does not attest to transitive code or
+provider binaries. Reported version, provider, and route are operator declarations.
+Runtime native Codex matching also probes `--version` and checks its supported
+provider and route. Missing or private identity remains unqualified.
+
 ## Historical benchmark notes
 
 The commentary below records historical experiments. It does not select the current production lane. Read each linked report for its source and date.

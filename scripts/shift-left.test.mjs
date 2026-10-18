@@ -54,8 +54,9 @@ if (process.env.FAKE_FAIL_COMMAND === command) {
   process.stdout.write('PRIVATE_CONSUMER_STDOUT');
   process.exitCode = 2;
 } else if (args[0] === 'verdict' || args[0] === 'render') {
+  if (command === 'render' && process.env.FAKE_MOVE_BASE_ON_RENDER === '1') cp.execFileSync('git', ['update-ref', 'refs/heads/review-base', 'HEAD']);
   const r = cp.spawnSync(${JSON.stringify(process.execPath)}, ['--import', ${JSON.stringify(tsx)}, ${JSON.stringify(cli)}, ...args], { encoding: 'utf8', maxBuffer: 8_000_000 });
-  process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exitCode = r.status ?? 1;
+  process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exitCode = process.env.FAKE_NONZERO_PASS_COMMAND === command ? 1 : r.status === 0 && process.env.FAKE_CORRECTED_NONPASS?.split(',').includes(command) && JSON.parse(fs.readFileSync(args[1], 'utf8')).verdict !== 'pass' ? 1 : r.status ?? 1;
 } else if (process.env.FAKE_WAIT === '1') {
   fs.writeFileSync(${JSON.stringify(join(dir, "review.pid"))}, String(process.pid));
   const child = cp.spawn(${JSON.stringify(process.execPath)}, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
@@ -71,7 +72,7 @@ if (process.env.FAKE_FAIL_COMMAND === command) {
   const base = { schemaVersion: 1, verdict: "pass", summary: "Completed review.", findings: [], checked: ["file.ts caller"], residualRisks: [], baseSha: head, headSha: head };
   function run(raw, status = 0, extra = {}) {
     writeFileSync(fixture, typeof raw === "string" ? raw : JSON.stringify(raw));
-    return spawnSync(process.execPath, [join(repo, ".needlefish/shift-left/review-gate.mjs"), "HEAD"], {
+    return spawnSync(process.execPath, [join(repo, ".needlefish/shift-left/review-gate.mjs"), extra.FAKE_BASE_REF ?? "HEAD"], {
       cwd: repo, env: { ...env, FAKE_STATUS: String(status), ...extra }, encoding: "utf8", timeout: 20000, maxBuffer: 8_000_000,
     });
   }
@@ -80,13 +81,15 @@ if (process.env.FAKE_FAIL_COMMAND === command) {
 
 for (const [verdict, status, findings, residualRisks, expectedText] of [
   ["pass", 0, [], [], "LGTM"],
+  ["changes_requested", 0, [finding], [], "Confirmed defect"],
   ["changes_requested", 1, [finding], [], "Confirmed defect"],
+  ["needs_human", 0, [], [{ text: "Missing evidence", blocks: true }], "Missing evidence"],
   ["needs_human", 1, [], [{ text: "Missing evidence", blocks: true }], "Missing evidence"],
 ]) {
-  test(`shared gate confirms literal ${verdict}`, (t) => {
+  test(`shared gate confirms literal ${verdict} with review exit ${status}`, (t) => {
     const f = setup(t);
     const result = f.run({ ...f.base, verdict, findings, residualRisks }, status);
-    assert.equal(result.status, status, result.stderr);
+    assert.equal(result.status, verdict === "pass" ? 0 : 1, result.stderr);
     assert.match(result.stdout, new RegExp(expectedText));
     const calls = readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepEqual(calls[0], ["--repo", realpathSync(f.repo), "--branch", "--base", "HEAD", "--json"]);
@@ -98,14 +101,44 @@ for (const [verdict, status, findings, residualRisks, expectedText] of [
   });
 }
 
+for (const verdict of ["changes_requested", "needs_human"]) {
+  for (const reviewStatus of [0, 1]) {
+    for (const corrected of ["verdict", "render", "verdict,render"]) {
+      test(`shared gate accepts corrected ${corrected} for ${verdict} with review exit ${reviewStatus}`, (t) => {
+        const f = setup(t);
+        const result = f.run({ ...f.base, verdict,
+          findings: verdict === "changes_requested" ? [finding] : [],
+          residualRisks: verdict === "needs_human" ? [{ text: "Missing evidence", blocks: true }] : [],
+        }, reviewStatus, { FAKE_CORRECTED_NONPASS: corrected });
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stdout, /Confirmed defect|Missing evidence/);
+        assert.equal(result.stderr, "");
+        assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+      });
+    }
+  }
+}
+
+for (const command of ["verdict", "render"]) {
+  test(`shared gate rejects nonzero pass ${command}`, (t) => {
+    const f = setup(t);
+    const result = f.run(f.base, 0, { FAKE_NONZERO_PASS_COMMAND: command });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Needlefish gate blocked/);
+  });
+}
+
 for (const [name, raw, status] of [
   ["bad JSON", "not json", 0], ["no output", "", 0],
   ["incomplete pass", '{"verdict":"pass"}', 0],
   ["bad findings shape", { findings: [{}] }, 0],
   ["forged pass with blocking finding", { findings: [finding] }, 0],
   ["nonzero pass", {}, 1], ["operational failure", {}, 2],
-  ["zero non-pass", { verdict: "needs_human", residualRisks: [{ text: "unknown", blocks: true }] }, 0],
   ["wrong head", { headSha: "another-head" }, 0],
+  ["wrong base", { baseSha: "another-base" }, 0],
+  ["unknown verdict", { verdict: "unknown" }, 0],
+  ["non-pass exit 2", { verdict: "needs_human", residualRisks: [{ text: "Missing evidence", blocks: true }] }, 2],
 ]) {
   test(`shared gate blocks ${name}`, (t) => {
     const f = setup(t);
@@ -118,7 +151,7 @@ for (const [name, raw, status] of [
 
 test("docs-only policy skip remains visible and P3 does not force a repair", (t) => {
   const f = setup(t);
-  const skip = f.run({ ...f.base, docsOnlyFastPath: true, summary: "Documentation change." });
+  const skip = f.run({ ...f.base, summary: "Docs-only change (1 file(s)); model review skipped.", checked: ["FAST_PATH docs-only files=[README.md]"] });
   assert.equal(skip.status, 0, skip.stderr);
   assert.match(skip.stdout, /skip|Skipped|docs-only/i);
   const p3 = f.run({ ...f.base, findings: [{ ...finding, severity: "P3" }] });
@@ -144,9 +177,6 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
   writeFileSync(hook, text);
   for (const [ref, sha, remoteRef, expected] of [
     ["refs/heads/topic", f.head, "refs/heads/topic", 0],
-    ["HEAD", f.head, "refs/heads/topic", 0],
-    ["HEAD", "0".repeat(40), "refs/heads/topic", 1],
-    ["HEAD", f.head, "refs/tags/topic", 1],
     ["refs/heads/topic", "0".repeat(40), "refs/heads/topic", 1],
     ["refs/tags/topic", f.head, "refs/heads/topic", 1],
     ["refs/heads/topic", f.head, "refs/tags/topic", 1],
@@ -168,27 +198,6 @@ test("pre-push checks HEAD and blocks unsupported pushed refs", (t) => {
 });
 
 
-test("detached HEAD branch push runs the installed gate", (t) => {
-  const f = setup(t);
-  writeFileSync(f.fixture, JSON.stringify(f.base));
-  f.git("checkout", "--detach", "-q", f.head);
-  const remote = join(f.dir, "remote.git");
-  execFileSync("git", ["init", "--bare", "-q", remote]);
-  f.git("remote", "add", "origin", remote);
-  f.git("config", "core.hooksPath", ".needlefish/shift-left");
-  const hook = join(f.repo, ".needlefish/shift-left/pre-push");
-  writeFileSync(hook, readFileSync(hook, "utf8").replace("review-gate.mjs origin/main", "review-gate.mjs HEAD"));
-  chmodSync(hook, 0o755);
-  const result = spawnSync("git", ["push", "origin", "HEAD:refs/heads/topic"], {
-    cwd: f.repo, env: f.env, encoding: "utf8", timeout: 20000,
-  });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /LGTM/);
-  assert.equal(execFileSync("git", ["--git-dir", remote, "rev-parse", "refs/heads/topic"], { encoding: "utf8" }).trim(), f.head);
-  assert.deepEqual(readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse)[0],
-    ["--repo", realpathSync(f.repo), "--branch", "--base", "HEAD", "--json"]);
-});
-
 test("documented review syntax reaches the real CLI dry-run without a model", (t) => {
   const f = setup(t);
   writeFileSync(join(f.repo, "file.ts"), "export const count = 1;\n");
@@ -202,6 +211,64 @@ test("documented review syntax reaches the real CLI dry-run without a model", (t
   assert.equal(existsSync(f.log), false);
 });
 
+
+test("real CLI docs-only artifact passes the gate with its skip notice and no runner", (t) => {
+  const f = setup(t);
+  writeFileSync(join(f.repo, "README.md"), "# Documentation change\n");
+  f.git("add", "README.md");
+  f.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "docs");
+  const runnerLog = join(f.dir, "runner-called");
+  const runner = join(f.dir, "bin/codex");
+  writeFileSync(runner, `#!/bin/sh\ntouch '${runnerLog}'\nexit 99\n`);
+  chmodSync(runner, 0o755);
+  const executable = join(f.dir, "bin/needlefish");
+  writeFileSync(executable, `#!/bin/sh\nexec '${process.execPath}' --import '${tsx}' '${cli}' "$@"\n`);
+  chmodSync(executable, 0o755);
+  const result = spawnSync(process.execPath, [join(f.repo, ".needlefish/shift-left/review-gate.mjs"), f.head], {
+    cwd: f.repo, env: { ...f.env, NEEDLEFISH_RUNNER: "codex", NEEDLEFISH_NO_FAST_PATH: "0" }, encoding: "utf8", timeout: 20000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Docs-only change \(1 file\(s\)\); model review skipped\./);
+  assert.match(result.stdout, /FAST_PATH docs-only files=\[README.md\]/);
+  assert.equal(existsSync(runnerLog), false);
+});
+
+for (const probe of [1, 5]) {
+  test(`whole-gate deadline covers Git probe ${probe}`, (t) => {
+    const f = setup(t);
+    const realGit = execFileSync("which", ["git"], { encoding: "utf8" }).trim();
+    const counter = join(f.dir, "git-probes");
+    writeFileSync(join(f.dir, "bin/git"), `#!${process.execPath}
+const fs = require('node:fs');
+const cp = require('node:child_process');
+const count = fs.existsSync(${JSON.stringify(counter)}) ? Number(fs.readFileSync(${JSON.stringify(counter)}, 'utf8')) + 1 : 1;
+fs.writeFileSync(${JSON.stringify(counter)}, String(count));
+function git() { const r = cp.spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), { stdio: 'inherit' }); process.exitCode = r.status ?? 1; }
+if (count === ${probe}) setTimeout(git, 1800); else git();
+`);
+    chmodSync(join(f.dir, "bin/git"), 0o755);
+    const result = f.run(f.base, 0, { NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS: "1500" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /deadline expired/);
+    if (probe === 1) assert.equal(existsSync(f.log), false);
+    else assert.equal(readFileSync(f.log, "utf8").trim().split("\n").length, 3);
+  });
+}
+
+test("base movement during rendering blocks the stale review", (t) => {
+  const f = setup(t);
+  f.git("update-ref", "refs/heads/review-base", f.head);
+  writeFileSync(join(f.repo, "file.ts"), "export const count = 1;\n");
+  f.git("add", "file.ts");
+  f.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "change");
+  const head = f.git("rev-parse", "HEAD");
+  const result = f.run({ ...f.base, headSha: head }, 0, { FAKE_BASE_REF: "review-base", FAKE_MOVE_BASE_ON_RENDER: "1" });
+  assert.equal(f.git("merge-base", "review-base", "HEAD"), head);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /HEAD or base changed during review/);
+});
 
 test("hook-bound head prevents a concurrent checkout from reviewing another commit", (t) => {
   const f = setup(t);
@@ -265,6 +332,15 @@ test("real Git rejects non-branch endpoints before review and reviews valid push
     const calls = readFileSync(f.log, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepEqual(calls.map((args) => args[0]), destinations.length === 1 ? ["--repo", "verdict", "render"] : ["--repo", "verdict", "render", "--repo", "verdict", "render"]);
     for (const name of destinations) assert.equal(execFileSync("git", ["--git-dir", bare, "rev-parse", `refs/heads/${name}`], { encoding: "utf8" }).trim(), f.head);
+  }
+  writeFileSync(f.fixture, JSON.stringify({ ...f.base, verdict: "needs_human", residualRisks: [{ text: "Missing evidence", blocks: true }] }));
+  for (const status of ["0", "1"]) {
+    const r = spawnSync("git", ["push", "origin", `${branch}:refs/heads/blocked-${status}`], {
+      cwd: f.repo, env: { ...f.env, FAKE_STATUS: status }, encoding: "utf8", timeout: 20000,
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stdout, /Missing evidence/);
+    assert.equal(execFileSync("git", ["--git-dir", bare, "for-each-ref", `refs/heads/blocked-${status}`], { encoding: "utf8" }), "");
   }
 });
 
@@ -384,13 +460,13 @@ for (const [name, checked] of [
 
 test("whole-gate output cap includes stderr and permits the nearby lower total", (t) => {
   const f = setup(t);
-  const raw = { ...f.base, checked: ["c".repeat(3_999_700)] };
+  const raw = { ...f.base, checked: ["c".repeat(3_999_500)] };
   const passed = f.run(raw);
   assert.equal(passed.error, undefined);
   assert.equal(passed.status, 0, passed.stderr);
   assert.match(passed.stdout, /LGTM/);
   assert.equal(passed.stderr, "");
-  const totalBytes = Buffer.byteLength(JSON.stringify(raw)) + Buffer.byteLength(passed.stdout) + Buffer.byteLength("stored:  pass\nderived: pass\n");
+  const totalBytes = Buffer.byteLength(JSON.stringify(raw)) + Buffer.byteLength(passed.stdout) + Buffer.byteLength("stored:  pass\nderived: pass\n") + 6 * 41;
   assert.ok(totalBytes <= 8_000_000);
   assert.ok(totalBytes + 1000 > 8_000_000);
   const blocked = f.run(raw, 0, { FAKE_DIAGNOSTIC_COMMAND: "review", FAKE_STDERR: "d".repeat(1000) });

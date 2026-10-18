@@ -43,6 +43,7 @@ import {
 } from "../shared/schema.js";
 import { normalizeFinding, normalizeMap, normalizeReview } from "../shared/normalize.js";
 import { scopeCallouts } from "./callouts.js";
+import { CRITIC_OUTPUT_SCHEMA } from "./critic-output-schema.js";
 import { checkQuotes } from "./quote-check.js";
 import { collectLargeLiteralContext, hotspotLiteralContext, type LargeLiteralContext } from "./large-literal-context.js";
 import { deriveVerdict } from "./verdict.js";
@@ -128,6 +129,7 @@ interface PromptSpec<T> extends ReviewPass {
 	readonly prompt: string;
 	readonly parse: (raw: unknown) => T;
 	readonly maxAttempts?: 3;
+	readonly codexOutputSchema?: CodexOptions["codexOutputSchema"];
 }
 
 interface PromptResult<T> extends ReviewTraceProvenance {
@@ -322,15 +324,22 @@ function codexOptions(
 	};
 }
 
+const failedReviewStats = new WeakMap<Error, readonly RunStat[]>();
+
+export function reviewFailureStats(error: unknown): readonly RunStat[] | undefined {
+	return error instanceof Error ? failedReviewStats.get(error) : undefined;
+}
+
 // Ride the run-wide transcript along on the error (message unchanged): the
 // eval harness scans it for the bait canary — neither invalid output nor a
 // cleaner retry is an escape hatch from detection. The snapshot is run-level,
 // not call-local, and includes SUCCESSFUL pass outputs too: when a later pass
 // rejects there is no ReviewResult, so a canary in an earlier successful map
 // or deep transcript would otherwise never reach the scan.
-function attachRunRaws(err: unknown, run: Pick<ReviewRun, "failedRawOutputs" | "rawOutputs" | "traceHealth">): void {
+function attachRunEvidence(err: unknown, run: Pick<ReviewRun, "stats" | "failedRawOutputs" | "rawOutputs" | "traceHealth">): void {
 	const raws = [...run.failedRawOutputs, ...run.rawOutputs];
 	if (!(err instanceof Error)) return;
+	failedReviewStats.set(err, Object.freeze([...run.stats]));
 	if (raws.length > 0) {
 		(err as Error & { rawOutputs?: readonly string[] }).rawOutputs = raws;
 	}
@@ -364,20 +373,23 @@ async function runJsonPrompt<T>(
 		try {
 			out = await runCodex(
 				spec.prompt,
-				codexOptions(run, spec.label, {
-					passKind: spec.passKind,
-					passIndex: spec.passIndex,
-					promptAttempt,
-					onSuccessfulRaw: (content, runnerAttempt) => {
-						successfulRunnerAttempt = runnerAttempt;
-						if (run.onTrace) {
-							successfulRaws.push({ content, runnerAttempt });
-						}
-					},
-				}),
+				{
+					...codexOptions(run, spec.label, {
+						passKind: spec.passKind,
+						passIndex: spec.passIndex,
+						promptAttempt,
+						onSuccessfulRaw: (content, runnerAttempt) => {
+							successfulRunnerAttempt = runnerAttempt;
+							if (run.onTrace) {
+								successfulRaws.push({ content, runnerAttempt });
+							}
+						},
+					}),
+					...(spec.codexOutputSchema ? { codexOutputSchema: spec.codexOutputSchema } : {}),
+				},
 			);
 		} catch (err) {
-			attachRunRaws(err, run);
+			attachRunEvidence(err, run);
 			throw err;
 		}
 		let value: T;
@@ -420,7 +432,7 @@ async function runJsonPrompt<T>(
 			runnerAttempt: successfulRunnerAttempt,
 		};
 	}
-	attachRunRaws(lastErr, run);
+	attachRunEvidence(lastErr, run);
 	throw lastErr;
 }
 
@@ -584,6 +596,7 @@ async function runCritic(
 			passKind: "critic",
 			passIndex: 0,
 			maxAttempts: 3,
+			...(run.runnerConfig.runner === "codex" ? { codexOutputSchema: CRITIC_OUTPUT_SCHEMA } : {}),
 			parse: (raw: unknown) =>
 				parseCriticReview(raw, candidates, candidate),
 		},
@@ -904,7 +917,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 	} catch (err) {
 		const fatal = findRunnerFailure(err)?.kind === "quota_exhausted"
 			? deepFailures.find((failure) => findRunnerFailure(failure)?.kind !== "quota_exhausted") ?? err : err;
-		attachRunRaws(fatal, run);
+		attachRunEvidence(fatal, run);
 		throw fatal;
 	}
 	const all = passes.flatMap((p) => p.findings);
@@ -1099,6 +1112,7 @@ async function reviewRoutes(
 		? [selections.length > 1 && config.connectionAuth instanceof AcpEnvironmentAuth ? config.connectionAuth.orderedOutputGuard() : config.connectionAuth] : []);
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
 		? { failed: onTrace === undefined, pending: new Set() } : undefined;
+	const stats: RunStat[] = [];
 	const failedRawOutputs: string[] = [];
 	const rawOutputs: string[] = [];
 	const tmp = await createManagedTempDirectory();
@@ -1109,7 +1123,8 @@ async function reviewRoutes(
 	const detachCancellation = registerTerminationFinalizer(async () => { cancellation.abort(); });
 	let selectedRunner = firstSelection.config.runner;
 	const screenError = (error: unknown) => {
-		attachRunRaws(error, {
+		attachRunEvidence(error, {
+			stats,
 			failedRawOutputs: [...failedRawOutputs, ...(activeRun?.failedRawOutputs ?? [])],
 			rawOutputs: [...rawOutputs, ...(activeRun?.rawOutputs ?? [])],
 			...(traceHealth ? {traceHealth} : {}),
@@ -1140,7 +1155,7 @@ async function reviewRoutes(
 					...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
 				}),
 				bundle, snapshot, runnerConfig: config, runtime: reviewRuntime(config, budget), outputGuards,
-				stats: [], failedRawOutputs: [], rawOutputs: [], lfs: { pointerFiles: new Set(), scanIncomplete: false }, startedAt,
+				stats, failedRawOutputs: [], rawOutputs: [], lfs: { pointerFiles: new Set(), scanIncomplete: false }, startedAt,
 				...(deadline === undefined ? {} : { reviewDeadlineMs: deadline }),
 				...(traceHealth ? { traceHealth } : {}),
 				...(onTrace && traceHealth ? { onTrace: wrapTraceObserver((event) => onTrace(selections.length > 1 ? Object.freeze({ ...event, routeIndex }) : event), traceHealth) } : {}),
@@ -1164,7 +1179,7 @@ async function reviewRoutes(
 				failedRawOutputs.push(...run.failedRawOutputs);
 				rawOutputs.push(...run.rawOutputs);
 				activeRun = undefined;
-				attachRunRaws(error, {...run, failedRawOutputs, rawOutputs});
+				attachRunEvidence(error, {...run, failedRawOutputs, rawOutputs});
 				assertSnapshotClean();
 				if (findRunnerFailure(error)?.kind !== "quota_exhausted" || routeIndex === selections.length - 1) throw error;
 			}

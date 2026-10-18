@@ -57,12 +57,12 @@ test("runtime records effective defaults and never qualifies incomplete identiti
 test("Grok config resolves defaults while attestation requires recorded model identity", (t) => {
   environment(t, { NEEDLEFISH_MODEL: undefined, GROK_MODEL: undefined });
   const cases = [
-    { top: undefined, runner: undefined, explicit: undefined, expected: "grok-build" },
-    { top: undefined, runner: "runner-model", explicit: undefined, expected: "runner-model" },
-    { top: "top-model", runner: "runner-model", explicit: undefined, expected: "top-model" },
-    { top: "top-model", runner: "runner-model", explicit: "explicit-model", expected: "explicit-model" },
+    { top: undefined, runner: undefined, explicit: undefined, expected: "grok-build", attested: false },
+    { top: undefined, runner: "runner-model", explicit: undefined, expected: "runner-model", attested: true },
+    { top: "top-model", runner: "runner-model", explicit: undefined, expected: "top-model", attested: true },
+    { top: "top-model", runner: "runner-model", explicit: "explicit-model", expected: "explicit-model", attested: true },
   ];
-  for (const { top, runner, explicit, expected } of cases) {
+  for (const { top, runner, explicit, expected, attested } of cases) {
     if (top === undefined) delete process.env.NEEDLEFISH_MODEL;
     else process.env.NEEDLEFISH_MODEL = top;
     if (runner === undefined) delete process.env.GROK_MODEL;
@@ -76,7 +76,7 @@ test("Grok config resolves defaults while attestation requires recorded model id
         ...(top === undefined ? [] : [["NEEDLEFISH_MODEL", top]]),
         ...(runner === undefined ? [] : [["GROK_MODEL", runner]]),
       ]),
-    }), explicit !== undefined || top !== undefined || runner !== undefined);
+    }), attested);
   }
 });
 

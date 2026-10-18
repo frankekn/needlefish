@@ -4,6 +4,7 @@ import { RUNNER_DEFINITIONS as RUNNER_CATALOG, type RunnerDefinition } from "./r
 export type RunnerName = (typeof RUNNER_CATALOG)[number]["name"];
 
 export const PI_DEFAULT_MODEL = "gpt-5.6-sol";
+export const PI_DEFAULT_THINKING = "medium";
 export const GROK_DEFAULT_MODEL = "grok-build";
 
 export const RUNNERS: readonly RunnerName[] = RUNNER_CATALOG.map(({ name }) => name);

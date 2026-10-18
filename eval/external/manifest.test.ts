@@ -35,6 +35,17 @@ function fixture(headContent = "export const value = 2;\n") {
   return { root, repo, run, manifest, base, head, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
+function rawSnapshot(f: ReturnType<typeof fixture>, names: (string | Buffer)[], mode = "100644", content?: string): void {
+  const object = (type: string, bytes: Buffer | string) => execFileSync("git", ["--no-optional-locks", "-C", f.repo, "hash-object", "--literally", "-w", "-t", type, "--stdin"], { input: bytes, encoding: "utf8" }).trim();
+  const makeTree = (blob: string) => object("tree", Buffer.concat(names.map((name) => Buffer.concat([Buffer.from(`${mode} `), Buffer.from(name), Buffer.from([0]), Buffer.from(blob, "hex")])).sort(Buffer.compare)));
+  const baseTree = makeTree(mode === "160000" ? f.base : object("blob", content ?? "one\n"));
+  const headTree = makeTree(mode === "160000" ? f.head : object("blob", content ?? "two\n"));
+  const base = f.run("commit-tree", baseTree, "-m", "raw base");
+  const head = f.run("commit-tree", headTree, "-p", base, "-m", "raw head");
+  const diff = execFileSync("git", ["--no-optional-locks", "-C", f.repo, "diff", "--full-index", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3", base, head, "--"]);
+  f.manifest.snapshot = { kind: "frozen", sourceBaseSHA: base, reviewBaseSHA: base, reviewHeadSHA: head, observedFinalHeadSHA: null, mergeBaseSHA: base, commitSHAs: [head], baseTreeSHA: baseTree, headTreeSHA: headTree, diffSHA256: sha256(diff) };
+}
+
 test("real samples retain excluded snapshots, original dataset head, provenance scope, and unscorable gold", () => {
   const m = clean();
   assert.equal(m.snapshot.reviewBaseSHA, "053fc118b7af3b77c42daddd6ceacd13394cf64a");
@@ -45,7 +56,7 @@ test("real samples retain excluded snapshots, original dataset head, provenance 
   assert.deepEqual(importManifest(m), { status: "excluded", reasons: ["local_code_objects_not_imported", "tree_and_diff_hashes_unknown", "upstream_code_license_unknown"] });
   const p = positive();
   assert.equal(p.source.canonicalRepo, "calcom/cal.diy");
-  assert.deepEqual(evaluatorMetadata(p, importManifest(p)).scoringReasons, ["common_rubric_not_frozen", "gold_locations_missing"]);
+  assert.deepEqual(evaluatorMetadata(p, importManifest(p)).scoringReasons, ["independent_evaluator_and_results_not_supplied", "gold_locations_missing"]);
   assert.equal(evaluatorMetadata(m, importManifest(m)).unmatchedFindingPolicy, "requires_blind_adjudication_not_automatic_false_positive");
 });
 
@@ -250,4 +261,60 @@ test("raw JSON source byte offsets reject rounding and interval overflow", () =>
   }
   const safe = { ...base, source: { ...base.source, sourceBytes: { ...base.source.sourceBytes, rangeStart: Number.MAX_SAFE_INTEGER - 2, byteLength: 2 } } };
   assert.equal(parseManifest(JSON.stringify(safe)).source.sourceBytes.rangeStart, 9007199254740989);
+});
+
+
+test("raw Git names preserve distinct Unicode spellings and enforce the JSON path length bound", () => {
+  const f = fixture();
+  try {
+    const names = ["café.ts", "cafe\u0301.ts", "עברית.ts", "العربية.ts", "join\u200d.ts", "nonjoin\u200c.ts", "word\u2060.ts", "bom\ufeff.ts", "😀".repeat(2000)];
+    rawSnapshot(f, names);
+    const result = importManifest(f.manifest, f.repo);
+    assert.equal(result.status, "source-ready", JSON.stringify(result));
+    if (result.status !== "source-ready") assert.fail();
+    assert.deepEqual(result.reviewer.headFiles.map((file) => file.path).sort(), [...names].sort());
+    assert.deepEqual(result.reviewer.lineMap.map((range) => range.path).sort(), [...names].sort());
+    rawSnapshot(f, ["😀".repeat(2001)]);
+    assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["unsupported_path_or_file_mode"] });
+  } finally { f.cleanup(); }
+});
+
+test("raw Git invalid UTF-8 and unsafe names never enter reviewer output", () => {
+  const f = fixture();
+  try {
+    for (const name of [Buffer.from([0xff]), Buffer.from([0xc3, 0x28]), Buffer.from([0xed, 0xa0, 0x80])]) {
+      rawSnapshot(f, [name]);
+      assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["unsupported_non_utf8"] });
+    }
+    for (const name of ["/absolute.ts", "../outside.ts", ".", "..", "a//b.ts", "a/./b.ts", "a/../b.ts", "C:/drive.ts", "C:drive.ts", "a:stream", "back\\slash.ts", "tab\tname.ts", "line\nname.ts", "del\u007f.ts", "control\u0085.ts", "bidi\u061c.ts", "bidi\u200e.ts", "bidi\u200f.ts", "bidi\u202a.ts", "bidi\u202b.ts", "bidi\u202c.ts", "bidi\u202d.ts", "bidi\u202e.ts", "bidi\u2066.ts", "bidi\u2067.ts", "bidi\u2068.ts", "bidi\u2069.ts"]) {
+      rawSnapshot(f, [name]);
+      const result = importManifest(f.manifest, f.repo);
+      assert.equal(result.status, "excluded", JSON.stringify({ name, result }));
+      if (result.status === "excluded") assert.match(result.reasons[0], /unsupported_path_or_file_mode|missing_object_or_git_limit/);
+    }
+    const input = join(f.root, "unsafe.json"); writeFileSync(input, JSON.stringify(f.manifest));
+    const output = join(f.root, "unsafe-import"); main([input, output, "--repo", f.repo]);
+    assert.equal(existsSync(join(output, "reviewer")), false);
+    assert.equal(JSON.parse(readFileSync(join(output, "evaluator.json"), "utf8")).importStatus, "excluded");
+  } finally { f.cleanup(); }
+});
+
+test("path expansion preserves mode, symlink, submodule, file-count and byte caps", () => {
+  const f = fixture();
+  try {
+    for (const mode of ["120000", "160000"]) {
+      rawSnapshot(f, ["route [id].ts"], mode);
+      assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["unsupported_path_or_file_mode"] });
+    }
+    rawSnapshot(f, ["executable 中文.ts"], "100755");
+    const executable = importManifest(f.manifest, f.repo);
+    assert.equal(executable.status, "source-ready");
+    if (executable.status === "source-ready") assert.deepEqual(executable.reviewer.headFiles, [{ path: "executable 中文.ts", mode: "100755", content: "two\n" }]);
+    rawSnapshot(f, Array.from({ length: 101 }, (_, index) => `changed ${index}.ts`));
+    assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["changed_file_limit"] });
+    rawSnapshot(f, Array.from({ length: 1001 }, (_, index) => `file ${index}.ts`));
+    assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["snapshot_file_limit"] });
+    rawSnapshot(f, ["large one.ts", "large two.ts"], "100644", "x".repeat(4 * 1024 * 1024 + 1));
+    assert.deepEqual(importManifest(f.manifest, f.repo), { status: "excluded", reasons: ["snapshot_byte_limit"] });
+  } finally { f.cleanup(); }
 });

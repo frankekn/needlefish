@@ -3984,6 +3984,61 @@ test("Codex credit errors advance the provider chain while auth and malformed er
 	}
 });
 
+test("Codex terminal order controls the real CLI and workflow provider chain", async (t) => {
+  const completed = { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } };
+  const failed = { type: "turn.failed", error: { message: "insufficient credits" } };
+  for (const { events, operational } of [{ events: [completed, failed], operational: false }, { events: [failed, failed], operational: false }, { events: [failed], operational: true }]) {
+    await t.test(events.map(event => event.type).join(" then "), t => {
+      const fixture = setupFixture(t, { prNumber: 115, rawReview: defaultRawReview() });
+      const bin = process.env.CLAUDE_BIN;
+      assert.ok(bin);
+      const raw = events.map(event => JSON.stringify(event)).join("\n") + "\n";
+      writeFileSync(bin, `#!/usr/bin/env node\nrequire("node:fs").readFileSync(0);process.stdout.write(${JSON.stringify(raw)});process.exit(1);`);
+      const previous = process.env.CODEX_BIN;
+      t.after(() => { if (previous === undefined) delete process.env.CODEX_BIN; else process.env.CODEX_BIN = previous; });
+      process.env.CODEX_BIN = bin;
+      process.env.NEEDLEFISH_RUNNER = "codex";
+      process.env.NEEDLEFISH_NO_RETRY = "1";
+      setEnvForTest(t, "GITHUB_RUN_ID", "123");
+      const run = spawnGithubCli(fixture, 115);
+      assert.equal(run.status, 1, run.stderr);
+      const line = run.stdout.split("\n").find(line => line.startsWith("needlefish-outcome "));
+      assert.equal(line, `needlefish-outcome ${JSON.stringify({ outcome: "failure", operational, ...(operational ? { cause: "usage limit" } : {}), prNumber: 115, headSha: fixture.headSha })}`);
+      if (!operational) assert.doesNotMatch(run.stdout + run.stderr, /likely cause: (?:usage limit|rate limited|network error|empty output|truncated output|html error page)/);
+
+      const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-terminal-workflow-"));
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+      assert.ok(Array.isArray(checks));
+      const cliOutput = path.join(root, "cli-output");
+      const log = path.join(root, "invocations");
+      writeFileSync(cliOutput, run.stdout);
+      writeFileSync(log, "");
+      writeFileSync(path.join(root, "checks"), JSON.stringify({ check_runs: checks }));
+      for (const [name, body] of [
+        ["needlefish", '#!/bin/sh\nprintf "run\\n" >> "$INVOCATIONS"\ncat "$CLI_OUTPUT"\nexit 1\n'],
+        ["gh", '#!/bin/sh\ncase "$*" in *--jq*) echo 0;; *) cat "$CHECKS";; esac\n'],
+        ["codex", '#!/bin/sh\necho codex-cli-test\n'],
+      ]) { writeFileSync(path.join(root, name), body); chmodSync(path.join(root, name), 0o755); }
+      const extracted = spawnSync(process.execPath, ["--input-type=module", "-e", 'import {readFileSync} from "node:fs";import {workflowRun} from "./scripts/workflow-test-helpers.mjs";process.stdout.write(workflowRun(readFileSync(".github/workflows/review.yml","utf8"),"review","Needlefish review"));'], { encoding: "utf8" });
+      assert.equal(extracted.status, 0, extracted.stderr);
+      const routed = spawnSync("bash", ["-c", extracted.stdout], { encoding: "utf8", timeout: 10_000, env: {
+        ...process.env, HOME: root, PATH: `${root}:${process.env.PATH ?? ""}`,
+        NEEDLEFISH_BIN: path.join(root, "needlefish"), CODEX_BIN: path.join(root, "codex"),
+        PR_NUM: "115", PR_HEAD_SHA: fixture.headSha, GITHUB_REPOSITORY: "frankekn/needlefish", GITHUB_RUN_ID: "123",
+        NEEDLEFISH_RUNNER_INPUT: "codex", NEEDLEFISH_MODEL_INPUT: "primary-model", NEEDLEFISH_MODEL_FALLBACKS: "gpt-6.1-sol",
+        CODEX_PROXY_BASE_URL_INPUT: "https://controlled.invalid/v1", CODEX_PROXY_API_KEY_INPUT: "controlled-test-key",
+        NEEDLEFISH_CHECK_APP_ID: "", GITHUB_STEP_SUMMARY: path.join(root, "summary"),
+        INVOCATIONS: log, CLI_OUTPUT: cliOutput, CHECKS: path.join(root, "checks"),
+      } });
+      assert.equal(routed.status, 1, routed.stderr);
+      assert.equal(readFileSync(log, "utf8"), operational ? "run\nrun\n" : "run\n", routed.stderr);
+      if (!operational) assert.doesNotMatch(routed.stdout + routed.stderr, /switching lane/);
+      else assert.match(routed.stdout + routed.stderr, /switching lane/);
+    });
+  }
+});
+
 test("empty runner output keeps its operational classification", (t) => {
 	const fixture = setupFixture(t, { prNumber: 95, rawReview: "" });
 
