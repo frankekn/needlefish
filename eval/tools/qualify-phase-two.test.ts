@@ -232,6 +232,66 @@ test("Docs provenance exemption is limited to canonical docs fast-path zero-call
   assert.throws(() => admitPhaseTwoReports(nonzero, specs, policy), /invalid docs fast path/);
 });
 
+test("Admission rejects successful zero-call draws without a canonical docs fast path", () => {
+  for (const [lane, fixtureId] of [
+    ["broad", "positive-0"], ["deep", "positive-0"], ["broad", "negative"],
+    ["broad", "honeypot"], ["broad", "docs"],
+  ] as const) {
+    const data = inputs();
+    const draw = data[lane].results.find((draw) => draw.fixtureId === fixtureId); assert.ok(draw);
+    Reflect.set(draw, "calls", 0);
+    assert.equal(draw.score.formatOk, true);
+    assert.ok(draw.score.robustness);
+    assert.equal("fastPath" in draw, false);
+    const campaign = { broad: parsePhaseTwoReport(data.broad), deep: parsePhaseTwoReport(data.deep) };
+    Reflect.set(data.oracle, "identity", phaseTwoOracleIdentity(campaign, specs));
+    assert.equal(evaluatePhaseTwoQualification(campaign, specs, policy, data.oracle).eligible, true);
+    assert.throws(() => admitPhaseTwoReports(campaign, specs, policy), /successful zero-call draw requires docs fast path/);
+  }
+});
+
+for (const failure of ["invalid model JSON", "spawn codex ETIMEDOUT. retry"]) {
+  test(`Zero-call failed draws retain a failed measurement artifact: ${failure}`, async () => {
+    const data = stored();
+    try {
+      const draw = data.input.broad.results[0];
+      const spec = specs[0];
+      Reflect.set(draw, "calls", 0);
+      Reflect.set(draw, "findings", []);
+      Reflect.set(draw, "matchEvidence", matchEvidence([], spec.expected));
+      Reflect.set(draw, "score", score(null, spec.expected, spec.id, failure, undefined, "invalid output", [{
+        surface: "raw_failure", content: "invalid output", passKind: "review", passIndex: 0,
+        promptAttempt: 1, runnerAttempt: 1, outcome: "parse_failed",
+      }]));
+      if (failure.includes("ETIMEDOUT")) Reflect.set(draw, "operationalFailure", failure);
+      assert.ok(draw.score.robustness);
+      assert.equal(draw.score.formatOk, false);
+      Object.assign(data.input.broad.aggregates, {
+        recall: 50 / 51, invalidJsonRate: 1 / 60, verdictMatchRate: 59 / 60, lineAnchorValidRate: 59 / 60,
+        recallByFixture: { ...data.input.broad.aggregates.recallByFixture, [spec.id]: 2 / 3 },
+        recallByTier: { ...data.input.broad.aggregates.recallByTier, t1: 44 / 45 },
+      });
+      Reflect.set(data.input.oracle.adjudication, "rows", data.input.oracle.adjudication.rows.filter((row) => row.fixtureId !== draw.fixtureId || row.draw !== draw.draw));
+      Reflect.set(data.input.oracle, "identity", phaseTwoOracleIdentity(data.input, specs));
+      const campaign = { broad: parsePhaseTwoReport(data.input.broad), deep: parsePhaseTwoReport(data.input.deep) };
+      admitPhaseTwoReports(campaign, specs, policy);
+      const result = evaluatePhaseTwoQualification(campaign, specs, policy, data.input.oracle);
+      assert.equal(result.eligible, false);
+      assert.ok(result.reasons.includes("invalid or compromised draw"));
+      [data.input.broad, data.input.deep, data.input.oracle, data.input.policy].forEach((value, index) => writeFileSync(data.paths[index], JSON.stringify(value)));
+      const before = data.paths.map((path) => readFileSync(path));
+      assert.equal(await main([...data.paths, data.output], () => specs), 1);
+      const measurement = JSON.parse(readFileSync(data.output, "utf8"));
+      assert.equal(measurement.status, "measurement_only");
+      assert.deepEqual(measurement.result, result);
+      assert.deepEqual(data.paths.map((path) => readFileSync(path)), before);
+      const missingProvenance = structuredClone(campaign);
+      Reflect.deleteProperty(missingProvenance.broad.results[0].score, "robustness");
+      assert.throws(() => admitPhaseTwoReports(missingProvenance, specs, policy), /retain anti-cheat provenance/);
+    } finally { rmSync(data.directory, { recursive: true, force: true }); }
+  });
+}
+
 test("Actual measurement main preserves unknown quality as failure artifact and rejects changed oracle binding", async (context) => {
   const data = stored();
   try {
