@@ -171,6 +171,7 @@ for (const { fixture, lineStart, generic, real } of [
 			["Admin check deleted from account deletion route", "Any caller can now delete any account."],
 			["DELETE /accounts/:id has no role check anymore", "Non-admin users can delete accounts."],
 			["Account deletion is unguarded", "The diff deletes requireRole(\"admin\") from DELETE /accounts/:id, so a regular user can delete accounts."],
+			["Any user can delete accounts", "Dispatch never verifies the caller's role, so any user can delete accounts."],
 		],
 	},
 	{
