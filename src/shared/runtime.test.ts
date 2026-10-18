@@ -54,7 +54,7 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
 });
 
-test("Grok config and attestation agree on default, environment and explicit model precedence", (t) => {
+test("Grok config resolves defaults while attestation requires recorded model identity", (t) => {
   environment(t, { NEEDLEFISH_MODEL: undefined, GROK_MODEL: undefined });
   const cases = [
     { top: undefined, runner: undefined, explicit: undefined, expected: "grok-build" },
@@ -76,7 +76,7 @@ test("Grok config and attestation agree on default, environment and explicit mod
         ...(top === undefined ? [] : [["NEEDLEFISH_MODEL", top]]),
         ...(runner === undefined ? [] : [["GROK_MODEL", runner]]),
       ]),
-    }), true);
+    }), explicit !== undefined || top !== undefined || runner !== undefined);
   }
 });
 
