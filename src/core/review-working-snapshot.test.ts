@@ -136,3 +136,35 @@ for (const deleteRefs of [false, true]) {
     assertRunnerSandboxClean("claude", sandbox.repoPath, sandbox.expectedHeadSha);
   });
 }
+
+test("WORKING baseline violation after a failed run keeps the original error and its raws", async (t) => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-dirty-baseline-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const repo = initRepo(tmp);
+  writeFileSync(path.join(repo, "app.ts"), "export const captured = 42;\n");
+  const { bundle } = diffBundle(repo, {});
+  const managedRoot = path.join(tmp, "managed");
+  const bin = path.join(tmp, "claude.cjs");
+  writeFileSync(bin, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+process.stdin.resume();
+process.stdin.on('end', () => {
+  const cwd = fs.realpathSync(process.cwd());
+  for (const name of fs.readdirSync(${JSON.stringify(managedRoot)})) {
+    const repo = path.join(${JSON.stringify(managedRoot)}, name, 'runner-repo');
+    if (fs.existsSync(repo) && fs.realpathSync(repo) !== cwd) fs.writeFileSync(path.join(repo, 'baseline-marker.txt'), 'x');
+  }
+  process.stdout.write('RAW-CANARY not json');
+});
+`);
+  chmodSync(bin, 0o755);
+  const previous = { ...process.env };
+  Object.assign(process.env, { CLAUDE_BIN: bin, NEEDLEFISH_EPHEMERAL_HOME: "0", NEEDLEFISH_NO_RETRY: "1", NEEDLEFISH_NO_FAST_PATH: "1", NEEDLEFISH_EVAL_TRACE: "1", NEEDLEFISH_TMPDIR: managedRoot });
+  t.after(() => { process.env = previous; });
+  const err: unknown = await review(bundle, { runner: "claude", timeoutMs: 5000 }).then(() => undefined, (e: unknown) => e);
+  assert.ok(err instanceof Error);
+  assert.match(err.message, /^no JSON object found in codex output\.[^\n]*\nclaude runner changed the review sandbox worktree: .*baseline-marker\.txt/);
+  assert.ok((err as Error & { rawOutputs?: readonly string[] }).rawOutputs?.some(raw => raw.includes("RAW-CANARY")));
+  assert.deepEqual(readdirSync(managedRoot).filter(name => /^needlefish-(?:managed-)?/.test(name)), []);
+});

@@ -62,6 +62,14 @@ import {
 
 export { isRunnerSafetyError } from "./runner-sandbox.js";
 
+export function withholdRunnerDiagnostic(err: unknown, connectionAuth: RunnerOptions["connectionAuth"]): void {
+	if (!(err instanceof Error) || !connectionAuth) return;
+	// Keep failure types and raw provenance while withholding public credentials.
+	err.message = err instanceof RunnerWorktreeChangedError
+		? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
+		: connectionAuth.screenDiagnostic(err.message);
+}
+
 const BASE_ENV_ALLOWLIST = [
 	"PATH",
 	"PATHEXT",
@@ -655,12 +663,7 @@ export async function runCodex(
 			emitStat(true);
 			return result.out;
 		} catch (err) {
-			if (err instanceof Error && opts.connectionAuth) {
-				// Keep failure types and raw provenance while withholding public credentials.
-				err.message = err instanceof RunnerWorktreeChangedError
-					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
-					: opts.connectionAuth.screenDiagnostic(err.message);
-			}
+			withholdRunnerDiagnostic(err, opts.connectionAuth);
 			const raw =
 				err instanceof Error
 					? (err as Error & { rawOutput?: string }).rawOutput

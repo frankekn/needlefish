@@ -3,6 +3,7 @@ import {
 	extractJson,
 	isRunnerSafetyError,
 	MALFORMED_OUTPUT_NEXT_STEP,
+	withholdRunnerDiagnostic,
 	type CodexOptions,
 } from "../shared/codex.js";
 import {
@@ -1092,6 +1093,17 @@ export function reviewPlan(bundle: Bundle): {
 	};
 }
 
+function assertSnapshotClean(snapshot: RunnerSandbox, runnerOptions: RunnerOptions, failure: unknown): void {
+	try {
+		assertRunnerSandboxClean(resolveRunner(runnerOptions), snapshot.repoPath, snapshot.expectedHeadSha);
+	} catch (err) {
+		withholdRunnerDiagnostic(err, runnerOptions.connectionAuth);
+		// A violation found after a failed run must not replace that failure, its type, or its raws.
+		if (!(failure instanceof Error) || !(err instanceof Error)) throw err;
+		failure.message += `\n${err.message}`;
+	}
+}
+
 export async function review(
 	bundle: Bundle,
 	runnerOptions: RunnerOptions = {},
@@ -1142,6 +1154,7 @@ export async function review(
 		? await createManagedTempDirectory()
 		: undefined;
 	let snapshot: RunnerSandbox | undefined;
+	let failure: unknown;
 	try {
 		if (snapshotTmp) {
 			snapshot = prepareRunnerSandbox({
@@ -1186,9 +1199,12 @@ export async function review(
 			attachRunRaws(err, run);
 			throw err;
 		}
+	} catch (err) {
+		failure = err;
+		throw err;
 	} finally {
 		try {
-			if (snapshot) assertRunnerSandboxClean(resolveRunner(runnerOptions), snapshot.repoPath, snapshot.expectedHeadSha);
+			if (snapshot) assertSnapshotClean(snapshot, runnerOptions, failure);
 		} finally {
 			if (snapshotTmp) await disposeManagedTempDirectory(snapshotTmp);
 		}

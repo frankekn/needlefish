@@ -57,6 +57,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     else send({id:request.id,result:{sessionId:'test-session'}});
   }
   if (request.method === 'session/prompt') {
+    if (mode.startsWith('dirty-baseline') && prior === 0) {
+      const tmp = path.join(path.dirname(log), 'tmp'), cwd = fs.realpathSync(process.cwd());
+      for (const name of fs.readdirSync(tmp)) {
+        const repo = path.join(tmp, name, 'runner-repo');
+        if (fs.existsSync(repo) && fs.realpathSync(repo) !== cwd) fs.writeFileSync(path.join(repo, 'status-marker-' + process.env.AGENT_API_KEY), 'x');
+      }
+      if (mode === 'dirty-baseline-failure') { process.stdout.write('', () => process.exit(1)); return; }
+    }
     if (mode.startsWith('split-thought') && prior === 0) {
       const key = process.env.AGENT_API_KEY;
       for (const text of [key.slice(0,4),key.slice(4,8),key.slice(8)]) send({method:'session/update',params:{sessionId:'test-session',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text}}}});
@@ -511,6 +519,23 @@ for (const mode of ["split-thought-success", "split-thought-failure"]) {
     assert.equal(f.records().length, mode === "split-thought-failure" ? 3 : 2);
     for (const record of f.records()) isolated(record, f.home);
     assert.equal(readFileSync(source, "utf8"), "export const value = 3;\n");
+    writeFileSync(source, "export const value = 2;\n");
+    f.clean();
+  });
+}
+
+for (const mode of ["dirty-baseline", "dirty-baseline-failure"]) {
+  test(`${mode}: WORKING baseline violation withholds sandbox status from public output`, (t) => {
+    const f = fixture(t, mode);
+    const source = path.join(f.repo, "source.ts");
+    writeFileSync(source, "export const value = 3;\n");
+    const result = f.run([cli, "--repo", f.repo, "--uncommitted", "--connection", "a", "--json"], { NEEDLEFISH_NO_RETRY: "1" });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential/);
+    assert.doesNotMatch(result.stdout + result.stderr, /status-marker|TEST-ACCOUNT/);
+    if (mode === "dirty-baseline-failure") assert.match(result.stderr, /^needlefish: acp runner exited 1;/);
+    assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     writeFileSync(source, "export const value = 2;\n");
     f.clean();
   });
