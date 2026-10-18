@@ -496,8 +496,11 @@ test("public URL structure rejects malformed authority and ports without optiona
 		"https://[]/", "https://[::1]]/", "https://user:password@example.com/", "file:///tmp/spec",
 	]) {
 		const result = externalUrlResult(url);
-		assert.equal(validate(result), false, url);
-		assert.equal(parses(result), false, url);
+		const validClaims = externalUrlResult("https://example.com/").findings[0].externalClaims;
+		for (const variant of [result, { ...result, findings: [{ ...result.findings[0], externalClaims: validClaims }] }]) {
+			assert.equal(validate(variant), false, url);
+			assert.equal(parses(variant), false, url);
+		}
 	}
 });
 
