@@ -1064,7 +1064,7 @@ export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
 // only threshold owners.
-export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
 	readonly capability: ReturnType<typeof runnerReviewCapability> | {
