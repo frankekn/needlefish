@@ -484,3 +484,40 @@ test("Phase 2 scoring identity is required and rejects older oracle contracts", 
     { ...oracle, schemaVersion: 1, identity: legacyIdentity },
   ]) assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, invalid), /invalid Phase 2 quality oracle/);
 });
+
+
+for (const { name, expected, severity, title, conflict } of [
+  { name: "permitted actionable P3 beside a false-positive P1", expected: { verdict: "pass", noBlockingFindings: true }, severity: "P3", title: "independent sibling", conflict: false },
+  { name: "actionable P1 beside a false-positive P1", expected: { verdict: "pass", noBlockingFindings: true }, severity: "P1", title: "independent sibling", conflict: true },
+  { name: "actionable P3 matching mustNotFind", expected: { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "guard.ts" }] }, severity: "P3", title: "forbidden sibling", conflict: true },
+  { name: "unmatched actionable P3 beside a mustNotFind false positive", expected: { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "guard.ts" }] }, severity: "P3", title: "independent sibling", conflict: false },
+] satisfies readonly { name: string; expected: FixtureSpec["expected"]; severity: Finding["severity"]; title: string; conflict: boolean }[]) {
+  test(`Phase 2 attributes negative conflicts to the finding: ${name}`, () => {
+    const selected = specs.map((spec) => spec.kind === "negative" ? { ...spec, expected } : spec);
+    const source = { ...campaign(selected), broad: report(selected, 3, (spec, index) => {
+      if (spec.kind === "positive") return [finding];
+      return index === 0 ? [{ ...finding, severity, title }, { ...finding, title: "forbidden false positive" }] : [];
+    }) };
+    const oracle = independentOracle(source);
+    const independent = {
+      ...oracle, identity: phaseTwoOracleIdentity(source, selected),
+      adjudication: { ...oracle.adjudication, rows: oracle.adjudication.rows.map((row) =>
+        row.fixtureId === "negative" && row.findingIndex === 1
+          ? { fixtureId: row.fixtureId, draw: row.draw, findingIndex: row.findingIndex, decision: "false_positive" }
+          : row) },
+    };
+    const permissive: PhaseTwoQualificationPolicy = { ...configuredPolicy, floors: {
+      minNoisePerPositive: 0, minTierOneAggregate: 0, minTierOnePerFixture: 0,
+      minTierOneFamilyRecall: 0, minTierOneFamilyLocalization: 0, minActionablePrecision: 0,
+      maxNegativeFalsePositiveDrawRate: 1, minSeverityCalibration: 0, minSeverityLabelCoverage: 0, minObservedPassK: 0,
+    } };
+    const before = JSON.stringify(source);
+    const result = evaluatePhaseTwoQualification(source, selected, permissive, independent);
+    assert.equal(source.broad.results.find((draw) => draw.fixtureId === "negative" && draw.draw === 0)?.score.falsePositive, true);
+    assert.deepEqual(result.actionablePrecision, { status: "measured", value: 52 / 53, numerator: 52, denominator: 53 });
+    assert.deepEqual(result.negativeFalsePositiveDrawRate, { status: "measured", value: 1 / 3, numerator: 1, denominator: 3 });
+    assert.deepEqual(result.reasons, conflict ? ["independent actionable finding conflicts with negative false-positive proxy: negative draw 0"] : []);
+    assert.equal(result.eligible, !conflict);
+    assert.equal(JSON.stringify(source), before);
+  });
+}
