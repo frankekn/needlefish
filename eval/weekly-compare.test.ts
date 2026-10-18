@@ -108,7 +108,7 @@ test("compareWeekly: missing operator identity withholds metrics", () => {
   assert.match(verdict.reasons.join("\n"), /attested provider, route, and runner version/);
 });
 
-test("compareWeekly: matching implicit model and effort still compare", () => {
+test("compareWeekly: matching captured model and effort still compare", () => {
   const implicit = {
     model: null,
     effort: null,
@@ -123,8 +123,9 @@ test("compareWeekly: matching implicit model and effort still compare", () => {
     ...drawsFor("b", [false, false, false]),
   ], implicit);
   assert.equal(compareWeekly(previous, latest).alert, true);
-  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: null, runnerEnvironment: "[]" }), true);
-  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: null, effort: null, runnerEnvironment: "[]" }), true);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: null, runnerEnvironment: "[]" }), false);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: null, effort: null, runnerEnvironment: "[]" }), false);
+  assert.equal(hasResolvedModelIdentity({ runner: "pi", model: "test-model", effort: "medium", runnerEnvironment: "[]" }), true);
 });
 
 test("compareWeekly: unresolved implicit model and effort withhold comparison", () => {
