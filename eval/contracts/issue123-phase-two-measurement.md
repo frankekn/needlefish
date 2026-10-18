@@ -207,6 +207,9 @@ by admission, including draw scores, findings, match evidence, robustness,
 aggregates, fixture metadata and public runner attestations. It returns the
 original parsed objects without rebuilding or sorting them. Unknown additive
 metadata remains part of the oracle identity but carries no validation claim.
+New eval reports retain `candidateFindings` beside candidate match evidence.
+Admission recomputes both final and candidate matches from their findings;
+candidate match claims without a retained candidate artifact are rejected.
 The policy parser requires all ten floor names, rejects unknown keys and
 invalid values, and supplies no defaults. A `null` floor remains unset.
 
@@ -262,10 +265,12 @@ bytes, identities and results.
 `hasResolvedModelIdentity` validates the effective model and effort, after
 explicit report fields and captured environment precedence. Empty and
 `unknown`, `private`, `unspecified`, or `unresolved` labels are rejected without
-case or surrounding-whitespace exceptions. Deterministic package defaults
-remain Pi `gpt-5.6-sol`/`medium` and Grok `grok-build` with the recorded effort.
-Unknown Codex CLI/config defaults remain unknown. Runner execution and
-attestation share the package model constants.
+case or surrounding-whitespace exceptions. The existing Pi package defaults
+remain `gpt-5.6-sol`/`medium`. New Grok runs record their resolved `grok-build`
+default in the captured environment before report generation. Report readers
+require an explicit or captured Grok model; they never infer an older report's
+model from the current package default. Unknown Codex CLI/config defaults
+remain unknown.
 
 This is a cross-consumer tightening, not only a Phase 2 admission check.
 `eval/run.ts` resume, `gen-site.ts` publication, `weekly-compare.ts`, and runtime
@@ -273,5 +278,5 @@ qualification proof matching also consume it directly or through
 `runnerEnvironmentAttestationError`. Prior artifacts with unresolved effective
 identities lose admission or comparison eligibility; their historical bytes
 and results remain unchanged. Runtime proof matching still requires its own
-complete explicit identity and successful qualification evidence. Accepting a
-Grok package default alone grants no runtime tested status.
+complete explicit identity and successful qualification evidence. Capturing a
+Grok model alone grants no runtime tested status.

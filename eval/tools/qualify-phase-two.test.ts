@@ -433,6 +433,7 @@ test("Grok null-model high-effort reports pass real Phase 2 admission and offlin
     for (const report of [data.input.broad, data.input.deep]) {
       Reflect.set(report, "runner", "grok");
       Reflect.set(report, "model", null);
+      Reflect.set(report, "runnerEnvironment", JSON.stringify([["NEEDLEFISH_EPHEMERAL_HOME", "1"], ["NEEDLEFISH_EVAL_TRACE", "1"], ["GROK_MODEL", "grok-build"]]));
     }
     Reflect.set(data.input.oracle, "identity", phaseTwoOracleIdentity(data.input, specs));
     admitPhaseTwoReports(data.input, specs, policy);
@@ -444,4 +445,24 @@ test("Grok null-model high-effort reports pass real Phase 2 admission and offlin
     assert.equal(measurement.result.eligible, true);
     assert.deepEqual(measurement.result.reasons, []);
   } finally { rmSync(data.directory, { recursive: true, force: true }); }
+});
+
+test("candidate match claims require retained findings and exact recomputation", () => {
+  const campaign = inputs();
+  const draw = campaign.broad.results[0];
+  Reflect.set(draw, "candidateFindings", drawFindings([finding]));
+  Reflect.set(draw, "candidateMatchEvidence", matchEvidence([finding], specs[0].expected));
+  admitPhaseTwoReports(campaign, specs, policy);
+  for (const [path, value] of [
+    [["candidateFindings"], undefined],
+    [["candidateFindings", 0, "file"], "foreign.ts"],
+    [["candidateMatchEvidence", 0, "findingIndex"], 99],
+  ] satisfies readonly [readonly (string | number)[], unknown][]) {
+    const changed = structuredClone(campaign);
+    edit(changed.broad.results[0], path, value);
+    assert.throws(() => admitPhaseTwoReports(changed, specs, policy), /candidate match evidence/);
+  }
+  const malformed = structuredClone(campaign.broad);
+  edit(malformed.results[0], ["candidateFindings", 0, "lineEnd"], 1);
+  assert.throws(() => parsePhaseTwoReport(malformed), /finding line range/);
 });

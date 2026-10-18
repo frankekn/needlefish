@@ -10,9 +10,10 @@ import { PHASE_TWO_FLOORS, type PhaseTwoQualificationPolicy } from "./qualificat
 import { hasConsistentCheatDetection, hasCurrentScorer } from "./report-integrity";
 import { isCompleteReport } from "./report-completeness";
 import { operationalFailures, sameRecord, type PublishedReport } from "./publication";
-import { ANTICHEAT_VERSION, type FixtureSpec } from "./types";
+import { ANTICHEAT_VERSION, type DrawFinding, type FixtureSpec } from "./types";
 
-export type PhaseTwoReport = PublishedReport & {
+export type PhaseTwoReport = Omit<PublishedReport, "results"> & {
+  readonly results: readonly (PublishedReport["results"][number] & { readonly candidateFindings?: readonly DrawFinding[] })[];
   readonly fixtureDefectClasses?: Readonly<Record<string, string>>;
   readonly aggregates: PublishedReport["aggregates"] & {
     readonly recallByDefectClass?: Readonly<Record<string, number>>;
@@ -43,6 +44,7 @@ const match = {
   findingIndex: { anyOf: [count, { type: "null" }] },
 };
 const evidence = { type: "array", items: object(match, ["findingIndex"]) };
+const findings = { type: "array", items: object({ severity, category, file: text, lineStart: positive, lineEnd: positive, title: text, whyItBreaks: text }) };
 const robustness = object({
   rawExposure: boolean, rawExposureCount: count, candidateAdoption: boolean, candidateAdoptionCount: count,
   criticRecovery: boolean, finalReviewTextMarkerLeak: boolean, finalReviewTextMarkerLeakCount: count,
@@ -74,7 +76,7 @@ const reportFields = {
   results: { type: "array", minItems: 1, items: object({
     fixtureId: text, draw: count, score: object({ ...scoreFields, robustness, error: text }, Object.keys(scoreFields)),
     durationMs: nonnegative, calls: count, retries: count,
-    findings: { type: "array", items: object({ severity, category, file: text, lineStart: positive, lineEnd: positive, title: text, whyItBreaks: text }) },
+    findings, candidateFindings: findings,
     matchEvidence: evidence, candidateMatchEvidence: evidence, operationalFailure: text, fastPath: { const: "docs" },
   }, ["fixtureId", "draw", "score", "durationMs", "calls", "retries"]) },
   aggregates: object({ ...aggregateFields, mustFindHitRateByFixture: rateRecord, mustFindHitRate: rate,
@@ -103,7 +105,7 @@ export function parsePhaseTwoReport(input: unknown): PhaseTwoReport {
   if (!Number.isFinite(Date.parse(input.createdAt))) throw new Error("invalid Phase 2 report creation date");
   for (const draw of input.results) {
     if (draw.score.fixtureId !== draw.fixtureId) throw new Error("draw score fixture identity mismatch");
-    for (const finding of draw.findings ?? []) {
+    for (const finding of [...draw.findings ?? [], ...draw.candidateFindings ?? []]) {
       if (finding.lineEnd < finding.lineStart) throw new Error("invalid Phase 2 finding line range");
     }
     for (const item of [...draw.matchEvidence ?? [], ...draw.candidateMatchEvidence ?? []]) {
@@ -201,15 +203,13 @@ export function admitPhaseTwoReports(
       if (fastPath && (!expected.fastPathFixtureIds?.includes(draw.fixtureId) || draw.calls !== 0)) fail("invalid docs fast path");
       if (draw.score.formatOk && draw.calls === 0 && !fastPath) fail("successful zero-call draw requires docs fast path");
       validateStoredScore(draw, gold, fastPath);
-      if (draw.matchEvidence !== undefined) {
-        const findings = (draw.findings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" }));
-        if (!isDeepStrictEqual(draw.matchEvidence, matchEvidence(findings, gold))) fail("final match evidence does not match findings");
-      }
+      const finalEvidence = matchEvidence((draw.findings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" })), gold);
+      const candidateEvidence = matchEvidence((draw.candidateFindings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" })), gold);
+      if (draw.matchEvidence !== undefined && !isDeepStrictEqual(draw.matchEvidence, finalEvidence)) fail("final match evidence does not match findings");
       if (draw.candidateMatchEvidence !== undefined) {
-        if (!isDeepStrictEqual(draw.candidateMatchEvidence.map((item) => ({ ...item, findingIndex: null })), matchEvidence([], gold))) fail("candidate match evidence does not match fixture gold");
+        if (draw.candidateFindings === undefined || !isDeepStrictEqual(draw.candidateMatchEvidence, candidateEvidence)) fail("candidate match evidence does not match retained candidate findings");
       }
-      const pruned = (draw.matchEvidence ?? []).some((item, index) => item.findingIndex === null &&
-        draw.candidateMatchEvidence?.[index]?.findingIndex !== null && draw.candidateMatchEvidence?.[index]?.findingIndex !== undefined);
+      const pruned = finalEvidence.some((item, index) => item.findingIndex === null && candidateEvidence[index]?.findingIndex !== null && candidateEvidence[index]?.findingIndex !== undefined);
       if (draw.score.criticPruneError !== pruned) fail("critic prune error does not match evidence");
     }
     validateAggregates(report, selected);

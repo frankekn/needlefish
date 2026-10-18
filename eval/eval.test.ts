@@ -22,6 +22,27 @@ import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+test("Grok reports capture the effective default model before attestation", () => {
+  const previous = { NEEDLEFISH_MODEL: process.env.NEEDLEFISH_MODEL, GROK_MODEL: process.env.GROK_MODEL };
+  delete process.env.NEEDLEFISH_MODEL;
+  delete process.env.GROK_MODEL;
+  try {
+    const args = parseArgs(["--runner", "grok", "--effort", "high"]);
+    const pairs: unknown = JSON.parse(runnerEnvironment(args));
+    assert.ok(Array.isArray(pairs));
+    assert.ok(pairs.some((entry: unknown) => Array.isArray(entry) && entry[0] === "GROK_MODEL" && entry[1] === "grok-build"));
+    const explicit = parseArgs(["--runner", "grok", "--effort", "high", "--env", "GROK_MODEL=explicit"]);
+    const captured: unknown = JSON.parse(runnerEnvironment(explicit));
+    assert.ok(Array.isArray(captured));
+    assert.ok(captured.some((entry: unknown) => Array.isArray(entry) && entry[0] === "GROK_MODEL" && entry[1] === "explicit"));
+  } finally {
+    for (const key of ["NEEDLEFISH_MODEL", "GROK_MODEL"] as const) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
 test("hasFailedDeepPass ignores recovered attempts", () => {
   const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
   assert.equal(hasFailedDeepPass([failed]), true);
