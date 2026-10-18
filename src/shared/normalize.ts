@@ -238,8 +238,12 @@ export function normalizeFinding(raw: unknown): Finding {
   if (severity !== "P3" && confidence < 0.7) {
     throw new Error("malformed finding: blocking finding has low confidence");
   }
-  const replacement = parseReplacement(record.replacement);
   const quote = parseQuote(record.quote);
+  // A supplied quote that fails parsing keeps the same state as a quote the
+  // tree check could not verify, so the finding stays out of inline comments.
+  const quoteSupplied = typeof record.quote === "string" ? record.quote.trim() !== "" : record.quote != null;
+  const unusableQuote = quoteSupplied && !quote;
+  const replacement = unusableQuote ? undefined : parseReplacement(record.replacement);
   return {
     severity,
     category,
@@ -255,6 +259,7 @@ export function normalizeFinding(raw: unknown): Finding {
     consumerLine: record.consumerLine ? Number(record.consumerLine) || undefined : undefined,
     ...(replacement ? { replacement } : {}),
     ...(quote ? { quote } : {}),
+    ...(unusableQuote ? { quoteCheck: { status: "unchecked" as const } } : {}),
   };
 }
 
