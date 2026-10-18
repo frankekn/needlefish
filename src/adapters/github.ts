@@ -1430,6 +1430,9 @@ function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipRe
 // requires a completed, non-infra Needlefish check run for that exact head:
 // the same terminal state the reconcile job looks for. A marker with no such
 // check (or only an infra-failure check, or a check still in progress) reruns.
+// The newest completed check decides: any newer completed non-verdict check
+// (failed, terminated, superseded, skipped or legacy neutral) is not covered by
+// an older verdict on the same head.
 //
 // Fail-closed on an unreadable check list: an extra review is the safe error,
 // a silently skipped one is not.
@@ -1457,10 +1460,9 @@ function completedCheckVerdict(repo: string, headSha: string): Verdict | null {
 		const conclusion = stringField(run, "conclusion");
 		const title = nestedString(run, "output", "title");
 		if (conclusion === "success" && title === "Needlefish: pass") return "pass";
-		if (conclusion === "neutral" && title.startsWith("Needlefish: needs_human")) return null;
-		if (conclusion !== "failure") continue;
-		if (title.startsWith("Needlefish: needs_human")) return "needs_human";
-		if (title.startsWith("Needlefish: changes_requested")) return "changes_requested";
+		if (conclusion === "failure" && title.startsWith("Needlefish: needs_human")) return "needs_human";
+		if (conclusion === "failure" && title.startsWith("Needlefish: changes_requested")) return "changes_requested";
+		return null;
 	}
 	return null;
 }

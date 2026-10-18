@@ -4298,3 +4298,22 @@ for (const scenario of [
     assert.deepEqual(readPosts(fixture.postLog), []);
   });
 }
+
+for (const [conclusion, title] of [
+  ["failure", "Needlefish: review terminated"],
+  ["failure", "Needlefish: review failed"],
+  ["neutral", "Needlefish: superseded"],
+  ["neutral", "Needlefish: needs_human"],
+] as const) {
+  test(`a newer ${title} check is not covered by an older same-head pass`, async (t) => {
+    const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+    seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+      user: { login: "github-actions[bot]", type: "Bot" } }]);
+    writeFileSync(fixture.checksState, JSON.stringify([
+      { id: 1, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+      { id: 2, status: "completed", conclusion, output: { title } },
+    ]));
+    await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+    assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
+  });
+}
