@@ -2358,3 +2358,61 @@ live canary ran for this implementation.
 
 - gateClass: R, NOT_RUN. Local uncommitted `changedFiles` and `patchStat` now come from native Git forward/reverse `apply --numstat -z` and `apply --stat` over the captured patch. Omitted binary paths and dirty-only gitlinks participate in classification; source object-store and replacement lookups are not needed. Tracked and untracked producers pin `a/` and `b/` prefixes and disable color so user presentation settings cannot alter captured paths or patch payloads.
 - No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.
+
+
+## 2026-10-18 PR #293 partial Class R stopped at an irreversible threshold
+
+Gate class **R**, `NOT_PASS / EARLY_ABORTED_AFTER_PREDECLARED_THRESHOLD_EXCEEDED`.
+The immutable candidate was `4f95b9d76e20440894c294d26cbab40a98afc11e`,
+tree `32fb597540ef478cbe59d613506b3fd8d2381265`. The primary stopped after
+114 of 327 planned slots, after 11 final-invalid outputs exceeded the sealed
+absolute limit `thresholds.maxFinalInvalid = 1`. This is an incomplete primary,
+not a complete 327-slot PASS or FAIL report. Confirmation, resident properties,
+Class D and the live canary were not run. Root revoked prospective model-call
+admission; the original admission receipt is historical, not current authority.
+
+The lane was native Codex CLI 0.163.0 through CLIProxyAPI,
+`gpt-5.6-terra/high`, Node 26.8.2, review concurrency 1 and deep concurrency 3.
+The backend identity remains unknown/private; this is not the native subscription
+lane. The accepted 41-path method digest was
+`40f062f89bfd3b44ffde1958877c2c2f83c6648ef0d43f9dc4a4cc792a3812d3`,
+criteria SHA-256
+`31a757bf9ae52786dbe1b4a71c7bf926cf7f0fd8e94fc0cb8990eff52eff9420`,
+freeze SHA-256
+`b7b3a865005b694df258252e2b0dcb031df75850f73ee1cd410788fed6bf1448`,
+and observer manifest SHA-256
+`8b73c17faa46e63206116345a22600bec540f2c13f68a53b7d56a9a68fb7133e`.
+The original partial report SHA-256 is
+`5cbd7cc3d2406908f213ccdac873e4494ce2f8504b8a1a73bd61e58749fd54f0`.
+These identify the historical artifacts; they do not establish a comparable
+full-contract report or qualify a later source.
+
+All 11 terminal format failures occurred in the critic: ten returned an empty
+`checked` list despite valid candidate coverage, and one used residual key
+`risk` without required `text`. Runtime validation rejected the output after
+three bounded format attempts. The latter review produced no final result,
+so this observation does not establish a critic pruning or recall miss.
+
+There were 289 attempt directories, 287 completed native receipts and two
+incomplete attempts. The original report records 234 calls and zero runner
+retries. Subsequent structural diagnosis reconciled the completed receipts as
+`287 = 234 reported calls + 53 attempts from 11 failed whole reviews`: nine
+small sequences contributed 36, and two large sequences contributed eight and
+nine. The old eval read stats only from successful results, so those failed
+whole-review attempts were absent from its call count. Format re-asks in
+successful reviews were already counted; runner retries are a separate measure.
+The incomplete attempts have no proven terminal outcome; one was active at
+revocation and the other has an unknown interruption cause.
+
+The original ledger audit and report verifier rejected the incomplete,
+unreconciled run. Original reports, audit outputs, raw receipts and sealed
+criteria remain unchanged; these diagnostic counts do not backfill the old
+report. Owned processes were stopped and checked absent. No resume, replacement
+campaign or post-revocation model call was used to rescue the result.
+
+The subsequent local repair supplies a critic-only structured output contract
+and preserves emitted stats on failed reviews. It keeps strict validation,
+candidate containment, system-blocking residual restoration and bounded re-asks.
+It requires a new Class R source/method/criteria seal and admission. Local
+synthetic tests do not demonstrate CLIProxyAPI schema support, model quality,
+formal R/D qualification or live-canary success.
