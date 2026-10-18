@@ -65,7 +65,7 @@ needlefish --repo . --json | jq .verdict
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
 | `unreviewedBinaryFiles` | 選用的 Git binary 路徑清單。內容未經審查，屬於非阻擋診斷。已列為 LFS pointer gap 的路徑不重複列出，fast path 不掃描 LFS pointer。 |
-| `docsOnlyFastPath` | 選用的 pipeline 旗標，表示 docs-only policy 跳過所有模型呼叫。 |
+| `docsOnlyFastPath` | 選用的 pipeline 產生旗標，表示 docs-only 政策跳過了所有模型呼叫。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |
 | `findings[].consumerLine` | 選用的下游受影響行號。 |
@@ -80,15 +80,23 @@ GitHub 模式在診斷輸出後附上最終 `needlefish-outcome {json}`。
 exit 1，跳過仍使用 `needlefish-skip`。
 
 Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
-完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
-舊收據阻止恢復審查。同一 head 跳過時保留原 verdict 的 exit code。
-舊版 neutral `needs_human` check 在該 head 再次觸發時會完整重審。
-升級後請手動重跑仍使用舊 check 的 open PR，既有 check 不會自動更新。
+完成後才寫入；缺少的 check、基礎設施故障、terminated 或 superseded 的
+check 不會讓舊收據阻止恢復審查。same-head 跳過時沿用已完成 verdict 的
+exit status。舊版 neutral `needs_human` check 在同一 head 再次觸發時會
+完整重新審查。升級後請手動重跑帶有舊版 neutral `needs_human` check 的
+開啟中 PR。既有 check 不會自動更新，neutral check 仍可能滿足 branch
+protection。
 
-審查指令只有 `pass` 回傳 exit 0。`changes_requested`、`needs_human`
-與執行失敗都回傳 exit 1，包含 JSON 與快取指令。`needs_human` 表示審查
-未完成或需要人工確認，不表示已證明程式有錯。重試或請維護者檢查未審範圍。
-Docs-only policy skip 會明確顯示未呼叫模型，除非設為 `NEEDLEFISH_NO_FAST_PATH=1`。
+產生 verdict 的審查指令只有 `pass` 會 exit 0；`changes_requested`、
+`needs_human` 與執行失敗都 exit 1，`--json` 輸出也一樣。GitHub 模式下
+closed、stale 與 untrusted-author 跳過會 exit 0，並輸出 `needlefish-skip`。
+審查出錯後的 closed 或 stale 跳過仍會 exit 1；因 SIGINT 或 SIGTERM 終止後的
+跳過則 exit 130 或 143。same-head 跳過沿用已完成 verdict 的 exit status。
+`needs_human` 表示審查未完成或需要
+人工確認，不代表程式有缺陷。請重跑審查，或請 maintainer 檢查未審到的
+範圍。除非以 `NEEDLEFISH_NO_FAST_PATH=1` 關閉 fast path，純文件變更會依
+政策通過，並明確標示「Model review skipped by policy」；這類變更沒有任何
+模型審過。
 
 未追蹤檔案若超過單檔 200 KiB 或合計 1 MiB 上限而未納入，審查會拒絕執行，
 包含 docs-only policy skip。指令回傳 exit 1，不寫入新的審查結果。
@@ -121,6 +129,13 @@ verdict 是確定性推導的——模型文字絕不決定 pass/fail：
 | changes_requested    | COMMENT             | failure   |
 | needs_human          | COMMENT             | failure   |
 | run failed           | （無）                | failure   |
+
+若要擋下未完成的審查，請在 consumer repo 把既有的 `Needlefish` check 設為
+required，不需要 strict flag 或新服務；Needlefish 不會修改 branch
+protection。升級後 `needs_human` 從 `neutral` 改為 `failure`，原本接受它
+的 workflow 現在必須重試或取得人工確認。superseded 與 untrusted-author
+skipped 的 check 維持原本的 neutral。docs-only policy skip 以成功的 `pass`
+check 完成。
 
 所有 verdict review 都是 `COMMENT`，絕不是 approval 或 blocking-review
 event：`GITHUB_TOKEN` bot 無法正式 approve PR，而 sticky 的 blocking

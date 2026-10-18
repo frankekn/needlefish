@@ -151,8 +151,12 @@ full re-review when that head is triggered again. After upgrading, manually
 re-run open PRs with legacy neutral `needs_human` checks. Existing checks are
 not updated automatically, and neutral checks can still satisfy branch protection.
 
-Review commands exit 0 only for `pass`. `changes_requested`, `needs_human`,
-and execution failures exit 1, including `--json` output. `needs_human` means
+Review commands that produce a verdict exit 0 only for `pass`.
+`changes_requested`, `needs_human`, and execution failures exit 1, including
+`--json` output. GitHub-mode closed, stale and untrusted-author skips exit 0
+and print a `needlefish-skip` line. A closed or stale skip after a review error
+exits 1, and one after a SIGINT or SIGTERM termination exits 130 or 143. A
+same-head skip keeps the completed verdict's exit status. `needs_human` means
 review incomplete or human confirmation required. It does not claim a code
 defect. Retry the review or ask a maintainer to check the unreviewed scope.
 Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
@@ -198,8 +202,9 @@ To block incomplete reviews, set the existing `Needlefish` check as required
 in the consumer repository. No strict flag or new service is needed. Needlefish
 does not change branch protection. On upgrade, `needs_human` changes from
 `neutral` to `failure`; workflows that accepted it must now retry or obtain
-human confirmation. Superseded and policy-skipped checks keep their existing
-neutral status.
+human confirmation. Superseded and untrusted-author skipped checks keep their
+existing neutral status. Docs-only policy skips complete as successful `pass`
+checks.
 
 All verdict reviews are `COMMENT`, never approval or blocking-review events:
 the `GITHUB_TOKEN` bot cannot formally approve PRs, and a sticky blocking

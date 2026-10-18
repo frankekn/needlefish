@@ -5472,3 +5472,38 @@ test("measurement preposting state probe failure is not a posting failure", (t) 
   assert.equal(final.measurement.runtime.status, "recorded");
   assert.equal(final.measurement.pipeline.status, "observed");
 });
+
+for (const [conclusion, title] of [
+  ["failure", "Needlefish: review terminated"],
+  ["failure", "Needlefish: review failed"],
+  ["neutral", "Needlefish: superseded"],
+  ["neutral", "Needlefish: needs_human"],
+] as const) {
+  for (const roundBound of [true, false]) test(`a newer ${roundBound ? "bound" : "legacy"} ${title} check is not covered by an older same-head pass`, async (t) => {
+    const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+    seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+      user: { login: "github-actions[bot]", type: "Bot" } }]);
+    const identity = { name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
+      external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run" }) };
+    writeFileSync(fixture.checksState, JSON.stringify([
+      { ...identity, id: 1, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+      { ...identity, id: 2, external_id: roundBound ? identity.external_id : undefined, status: "completed", conclusion, output: { title } },
+    ]));
+    await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+    assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
+  });
+}
+
+test("a newer same-head pass still covers an older terminated check", async (t) => {
+  const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+  seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha, 2),
+    user: { login: "github-actions[bot]", type: "Bot" } }]);
+  const identity = { name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
+    external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId: "fixture-round", runId: "fixture-run" }) };
+  writeFileSync(fixture.checksState, JSON.stringify([
+    { ...identity, id: 1, status: "completed", conclusion: "failure", output: { title: "Needlefish: review terminated" } },
+    { ...identity, id: 2, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+  ]));
+  await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+  assert.equal(runnerInvocationCount(fixture), 0, "a newer pass must still dedupe");
+});

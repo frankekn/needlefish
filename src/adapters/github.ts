@@ -1552,9 +1552,12 @@ function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[],
 function hasNewerRound(state: RoundState, checks: readonly JsonRecord[], prNumber: number): boolean {
 	if (state.v !== 2) return false;
 	const receipt = state.delivery;
-	return checks.some((check) => typeof check.id === "number" && check.id > receipt.checkId &&
-		check.head_sha === state.headSha && isRecord(check.app) && check.app.id === receipt.appId &&
-		check.name === "Needlefish" && parseCheckRound(check.external_id)?.prNumber === prNumber);
+	return checks.some((check) => {
+		if (typeof check.id !== "number" || check.id <= receipt.checkId || check.head_sha !== state.headSha ||
+			!isRecord(check.app) || check.app.id !== receipt.appId || check.name !== "Needlefish") return false;
+		const round = parseCheckRound(check.external_id);
+		return round ? round.prNumber === prNumber : check.status === "completed";
+	});
 }
 
 function reconciledPost(args: readonly string[], input: string, read: () => unknown | null): unknown {
