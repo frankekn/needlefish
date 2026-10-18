@@ -1,3 +1,4 @@
+import { aggregateDefectClassMetrics, aggregateMustFindHitRates } from "./shared/aggregate";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -6,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Finding, Verdict } from "../src/shared/schema";
-import { aggregateDefectClassMetrics, aggregateMustFindHitRates, cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, validateProviderRouteAttestation, writeReport } from "./run";
+import { cheatAlert, compare, fixtureSetHash, loadFixtures, mapLimit, parseArgs, filterByHoldout, hasFailedDeepPass, isOperationalEvalError, resumeSlots, runnerEnvironment, validateProviderRouteAttestation, writeReport } from "./run";
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";

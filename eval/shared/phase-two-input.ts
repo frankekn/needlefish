@@ -1,3 +1,4 @@
+import { aggregate } from "./aggregate";
 import Ajv from "ajv";
 import { isDeepStrictEqual } from "node:util";
 import { matchEvidence } from "./score";
@@ -122,55 +123,12 @@ export function parsePhaseTwoPolicy(input: unknown): PhaseTwoQualificationPolicy
 }
 
 function validateAggregates(report: PhaseTwoReport, specs: readonly FixtureSpec[]): void {
-  const results = report.results;
-  const positiveIds = new Set(specs.filter((spec) => spec.kind === "positive").map((spec) => spec.id));
-  const negativeIds = new Set(specs.filter((spec) => spec.kind === "negative").map((spec) => spec.id));
-  const positives = results.filter((draw) => positiveIds.has(draw.fixtureId));
-  const negatives = results.filter((draw) => negativeIds.has(draw.fixtureId));
-  const ratio = (hits: number, total: number) => total ? hits / total : 0;
-  const check = (key: keyof typeof aggregateFields, expected: number) => {
-    if (report.aggregates[key] !== expected) throw new Error(`Phase 2 aggregate ${key} does not match draws`);
-  };
-  check("recall", ratio(positives.filter((draw) => draw.score.recall).length, positives.length));
-  check("falsePositiveRate", ratio(negatives.filter((draw) => draw.score.falsePositive).length, negatives.length));
-  check("invalidJsonRate", ratio(results.filter((draw) => !draw.score.formatOk).length, results.length));
-  check("verdictMatchRate", ratio(results.filter((draw) => draw.score.verdictMatch).length, results.length));
-  check("lineAnchorValidRate", ratio(results.filter((draw) => draw.score.lineAnchorValid).length, results.length));
-  check("meanDurationMs", ratio(results.reduce((sum, draw) => sum + draw.durationMs, 0), results.length));
-  check("criticPruneErrorRate", ratio(positives.filter((draw) => draw.score.criticPruneError).length, positives.length));
-  check("meanNoisePerPositive", ratio(positives.reduce((sum, draw) => sum + draw.score.noiseFindingCount, 0), positives.length));
-  const recallByFixture = Object.fromEntries(specs.map((spec) => {
-    const draws = results.filter((draw) => draw.fixtureId === spec.id);
-    return [spec.id, ratio(draws.filter((draw) => draw.score.recall).length, draws.length)];
-  }));
-  const recallByTier = Object.fromEntries([1, 2, 3].flatMap((tier) => {
-    const ids = new Set(specs.filter((spec) => spec.kind === "positive" && (spec.tier ?? 2) === tier).map((spec) => spec.id));
-    const draws = results.filter((draw) => ids.has(draw.fixtureId));
-    return draws.length ? [[`t${tier}`, ratio(draws.filter((draw) => draw.score.recall).length, draws.length)]] : [];
-  }));
-  const mustFindHitRateByFixture = Object.fromEntries([...new Set(results.map((draw) => draw.fixtureId))].flatMap((fixtureId) => {
-    const draws = results.filter((draw) => draw.fixtureId === fixtureId && draw.score.mustFindTotal > 0);
-    return draws.length ? [[fixtureId, draws.reduce((sum, draw) => sum + draw.score.mustFindHits / draw.score.mustFindTotal, 0) / draws.length]] : [];
-  }));
-  const mustFindRates = Object.values(mustFindHitRateByFixture);
-  if (report.aggregates.mustFindHitRate !== undefined && report.aggregates.mustFindHitRate !== ratio(mustFindRates.reduce((sum, value) => sum + value, 0), mustFindRates.length)) {
-    throw new Error("Phase 2 aggregate mustFindHitRate does not match draws");
-  }
-  if (report.aggregates.mustFindHitRateByFixture !== undefined && !sameRecord(report.aggregates.mustFindHitRateByFixture, mustFindHitRateByFixture)) {
-    throw new Error("Phase 2 aggregate mustFindHitRateByFixture does not match draws");
-  }
-  for (const [key, flag] of [["recallByDefectClass", "recall"], ["lineAnchorValidRateByDefectClass", "lineAnchorValid"]] as const) {
-    const actual = report.aggregates[key];
-    if (actual === undefined) continue;
-    const expected = Object.fromEntries([...new Set(specs.filter((spec) => spec.kind === "positive").map((spec) => spec.defectClass))].map((family) => {
-      const ids = new Set(specs.filter((spec) => spec.kind === "positive" && spec.defectClass === family).map((spec) => spec.id));
-      const draws = results.filter((draw) => ids.has(draw.fixtureId));
-      return [family, ratio(draws.filter((draw) => draw.score[flag]).length, draws.length)];
-    }));
-    if (!sameRecord(actual, expected)) throw new Error(`Phase 2 aggregate ${key} does not match draws`);
-  }
-  if (!sameRecord(report.aggregates.recallByFixture, recallByFixture) || !sameRecord(report.aggregates.recallByTier, recallByTier)) {
-    throw new Error("Phase 2 aggregate recall records do not match draws");
+  const expected: Readonly<Record<string, unknown>> = { ...aggregate(report.results, specs) };
+  const actual: Readonly<Record<string, unknown>> = { ...report.aggregates };
+  for (const [key, value] of Object.entries(expected)) {
+    if ((Object.hasOwn(aggregateFields, key) || Object.hasOwn(actual, key)) && !isDeepStrictEqual(actual[key], value)) {
+      throw new Error(`Phase 2 aggregate ${key} does not match draws`);
+    }
   }
 }
 

@@ -1,3 +1,4 @@
+import { aggregate } from "../shared/aggregate";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -179,6 +180,27 @@ test("Policy rejects every omitted/mistyped floor and permits null only as expli
   }
 });
 
+test("producer aggregates pass admission and metric drift remains rejected", () => {
+  const input = inputs();
+  const tierOne = specs.filter((spec) => spec.kind === "positive" && spec.tier === 1);
+  const campaign = {
+    broad: { ...input.broad, aggregates: aggregate(input.broad.results, specs) },
+    deep: { ...input.deep, aggregates: aggregate(input.deep.results, tierOne) },
+  };
+  assert.equal(campaign.broad.aggregates.recall, 1);
+  assert.equal(campaign.broad.aggregates.falsePositiveRate, 0);
+  assert.equal(campaign.broad.aggregates.mustFindHitRate, 1);
+  assert.equal(campaign.broad.aggregates.criticPrunedRecallCount, 0);
+  assert.equal(campaign.broad.aggregates.meanDurationMs, 1);
+  assert.doesNotThrow(() => admitPhaseTwoReports(campaign, specs, policy));
+  assert.throws(() => admitPhaseTwoReports({ ...campaign, broad: {
+    ...campaign.broad, aggregates: { ...campaign.broad.aggregates, meanDurationMs: 2 },
+  } }, specs, policy), /aggregate meanDurationMs/);
+  const missing = structuredClone(campaign);
+  Reflect.deleteProperty(missing.broad.aggregates, "recall");
+  assert.throws(() => admitPhaseTwoReports(missing, specs, policy), /aggregate recall/);
+});
+
 test("Admission rejects coverage, source/lane, score, aggregates and provenance drift", () => {
   const original = inputs();
   for (const [path, value, message] of [
@@ -204,7 +226,7 @@ test("Admission rejects coverage, source/lane, score, aggregates and provenance 
     [["broad", "aggregates", "mustFindHitRate"], 0, /aggregate mustFindHitRate/],
     [["broad", "aggregates", "mustFindHitRateByFixture"], {}, /aggregate mustFindHitRateByFixture/],
     [["broad", "aggregates", "recallByDefectClass"], {}, /aggregate recallByDefectClass/],
-    [["broad", "aggregates", "lineAnchorValidRateByDefectClass"], {}, /aggregate lineAnchorValidRateByDefectClass/], [["broad", "aggregates", "recallByTier"], {}, /aggregate recall records/],
+    [["broad", "aggregates", "lineAnchorValidRateByDefectClass"], {}, /aggregate lineAnchorValidRateByDefectClass/], [["broad", "aggregates", "recallByTier"], {}, /aggregate recallByTier/],
     [["broad", "results", 0, "operationalFailure"], "spawn codex EACCES", /operational failures/],
     [["broad", "aggregates", "cheatDetectedCount"], 1, /anti-cheat/],
   ] satisfies readonly [readonly (string | number)[], unknown, RegExp][]) {

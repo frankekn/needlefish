@@ -215,7 +215,9 @@ invalid values, and supplies no defaults. A `null` floor remains unset.
 
 Admission checks exact fixture/draw coverage, holdout inclusion, gate class R,
 current prompt/scorer/anticheat hashes, fixture classifications, stored scores,
-anti-cheat provenance and aggregate consistency. Broad and deep reports use
+anti-cheat provenance and aggregate consistency. Producer and admission share
+`eval/shared/aggregate.ts`; admission recomputes metrics without a separate formula.
+Historical optional aggregate fields remain optional. Broad and deep reports use
 their own subset fixture hashes; those hashes need not match each other. Their
 source SHA and lane identities must match. Private, unresolved or unguarded
 runner attestations reject the input. A docs-only zero-call exemption applies
