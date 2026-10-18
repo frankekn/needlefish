@@ -166,6 +166,63 @@ originalWrite(${JSON.stringify(receipt)}, JSON.stringify({ failure: ${JSON.strin
   });
 }
 
+test("termination during owner acquisition removes unregistered staging before exit", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const acquiring = path.join(root, "acquiring");
+  const release = path.join(root, "release");
+  const receipt = path.join(root, "termination.json");
+  const fakebin = path.join(root, "fakebin");
+  mkdirSync(fakebin);
+  const flock = path.join(fakebin, "flock");
+  writeFileSync(flock, `#!/bin/sh
+case "$*" in
+  *needlefish-owner-lock-*)
+    : > '${acquiring}'
+    while [ ! -f '${release}' ]; do sleep 0.01; done
+    ;;
+esac
+exec /usr/bin/flock "$@"
+`, { mode: 0o755 });
+  const owner = spawnModule(`
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+const { createManagedTempDirectory, registerTerminationFinalizer, RunnerTerminatingError } = await import(${JSON.stringify(lifecycleUrl)});
+registerTerminationFinalizer(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+process.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(release)}, ""));
+const originalRm = fsp.rm;
+fsp.rm = async (target, options) => {
+  if (String(target).includes(".needlefish-staging-")) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return await originalRm(target, options);
+};
+syncBuiltinESMExports();
+await assert.rejects(createManagedTempDirectory(), (error) => {
+  assert.ok(error instanceof RunnerTerminatingError);
+  assert.equal(error.name, "RunnerTerminatingError");
+  assert.equal(error.message, "cannot schedule runner work while terminating from SIGTERM");
+  fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ name: error.name, message: error.message }));
+  return true;
+});
+`, root, { PATH: `${fakebin}:${process.env.PATH ?? ""}`, NEEDLEFISH_TERMINATION_GRACE_MS: "2000" });
+  let stderr = "";
+  owner.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+  await waitForFile(acquiring);
+  assert.equal(owner.kill("SIGTERM"), true);
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 143, stderr);
+  assert.deepEqual(readdirSync(root).filter((name) => /^(needlefish-managed-|\.needlefish-staging-)/.test(name)), [], "termination must not interrupt failed allocation cleanup");
+  assert.equal(existsSync(receipt), true, "the original termination error must reach the caller before exit");
+  t.diagnostic(readFileSync(receipt, "utf8"));
+});
+
 test("startup reaper preserves a locked live directory and removes it after owner death", { skip: process.platform !== "linux" }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const owner = spawnModule(`
