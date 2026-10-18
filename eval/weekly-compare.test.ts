@@ -9,8 +9,9 @@ import { compareWeekly } from "./weekly-compare";
 import { scorerHash } from "./shared/scorer-hash";
 import { hasResolvedModelIdentity, type ReportAttestation } from "./shared/report-integrity";
 import type { Aggregates, DrawResult, FixtureScore, Report } from "./shared/types";
+import type { CallAccountingMetadata } from "./shared/call-accounting";
 
-type WeeklyReport = Report & ReportAttestation;
+type WeeklyReport = Report & ReportAttestation & CallAccountingMetadata;
 
 function scoreOf(partial: Partial<FixtureScore> & Pick<FixtureScore, "fixtureId">): FixtureScore {
   return {
@@ -61,6 +62,7 @@ function report(
 ): WeeklyReport {
   return {
     promptHash: "abc",
+    callAccountingVersion: 2,
     runner: "codex",
     model: "gpt-5.6-terra",
     effort: "high",
@@ -94,6 +96,42 @@ test("compareWeekly: no alert when everything stable", () => {
   const latest = report([...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true])]);
   const v = compareWeekly(prev, latest);
   assert.equal(v.alert, false);
+});
+
+test("compareWeekly: different call accounting versions withhold cross-report metrics", () => {
+  const previous = Object.assign(report([
+    ...drawsFor("a", [true, true, true]), ...drawsFor("b", [true, true, true]),
+  ]), { callAccountingVersion: 1 } satisfies CallAccountingMetadata);
+  const latest = Object.assign(report([
+    ...drawsFor("a", [false, false, false]), ...drawsFor("b", [false, false, false]),
+  ]), { callAccountingVersion: 2 } satisfies CallAccountingMetadata);
+  const verdict = compareWeekly(previous, latest);
+  assert.equal(verdict.alert, false);
+  assert.match(verdict.reasons.join("\n"), /call accounting version mismatch/);
+  Reflect.set(latest, "fixtureTiers", { a: 1 });
+  const tierOne = compareWeekly(previous, latest);
+  assert.equal(tierOne.alert, true);
+  assert.match(tierOne.reasons.join("\n"), /tier-1 fixtures stably missed/);
+});
+
+test("compareWeekly: unsupported call accounting metadata withholds latest metrics", () => {
+  for (const value of [null, 0, 3, "2"]) {
+    const latest = report(drawsFor("a", [true, true, true]));
+    Reflect.set(latest, "callAccountingVersion", value);
+    const verdict = compareWeekly(null, latest);
+    assert.equal(verdict.unguarded, true);
+    assert.match(verdict.reasons.join("\n"), /call accounting version mismatch/);
+  }
+});
+
+test("compareWeekly: unrecorded accounting cannot be assumed to be the same legacy method", () => {
+  const previous = report(drawsFor("a", [true, true, true]));
+  const latest = report(drawsFor("a", [true, true, true]));
+  Reflect.deleteProperty(previous, "callAccountingVersion");
+  Reflect.deleteProperty(latest, "callAccountingVersion");
+  const verdict = compareWeekly(previous, latest);
+  assert.equal(verdict.unguarded, true);
+  assert.match(verdict.reasons.join("\n"), /call accounting version mismatch/);
 });
 
 test("compareWeekly: missing operator identity withholds metrics", () => {

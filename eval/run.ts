@@ -1,4 +1,5 @@
 import { codexPublicEnvironment } from "../src/shared/codex-public-environment.js";
+import { CALL_ACCOUNTING_VERSION, callAccountingError, type CallAccountingMetadata } from "./shared/call-accounting";
 import { codexAuthRoot, codexInvocationEnvironment, publicNativeCodexDigest } from "../src/shared/codex-invocation.js";
 import {
 	existsSync,
@@ -471,6 +472,11 @@ export function resumeSlots(
 			process.stderr.write(
 				`resume: report is compromised or unverifiable (cheatDetectedCount=${existing.aggregates.cheatDetectedCount ?? "missing"}), ignoring resume file\n`,
 			);
+			return { slots, skipped };
+		}
+		const accountingError = callAccountingError(existing, { callAccountingVersion: CALL_ACCOUNTING_VERSION });
+		if (accountingError) {
+			process.stderr.write(`resume: ${accountingError}, ignoring resume file\n`);
 			return { slots, skipped };
 		}
 		const byFixture = new Map<string, DrawResult[]>();
@@ -1206,7 +1212,7 @@ export function writeReport(
 	args: RunArgs,
 	results: readonly (DrawResult & CriticDrawFields)[],
 	specs: readonly FixtureSpec[],
-): Report & {
+): Report & CallAccountingMetadata & {
 	readonly aggregates: Aggregates & CriticValueAggregates;
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
@@ -1229,6 +1235,7 @@ export function writeReport(
 		fixtureDefectClasses[s.id] = s.defectClass;
 	}
 	const report = {
+		callAccountingVersion: CALL_ACCOUNTING_VERSION,
 		promptHash: promptHash(),
 		runner: args.runner,
 		model: args.model,
@@ -1280,7 +1287,7 @@ export function writeReport(
 		fixtures: specs.map((spec) => spec.id),
 		fixtureKinds,
 		fixtureDefectClasses,
-	} satisfies Report & {
+	} satisfies Report & CallAccountingMetadata & {
 		readonly aggregates: Aggregates & CriticValueAggregates;
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
@@ -1337,7 +1344,7 @@ export function writeReport(
 	return report;
 }
 
-export function compare(baselinePath: string, candidate: Report & ReportAttestation): void {
+export function compare(baselinePath: string, candidate: Report & ReportAttestation & CallAccountingMetadata): void {
 	let baseline: Report & ReportAttestation;
 	try {
 		baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
@@ -1419,6 +1426,8 @@ export function compare(baselinePath: string, candidate: Report & ReportAttestat
 			);
 		}
 	}
+	const accountingError = callAccountingError(baseline, candidate);
+	if (accountingError) throw new Error(accountingError);
 	const b = baseline.aggregates;
 	const c = candidate.aggregates;
 	const delta = (x: number, y: number) => y - x;

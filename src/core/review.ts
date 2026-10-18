@@ -1112,6 +1112,7 @@ async function reviewRoutes(
 		? [selections.length > 1 && config.connectionAuth instanceof AcpEnvironmentAuth ? config.connectionAuth.orderedOutputGuard() : config.connectionAuth] : []);
 	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (outputGuards.length > 0 && evalTraceOn())
 		? { failed: onTrace === undefined, pending: new Set() } : undefined;
+	// Keep failed-route logical calls; runner attempts are not native completions.
 	const stats: RunStat[] = [];
 	const failedRawOutputs: string[] = [];
 	const rawOutputs: string[] = [];

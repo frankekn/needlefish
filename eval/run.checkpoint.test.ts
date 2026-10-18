@@ -105,6 +105,7 @@ test("writeReport: a fresh run without --resume still writes a structurally vali
 	writeReport(args, [makeDraw(specA, 0)], [specA, specB]);
 
 	const onDisk = readReport(reportPath);
+	assert.equal(Reflect.get(onDisk, "callAccountingVersion"), 2);
 	assert.equal(onDisk.results.length, 1);
 	assert.equal(onDisk.results[0]?.fixtureId, specA.id);
 	assert.deepEqual(onDisk.fixtures, [specA.id, specB.id]);
@@ -488,6 +489,14 @@ test("resumeSlots: reuses already-checkpointed draws from a partially-completed 
 		null,
 		"draw 1 was never completed and must still be scheduled",
 	);
+	const current = readReport(reportPath);
+	for (const version of [undefined, 1, 3]) {
+		const incompatible = structuredClone(current);
+		if (version === undefined) Reflect.deleteProperty(incompatible, "callAccountingVersion");
+		else Reflect.set(incompatible, "callAccountingVersion", version);
+		writeFileSync(reportPath, JSON.stringify(incompatible));
+		assert.deepEqual(resumeSlots(resumeArgs, specs, work).slots, [null, null]);
+	}
 });
 
 // A positional `good[draw]` lookup relabels results: if draw 0 failed
