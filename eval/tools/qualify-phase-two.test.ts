@@ -231,6 +231,54 @@ test("Docs provenance exemption is limited to canonical docs fast-path zero-call
   assert.throws(() => admitPhaseTwoReports(nonzero, specs, policy), /invalid docs fast path/);
 });
 
+test("Admission resolves model and effort before rejecting unknown environment identities", () => {
+  for (const entries of [
+    [],
+    ...["unknown", "private", "unspecified", "unresolved"].flatMap((sentinel) => [
+      [["NEEDLEFISH_MODEL", ` ${sentinel.toUpperCase()} `], ["CODEX_REASONING_EFFORT", "high"]],
+      [["CODEX_MODEL", sentinel], ["CODEX_REASONING_EFFORT", "high"]],
+      [["CODEX_MODEL", "synthetic"], ["CODEX_REASONING_EFFORT", ` ${sentinel.toUpperCase()} `]],
+    ]),
+  ]) {
+    const data = inputs();
+    for (const report of [data.broad, data.deep]) {
+      Reflect.set(report, "model", null); Reflect.set(report, "effort", null);
+      Reflect.set(report, "runnerEnvironment", JSON.stringify([
+        ["NEEDLEFISH_EPHEMERAL_HOME", "1"], ["NEEDLEFISH_EVAL_TRACE", "1"], ...entries,
+      ]));
+    }
+    Reflect.set(data.oracle, "identity", phaseTwoOracleIdentity(data, specs));
+    assert.equal(evaluatePhaseTwoQualification(data, specs, policy, data.oracle).eligible, true);
+    assert.throws(() => admitPhaseTwoReports(data, specs, policy), /resolved model and effort/);
+  }
+});
+
+test("offline CLI admits valid implicit identities and rejects effective unknown identities", () => {
+  for (const model of ["synthetic", "unknown"]) {
+    const data = stored();
+    try {
+      for (const report of [data.input.broad, data.input.deep]) {
+        Reflect.set(report, "model", null); Reflect.set(report, "effort", null);
+        Reflect.set(report, "runnerEnvironment", JSON.stringify([
+          ["NEEDLEFISH_EPHEMERAL_HOME", "1"], ["NEEDLEFISH_EVAL_TRACE", "1"],
+          ["NEEDLEFISH_MODEL", model], ["CODEX_REASONING_EFFORT", "high"],
+        ]));
+      }
+      Reflect.set(data.input.oracle, "identity", phaseTwoOracleIdentity(data.input, specs));
+      [data.input.broad, data.input.deep, data.input.oracle].forEach((value, index) => writeFileSync(data.paths[index], JSON.stringify(value)));
+      const child = cli(data.directory, [...data.paths, data.output], true);
+      assert.equal(child.status, model === "synthetic" ? 0 : 1, child.stderr);
+      if (model === "unknown") assert.match(child.stderr, /resolved model and effort/);
+      assert.equal(existsSync(data.output), model === "synthetic");
+      if (model === "synthetic") {
+        const measurement = JSON.parse(readFileSync(data.output, "utf8"));
+        assert.equal(measurement.result.eligible, true);
+        assert.deepEqual(measurement.result.reasons, []);
+      }
+    } finally { rmSync(data.directory, { recursive: true, force: true }); }
+  }
+});
+
 test("Admission rejects successful zero-call draws without a canonical docs fast path", () => {
   for (const [lane, fixtureId] of [
     ["broad", "positive-0"], ["deep", "positive-0"], ["broad", "negative"],

@@ -69,8 +69,10 @@ export function hasResolvedModelIdentity(
   return (
     typeof model === "string" &&
     model.trim().length > 0 &&
+    !/^(unknown|private|unspecified|unresolved)$/i.test(model.trim()) &&
     typeof effort === "string" &&
-    effort.trim().length > 0
+    effort.trim().length > 0 &&
+    !/^(unknown|private|unspecified|unresolved)$/i.test(effort.trim())
   );
 }
 
