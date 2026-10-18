@@ -1016,56 +1016,58 @@ async function runCodexOnce(
 type CodexEvent =
 	| { readonly kind: "failure"; readonly message: string }
 	| { readonly kind: "message"; readonly text: string }
-	| { readonly kind: "metadata" };
+	| { readonly kind: "metadata" }
+	| { readonly kind: "completed" };
 
-function* codexEvents(stdout: string): Generator<CodexEvent | null> {
+function* codexEnvelopes(stdout: string): Generator<Record<string, unknown> | null> {
+	let terminal = false;
 	for (const line of stdout.split(/\r?\n/)) {
 		if (!line.trim()) continue;
+		if (terminal) { yield null; continue; }
 		let event: unknown;
-		try {
-			event = JSON.parse(line);
-		} catch {
-			yield null;
-			continue;
-		}
+		try { event = JSON.parse(line); } catch { yield null; continue; }
 		if (!isRecord(event)) { yield null; continue; }
-		switch (event.type) {
-			case "error":
-			case "turn.failed": {
-				const message = event.type === "error" ? event.message : isRecord(event.error) ? event.error.message : undefined;
-				yield typeof message === "string" ? { kind: "failure", message } : null;
-				break;
-			}
-			case "thread.started":
-				yield typeof event.thread_id === "string" ? { kind: "metadata" } : null;
-				break;
-			case "turn.started":
-				yield { kind: "metadata" };
-				break;
-			case "turn.completed": {
-				const usage = event.usage;
-				yield isRecord(usage) && ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
-					.every((field) => Number.isInteger(usage[field])) ? { kind: "metadata" } : null;
-				break;
-			}
-			case "item.started":
-			case "item.updated":
-			case "item.completed": {
-				const item = event.item;
-				if (!isRecord(item) || typeof item.id !== "string" || typeof item.type !== "string") { yield null; break; }
-				if (item.type === "agent_message") {
-					yield typeof item.text !== "string" ? null : event.type === "item.completed"
-						? { kind: "message", text: item.text } : { kind: "metadata" };
-				} else {
-					yield ["reasoning", "command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "todo_list", "error"]
-						.includes(item.type) ? { kind: "metadata" } : null;
-				}
-				break;
-			}
-			default:
-				yield null;
-		}
+		terminal = event.type === "turn.failed" || event.type === "turn.completed";
+		yield event;
 	}
+}
+
+function codexEvent(event: Record<string, unknown>): CodexEvent | null {
+	switch (event.type) {
+		case "error":
+		case "turn.failed": {
+			const message = event.type === "error" ? event.message : isRecord(event.error) ? event.error.message : undefined;
+			return typeof message === "string" ? { kind: "failure", message } : null;
+		}
+		case "thread.started":
+			return typeof event.thread_id === "string" ? { kind: "metadata" } : null;
+		case "turn.started":
+			return { kind: "metadata" };
+		case "turn.completed": {
+			const usage = event.usage;
+			return isRecord(usage) && ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
+				.every((field) => Number.isInteger(usage[field])) ? { kind: "completed" } : null;
+		}
+		case "item.started":
+		case "item.updated":
+		case "item.completed": {
+			const item = event.item;
+			if (!isRecord(item) || typeof item.id !== "string" || typeof item.type !== "string") { return null; }
+			if (item.type === "agent_message") {
+				return typeof item.text !== "string" ? null : event.type === "item.completed"
+					? { kind: "message", text: item.text } : { kind: "metadata" };
+			} else {
+				return ["reasoning", "command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "todo_list", "error"]
+					.includes(item.type) ? { kind: "metadata" } : null;
+			}
+		}
+		default:
+			return null;
+	}
+}
+
+function* codexEvents(stdout: string): Generator<CodexEvent | null> {
+	for (const envelope of codexEnvelopes(stdout)) yield envelope === null ? null : codexEvent(envelope);
 }
 
 function exhaustedCodexMessage(message: string): boolean {
@@ -1100,10 +1102,9 @@ function exhaustedCodexMessage(message: string): boolean {
 
 export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
 	if (status === null || !Number.isInteger(status) || status <= 0) return false;
-	for (const line of stdout.split(/\r?\n/).filter((line) => line.trim())) {
-		let envelope: unknown;
-		try { envelope = JSON.parse(line); } catch { return false; }
-		if (!isRecord(envelope)) return false;
+	let terminal = false;
+	for (const envelope of codexEnvelopes(stdout)) {
+		if (envelope === null) return false;
 		const fields = envelope.type === "error" ? ["type", "message"] : envelope.type === "turn.failed" ? ["type", "error"]
 			: envelope.type === "thread.started" ? ["type", "thread_id"] : envelope.type === "turn.started" ? ["type"]
 			: envelope.type === "turn.completed" ? ["type", "usage"] : ["type", "item"];
@@ -1111,10 +1112,8 @@ export function nativeCodexQuotaExhausted(stdout: string, status: number | null)
 		if (isRecord(envelope.item) && envelope.item.type === "error" &&
 			(typeof envelope.item.message !== "string" || !/^Model metadata for `[^`\r\n]+` not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(envelope.item.message))) return false;
 		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
-	}
-	let terminal = false;
-	for (const event of codexEvents(stdout)) {
-		if (event === null) return false;
+		const event = codexEvent(envelope);
+		if (event === null || event.kind === "completed") return false;
 		if (event.kind === "failure") {
 			if (!exhaustedCodexMessage(event.message)) return false;
 			terminal = !/^Reconnecting\.\.\. /.test(event.message);
@@ -1129,7 +1128,7 @@ function safeCodexCause(stdout: string, stderr: string, prompt: string): string 
 		if (event === null) return undefined;
 		if (event.kind === "failure") {
 			failure = { kind: "seen", message: event.message };
-		} else if (failure.kind === "seen") {
+		} else if (event.kind === "completed" || failure.kind === "seen") {
 			failure = { kind: "seen", message: undefined };
 		}
 	}
