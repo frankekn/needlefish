@@ -84,9 +84,10 @@ export function dispatch(route: string, req: Request): Response {
             id: "role_guard_missing",
             meaning: "The admin role check was removed from the route, or nothing (including the dispatcher) checks the role.",
             alternatives: [
-              { allOf: ["\\b(?:remov|dropp|strip|lost|missing|no longer|without|lacks?|absent|skip)\\w*.{0,40}(?:admin|role|requireRole|authoriz|permission|guard)"] },
-              { allOf: ["(?:admin|role|requireRole|authoriz|permission|guard)\\w*.{0,40}(?:remov|dropp|strip|missing|absent|gone)"] },
-              { allOf: ["dispatch", "(?:\\bno|\\bnot|\\bnever|n't|\\bwithout)\\b.{0,40}(?:role|admin|authoriz|permission)"] },
+              { allOf: ["\\b(?:remov|deleted\\b|deletes\\b|dropp|strip|lost|missing|no longer|without|lacks?|absent|skip)\\w*.{0,40}(?:admin|role|requireRole|authoriz|permission|guard)"] },
+              { allOf: ["(?:admin|role|requireRole|authoriz|permission|guard)\\w*.{0,40}(?:remov|deleted\\b|dropp|strip|missing|absent|gone)"] },
+              { allOf: ["\\b(?:no|without)\\s+(?:\\w+\\s+)?(?:role|admin|authoriz\\w*|permission)\\s+(?:check|guard)|\\bun(?:guarded|protected)\\b"] },
+              { allOf: ["dispatch", "(?:\\bno|\\bnot|\\bnever|n't|\\bwithout)\\b\\s+(?:\\w+\\s+){0,2}(?:check|enforc|verif)\\w*\\s+(?:\\w+\\s+){0,2}(?:roles?|admin|authoriz\\w*|permissions?)\\b"] },
             ],
           },
           {
