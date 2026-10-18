@@ -101,7 +101,7 @@ test("doctor passes with a logged-in runner on PATH and a detectable base", asyn
   assert.equal(report.needlefish, "0.0.0-test");
   assert.deepEqual(
     report.checks.map((entry) => [entry.name, entry.status]),
-    [["node", "ok"], ["runner", "ok"], ["auth", "ok"], ["git", "ok"], ["base", "ok"]],
+    [["node", "ok"], ["runner", "ok"], ["capability", "ok"], ["auth", "ok"], ["git", "ok"], ["base", "ok"]],
   );
   assert.equal(check(report, "runner").detail, `codex (auto-detected; ${codex}, codex-cli 9.9.9-stub)`);
   assert.equal(check(report, "auth").detail, "codex: Logged in using ChatGPT");
@@ -124,7 +124,7 @@ test("doctor fails the auth check with the runner's login command when its statu
     fix: "Run `codex login`.",
   });
   assert.match(renderDoctorReport(report), /^fail {4}auth {4}codex: Not logged in\n {16}fix: Run `codex login`\.\n/m);
-  assert.match(renderDoctorReport(report), /\n4 passed, 0 unknown, 1 failed\n$/);
+  assert.match(renderDoctorReport(report), /\n5 passed, 0 unknown, 1 failed\n$/);
 });
 
 test("doctor mirrors the review's mode choice: a dirty worktree needs no base ref", async (t) => {
@@ -213,7 +213,7 @@ test("doctor reports unknown, not a guess, when a runner has no status command o
     detail: "grok: no login status command known; `grok login` signs in",
   });
   assert.equal(grok.ok, true, "unknown must not fail the report");
-  assert.match(renderDoctorReport(grok), /\n4 passed, 1 unknown, 0 failed\n$/);
+  assert.match(renderDoctorReport(grok), /\n5 passed, 1 unknown, 0 failed\n$/);
   assert.doesNotMatch(renderDoctorReport(grok), /all checks passed/);
 
   stub(f.bin, "opencode", 'echo "not json"; exit 0');
@@ -526,6 +526,30 @@ test("doctor runs every runner probe in an empty temp dir, not the repository", 
     assert.equal(existsSync(cwd), false, "probe dir is removed after the report");
   }
   assert.equal(cwds[0], cwds[1]);
+});
+
+test("doctor reports HTTP review capability as unsupported even with a configured credential", async (t) => {
+  const f = setup(t);
+  process.env.OPENAI_API_KEY = "local-test-placeholder";
+  const report = await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "openai" });
+  assert.equal(report.ok, false);
+  const capability = report.checks.find((entry) => entry.name === "capability");
+  assert.equal(capability?.status, "fail");
+  assert.match(capability?.detail ?? "", /unsupported-capability.*repositoryRead/);
+  assert.equal(capability?.fix, "Use a recommended CLI runner: codex, claude, or opencode.");
+  assert.match(
+    renderDoctorReport(report),
+    /^fail {4}capability unsupported-capability: [^\n]+\n {19}fix: Use a recommended CLI runner: codex, claude, or opencode\.\n/m,
+  );
+});
+
+test("doctor marks an arbitrary ACP launcher repository capability unknown", async (t) => {
+  const f = setup(t);
+  process.env.NEEDLEFISH_ACP_BIN = stub(f.bin, "acp-agent", "exit 0");
+  const report = await runDoctor({ repo: f.repo, version: "0.0.0-test", runner: "acp" });
+  const capability = report.checks.find((entry) => entry.name === "capability");
+  assert.equal(capability?.status, "unknown");
+  assert.match(capability?.detail ?? "", /unknown.*initialize.*repositoryRead/);
 });
 
 for (const stalledCommand of ["--version", "login"]) {

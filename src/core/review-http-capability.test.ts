@@ -11,7 +11,7 @@ const bundle: Bundle = {
   agentsMd: "(none)", prMeta: null, deep: false, focus: null,
 };
 
-test("tool-less HTTP runner rejects deep and automatically large reviews before sending requests", async (t) => {
+test("tool-less HTTP runner rejects small critic, deep and automatically large reviews before sending requests", async (t) => {
   let requests = 0;
   const server = createServer((req, res) => {
     requests++;
@@ -46,7 +46,6 @@ test("tool-less HTTP runner rejects deep and automatically large reviews before 
   assert.equal(requests, 0);
   assert.equal((await review({ ...bundle, deep: true, changedFiles: [{ path: "README.md", surface: "docs" }] }, { runner: "openai" })).verdict, "pass");
   assert.equal(requests, 0);
-  const small = await review(bundle, { runner: "openai", model: "probe" });
-  assert.equal(small.verdict, "pass");
-  assert.equal(requests, 2);
+  await assert.rejects(review(bundle, { runner: "openai", model: "probe" }), unsupported);
+  assert.equal(requests, 0);
 });

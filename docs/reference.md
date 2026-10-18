@@ -354,11 +354,17 @@ When neither `--runner` nor `NEEDLEFISH_RUNNER` is set and none of `codex`,
 for those three CLIs instead of a stack trace. Auto-detect does not look for
 `grok`, `pi`, `openai`, or `acp`.
 
-The `openai` HTTP runner has no repository-reading tools. Use a tool-capable
-CLI runner for large or deep reviews. The unreleased source rejects `--deep`
-and automatically large HTTP reviews before any request. Published v0.4.10
-does not guarantee that refusal. Small full-diff reviews and docs-only skips
-remain supported.
+The `openai` HTTP runner has no repository-reading tools. All model review
+paths, including the small-diff critic, require those tools. The unreleased
+source rejects every HTTP model review before any request. Published v0.4.10
+does not guarantee that refusal. Use a recommended CLI runner, such as
+`codex`, `claude`, or `opencode`. Docs-only skips remain supported.
+`--dry-run` applies the same capability check, and `doctor` reports the same
+restriction.
+
+ACP launcher repository capability is `unknown`. A successful protocol
+initialize does not prove tool access. ACP execution remains experimental;
+`doctor` and `--dry-run` report that limitation without certifying the launcher.
 
 Per-runner env vars. For CLI runners, binary / model / listed auth vars are
 in that runner's subprocess allowlist. The `openai` runner is HTTP and reads

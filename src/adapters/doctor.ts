@@ -9,6 +9,7 @@ import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definitio
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
   resolveRunnerBinary,
+  runnerReviewCapability,
   type ResolvedRunnerBinary,
 } from "../shared/runner-detection.js";
 import { RUNNER_DEFINITIONS, RUNNERS, isRunnerName, type RunnerName } from "../shared/runner.js";
@@ -24,7 +25,7 @@ import {
 export type DoctorStatus = "ok" | "fail" | "unknown";
 
 export interface DoctorCheck {
-  readonly name: "node" | "runner" | "auth" | "git" | "base";
+  readonly name: "node" | "runner" | "capability" | "auth" | "git" | "base";
   readonly status: DoctorStatus;
   readonly detail: string;
   readonly fix?: string;
@@ -189,6 +190,17 @@ async function cliRunnerCheck(
   };
 }
 
+function capabilityCheck(selection: RunnerSelection): DoctorCheck {
+  if (selection.kind === "unavailable") {
+    return { name: "capability", status: "unknown", detail: "skipped: no runner available" };
+  }
+  const { capability, detail } = runnerReviewCapability(selection.runner);
+  if (capability === "promptOnly") {
+    return { name: "capability", status: "fail", detail, fix: "Use a recommended CLI runner: codex, claude, or opencode." };
+  }
+  return { name: "capability", status: capability === "unknown" ? "unknown" : "ok", detail };
+}
+
 async function authCheck(selection: RunnerSelection, probeCwd: string): Promise<DoctorCheck> {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
@@ -336,6 +348,7 @@ export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
     checks = [
       nodeCheck(),
       runner.check,
+      capabilityCheck(runner.selection),
       await authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
@@ -360,11 +373,12 @@ export function serializeDoctorReport(report: DoctorReport): string {
 export function renderDoctorReport(report: DoctorReport): string {
   const lines = [`needlefish ${report.needlefish}`];
   for (const check of report.checks) {
-    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(8)}${check.detail}`);
+    const detailColumn = 8 + Math.max(8, check.name.length + 1);
+    lines.push(`${check.status.padEnd(8)}${check.name.padEnd(detailColumn - 8)}${check.detail}`);
     if (check.fix !== undefined) {
       const [first, ...rest] = check.fix.split("\n");
-      lines.push(`${"".padEnd(16)}fix: ${first}`);
-      for (const line of rest) lines.push(`${"".padEnd(21)}${line.trim()}`);
+      lines.push(`${"".padEnd(detailColumn)}fix: ${first}`);
+      for (const line of rest) lines.push(`${"".padEnd(detailColumn + 5)}${line.trim()}`);
     }
   }
   const count = (status: DoctorStatus): number => report.checks.filter((check) => check.status === status).length;

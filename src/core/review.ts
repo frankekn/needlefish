@@ -13,7 +13,7 @@ import {
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
-import { resolveRunner } from "../shared/runner-detection.js";
+import { resolveRunner, runnerReviewCapability, RunnerSelectionError } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -1050,7 +1050,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 // Markdown). classify.ts rule order already routes workflow yml to
 // "workflow", so CI files can never ride this path. Executable files under
 // a docs/ directory are not classified "docs" (Markdown extension required).
-function isDocsOnlyFastPath(bundle: Bundle): boolean {
+export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
@@ -1063,12 +1063,27 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // The two dispatch questions review() asks of a bundle, answered in one place
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
-// only threshold owners.
-export function reviewPlan(bundle: Bundle): {
+// only threshold owners. runnerOptions defaults to {} only so the hash-pinned
+// study generator eval/tools/deep-concurrency.ts keeps type-checking unchanged.
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
+	readonly capability: ReturnType<typeof runnerReviewCapability> | {
+		readonly runner: null;
+		readonly capability: "unresolved";
+		readonly detail: string;
+	} | null;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	let capability: ReturnType<typeof reviewPlan>["capability"] = null;
+	if (!docsOnlyFastPath) {
+		try {
+			capability = runnerReviewCapability(resolveRunner(runnerOptions));
+		} catch (error) {
+			if (!(error instanceof RunnerSelectionError)) throw error;
+			capability = { runner: null, capability: "unresolved", detail: error.message };
+		}
+	}
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1077,6 +1092,7 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
+		capability,
 		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
@@ -1088,7 +1104,7 @@ export async function review(
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
-	const plan = reviewPlan(bundle);
+	const plan = reviewPlan(bundle, runnerOptions);
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
@@ -1109,10 +1125,8 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
-		throw new Error(
-			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
-		);
+	if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") {
+		throw new Error(plan.capability.detail);
 	}
 
 	// Read only past the docs-only short-circuit, for the same reason

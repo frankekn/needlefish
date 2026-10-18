@@ -255,10 +255,15 @@ runner retry，而不是苦等被拉長的 per-call timeout。整個 per-attempt
 束，而不是丟出 stack trace。自動偵測不會尋找 `grok`、`pi`、`openai` 或
 `acp`。
 
-`openai` HTTP runner 沒有讀取 repo 的工具。大型或 deep 審查請改用具工具
-能力的 CLI runner。尚未發布的原始碼會在 HTTP request 前拒絕 `--deep`
-與自動判定的大型 HTTP 審查。已發布的 v0.4.10 不保證事前拒絕。
-小型完整 diff 審查與純文件 fast path 仍可使用。
+`openai` HTTP runner 沒有讀取 repo 的工具。所有模型審查路徑，包括小型 diff
+的 critic，都需要這些工具。尚未發布的原始碼會在 HTTP request 前拒絕所有
+HTTP 模型審查。已發布的 v0.4.10 不保證事前拒絕。請改用建議的 CLI runner，
+例如 `codex`、`claude` 或 `opencode`。純文件 fast path 仍可使用。
+`--dry-run` 套用同一個能力檢查，`doctor` 也回報同樣的限制。
+
+ACP launcher 的 repo 能力是 `unknown`。protocol initialize 成功不代表有
+工具存取。ACP 執行仍屬實驗性質；`doctor` 與 `--dry-run` 會回報這個限制，
+但不替 launcher 背書。
 
 各 runner 的環境變數。CLI runner 的 binary／model／所列認證變數都在該
 runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
