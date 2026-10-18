@@ -155,7 +155,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 500,
-          "pattern": "^[^\\r\\n]*$"
+          "pattern": "^[^\\s\\u0000](?:[^\\r\\n\\u0000]*[^\\s\\u0000])?$"
         },
         "quoteCheck": {
           "description": "Needlefish's check of quote against the reviewed tree. Never affects the verdict.",

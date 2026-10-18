@@ -238,6 +238,12 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["empty consumerFile", false, (_r, f) => { f.consumerFile = ""; }],
 		["empty replacement", false, (_r, f) => { f.replacement = { lines: [] }; }],
 		["multi-line replacement entry", false, (_r, f) => { f.replacement = { lines: ["a\nb"] }; }],
+		["quote", true, (_r, f) => { f.quote = "source"; }],
+		["quote with inner spaces", true, (_r, f) => { f.quote = "const a = b;"; }],
+		["leading-space quote", false, (_r, f) => { f.quote = " source"; }],
+		["trailing-space quote", false, (_r, f) => { f.quote = "source "; }],
+		["NUL quote", false, (_r, f) => { f.quote = "source\u0000"; }],
+		["multi-line quote", false, (_r, f) => { f.quote = "a\nb"; }],
 		["unknown runner", false, (_r, _f, s) => { s.runner = "gpt"; }],
 		["zero attempts", false, (_r, _f, s) => { s.attempts = 0; }],
 		["negative token usage", false, (_r, _f, s) => {
