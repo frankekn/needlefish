@@ -948,6 +948,17 @@ export function findPreviousReview(
 	return null;
 }
 
+// Explain trusts prior findings only from a delivered round: a v2 receipt whose
+// owned check completed. Legacy and undelivered markers give it no context.
+export function findDeliveredReview(repo: string, prNumber: number, expectedAppId: number | null): RoundState | null {
+	const previous = findPreviousReview(repo, prNumber, expectedAppId);
+	if (previous?.state.v !== 2) return null;
+	const receipt = previous.state.delivery;
+	const checks = readCheckRuns(repo, previous.state.headSha);
+	const owned = checks.some((check) => check.id === receipt.checkId && ownedCheckAppId(check.app, expectedAppId) === receipt.appId);
+	return owned && completedCheckVerdict(previous.state, checks, prNumber) !== null ? previous.state : null;
+}
+
 function ownedCheckAppId(app: unknown, expectedAppId: number | null): number | null {
 	if (!isRecord(app) || typeof app.id !== "number" || !Number.isSafeInteger(app.id) || app.id <= 0) return null;
 	if (expectedAppId === null && app.slug !== "github-actions") return null;

@@ -28,8 +28,14 @@ test("screenExplanation returns clean text unchanged", () => {
   assert.equal(screenExplanation("plain explanation", {}), "plain explanation");
 });
 
-for (const pin of [undefined, "4812", "not-an-id"]) {
-test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`, (t) => {
+for (const { pin, receipt } of [
+  { pin: undefined, receipt: "delivered" },
+  { pin: "4812", receipt: "delivered" },
+  { pin: "not-an-id", receipt: "delivered" },
+  { pin: undefined, receipt: "legacy" },
+  { pin: undefined, receipt: "in-progress" },
+] as const) {
+test(`explain CLI with App pin ${pin ?? "default"} and a ${receipt} state marker`, (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-explain-test-"));
   const repo = initRepo(tmp);
   const fakeBin = path.join(tmp, "bin");
@@ -65,7 +71,7 @@ test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`
 
   const appId = pin === undefined ? 15368 : 4812;
   const login = pin === undefined ? "github-actions[bot]" : "private-review-app[bot]";
-  const state = renderState(head, [
+  const delivered = renderState(head, [
     {
       severity: "P2",
       title: "Doctor base check fails on a dirty worktree",
@@ -79,6 +85,11 @@ test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`
       validation: "test",
     },
   ], { checkId: 1, appId, roundId: "explain-fixture", runId: "fixture" });
+  const state = receipt === "legacy"
+    ? `<!-- needlefish-state: ${JSON.stringify({ v: 1, headSha: head, findings: [
+      { file: "app.ts", lineStart: 1, category: "bug", title: "doctor base check fails on a dirty worktree" },
+    ] })} -->`
+    : delivered;
   const reviewBody = `CHANGES REQUESTED ⚠️ — 1 blocking\n\nCoverage: full diff reviewed in one pass (1 file)\n\n## Findings\n\n| 1 | P2 | Doctor base check fails on a dirty worktree | app.ts:1 |\n\n${state}\n`;
   const prView = {
     number: 9,
@@ -96,8 +107,9 @@ test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`
     headRefName: "feature",
   };
   const reviewsPage = [[{ id: 1, body: reviewBody, user: { login, type: "Bot" } }]];
-  const checks = [{ check_runs: [{ id: 1, head_sha: head, app: { id: appId, slug: "private-review-app" },
-    name: "Needlefish", status: "completed", conclusion: "failure", output: { title: "Needlefish: changes_requested" },
+  const checks = [{ check_runs: [{ id: 1, head_sha: head, app: { id: appId, slug: pin === undefined ? "github-actions" : "private-review-app" },
+    name: "Needlefish", status: receipt === "in-progress" ? "in_progress" : "completed",
+    conclusion: receipt === "in-progress" ? null : "failure", output: { title: "Needlefish: changes_requested" },
     external_id: JSON.stringify({ v: 2, prNumber: 9, roundId: "explain-fixture", runId: "fixture" }),
   }] }];
   mkdirSync(fakeBin);
@@ -161,11 +173,13 @@ test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`
     latestReview?: { headSha: string; findings: { file: string; lineStart: number; title: string }[] };
     prMeta: { reviews: string[] };
   };
-  assert.equal(context.latestReview?.headSha, head);
-  assert.deepEqual(
-    context.latestReview?.findings.map((f) => [f.file, f.lineStart, f.title]),
-    [["app.ts", 1, "doctor base check fails on a dirty worktree"]]
-  );
+  if (receipt === "delivered") {
+    assert.equal(context.latestReview?.headSha, head);
+    assert.deepEqual(
+      context.latestReview?.findings.map((f) => [f.file, f.lineStart, f.title]),
+      [["app.ts", 1, "doctor base check fails on a dirty worktree"]]
+    );
+  } else assert.equal(context.latestReview, undefined, "an undelivered marker gives explain no prior findings");
   assert.deepEqual(context.prMeta.reviews, ["LGTM from me, one nit inline."]);
   assert.equal(prompt.includes("needlefish-state"), false);
   assert.equal(prompt.includes("Coverage: full diff"), false);
