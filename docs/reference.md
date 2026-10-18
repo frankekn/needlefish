@@ -144,8 +144,8 @@ not updated automatically, and neutral checks can still satisfy branch protectio
 Review commands that produce a verdict exit 0 only for `pass`.
 `changes_requested`, `needs_human`, and execution failures exit 1, including
 `--json` output. GitHub-mode closed, stale and untrusted-author skips exit 0
-and print a `needlefish-skip` line. A same-head skip keeps the completed
-verdict's exit status. `needs_human` means
+and print a `needlefish-skip` line. A closed or stale skip after a review error
+still exits 1. A same-head skip keeps the completed verdict's exit status. `needs_human` means
 review incomplete or human confirmation required. It does not claim a code
 defect. Retry the review or ask a maintainer to check the unreviewed scope.
 Unless `NEEDLEFISH_NO_FAST_PATH=1` disables the fast path, docs-only changes
