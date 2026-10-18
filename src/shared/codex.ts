@@ -16,6 +16,8 @@ import { envFlagOn } from "./env.js";
 import { findRunnerFailure, RunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
+	PI_DEFAULT_MODEL,
+	GROK_DEFAULT_MODEL,
 	parsePositiveInteger,
 	type AcpLaunchSpec,
 	type ConnectionOutputGuard,
@@ -642,9 +644,6 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 	}
 	return Object.freeze({ baseUrl, apiKey });
 }
-
-const PI_DEFAULT_MODEL = "gpt-5.6-sol";
-const GROK_DEFAULT_MODEL = "grok-build";
 
 export interface EffectiveRunnerConfig {
 	readonly connectionAuth: RunnerOptions["connectionAuth"];

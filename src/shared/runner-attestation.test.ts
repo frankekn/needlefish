@@ -44,3 +44,15 @@ test("effective identity preserves explicit, environment and Pi default preceden
   assert.equal(hasResolvedModelIdentity({ ...report, runnerEnvironment: environment([]) }), false);
   assert.equal(hasResolvedModelIdentity({ ...report, runnerEnvironment: environment([["NEEDLEFISH_MODEL", "unknown"], ["CODEX_MODEL", "synthetic"], ["CODEX_REASONING_EFFORT", "high"]]) }), false);
 });
+
+test("Grok default identity is admitted without inventing a Codex CLI default", () => {
+  const input = { ...report, runner: "grok" as const, effort: "high", runnerEnvironment: environment([]) };
+  assert.equal(hasResolvedModelIdentity(input), true);
+  assert.equal(runnerEnvironmentAttestationError(input), null);
+  for (const source of ["NEEDLEFISH_MODEL", "GROK_MODEL"]) {
+    assert.equal(hasResolvedModelIdentity({ ...input, runnerEnvironment: environment([[source, "unresolved"]]) }), false);
+  }
+  assert.equal(hasResolvedModelIdentity({ ...input, model: "explicit", runnerEnvironment: environment([["GROK_MODEL", "unknown"]]) }), true);
+  assert.equal(hasResolvedModelIdentity({ ...input, runnerEnvironment: environment([["NEEDLEFISH_MODEL", "explicit"], ["GROK_MODEL", "unknown"]]) }), true);
+  assert.equal(hasResolvedModelIdentity({ ...input, runner: "codex" }), false);
+});
