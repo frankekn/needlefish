@@ -181,5 +181,8 @@ explicit/environment resolution. New Grok runs capture the resolved package
 default, and report readers require that captured or explicit model identity.
 The existing Pi defaults remain unchanged; unknown Codex CLI defaults remain
 unknown. A valid identity does not itself grant a qualification proof.
-Candidate matches require retained `candidateFindings` and are recomputed
-before admission. Older match claims without their artifact are rejected.
+Successful model draws require retained `candidateFindings` and
+`candidateMatchEvidence`, including empty candidate bags. Admission recomputes
+evidence and aggregates and rejects unsupported extra aggregate claims.
+Broad and deep reports must record the same supported `callAccountingVersion`;
+unversioned historical reports can be inspected but cannot enter a new measurement.

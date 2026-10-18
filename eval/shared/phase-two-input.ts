@@ -1,4 +1,5 @@
 import { aggregate } from "./aggregate";
+import { callAccountingError, type CallAccountingMetadata } from "./call-accounting";
 import Ajv from "ajv";
 import { isDeepStrictEqual } from "node:util";
 import { matchEvidence } from "./score";
@@ -13,7 +14,7 @@ import { isCompleteReport } from "./report-completeness";
 import { operationalFailures, sameRecord, type PublishedReport } from "./publication";
 import { ANTICHEAT_VERSION, type DrawFinding, type FixtureSpec } from "./types";
 
-export type PhaseTwoReport = Omit<PublishedReport, "results"> & {
+export type PhaseTwoReport = Omit<PublishedReport, "results"> & CallAccountingMetadata & {
   readonly results: readonly (PublishedReport["results"][number] & { readonly candidateFindings?: readonly DrawFinding[] })[];
   readonly fixtureDefectClasses?: Readonly<Record<string, string>>;
   readonly aggregates: PublishedReport["aggregates"] & {
@@ -85,6 +86,7 @@ const reportFields = {
   }, Object.keys(aggregateFields)),
 };
 const extensionFields = {
+  callAccountingVersion: { enum: [1, 2] },
   gitSha: { type: "string", pattern: "^[a-f0-9]{40}$" }, fixtureSetHash: text, scorerHash: text,
   fixtures: { type: "array", minItems: 1, uniqueItems: true, items: text }, fixtureKinds: recordOf({ enum: ["positive", "negative", "parity", "honeypot"] }),
   fixtureTiers: recordOf({ enum: [1, 2, 3] }), fixtureDefectClasses: recordOf(text), anticheatVersion: positive,
@@ -93,7 +95,7 @@ const extensionFields = {
 };
 const ajv = new Ajv({ strict: true, allErrors: true });
 const validateReport = ajv.compile<PhaseTwoReport>(object({ ...reportFields, ...extensionFields },
-  [...Object.keys(reportFields), ...Object.keys(extensionFields).filter((key) => key !== "fixtureDefectClasses")]));
+  [...Object.keys(reportFields), ...Object.keys(extensionFields).filter((key) => key !== "fixtureDefectClasses" && key !== "callAccountingVersion")]));
 const validatePolicy = ajv.compile<PhaseTwoQualificationPolicy>(object({
   id: text, broadDraws: positive, deepDraws: positive, consistencyK: positive,
   floors: object(Object.fromEntries(PHASE_TWO_FLOORS.map((key) => [key, {
@@ -125,8 +127,8 @@ export function parsePhaseTwoPolicy(input: unknown): PhaseTwoQualificationPolicy
 function validateAggregates(report: PhaseTwoReport, specs: readonly FixtureSpec[]): void {
   const expected: Readonly<Record<string, unknown>> = { ...aggregate(report.results, specs) };
   const actual: Readonly<Record<string, unknown>> = { ...report.aggregates };
-  for (const [key, value] of Object.entries(expected)) {
-    if ((Object.hasOwn(aggregateFields, key) || Object.hasOwn(actual, key)) && !isDeepStrictEqual(actual[key], value)) {
+  for (const key of new Set([...Object.keys(expected), ...Object.keys(actual)])) {
+    if ((Object.hasOwn(aggregateFields, key) || Object.hasOwn(actual, key)) && !isDeepStrictEqual(actual[key], expected[key])) {
       throw new Error(`Phase 2 aggregate ${key} does not match draws`);
     }
   }
@@ -136,6 +138,8 @@ export function admitPhaseTwoReports(
   campaign: { readonly broad: PhaseTwoReport; readonly deep: PhaseTwoReport },
   specs: readonly FixtureSpec[], policy: PhaseTwoQualificationPolicy,
 ): void {
+  const accountingError = callAccountingError(campaign.broad, campaign.deep);
+  if (accountingError) throw new Error(`Phase 2: ${accountingError}`);
   const tierOne = specs.filter((spec) => spec.kind === "positive" && spec.tier === 1);
   for (const [name, report, selected, draws] of [
     ["broad", campaign.broad, specs, policy.broadDraws],
@@ -161,6 +165,7 @@ export function admitPhaseTwoReports(
       if (fastPath && (!expected.fastPathFixtureIds?.includes(draw.fixtureId) || draw.calls !== 0)) fail("invalid docs fast path");
       if (draw.score.formatOk && draw.calls === 0 && !fastPath) fail("successful zero-call draw requires docs fast path");
       validateStoredScore(draw, gold, fastPath);
+      if (draw.score.formatOk && !fastPath && (draw.candidateFindings === undefined || draw.candidateMatchEvidence === undefined)) fail("candidate match evidence and retained findings are required for trace-attested successful draws");
       const finalEvidence = matchEvidence((draw.findings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" })), gold);
       const candidateEvidence = matchEvidence((draw.candidateFindings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" })), gold);
       if (draw.matchEvidence !== undefined && !isDeepStrictEqual(draw.matchEvidence, finalEvidence)) fail("final match evidence does not match findings");

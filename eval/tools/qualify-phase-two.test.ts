@@ -55,6 +55,7 @@ function report(selected: readonly FixtureSpec[], draws: number): PhaseTwoReport
     fixtureSetHash: fixtureSetHash(selected), fixtures: selected.map((spec) => spec.id),
     fixtureKinds: classification.fixtureKinds, fixtureTiers: classification.fixtureTiers, fixtureDefectClasses: Object.fromEntries(selected.map((spec) => [spec.id, spec.defectClass])),
     gitSha: "a".repeat(40), runner: "codex", model: "synthetic", effort: "high", draws,
+    callAccountingVersion: 2,
     createdAt: "2026-10-18T00:00:00Z", baseline: false, holdout: "include", gateClass: "R",
     provider: "synthetic", route: "synthetic-offline", runnerVersion: "test-1", privateEnvironment: false,
     runnerEnvironment: JSON.stringify([["NEEDLEFISH_EPHEMERAL_HOME", "1"], ["NEEDLEFISH_EVAL_TRACE", "1"]]),
@@ -63,6 +64,7 @@ function report(selected: readonly FixtureSpec[], draws: number): PhaseTwoReport
       return {
         fixtureId: spec.id, draw, durationMs: 1, calls: 2, retries: 0,
         findings: drawFindings(findings), matchEvidence: matchEvidence(findings, spec.expected),
+        candidateFindings: drawFindings(findings), candidateMatchEvidence: matchEvidence(findings, spec.expected),
         score: { ...score({ verdict: findings.length ? "changes_requested" : "pass", findings }, spec.expected, spec.id), robustness },
       };
     })),
@@ -196,6 +198,9 @@ test("producer aggregates pass admission and metric drift remains rejected", () 
   assert.throws(() => admitPhaseTwoReports({ ...campaign, broad: {
     ...campaign.broad, aggregates: { ...campaign.broad.aggregates, meanDurationMs: 2 },
   } }, specs, policy), /aggregate meanDurationMs/);
+  const surplus = structuredClone(campaign);
+  Reflect.set(surplus.broad.aggregates, "candidateFalsePositiveRate", 0);
+  assert.throws(() => admitPhaseTwoReports(surplus, specs, policy), /aggregate candidateFalsePositiveRate/);
   const missing = structuredClone(campaign);
   Reflect.deleteProperty(missing.broad.aggregates, "recall");
   assert.throws(() => admitPhaseTwoReports(missing, specs, policy), /aggregate recall/);
@@ -327,6 +332,8 @@ for (const failure of ["invalid model JSON", "spawn codex ETIMEDOUT. retry"]) {
       const spec = specs[0];
       Reflect.set(draw, "calls", 0);
       Reflect.set(draw, "findings", []);
+      Reflect.deleteProperty(draw, "candidateFindings");
+      Reflect.deleteProperty(draw, "candidateMatchEvidence");
       Reflect.set(draw, "matchEvidence", matchEvidence([], spec.expected));
       Reflect.set(draw, "score", score(null, spec.expected, spec.id, failure, undefined, "invalid output", [{
         surface: "raw_failure", content: "invalid output", passKind: "review", passIndex: 0,
@@ -487,4 +494,43 @@ test("candidate match claims require retained findings and exact recomputation",
   const malformed = structuredClone(campaign.broad);
   edit(malformed.results[0], ["candidateFindings", 0, "lineEnd"], 1);
   assert.throws(() => parsePhaseTwoReport(malformed), /finding line range/);
+});
+
+
+test("Phase 2 rejects unrecorded, unsupported and mixed call accounting", () => {
+  for (const value of [undefined, 1, 3, "2"]) {
+    const campaign = inputs();
+    edit(campaign, ["deep", "callAccountingVersion"], value);
+    assert.throws(() => admitPhaseTwoReports(campaign, specs, policy), /call accounting version mismatch/);
+  }
+  const legacy = inputs();
+  Reflect.deleteProperty(legacy.broad, "callAccountingVersion");
+  Reflect.deleteProperty(legacy.deep, "callAccountingVersion");
+  assert.equal(parsePhaseTwoReport(legacy.broad), legacy.broad);
+  assert.throws(() => admitPhaseTwoReports(legacy, specs, policy), /call accounting version mismatch/);
+  for (const version of [1, 2]) {
+    const campaign = inputs();
+    edit(campaign, ["broad", "callAccountingVersion"], version);
+    edit(campaign, ["deep", "callAccountingVersion"], version);
+    assert.doesNotThrow(() => admitPhaseTwoReports(campaign, specs, policy));
+  }
+});
+
+test("trace-attested successful draws cannot omit candidate artifacts to hide a prune", () => {
+  const campaign = inputs();
+  const spec = specs[0];
+  const draw = campaign.broad.results[0];
+  const candidate = [finding];
+  const final: Finding[] = [];
+  Reflect.set(draw, "findings", drawFindings(final));
+  Reflect.set(draw, "matchEvidence", matchEvidence(final, spec.expected));
+  Reflect.set(draw, "score", { ...score({ verdict: "pass", findings: final }, spec.expected, spec.id), criticPruneError: true, robustness });
+  Reflect.set(campaign.broad, "aggregates", aggregate(campaign.broad.results, specs));
+  assert.deepEqual(draw.candidateFindings, drawFindings(candidate));
+  assert.doesNotThrow(() => admitPhaseTwoReports(campaign, specs, policy));
+  Reflect.deleteProperty(draw, "candidateFindings");
+  Reflect.deleteProperty(draw, "candidateMatchEvidence");
+  Reflect.set(draw.score, "criticPruneError", false);
+  Reflect.set(campaign.broad, "aggregates", aggregate(campaign.broad.results, specs));
+  assert.throws(() => admitPhaseTwoReports(campaign, specs, policy), /candidate.*required/);
 });
