@@ -238,7 +238,6 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 				reasoningEffort: study.lane.effort });
 			const before = process.hrtime.bigint();
 			const slotStartedAt = new Date().toISOString();
-			activeSlot = { index, startedNs: before };
 			let capacityLost = false;
 			let methodError: string | null = null;
 			let pgid: number | undefined;
@@ -254,10 +253,13 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 					if (Number(process.hrtime.bigint() - begin) / 1e6 >= study.stopping.maximumCampaignMs) { stop = "CAMPAIGN_DEADLINE"; running?.stop(); }
 				} catch (error) { methodError = error instanceof Error ? error.message : String(error); running?.stop(); }
 			};
+			observe();
+			if (stop) break;
+			if (methodError) throw new Error(methodError);
+			activeSlot = { index, startedNs: before };
 			const timer = setInterval(observe, 1000);
 			let processResult;
 			try {
-				observe();
 				const worker = runManagedRunnerProcess({ command: process.execPath, args: ["--import", loader, self, "--slot", workerInput],
 					repoPath: root, timeoutMs: Math.min(1805000, study.stopping.maximumCampaignMs - Number(process.hrtime.bigint() - begin) / 1e6),
 					env: { ...process.env, ...study.environment,
