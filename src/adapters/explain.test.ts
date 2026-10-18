@@ -34,6 +34,7 @@ for (const { pin, receipt } of [
   { pin: "not-an-id", receipt: "delivered" },
   { pin: undefined, receipt: "legacy" },
   { pin: undefined, receipt: "in-progress" },
+  { pin: undefined, receipt: "mismatched" },
 ] as const) {
 test(`explain CLI with App pin ${pin ?? "default"} and a ${receipt} state marker`, (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-explain-test-"));
@@ -110,7 +111,7 @@ test(`explain CLI with App pin ${pin ?? "default"} and a ${receipt} state marker
   const checks = [{ check_runs: [{ id: 1, head_sha: head, app: { id: appId, slug: pin === undefined ? "github-actions" : "private-review-app" },
     name: "Needlefish", status: receipt === "in-progress" ? "in_progress" : "completed",
     conclusion: receipt === "in-progress" ? null : "failure", output: { title: "Needlefish: changes_requested" },
-    external_id: JSON.stringify({ v: 2, prNumber: 9, roundId: "explain-fixture", runId: "fixture" }),
+    external_id: JSON.stringify({ v: 2, prNumber: 9, roundId: receipt === "mismatched" ? "other-round" : "explain-fixture", runId: "fixture" }),
   }] }];
   mkdirSync(fakeBin);
   writeFileSync(
