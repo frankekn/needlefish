@@ -303,7 +303,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 500,
-          "pattern": "^\\S(?:[^\\r\\n]*\\S)?$"
+          "pattern": "^\\S(?:[^\\r\\n]*\\S)?(?![\\s\\S])"
         },
         "quoteCheck": {
           "description": "Needlefish's check of quote against the reviewed tree. Never affects the verdict.",
