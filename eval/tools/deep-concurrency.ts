@@ -97,7 +97,8 @@ export function offlinePlan() {
 		assert.notEqual(fixture.holdout, true, "sealed holdouts are excluded from study design");
 		const loaded = loadFixture(fixture);
 		try {
-			assert.deepEqual(reviewPlan(loaded.bundle), { docsOnlyFastPath: false, largePath: true });
+			const { docsOnlyFastPath, largePath } = reviewPlan(loaded.bundle, {});
+			assert.deepEqual({ docsOnlyFastPath, largePath }, { docsOnlyFastPath: false, largePath: true });
 			return { id: fixture.id, changedFiles: loaded.bundle.changedFiles.length,
 				patchSha256: createHash("sha256").update(loaded.bundle.patch).digest("hex") };
 		} finally { loaded.cleanup(); }
