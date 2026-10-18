@@ -1,4 +1,4 @@
-import { quoteNote } from "../shared/render.js";
+import { quoteNote, sourceDetails } from "../shared/render.js";
 import { OWN_POST_FINDING_MARKER } from "../shared/normalize.js";
 import type { Finding } from "../shared/schema.js";
 
@@ -55,6 +55,8 @@ function formatCommentBody(finding: Finding, replacementLines: readonly string[]
   if (finding.validation) lines.push("", `**Validate:** ${finding.validation}`);
   const note = quoteNote(finding);
   if (note) lines.push("", note);
+  const details = sourceDetails(finding);
+  if (details) lines.push("", details);
   if (replacementLines) lines.push("", "```suggestion", ...replacementLines, "```");
   lines.push("", OWN_POST_FINDING_MARKER);
   return lines.join("\n");

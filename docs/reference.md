@@ -124,6 +124,15 @@ matches `schemaVersion`. The schema allows unknown properties, so a validator
 keeps working when a release adds a field. Two rules are not expressible in
 the schema: a finding's `lineEnd` is never below its `lineStart`, and
 `stats[].usage.totalTokens` is at least `inputTokens + outputTokens`.
+External source URLs in `externalClaims` and `evidence.sources` use a structural
+schema constraint for normalized HTTP(S) URLs. It requires a nonempty host,
+balanced IP-literal brackets, no userinfo, and an optional decimal port from
+0 through 65535 without leading zeros. The normalizer serializes URLs with
+WHATWG `URL.href`, including IDNA hostnames and normalized ports. Full IP and
+IDNA validity remain parser checks. For example, `https://[:::]/` passes the
+structural schema but the persisted parser rejects it. Schema validation alone
+does not establish full admission; consumers must also apply WHATWG URL parsing
+and reject non-HTTP(S) schemes and credentials.
 `--dry-run --json` prints a different summary object that this schema does
 not describe.
 

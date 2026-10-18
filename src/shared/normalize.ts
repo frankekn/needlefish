@@ -1,5 +1,6 @@
 import type {
   Category,
+  ExternalClaim,
   Finding,
   Hotspot,
   MapResult,
@@ -207,6 +208,22 @@ function parseQuote(raw: unknown): string | undefined {
   return quote && quote.length <= 500 ? quote : undefined;
 }
 
+export function parseExternalClaims(raw: unknown): readonly ExternalClaim[] {
+  if (!Array.isArray(raw)) throw new Error("externalClaims not an array");
+  return raw.map((item): ExternalClaim => {
+    if (!isRecord(item) || typeof item.claim !== "string" || !item.claim.trim() ||
+      typeof item.necessary !== "boolean" || !isRecord(item.source) ||
+      item.source.type !== "external" || typeof item.source.url !== "string") {
+      throw new Error("externalClaims requires claim, necessary, and external source URL");
+    }
+    const url = new URL(item.source.url);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) {
+      throw new Error("externalClaims source must be an HTTP URL without credentials");
+    }
+    return { claim: item.claim.trim(), necessary: item.necessary, source: { type: "external", url: url.href } };
+  });
+}
+
 export function normalizeFinding(raw: unknown): Finding {
   const record = requireRecord(raw, "malformed finding");
   const severity = parseSeverity(record.severity);
@@ -239,6 +256,7 @@ export function normalizeFinding(raw: unknown): Finding {
     throw new Error("malformed finding: blocking finding has low confidence");
   }
   const quote = parseQuote(record.quote);
+  const externalClaims = record.externalClaims === undefined ? undefined : parseExternalClaims(record.externalClaims);
   // A supplied quote that fails parsing keeps the same state as a quote the
   // tree check could not verify, so the finding stays out of inline comments.
   const quoteSupplied = typeof record.quote === "string" ? record.quote.trim() !== "" : record.quote != null;
@@ -259,6 +277,7 @@ export function normalizeFinding(raw: unknown): Finding {
     consumerLine: record.consumerLine ? Number(record.consumerLine) || undefined : undefined,
     ...(replacement ? { replacement } : {}),
     ...(quote ? { quote } : {}),
+    ...(externalClaims ? { externalClaims } : {}),
     ...(unusableQuote ? { quoteCheck: { status: "unchecked" as const } } : {}),
   };
 }

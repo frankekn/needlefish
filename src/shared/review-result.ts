@@ -1,3 +1,4 @@
+import { parseExternalClaims } from "./normalize.js";
 import { isRunnerName, type RunStat } from "./runner.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
@@ -5,6 +6,8 @@ import {
 	type Category,
 	type CoverageGap,
 	type Finding,
+	type FindingEvidence,
+	type SourceEvidence,
 	type ResidualRisk,
 	type ReviewResult,
 	type ScopeCallout,
@@ -151,6 +154,36 @@ function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
 	return { status };
 }
 
+function requireEvidence(raw: unknown): FindingEvidence {
+	if (!isRecord(raw) || raw.toolRead !== "unknown" || !Array.isArray(raw.sources)) {
+		throw new Error("evidence requires unknown toolRead and sources array");
+	}
+	const sources = raw.sources.map((source): SourceEvidence => {
+		if (!isRecord(source)) throw new Error("evidence source not an object");
+		if (source.sourceType === "external" && source.status === "unverified_external_claim") {
+			const [claim] = parseExternalClaims([source]);
+			return { ...claim, sourceType: "external", status: "unverified_external_claim" };
+		}
+		if (source.sourceType !== "git_blob" ||
+			(source.revision !== null && (typeof source.revision !== "string" || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(source.revision)))) {
+			throw new Error("evidence requires git_blob and fixed revision or null");
+		}
+		const file = fieldNonEmpty(source, "file");
+		const lineStart = fieldPositiveNumber(source, "lineStart");
+		const lineEnd = fieldPositiveNumber(source, "lineEnd");
+		if (lineEnd < lineStart) throw new Error("evidence lineEnd before lineStart");
+		const location = { sourceType: "git_blob", revision: source.revision, file, lineStart, lineEnd } satisfies Partial<SourceEvidence>;
+		if (source.status === "source_unverified") return { ...location, status: "source_unverified" };
+		if (source.status !== "source_present" || source.revision === null ||
+			typeof source.contentDigest !== "string" || !/^[a-f0-9]{64}$/.test(source.contentDigest) ||
+			!Number.isInteger(lineStart) || !Number.isInteger(lineEnd)) {
+			throw new Error("source_present requires fixed revision, integer lines and SHA-256 digest");
+		}
+		return { ...location, revision: source.revision, status: "source_present", contentDigest: source.contentDigest };
+	});
+	return { toolRead: "unknown", sources };
+}
+
 function requireFinding(raw: unknown): Finding {
 	if (!isRecord(raw)) throw new Error("not an object");
 	const severity = requireSeverity(raw.severity);
@@ -207,6 +240,8 @@ function requireFinding(raw: unknown): Finding {
 		throw new Error("quote not a non-empty trimmed one-line string without NUL of at most 500 characters");
 	}
 	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
+	const externalClaims = raw.externalClaims === undefined ? undefined : parseExternalClaims(raw.externalClaims);
+	const evidence = raw.evidence === undefined ? undefined : requireEvidence(raw.evidence);
 	return {
 		severity,
 		title,
@@ -223,6 +258,8 @@ function requireFinding(raw: unknown): Finding {
 		...(replacement !== undefined ? { replacement } : {}),
 		...(quote !== undefined ? { quote } : {}),
 		...(quoteCheck !== undefined ? { quoteCheck } : {}),
+		...(externalClaims !== undefined ? { externalClaims } : {}),
+		...(evidence !== undefined ? { evidence } : {}),
 	};
 }
 

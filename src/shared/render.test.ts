@@ -547,6 +547,32 @@ test("renderMarkdown warns when source quotes could not be verified at HEAD", ()
 	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
 });
 
+test("renderMarkdown shows source caveats and keeps digest and tool limits in details", () => {
+	const item = finding("P2", "Restore guard", "src/app.ts", { evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+		{ sourceType: "external", status: "unverified_external_claim", claim: "Vendor syntax exists", necessary: false,
+			source: { type: "external", url: "https://spec.example.invalid/reference" } },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.match(markdown, /<sub>Code source present; external premise unverified\.<\/sub>/);
+	assert.match(markdown, /<details><summary>Source evidence<\/summary>\n\nTool reading unknown\. Source presence does not verify the bug\./);
+	assert.match(markdown, new RegExp(`SHA-256 .${"c".repeat(64)}`));
+	assert.match(markdown, /blob\/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\/src\/app.ts#L1/);
+	assert.equal(markdown.includes("confidence"), false);
+});
+
+
+test("renderMarkdown links removed source to its original path at the captured base", () => {
+	const item = finding("P2", "Restore removed guard", "src/renamed.ts", { quoteCheck: { status: "unchecked" }, evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/original.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.ok(markdown.includes("_Code source present._\n\n_Location unverified: the quoted source could not be verified at this HEAD location._"));
+	assert.ok(markdown.includes("[`src/renamed.ts:1`](https://github.com/owner/repo/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/original.ts#L1)"));
+});
+
 test("docs-only output identifies a policy skip without claiming a model review", () => {
   const output = renderMarkdown({ ...baseResult([], "pass"),
     summary: "Docs-only change (1 file(s)); model review skipped.",
