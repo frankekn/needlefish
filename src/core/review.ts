@@ -980,8 +980,9 @@ export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // The two dispatch questions review() asks of a bundle, answered in one place
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
-// only threshold owners.
-export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions): {
+// only threshold owners. runnerOptions defaults to {} only so the hash-pinned
+// study generator eval/tools/deep-concurrency.ts keeps type-checking unchanged.
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
 	readonly docsOnlyFastPath: boolean;
 	readonly binaryOnlyFastPath: boolean;
 	readonly largePath: boolean;
