@@ -43,6 +43,32 @@ test("Grok reports capture the effective default model before attestation", () =
   }
 });
 
+test("Pi producers record default or explicit model and effort before attestation", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "needlefish-pi-identity-"));
+  const previous = { NEEDLEFISH_MODEL: process.env.NEEDLEFISH_MODEL, PI_MODEL: process.env.PI_MODEL };
+  delete process.env.NEEDLEFISH_MODEL;
+  delete process.env.PI_MODEL;
+  t.after(() => {
+    for (const key of ["NEEDLEFISH_MODEL", "PI_MODEL"] as const) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+  for (const { flags, model, effort } of [
+    { flags: [], model: "gpt-5.6-sol", effort: "medium" },
+    { flags: ["--env", "PI_MODEL=captured-pi"], model: "captured-pi", effort: "medium" },
+    { flags: ["--model", "explicit-pi", "--effort", "high"], model: null, effort: "high" },
+  ]) {
+    const args = parseArgs(["--runner", "pi", "--env", `HOME=${root}`, ...flags]);
+    const pairs: unknown = JSON.parse(runnerEnvironment(args));
+    assert.ok(Array.isArray(pairs));
+    const recorded = pairs.find((entry: unknown) => Array.isArray(entry) && entry[0] === "PI_MODEL");
+    assert.deepEqual(recorded, model === null ? undefined : ["PI_MODEL", model]);
+    assert.equal(args.effort, effort);
+  }
+});
+
 test("hasFailedDeepPass ignores recovered attempts", () => {
   const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
   assert.equal(hasFailedDeepPass([failed]), true);

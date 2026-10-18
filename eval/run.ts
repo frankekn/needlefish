@@ -22,7 +22,7 @@ import {
 	RunnerOperationalError,
 } from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
-import { GROK_DEFAULT_MODEL, parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
+import { GROK_DEFAULT_MODEL, PI_DEFAULT_MODEL, PI_DEFAULT_THINKING, parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
@@ -124,7 +124,7 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
-	const effort = get("--effort");
+	const effort = runner === "pi" ? get("--effort") || PI_DEFAULT_THINKING : get("--effort");
 	const provider = attestationValue("--provider");
 	const route = attestationValue("--route");
 	const runnerVersion = attestationValue("--runner-version");
@@ -677,6 +677,9 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 	}
 	if (args.runner === "grok" && args.model === null && effective.NEEDLEFISH_MODEL === undefined && effective.GROK_MODEL === undefined) {
 		effective.GROK_MODEL = GROK_DEFAULT_MODEL;
+	}
+	if (args.runner === "pi" && args.model === null && effective.NEEDLEFISH_MODEL === undefined && effective.PI_MODEL === undefined) {
+		effective.PI_MODEL = PI_DEFAULT_MODEL;
 	}
 	if (args.runner === "codex" && args.effort !== null) {
 		delete effective.CODEX_REASONING_EFFORT;

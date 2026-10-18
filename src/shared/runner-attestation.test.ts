@@ -28,13 +28,13 @@ test("effective model and effort reject unresolved labels at their resolved sour
   }
 });
 
-test("effective identity preserves explicit, environment and Pi default precedence", () => {
+test("effective identity preserves explicit and captured environment precedence", () => {
   const identities = [
     { runnerEnvironment: environment([["NEEDLEFISH_MODEL", "synthetic"], ["CODEX_REASONING_EFFORT", "high"]]) },
     { runnerEnvironment: environment([["CODEX_MODEL", "synthetic"], ["CODEX_REASONING_EFFORT", "high"]]) },
     { model: "synthetic", effort: "high", runnerEnvironment: environment([["NEEDLEFISH_MODEL", "unknown"], ["CODEX_REASONING_EFFORT", "private"]]) },
     { runnerEnvironment: environment([["NEEDLEFISH_MODEL", "synthetic"], ["CODEX_MODEL", "unknown"], ["CODEX_REASONING_EFFORT", "high"]]) },
-    { runner: "pi" as const, runnerEnvironment: environment([]) },
+    { runner: "pi" as const, effort: "medium", runnerEnvironment: environment([["PI_MODEL", "captured-pi-model"]]) },
   ];
   for (const identity of identities) {
     const input = { ...report, ...identity };
@@ -43,6 +43,15 @@ test("effective identity preserves explicit, environment and Pi default preceden
   }
   assert.equal(hasResolvedModelIdentity({ ...report, runnerEnvironment: environment([]) }), false);
   assert.equal(hasResolvedModelIdentity({ ...report, runnerEnvironment: environment([["NEEDLEFISH_MODEL", "unknown"], ["CODEX_MODEL", "synthetic"], ["CODEX_REASONING_EFFORT", "high"]]) }), false);
+});
+
+test("Pi readers require recorded model and effort instead of current package defaults", () => {
+  const input = { ...report, runner: "pi" as const, runnerEnvironment: environment([]) };
+  for (const identity of [{}, { model: "captured" }, { effort: "medium" }]) {
+    assert.equal(hasResolvedModelIdentity({ ...input, ...identity }), false);
+  }
+  assert.equal(hasResolvedModelIdentity({ ...input, model: "captured", effort: "medium" }), true);
+  assert.equal(hasResolvedModelIdentity({ ...input, effort: "high", runnerEnvironment: environment([["PI_MODEL", "captured"]]) }), true);
 });
 
 test("Grok identity requires a captured effective model", () => {

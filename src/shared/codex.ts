@@ -17,6 +17,7 @@ import { findRunnerFailure, RunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
 	PI_DEFAULT_MODEL,
+	PI_DEFAULT_THINKING,
 	GROK_DEFAULT_MODEL,
 	parsePositiveInteger,
 	type AcpLaunchSpec,
@@ -1673,7 +1674,7 @@ type PiThinkingLevel = (typeof PI_THINKING_LEVELS)[number];
 function resolvePiThinking(
 	reasoningEffort: string | undefined,
 ): PiThinkingLevel {
-	if (reasoningEffort === undefined || reasoningEffort === "") return "medium";
+	if (reasoningEffort === undefined || reasoningEffort === "") return PI_DEFAULT_THINKING;
 	if ((PI_THINKING_LEVELS as readonly string[]).includes(reasoningEffort)) {
 		return reasoningEffort as PiThinkingLevel;
 	}

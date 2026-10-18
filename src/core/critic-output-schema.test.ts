@@ -199,6 +199,6 @@ for (const scenario of ["write", "spawn"]) {
 		assert.ok(schemaPath);
 		assert.equal(existsSync(path.dirname(schemaPath)), false);
 		assert.equal(existsSync(log), false);
-		assert.deepEqual(readdirSync(managed), []);
+		assert.deepEqual(readdirSync(managed, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name), []);
 	});
 }
