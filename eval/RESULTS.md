@@ -2303,3 +2303,152 @@ Each study records one bait exposure without adoption or escape. Reports retain 
 - **PR #255 proxy offline Class D study.** The same `6032f98` source completed nine draws and 19 native calls, but its status is `INVALID_OFFLINE_D_GATE`. The capacity observer paused the eval parent for 40.372 seconds. One intermediate critic contract error required a re-ask despite zero final malformed draws. Both positive fixtures scored 3/3; those counts cannot qualify the invalid measurement. Raw bait exposures were two, with zero adoption, escape, or cheat detection. The resident suite recorded 14/14 passes.
 
 The lane was Codex 0.163.0, CLIProxyAPI, `gpt-5.6-terra/high` on Ubuntu Node 26.8.2. Proxy service version remains unknown. The earlier native offline pass does not transfer to this provider. Both owned roots and processes were cleared, with the existing installation pointers unchanged. This archive does not certify GitHub posting, fleet deployment, production rollout, or either source's full Class D gate. It preserves failures and superseded windows without new trials or replacement draws.
+
+## 2026-10-16 public runtime identity contract
+
+Gate class **R**, pending. The issue149 publication follow-up adds provenance-aware
+ACP launcher/harness/auth-source metadata, conservative exact configuration
+matching and a public distribution map. It does not run a model campaign or
+certify a runtime. Existing reports and model inputs remain unchanged.
+
+New eval reports omit private config/auth digests. Reports requiring those files
+remain private and cannot resume across processes or enter the public leaderboard.
+Existing publication refusals remain in force. Exact identity correspondence alone
+is not evidence that a report passed its quality gate. Production results remain
+`unqualified` until a complete matching qualification artifact is available.
+
+## 2026-10-17 integrated PR #256 Class R failure
+
+Gate class **R**, `CLASS_R_FAIL`. The [aggregate evidence](evidence/2026-10-17-r256-integrated/summary.json) records candidate `6d41f5295006996c9e3159e611134784f5e0e8e2` against baseline `40409c68b7a3700840f7699d77dc1611f3365712`. Each side completed the full 93-fixture set three times, including 17 sealed holdouts, followed by the preregistered divergent union confirmation. The lane was native Codex 0.163.0, `gpt-5.6-terra/high`, OpenAI ChatGPT.
+
+Candidate primary recall was 164/189, below 0.89. Noise was 16/189, above 0.05. Pooled negative false positives were 4/84, above the limit of two. Candidate Tier1 recall was 21/21. Baseline recall was 166/189, noise was 19/189, pooled false positives were 6/84, and Tier1 recall was 20/21. The baseline also failed; its failure does not qualify the candidate.
+
+All 714 fixed primary and confirmation slots completed with 1,493 native attempts and no runner retries. There were 25 intermediate output admission or subset rejections followed by same-prompt re-asks. Final invalid, operational failure, and cheat counts were zero. Source and dependency inventories did not drift. Confirmation preserves the original primary failures and does not replace their denominators. The summary includes the four original report SHA256 digests and setup-manifest digest; the original reports and raw attempts remain archived separately.
+
+A post-hoc audit found a shared caller defect that reprocessed literal template tokens inside critic candidate JSON on both sources. This local fix addresses that general input-construction defect without changing prompt wording, matching, scoring, or the owner-approved model-residual critic policy in #220. It neither rescues this failed campaign nor proves a cause for the aggregate quality differences. The changed model inputs require a new complete Class R gate on the new source. No new campaign ran for this fix.
+
+PR #256 is not merged into main. It and dependent qualification work remain unqualified and must not be promoted from Draft on these results. This entry records the failure before delivery; it does not claim that the failed source shipped.
+
+
+## 2026-10-18 critic decision ledger
+
+Gate class **R**, `NOT_RUN`. The private critic protocol now requires one explicit
+keep/drop decision per candidate ref and materializes findings from the original
+candidate, changing model inputs and output admission. The critic rules now
+require an explicit drop decision instead of deleting or omitting a candidate.
+Local behavior tests do not certify model quality or semantic ref attribution.
+The separately authored sealed holdout commit `72e2f0a` is integrated in source
+`bd3d2691892f92ae42d9ded4a5196bc74fc6d9fa`. The verified catalog has 109 fixtures,
+including 29 holdouts, with `fixtureSetHash: b4fcef1900ab9475`,
+`scorerHash: 8bbc6152d8b45a43`, and `anticheatVersion: 2`. This wording change
+leaves fixture bytes unchanged. The revised `promptHash` is `9c53ddecdcd71c16`,
+computed with `src/shared/prompt-hash.ts`. The production-lane full Class R x3
+gate, sealed holdouts and mechanical confirmation remain required.
+
+The valid source `95d0a9002cdf282aa8e823f6d5f2868358f1a125` Class D study
+remains **FAIL**. It completed 9/9 slots and 19 native calls with one intermediate
+critic identity rejection when lineStart moved from 83 to 86. The same-prompt
+re-ask succeeded, with zero final invalid outputs, recall 1 and noise 0. That
+success does not erase the zero-intermediate-error gate failure. The earlier
+INVALID campaign and partial studies remain unchanged. No new R/D campaign or
+live canary ran for this implementation.
+
+
+### Captured local patch metadata, 2026-10-18
+
+- gateClass: R, NOT_RUN. Local uncommitted `changedFiles` and `patchStat` now come from native Git forward/reverse `apply --numstat -z` and `apply --stat` over the captured patch. Omitted binary paths and dirty-only gitlinks participate in classification; source object-store and replacement lookups are not needed. Tracked and untracked producers pin `a/` and `b/` prefixes and disable color so user presentation settings cannot alter captured paths or patch payloads.
+- No provider/model gate was run for this scoped repair. Local regression and Git artifact controls do not substitute for the required full Class R gate.
+
+
+## 2026-10-18 PR #293 partial Class R stopped at an irreversible threshold
+
+Gate class **R**, `NOT_PASS / EARLY_ABORTED_AFTER_PREDECLARED_THRESHOLD_EXCEEDED`.
+The immutable candidate was `4f95b9d76e20440894c294d26cbab40a98afc11e`,
+tree `32fb597540ef478cbe59d613506b3fd8d2381265`. The primary stopped after
+114 of 327 planned slots, after 11 final-invalid outputs exceeded the sealed
+absolute limit `thresholds.maxFinalInvalid = 1`. This is an incomplete primary,
+not a complete 327-slot PASS or FAIL report. Confirmation, resident properties,
+Class D and the live canary were not run. Root revoked prospective model-call
+admission; the original admission receipt is historical, not current authority.
+
+The lane was native Codex CLI 0.163.0 through CLIProxyAPI,
+`gpt-5.6-terra/high`, Node 26.8.2, review concurrency 1 and deep concurrency 3.
+The backend identity remains unknown/private; this is not the native subscription
+lane. The accepted 41-path method digest was
+`40f062f89bfd3b44ffde1958877c2c2f83c6648ef0d43f9dc4a4cc792a3812d3`,
+criteria SHA-256
+`31a757bf9ae52786dbe1b4a71c7bf926cf7f0fd8e94fc0cb8990eff52eff9420`,
+freeze SHA-256
+`b7b3a865005b694df258252e2b0dcb031df75850f73ee1cd410788fed6bf1448`,
+and observer manifest SHA-256
+`8b73c17faa46e63206116345a22600bec540f2c13f68a53b7d56a9a68fb7133e`.
+The original partial report SHA-256 is
+`5cbd7cc3d2406908f213ccdac873e4494ce2f8504b8a1a73bd61e58749fd54f0`.
+These identify the historical artifacts; they do not establish a comparable
+full-contract report or qualify a later source.
+
+All 11 terminal format failures occurred in the critic: ten returned an empty
+`checked` list despite valid candidate coverage, and one used residual key
+`risk` without required `text`. Runtime validation rejected the output after
+three bounded format attempts. The latter review produced no final result,
+so this observation does not establish a critic pruning or recall miss.
+
+There were 289 attempt directories, 287 completed native receipts and two
+incomplete attempts. The original report records 234 calls and zero runner
+retries. Subsequent structural diagnosis reconciled the completed receipts as
+`287 = 234 reported calls + 53 attempts from 11 failed whole reviews`: nine
+small sequences contributed 36, and two large sequences contributed eight and
+nine. The old eval read stats only from successful results, so those failed
+whole-review attempts were absent from its call count. Format re-asks in
+successful reviews were already counted; runner retries are a separate measure.
+The incomplete attempts have no proven terminal outcome; one was active at
+revocation and the other has an unknown interruption cause.
+
+The original ledger audit and report verifier rejected the incomplete,
+unreconciled run. Original reports, audit outputs, raw receipts and sealed
+criteria remain unchanged; these diagnostic counts do not backfill the old
+report. Owned processes were stopped and checked absent. No resume, replacement
+campaign or post-revocation model call was used to rescue the result.
+
+The subsequent local repair supplies a critic-only structured output contract
+and preserves emitted stats on failed reviews. It keeps strict validation,
+candidate containment, system-blocking residual restoration and bounded re-asks.
+It requires a new Class R source/method/criteria seal and admission. Local
+synthetic tests do not demonstrate CLIProxyAPI schema support, model quality,
+formal R/D qualification or live-canary success.
+
+## 2026-10-18: call accounting compatibility, no evaluation run
+
+New reports record `callAccountingVersion: 2`. Calls and retries retain logical
+calls emitted by failed reviews. A successful fallback also retains the earlier
+routes' stats, including their critic and total pass time. Logical calls and
+runner attempts are not native process completions.
+
+Resume, direct comparison and weekly comparison refuse mixed accounting
+versions. Unrecorded or unsupported versions withhold metrics; their method is
+not inferred from the current package or their age. Explicit version 1 reports
+can compare with version 1, and version 2 reports with version 2. Historical
+unversioned reports remain available for inspection but cannot seed a resume or
+comparison.
+Latest tier-1 miss alerts remain active even when the previous report cannot
+support a comparison.
+
+Historical reports and the 4f95 NOT_PASS/EARLY_ABORTED evidence are unchanged.
+This metadata repair does not alter model inputs, scoring arithmetic, scorer
+identity or fixture answers. The combined pipeline change remains Class R and
+still requires its current-source gate before merge. No evaluation campaign or
+live-canary result is claimed by this entry.
+
+
+## 2026-10-18: boundary contract repair, no evaluation run
+
+Gate class **R**, pending. The shared critic schema/parser corpus exposed
+coercion of blank coverage entries and malformed residual shapes. The critic
+parser now enforces the existing structured contract before restoring candidate
+provenance. This changes usable model output and requires the exact-source full
+Class R gate; synthetic controls do not qualify it.
+
+Persisted external URLs are checked against the public structural contract
+before WHATWG normalization, including raw whitespace and port boundaries.
+Author-skip checks re-read live PR state and head immediately before posting.
+Historical model results, scorer owners and the failed 4f95 campaign are unchanged.

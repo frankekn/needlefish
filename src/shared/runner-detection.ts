@@ -3,7 +3,7 @@ import path from "node:path";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "./runner-definition.js";
 import { RUNNER_DEFINITIONS, parseRunnerName, type RunnerName, type RunnerOptions } from "./runner.js";
 
-const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner);
+const AUTO_DETECT_RUNNERS = RUNNER_CATALOG.filter((runner) => "autoDetect" in runner).filter((runner) => !("reviewUnavailableReason" in runner));
 
 export const NO_AUTO_DETECTED_RUNNER_MESSAGE = [
   "No supported model runner found on PATH.",
@@ -20,22 +20,29 @@ export interface ResolvedRunnerBinary {
 export class RunnerSelectionError extends Error {}
 
 export function resolveRunner(opts: RunnerOptions): RunnerName {
-  if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) {
+  let runner: RunnerName;
+  if (opts.runner) runner = opts.runner;
+  else if (envRunner) {
     try {
-      return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+      runner = parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
     } catch (error) {
       if (!(error instanceof Error)) throw error;
       throw new RunnerSelectionError(error.message, { cause: error });
     }
-  }
-  return autoDetectRunner();
+  } else runner = autoDetectRunner();
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
+  return runner;
 }
 
 function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
+  }
+  for (const runner of RUNNER_CATALOG) {
+    if (!("reviewUnavailableReason" in runner)) continue;
+    if (resolveRunnerBinary(runner.name)?.path !== undefined) throw new Error(runner.reviewUnavailableReason);
   }
   throw new RunnerSelectionError(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
@@ -44,16 +51,25 @@ function autoDetectRunner(): RunnerName {
  * The command runner R is spawned as. The `*_BIN` override is trimmed and a blank
  * value counts as unset; then the catalog default applies. Undefined when R has
  * no CLI (openai) or its override is required and unset (acp). Detection, the
- * doctor, and every spawn site read it here so they cannot disagree.
+ * doctor, and every spawn site share this command spelling.
  */
-export function runnerCommand(runner: RunnerName): string | undefined {
+export function runnerCommand(runner: RunnerName, environment: Readonly<NodeJS.ProcessEnv> = process.env): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  return process.env[bin.env]?.trim() || bin.fallback;
+  const command = environment[bin.env]?.trim() || bin.fallback;
+  return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
+}
+
+export function resolveCallerCommand(command: string, cwd = process.cwd(), pathApi = path): string {
+  return !pathApi.isAbsolute(command) && (command.includes("/") || command.includes(pathApi.sep))
+    ? pathApi.resolve(cwd, command)
+    : command;
 }
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
 export function requireRunnerCommand(runner: RunnerName): string {
+  const reason = RUNNER_DEFINITIONS[runner].reviewUnavailableReason;
+  if (reason !== undefined) throw new Error(reason);
   const command = runnerCommand(runner);
   if (command !== undefined) return command;
   const bin = RUNNER_DEFINITIONS[runner].bin;
@@ -63,21 +79,21 @@ export function requireRunnerCommand(runner: RunnerName): string {
 }
 
 /** Undefined when the runner has no executable to resolve: an HTTP runner, or a bin env that is required but unset. */
-export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | undefined {
-  const command = runnerCommand(runner);
+export function resolveRunnerBinary(runner: RunnerName, environment: Readonly<NodeJS.ProcessEnv> = process.env): ResolvedRunnerBinary | undefined {
+  const command = runnerCommand(runner, environment);
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
     return { command, path: executableExists(command) ? command : undefined };
   }
-  return { command, path: findOnPath(command) };
+  return { command, path: findOnPath(command, environment) };
 }
 
-function findOnPath(command: string): string | undefined {
-  const pathValue = process.env.PATH;
+function findOnPath(command: string, environment: Readonly<NodeJS.ProcessEnv>): string | undefined {
+  const pathValue = environment.PATH;
   if (!pathValue) return undefined;
   for (const dir of pathValue.split(path.delimiter)) {
     if (!dir) continue;
-    for (const executableName of executableNames(command)) {
+    for (const executableName of executableNames(command, process.platform, environment.PATHEXT)) {
       const candidate = path.join(dir, executableName);
       if (executableExists(candidate)) return candidate;
     }
@@ -95,9 +111,9 @@ function executableExists(file: string): boolean {
   }
 }
 
-function executableNames(command: string): readonly string[] {
-  if (process.platform !== "win32" || path.extname(command)) return [command];
-  const extensions = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+export function executableNames(command: string, platform: NodeJS.Platform = process.platform, pathExt = process.env.PATHEXT): readonly string[] {
+  if (platform !== "win32" || path.extname(command)) return [command];
+  const extensions = (pathExt ?? ".COM;.EXE;.BAT;.CMD")
     .split(";")
     .filter((ext: string) => ext);
   return [command, ...extensions.map((ext: string) => `${command}${ext}`)];
@@ -110,7 +126,7 @@ export function runnerReviewCapability(runner: RunnerName): {
 } {
   const capability = RUNNER_DEFINITIONS[runner].reviewCapability;
   const detail = capability === "promptOnly"
-    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex, claude, or opencode).`
+    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex or claude).`
     : capability === "unknown"
       ? `${runner}: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.`
       : `${runner}: repositoryRead; the CLI adapter enables repository tools.`;

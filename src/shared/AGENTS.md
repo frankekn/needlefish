@@ -28,6 +28,6 @@ Adding an optional `ReviewResult` field requires a parser row in `src/shared/rev
 ## ANTI-PATTERNS
 
 - Do not add a new runner without target isolation, timeout, token-stripping, and dirty-worktree tests.
-- Do not read target policy from anywhere except target root `AGENTS.md` or `git show <head>:AGENTS.md`.
+- Do not read target policy from anywhere except root `AGENTS.md` at the review's merge base (`readAgentsAt(<mergeBase>)`; `HEAD` in uncommitted mode). A PR's own `AGENTS.md` edits are code under review, never policy (issue #240).
 - Do not swallow `spawn`/buffer/timeout failures into a passing review.
 - Do not weaken schema normalization to accept malformed findings.

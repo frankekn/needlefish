@@ -64,6 +64,7 @@ needlefish --repo . --json | jq .verdict
 | `schemaVersion` | 固定為 `1`。 |
 | `verdict` | `pass`、`needs_human` 或 `changes_requested`。 |
 | `reviewTarget` | 選用的審查目標字串。 |
+| `unreviewedBinaryFiles` | 選用的 Git binary 路徑清單。內容未經審查，屬於非阻擋診斷。已列為 LFS pointer gap 的路徑不重複列出，fast path 不掃描 LFS pointer。 |
 | `docsOnlyFastPath` | 選用的 pipeline 產生旗標，表示 docs-only 政策跳過了所有模型呼叫。 |
 | `findings[]` | Finding 物件，含 `severity`、`title`、`category`、`file`、`lineStart`、`lineEnd`、`confidence`、`whyItBreaks`、`suggestedFix` 與 `validation`。 |
 | `findings[].consumerFile` | 選用的下游受影響檔案。 |
@@ -96,6 +97,10 @@ closed、stale 與 untrusted-author 跳過會 exit 0，並輸出 `needlefish-ski
 範圍。除非以 `NEEDLEFISH_NO_FAST_PATH=1` 關閉 fast path，純文件變更會依
 政策通過，並明確標示「Model review skipped by policy」；這類變更沒有任何
 模型審過。
+
+未追蹤檔案若超過單檔 200 KiB 或合計 1 MiB 上限而未納入，審查會拒絕執行，
+包含 docs-only policy skip。指令回傳 exit 1，不寫入新的審查結果。
+請將省略的檔案加入暫存區以納入 Git diff，或縮小檔案後重試。
 
 ### 基準偵測
 
@@ -150,17 +155,16 @@ review 絕不會讓 PR 過關，因為 check 會是 `failure`。當 finding 帶�
 | -------- | ------ |
 | codex    | `CODEX_AUTH_JSON`（已登入的 `~/.codex/auth.json` 內容）或 `CODEX_API_KEY` |
 | claude   | `ANTHROPIC_API_KEY` |
-| opencode | 所選模型的 provider key（例如 `OPENAI_API_KEY`） |
 | pi       | `PI_AUTH_JSON`（已登入的 `~/.pi/agent/auth.json` 內容） |
 
-hosted 安裝步驟只接受 `codex`、`claude`、`opencode` 或 `pi`。`grok` 與
-`acp` 是 CLI runner，`openai` 是 HTTP——hosted action 都不會安裝，傳入
-`runner: grok`（或 `openai`／`acp`）會在該安裝步驟失敗；Grok 4.5 請使
-用下方的 self-hosted workflow。Claude 的認證變數（`ANTHROPIC_API_KEY`、
-`CLAUDE_CODE_OAUTH_TOKEN`）與 opencode 的 `OPENAI_API_KEY` 在 runner
-subprocess 的 allowlist 內；其他 provider 的 key 需要
-`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH=VAR`（見
-[Runner subprocess 環境](#runner-subprocess-環境)）。
+hosted 安裝步驟只接受 `codex`、`claude` 或 `pi`。
+OpenCode 的啟動設定隔離尚未完成，因此暫停審查。傳入 `runner: opencode`
+會在安裝前失敗。見 [issue #207](https://github.com/frankekn/needlefish/issues/207)。
+`grok` 與 `acp` 是 CLI runner，`openai` 是 HTTP。hosted action 都不會安裝，
+傳入 `runner: grok`、`openai` 或 `acp` 會在安裝步驟失敗。
+這些 CLI runner 請使用下方的 self-hosted workflow。
+Claude 的認證變數（`ANTHROPIC_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN`）在 runner
+subprocess 的 allowlist 內。見 [Runner subprocess 環境](#runner-subprocess-環境)。
 
 **輸入**（皆可選）：`pr_number`（預設為事件 PR）、`runner`（預設
 `codex`）、`model`、`timeout_ms`、`codex_reasoning_effort`、
@@ -169,7 +173,7 @@ subprocess 的 allowlist 內；其他 provider 的 key 需要
 （預設 `false`）。
 
 **Runner 版本：** 未設定 `runner_version` 時，action 會安裝所選 runner
-CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`、`@opencode/cli`
+CLI 的最新版（`@openai/codex`、`@anthropic-ai/claude-code`
 或 `@earendil-works/pi-coding-agent`）。要固定版本時，傳入明確版本即可。
 
 **成本與行為：**
@@ -323,6 +327,10 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
   prompt response 若包含 token usage，review stats 會保留 input／output 總量。
 
+清理程序不是防範同一使用者程序的 OS 安全邊界。這類程序可在刪除路徑時，
+把無關資料移入自有暫存樹。Node 沒有依 inode 身分原子判定的 unlink 或
+目錄刪除操作。不要用維護者帳戶執行主動攻擊的 CLI。
+
 每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
 行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
 Needlefish 會用 `git status
@@ -404,12 +412,19 @@ cached-result `render`／`verdict` 診斷。
 explain` 留言指令存在於本 repo 的 `.github/workflows/commands.yml`；已發
 布的 composite action 不會安裝該 workflow。
 
+原生 Codex 額度分類已驗證 CLI 0.163 的 JSON events。其他版本尚未取得
+自動額度 fallback 資格。未知 event schema 保留失敗，並以私有失敗 trace metadata 記錄
+`unrecognized_codex_event_schema`，原始 transcript 不變，不依額度字樣切換路由。單一路由的 deep
+review 遇到額度耗盡或取消也會失敗，不會改成 blocking residual。
+
 ## Doctor 與 GitHub 設定細節
 
-`npx needlefish doctor` 不呼叫模型，會檢查 Node、所選 runner CLI 與版本、
-Git repo 與偵測到的基準 ref。認證檢查使用 runner 的狀態指令及與審查相同
+`npx needlefish doctor` 不呼叫模型，會檢查 Node、Git repo 與偵測到的基準 ref。
+一般 runner 選擇會另檢查 CLI 版本。認證檢查使用 runner 的狀態指令及與審查相同
 的環境變數 allowlist。審查接受的環境憑證，例如 opencode 的
-`OPENAI_API_KEY`，不另行探測即可通過。失敗項目會列出修正方式。
+`OPENAI_API_KEY`，不另行探測即可通過。
+`doctor --connection` 檢查具名連線設定與執行檔是否可用，不探測 CLI 版本、
+帳戶身分或登入狀態。這些項目保留為 `unknown`。失敗項目會列出修正方式。
 `--json` 提供相同報告。任何檢查失敗時 exit code 為 1，否則為 0。
 無法判定的檢查列為 `unknown`，不造成非零 exit code，也不證明模型可用。
 
@@ -431,6 +446,25 @@ workflow，另行設定 Actions secret `NEEDLEFISH_CODEX_API_KEY`。此指令
 啟用後，finding 會
 以錨定到 diff 的 inline review comment 送達；後續 push 會就地更新同一
 份 review（fresh／still-open／未再回報），而不是不斷堆疊新 review。
+
+## 公開 native 評測的重現條件
+
+公開 native Codex report 在 `runnerEnvironment` 的 `CODEX_PUBLIC_NATIVE`
+記錄指定執行檔的完整 SHA-256。若設定了 `CODEX_BIN`，該欄也記錄相同 digest。
+Qualification proof 保留這份 environment。Runtime qualification 會計算實際
+設定的 native 執行檔 digest，再與 proof 的身份比對。同一路徑的檔案若換了
+內容，即使版本字串相同，也不能符合原 proof。
+
+重現需要 checkout report 的 `gitSha`，並由 operator 在
+`reproductionCommand` 的路徑提供 native 執行檔。該檔案的 SHA-256 必須與
+report 相同。只有 source checkout 不會包含這個 artifact，指令也不會下載
+它。`--public-launcher-artifact` 必須指向實際設定的 Codex 執行檔。其他已記錄的
+設定也必須相同。
+
+Digest 只識別該檔案，不證明其間接載入的程式碼或 provider 執行檔身份。
+Report 的版本、provider 與 route 由 operator 宣告。Runtime native Codex
+比對還會執行 `--version`，並檢查其支援的 provider 與 route。
+缺漏或私有身份仍不具資格。
 
 ## 歷史 benchmark 記錄
 

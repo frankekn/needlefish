@@ -1,3 +1,6 @@
+import { captureCodexInvocation, capturedCodexEnvironment, prepareCapturedCodexHome, capturedCodexCommand, checkCodexInvocation } from "./codex-invocation.js";
+import { findDuplicateJsonKey } from "./json-keys.js";
+import { collectCodexToolReceipts, type CodexToolTrace } from "./codex-tool-receipts.js";
 import {
 	existsSync,
 	copyFileSync,
@@ -6,13 +9,19 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { runAcp } from "./acp.js";
+import { CodexEnvironmentAuth } from "./connection-auth.js";
+import { runtimeLabel } from "./runtime.js";
+import { resolveAcpInitializeTimeoutMs, runAcp } from "./acp.js";
 import { envFlagOn } from "./env.js";
-import { findRunnerFailure } from "./runner-failure.js";
+import { findRunnerFailure, RunnerFailure } from "./runner-failure.js";
 import {
 	RUNNER_DEFINITIONS,
+	PI_DEFAULT_MODEL,
+	PI_DEFAULT_THINKING,
+	GROK_DEFAULT_MODEL,
 	parsePositiveInteger,
 	type AcpLaunchSpec,
+	type ConnectionOutputGuard,
 	type RunnerName,
 	type RunnerOptions,
 	type RunStat,
@@ -57,6 +66,7 @@ import {
 	assertRunnerSandboxClean,
 	isRunnerSafetyError,
 	prepareRunnerSandbox,
+	type RunnerSandbox,
 } from "./runner-sandbox.js";
 
 export { isRunnerSafetyError } from "./runner-sandbox.js";
@@ -92,15 +102,16 @@ export function buildRunnerEnv(
 	ghConfigDir: string,
 	ephemeralHome?: string,
 	connectionAuth?: RunnerOptions["connectionAuth"],
+	sourceEnvironment: RunnerEnvironment = process.env,
 ): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = { GH_CONFIG_DIR: ghConfigDir };
 	const allowed = [...BASE_ENV_ALLOWLIST, ...RUNNER_DEFINITIONS[runner].envAllowlist];
-	const extra = connectionAuth ? [] : (process.env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
+	const extra = connectionAuth ? [] : (sourceEnvironment.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH ?? "")
 		.split(",")
 		.map((name) => name.trim())
 		.filter(Boolean);
 	for (const name of [...allowed, ...extra]) {
-		const value = process.env[name];
+		const value = sourceEnvironment[name];
 		if (value !== undefined) env[name] = value;
 	}
 	// Ephemeral per-draw HOME (G1): when the flag is on and a non-claude
@@ -114,6 +125,7 @@ export function buildRunnerEnv(
 			env.XDG_CONFIG_HOME = path.join(ephemeralHome, ".config");
 			env.XDG_DATA_HOME = path.join(ephemeralHome, ".local", "share");
 		}
+		if (runner === "codex") env.CODEX_HOME = path.join(ephemeralHome, ".codex");
 		if (connectionAuth) {
 			env.XDG_CACHE_HOME = path.join(ephemeralHome, ".cache");
 			env.XDG_STATE_HOME = path.join(ephemeralHome, ".local", "state");
@@ -304,11 +316,26 @@ function requireAcpEnvCredentials(): void {
 	}
 }
 
+interface PiAuthSelection {
+	readonly provider: string;
+	readonly authMode: "oauth" | "proxy";
+}
+
+function resolvePiAuthSelection(): PiAuthSelection {
+	const provider = process.env.PI_PROVIDER ?? "openai-codex";
+	const authMode = process.env.PI_AUTH_MODE ??
+		(provider === "openai-codex" ? "oauth" : "proxy");
+	if (authMode !== "oauth" && authMode !== "proxy") {
+		throw new Error("PI_AUTH_MODE must be oauth or proxy");
+	}
+	return Object.freeze({ provider, authMode });
+}
+
 // Which of a runner's HOME files are required vs merely staged-if-present
 // depends on the auth mode in effect: env-key / proxy-provider modes carry
 // their credentials outside the HOME, so demanding the HOME credential store
 // would reject supported configurations that never read it.
-function ephemeralAuthFiles(runner: RunnerName): {
+function ephemeralAuthFiles(runner: RunnerName, piAuth: PiAuthSelection | undefined): {
 	readonly required: readonly string[];
 	readonly optional: readonly string[];
 } {
@@ -375,14 +402,8 @@ function ephemeralAuthFiles(runner: RunnerName): {
 	}
 	// pi: proxy routes keep credentials outside HOME. Every explicit non-default
 	// provider also needs its registry; OAuth routes require Pi's auth store.
-	if (runner === "pi") {
-		const provider = process.env.PI_PROVIDER ?? "openai-codex";
-		const authMode =
-			process.env.PI_AUTH_MODE ??
-			(provider === "openai-codex" ? "oauth" : "proxy");
-		if (authMode !== "oauth" && authMode !== "proxy") {
-			throw new Error("PI_AUTH_MODE must be oauth or proxy");
-		}
+	if (piAuth) {
+		const { provider, authMode } = piAuth;
 		if (authMode === "proxy" || hasPiProviderEnvCredential(provider)) {
 			return {
 				required: [".pi/agent/models.json"],
@@ -409,6 +430,7 @@ export function prepareEphemeralHome(
 	runner: RunnerName,
 	tmp: string,
 	connectionAuth?: RunnerOptions["connectionAuth"],
+	selectedPiAuth?: PiAuthSelection,
 ): string | undefined {
 	connectionAuth?.assertCompatible(runner);
 	if (!connectionAuth && process.env.NEEDLEFISH_EPHEMERAL_HOME !== "1") return undefined;
@@ -426,10 +448,12 @@ export function prepareEphemeralHome(
 		process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
 	const home = path.join(tmp, "home");
 	mkdirSync(home, { recursive: true, mode: 0o700 });
+	if (runner === "codex" && connectionAuth) mkdirSync(path.join(home, ".codex"), { mode: 0o700 });
+	const piAuth = runner === "pi" ? selectedPiAuth ?? resolvePiAuthSelection() : undefined;
 	// Explicit env auth never stages a default account's files or config.
 	const { required, optional } = connectionAuth
 		? { required: [], optional: [] }
-		: ephemeralAuthFiles(runner);
+		: ephemeralAuthFiles(runner, piAuth);
 	if (!realHome) {
 		// No source HOME is only a problem when something must be staged from
 		// it: an env-authenticated mode (required empty) is independently valid,
@@ -498,8 +522,8 @@ export function prepareEphemeralHome(
 		// this only stops default-path resolution; a same-uid child that
 		// hunts absolute paths can still read the real HOME. Detection of
 		// that behavior is G3's job (bait + canary), not G1's.
-		if (runner === "pi" && rel === ".pi/agent/auth.json") {
-			const provider = process.env.PI_PROVIDER ?? "openai-codex";
+		if (piAuth && rel === ".pi/agent/auth.json") {
+			const { provider } = piAuth;
 			let auth: unknown;
 			try {
 				auth = JSON.parse(readFileSync(src, "utf8"));
@@ -519,18 +543,25 @@ export function prepareEphemeralHome(
 	return home;
 }
 
+export type RunnerDiagnostic = "unrecognized_codex_event_schema";
+
 export interface CodexOptions extends RunnerOptions {
+	readonly codexOutputSchema?: Readonly<Record<string, unknown>>;
+	readonly effectiveConfig?: EffectiveRunnerConfig;
+	readonly outputGuards?: readonly ConnectionOutputGuard[];
 	// Absolute monotonic deadline shared by every pass, JSON repair and runner retry.
 	readonly reviewDeadlineMs?: number;
 	readonly repoPath: string;
 	readonly targetHeadSha: string;
 	readonly targetBaseSha?: string;
 	readonly targetPatch?: string;
+	readonly snapshot?: Pick<RunnerSandbox, "repoPath" | "expectedHeadSha">;
 	readonly label?: string;
 	readonly onStat?: (stat: RunStat) => void;
 	readonly onFailedAttempt?: (
 		runnerAttempt: number,
 		raw: string | undefined,
+		diagnostic?: RunnerDiagnostic,
 	) => void;
 	// Called with the captured stdout of every failed attempt (runner crash or
 	// nonzero exit) — the eval canary scan must see output a runner emitted
@@ -541,6 +572,7 @@ export interface CodexOptions extends RunnerOptions {
 	// canary on a stream while writing a clean final message — the resolved
 	// output alone is not the transcript.
 	readonly onRaw?: (raw: string, runnerAttempt: number) => void;
+	readonly onNativeToolTrace?: (trace: CodexToolTrace, runnerAttempt: number) => void | Promise<void>;
 	// Called once per sandbox. Output-only metadata for the human-facing
 	// result; the runner already gets the same facts in its prompt.
 	readonly onLfsReport?: (report: LfsSandboxReport) => void;
@@ -569,15 +601,22 @@ interface RunnerAttemptResult {
 }
 
 interface RunnerInvocation {
+	readonly codexOutputSchema?: CodexOptions["codexOutputSchema"];
+	readonly codexCommand?: string;
 	readonly acpLaunch?: AcpLaunchSpec;
+	readonly initializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
 	readonly prompt: string;
+	readonly launchPath: string;
 	readonly repoPath: string;
 	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
+	readonly codexServiceTier: string | undefined;
+	readonly piProvider: string | undefined;
 	readonly timeoutMs: number;
 	readonly env: NodeJS.ProcessEnv;
 	readonly tmp: string;
-	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly codexProxyBaseUrl: string | undefined;
 }
 
 interface CodexProxyConfig {
@@ -604,7 +643,61 @@ function resolveCodexProxyConfig(): CodexProxyConfig | undefined {
 			"CODEX_PROXY_API_KEY is required when the Codex proxy route is configured or NEEDLEFISH_CODEX_PROXY_REQUIRED=1",
 		);
 	}
-	return { baseUrl, apiKey };
+	return Object.freeze({ baseUrl, apiKey });
+}
+
+export interface EffectiveRunnerConfig {
+	readonly connectionAuth: RunnerOptions["connectionAuth"];
+	readonly runner: RunnerName;
+	readonly acpLaunch: AcpLaunchSpec | undefined;
+	readonly acpInitializeTimeoutMs: number;
+	readonly openCodeIdleTimeoutMs: number;
+	readonly model: string | undefined;
+	readonly reasoningEffort: string | undefined;
+	readonly effectiveEffort: string | undefined;
+	readonly timeoutMs: number;
+	readonly codexServiceTier: string | undefined;
+	readonly codexProxy: CodexProxyConfig | undefined;
+	readonly piAuth: PiAuthSelection | undefined;
+}
+
+export function resolveRunnerConfig(opts: RunnerOptions): EffectiveRunnerConfig {
+	try {
+		const runner = resolveRunner(opts);
+		opts.connectionAuth?.assertCompatible(runner);
+		const configuredModel = resolveModel(opts, runner) ??
+			(runner === "pi" ? PI_DEFAULT_MODEL : runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
+		const effort = opts.reasoningEffort || undefined;
+		const model = runner === "acp" ? opts.acpLaunch ? opts.model : undefined :
+			runner === "opencode" && configuredModel && effort && effort !== "default"
+				? `${configuredModel.split("#")[0]}#${effort}` : configuredModel;
+		const effectiveEffort = runner === "acp" || runner === "openai" ? undefined :
+			runner === "codex" ? effort ?? resolveCodexReasoningEffort() :
+			runner === "pi" ? resolvePiThinking(effort) :
+			runner === "opencode" ? model?.split("#").length === 2 ? model.split("#")[1] : undefined : effort;
+		if (opts.timeoutMs !== undefined && (!Number.isSafeInteger(opts.timeoutMs) || opts.timeoutMs <= 0)) {
+			throw new Error("timeoutMs requires a positive safe integer");
+		}
+		const timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
+		const config: EffectiveRunnerConfig = Object.freeze({
+			runner,
+			connectionAuth: opts.connectionAuth,
+			acpLaunch: opts.acpLaunch,
+			acpInitializeTimeoutMs: runner === "acp" ? resolveAcpInitializeTimeoutMs(timeoutMs) : timeoutMs,
+			openCodeIdleTimeoutMs: runner === "opencode" ? openCodeIdleTimeoutMs(timeoutMs) : timeoutMs,
+			model,
+			reasoningEffort: runner === "codex" ? effectiveEffort : opts.reasoningEffort,
+			effectiveEffort,
+			timeoutMs,
+			codexServiceTier: runner === "codex" ? resolveCodexServiceTier() : undefined,
+			codexProxy: runner === "codex" && !(opts.connectionAuth instanceof CodexEnvironmentAuth) ? resolveCodexProxyConfig() : undefined,
+			piAuth: runner === "pi" ? resolvePiAuthSelection() : undefined,
+		});
+		captureCodexInvocation(config);
+		return config;
+	} catch (error) {
+		throw asRunnerOperationalError(error);
+	}
 }
 
 function remainingReviewMs(deadline: number | undefined): number {
@@ -617,22 +710,17 @@ export async function runCodex(
 	prompt: string,
 	opts: CodexOptions,
 ): Promise<string> {
-	let runner: RunnerName;
-	let codexProxy: CodexProxyConfig | undefined;
-	try {
-		runner = resolveRunner(opts);
-		opts.connectionAuth?.assertCompatible(runner);
-		codexProxy = runner === "codex" ? resolveCodexProxyConfig() : undefined;
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const config = opts.effectiveConfig ?? resolveRunnerConfig(opts);
+	const { runner } = config;
+	const guards = opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : []);
 	const maxAttempts = envFlagOn("NEEDLEFISH_NO_RETRY") ? 1 : 2;
 	const startedAt = Date.now();
 	let attempts = 0;
 	let usage: RunUsage | undefined;
 	const emitStat = (ok: boolean): void => {
 		if (!opts.onStat) return;
-		const model = resolveModel(opts, runner);
+		const modelIdentity = runtimeLabel(config.model, "known", "model");
+		const model = modelIdentity.status === "unknown" ? undefined : modelIdentity.value;
 		opts.onStat({
 			label: opts.label ?? "(unlabeled)",
 			runner,
@@ -648,31 +736,34 @@ export async function runCodex(
 		attempts = attempt;
 		try {
 			remainingReviewMs(opts.reviewDeadlineMs);
-			const result = await runCodexOnce(prompt, opts, runner, attempt, codexProxy);
+			const result = await runCodexOnce(prompt, opts, config, attempt);
 			usage = result.usage;
 			emitStat(true);
 			return result.out;
 		} catch (err) {
-			if (err instanceof Error && opts.connectionAuth) {
+			if (err instanceof Error && guards.length > 0) {
 				// Keep failure types and raw provenance while withholding public credentials.
 				err.message = err instanceof RunnerWorktreeChangedError
 					? "Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential. Use controlled raw diagnostics to inspect the change."
-					: opts.connectionAuth.screenDiagnostic(err.message);
+					: guards.reduce((message, guard) => guard.screenDiagnostic(message), err.message);
 			}
 			const raw =
 				err instanceof Error
 					? (err as Error & { rawOutput?: string }).rawOutput
 					: undefined;
-			opts.onFailedAttempt?.(attempt, raw);
+			const diagnostic: unknown = err instanceof Error
+				? Object.getOwnPropertyDescriptor(err, "runnerDiagnostic")?.value : undefined;
+			opts.onFailedAttempt?.(attempt, raw,
+				diagnostic === "unrecognized_codex_event_schema" ? diagnostic : undefined);
 			if (raw) {
 				// Hand the failed attempt's stdout to the caller's accumulator now:
 				// a successful retry discards this error object, and the canary
 				// scan must still see what the dying attempt emitted.
 				opts.onFailedRaw?.(raw, attempt);
 			}
-			if (raw && opts.connectionAuth && !isRunnerSafetyError(err)) {
+			if (raw && guards.length > 0 && !isRunnerSafetyError(err)) {
 				try {
-					opts.connectionAuth.assertOutputSafe(raw);
+					for (const guard of guards) guard.assertOutputSafe(raw);
 				} catch (screeningError) {
 					if (screeningError instanceof Error) Object.defineProperty(screeningError, "cause", { value: err, configurable: true });
 					emitStat(false);
@@ -714,17 +805,10 @@ export async function runCodex(
 async function runCodexOnce(
 	prompt: string,
 	opts: CodexOptions,
-	runner: RunnerName,
+	config: EffectiveRunnerConfig,
 	runnerAttempt: number,
-	codexProxy: CodexProxyConfig | undefined,
 ): Promise<RunnerAttemptResult> {
-	const model = resolveModel(opts, runner);
-	let timeoutMs: number;
-	try {
-		timeoutMs = opts.timeoutMs ?? timeoutMsFor(runner);
-	} catch (error) {
-		throw asRunnerOperationalError(error);
-	}
+	const { runner, model, timeoutMs, codexProxy } = config;
 	if (runner === "openai") {
 		return {
 			out: await runOpenAIDirect(prompt, model, Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)), (raw) =>
@@ -739,6 +823,9 @@ async function runCodexOnce(
 		if (isRunnerSafetyError(error)) throw error;
 		throw asRunnerOperationalError(error);
 	}
+	let nativeResult: RunnerProcessResult | undefined;
+	let nativeFailure: unknown;
+	let nativeAccepted = false;
 	// Everything after temp allocation lives inside the try: a preparation failure
 	// (e.g. fail-closed missing auth in prepareEphemeralHome) must still hit
 	// the finally cleanup, or it leaks the dir — with copied credentials in it.
@@ -746,31 +833,42 @@ async function runCodexOnce(
 		const ghConfigDir = path.join(tmp, "gh-empty");
 		const { invocation, sandbox } = (() => {
 			try {
+				const codexCommand = runner === "codex" ? capturedCodexCommand(config) : undefined;
 				mkdirSync(ghConfigDir, { recursive: true });
-				const ephemeralHome = prepareEphemeralHome(runner, tmp, opts.connectionAuth);
-				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, opts.connectionAuth);
+				const ephemeralHome = runner === "codex" && !config.connectionAuth
+					? prepareCapturedCodexHome(config, tmp) : prepareEphemeralHome(runner, tmp, config.connectionAuth, config.piAuth);
+				const env = buildRunnerEnv(runner, ghConfigDir, ephemeralHome, config.connectionAuth, capturedCodexEnvironment(config));
 				if (codexProxy) env.CODEX_PROXY_API_KEY = codexProxy.apiKey;
 				const sandbox = prepareRunnerSandbox({
 					runner,
 					repoPath: opts.repoPath,
 					prompt,
 					targetHeadSha: opts.targetHeadSha,
+					remainingReviewMs: () => remainingReviewMs(opts.reviewDeadlineMs),
 					...(opts.targetBaseSha ? { targetBaseSha: opts.targetBaseSha } : {}),
 					...(opts.targetPatch ? { targetPatch: opts.targetPatch } : {}),
+					...(opts.snapshot ? { snapshot: opts.snapshot } : {}),
 					tmp,
 				});
 				return {
 					sandbox,
 					invocation: {
-						...(opts.acpLaunch ? { acpLaunch: opts.acpLaunch } : {}),
+						...(codexCommand ? { codexCommand } : {}),
+						...(opts.codexOutputSchema ? { codexOutputSchema: opts.codexOutputSchema } : {}),
+						...(config.acpLaunch ? { acpLaunch: config.acpLaunch } : {}),
+						initializeTimeoutMs: config.acpInitializeTimeoutMs,
+						openCodeIdleTimeoutMs: config.openCodeIdleTimeoutMs,
 						prompt: sandbox.prompt,
 						repoPath: sandbox.repoPath,
+						launchPath: sandbox.launchPath,
 						model,
-						reasoningEffort: opts.reasoningEffort,
+						reasoningEffort: config.reasoningEffort,
+						codexServiceTier: config.codexServiceTier,
+						piProvider: config.piAuth?.provider,
 						timeoutMs: Math.min(timeoutMs, remainingReviewMs(opts.reviewDeadlineMs)),
 						env,
 						tmp,
-						codexProxy,
+						codexProxyBaseUrl: config.connectionAuth instanceof CodexEnvironmentAuth ? config.connectionAuth.proxyBaseUrl() : codexProxy?.baseUrl,
 					},
 				};
 			} catch (error) {
@@ -784,7 +882,12 @@ async function runCodexOnce(
 		});
 		let result: RunnerResult;
 		try {
-			result = await runRunner(runner, invocation);
+			try {
+				if (runner === "codex") capturedCodexCommand(config);
+				result = await runRunner(runner, invocation);
+			}
+			finally { checkCodexInvocation(config, invocation.codexCommand, invocation.env.HOME); }
+			if (runner === "codex") nativeResult = result.res;
 		} catch (error) {
 			if (isRunnerSafetyError(error)) throw error;
 			throw asRunnerOperationalError(error);
@@ -803,6 +906,12 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
+			if (runner === "codex" && [...codexEvents(result.res.stdout)].some(event => event === null)) {
+				Object.defineProperty(err, "runnerDiagnostic", {
+					value: "unrecognized_codex_event_schema" satisfies RunnerDiagnostic,
+					configurable: true,
+				});
+			}
 			if (raw) {
 				Object.defineProperty(err, "rawOutput", {
 					value: raw,
@@ -821,13 +930,17 @@ async function runCodexOnce(
 			);
 		}
 		if (result.res.status !== 0) {
-			// Surface only allowlisted, prompt-free cause tokens extracted from
-			// stderr (auth/quota/network classifications). Raw stderr stays
-			// withheld — it may contain the review prompt.
-			const cause = safeRunnerCause(result.res.stderr);
+			try { assertRunnerSandboxClean(runner, sandbox.repoPath, sandbox.expectedHeadSha); }
+			catch (error) { if (error instanceof Error) throw withRunnerOutput(error); throw error; }
+			// Raw streams can contain the review prompt; expose only canned causes.
+			const cause = runner === "codex"
+				? safeCodexCause(result.res.stdout, result.res.stderr, invocation.prompt)
+				: safeRunnerCause(result.res.stderr);
 			throw withRunnerOutput(
 				new RunnerOperationalError(
 					`${runner} runner exited ${result.res.status}${cause ? `; likely cause: ${cause}` : ""}; stderr withheld because it may contain the review prompt. ${exitFailureNextStep(runner, cause)}`,
+					...(runner === "codex" && nativeCodexQuotaExhausted(result.res.stdout, result.res.status)
+						? [{ cause: new RunnerFailure("quota_exhausted", "Selected Codex route exhausted its quota.") }] : []),
 				),
 			);
 		}
@@ -848,8 +961,8 @@ async function runCodexOnce(
 		// from a zero-exit process) — that text is still canary-scan material.
 		try {
 			const out = outputFor(runner, result);
-			if (opts.connectionAuth) {
-				opts.connectionAuth.assertOutputSafe(out);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) {
+				guard.assertOutputSafe(out);
 				let decoded: unknown;
 				try {
 					decoded = extractJson(out);
@@ -857,7 +970,7 @@ async function runCodexOnce(
 					// Explain output can be plain text; raw screening still applies.
 					if (!(error instanceof Error)) throw error;
 				}
-				if (decoded !== undefined) opts.connectionAuth.assertOutputSafe(JSON.stringify(decoded));
+				if (decoded !== undefined) guard.assertOutputSafe(JSON.stringify(decoded));
 			}
 			// Success is not an escape hatch either: the raw streams of a
 			// status-0 attempt (codex prints noise to stdout while the model
@@ -867,21 +980,188 @@ async function runCodexOnce(
 			]
 				.filter(Boolean)
 				.join("\n");
-			opts.connectionAuth?.assertOutputSafe(raw);
+			for (const guard of opts.outputGuards ?? (config.connectionAuth ? [config.connectionAuth] : [])) guard.assertOutputSafe(raw);
 			opts.onRaw?.(raw, runnerAttempt);
+			nativeAccepted = true;
 			return { out, ...(result.usage ? { usage: result.usage } : {}) };
 		} catch (err) {
 			if (err instanceof Error) throw withRunnerOutput(err);
 			throw err;
 		}
+	} catch (error) {
+		nativeFailure = error;
+		throw error;
 	} finally {
+		if (runner === "codex" && opts.onNativeToolTrace) {
+			const invocation: CodexToolTrace["invocation"] =
+				nativeFailure instanceof RunnerWorktreeChangedError ? "integrity_failed" :
+				nativeResult?.error instanceof RunnerTimeoutError || nativeResult?.error instanceof RunnerIdleTimeoutError ? "timeout" :
+				nativeResult?.error ? "process_error" : nativeResult?.signal ? "signal" :
+				nativeResult && nativeResult.status !== 0 ? "exit_nonzero" :
+				nativeAccepted ? "accepted" : nativeResult ? "output_rejected" : "unknown";
+			const collected = collectCodexToolReceipts(nativeResult?.stdout);
+			const collection: CodexToolTrace["collection"] = ["timeout", "signal", "process_error"].includes(invocation)
+				? Object.freeze({ ...collected, status: "incomplete", gaps: Object.freeze([...collected.gaps, "process_interrupted" as const]) }) : collected;
+			try { await opts.onNativeToolTrace(Object.freeze({
+				adapter: "codex", transport: "exec_jsonl_stdout", protocol: "rust-v0.163.0",
+				toolRead: "unknown", invocation,
+				collection,
+			}), runnerAttempt); } catch {
+				// review() records observer health; telemetry must not alter runner admission.
+			}
+		}
 		await disposeManagedTempDirectory(tmp);
 	}
 }
 
-// Allowlisted cause classification for withheld runner stderr. Only canned
-// phrases and regex-extracted codes ever reach the PR-visible message; raw
-// stderr text never does (it may contain the review prompt).
+type CodexEvent =
+	| { readonly kind: "failure"; readonly message: string }
+	| { readonly kind: "message"; readonly text: string }
+	| { readonly kind: "metadata" }
+	| { readonly kind: "completed" };
+
+function* codexEnvelopes(stdout: string): Generator<Record<string, unknown> | null> {
+	let terminal = false;
+	for (const line of stdout.split(/\r?\n/)) {
+		if (!line.trim()) continue;
+		if (terminal) { yield null; continue; }
+		let event: unknown;
+		try { event = JSON.parse(line); } catch { yield null; continue; }
+		if (!isRecord(event)) { yield null; continue; }
+		terminal = event.type === "turn.failed" || event.type === "turn.completed";
+		yield event;
+	}
+}
+
+function codexEvent(event: Record<string, unknown>): CodexEvent | null {
+	switch (event.type) {
+		case "error":
+		case "turn.failed": {
+			const message = event.type === "error" ? event.message : isRecord(event.error) ? event.error.message : undefined;
+			return typeof message === "string" ? { kind: "failure", message } : null;
+		}
+		case "thread.started":
+			return typeof event.thread_id === "string" ? { kind: "metadata" } : null;
+		case "turn.started":
+			return { kind: "metadata" };
+		case "turn.completed": {
+			const usage = event.usage;
+			return isRecord(usage) && ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"]
+				.every((field) => Number.isInteger(usage[field])) ? { kind: "completed" } : null;
+		}
+		case "item.started":
+		case "item.updated":
+		case "item.completed": {
+			const item = event.item;
+			if (!isRecord(item) || typeof item.id !== "string" || typeof item.type !== "string") { return null; }
+			if (item.type === "agent_message") {
+				return typeof item.text !== "string" ? null : event.type === "item.completed"
+					? { kind: "message", text: item.text } : { kind: "metadata" };
+			} else {
+				return ["reasoning", "command_execution", "file_change", "mcp_tool_call", "collab_tool_call", "web_search", "todo_list", "error"]
+					.includes(item.type) ? { kind: "metadata" } : null;
+			}
+		}
+		default:
+			return null;
+	}
+}
+
+function* codexEvents(stdout: string): Generator<CodexEvent | null> {
+	for (const envelope of codexEnvelopes(stdout)) yield envelope === null ? null : codexEvent(envelope);
+}
+
+function exhaustedCodexMessage(message: string): boolean {
+	let text = message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	const reconnect = text.match(/^Reconnecting\.\.\. [1-5]\/5 \((.+)\)$/);
+	if (reconnect) text = reconnect[1];
+	const nativeStatus = text.match(/^unexpected status 402 Payment Required: (.+), url: (https?:\/\/\S+)$/);
+	if (text.startsWith("unexpected status ")) {
+		if (!nativeStatus) return false;
+		try { new URL(nativeStatus[2]); } catch { return false; }
+		text = nativeStatus[1];
+	}
+
+	if (/^[{["]/.test(text)) {
+		let raw: unknown;
+		try { raw = JSON.parse(text); } catch { return false; }
+		if (!isRecord(raw)) return false;
+		if ("error" in raw && Object.keys(raw).some((key) => key !== "error")) return false;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload) || Object.keys(payload).some((key) => !["code", "type", "message"].includes(key))) return false;
+		if (Object.values(payload).some((value) => typeof value !== "string")) return false;
+		if (payload.code !== undefined && payload.code !== "insufficient_quota" && payload.code !== "payment_required" && payload.code !== "BAD_REQUEST") return false;
+		if (payload.type !== undefined && payload.type !== "insufficient_quota" && payload.type !== "invalid_request_error") return false;
+		const values = Object.values(payload).join("\n");
+		if (/auth|unauthorized|forbidden|token_expired|invalid_api_key|\b40[13]\b/i.test(values)) return false;
+		if (payload.code === "insufficient_quota" || payload.type === "insufficient_quota") return true;
+		if (typeof payload.message !== "string") return false;
+		text = payload.message;
+	}
+	return /^(?:insufficient credits|insufficient account funds|usage balance exhausted|You have insufficient credits to make this request\.(?: Please purchase more credits to continue using the service\.)?)$/i.test(text);
+}
+
+export function nativeCodexQuotaExhausted(stdout: string, status: number | null): boolean {
+	if (status === null || !Number.isInteger(status) || status <= 0) return false;
+	let terminal = false;
+	for (const envelope of codexEnvelopes(stdout)) {
+		if (envelope === null) return false;
+		const fields = envelope.type === "error" ? ["type", "message"] : envelope.type === "turn.failed" ? ["type", "error"]
+			: envelope.type === "thread.started" ? ["type", "thread_id"] : envelope.type === "turn.started" ? ["type"]
+			: envelope.type === "turn.completed" ? ["type", "usage"] : ["type", "item"];
+		if (Object.keys(envelope).some((key) => !fields.includes(key))) return false;
+		if (isRecord(envelope.item) && envelope.item.type === "error" &&
+			(typeof envelope.item.message !== "string" || !/^Model metadata for `[^`\r\n]+` not found\. Defaulting to fallback metadata; this can degrade performance and cause issues\.$/.test(envelope.item.message))) return false;
+		if (envelope.type === "turn.failed" && (!isRecord(envelope.error) || Object.keys(envelope.error).some((key) => key !== "message"))) return false;
+		const event = codexEvent(envelope);
+		if (event === null || event.kind === "completed") return false;
+		if (event.kind === "failure") {
+			if (!exhaustedCodexMessage(event.message)) return false;
+			terminal = !/^Reconnecting\.\.\. /.test(event.message);
+		} else if (terminal) return false;
+	}
+	return terminal;
+}
+
+function safeCodexCause(stdout: string, stderr: string, prompt: string): string | undefined {
+	let failure: { kind: "absent" } | { kind: "seen"; message: string | undefined } = { kind: "absent" };
+	for (const event of codexEvents(stdout)) {
+		if (event === null) return undefined;
+		if (event.kind === "failure") {
+			failure = { kind: "seen", message: event.message };
+		} else if (event.kind === "completed" || failure.kind === "seen") {
+			failure = { kind: "seen", message: undefined };
+		}
+	}
+	if (failure.kind === "absent") {
+		// JSON mode keeps model and tool text in stdout events, never stderr.
+		const promptStart = prompt ? stderr.lastIndexOf(prompt) : -1;
+		return safeRunnerCause(promptStart < 0 ? stderr : stderr.slice(promptStart + prompt.length));
+	}
+	if (typeof failure.message !== "string") return undefined;
+	let message = failure.message.trim().replace(/^(?:\[[^\]\r\n]+\]\s*)?ERROR:\s*/, "");
+	if (/^[{["]/.test(message)) {
+		let raw: unknown;
+		try {
+			raw = JSON.parse(message);
+		} catch {
+			return undefined;
+		}
+		if (!isRecord(raw)) return undefined;
+		const payload = "error" in raw ? raw.error : raw;
+		if (!isRecord(payload)) return undefined;
+		const fields = [payload.code, payload.type, payload.message, payload.last_upstream_error];
+		if (fields.some((field) => field !== undefined && typeof field !== "string")) return undefined;
+		message = fields.filter((field) => typeof field === "string").join("\n");
+	}
+	const legacy = safeRunnerCause(message);
+	if (legacy?.startsWith("auth")) return legacy;
+	return /insufficient credits|insufficient account funds|usage balance exhausted/i.test(message)
+		? "usage limit"
+		: legacy;
+}
+
+// Only canned phrases and regex-extracted codes reach the public diagnostic.
 export function safeRunnerCause(stderr: string): string | undefined {
 	if (!stderr) return undefined;
 	// Order matters. Explicit, self-labelling signals are checked before the loose
@@ -1013,58 +1293,6 @@ function unparseableOutputError(text: string): Error {
 	);
 }
 
-// JSON.parse collapses a duplicated member key silently (last value wins), so
-// a response repeating `"findings"` (findings, then []) loses the findings and
-// normalizes to a pass. Reject duplicates anywhere instead of trusting the
-// collapsed object. The reviver cannot detect this (V8 calls it once per
-// collapsed key), so this scanner walks the text: in JSON that has already
-// parsed, the first token after `{` or `,` inside an object is a member name,
-// so a string in that position is a key and duplicate keys fail the set check.
-// Keys are compared decoded, matching what JSON.parse collided.
-function findDuplicateJsonKey(source: string): string | undefined {
-	type Scope = { isObject: true; keys: Set<string> } | { isObject: false };
-	const stack: Scope[] = [];
-	let nextIsKey = false;
-	for (let i = 0; i < source.length; ) {
-		const ch = source[i];
-		if (ch === '"') {
-			// Skip to the closing quote, stepping over escape pairs so `\"`
-			// and braces inside strings do not shift the structural scan.
-			let end = i + 1;
-			while (end < source.length) {
-				if (source[end] === "\\") end += 2;
-				else if (source[end] === '"') break;
-				else end += 1;
-			}
-			const top = stack[stack.length - 1];
-			if (top !== undefined && top.isObject && nextIsKey) {
-				const key = JSON.parse(source.slice(i, end + 1)) as string;
-				if (top.keys.has(key)) return key;
-				top.keys.add(key);
-			}
-			nextIsKey = false;
-			i = end + 1;
-			continue;
-		}
-		if (ch === "{") {
-			stack.push({ isObject: true, keys: new Set() });
-			nextIsKey = true;
-		} else if (ch === "[") {
-			stack.push({ isObject: false });
-			nextIsKey = false;
-		} else if (ch === "}" || ch === "]") {
-			stack.pop();
-			nextIsKey = false;
-		} else if (ch === ",") {
-			nextIsKey = stack[stack.length - 1]?.isObject === true;
-		} else if (ch === ":") {
-			nextIsKey = false;
-		}
-		i += 1;
-	}
-	return undefined;
-}
-
 // Complete response, duplicated member key: model-side contract failure, so
 // it stays unclassified like invalid JSON (no likely-cause token) and keeps
 // the shared malformed-output next step.
@@ -1158,11 +1386,11 @@ export function extractJson(text: string): unknown {
 }
 
 function resolveModel(
-	opts: CodexOptions,
+	opts: RunnerOptions,
 	runner: RunnerName,
 ): string | undefined {
 	// Named connections never borrow a model from another ambient lane.
-	if (opts.connection !== undefined) return opts.model;
+	if (opts.connections !== undefined) return opts.model;
 	if (opts.model) return opts.model;
 	if (process.env.NEEDLEFISH_MODEL) return process.env.NEEDLEFISH_MODEL;
 	const modelEnv = RUNNER_DEFINITIONS[runner].modelEnv;
@@ -1233,22 +1461,34 @@ async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
 	const lastMsg = path.join(invocation.tmp, "last.txt");
-	const reasoningEffort = resolveCodexReasoningEffort();
-	const serviceTier = resolveCodexServiceTier();
+	const command = invocation.codexCommand ?? requireRunnerCommand("codex");
+	const reasoningEffort = invocation.reasoningEffort;
+	const serviceTier = invocation.codexServiceTier;
 	const args = [
 		"exec",
+		"--json",
 		"--color",
 		"never",
 		"--ignore-user-config",
 		"-c",
 		`model_reasoning_effort="${reasoningEffort}"`,
+		// The sandbox is checked out at the PR head, so its AGENTS.md (and
+		// AGENTS.override.md) is author-controlled. Review policy comes only from
+		// the bundle's merge-base agentsMd (issue #240); 0 skips project docs.
+		"-c",
+		"project_doc_max_bytes=0",
 		"--dangerously-bypass-approvals-and-sandbox",
 		"--ignore-rules",
 		"--skip-git-repo-check",
 		"--output-last-message",
 		lastMsg,
 	];
-	if (invocation.codexProxy) {
+	if (invocation.codexOutputSchema) {
+		const schemaPath = path.join(invocation.tmp, "critic-output.schema.json");
+		writeFileSync(schemaPath, JSON.stringify(invocation.codexOutputSchema), { mode: 0o600, flag: "wx" });
+		args.push("--output-schema", schemaPath);
+	}
+	if (invocation.codexProxyBaseUrl !== undefined) {
 		const provider = "model_providers.cliproxyapi";
 		args.push(
 			"-c",
@@ -1256,7 +1496,7 @@ async function runCodexCli(
 			"-c",
 			`${provider}.name="CLIProxyAPI"`,
 			"-c",
-			`${provider}.base_url=${JSON.stringify(invocation.codexProxy.baseUrl)}`,
+			`${provider}.base_url=${JSON.stringify(invocation.codexProxyBaseUrl)}`,
 			"-c",
 			`${provider}.env_key="CODEX_PROXY_API_KEY"`,
 			"-c",
@@ -1265,16 +1505,17 @@ async function runCodexCli(
 			`${provider}.requires_openai_auth=false`,
 		);
 	}
+	if (invocation.env.CODEX_HOME && (invocation.env.CODEX_API_KEY || invocation.env.CODEX_PROXY_API_KEY)) {
+		args.push("-c", 'cli_auth_credentials_store="file"');
+	}
 	if (serviceTier) args.push("-c", `service_tier="${serviceTier}"`);
 	if (invocation.model) args.push("-m", invocation.model);
-	if (invocation.reasoningEffort)
-		args.push("-c", `model_reasoning_effort=${invocation.reasoningEffort}`);
 
 	const res = await spawnRunnerProcess({
-		command: requireRunnerCommand("codex"),
+		command,
 		args,
-		stdin: invocation.prompt,
-		repoPath: invocation.repoPath,
+		stdin: `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1283,7 +1524,11 @@ async function runCodexCli(
 	try {
 		out = readFileSync(lastMsg, "utf8");
 	} catch {
-		out = res.stdout;
+		out = "";
+		for (const event of codexEvents(res.stdout)) {
+			if (event === null) { out = ""; break; }
+			if (event.kind === "message") out = event.text;
+		}
 	}
 	return { res, out };
 }
@@ -1358,16 +1603,7 @@ async function runOpenCode(
 	];
 	args.push("--file", promptPath);
 	if (invocation.model) {
-		// opencode v2 accepts one `#variant` suffix; an explicit effort replaces any
-		// variant already in the model id rather than appending a second one.
-		const effort =
-			invocation.reasoningEffort && invocation.reasoningEffort !== "default"
-				? invocation.reasoningEffort
-				: null;
-		args.push(
-			"--model",
-			effort ? `${invocation.model.split("#")[0]}#${effort}` : invocation.model,
-		);
+		args.push("--model", invocation.model);
 	} else if (invocation.reasoningEffort) {
 		throw new RunnerOperationalError(
 			"opencode reasoning effort requires a model to be specified",
@@ -1381,7 +1617,7 @@ async function runOpenCode(
 		stdin: "",
 		repoPath: invocation.repoPath,
 		timeoutMs: invocation.timeoutMs,
-		idleTimeoutMs: openCodeIdleTimeoutMs(invocation.timeoutMs),
+		idleTimeoutMs: Math.min(invocation.openCodeIdleTimeoutMs, invocation.timeoutMs),
 		env: {
 			...invocation.env,
 			OPENCODE_CONFIG_CONTENT: unrestrictedConfig,
@@ -1392,10 +1628,14 @@ async function runOpenCode(
 
 async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const promptPath = path.join(invocation.tmp, "prompt.txt");
-	writeFileSync(promptPath, invocation.prompt, { mode: 0o600 });
+	writeFileSync(
+		promptPath,
+		`The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		{ mode: 0o600 },
+	);
 	const args = [
 		"-m",
-		invocation.model ?? "grok-build",
+		invocation.model ?? GROK_DEFAULT_MODEL,
 		"--prompt-file",
 		promptPath,
 		"--output-format",
@@ -1413,7 +1653,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 		command: requireRunnerCommand("grok"),
 		args,
 		stdin: "",
-		repoPath: invocation.repoPath,
+		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
 	});
@@ -1434,7 +1674,7 @@ type PiThinkingLevel = (typeof PI_THINKING_LEVELS)[number];
 function resolvePiThinking(
 	reasoningEffort: string | undefined,
 ): PiThinkingLevel {
-	if (reasoningEffort === undefined || reasoningEffort === "") return "medium";
+	if (reasoningEffort === undefined || reasoningEffort === "") return PI_DEFAULT_THINKING;
 	if ((PI_THINKING_LEVELS as readonly string[]).includes(reasoningEffort)) {
 		return reasoningEffort as PiThinkingLevel;
 	}
@@ -1448,6 +1688,11 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const args = [
 		"-p",
 		"--no-session",
+		// The sandbox is the PR head: its AGENTS.md, CLAUDE.md and project-local
+		// skills are author-controlled. Policy comes only from the bundle's
+		// merge-base agentsMd (issue #240).
+		"--no-context-files",
+		"--no-approve",
 		"--mode",
 		"text",
 		"--provider",
@@ -1455,9 +1700,9 @@ async function runPi(invocation: RunnerInvocation): Promise<RunnerResult> {
 		// provider registered in ~/.pi/agent/models.json instead of pi's own
 		// openai-codex OAuth (e.g. the ubuntu runner, where credentials live
 		// in the proxy).
-		process.env.PI_PROVIDER ?? "openai-codex",
+		invocation.piProvider ?? "openai-codex",
 		"--model",
-		invocation.model ?? "gpt-5.6-sol",
+		invocation.model ?? PI_DEFAULT_MODEL,
 		"--thinking",
 		thinking,
 	];

@@ -1,3 +1,6 @@
+import { codexPublicEnvironment } from "../src/shared/codex-public-environment.js";
+import { CALL_ACCOUNTING_VERSION, callAccountingError, type CallAccountingMetadata } from "./shared/call-accounting";
+import { codexAuthRoot, codexInvocationEnvironment, publicNativeCodexDigest } from "../src/shared/codex-invocation.js";
 import {
 	existsSync,
 	readFileSync,
@@ -13,14 +16,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../src/shared/repo";
 import { isDocsFastPathEligible } from "../src/shared/classify";
-import { review } from "../src/core/review";
+import { review, reviewFailureStats } from "../src/core/review";
 import {
 	hasPiProviderEnvCredential,
 	isRunnerSafetyError,
 	RunnerOperationalError,
 } from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
-import { parseRunnerName, type RunnerName } from "../src/shared/runner";
+import { GROK_DEFAULT_MODEL, PI_DEFAULT_MODEL, PI_DEFAULT_THINKING, parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
@@ -35,6 +38,7 @@ import {
 } from "./shared/critic-value";
 import { drawFindings, matchEvidence, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
+import { acpRuntimeIdentity, isPublicAttestationLabel } from "./shared/runtime-identity";
 import {
 	ANTICHEAT_VERSION,
 	type Aggregates,
@@ -51,6 +55,7 @@ interface ReviewFamilyAggregates {
 	readonly lineAnchorValidRateByDefectClass: Readonly<Record<string, number>>;
 }
 import {
+	comparisonEnvironmentError,
 	hasConsistentCheatDetection,
 	hasResolvedModelIdentity,
 	type ReportAttestation,
@@ -68,6 +73,7 @@ interface RunArgs {
 	provider: string | null;
 	route: string | null;
 	runnerVersion: string | null;
+	publicLauncherArtifact: string | null;
 	draws: number;
 	concurrency: number;
 	baseline: boolean;
@@ -119,10 +125,12 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 	};
 	const runner = parseRunnerName(get("--runner") ?? "codex", "--runner");
 	const model = get("--model");
-	const effort = get("--effort");
+	const effort = runner === "pi" ? get("--effort") || PI_DEFAULT_THINKING : get("--effort");
 	const provider = attestationValue("--provider");
 	const route = attestationValue("--route");
 	const runnerVersion = attestationValue("--runner-version");
+	const publicLauncherArtifact = attestationValue("--public-launcher-artifact");
+	if (publicLauncherArtifact !== null && runner !== "acp" && runner !== "codex") throw new Error("--public-launcher-artifact requires --runner acp or codex");
 	const attestation = [provider, route, runnerVersion];
 	if (
 		attestation.some((value) => value !== null) &&
@@ -178,13 +186,14 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		env[raw.slice(0, eq)] = raw.slice(eq + 1);
 		i++;
 	}
-	return {
+	const args: RunArgs = {
 		runner,
 		model,
 		effort,
 		provider,
 		route,
 		runnerVersion,
+		publicLauncherArtifact,
 		draws,
 		concurrency,
 		baseline,
@@ -198,9 +207,17 @@ export function parseArgs(argv: readonly string[]): RunArgs {
 		env,
 		environmentIdentity: null,
 	};
+	validatePublicAttestationLabels(args);
+	return args;
 }
 
-async function runOne(
+function validatePublicAttestationLabels(args: RunArgs): void {
+	for (const [flag, value] of [["--provider", args.provider], ["--route", args.route], ["--runner-version", args.runnerVersion]]) {
+		if (value !== null && !isPublicAttestationLabel(value, { ...process.env, ...args.env })) throw new Error(`${flag} requires a public label, not a private endpoint or path`);
+	}
+}
+
+export async function runOne(
 	spec: FixtureSpec,
 	runner: RunnerName,
 	model: string | null,
@@ -211,6 +228,7 @@ async function runOne(
 	const loaded = loadFixture(spec, canary);
 	const start = Date.now();
 	let result: ReviewResult | null = null;
+	let failedStats: readonly RunStat[] | undefined;
 	let error: string | undefined;
 	let operationalFailure: string | undefined;
 	let failedOutput: string | undefined;
@@ -234,6 +252,7 @@ async function runOne(
 		}
 	} catch (err) {
 		if (isRunnerSafetyError(err)) throw err;
+		failedStats = reviewFailureStats(err);
 		error = err instanceof Error ? err.message : String(err);
 		if (isOperationalEvalError(err)) operationalFailure = error;
 		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
@@ -255,7 +274,7 @@ async function runOne(
 	if (hasFailedDeepPass(traceEvents)) {
 		operationalFailure = "deep review pass failed";
 	}
-	const stats = result?.stats;
+	const stats = result?.stats ?? failedStats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
 	const findings = result?.findings ?? [];
@@ -437,8 +456,8 @@ export function resumeSlots(
 		}
 		if (
 			existing.runnerEnvironment !== currentRunnerEnvironment ||
-			existing.privateEnvironment === true ||
-			hasUnverifiableInvocationEnv(args)
+			comparisonEnvironmentError(existing) !== null ||
+			comparisonEnvironmentError({ runner: args.runner, runnerEnvironment: currentRunnerEnvironment, privateEnvironment: hasUnverifiableInvocationEnv(args) }) !== null
 		) {
 			process.stderr.write(
 				"resume: runner environment mismatch, ignoring resume file\n",
@@ -453,6 +472,11 @@ export function resumeSlots(
 			process.stderr.write(
 				`resume: report is compromised or unverifiable (cheatDetectedCount=${existing.aggregates.cheatDetectedCount ?? "missing"}), ignoring resume file\n`,
 			);
+			return { slots, skipped };
+		}
+		const accountingError = callAccountingError(existing, { callAccountingVersion: CALL_ACCOUNTING_VERSION });
+		if (accountingError) {
+			process.stderr.write(`resume: ${accountingError}, ignoring resume file\n`);
 			return { slots, skipped };
 		}
 		const byFixture = new Map<string, DrawResult[]>();
@@ -632,13 +656,14 @@ const PATH_INVOCATION_ENV = new Set([
 ]);
 const BUILTIN_CREDENTIAL_ENV: Partial<Record<RunnerName, readonly string[]>> = {
 	claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
-	codex: ["CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY"],
+	codex: ["CODEX_HOME", "CODEX_PROXY_BASE_URL", "CODEX_PROXY_API_KEY"],
 	opencode: ["OPENAI_API_KEY", "XDG_CONFIG_HOME", "XDG_DATA_HOME"],
 	openai: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
 	acp: ["NEEDLEFISH_ACP_AUTH_ENV_VARS", "NEEDLEFISH_ACP_AUTH_FILES"],
 };
 
 function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
+	const source = args.runner === "codex" ? codexInvocationEnvironment({ ...process.env, ...args.env }) : { ...process.env, ...args.env };
 	const effective: Record<string, string> = {};
 	for (const key of [
 		...COMMON_PUBLIC_INVOCATION_ENV,
@@ -646,7 +671,7 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		...RUNNER_PUBLIC_INVOCATION_ENV[args.runner],
 		...(BUILTIN_CREDENTIAL_ENV[args.runner] ?? []),
 	]) {
-		const value = args.env[key] ?? process.env[key];
+		const value = source[key];
 		if (value !== undefined) effective[key] = value;
 	}
 	for (const key of ["HOME", "USERPROFILE"] as const) {
@@ -655,6 +680,12 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 	if (args.model !== null) {
 		delete effective.NEEDLEFISH_MODEL;
 		delete effective[`${args.runner.toUpperCase()}_MODEL`];
+	}
+	if (args.runner === "grok" && args.model === null && effective.NEEDLEFISH_MODEL === undefined && effective.GROK_MODEL === undefined) {
+		effective.GROK_MODEL = GROK_DEFAULT_MODEL;
+	}
+	if (args.runner === "pi" && args.model === null && effective.NEEDLEFISH_MODEL === undefined && effective.PI_MODEL === undefined) {
+		effective.PI_MODEL = PI_DEFAULT_MODEL;
 	}
 	if (args.runner === "codex" && args.effort !== null) {
 		delete effective.CODEX_REASONING_EFFORT;
@@ -669,7 +700,7 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 		.flatMap((value) => value.split(","))
 		.map((name) => name.trim())
 		.filter(Boolean)) {
-		const value = args.env[key] ?? process.env[key];
+		const value = source[key];
 		if (value !== undefined) effective[key] = value;
 	}
 	return effective;
@@ -685,6 +716,8 @@ function publicInvocationEnvValue(key: string, value: string): string | null {
 		? publicPath(value)
 		: value;
 }
+
+const privateConfigurationIdentities = new WeakMap<RunArgs, string>();
 
 function runnerConfigIdentities(args: RunArgs): [string, string][] {
 	const home =
@@ -704,54 +737,52 @@ function runnerConfigIdentities(args: RunArgs): [string, string][] {
 							return existsSync(json) ? json : path.join(base, "opencode.jsonc");
 						})() : null]]
 					: [];
+	const privateIdentities: [string, string][] = [];
+	if (args.runner === "codex" && args.publicLauncherArtifact !== null) {
+		const authRoot = codexAuthRoot({ ...process.env, ...args.env });
+		for (const relative of ["auth.json", "config.toml"]) {
+			const file = authRoot ? path.join(authRoot, relative) : undefined;
+			try { privateIdentities.push([relative, file && existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : "missing"]); }
+			catch { throw new Error("private Codex invocation source is unreadable"); }
+		}
+	}
+
 	const identities = files.map(([key, file]): [string, string] => {
-		if (file === null) return [key, "missing"];
+		if (file === null || !existsSync(file)) return [key, "missing"];
 		try {
 			const digest = createHash("sha256")
 				.update(readFileSync(file))
 				.digest("hex")
 				.slice(0, 16);
-			return [key, `sha256:${digest}`];
-		} catch (error) {
-			if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return [key, "missing"];
-			throw error;
+			privateIdentities.push([key, digest]);
+			return [key, "<required>"];
+		} catch {
+			throw new Error("private runner configuration identity is unreadable");
 		}
 	});
 	if (args.runner === "pi") {
 		const usesAuthStore = piUsesAuthStore(args);
 		identities.push(["PI_AUTH_SOURCE", usesAuthStore ? "auth-store" : "environment"]);
-		if (!usesAuthStore) return identities;
-		const provider =
-			args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
-		const authFile = home
-			? path.join(home, ".pi", "agent", "auth.json")
-			: null;
-		if (authFile === null) {
-			identities.push(["PI_AUTH_JSON", "missing"]);
-		} else {
-			let raw: string;
-			try {
-				raw = readFileSync(authFile, "utf8");
-			} catch (error) {
-				if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-					identities.push(["PI_AUTH_JSON", "missing"]);
-					return identities;
+		if (usesAuthStore) {
+			identities.push(["PI_AUTH_JSON", "<required>"]);
+			let identity = "missing";
+			const authFile = home ? path.join(home, ".pi", "agent", "auth.json") : undefined;
+			if (authFile && existsSync(authFile)) {
+				try {
+					const auth: unknown = JSON.parse(readFileSync(authFile, "utf8"));
+					const provider = args.env.PI_PROVIDER ?? process.env.PI_PROVIDER ?? "openai-codex";
+					const entry: unknown = typeof auth === "object" && auth !== null && !Array.isArray(auth) ? Object.getOwnPropertyDescriptor(auth, provider)?.value : undefined;
+					if (entry !== undefined) identity = createHash("sha256").update(JSON.stringify(entry)).digest("hex");
+				} catch {
+					throw new Error("private runner authentication identity is unreadable");
 				}
-				throw error;
 			}
-			const auth = JSON.parse(raw) as unknown;
-			const entry =
-				typeof auth === "object" && auth !== null
-					? (auth as Record<string, unknown>)[provider]
-					: undefined;
-			identities.push([
-				"PI_AUTH_JSON",
-				entry === undefined
-					? "missing"
-					: `sha256:${createHash("sha256").update(JSON.stringify(entry)).digest("hex").slice(0, 16)}`,
-			]);
+			privateIdentities.push(["PI_AUTH_JSON", identity]);
 		}
 	}
+	const privateIdentity = JSON.stringify(privateIdentities);
+	if (args.environmentIdentity !== null && privateConfigurationIdentities.has(args) && privateConfigurationIdentities.get(args) !== privateIdentity) throw new Error("runner environment changed during the eval run");
+	privateConfigurationIdentities.set(args, privateIdentity);
 	return identities;
 }
 
@@ -768,7 +799,12 @@ function piUsesAuthStore(args: RunArgs): boolean {
 
 export function runnerEnvironment(args: RunArgs): string {
 	const configIdentities = runnerConfigIdentities(args);
-	const current = JSON.stringify(
+	if (args.runner === "acp") {
+		configIdentities.push(["ACP_PUBLIC_RUNTIME", JSON.stringify(acpRuntimeIdentity(args.publicLauncherArtifact, { ...process.env, ...args.env }, args.runnerVersion))]);
+	}
+	const current = args.runner === "codex" && args.publicLauncherArtifact !== null
+		? codexPublicEnvironment(codexInvocationEnvironment({ ...process.env, ...args.env }), args.model, args.effort, publicNativeCodexDigest(args.publicLauncherArtifact, { ...process.env, ...args.env }))
+		: JSON.stringify(
 		[
 			...Object.entries(effectiveInvocationEnv(args)).map(([key, value]) => {
 				const publicValue = publicInvocationEnvValue(key, value);
@@ -793,6 +829,8 @@ export function runnerEnvironment(args: RunArgs): string {
 }
 
 function hasUnverifiableInvocationEnv(args: RunArgs): boolean {
+	if (args.runner === "codex" && args.publicLauncherArtifact !== null) return Object.hasOwn(args.env, "HOME") || Object.hasOwn(args.env, "USERPROFILE") || runnerEnvironment(args).includes('"<required>"') || runnerEnvironment(args).includes('"<redacted>"');
+	if (piUsesAuthStore(args) || runnerConfigIdentities(args).some(([, value]) => value === "<required>")) return true;
 	return Object.entries(effectiveInvocationEnv(args)).some(([key, value]) => {
 		const publicValue = publicInvocationEnvValue(key, value);
 		return publicValue === null || publicValue === "<redacted>";
@@ -832,11 +870,13 @@ function reportInvocation(
 	add("--provider", args.provider);
 	add("--route", args.route);
 	add("--runner-version", args.runnerVersion);
+	add("--public-launcher-artifact", args.publicLauncherArtifact ? publicPath(args.publicLauncherArtifact) : null);
 	for (const [key, value] of Object.entries(effectiveInvocationEnv(args)).sort(([a], [b]) =>
 		a.localeCompare(b),
 	)) {
 		const publicValue = publicInvocationEnvValue(key, value);
-		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>") {
+		if (key !== "PATH" && publicValue !== null && publicValue !== "<redacted>" &&
+			(args.runner !== "codex" || args.publicLauncherArtifact === null || isPublicAttestationLabel(publicValue, { ...process.env, ...args.env }))) {
 			values.push("--env", `${key}=${publicValue}`);
 		}
 	}
@@ -1172,7 +1212,7 @@ export function writeReport(
 	args: RunArgs,
 	results: readonly (DrawResult & CriticDrawFields)[],
 	specs: readonly FixtureSpec[],
-): Report & {
+): Report & CallAccountingMetadata & {
 	readonly aggregates: Aggregates & CriticValueAggregates;
 	readonly fixtures: readonly string[];
 	readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
@@ -1185,6 +1225,7 @@ export function writeReport(
 	readonly runnerEnvironment: string;
 	readonly privateEnvironment: boolean;
 } {
+	validatePublicAttestationLabels(args);
 	const fixtureTiers: Record<string, number> = {};
 	const fixtureKinds: Record<string, FixtureKind> = {};
 	const fixtureDefectClasses: Record<string, string> = {};
@@ -1194,6 +1235,7 @@ export function writeReport(
 		fixtureDefectClasses[s.id] = s.defectClass;
 	}
 	const report = {
+		callAccountingVersion: CALL_ACCOUNTING_VERSION,
 		promptHash: promptHash(),
 		runner: args.runner,
 		model: args.model,
@@ -1245,7 +1287,7 @@ export function writeReport(
 		fixtures: specs.map((spec) => spec.id),
 		fixtureKinds,
 		fixtureDefectClasses,
-	} satisfies Report & {
+	} satisfies Report & CallAccountingMetadata & {
 		readonly aggregates: Aggregates & CriticValueAggregates;
 		readonly fixtures: readonly string[];
 		readonly fixtureKinds: Readonly<Record<string, FixtureKind>>;
@@ -1302,10 +1344,10 @@ export function writeReport(
 	return report;
 }
 
-export function compare(baselinePath: string, candidate: Report): void {
-	let baseline: Report;
+export function compare(baselinePath: string, candidate: Report & ReportAttestation & CallAccountingMetadata): void {
+	let baseline: Report & ReportAttestation;
 	try {
-		baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as Report;
+		baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
 	} catch (error) {
 		throw new Error(`failed to parse baseline report ${baselinePath}`, {
 			cause: error,
@@ -1355,6 +1397,8 @@ export function compare(baselinePath: string, candidate: Report): void {
 		["baseline", baseline],
 		["candidate", candidate],
 	] as const) {
+		const environmentError = comparisonEnvironmentError(report);
+		if (environmentError) throw new Error(`${label} report has ${environmentError}; cross-report comparison is unavailable.`);
 		if (report.anticheatVersion !== ANTICHEAT_VERSION) {
 			throw new Error(
 				`${label} report anti-cheat version is ${report.anticheatVersion ?? "none"}, current is ${ANTICHEAT_VERSION}. Re-run the ${label} under the current guards.`,
@@ -1382,6 +1426,8 @@ export function compare(baselinePath: string, candidate: Report): void {
 			);
 		}
 	}
+	const accountingError = callAccountingError(baseline, candidate);
+	if (accountingError) throw new Error(accountingError);
 	const b = baseline.aggregates;
 	const c = candidate.aggregates;
 	const delta = (x: number, y: number) => y - x;

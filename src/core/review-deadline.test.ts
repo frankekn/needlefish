@@ -35,7 +35,7 @@ process.stdin.on('end', () => {
   const count = fs.readFileSync(calls, 'utf8').trim().split('\\n').length;
   const value = phase === 'map'
     ? { summary: 'mapped', hotspots: Array.from({ length: 6 }, (_, i) => ({ name: 'surface-' + i, files: ['src/f' + i + '.ts'], risk: 'high', why: 'changed source', edges: [] })) }
-    : { summary: 'reviewed', findings: [], checked: ['source checked'], residual_risks: [] };
+    : { summary: 'reviewed', ...(phase === 'critic' ? { decisions: [] } : { findings: [] }), checked: ['source checked'], residual_risks: [] };
   setTimeout(() => fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message') + 1], ${JSON.stringify(behavior)} === 'repair' && count === 1 ? 'invalid JSON' : JSON.stringify(value)), ${JSON.stringify(behavior)} === 'slow' ? 400 : 0);
 });
 `);
@@ -57,8 +57,10 @@ test("shared deadline preserves successful seven-hotspot pipeline output", async
   const before = await review(f.bundle);
   process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "60000";
   const after = await review(f.bundle);
-  const stable = (result: typeof before) => ({ ...result, totalDurationMs: 0, stats: result.stats?.map((s) => ({ ...s, durationMs: 0 })).sort((a, b) => a.label.localeCompare(b.label)) });
+  const stable = (result: typeof before) => ({ ...result, runtime: undefined, totalDurationMs: 0, stats: result.stats?.map((s) => ({ ...s, durationMs: 0 })).sort((a, b) => a.label.localeCompare(b.label)) });
   assert.deepEqual(stable(after), stable(before));
+  assert.equal(before.runtime?.reviewBudgetMs, null);
+  assert.equal(after.runtime?.reviewBudgetMs, 60000);
   assert.equal(f.calls().length, 18); // map + seven deep (including tail) + critic, twice.
   assert.equal(after.verdict, "pass");
 });
@@ -111,7 +113,7 @@ test("seven slow hotspots across three workers stop within the pipeline budget",
   const f = fixture(t, "slow");
   process.env.NEEDLEFISH_REVIEW_TIMEOUT_MS = "1500";
   const started = performance.now();
-  await assert.rejects(review(f.bundle, { timeoutMs: 450 }), /deadline|ETIMEDOUT/);
+  await assert.rejects(review(f.bundle, { timeoutMs: 5000 }), /deadline|ETIMEDOUT/);
   assert.ok(performance.now() - started < 2500, "shared deadline plus process cleanup grace");
   assert.ok(f.calls().filter((phase) => phase === "deep").length >= 3, "exercise concurrent deep workers");
   assert.ok(!f.calls().includes("critic"), "expired work must not receive a fresh critic allowance");

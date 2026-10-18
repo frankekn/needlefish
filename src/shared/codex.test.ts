@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -145,11 +145,12 @@ test("extractJson rejects unfenced output that is not a single JSON document", (
   );
 });
 
-test("runCodex invokes Codex without approval or sandbox restrictions", async (t) => {
+test("runCodex invokes Codex without approval or sandbox restrictions or repo instructions", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
   const repo = initRepo(tmp);
   const bin = path.join(tmp, "codex-bin.js");
   const argsPath = path.join(tmp, "args.json");
+  const promptPath = path.join(tmp, "prompt.txt");
   const previous = process.env.CODEX_BIN;
   t.after(() => {
     if (previous === undefined) delete process.env.CODEX_BIN;
@@ -162,23 +163,48 @@ test("runCodex invokes Codex without approval or sandbox restrictions", async (t
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
       `fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
+      `fs.writeFileSync(${JSON.stringify(argsPath + ".cwd")}, process.cwd());`,
+      "const input = fs.readFileSync(0, 'utf8');",
+      "const repoPath = JSON.parse(input.slice('The repository to inspect is '.length, input.indexOf('. Your startup directory')));",
+      "const head = require('node:child_process').execFileSync('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
+      `fs.writeFileSync(${JSON.stringify(argsPath + ".inspection")}, JSON.stringify({ head, launchEntries: fs.readdirSync(process.cwd()), repoPath: fs.realpathSync(repoPath), input }));`,
+      `fs.writeFileSync(${JSON.stringify(promptPath)}, input);`,
       "const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
       "fs.writeFileSync(out, '{\"ok\":true}');",
+      "process.stdout.write(JSON.stringify({type: 'item.completed', item: {id: 'item_0', type: 'agent_message', text: 'different stream output'}}) + '\\n');",
     ].join("\n")
   );
   chmodSync(bin, 0o755);
   process.env.CODEX_BIN = bin;
 
-  await runCodex("prompt", {
+  let rawOutput = "";
+  const output = await runCodex("prompt", {
     repoPath: repo,
     runner: "codex",
     targetHeadSha: headSha(repo),
     timeoutMs: 1000,
+    onRaw: (raw) => { rawOutput = raw; },
   });
+  assert.equal(output, '{"ok":true}');
+  assert.match(readFileSync(promptPath, "utf8"), /prompt$/);
+  assert.match(rawOutput, /different stream output/);
 
   const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+  const launch = readFileSync(argsPath + ".cwd", "utf8");
+  const inspection: unknown = JSON.parse(readFileSync(argsPath + ".inspection", "utf8"));
+  assert.ok(typeof inspection === "object" && inspection !== null);
+  assert.ok("head" in inspection && "launchEntries" in inspection && "repoPath" in inspection && "input" in inspection);
+  assert.equal(inspection.head, headSha(repo));
+  assert.deepEqual(inspection.launchEntries, []);
+  assert.equal(inspection.repoPath, path.join(path.dirname(launch), "runner-repo"));
+  assert.match(String(inspection.input), /Use git -C/);
+  assert.equal(path.basename(launch), "runner-launch");
+  assert.equal(launch.startsWith(repo + path.sep), false);
+  assert.equal(existsSync(launch), false, "launch directory must be removed with its managed parent");
+  assert.equal(args.includes("--json"), true);
   assert.equal(args.includes("--dangerously-bypass-approvals-and-sandbox"), true);
   assert.equal(args.includes("--ignore-rules"), true);
+  assert.equal(args[args.indexOf("project_doc_max_bytes=0") - 1], "-c");
   assert.equal(args.includes("-s"), false);
   assert.equal(args.includes("--sandbox"), false);
   assert.equal(args.some((arg) => arg.startsWith("--sandbox=")), false);

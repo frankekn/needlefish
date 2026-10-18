@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { resolveConnectionOptions } from "../shared/connections.js";
+import type { RunnerOptions } from "../shared/runner.js";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
 import { git, gitSupportsAttrSource } from "../shared/repo.js";
 import { runManagedRunnerProcess } from "../shared/runner-process.js";
@@ -41,6 +43,7 @@ export interface DoctorReport {
 }
 
 export interface DoctorOptions {
+  readonly connection?: string;
   readonly repo: string;
   readonly version: string;
   readonly runner?: RunnerName;
@@ -123,10 +126,12 @@ async function selectRunner(explicit: RunnerName | undefined, probeCwd: string):
   }
   if (runner === undefined) {
     for (const candidate of RUNNER_CATALOG) {
-      if (!("autoDetect" in candidate)) continue;
+      if (!("autoDetect" in candidate) || "reviewUnavailableReason" in candidate) continue;
       const binary = resolveRunnerBinary(candidate.name);
       if (binary?.path !== undefined) return cliRunnerCheck(candidate.name, { ...binary, path: binary.path }, "auto-detected", probeCwd);
     }
+    const unavailable = RUNNER_CATALOG.find((candidate) => "reviewUnavailableReason" in candidate && resolveRunnerBinary(candidate.name)?.path !== undefined);
+    if (unavailable !== undefined) return selectRunner(unavailable.name, probeCwd);
     const [summary, ...installLines] = NO_AUTO_DETECTED_RUNNER_MESSAGE.split("\n");
     return {
       check: { name: "runner", status: "fail", detail: summary, fix: installLines.join("\n") },
@@ -134,6 +139,12 @@ async function selectRunner(explicit: RunnerName | undefined, probeCwd: string):
     };
   }
   const definition = RUNNER_DEFINITIONS[runner];
+  if (definition.reviewUnavailableReason !== undefined) {
+    return {
+      check: { name: "runner", status: "fail", detail: definition.reviewUnavailableReason, fix: "Set --runner or NEEDLEFISH_RUNNER to codex or claude; see issue #207." },
+      selection: { kind: "unavailable" },
+    };
+  }
   if (definition.bin === undefined) {
     return {
       check: { name: "runner", status: "ok", detail: `${runner} (HTTP runner, no CLI)` },
@@ -336,20 +347,31 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
 
 export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   const repo = path.resolve(opts.repo);
+  const selected = opts.connection === undefined ? undefined
+    : resolveConnectionOptions<RunnerOptions>({ connections: [opts.connection], runner: opts.runner }, repo);
+  if (selected && selected.runner !== "codex") throw new Error("doctor --connection currently supports codex connections only.");
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
   const cleanup = (): void => rmSync(probeCwd, { recursive: true, force: true });
   const unregisterCleanup = registerTerminationFinalizer(async () => cleanup());
   let checks: readonly DoctorCheck[];
   let repoRoot: string | undefined;
   try {
-    const runner = await selectRunner(opts.runner, probeCwd);
+    const selectedBinary = selected ? resolveRunnerBinary("codex") : undefined;
+    const runner = selected ? {
+      check: { name: "runner", status: selectedBinary?.path ? "ok" : "fail", detail: selectedBinary?.path ? "codex: selected connection executable available; CLI not probed" : "codex: selected connection executable unavailable" } satisfies DoctorCheck,
+      selection: selectedBinary?.path === undefined
+        ? { kind: "unavailable" } satisfies RunnerSelection
+        : { kind: "cli", runner: "codex", binary: { ...selectedBinary, path: selectedBinary.path } } satisfies RunnerSelection,
+    } : await selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
     repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
       capabilityCheck(runner.selection),
-      await authCheck(runner.selection, probeCwd),
+      selected ? { name: "auth", status: "unknown", detail: selected.connectionAuth
+        ? "codex: credential source chosen; provider account identity unknown; login state not probed"
+        : "codex: named connection chosen; provider account identity unknown; login state not probed" } : await authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
     ];

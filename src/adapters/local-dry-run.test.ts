@@ -67,7 +67,7 @@ function setupDryRunFixture(
       "#!/usr/bin/env node",
       "const fs = require('node:fs');",
       `fs.writeFileSync(${JSON.stringify(marker)}, 'called');`,
-      "process.stdout.write(JSON.stringify({ summary: 'ok', findings: [], checked: ['checked'], residual_risks: [] }));",
+      "const input = fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.stringify({ summary: 'ok', ...(input.includes('adversarial critic') ? { decisions: [] } : { findings: [] }), checked: ['checked'], residual_risks: [] }));",
     ].join("\n")
   );
   chmodSync(claude, 0o755);
@@ -354,3 +354,107 @@ test("ACP dry-run reports unknown repository capability without launching the ag
   });
   assert.equal(existsSync(fixture.marker), false);
 });
+
+for (const docs of [false,true]) {
+  test(`ordered dry-run reports every capability without binding private credentials (${docs ? "docs" : "source"})`,t=>{
+    const fixture=setupDryRunFixture(t,[{path:docs?"docs/guide.md":"app.ts",content:"source preview\n"}]);
+    const config=path.join(fixture.tmp,"connections.json");
+    writeFileSync(config,JSON.stringify({version:1,connections:[
+      {id:"primary",adapter:"codex",model:"selected",auth:{env:{CODEX_API_KEY:"MISSING_SELECTED_SOURCE"},route:{kind:"openai"}}},
+      {id:"spare",adapter:"openai",model:"selected"},
+    ]}));
+    const run=runCli(fixture,["--repo",fixture.repo,"--connection=primary","--connection=spare","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:docs?"invalid":"10000"});
+    assert.equal(run.status,docs?0:1,run.stderr);
+    const summary=parseJsonObject(run.stdout);
+    assert.ok(Array.isArray(summary.capabilities));assert.equal(summary.capabilities.length,2);
+    if(docs) assert.deepEqual(summary.capabilities,[null,null]);
+    else assert.deepEqual(summary.capabilities.map((capability:{runner:string})=>capability.runner),["codex","openai"]);
+    assert.equal(existsSync(fixture.marker),false);
+    assert.equal(existsSync(cacheFile(fixture)),false);
+    assert.doesNotMatch(run.stdout,/MISSING_SELECTED_SOURCE|connectionAuth|apiKey/);
+  });
+}
+
+for(const budget of [undefined,"invalid"]){
+  test(`ordered model dry-run rejects ${budget ?? "missing"} shared budget before launch`,t=>{
+    const fixture=setupDryRunFixture(t,[{path:"app.ts",content:"source preview\n"}]),config=path.join(fixture.tmp,"connections.json");
+    writeFileSync(config,JSON.stringify({version:1,connections:[{id:"first",adapter:"claude",model:"one"},{id:"second",adapter:"claude",model:"two"}]}));
+    const run=runCli(fixture,["--repo",fixture.repo,"--connection=first","--connection=second","--dry-run","--json"],{NEEDLEFISH_CONNECTIONS_FILE:config,NEEDLEFISH_REVIEW_TIMEOUT_MS:budget});
+    assert.equal(run.status,1);assert.match(run.stderr,/NEEDLEFISH_REVIEW_TIMEOUT_MS/);assert.equal(existsSync(fixture.marker),false);
+  });
+}
+
+for (const flags of [["--dry-run", "--json"], ["--json"], []]) {
+  test(`CLI refuses capped input without a result or cache (${flags.join(" ") || "markdown"})`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: "docs/guide.md", content: "guide\n" }]);
+    writeFileSync(path.join(fixture.repo, "README.md"), "Updated documentation\n");
+    writeFileSync(path.join(fixture.repo, "source.ts"), "x".repeat(201 * 1024));
+    const result = runCli(fixture, ["--repo", fixture.repo, ...flags]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Untracked file contents omitted: "source\.ts" \(per_file_cap\)/);
+    assert.equal(result.stdout, "");
+    assert.equal(existsSync(fixture.marker), false);
+    assert.equal(existsSync(cacheFile(fixture)), false);
+  });
+}
+
+for (const docs of [false, true]) {
+  for (const explicit of [false, true]) {
+    test(`suspended OpenCode is refused before ${docs ? "docs" : "source"} collection output (${explicit ? "flag" : "environment"})`, (t) => {
+      const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+      const args = ["--repo", fixture.repo, ...(explicit ? ["--runner", "opencode"] : [])];
+      const env = { NEEDLEFISH_RUNNER: explicit ? "claude" : "opencode", OPENCODE_BIN: path.join(fixture.fakeBin, "claude") };
+      for (const mode of [[], ["--dry-run", "--json"]]) {
+        const result = runCli(fixture, [...args, ...mode], env);
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+        assert.equal(result.stdout, "");
+        assert.equal(existsSync(fixture.marker), false, "suspended runner must not launch");
+        assert.equal(existsSync(cacheFile(fixture)), false, "refusal must not create a review cache");
+      }
+    });
+  }
+}
+
+for (const docs of [false, true]) {
+  test(`auto-detected suspended OpenCode refuses ${docs ? "docs" : "source"} before output`, (t) => {
+    const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+    const env = { NEEDLEFISH_RUNNER: undefined, CODEX_BIN: path.join(fixture.tmp, "missing-codex"), CLAUDE_BIN: path.join(fixture.tmp, "missing-claude"), OPENCODE_BIN: path.join(fixture.fakeBin, "claude") };
+    for (const mode of [[], ["--dry-run", "--json"]]) {
+      const result = runCli(fixture, ["--repo", fixture.repo, ...mode], env);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+      assert.equal(result.stdout, "");
+      assert.equal(existsSync(fixture.marker), false);
+      assert.equal(existsSync(cacheFile(fixture)), false);
+    }
+  });
+}
+
+for (const docs of [false, true]) {
+  for (const supported of [false, true]) {
+    test(`named ${supported ? "Codex" : "suspended"} connection owns ${docs ? "docs" : "source"} selection over ambient OpenCode`, (t) => {
+      const fixture = setupDryRunFixture(t, [{ path: docs ? "docs/guide.md" : "app.ts", content: docs ? "guide\n" : "export const value = 1;\n" }]);
+      const bin = path.join(fixture.fakeBin, "codex.cjs");
+      writeFileSync(bin, `#!/usr/bin/env node\nconst fs=require('node:fs');const input=fs.readFileSync(0,'utf8');fs.writeFileSync(${JSON.stringify(fixture.marker)},'called');fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:'selected clean',...(input.includes('adversarial critic')?{decisions:[]}:{findings:[]}),checked:['checked'],residual_risks:[]}));\n`);
+      chmodSync(bin, 0o755);
+      const config = path.join(fixture.tmp, "connections.json");
+      writeFileSync(config, JSON.stringify({ version: 1, connections: [{ id: "selected", adapter: supported ? "codex" : "opencode", model: "fixture" }] }));
+      const result = runCli(fixture, ["--repo", fixture.repo, "--connection", "selected", "--json"], {
+        NEEDLEFISH_RUNNER: "opencode", OPENCODE_BIN: path.join(fixture.fakeBin, "claude"), CODEX_BIN: bin, NEEDLEFISH_CONNECTIONS_FILE: config,
+      });
+      if (supported) {
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(parseJsonObject(result.stdout).verdict, "pass");
+        assert.equal(existsSync(fixture.marker), !docs);
+        assert.equal(existsSync(cacheFile(fixture)), true);
+      } else {
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /OpenCode reviews are temporarily disabled/);
+        assert.equal(result.stdout, "");
+        assert.equal(existsSync(fixture.marker), false);
+        assert.equal(existsSync(cacheFile(fixture)), false);
+      }
+    });
+  }
+}

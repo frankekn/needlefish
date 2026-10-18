@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 export interface RunOptions {
   readonly cwd?: string;
   readonly input?: string;
+  readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
   /** Keep stdout as-is. `git diff` needs this so a final blank context line survives. */
   readonly preserveOutput?: boolean;
@@ -11,6 +12,7 @@ export interface RunOptions {
 export function runText(command: string, args: readonly string[], opts: RunOptions = {}): string {
   const res = spawnSync(command, [...args], {
     cwd: opts.cwd,
+    env: opts.env,
     encoding: "utf8",
     input: opts.input,
     maxBuffer: 1024 * 1024 * 64,

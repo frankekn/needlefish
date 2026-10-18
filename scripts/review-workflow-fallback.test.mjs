@@ -27,7 +27,10 @@ function shq(value) {
 }
 
 // primary/fallback: { out, err, code } the stub emits on that lane.
-function runReviewScript(t, { primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "codex", tier = "", previousCheckId = 0, snapshotExit = 0 }) {
+function runReviewScript(t, {
+  primary, fallback, checks = [], checkResponse, checkExit = 0, runner = "codex",
+  tier = "", previousCheckId = 0, snapshotExit = 0, appId = "",
+}) {
   const root = mkdtempSync(join(tmpdir(), "needlefish-workflow-fallback-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const write = (name, content) => {
@@ -101,6 +104,7 @@ function runReviewScript(t, { primary, fallback, checks = [], checkResponse, che
       NEEDLEFISH_TIMEOUT_MS_INPUT: "",
       OPENCODE_IDLE_TIMEOUT_MS_INPUT: "",
       NEEDLEFISH_RECHECK_INPUT: "",
+      NEEDLEFISH_CHECK_APP_ID: appId,
     },
   });
   return {
@@ -290,8 +294,8 @@ function runnerCheck(overrides = {}) {
   };
 }
 
-test("installed runner auth misclassification uses this run check and Sol medium only on fallback", t => {
-  for (const out of ["", outcome({ outcome: "failure", operational: false })]) {
+test("legacy runner checks apply when a matching machine failure outcome is unavailable", t => {
+  for (const out of ["", "needlefish-outcome {bad", outcome({ outcome: "failure", operational: false, prNumber: 8, headSha: "a".repeat(40) }), outcome({ outcome: "failure", operational: false, prNumber: 7, headSha: "b".repeat(40) })]) {
     const result = runReviewScript(t, {
       primary: { out, err: "needlefish review failed: codex runner exited 1; likely cause: auth rejected", code: 1 },
       fallback: { out: outcome({ outcome: "verdict", verdict: "pass" }), err: "", code: 0 },
@@ -304,9 +308,22 @@ test("installed runner auth misclassification uses this run check and Sol medium
   }
 });
 
+test("a current non-operational outcome cannot be overridden by a legacy runner check", t => {
+  const result = runReviewScript(t, {
+    primary: { out: outcome({ outcome: "failure", operational: false, prNumber: 7, headSha: "a".repeat(40) }), err: "codex runner exited 1; stderr withheld", code: 1 },
+    fallback: { out: "PASS", err: "", code: 0 },
+    checks: [runnerCheck()],
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.invocations.length, 1);
+});
+
 test("check lookup stays closed for old runs, other apps, nonterminal checks and verdicts", t => {
   for (const checks of [
     [runnerCheck({ external_id: "older-run" })],
+    [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 7, runId: "older-run", roundId: "round", recoveryAttempt: 0 }) })],
+    [runnerCheck({ external_id: JSON.stringify({ v: 1, runId: "123" }) })],
+    [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 8, runId: "123", roundId: "other", recoveryAttempt: 0 }) })],
     [runnerCheck({ app: { slug: "other-app" } })],
     [runnerCheck({ status: "in_progress" })],
     [runnerCheck({ output: { title: "Needlefish: changes requested", summary: "codex runner exited 1; 429" } })],
@@ -329,10 +346,10 @@ test("failed check API cannot authorize fallback even with a valid body", t => {
 });
 
 test("Sol fallback is disabled for incompatible runners", t => {
-  for (const runner of ["claude", "opencode", "grok", "pi"]) {
+  for (const [runner, expectedInvocations] of [["claude", 1], ["opencode", 0], ["grok", 1], ["pi", 1]]) {
     const result = runReviewScript(t, { runner, primary: { out: outcome({ outcome: "failure", operational: true }), err: "", code: 1 }, fallback: { out: "", err: "", code: 0 } });
     assert.equal(result.status, 1, result.stderr);
-    assert.equal(result.invocations.length, 1, runner);
+    assert.equal(result.invocations.length, expectedInvocations, runner);
   }
 });
 
@@ -354,6 +371,28 @@ test("compatibility fallback requires a check created after this invocation snap
   for (const [previousCheckId, id, snapshotExit, expected] of [[1, 1, 0, 1], [1, 2, 0, 2], [0, 2, 1, 1]]) {
     const result = runReviewScript(t, { previousCheckId, snapshotExit, primary: { out: "", err: "", code: 1 }, fallback: { out: "PASS", err: "", code: 0 }, checks: [runnerCheck({ id })] });
     assert.equal(result.invocations.length, expected, result.stderr);
+    assert.equal(result.status, expected === 2 ? 0 : 1, result.stderr);
+  }
+});
+
+test("versioned delivery metadata preserves this workflow run fallback", t => {
+ const result = runReviewScript(t, {
+  primary: { out: "", err: "", code: 1 },
+  fallback: { out: outcome({ outcome: "verdict", verdict: "pass" }), err: "", code: 0 },
+  checks: [runnerCheck({ external_id: JSON.stringify({ v: 2, prNumber: 7, runId: "123", roundId: "round", recoveryAttempt: 0 }) })],
+ });
+ assert.equal(result.status, 0, result.stderr);
+ assert.equal(result.invocations.length, 2);
+ assert.match(result.invocations[1], /--model gpt-6\.1-sol/);
+});
+
+test("compatibility fallback honors the configured check App ID", t => {
+  const primary = { out: "", err: "", code: 1 };
+  const fallback = { out: "PASS", err: "", code: 0 };
+  const custom = runnerCheck({ app: { id: 4812, slug: "private-review-app" } });
+  for (const [appId, expected] of [["4812", 2], ["9999", 1], ["", 1], ["invalid", 1]]) {
+    const result = runReviewScript(t, { primary, fallback, checks: [custom], appId });
+    assert.equal(result.invocations.length, expected, `App ID ${appId}: ${result.stderr}`);
     assert.equal(result.status, expected === 2 ? 0 : 1, result.stderr);
   }
 });

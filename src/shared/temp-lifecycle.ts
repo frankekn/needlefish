@@ -1,11 +1,18 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
+  rmdirSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -45,6 +52,11 @@ interface ProcessOwner {
   readonly metadata: OwnerMetadata;
 }
 
+interface ManagedDirectory {
+  readonly descriptor: number;
+  readonly owner: Buffer;
+}
+
 interface RunnerProcessGroup {
   readonly directory: string | null;
   readonly terminate: (signal: NodeJS.Signals) => void;
@@ -52,6 +64,7 @@ interface RunnerProcessGroup {
 }
 
 const activeTempDirectories = new Set<string>();
+const managedDirectories = new Map<string, ManagedDirectory>();
 const activeRunnerProcessGroups = new Map<number, RunnerProcessGroup>();
 const startupSweeps = new Map<string, Promise<void>>();
 const processOwnerPromises = new Map<string, Promise<ProcessOwner>>();
@@ -136,6 +149,8 @@ export async function createManagedTempDirectory(): Promise<string> {
 
   const owner = await ensureProcessOwner(root);
   const staging = mkdtempSync(path.join(root, STAGING_PREFIX));
+  let directory = staging;
+  let descriptor: number | undefined;
   try {
     assertRunnerSchedulingAllowed();
     writeFileSync(path.join(staging, OWNER_FILE), `${JSON.stringify(owner.metadata)}\n`, {
@@ -144,10 +159,26 @@ export async function createManagedTempDirectory(): Promise<string> {
     const suffix = path.basename(staging).slice(STAGING_PREFIX.length);
     const managed = path.join(root, `${MANAGED_PREFIX}${suffix}`);
     renameSync(staging, managed);
+    directory = managed;
+    descriptor = openSync(managed, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    managedDirectories.set(managed, { descriptor, owner: Buffer.from(`${JSON.stringify(owner.metadata)}\n`) });
     activeTempDirectories.add(managed);
     return managed;
   } catch (error) {
-    await rm(staging, { recursive: true, force: true });
+    activeTempDirectories.delete(directory);
+    managedDirectories.delete(directory);
+    if (descriptor !== undefined) {
+      try {
+        closeSync(descriptor);
+      } catch (cleanupError) {
+        warnCleanupFailure(`temp directory descriptor ${directory}`, cleanupError);
+      }
+    }
+    try {
+      rmSync(directory, { recursive: true, force: true });
+    } catch (cleanupError) {
+      warnCleanupFailure(`temp directory ${directory}`, cleanupError);
+    }
     throw error;
   }
 }
@@ -168,6 +199,11 @@ export async function disposeManagedTempDirectory(directory: string): Promise<vo
     return;
   }
   activeTempDirectories.delete(directory);
+  const managed = managedDirectories.get(directory);
+  if (managed !== undefined) {
+    closeSync(managed.descriptor);
+    managedDirectories.delete(directory);
+  }
 }
 
 /**
@@ -185,6 +221,56 @@ async function removeOwnedTempTree(directory: string): Promise<void> {
   }
   await restoreOwnerAccess(directory);
   await rm(directory, { recursive: true, force: true });
+}
+
+function managedRootMatches(directory: string, managed: ManagedDirectory): boolean {
+  const current = lstatSync(directory);
+  const allocated = fstatSync(managed.descriptor);
+  if (!current.isDirectory() || current.dev !== allocated.dev || current.ino !== allocated.ino) return false;
+  const marker = openSync(`/proc/self/fd/${managed.descriptor}/${OWNER_FILE}`, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const stats = fstatSync(marker);
+    return stats.isFile() && stats.size === managed.owner.length && readFileSync(marker).equals(managed.owner);
+  } finally {
+    closeSync(marker);
+  }
+}
+
+async function removeTerminatingTempTree(directory: string, deadlineMs: number): Promise<boolean> {
+  const managed = managedDirectories.get(directory);
+  if (managed === undefined || !managedRootMatches(directory, managed)) return false;
+  // The fd pins the allocated inode across awaits even if the runner replaces its pathname.
+  const anchored = `/proc/self/fd/${managed.descriptor}/.`;
+  const ownerPath = `${anchored}/${OWNER_FILE}`;
+  let entries: string[];
+  try {
+    entries = await readdir(anchored);
+  } catch (error) {
+    if (!isPermissionDenied(error) || !managedRootMatches(directory, managed)) throw error;
+    await restoreOwnerAccess(anchored);
+    if (!managedRootMatches(directory, managed)) return false;
+    entries = await readdir(anchored);
+  }
+  for (const entry of entries) {
+    if (Date.now() >= deadlineMs || !managedRootMatches(directory, managed)) return false;
+    if (entry !== OWNER_FILE) await removeOwnedTempTree(`${anchored}/${entry}`);
+  }
+  if (Date.now() >= deadlineMs || !managedRootMatches(directory, managed)) return false;
+  // No async gap may leave a partially deleted tree without its reaper identity.
+  unlinkSync(ownerPath);
+  try {
+    rmdirSync(directory);
+  } catch (error) {
+    writeFileSync(ownerPath, managed.owner, { mode: 0o600, flag: "wx" });
+    throw error;
+  }
+  if (fstatSync(managed.descriptor).nlink !== 0) {
+    writeFileSync(ownerPath, managed.owner, { mode: 0o600, flag: "wx" });
+    return false;
+  }
+  closeSync(managed.descriptor);
+  managedDirectories.delete(directory);
+  return true;
 }
 
 const OWNER_ONLY_ACCESS = 0o700;
@@ -427,7 +513,7 @@ function coordinateTermination(signal: TerminationSignal): void {
   };
   signalRegisteredRunners("terminate", signal);
   startTerminationFinalizers(termination);
-  if (runnersGone() && finalizersSettled) {
+  if (runnersGone() && finalizersSettled && activeTempDirectories.size === 0) {
     terminateImmediately(termination);
     return;
   }
@@ -502,11 +588,30 @@ function isGoneProcessError(error: unknown): boolean {
   );
 }
 
-async function completeTermination({ signal, deadlineMs }: Termination): Promise<never> {
+async function completeTermination(current: Termination): Promise<never> {
+  const { signal, deadlineMs } = current;
   await waitUntil(() => runnersGone() && finalizersSettled, deadlineMs);
   if (!runnersGone()) signalRegisteredRunners("kill", signal);
 
   if (isLinux()) {
+    // Unconfirmed runner exits still leave their trees to the startup reaper.
+    if (runnersGone() && finalizersSettled && Date.now() < deadlineMs) {
+      const timeout = setTimeout(() => terminateImmediately(current), deadlineMs - Date.now());
+      try {
+        for (const directory of [...activeTempDirectories]) {
+          if (Date.now() >= deadlineMs) break;
+          try {
+            if (await removeTerminatingTempTree(directory, deadlineMs)) {
+              activeTempDirectories.delete(directory);
+            }
+          } catch (error) {
+            warnCleanupFailure(`temp directory ${directory}`, error);
+          }
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
     terminationCancel.abort();
     process.exit(signal === "SIGINT" ? 130 : 143);
   }

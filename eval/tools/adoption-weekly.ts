@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderReport, type AdoptionRow } from "./adoption";
+import { measurementOptions, parseFindingMeasurement, type MeasurementContract } from "./adoption-measurements.js";
 
 const REPO = "frankekn/needlefish";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -22,8 +23,11 @@ function parseRows(raw: string): AdoptionRow[] {
       || !("author" in row) || (row.author !== null && typeof row.author !== "string")) {
       throw new Error("invalid collector row");
     }
+    const measurement = "measurement" in row ? parseFindingMeasurement(row.measurement) : undefined;
+    if (measurement?.status === "producer_attested" && (measurement.receipt.repository !== row.repo || measurement.receipt.prNumber !== row.pr)) throw new Error("measurement row identity conflict");
     return { repo: row.repo, pr: row.pr, severity: row.severity, category: row.category,
-      fate: row.fate, resolved: row.resolved, path: row.path, created: row.created, author: row.author };
+      fate: row.fate, resolved: row.resolved, path: row.path, created: row.created, author: row.author,
+      ...(measurement ? { measurement } : {}) };
   });
 }
 
@@ -31,6 +35,7 @@ export function writeWeeklyReport(options: {
   readonly outputDir: string;
   readonly now: Date;
   readonly env?: NodeJS.ProcessEnv;
+  readonly measurements?: MeasurementContract;
 }): number {
   const env = options.env ?? process.env;
   if (env.GITHUB_REPOSITORY && env.GITHUB_REPOSITORY !== REPO) {
@@ -47,7 +52,8 @@ export function writeWeeklyReport(options: {
   mkdirSync(options.outputDir, { recursive: false });
   const save = (name: string, content: string) => writeFileSync(path.join(options.outputDir, name), content);
   save("source-sha.txt", `${sourceSha}\n`);
-  const result = spawnSync(process.execPath, ["--import", "tsx", path.join(ROOT, "eval/tools/adoption.ts"), REPO, "--since", since, "--json"], {
+  const measurementArgs = options.measurements ? ["--measurement-workflow", options.measurements.workflowPath, "--measurement-job-key", options.measurements.jobKey, "--measurement-job-name", options.measurements.jobName] : [];
+  const result = spawnSync(process.execPath, ["--import", "tsx", path.join(ROOT, "eval/tools/adoption.ts"), REPO, "--since", since, "--json", ...measurementArgs], {
     cwd: ROOT, env, encoding: "utf8", timeout: 10 * 60 * 1000, maxBuffer: 64 * 1024 * 1024,
   });
   const stderr = result.stderr ?? "";
@@ -64,10 +70,12 @@ export function writeWeeklyReport(options: {
   }
   const warnings = stderr.split("\n").filter((line) => line && !/^adoption: frankekn\/needlefish: \d+ finding threads$/.test(line));
   const unknownCategories = rows.filter((row) => row.category === "unknown").length;
-  const status = error ? "failed" : warnings.length > 0 || unknownCategories > 0 ? "partial" : "collected";
+  const unknownMeasurements = options.measurements ? rows.filter((row) => row.measurement?.status !== "producer_attested").length : null;
+  const status = error ? "failed" : warnings.length > 0 || unknownCategories > 0 || (unknownMeasurements ?? 0) > 0 ? "partial" : "collected";
   save("rows.json", `${JSON.stringify(rows, null, 2)}\n`);
   save("metadata.json", `${JSON.stringify({ repo: REPO, sourceSha, since: start.toISOString(), until,
     status, error, findingThreads: rows.length, unknownCategories, warnings,
+    measurements: options.measurements ? { contract: options.measurements, findingDenominator: rows.length, unknown: unknownMeasurements, scope: "producer_attested_only" } : { status: "not_requested" },
     completeness: "The collector reads at most 100 threads per PR. Available history cannot prove that inaccessible edits had no category conflicts.",
   }, null, 2)}\n`);
   save("report.md", ["# Weekly Needlefish adoption", "", `Repository: ${REPO}`,
@@ -83,8 +91,9 @@ export function writeWeeklyReport(options: {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   try {
-    if (process.argv.length !== 3) throw new Error("Usage: tsx eval/tools/adoption-weekly.ts <new-output-directory>");
-    process.exitCode = writeWeeklyReport({ outputDir: process.argv[2], now: new Date() });
+    if (process.argv.length < 3) throw new Error("Usage: tsx eval/tools/adoption-weekly.ts <new-output-directory> [explicit measurement options]");
+    const measurements = process.argv.length > 3 ? measurementOptions(process.argv.slice(3)) : undefined;
+    process.exitCode = writeWeeklyReport({ outputDir: process.argv[2], now: new Date(), measurements });
   } catch (err) {
     process.stderr.write(`weekly adoption failed: ${err instanceof Error ? err.message : String(err)}\n`);
     process.exitCode = 1;

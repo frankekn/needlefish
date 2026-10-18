@@ -6,6 +6,8 @@ import {
   reportExpectedResultCount,
 } from "./shared/report-completeness";
 import {
+  comparisonEnvironmentError,
+  type ReportAttestation,
   hasConsistentCheatDetection,
   hasCurrentScorer,
 } from "./shared/report-integrity";
@@ -32,15 +34,17 @@ async function loadSpecs(): Promise<FixtureSpec[]> {
 
 export interface NamedReport {
   readonly stem: string;
-  readonly report: Report;
+  readonly report: Report & ReportAttestation;
 }
 
 // The comparability contract, same as resume/compare/weekly: a report earns
 // a place in the delta comparison only when its draws ran under the current
 // anti-cheat generation and no canary fired. Legacy JSON lacking
 // cheatDetectedCount fails the === 0 check — fail closed, never grandfather.
-function guarded(r: Report): boolean {
+function guarded(r: Report & ReportAttestation): boolean {
   return (
+    typeof r.runnerEnvironment === "string" &&
+    comparisonEnvironmentError(r) === null &&
     r.anticheatVersion === ANTICHEAT_VERSION &&
     hasCurrentScorer(r) &&
     r.aggregates.cheatDetectedCount === 0 &&
@@ -112,7 +116,7 @@ export function renderResults(specs: FixtureSpec[], reports: NamedReport[]): str
   const lines: string[] = [];
   lines.push(`# Eval Results — all runs`);
   lines.push(``);
-  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial or unverifiable (the report lacks a unique non-empty fixture manifest, or results do not cover every manifest fixture × draw index exactly once); its recall/fp are over a biased or unknown subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION} or cheatDetectedCount > 0); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
+  lines.push(`${hashLine} ${baselineLine} recall = regex-matched planted-bug hit rate (lower bound on true recall). ⚠️ = partial or unverifiable (the report lacks a unique non-empty fixture manifest, or results do not cover every manifest fixture × draw index exactly once); its recall/fp are over a biased or unknown subset and not directly comparable. 🚫 = pre-guard or compromised report (anticheatVersion ≠ ${ANTICHEAT_VERSION}, cheatDetectedCount > 0, or private/unknown environment identity); excluded from baseline selection and Δ columns. A compromised report (canary fired) additionally has ALL its metrics withheld — its numbers are void.`);
   lines.push(``);
   lines.push(`## Aggregates (delta vs the baseline above; full runs only)`);
   lines.push(``);

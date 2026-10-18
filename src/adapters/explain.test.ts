@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { commitAll, gitText, headSha, initRepo } from "../shared/codex-runner-test-fixtures";
 import { WITHHELD_MESSAGE } from "../shared/outbound-screen.js";
-import { runGithubExplain, screenExplanation } from "./explain.js";
+import { screenExplanation } from "./explain.js";
 import { renderState } from "./github.js";
 
 const KNOWN = "abc123def456ghi789jkl0";
@@ -27,7 +28,8 @@ test("screenExplanation returns clean text unchanged", () => {
   assert.equal(screenExplanation("plain explanation", {}), "plain explanation");
 });
 
-test("runGithubExplain hands the model Needlefish's latest finding keys, not its review prose", async (t) => {
+for (const pin of [undefined, "4812", "not-an-id"]) {
+test(`explain CLI resolves latest finding keys with App pin ${pin ?? "default"}`, (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-explain-test-"));
   const repo = initRepo(tmp);
   const fakeBin = path.join(tmp, "bin");
@@ -38,6 +40,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
     repository: process.env.GITHUB_REPOSITORY,
     bin: process.env.CLAUDE_BIN,
     runner: process.env.NEEDLEFISH_RUNNER,
+    appId: process.env.NEEDLEFISH_CHECK_APP_ID,
   };
   t.after(() => {
     if (previous.path === undefined) delete process.env.PATH;
@@ -48,6 +51,8 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
     else process.env.CLAUDE_BIN = previous.bin;
     if (previous.runner === undefined) delete process.env.NEEDLEFISH_RUNNER;
     else process.env.NEEDLEFISH_RUNNER = previous.runner;
+    if (previous.appId === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID;
+    else process.env.NEEDLEFISH_CHECK_APP_ID = previous.appId;
     rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -55,9 +60,12 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
   const base = headSha(repo);
   gitText(["checkout", "-b", "feature"], repo);
   writeFileSync(path.join(repo, "app.ts"), "export const x = 1;\n");
+  writeFileSync(path.join(repo, "asset.bin"), Buffer.from([0, 1]));
   commitAll(repo, "feature");
   const head = headSha(repo);
 
+  const appId = pin === undefined ? 15368 : 4812;
+  const login = pin === undefined ? "github-actions[bot]" : "private-review-app[bot]";
   const state = renderState(head, [
     {
       severity: "P2",
@@ -71,7 +79,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
       suggestedFix: "fix",
       validation: "test",
     },
-  ]);
+  ], { checkId: 1, appId, roundId: "explain-fixture", runId: "fixture" });
   const reviewBody = `CHANGES REQUESTED ⚠️ — 1 blocking\n\nCoverage: full diff reviewed in one pass (1 file)\n\n## Findings\n\n| 1 | P2 | Doctor base check fails on a dirty worktree | app.ts:1 |\n\n${state}\n`;
   const prView = {
     number: 9,
@@ -88,7 +96,11 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
     baseRefName: "main",
     headRefName: "feature",
   };
-  const reviewsPage = [[{ id: 1, body: reviewBody, user: { login: "github-actions[bot]", type: "Bot" } }]];
+  const reviewsPage = [[{ id: 1, commit_id: head, body: reviewBody, user: { login, type: "Bot" } }]];
+  const checks = [{ check_runs: [{ id: 1, head_sha: head, app: { id: appId, slug: "private-review-app" },
+    name: "Needlefish", status: "completed", conclusion: "failure", output: { title: "Needlefish: changes_requested" },
+    external_id: JSON.stringify({ v: 2, prNumber: 9, roundId: "explain-fixture", runId: "fixture" }),
+  }] }];
   mkdirSync(fakeBin);
   writeFileSync(
     path.join(fakeBin, "gh"),
@@ -104,7 +116,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
       `  process.stdout.write(${JSON.stringify(JSON.stringify(reviewsPage))});`,
       "  process.exit(0);",
       "}",
-      // An Actions token may not call GET /user; trust then rests on the bot identity.
+      `if (args.some(arg => arg.includes("/check-runs?"))) { process.stdout.write(${JSON.stringify(JSON.stringify(checks))}); process.exit(0); }`,
       "if (args[1] === 'user') { process.stderr.write('HTTP 403'); process.exit(1); }",
       "if (args.includes('--input')) {",
       `  fs.appendFileSync(${JSON.stringify(postLog)}, JSON.stringify({ args, payload: fs.readFileSync(0, 'utf8') }) + '\\n');`,
@@ -131,7 +143,18 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
   process.env.CLAUDE_BIN = path.join(fakeBin, "claude");
   process.env.NEEDLEFISH_RUNNER = "claude";
 
-  await runGithubExplain(repo, 9, "dirty worktree", { timeoutMs: 1000 });
+  if (pin === undefined) delete process.env.NEEDLEFISH_CHECK_APP_ID;
+  else process.env.NEEDLEFISH_CHECK_APP_ID = pin;
+  const result = spawnSync(process.execPath, ["--import", "tsx", "src/cli.ts", "explain", "9",
+    "--repo", repo, "--finding", "dirty worktree"], { encoding: "utf8", timeout: 20_000 });
+  if (pin === "not-an-id") {
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /NEEDLEFISH_CHECK_APP_ID must be a positive safe integer/);
+    assert.equal(existsSync(promptLog), false);
+    assert.equal(existsSync(postLog), false);
+    return;
+  }
+  assert.equal(result.status, 0, result.stderr);
 
   const prompt = readFileSync(promptLog, "utf8");
   const bundle = prompt.slice(prompt.indexOf("# Context bundle"), prompt.indexOf("# Diff"));
@@ -145,6 +168,7 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
     [["app.ts", 1, "doctor base check fails on a dirty worktree"]]
   );
   assert.deepEqual(context.prMeta.reviews, ["LGTM from me, one nit inline."]);
+  assert.equal(bundle.includes('"binaryFiles"'), false);
   assert.equal(prompt.includes("needlefish-state"), false);
   assert.equal(prompt.includes("Coverage: full diff"), false);
 
@@ -155,3 +179,5 @@ test("runGithubExplain hands the model Needlefish's latest finding keys, not its
   assert.ok(body.startsWith("## 🔍 Needlefish explain\n\nThe guard runs after the write."));
   assert.ok(body.endsWith("\n<!-- needlefish-explain -->"));
 });
+
+}

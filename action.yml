@@ -7,7 +7,7 @@ inputs:
     description: PR number to review (defaults to the pull_request event PR)
     required: false
   runner:
-    description: "Model runner: codex, claude, opencode, or pi"
+    description: "Model runner: codex, claude, or pi. OpenCode is temporarily disabled (#207)."
     required: false
     default: codex
   model:
@@ -71,7 +71,8 @@ runs:
             echo "::error::could not read PR #$pr metadata" >&2
             exit 1
           fi
-          mapfile -t pr_fields <<< "$pr_meta"
+          pr_fields=()
+          while IFS= read -r field; do pr_fields+=("$field"); done <<< "$pr_meta"
           head="${pr_fields[0]:-}"
           author_association="${pr_fields[1]:-}"
           author_type="${pr_fields[2]:-}"
@@ -90,11 +91,36 @@ runs:
           reason="PR author (association ${author_association:-unknown}, type ${author_type:-unknown}) is not trusted"
           echo "$reason"
           if [ -n "$head" ]; then
+            random="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+            invocation="${random:0:8}-${random:8:4}-4${random:13:3}-8${random:17:3}-${random:20:12}"
+            measurement=$(jq -cn --arg repository "$REPO" --arg pr "$pr" --arg head "$head" \
+              --arg invocation "$invocation" \
+              --arg run "${GITHUB_RUN_ID:-}" --arg attempt "${GITHUB_RUN_ATTEMPT:-}" --arg job "${GITHUB_JOB:-}" '
+              {schemaVersion: 1, invocationId: $invocation, repository: $repository, prNumber: ($pr | tonumber), targetHeadSha: $head,
+               workflow: (if ($run | test("^[1-9][0-9]{0,19}$")) and ($attempt | test("^[1-9][0-9]{0,8}$")) and ($job | test("^[A-Za-z_][A-Za-z0-9_-]{0,99}$"))
+                 then {status: "recorded", runId: $run, runAttempt: ($attempt | tonumber), jobKey: $job} else {status: "unknown"} end),
+               execution: {ordinal: 1, role: "unknown"}, summaryReviewId: null, inlineReviewIds: [],
+               runtime: {status: "unknown"}, pipeline: {status: "unknown"}, outcome: "skipped", verdict: null, delivery: "not_applicable"}')
+            if ! live_pr="$(gh api "repos/$REPO/pulls/$pr" --jq '.state, .head.sha')"; then
+              echo "::error::could not revalidate PR before posting an author-skip check" >&2
+              exit 1
+            fi
+            live_fields=()
+            while IFS= read -r field; do live_fields+=("$field"); done <<< "$live_pr"
+            if [ "${live_fields[0]:-}" != "open" ] || [ "${live_fields[1]:-}" != "$head" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "skip_reason=closed_or_stale_head" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             gh api -X POST "repos/$REPO/check-runs" \
               -f name="Needlefish" \
               -f head_sha="$head" \
               -f status="completed" \
               -f conclusion="neutral" \
+              -f external_id="$(jq -cn --argjson pr "$pr" \
+                --arg run "${GITHUB_RUN_ID:-}" --arg round "$(jq -r .invocationId <<<"$measurement")" \
+                '{v: 2, prNumber: $pr, roundId: $round, runId: $run}')" \
+              -f "output[text]=$measurement" \
               -f "output[title]=Needlefish: skipped (author not trusted)" \
               -f "output[summary]=Needlefish reviews only PRs opened by an OWNER, MEMBER, or COLLABORATOR that is not a bot. $reason. A maintainer who has read this PR can review it by running the workflow manually with allow_untrusted_author: true." >/dev/null
           fi
@@ -122,7 +148,7 @@ runs:
         case "$NF_RUNNER" in
           codex) pkg="@openai/codex" ;;
           claude) pkg="@anthropic-ai/claude-code" ;;
-          opencode) pkg="@opencode/cli" ;;
+          opencode) echo "OpenCode reviews are temporarily disabled because startup configuration isolation is incomplete. Choose codex, claude, or pi; see issue #207." >&2; exit 1 ;;
           # @mariozechner/pi ships its bin as `pi-pods`, not `pi`; the successor package
           # from the same author installs a `pi` bin, which this action expects.
           pi) pkg="@earendil-works/pi-coding-agent" ;;

@@ -1,11 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runText } from "../shared/process.js";
+import { binaryPathsFromNumstat } from "../shared/diff-numstat.js";
 import {
-  review,
-  isDocsOnlyFastPath,
+  reviewWithConnections,
   reviewPlan,
+  isDocsOnlyFastPath,
+  reviewBudgetMs,
   type ReviewProgressEvent,
   type ReviewProgressObserver,
 } from "../core/review.js";
@@ -34,13 +37,12 @@ import {
   type UntrackedSkippedFile,
 } from "../shared/schema.js";
 import type { RunnerOptions } from "../shared/runner.js";
-import { resolveConnectionOptions } from "../shared/connections.js";
+import { resolveConnectionRoutes } from "../shared/connections.js";
 import {
   buildUntrackedPatch,
   EMPTY_BASE_SHA,
   formatUncommittedReviewTarget,
   joinSections,
-  parseTrackedBinaryPathsFromNumstat,
   WORKING_HEAD_SHA,
 } from "./local-uncommitted.js";
 
@@ -165,10 +167,10 @@ export function hasHeadCommit(cwd: string): boolean {
 // work tree side needs its eol, working-tree-encoding and clean-filter
 // conversions, including ones the uncommitted change itself adds. Textconv
 // and external diff drivers stay off: they would rewrite or replace the patch.
-const UNCOMMITTED_DIFF = ["diff", "--no-textconv", "--no-ext-diff"];
+const UNCOMMITTED_DIFF = ["-c", "diff.autoRefreshIndex=false", "diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-textconv", "--no-ext-diff"];
 
-function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[]): string[] {
-  const args = [...UNCOMMITTED_DIFF, ...extraArgs, "HEAD"];
+function trackedDiffArgs(extraArgs: readonly string[], excludedPaths: readonly string[], baseSha: string): string[] {
+  const args = [...UNCOMMITTED_DIFF, ...extraArgs, baseSha];
   if (excludedPaths.length === 0) return args;
   // `literal` magic: a binary file named `a[b].png` must exclude only itself,
   // not every path matching the glob (e.g. `ab.png`), or those changes vanish
@@ -221,7 +223,9 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
   if (!hasHeadCommit(cwd)) {
     throw new Error("No commits yet. Run without --branch to review uncommitted files.");
   }
-  const dirty = git(["status", "--porcelain"], cwd);
+  const dirty = runText("git", ["status", "--porcelain"], {
+    cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+  });
   if (dirty.trim()) {
     process.stderr.write(
       "needlefish: warning: uncommitted changes are not included; review is merge-base..HEAD only.\n"
@@ -242,6 +246,7 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
     patch,
     patchStat: git([...reviewDiff(cwd), "--stat", baseSha, "HEAD"], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, baseSha),
+    binaryFiles: binaryPathsFromNumstat(git([...reviewDiff(cwd), "--numstat", "-z", baseSha, "HEAD"], cwd, { preserveOutput: true })),
     ...(opts.pr
       ? {
           reviewTarget: `Review target: local ${baseSha}..${headSha}\nPR context: #${opts.pr} metadata only`,
@@ -250,27 +255,75 @@ function branchDiffBundle(cwd: string, opts: LocalOptions): Bundle {
       : { prMeta: null }),
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    agentsMd: readAgentsAt(cwd, headSha),
+    agentsMd: readAgentsAt(cwd, baseSha),
   });
 }
 
 function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: boolean): Bundle {
   const baseSha = headExists ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  // shortcut: matching reads miss edits reverted between reads; use OS snapshots if atomic capture is required.
+  const bundle = captureUncommittedBundle(cwd, opts, baseSha);
+  const checked = captureUncommittedBundle(cwd, opts, baseSha);
+  const currentHead = hasHeadCommit(cwd) ? git(["rev-parse", "HEAD"], cwd) : EMPTY_BASE_SHA;
+  if (currentHead !== baseSha || JSON.stringify(bundle) !== JSON.stringify(checked)) {
+    throw new Error("Repository changed while capturing uncommitted changes; retry the review.");
+  }
+  return { ...bundle, prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null };
+}
+
+function capturedPatchMetadata(patch: string): {
+  readonly paths: readonly string[];
+  readonly patchStat: string;
+} {
+  if (!patch.trim()) return { paths: [], patchStat: "" };
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
+  Object.assign(env, {
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+  });
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-captured-patch-"));
+  try {
+    const gitDir = path.join(tmp, "repo.git");
+    runText("git", ["init", "--bare", "--template=", gitDir], { cwd: tmp, env });
+    const patchFile = path.join(tmp, "captured.patch");
+    writeFileSync(patchFile, patch);
+    const patchMetadata = (args: readonly string[]): string =>
+      runText("git", [`--git-dir=${gitDir}`, "apply", ...args, patchFile], { cwd: tmp, env, preserveOutput: true });
+    const paths = new Set<string>();
+    for (const reverse of [false, true]) {
+      const numstat = patchMetadata([...(reverse ? ["--reverse"] : []), "--numstat", "-z"]);
+      if (!numstat.endsWith("\0")) throw new Error("Captured patch has missing or malformed path metadata.");
+      for (const row of numstat.slice(0, -1).split("\0")) {
+        const firstTab = row.indexOf("\t");
+        const secondTab = row.indexOf("\t", firstTab + 1);
+        const file = row.slice(secondTab + 1);
+        if (firstTab < 0 || secondTab < 0 || !file ||
+            !/^\d+$/.test(row.slice(0, firstTab)) || !/^\d+$/.test(row.slice(firstTab + 1, secondTab))) {
+          throw new Error("Captured patch has binary or malformed path metadata.");
+        }
+        paths.add(file);
+      }
+    }
+    return { paths: [...paths], patchStat: patchMetadata(["--stat"]) };
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+function captureUncommittedBundle(cwd: string, opts: LocalOptions, baseSha: string): Bundle {
+  const headExists = baseSha !== EMPTY_BASE_SHA;
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
   const trackedBinaryPaths = headExists
-    ? parseTrackedBinaryPathsFromNumstat(git([...UNCOMMITTED_DIFF, "--numstat", "-z", "HEAD"], cwd))
+    ? binaryPathsFromNumstat(runText("git", [...UNCOMMITTED_DIFF, "--numstat", "-z", baseSha], { cwd, env, preserveOutput: true }))
     : [];
   const trackedPatch = headExists
-    ? git(trackedDiffArgs([], trackedBinaryPaths), cwd, { preserveOutput: true })
+    ? runText("git", trackedDiffArgs([], trackedBinaryPaths, baseSha), { cwd, env, preserveOutput: true })
     : "";
-  const trackedPatchStat = headExists
-    ? git(trackedDiffArgs(["--stat"], trackedBinaryPaths), cwd, { preserveOutput: true })
-    : "";
-  // Rename detection off for the name list only: a `git mv` into a docs path
-  // must keep its removed source path, or classification sees docs alone and
-  // the fast path skips the review. The patch above keeps its rename headers.
-  const trackedPaths = headExists
-    ? gitPathList(trackedDiffArgs(["--name-only", "-z", "--no-renames"], trackedBinaryPaths), cwd)
-    : [];
   const trackedSkipped = trackedBinaryPaths.map((filePath) => `${filePath} (binary)`);
   const untrackedFiles = headExists
     ? gitPathList(["ls-files", "-z", "--others", "--exclude-standard"], cwd)
@@ -278,27 +331,31 @@ function uncommittedDiffBundle(cwd: string, opts: LocalOptions, headExists: bool
   const untracked = buildUntrackedPatch(cwd, untrackedFiles);
   const patch = joinSections([trackedPatch, untracked.patch]);
 
-  if (!patch.trim()) {
+  const hasBinary = trackedBinaryPaths.length + untracked.binaryFiles.length > 0;
+  if (!patch.trim() && !hasBinary) {
     const skipped = [...trackedSkipped, ...untracked.skipped];
     const skippedMessage = skipped.length > 0 ? ` Skipped files: ${skipped.join(", ")}.` : "";
     throw new Error(`No uncommitted changes to review.${skippedMessage}`);
   }
 
+  const metadata = capturedPatchMetadata(patch);
+  const binaryFiles = [...trackedBinaryPaths, ...untracked.binaryFiles];
   return makeBundle({
     repoPath: cwd,
     baseSha,
     headSha: WORKING_HEAD_SHA,
     patch,
-    patchStat: joinSections([trackedPatchStat, untracked.patchStat]),
-    changedFiles: changedFilesFromPaths([...trackedPaths, ...untracked.paths]),
+    patchStat: metadata.patchStat,
+    changedFiles: changedFilesFromPaths([...metadata.paths, ...binaryFiles]),
     reviewTarget: formatUncommittedReviewTarget(opts.pr, untracked.skipped, trackedSkipped),
     untrackedSkipped: untracked.untrackedSkipped,
-    prMeta: opts.pr ? fetchPrMeta(cwd, opts.pr) : null,
+    binaryFiles,
+    prMeta: null,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    // Uncommitted mode has no reviewed commit; read HEAD's blob. An AGENTS.md
-    // that exists only in the working tree is not git policy yet (issue #211).
-    agentsMd: readAgentsAt(cwd, "HEAD"),
+    // Uncommitted mode pins policy to the captured base blob. Working-tree-only
+    // AGENTS.md is not git policy yet; blob-only reads avoid symlink follows (#211).
+    agentsMd: headExists ? readAgentsAt(cwd, baseSha) : NO_AGENTS,
   });
 }
 
@@ -321,7 +378,9 @@ export function localDiffMode(
 export function diffBundle(cwd: string, opts: LocalOptions): LocalBundle {
   const root = resolveRepoRoot(cwd);
   const headExists = hasHeadCommit(root);
-  const dirty = git(["status", "--porcelain"], root).trim() !== "";
+  const dirty = runText("git", ["status", "--porcelain"], {
+    cwd: root, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+  }).trim() !== "";
   const mode = localDiffMode(headExists, dirty, opts.localMode);
   const bundle = mode === "uncommitted" ? uncommittedDiffBundle(root, opts, headExists) : branchDiffBundle(root, opts);
   return { bundle, mode };
@@ -343,11 +402,12 @@ export function prDiffBundle(
     patch: diff.patch,
     patchStat: diff.patchStat,
     changedFiles: diff.changedFiles,
+    binaryFiles: diff.binaryFiles,
     reviewTarget: `Review target: PR #${pr.prMeta.number} ${diff.baseSha}..${diff.headSha}`,
     prMeta: pr.prMeta,
     deep: Boolean(opts.deep),
     focus: opts.focus ?? null,
-    agentsMd: readAgentsAt(root, pr.headSha),
+    agentsMd: readAgentsAt(root, diff.baseSha),
   });
   return { bundle, pr };
 }
@@ -364,11 +424,16 @@ export interface LocalOptions extends RunnerOptions {
 export async function runLocal(
   cwd: string,
   opts: LocalOptions,
-  onProgress?: ReviewProgressObserver
+  onProgress?: ReviewProgressObserver,
+  prepared?: { readonly resolveRoutes: (bindCredentials: boolean) => readonly [RunnerOptions, ...RunnerOptions[]]; readonly signal?: AbortSignal },
 ): Promise<ReviewResult> {
+  prepared?.signal?.throwIfAborted();
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
-  const result = await review(bundle, resolvedOpts, undefined, onProgress);
+  const bindCredentials = !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles?.length);
+  const resolvedOpts = prepared ? prepared.resolveRoutes(bindCredentials) : resolveConnectionRoutes(opts, bundle.repoPath, process.env, bindCredentials);
+  reviewPlan(bundle, resolvedOpts[0]);
+  const result = await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress);
+  prepared?.signal?.throwIfAborted();
   writeCache(bundle.repoPath, opts, result);
   return result;
 }
@@ -380,12 +445,13 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
+  const resolvedOpts = resolveConnectionRoutes(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle) && Boolean(bundle.patch.trim() || !bundle.binaryFiles?.length));
+  reviewPlan(bundle, resolvedOpts[0]);
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
   const result: ReviewResult = {
-    ...(await review(bundle, resolvedOpts, undefined, onProgress)),
+    ...(await reviewWithConnections(bundle, resolvedOpts, undefined, onProgress)),
     prNumber: pr.prMeta.number,
     prBaseSha: pr.baseSha,
   };
@@ -441,21 +507,30 @@ export interface DryRunReport {
   readonly mode: DryRunMode;
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
   readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
 // render; --print-bundle emits the bundle itself, which is the whole diff and
 // the repo AGENTS.md policy text verbatim.
+function dryRunPlans(bundle: Bundle, opts: LocalOptions) {
+  const [first, ...rest] = resolveConnectionRoutes(opts, bundle.repoPath, process.env, false);
+  const plan = reviewPlan(bundle, first);
+  if (rest.length && !plan.docsOnlyFastPath && !plan.binaryOnlyFastPath) reviewBudgetMs(rest.length + 1);
+  return { ...plan, ...(rest.length ? { capabilities: [plan.capability, ...rest.map(route => reviewPlan(bundle, route).capability)] } : {}) };
+}
+
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(cwd, opts);
-  return { mode, bundle, ...reviewPlan(bundle, opts) };
+  return { mode, bundle, ...dryRunPlans(bundle, opts) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle, opts) };
+  return { mode: "pr", bundle, ...dryRunPlans(bundle, opts) };
 }
 
 interface DryRunSummary {
@@ -470,8 +545,10 @@ interface DryRunSummary {
   readonly agentsMd: { readonly present: boolean; readonly bytes: number };
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
+  readonly binaryOnlyFastPath: boolean;
   readonly largePath: boolean;
   readonly capability: ReturnType<typeof reviewPlan>["capability"];
+  readonly capabilities?: readonly ReturnType<typeof reviewPlan>["capability"][];
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -496,8 +573,10 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     },
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
+    binaryOnlyFastPath: report.binaryOnlyFastPath,
     largePath: report.largePath,
     capability: report.capability,
+    ...(report.capabilities ? {capabilities: report.capabilities} : {}),
   };
 }
 
@@ -505,9 +584,11 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
-  if (report.capability?.capability === "promptOnly") {
-    process.stderr.write(`needlefish: ${report.capability.detail}\n`);
-    process.exitCode = 1;
+  for (const capability of report.capabilities ?? [report.capability]) {
+    if (capability?.capability === "promptOnly" || (report.capabilities !== undefined && capability?.capability === "unresolved")) {
+      process.stderr.write(`needlefish: ${capability.detail}\n`);
+      process.exitCode = 1;
+    }
   }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
@@ -551,11 +632,13 @@ export function printDryRun(
     lines.push(`  ${skipped.path} (${skipped.reason}, ${skipped.bytes} bytes)`);
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
+  lines.push(`binaryOnlyFastPath: ${summary.binaryOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
   if (summary.capability) {
     const [first, ...rest] = summary.capability.detail.split("\n");
     lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${first}`);
     for (const line of rest) lines.push(`  ${line}`);
   }
+  if (summary.capabilities) summary.capabilities.forEach((capability, index) => lines.push(`route ${index + 1}: ${capability?.detail ?? "docs-only"}`));
   process.stdout.write(`${lines.join("\n")}\n`);
 }

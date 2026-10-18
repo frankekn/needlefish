@@ -12,10 +12,33 @@ critic filter the findings. Fixed rules derive the final verdict.
 [Benchmark page](https://frankekn.github.io/needlefish/) ·
 [Full reference](https://github.com/frankekn/needlefish/blob/main/docs/reference.md)
 
+OpenCode review execution is temporarily disabled, including automatic selection.
+OpenCode v2.0.22 and v2.0.30 load target plugins during startup. The verified
+v2.0.30 CLI can disable project discovery but still loads system plugins and
+managed configuration. `--standalone` and an ephemeral HOME do not provide
+complete configuration isolation. Existing OpenCode authentication files are
+preserved. Choose another runner explicitly with `--runner`; Needlefish does
+not switch providers automatically. A future OpenCode release needs renewed
+isolation verification before this lane can be enabled. See [issue #207](https://github.com/frankekn/needlefish/issues/207).
+
+To reproduce the integration check with an already installed CLI, run
+`NEEDLEFISH_OPENCODE_INTEGRATION_BIN=/path/to/opencode node --test --import tsx src/shared/opencode-isolation.test.ts`.
+The test uses no provider credentials. It is not an OS sandbox; a loaded OpenCode
+plugin can write outside the temporary fixture. Run it only on a disposable
+machine or under an external OS sandbox.
+Default CI skips this optional integration. The nonexistent provider is expected
+to fail after plugin startup.
+
+Historical deep-concurrency v1 replay requires its pinned source and restored
+archived generator, protocol, and plan before running the two `--plan` and `cmp`
+commands. The current generator emits v2. Follow
+[the historical v1 replay procedure](eval/campaigns/deep-concurrency-v2.md#preserve-v1).
+The sealed v1 protocol and comparator remain unchanged.
+
 ## Quick start
 
 Use a trusted Git repository. You need Node 20+, Git 2.41+, and an authenticated
-`codex`, `claude`, or `opencode` CLI on `PATH`.
+`codex` or `claude` CLI on `PATH`.
 Run the published v0.4.10 CLI from the repository root.
 The full reference describes current source, including unreleased changes.
 
@@ -84,20 +107,43 @@ Dry-run JSON has a different shape. See the
 | Symptom | Action |
 | --- | --- |
 | Node or Git check fails | Install Node 20+ or Git 2.41+, then run `doctor` again. |
-| No runner is found | Install and authenticate `codex`, `claude`, or `opencode`, or explicitly select a configured runner. |
+| No runner is found | Install and authenticate `codex` or `claude`, or explicitly select a configured runner. |
 | Login, provider, quota, or network error | Read the runner diagnostic. Check that provider's login and account status. `doctor` does not prove quota or connectivity. |
 | Folder is not a Git repository | Select the repository root, or run `git init` only if you intend to create a repository. |
 | Base ref cannot be resolved | Fetch the intended base and pass `--base <ref>`. |
 | GitHub review is skipped | Read `needlefish-skip` and the check. Closed, stale, same-head, and untrusted-author skips are not new reviews. |
 | Review times out | Inspect the failure and runner logs. Set an appropriate timeout only after checking the cause. Do not treat missing output as a pass. |
 
-The `openai` HTTP runner cannot inspect repository files. Use a recommended
-CLI runner, such as `codex`, `claude`, or `opencode`, for any model review.
-Refusal before a model call is an unreleased source guard, not a v0.4.10
-guarantee.
+The `openai` HTTP runner cannot inspect repository files. The unreleased
+source rejects every model-backed review, including small diffs, before any
+HTTP request. Docs-only reviews still use the fast path without a model call.
+Published v0.4.10 does not guarantee that refusal.
 
 [Timeouts and runner options](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#runners) and
 [GitHub authentication](https://github.com/frankekn/needlefish/blob/main/docs/reference.md#hosted-any-repo) contain the full details.
+
+## Public evaluation identity
+
+`eval/run.ts --runner acp --public-launcher-artifact <file>` opts in to a
+SHA-256 of public launcher bytes. The file must be the actual configured ACP
+executable. It identifies that file only, including neither transitive imports
+nor a private provider binary. `--runner-version` and the auth-source type
+remain `operator_attested`. Missing identity remains `unknown`.
+
+Private runner configuration and credential stores never contribute a public
+digest. New reports that depend on them remain `privateEnvironment: true`.
+Historical report bytes and the public generator's private-report refusal stay
+unchanged. The shared configuration matcher returns `exact`, `different`, or
+`unknown`; `exact` alone does not establish a passed qualification gate.
+
+`runtime-publication.json` distinguishes the benchmark selection, package
+defaults, and an operator-selected installation. Run
+`node scripts/runtime-publication.mjs --write` after changing that file.
+It updates only the marked runtime publication blocks in both READMEs and the site.
+`pnpm check` rejects runtime publication block or version drift without writing files.
+Full site regeneration still requires reports matching the current fixture contract.
+Historical reports cannot bypass that contract. Source installs copy this map into `release.json`.
+It does not attest the operator's effective model or change runner selection.
 
 ## GitHub Action
 
@@ -141,6 +187,11 @@ workflows and unrecognized setup branches cause a conflict. Unrelated custom
 workflows that setup can inspect are preserved and do not block setup.
 If setup cannot inspect a workflow's contents, it stops without writing changes.
 Ask a repository administrator to inspect that workflow before retrying.
+Upgrades from the previous template inspect classic branch protection and active
+branch rules before writing. If either requires `Needlefish`, setup refuses the
+upgrade. Preserve required checks and ask a maintainer to plan and independently
+review a workflow migration on a separate branch. The reserved setup branch
+does not run a model review and cannot satisfy that required check.
 Read the workflow and OpenAI code-disclosure/cost notice from `status` before consent.
 
 `set-secret --repository owner/repo --confirm --replace-secret` accepts the
@@ -192,16 +243,20 @@ remain in the reference.
 The generator currently writes the full table into both READMEs. The generated
 block stays here unchanged so future publication uses the same source of truth.
 
+<!-- runtime-publication:begin -->
+Package 0.4.10 auto-detects codex, claude in order. Codex defaults to `medium` effort. The benchmark selects the configuration in [this report](eval/results/2026-09-09-pi-deepseek-v41-flash-high-x3.json). The operator selects the installation configuration. Its identity is unknown and unqualified. Benchmark selection does not establish what any host has deployed.
+<!-- runtime-publication:end -->
+
 <!-- benchmark:begin -->
 <!-- generated by eval/gen-readme.ts from eval/leaderboard.json and eval/results/*.json — do not hand-edit -->
 
 **Updated 2026-10-13** — measured 2026-09-06 to 2026-10-13; all 17 published lanes at 87 scenarios × 3 draws, sealed holdouts included, Class R gate, anti-cheat v2; baseline commit `a5a0c68`, prompt `e62d0889fc704541`, fixture set `e9923bbc7753a04a`, scorer `8bbc6152d8b45a43`; every report has `cheatDetectedCount: 0`.
 
-**Ranked lanes.** **Deployed lane: DeepSeek V4.1 Flash (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** — the deployed lane recorded in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the deployed lane and the best value in each column.
+**Ranked lanes.** **Benchmark-selected configuration: DeepSeek V4.1 Flash (`deepseek-v4.1-flash-expires-on-0910` at `high` effort)** — the benchmark configuration selected in the leaderboard; which lane actually runs is decided by workflow inputs and by any self-managed runner bundle. Bold marks the benchmark-selected configuration and the best value in each column.
 
 | Rank | Lane | Harness | Effort | Balanced | 95% CI | Tier-1 | FP | Noise/review | Mean |
 | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | **[DeepSeek V4.1 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-deepseek-v41-flash-high-x3.json) (deployed)** | Pi 0.85.1 | high | **97.81%** | 95.6%–100.0% | 100% | 0.00% | 0.027 | **31s** |
+| 1 | **[DeepSeek V4.1 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-deepseek-v41-flash-high-x3.json) (benchmark-selected)** | Pi 0.85.1 | high | **97.81%** | 95.6%–100.0% | 100% | 0.00% | 0.027 | **31s** |
 | 1 | [Qwen 3.8 Flash](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-09-pi-qwen38-flash-max-x3.json) | Pi 0.85.1 | max | 95.63% | 92.7%–98.6% | 95% | 0.00% | 0.055 | 118s |
 | 1 | [Grok 4.6](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-06-grok-grok46-xhigh-x3.json) | Grok CLI 1.0.13 | xhigh | 95.48% | 92.2%–98.8% | 100% | 1.39% | **0.011** | 230s |
 | 1 | [Grok 4.7](https://github.com/frankekn/needlefish/blob/main/eval/results/2026-09-22-grok-47-high-x3.json) | grok 1.0.40 | high | 95.48% | 92.3%–98.7% | 100% | 1.39% | 0.038 | 255s |

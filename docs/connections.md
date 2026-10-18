@@ -1,6 +1,6 @@
 # Named connections
 
-Choose one existing CLI adapter or trusted ACP executable by name:
+Source preview. Choose existing CLI adapters or trusted ACP executables by name:
 
 ```sh
 needlefish --connection my-cli
@@ -8,10 +8,11 @@ needlefish pr 7 --connection my-agent
 needlefish --connection my-agent --dry-run
 ```
 
-This increment selects **one** connection. It does not implement automatic
-fallback, OAuth account stores, login, installation or provider presets.
+Repeat `--connection` to set the order for whole-review quota fallback.
+A single selection retains its existing behavior. OAuth account stores, login,
+installation and provider presets remain separate work.
 Without `auth`, two names still use the existing adapter credentials, not independent
-accounts. ACP supports the explicit environment bindings below. Unsupported
+accounts. ACP and Codex support the explicit environment bindings below. Unsupported
 `authRef`, arbitrary env, presets and fallback fields are rejected.
 
 ## User-owned configuration
@@ -51,9 +52,10 @@ model, omit both model and placeholder; stats then omit the requested model
 rather than borrowing `NEEDLEFISH_MODEL`. There is no variable, tilde, shell or
 command-substitution expansion. An executable path containing spaces is one path.
 
-Native CLI connections require a model. Authentication, endpoint/proxy policy,
-reasoning settings and native executable selection keep the existing adapter's
-configuration. Explicit Codex proxy requirements are not bypassed. ACP identities
+Native CLI connections require a model. Without explicit auth, authentication and
+endpoint/proxy policy keep the existing adapter configuration. Reasoning settings
+and native executable selection also keep the existing configuration. Explicit
+Codex proxy requirements are not bypassed. ACP identities
 are open-ended; adding one does not add a `RunnerName`. `stats.runner` remains the
 adapter. A requested model name is not evidence of the delivered model.
 
@@ -99,7 +101,7 @@ capability classifier. Other explicit source mappings, including values that nam
 host resources, are the trusted operator's responsibility. An unrestricted agent
 may still access any host resource available to its user.
 
-Selection snapshots only the chosen sources. Missing, empty, invalid or
+Selection snapshots all explicitly chosen sources. Missing, empty, invalid or
 whitespace-wrapped values stop before launch: no default account, login probe or
 automatic fallback.
 Retries and all review passes retain the snapshot without changing `process.env`.
@@ -129,15 +131,15 @@ HTTP(S) proxy variables from the existing base allowlist are retained. Before an
 authenticated model run, nonempty `NEEDLEFISH_RUNNER_ENV_PASSTHROUGH` is rejected,
 not silently dropped: reconcile
 any required endpoint/CA/routing settings before using this mode. Arbitrary
-per-connection environment and file-based routing are outside this increment.
+per-connection environment overrides and file-based routing are outside this increment.
 
 This isolates **default credential discovery**, not processes or provider identities.
 A same-UID executable can still seek host files; project hooks/skills/MCP are not
 made safe by an empty HOME. Use a trusted agent. This is not an OAuth/Keychain
 integration, token vault, refresh manager or proof that two sources are different
-accounts. Native CLI bindings and the nontechnical login UI remain separate work.
+accounts. Other native CLI bindings and the nontechnical login UI remain separate work.
 
-## One selection, one runtime
+## Shared runtime
 
 Without `--connection`, no connection file is read. Legacy `--runner acp` still
 uses `NEEDLEFISH_ACP_BIN` with empty argv. `--connection` conflicts with explicit
@@ -157,8 +159,9 @@ Named ACP launch goes through the same client as legacy launch:
 No second retry loop, process manager, telemetry schema or routing framework is
 introduced. Raw callbacks, review deadline, clone/HOME cleanup and integrity
 checks stay in the shared lifecycle. Structured authentication failures do not
-retry; transient session/new errors may use its bounded second attempt. Neither
-an error code nor quota prose activates another connection in this increment.
+retry; transient session/new errors may use its bounded second attempt. ACP has no portable quota signal and cannot activate another connection.
+Authentication failures, timeouts, refusal, cancellation and ordinary 429 errors
+also stop without switching.
 
 ## Preview and qualification
 
@@ -186,6 +189,7 @@ live canary are required before merge/deployment; fake-agent CI is not a substit
 | Adapter identities/metadata | Existing `runner-definition.ts`; no connection-specific catalog |
 | ACP command/argv, startup/completion/usage | `acp.ts`; existing `acp*.test.ts` and named-launch integration below |
 | ACP credential references and private snapshot | `connection-auth.ts`; `connection-auth.test.ts` |
+| Codex credential references, explicit route, and metadata-only doctor | `connection-auth.ts`, `connections.ts`, `codex.ts`, `doctor.ts`; `codex-connection-auth.test.ts` |
 | Child credential/HOME isolation | Existing `codex.ts`; `connection-auth-integration.test.ts` |
 | Cross-pass launch/model plumbing | `src/cli.ts`, `codex.ts`; `connections-integration.test.ts` |
 
@@ -209,9 +213,268 @@ and remaining gates in the PR before handing off; recheck head before pushing.
 ACP 現可用 `auth.env` 將工具的密鑰變數綁到不同來源；設定檔只存變數名。
 缺少認證就停止，重試不換帳號；強制使用空白暫存 HOME/XDG，不複製預設帳號。
 此模式拒絕舊的任意 passthrough，避免暗中丟掉必要路由；OAuth、原生 CLI 多帳號、
-額度備援與安裝精靈仍未交付。這也不是作業系統隔離或供應商帳號驗證。
+安裝精靈仍未交付。這也不是作業系統隔離或供應商帳號驗證。
 
 設定只能來自專案外的使用者檔案，請勿放密鑰。選定的 command／argv／模型
 在重試與各審查階段保持固定，並沿用同一套握手、完成性、用量及清理流程。
 取消、拒絕或權限失敗不能靠合法 JSON／用量變成成功；預覽不登入、不送程式碼。
 工程測試通過仍不代表正式模型資格評估或受控 canary 已完成。
+
+
+## Select a Codex API credential and route
+
+This source-preview increment binds one environment credential reference to a
+Codex route. It does not select or verify an OAuth account. Two references do not
+prove two provider accounts. Formal Class R qualification remains required.
+
+```json
+{
+  "version": 1,
+  "connections": [
+    {
+      "id": "codex-direct",
+      "adapter": "codex",
+      "model": "your-selected-model",
+      "auth": {
+        "env": {"CODEX_API_KEY": "ACCOUNT_A_KEY"},
+        "route": {"kind": "openai"}
+      }
+    },
+    {
+      "id": "codex-proxy",
+      "adapter": "codex",
+      "model": "your-selected-model",
+      "auth": {
+        "env": {"CODEX_PROXY_API_KEY": "ACCOUNT_B_KEY"},
+        "route": {"kind": "cliproxyapi", "baseUrl": "http://127.0.0.1:8317/v1"}
+      }
+    }
+  ]
+}
+```
+
+Each route accepts exactly the target variable shown above. The source is an
+environment variable name, never the key value. Supply the source through your
+trusted launch environment. The proxy URL must use HTTP or HTTPS and must not
+contain credentials, userinfo, a query, or a fragment. Do not put secrets in its
+path or hostname. Selected credentials in raw or percent-decoded URLs are rejected
+before launch. Malformed percent encoding is also rejected.
+
+Direct mode rejects an ambient `CODEX_PROXY_BASE_URL`, `CODEX_PROXY_API_KEY`, or
+`NEEDLEFISH_CODEX_PROXY_REQUIRED=1`. Remove those settings or select an explicit
+proxy connection. Explicit auth also rejects legacy
+`NEEDLEFISH_RUNNER_ENV_PASSTHROUGH`. Proxy mode uses only its selected URL and key.
+Calls without explicit connection auth retain legacy routing.
+
+Selection fixes the model, key, and route for retries and all review passes.
+Changing the source environment affects only the next explicit selection. Each
+invocation uses a new empty `HOME`, `USERPROFILE`, and `CODEX_HOME` with file
+credential storage. It does not copy ambient auth, configuration, skills, or
+history. The selected credential uses the same output guards as ACP auth.
+Normal transport proxy environment variables retain their existing behavior.
+
+```sh
+needlefish --connection codex-direct
+needlefish --connection codex-proxy
+needlefish doctor --connection codex-direct --json
+```
+
+Doctor accepts named Codex connections. It checks local source selection and
+executable availability without invoking the CLI. The auth result is `unknown`
+and states that provider account identity is unknown. It does not publish login
+status text, credential fragments, profile paths, or credential digests.
+Missing or invalid selected credentials stop before any CLI probe or review.
+OAuth login, refresh persistence, provider identity verification and other native
+adapter auth variants remain outside this preview. Ordered quota fallback is
+described below.
+
+
+Codex 的 source preview 亦可用 `auth.env` 選定 API key 來源，並必須明確指定
+`auth.route.kind` 為 `openai` 或 `cliproxyapi`。設定檔只存變數名稱與非秘密 URL。
+重試與各 pass 共用同一份私有 snapshot。`doctor --connection 名稱` 只確認
+Codex 來源已選定，provider 帳號身分仍為 `unknown`，不執行登入狀態查詢。
+這不包含 OAuth 多帳號、refresh 或正式 Class R 資格。
+
+## Ordered whole-review quota fallback
+
+This source preview accepts an ordered list through repeated `--connection`.
+Set the existing review budget before selecting multiple connections:
+
+```sh
+NEEDLEFISH_REVIEW_TIMEOUT_MS=600000 needlefish --connection primary --connection spare
+```
+
+IDs must be known, nonempty and distinct. Do not combine them with `--runner`
+or `--model`. Configuration and all selected credential sources bind once.
+Only the selected route's credentials reach its child process. All selected
+credentials protect public output, including output from a different route.
+
+Only verified native Codex terminal JSONL with a nonzero exit and recognized
+exhaustion semantics can advance the list. The supported native 0.163 proof uses
+controlled Responses-provider exhaustion, not real provider account verification.
+An explicit CLIProxyAPI route remains a proxy route. It does not establish
+ChatGPT subscription exhaustion. Other adapters' prose and generic 429 responses
+cannot activate fallback.
+
+Each route restarts the complete review, including map, deep and critic passes.
+They share one captured source and one monotonic deadline. Each model pass
+retains its independent throwaway clone. A concurrent sandbox, cancellation,
+authentication or other failure prevents a quota event from hiding that failure.
+Existing ordinary deep failures remain blocking residuals when no quota occurs.
+
+Any complete verdict ends the list. `pass`, `needs_human` and
+`changes_requested` never trigger another model. Exhausting every route is an
+operational error. Local mode writes only the final complete cache. GitHub mode
+claims once and delivers only the final complete review, after checking its head.
+Failed-route transcripts remain in the private trace and evaluation canary flow.
+Candidate findings and stats from failed routes do not enter the final result.
+
+`doctor` and `explain` accept one connection only. `--dry-run` reports each
+selected route's capability without binding credentials or calling models.
+Docs-only reviews do not bind credentials, capture source or consume the budget.
+Multiple model routes require `NEEDLEFISH_REVIEW_TIMEOUT_MS`; no new total-budget
+default is implied by the per-pass timeout.
+
+Class R qualification, sealed holdouts and the dependency PR gates remain pending.
+This preview does not qualify any provider, credential store or production install.
+
+重複 `--connection` 可指定整次審查的額度備援順序，多條連線須明確設定
+`NEEDLEFISH_REVIEW_TIMEOUT_MS`。只有已驗證的 Codex native 終局額度訊號能前進。
+每條連線從頭重跑，所有連線共用同一份來源與總期限。完整 verdict 立即結束。
+認證、取消、timeout、隔離故障、一般 429 與 ACP 錯誤文字都不會觸發備援。
+所有選定密鑰共同保護公開輸出，每個子程序只收到自己那條連線的密鑰。
+全部額度耗盡就失敗，不寫部分 cache、不貼部分 review。正式 Class R 尚未完成。
+
+## Machine editor
+
+`needlefish connections <list|edit|validate|apply|inspect> --json [--repo <path>]`
+manages the same operator configuration. The commands never run a model, login command, or
+version probe. They do not bind credentials. Authentication and account identity
+remain `unknown`, and qualification remains `unqualified`.
+
+| Operation | Input through stdin | Success fields |
+| --- | --- | --- |
+| `list` | None | `revision`, `connections` descriptors |
+| `edit` | None | `baseRevision`, validated raw `document` |
+| `validate` | `{"document": <version-1 document>}` | `connections` descriptors |
+| `apply` | `{"expectedRevision": "missing or sha256:…", "document": <version-1 document>}` | `revision`, `connections` descriptors |
+| `inspect` | `{"ids": ["first", "second"]}` | `revision`, ordered descriptors with local executable availability |
+
+Every response includes `schemaVersion: 1` and `ok`. Errors exit with code 1 and
+return a fixed `code`. Invalid documents can include `issues` with fixed `field`
+and `code` values. Parser messages, input fragments, executable paths, endpoint
+URLs, and credential references do not appear in errors or catalog descriptors.
+`edit` returns the local raw document, including paths and credential reference
+names. Keep this response out of logs, exports, and review prompts. Arbitrary
+text entered into profile fields is not certified safe to publish.
+
+Reading request JSON from stdin has a five-second timeout and a 128 KiB limit.
+Documents must fit the existing 64 KiB configuration limit. `validate` writes
+nothing. Add, edit, and delete profiles by changing the complete `document` from
+`edit`, then use one `apply`. Preserve ACP `{model}` arguments and raw `auth.env`
+and `auth.route` fields. Parsed execution objects contain internal `auth.kind`
+and substituted arguments, so they are not an editable document.
+
+A missing file has revision `missing`. The configuration parent directory must
+already exist and belong to the current user. A missing parent returns
+`configuration_unavailable` and writes nothing. Existing invalid configurations are errors and
+cannot be overwritten by an apply. Files must be regular, user-owned, outside the
+reviewed repository, and have no extra hard links. Configuration directories and
+files must not permit writes by other users. Canonical ancestors must belong to
+the current user or root. Writable ancestors require sticky-directory protection.
+The editor rejects a symlink file
+or configuration parent. These editor restrictions do not change the existing
+read-only `--connection` resolver.
+
+Apply locks the canonical configuration path with an exclusive `.lock` file.
+It compares the exact original byte revision, writes a same-directory exclusive
+0600 temporary file, syncs the file, checks the revision again, renames it, and
+syncs the directory. It then removes its lock and syncs that directory again
+before reporting success. `revision_conflict`
+requires a reload and an explicit draft
+reapply. `config_busy` never removes an existing lock, even if it appears stale.
+The lock records only `pid`, `hostname`, and `createdAt`. After a crash, inspect
+`<connections.json>.lock` on the recorded host. Stop all Needlefish processes
+that can edit this configuration and confirm no apply is running. Then remove
+that exact lock file and reload the editor before saving. Do not remove a lock
+while a writer is running, or rely on a PID alone to identify a stale lock.
+A PID can be reused. This manual recovery never runs automatically.
+A failure before rename preserves the original file. `save_state_unknown` means
+rename completed but durability or cleanup failed. Reload before any retry.
+Cancellation before rename discards the temporary file. Cancellation after a
+successful rename reports the saved result or `save_state_unknown`.
+
+The lock coordinates writers using these commands. External editors do not
+honor the lock. The final revision check detects some external changes, but it
+cannot provide an atomic filesystem compare-and-swap against external writers.
+
+`inspect` checks executable availability without executing it. HTTP runners with
+no repository capability remain blocked. This check does not verify credentials,
+provider identity, delivered model, independent accounts, or release gates.
+Ordered IDs affect only this request. No fallback or account fields are added to
+the stored version-1 document. Session credentials, review ingress, and the
+advanced desktop interface are separate work.
+
+The fixed error codes are `invalid_request`, `input_too_large`, `input_timeout`,
+`invalid_configuration`, `unsafe_configuration`, `configuration_unavailable`,
+`revision_conflict`, `config_busy`, `save_failed`, `save_state_unknown`,
+`cancelled`, and `review_incomplete`.
+
+## Session-only machine review
+
+`needlefish connections review --json` accepts one bounded JSON request through
+stdin. It uses the existing local-uncommitted adapter, whole-review session,
+quota-only fallback, fixed source snapshot and final cache writer. The request
+contains every selection input. `--repo` and review options on argv are rejected.
+
+```json
+{
+  "repo": "/absolute/path/to/project",
+  "scope": "local-uncommitted",
+  "expectedRevision": "sha256:<exact raw-byte revision from connections list>",
+  "ids": ["account-a", "account-b"],
+  "budgetMs": 120000,
+  "credentialMode": "session",
+  "sources": {"ACCOUNT_A_KEY": "<session value>", "ACCOUNT_B_KEY": "<session value>"}
+}
+```
+
+The existing trusted configuration parent must already exist. The raw revision
+must match before source collection or model execution. Later edits to the
+configuration or credential sources do not change the captured selection.
+`ids` is a nonempty, unique ordered list. `budgetMs` is an explicit integer from
+1 through 2147483647 for the whole model review, shared across fallback routes.
+It overrides the ambient review budget for this request. Collection and finalizer
+time are outside this model budget. The per-call timeout remains unchanged.
+
+In `session` mode every selected route must have explicit `auth.env` references.
+`sources` must contain exactly their distinct source names. Missing, additional
+or duplicate JSON keys are rejected. The same source reference shared by selected
+routes takes one value. No missing value falls back to an ambient source. In
+`existing` mode `sources` must be `{}` and the existing auth owner captures the
+selected ambient references. Auth-free routes keep their existing credential
+policy only in `existing` mode. Neither mode proves account identity or provider
+authentication, and runtime qualification remains unqualified.
+
+Session values bind once through a local environment object and the existing
+private auth owner. They do not enter global `process.env`, argv, the configuration,
+public results, diagnostics or cache. All selected credentials screen runner
+output, including literal, JSON-escaped and percent-encoded complete values.
+Singleton ACP session reviews use the same encoded guard as ordered ACP reviews.
+Existing CLI caller defaults remain unchanged. The existing unrestricted-agent
+trust boundary and limits of complete-value credential screening still apply.
+
+Input has a 128 KiB and five-second limit. Invalid JSON and request errors return
+only the existing `{schemaVersion:1,ok:false,code}` machine envelope. Errors never
+quote an input fragment or secret. A successful response is the existing final
+`ReviewResult`, with no extra account/auth claim. Invalid, cancelled and incomplete
+reviews return a nonzero status and never save a partial result.
+`review_incomplete` identifies a review that did not complete. Completed reviews
+exit zero only for `pass`, preserving the full result and final cache for every
+verdict. SIGINT and SIGTERM use the existing lifecycle owner to drain runner
+groups. A closed stdout pipe fails without a raw EPIPE diagnostic.
+
+Session credentials are not persisted. Request buffers and references are released
+on completion or cancellation. JavaScript strings and JSON parsing can leave
+copies until garbage collection, so this is not a physical memory zeroization
+claim. This source preview has no GUI, OAuth store or provider qualification.

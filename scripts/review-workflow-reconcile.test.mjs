@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { parse } from "yaml";
 import { workflowRun } from "./workflow-test-helpers.mjs";
 
 // The reconcile job is the only thing that can re-dispatch a review on its
@@ -34,7 +35,7 @@ const HEAD = "0123456789abcdef0123456789abcdef01234567";
 const SELF_RUN_ID = "777";
 
 function checkRun(title, conclusion = "failure") {
-	return { conclusion, output: { title } };
+	return { name: "Needlefish", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "fixture-round", runId: SELF_RUN_ID }), conclusion, output: { title } };
 }
 
 function activeRun(id, title) {
@@ -45,6 +46,9 @@ function activeRun(id, title) {
 // endpoint. Order matters: first match wins.
 function runReconcile({
 	prNum = "42",
+ appId = "",
+	runner = "codex",
+	checkPostFails = false,
 	state = "open",
 	headRepo = REPO,
 	checkRunsAll = [],
@@ -96,7 +100,7 @@ done
 case "$path" in
   *"/check-runs?"*"filter=all"*) body=$(pick checkRunsAll) ;;
   *"/check-runs?"*) body=$(pick checkRunsLatest) ;;
-  repos/*/check-runs) body='{}' ;;
+  repos/*/check-runs) [ "$CHECK_POST_FAILS" != "1" ] || exit 1; body='{}' ;;
   *"/actions/workflows/"*"/runs?status=completed&per_page=100") body=$(pick completedRuns) ;;
   *"/actions/workflows/"*"/runs?"*) body=$(pick activeRuns) ;;
   *"/actions/runs?"*) body='{"workflow_runs": []}' ;;
@@ -119,9 +123,13 @@ if [ -n "$jq_filter" ]; then printf '%s' "$body" | jq -r "$jq_filter"; else prin
 			GH_TOKEN: "test-token",
 			PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 			PR_NUM: prNum,
+   NEEDLEFISH_CHECK_APP_ID: parse(workflow).jobs.reconcile.steps[0].env.NEEDLEFISH_CHECK_APP_ID === "" ? "" : appId,
+			NEEDLEFISH_RUNNER_INPUT: runner,
+			CHECK_POST_FAILS: checkPostFails ? "1" : "0",
 			REPO,
 			RESPONSES: join(root, "responses.json"),
 			RUN_ID: SELF_RUN_ID,
+			GITHUB_RUN_ATTEMPT: "1",
 			WORKFLOW_REF: workflowRef,
 			WORKFLOW_MISSING: workflowMissing ? "1" : "0",
 		},
@@ -153,6 +161,8 @@ test("reconcile re-dispatches once when the head has a single infra failure", ()
 	const r = runReconcile({ checkRunsAll: [INFRA] });
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 1);
+	assert.match(r.log, /workflow run review.yml --repo acme\/widgets --ref main -f pr_number=42/);
+	assert.doesNotMatch(r.log, /recheck=true|recheck=1/);
 	assert.match(r.stdout, /reconciliation dispatched for PR #42/);
 });
 
@@ -194,6 +204,14 @@ for (const title of [
 		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
 	});
 }
+test("reconcile treats a non-infra failure as a terminal verdict", () => {
+	for (const title of ["Needlefish: changes_requested — Fix the thing", "Needlefish: runner unavailable"]) {
+		const r = runReconcile({ checkRunsAll: [checkRun(title, "failure")] });
+		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.dispatched, 0);
+		assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+	}
+});
 
 test("reconcile waits for an active run of the same workflow for the same PR", () => {
 	const r = runReconcile({
@@ -243,6 +261,27 @@ test("reconcile reports a missing caller workflow before querying its runs", () 
 	assert.equal(posts.length, 1);
 	assert.match(posts[0], /check-runs .*output\[title\]=Needlefish: caller retry required/);
 	assert.doesNotMatch(r.log, /actions\/workflows\/review.yml\/runs\?/);
+	const fields = Object.fromEntries(
+		[...posts[0].matchAll(/-f (output\[\w+\]|\w+)=(.*?)(?= -f |$)/g)]
+			.map((match) => [match[1], match[2]]),
+	);
+	assert.deepEqual(JSON.parse(fields.external_id), {
+		v: 2, prNumber: 42, roundId: "retry-required-777-1", runId: "777",
+	});
+	const repeated = runReconcile({
+		workflowMissing: true,
+		checkRunsAll: [{
+			name: fields.name,
+			app: { id: 15368, slug: "github-actions" },
+			external_id: fields.external_id,
+			conclusion: fields.conclusion,
+			output: { title: fields["output[title]"] },
+		}],
+	});
+	assert.equal(repeated.status, 0, repeated.stderr);
+	assert.equal(repeated.dispatched, 0);
+	assert.match(repeated.stdout, /already has a terminal Needlefish verdict/);
+	assert.doesNotMatch(repeated.log, /api -X POST/);
 });
 
 test("reconcile rejects a PR number containing regex syntax before any API call", () => {
@@ -289,4 +328,99 @@ test("reconcile includes cancelled runs in the completed-run cap", () => {
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.dispatched, 0);
 	assert.match(r.stdout, /completed failed or cancelled runs; retry cap reached/);
+});
+
+
+for (const mode of ["foreign-app", "other-pr", "custom-pinned", "custom-mismatch", "legacy-actions"]) {
+ test(`reconcile terminal identity handles ${mode}`, () => {
+  const terminal = checkRun("Needlefish: pass", "success");
+  if (mode.startsWith("custom") || mode === "foreign-app") terminal.app = { id: 4812, slug: "private-review-app" };
+  if (mode === "other-pr") terminal.external_id = JSON.stringify({ v: 2, prNumber: 99 });
+  if (mode === "legacy-actions") terminal.external_id = "123456";
+  const r = runReconcile({ checkRunsAll: [terminal], appId: mode === "custom-pinned" ? "4812" : mode === "custom-mismatch" ? "9999" : "" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.dispatched, mode === "legacy-actions" ? 0 : 1, r.stdout);
+ });
+}
+
+test("bundled reconcile sees the Actions verdict despite a repository or host custom App pin", () => {
+ const r = runReconcile({ appId: "4812", checkRunsAll: [checkRun("Needlefish: pass", "success")] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+ assert.doesNotMatch(r.log, /api -X POST/);
+});
+
+for (const externalId of [
+ JSON.stringify({ v: 2, prNumber: 42 }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "", runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: 5, runId: "777" }),
+ JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: 777 }),
+ JSON.stringify({ v: 2, unrelated: true }),
+ JSON.stringify({ v: 1, prNumber: 42 }),
+ "[]", "true", "null", "unrelated", "",
+]) {
+ test(`reconcile rejects incomplete or unrelated receipt ${externalId}`, () => {
+  const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: externalId };
+  const r = runReconcile({ checkRunsAll: [terminal] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.dispatched, 1, r.stdout);
+  assert.match(r.log, /workflow run review.yml .*pr_number=42/);
+ });
+}
+
+test("reconcile accepts a complete v2 receipt with an empty run ID", () => {
+ const terminal = { ...checkRun("Needlefish: pass", "success"), external_id: JSON.stringify({ v: 2, prNumber: 42, roundId: "round", runId: "" }) };
+ const r = runReconcile({ checkRunsAll: [terminal] });
+ assert.equal(r.status, 0, r.stderr);
+ assert.equal(r.dispatched, 0);
+ assert.match(r.stdout, /already has a terminal Needlefish verdict/);
+});
+
+test("reconcile preserves unavailable OpenCode when the initial terminal check is missing", () => {
+  for (const checkPostFails of [false, true]) {
+    const r = runReconcile({ runner: "opencode", checkPostFails });
+    assert.equal(r.dispatched, 0, r.log);
+    assert.equal(r.status, checkPostFails ? 1 : 0, r.stderr);
+    assert.match(r.log, /api -X POST repos\/acme\/widgets\/check-runs/);
+    assert.ok(r.log.includes(`head_sha=${HEAD}`));
+    assert.match(r.log, /conclusion=failure/);
+    assert.match(r.log, /output\[title\]=Needlefish: runner unavailable/);
+    assert.match(r.log, /OpenCode reviews are temporarily disabled/);
+    const receipt = r.log.match(/-f external_id=(\{.*?\})(?= -f)/)?.[1];
+    assert.ok(receipt, "unavailable checks retain the owned PR and round receipt");
+    assert.deepEqual(JSON.parse(receipt), { v: 2, prNumber: 42, roundId: "runner-unavailable-777-1", runId: "777" });
+  }
+});
+
+test("review and reconcile retain the same original runner input", () => {
+  const jobs = parse(workflow).jobs;
+  const reviewStep = jobs.review.steps.find((step) => step.name === "Needlefish review");
+  const reconcileStep = jobs.reconcile.steps.find((step) => step.name === "Re-dispatch when the latest head lacks a terminal result");
+  const expected = "${{ inputs.runner || github.event.inputs.runner || 'codex' }}";
+  assert.equal(reviewStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
+  assert.equal(reconcileStep.env.NEEDLEFISH_RUNNER_INPUT, expected);
+});
+
+test("reconcile recognizes the initial suspended-runner check as one owned terminal result", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "needlefish-unavailable-receipt-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const record = join(root, "post.json");
+  writeFileSync(join(root, "gh"), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(record)}, JSON.stringify(process.argv.slice(2)));\n`);
+  chmodSync(join(root, "gh"), 0o755);
+  const review = workflowRun(workflow, "review", "Needlefish review");
+  const first = spawnSync("bash", ["-e", "-c", review], { encoding: "utf8", env: {
+    PATH: `${root}:${process.env.PATH}`, NEEDLEFISH_RUNNER_INPUT: "opencode", PR_NUM: "42",
+    GITHUB_REPOSITORY: REPO, PR_HEAD_SHA: HEAD, GITHUB_RUN_ID: SELF_RUN_ID, GITHUB_RUN_ATTEMPT: "1",
+  } });
+  assert.equal(first.status, 1, first.stderr);
+  const args = JSON.parse(readFileSync(record, "utf8"));
+  const fields = Object.fromEntries(args.flatMap((value, index) => args[index - 1] === "-f" ? [[value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]] : []));
+  const terminal = { name: fields.name, app: { id: 15368, slug: "github-actions" }, external_id: fields.external_id ?? "", conclusion: fields.conclusion, output: { title: fields["output[title]"] } };
+  const repeated = runReconcile({ runner: "opencode", checkRunsAll: [terminal] });
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(repeated.dispatched, 0);
+  assert.doesNotMatch(repeated.log, /api -X POST/, "initial refusal must not create a second terminal check");
+  assert.deepEqual(JSON.parse(fields.external_id), { v: 2, prNumber: 42, roundId: "runner-unavailable-777-1", runId: "777" });
 });

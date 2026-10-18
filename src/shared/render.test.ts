@@ -462,10 +462,33 @@ test("renderMarkdown omits the coverage gap notice when there are no gaps", () =
 	assert.ok(onlyIncomplete.includes("**Coverage uncertain (non-blocking):**"));
 });
 
+test("renderMarkdown lists binary paths once and gives LFS pointers precedence", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		unreviewedBinaryFiles: ["asset.bin", "asset.bin", "model.bin"],
+		coverageGaps: [{ kind: "lfs_pointer_only", file: "model.bin" }],
+	});
+	assert.equal(markdown.split("- asset.bin").length - 1, 1);
+	assert.equal(markdown.split("- model.bin").length - 1, 1);
+	assert.match(markdown, /skipped as binary/);
+	assert.match(markdown, /available only as Git LFS pointers/);
+});
+
+test("renderMarkdown keeps bare CR in binary paths from creating Markdown headings", () => {
+	const markdown = renderMarkdown({
+		...baseResult([], "pass"),
+		unreviewedBinaryFiles: ["asset.bin\r## forged review"],
+	});
+	assert.ok(markdown.includes("\n- asset.bin ## forged review\n"));
+	assert.ok(!markdown.includes("\r"));
+	assert.doesNotMatch(markdown, /(?:^|[\r\n])## forged review/);
+});
+
 test("renderMarkdown omits both coverage notices when asked, leaving the rest intact", () => {
 	const result: ReviewResult = {
 		...baseResult([], "pass"),
 		coverage: "full diff reviewed in one pass (1 file)",
+		unreviewedBinaryFiles: ["asset.bin"],
 		coverageGaps: [
 			{ kind: "lfs_pointer_only", file: "assets/model.bin" },
 			{ kind: "lfs_scan_incomplete" },
@@ -475,6 +498,7 @@ test("renderMarkdown omits both coverage notices when asked, leaving the rest in
 	assert.ok(!omitted.includes("Not reviewed"));
 	assert.ok(!omitted.includes("Coverage uncertain"));
 	assert.ok(!omitted.includes("assets/model.bin"));
+	assert.ok(!omitted.includes("asset.bin"));
 	assert.ok(omitted.includes("Coverage: full diff reviewed in one pass (1 file)"));
 	assert.notEqual(omitted, renderMarkdown(result), "the option must change the output when gaps exist");
 	assert.equal(
@@ -515,6 +539,62 @@ test("renderMarkdown collapses embedded newlines in callout paths", () => {
 	);
 	assert.ok(bullets[0].includes("dependency: pnpm-lock.yaml, new line.ts"));
 	assert.ok(!markdown.includes("new\nline"));
+});
+
+test("renderMarkdown adds the quote-check location note to finding details", () => {
+	const moved = renderMarkdown(baseResult([finding("P2", "moved", "b.ts", { quoteCheck: { status: "moved", from: "a.ts:9" } })]));
+	const missing = renderMarkdown(baseResult([finding("P2", "missing", "c.ts", { quoteCheck: { status: "not_found" } })]));
+	const matched = renderMarkdown(baseResult([finding("P2", "same", "d.ts", { quoteCheck: { status: "matched" } })]));
+
+	assert.match(moved, /_Location corrected from `a\.ts:9`: the quoted source was found here\._/);
+	assert.match(missing, /_Location unverified: the quoted source could not verify the cited location in `c\.ts`\._/);
+	assert.equal(matched, renderMarkdown(baseResult([finding("P2", "same", "d.ts")])));
+});
+
+test("renderMarkdown keeps a hostile path inside one inert code span in the location note", () => {
+	const from = "a`b\n\n[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "moved", "b.ts", { quoteCheck: { status: "moved", from } })]));
+
+	assert.match(out, /_Location corrected from `` a`b \[notice\]\(https:\/\/example\.invalid\) ``: the quoted source/);
+});
+
+test("renderMarkdown folds a bare CR in a hostile path so the note stays one paragraph", () => {
+	const file = "a`b\r\r[notice](https://example.invalid)";
+	const out = renderMarkdown(baseResult([finding("P2", "missing", file, { quoteCheck: { status: "not_found" } })]));
+	const note = out.split("\n").find((line) => line.startsWith("_Location unverified"));
+
+	assert.equal(note, "_Location unverified: the quoted source could not verify the cited location in `` a`b [notice](https://example.invalid) ``._");
+});
+
+test("renderMarkdown warns when source quotes could not be verified at HEAD", () => {
+	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
+	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
+});
+
+test("renderMarkdown shows source caveats and keeps digest and tool limits in details", () => {
+	const item = finding("P2", "Restore guard", "src/app.ts", { evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/app.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+		{ sourceType: "external", status: "unverified_external_claim", claim: "Vendor syntax exists", necessary: false,
+			source: { type: "external", url: "https://spec.example.invalid/reference" } },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.match(markdown, /<sub>Code source present; external premise unverified\.<\/sub>/);
+	assert.match(markdown, /<details><summary>Source evidence<\/summary>\n\nTool reading unknown\. Source presence does not verify the bug\./);
+	assert.match(markdown, new RegExp(`SHA-256 .${"c".repeat(64)}`));
+	assert.match(markdown, /blob\/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\/src\/app.ts#L1/);
+	assert.equal(markdown.includes("confidence"), false);
+});
+
+
+test("renderMarkdown links removed source to its original path at the captured base", () => {
+	const item = finding("P2", "Restore removed guard", "src/renamed.ts", { quoteCheck: { status: "unchecked" }, evidence: { toolRead: "unknown", sources: [
+		{ sourceType: "git_blob", revision: "a".repeat(40), file: "src/original.ts", lineStart: 1, lineEnd: 1,
+			status: "source_present", contentDigest: "c".repeat(64) },
+	] } });
+	const markdown = renderMarkdown(baseResult([item]), { repoSlug: "owner/repo" });
+	assert.ok(markdown.includes("_Code source present._\n\n_Location unverified: the quoted source could not be verified at this HEAD location._"));
+	assert.ok(markdown.includes("[`src/renamed.ts:1`](https://github.com/owner/repo/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/src/original.ts#L1)"));
 });
 
 test("docs-only output identifies a policy skip without claiming a model review", () => {

@@ -72,3 +72,11 @@ test("runTextAsync SIGKILLs a child that outlives its bound", async () => {
   );
   assert.ok(Date.now() - started < 2000);
 });
+
+test("runText passes an isolated environment without changing its parent", () => {
+  const previous = process.env.NEEDLEFISH_PROCESS_TEST;
+  assert.equal(runText(process.execPath, ["-e", "process.stdout.write(process.env.NEEDLEFISH_PROCESS_TEST ?? 'missing')"], {
+    env: { ...process.env, NEEDLEFISH_PROCESS_TEST: "child-only" },
+  }), "child-only");
+  assert.equal(process.env.NEEDLEFISH_PROCESS_TEST, previous);
+});

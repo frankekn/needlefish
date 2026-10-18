@@ -10,17 +10,65 @@ import { aggregateDefectClassMetrics, aggregateMustFindHitRates, cheatAlert, com
 import { renderResults } from "./gen-results";
 import { loadFixture } from "./shared/fixture";
 import { promptHash } from "./shared/prompt-hash";
-import { hasConsistentCheatDetection } from "./shared/report-integrity";
+import { hasConsistentCheatDetection, runnerEnvironmentAttestationError } from "./shared/report-integrity";
 import { drawFindings, matchEvidence, matchesSpec, score } from "./shared/score";
 import { scorerHash } from "./shared/scorer-hash";
 import { RunnerOperationalError } from "../src/shared/codex";
-import type { Expected, FixtureSpec, Report } from "./shared/types";
+import { ANTICHEAT_VERSION, type Expected, type FixtureSpec, type Report } from "./shared/types";
+import type { CallAccountingMetadata } from "./shared/call-accounting";
 import posOverBlock from "./fixtures/pos-over-block/spec";
 import renameSourceIntoDocs from "./fixtures/rename-source-into-docs/spec";
 import negStyleOnly from "./fixtures/neg-style-only/spec";
 import severityDowngrade from "./fixtures-real/real-pr1-severity-downgrade/spec";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+test("Grok reports capture the effective default model before attestation", () => {
+  const previous = { NEEDLEFISH_MODEL: process.env.NEEDLEFISH_MODEL, GROK_MODEL: process.env.GROK_MODEL };
+  delete process.env.NEEDLEFISH_MODEL;
+  delete process.env.GROK_MODEL;
+  try {
+    const args = parseArgs(["--runner", "grok", "--effort", "high"]);
+    const pairs: unknown = JSON.parse(runnerEnvironment(args));
+    assert.ok(Array.isArray(pairs));
+    assert.ok(pairs.some((entry: unknown) => Array.isArray(entry) && entry[0] === "GROK_MODEL" && entry[1] === "grok-build"));
+    const explicit = parseArgs(["--runner", "grok", "--effort", "high", "--env", "GROK_MODEL=explicit"]);
+    const captured: unknown = JSON.parse(runnerEnvironment(explicit));
+    assert.ok(Array.isArray(captured));
+    assert.ok(captured.some((entry: unknown) => Array.isArray(entry) && entry[0] === "GROK_MODEL" && entry[1] === "explicit"));
+  } finally {
+    for (const key of ["NEEDLEFISH_MODEL", "GROK_MODEL"] as const) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+test("Pi producers record default or explicit model and effort before attestation", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "needlefish-pi-identity-"));
+  const previous = { NEEDLEFISH_MODEL: process.env.NEEDLEFISH_MODEL, PI_MODEL: process.env.PI_MODEL };
+  delete process.env.NEEDLEFISH_MODEL;
+  delete process.env.PI_MODEL;
+  t.after(() => {
+    for (const key of ["NEEDLEFISH_MODEL", "PI_MODEL"] as const) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    rmSync(root, { recursive: true, force: true });
+  });
+  for (const { flags, model, effort } of [
+    { flags: [], model: "gpt-5.6-sol", effort: "medium" },
+    { flags: ["--env", "PI_MODEL=captured-pi"], model: "captured-pi", effort: "medium" },
+    { flags: ["--model", "explicit-pi", "--effort", "high"], model: null, effort: "high" },
+  ]) {
+    const args = parseArgs(["--runner", "pi", "--env", `HOME=${root}`, ...flags]);
+    const pairs: unknown = JSON.parse(runnerEnvironment(args));
+    assert.ok(Array.isArray(pairs));
+    const recorded = pairs.find((entry: unknown) => Array.isArray(entry) && entry[0] === "PI_MODEL");
+    assert.deepEqual(recorded, model === null ? undefined : ["PI_MODEL", model]);
+    assert.equal(args.effort, effort);
+  }
+});
 
 test("hasFailedDeepPass ignores recovered attempts", () => {
   const failed = { passKind: "deep" as const, passIndex: 0, outcome: "runner_failed" as const };
@@ -793,7 +841,7 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const first = runnerEnvironment(args);
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://two"}}}');
   const second = runnerEnvironment(args);
-  assert.notEqual(second, first);
+  assert.equal(second, first);
   Object.assign(args, { environmentIdentity: second });
   writeFileSync(registry, '{"providers":{"proxy":{"baseUrl":"http://three"}}}');
   assert.throws(
@@ -808,7 +856,7 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const grokArgs = parseArgs(["--runner", "grok"]);
   const firstGrok = runnerEnvironment(grokArgs);
   writeFileSync(grokConfig, 'provider = "two"');
-  assert.notEqual(runnerEnvironment(grokArgs), firstGrok);
+  assert.equal(runnerEnvironment(grokArgs), firstGrok);
 
   process.env.XDG_CONFIG_HOME = path.join(dir, "xdg");
   const opencodeDir = path.join(process.env.XDG_CONFIG_HOME, "opencode");
@@ -818,31 +866,31 @@ test("runnerEnvironment: binds staged routing configuration", (t) => {
   const opencodeArgs = parseArgs(["--runner", "opencode"]);
   const firstOpenCode = runnerEnvironment(opencodeArgs);
   writeFileSync(opencodeConfig, '{"provider":"two"}');
-  assert.notEqual(runnerEnvironment(opencodeArgs), firstOpenCode);
+  assert.equal(runnerEnvironment(opencodeArgs), firstOpenCode);
 
   const oauthArgs = parseArgs([
     "--runner", "pi",
     "--env", "PI_AUTH_MODE=oauth",
     "--env", "PI_PROVIDER=deepseek",
   ]);
-  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*missing/);
+  assert.match(runnerEnvironment(oauthArgs), /PI_AUTH_JSON.*<required>/);
   writeFileSync(
     path.join(registryDir, "auth.json"),
     '{"deepseek":{"type":"api_key","key":"first-secret"}}',
   );
   const firstOauth = runnerEnvironment(oauthArgs);
-  assert.match(firstOauth, /PI_AUTH_JSON.*sha256:/);
+  assert.match(firstOauth, /PI_AUTH_JSON.*<required>/);
   assert.doesNotMatch(firstOauth, /first-secret/);
   assert.equal(
     writeReport(oauthArgs, [], [holdoutSpec("pi-oauth-private", false)])
       .privateEnvironment,
-    false,
+    true,
   );
   writeFileSync(
     path.join(registryDir, "auth.json"),
     '{"deepseek":{"type":"api_key","key":"second-secret"}}',
   );
-  assert.notEqual(runnerEnvironment(oauthArgs), firstOauth);
+  assert.equal(runnerEnvironment(oauthArgs), firstOauth);
 
   writeFileSync(
     registry,
@@ -1207,13 +1255,14 @@ function resumeReport(
     readonly runnerEnvironment?: string;
     readonly runnerVersion?: string;
   }>,
-): Report & {
+): Report & CallAccountingMetadata & {
   readonly provider?: string;
   readonly route?: string;
   readonly runnerEnvironment?: string;
   readonly runnerVersion?: string;
 } {
   return {
+    callAccountingVersion: 2,
     promptHash: promptHash(),
     runner: "codex",
     model: null,
@@ -1599,6 +1648,29 @@ test("renderResults: legacy and compromised reports are excluded from baseline a
   );
   assert.ok(!row("clean-grok-low").includes("🚫"), "guarded report is not marked");
   assert.ok(!row("clean-grok-low").includes("n/a"), "guarded report stays comparable");
+});
+
+test("renderResults rejects a current report without runner environment identity", () => {
+  const spec = holdoutSpec("results-environment-boundary", false);
+  const complete = { ...resumeReport(spec, {
+    anticheatVersion: ANTICHEAT_VERSION, effort: "xhigh", model: "controlled-model",
+    provider: "controlled-provider", route: "controlled-route", runnerVersion: "controlled-version",
+    runnerEnvironment: '[["NEEDLEFISH_EPHEMERAL_HOME","1"],["NEEDLEFISH_EVAL_TRACE","1"]]',
+  }), privateEnvironment: false };
+  assert.equal(runnerEnvironmentAttestationError(complete), null);
+  const missingEnvironment = { ...complete };
+  Reflect.deleteProperty(missingEnvironment, "runnerEnvironment");
+  const original = JSON.stringify(missingEnvironment);
+  const alone = renderResults([spec], [{ stem: "missing-environment", report: missingEnvironment }]);
+  assert.match(alone, /No guarded report qualifies as a baseline/);
+  assert.match(alone.split("\n").find(line => line.includes("missing-environment |")) ?? "", /🚫.*n\/a/);
+  const paired = renderResults([spec], [
+    { stem: "missing-environment", report: missingEnvironment },
+    { stem: "controlled", report: complete },
+  ]);
+  assert.match(paired, /Baseline = controlled/);
+  assert.doesNotMatch(paired, /Baseline = missing-environment/);
+  assert.equal(JSON.stringify(missingEnvironment), original);
 });
 
 test("renderResults withholds secondary metrics for malformed per-draw cheat detection", () => {
@@ -2320,7 +2392,7 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
     assert.equal(unresolved.skipped, 0);
     writeFileSync(
       resumePath,
-      JSON.stringify(resumeReport(spec, {
+      JSON.stringify(Object.assign(resumeReport(spec, {
         anticheatVersion: 2,
         model: "test-model",
         effort: "medium",
@@ -2330,7 +2402,7 @@ test("resumeSlots: a current-generation anti-cheat report reuses its draws", () 
         runnerEnvironment: runnerEnvironment(parseArgs([
           "--model", "test-model", "--effort", "medium",
         ])),
-      })),
+      }), { callAccountingVersion: 2 })),
     );
     const resumed = resumeSlots(parseArgs([
       "--draws", "1", "--resume", resumePath,
@@ -2442,6 +2514,26 @@ test("compare: refuses missing or mismatched scorerHash", () => {
   }
 });
 
+test("compare: refuses different call accounting versions", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "needlefish-accounting-compare-"));
+  const baselinePath = path.join(dir, "baseline.json");
+  const current = Object.assign(resumeReport(holdoutSpec("accounting-compare", false), { anticheatVersion: 2 }), { callAccountingVersion: 2 } satisfies CallAccountingMetadata);
+  try {
+    for (const version of [undefined, 1, 3]) {
+      writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true, callAccountingVersion: version }));
+      assert.throws(() => compare(baselinePath, current), /call accounting version mismatch/);
+    }
+    const unrecorded = structuredClone(current);
+    Reflect.deleteProperty(unrecorded, "callAccountingVersion");
+    writeFileSync(baselinePath, JSON.stringify({ ...unrecorded, baseline: true }));
+    assert.throws(() => compare(baselinePath, unrecorded), /call accounting version mismatch/);
+    writeFileSync(baselinePath, JSON.stringify({ ...current, baseline: true }));
+    assert.doesNotThrow(() => compare(baselinePath, current));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("compare: refuses cross-gate-class reports", () => {
   const dir = mkdtempSync(path.join(tmpdir(), "needlefish-gate-class-compare-"));
   const baselinePath = path.join(dir, "baseline.json");
@@ -2493,7 +2585,8 @@ test("compare: rejects reports from another anti-cheat generation", () => {
     retries: 0,
   });
   // Complete fixture × draw coverage so the success path reaches metrics.
-  const current: Report = {
+  const current: Report & CallAccountingMetadata = {
+    callAccountingVersion: 2,
     promptHash: "prompt-hash",
     runner: "codex",
     model: null,

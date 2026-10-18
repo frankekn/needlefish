@@ -2,12 +2,17 @@ import { ConnectionCredentialLeakError } from "./runner-failure.js";
 import type { RunnerName } from "./runner.js";
 import { screenPayload, screenText } from "./outbound-screen.js";
 
-function containsCredential(text: string, values: readonly string[]): boolean {
-  const decoded = text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
+const credentialDiagnostic = "Needlefish withheld runner diagnostic: it contained a selected connection credential.";
+
+function decodeJsonEscapes(text: string): string {
+  return text.replace(/\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])/g, (escape: string) => {
     const value: unknown = JSON.parse(`"${escape}"`);
     return typeof value === "string" ? value : escape;
   });
-  return screenText(text, values).kind === "withheld" || screenText(decoded, values).kind === "withheld";
+}
+
+function containsCredential(text: string, values: readonly string[]): boolean {
+  return screenText(text, values).kind === "withheld" || screenText(decodeJsonEscapes(text), values).kind === "withheld";
 }
 
 export type AuthEnvironmentReferences = Readonly<Record<string, string>>;
@@ -42,8 +47,10 @@ export function parseAuthEnvironment(raw: unknown): AuthEnvironmentReferences {
 // out of JSON.stringify/options inspection; no file, argv or global env writes.
 export class AcpEnvironmentAuth {
   readonly #values: Readonly<Record<string, string>>;
+  readonly #encodedOutputGuard: boolean;
 
-  constructor(refs: AuthEnvironmentReferences, env: NodeJS.ProcessEnv = process.env) {
+  constructor(refs: AuthEnvironmentReferences, env: NodeJS.ProcessEnv = process.env, encodedOutputGuard = false) {
+    this.#encodedOutputGuard = encodedOutputGuard;
     const checked = parseAuthEnvironment(refs);
     this.#values = Object.freeze(Object.fromEntries(Object.entries(checked).map(([target, source]) => {
       const value = Object.hasOwn(env, source) ? env[source] : undefined;
@@ -68,18 +75,158 @@ export class AcpEnvironmentAuth {
     Object.assign(env, this.#values);
   }
 
+  orderedOutputGuard(): Pick<AcpEnvironmentAuth, "screenDiagnostic" | "assertOutputSafe"> {
+    const patterns = Object.values(this.#values).map(percentCredentialPattern);
+    return Object.freeze({
+      screenDiagnostic: (message: string) => {
+        for (const view of codexCredentialViews(message)) {
+          if (patterns.some(pattern => pattern.test(view)) || this.#screenPlainDiagnostic(view) !== view) return credentialDiagnostic;
+        }
+        return message;
+      },
+      assertOutputSafe: (output: string) => {
+        for (const view of codexCredentialViews(output)) {
+          if (patterns.some(pattern => pattern.test(view))) throw new ConnectionCredentialLeakError();
+          this.#assertPlainOutputSafe(view);
+        }
+      },
+    });
+  }
+
   screenDiagnostic(message: string): string {
+    return this.#encodedOutputGuard ? this.orderedOutputGuard().screenDiagnostic(message) : this.#screenPlainDiagnostic(message);
+  }
+
+  #screenPlainDiagnostic(message: string): string {
     return containsCredential(message, Object.values(this.#values))
-      ? "Needlefish withheld runner diagnostic: it contained a selected connection credential."
+      ? credentialDiagnostic
       : message;
   }
 
   assertOutputSafe(output: string): void {
+    if (this.#encodedOutputGuard) this.orderedOutputGuard().assertOutputSafe(output);
+    else this.#assertPlainOutputSafe(output);
+  }
+
+  #assertPlainOutputSafe(output: string): void {
     const knownValues = Object.values(this.#values);
     if (containsCredential(output, knownValues)
       || screenPayload(output, knownValues).kind === "withheld"
       || output.split(/\r?\n/).some((line) => screenPayload(line, knownValues).kind === "withheld")) {
       throw new ConnectionCredentialLeakError();
+    }
+  }
+}
+
+
+export type CodexAuthRoute =
+  | { readonly kind: "openai" }
+  | { readonly kind: "cliproxyapi"; readonly baseUrl: string };
+
+export function parseCodexRoute(raw: unknown): CodexAuthRoute {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw) || !("kind" in raw)) {
+    throw new Error("Codex auth requires an explicit openai or cliproxyapi route.");
+  }
+  if (raw.kind === "openai" && Object.keys(raw).length === 1) return Object.freeze({ kind: "openai" });
+  if (raw.kind === "cliproxyapi" && "baseUrl" in raw && typeof raw.baseUrl === "string"
+    && raw.baseUrl === raw.baseUrl.trim() && !/[\\\s?#]/.test(raw.baseUrl) && !Array.from(raw.baseUrl).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) && !/^https?:\/\/[^/]*@/i.test(raw.baseUrl)
+    && Object.keys(raw).every(key => key === "kind" || key === "baseUrl")) {
+    let url: URL;
+    try { url = new URL(raw.baseUrl); decodeURIComponent(raw.baseUrl); } catch { throw new Error("Codex proxy route requires a valid non-secret HTTP(S) baseUrl."); }
+    if ((url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.search && !url.hash) {
+      return Object.freeze({ kind: "cliproxyapi", baseUrl: raw.baseUrl });
+    }
+  }
+  throw new Error("Codex route must be openai or cliproxyapi with a non-secret HTTP(S) baseUrl without userinfo, query or fragment.");
+}
+
+export function parseCodexAuthEnvironment(raw: unknown, route: CodexAuthRoute): AuthEnvironmentReferences {
+  const refs = parseAuthEnvironment(raw);
+  const target = route.kind === "openai" ? "CODEX_API_KEY" : "CODEX_PROXY_API_KEY";
+  if (Object.keys(refs).length !== 1 || !Object.hasOwn(refs, target)) {
+    throw new Error("Codex auth.env requires exactly CODEX_API_KEY for openai or CODEX_PROXY_API_KEY for cliproxyapi.");
+  }
+  return refs;
+}
+
+function percentCredentialPattern(value: string): RegExp {
+  return new RegExp(Array.from(value).map(char => {
+    const literal = char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const encoded = Array.from(Buffer.from(char)).map(byte => `%${byte.toString(16).padStart(2, "0")}`).join("");
+    return `(?:${literal}|${encoded})`;
+  }).join(""), "i");
+}
+
+function* codexCredentialViews(text: string): Generator<string> {
+  yield text;
+  for (let pass = 0; pass < 2; pass++) {
+    text = decodeJsonEscapes(text);
+    yield text;
+    text = text.replace(/(?:%[0-9a-f]{2})+/gi, bytes => {
+      try { return decodeURIComponent(bytes); }
+      catch {
+        return bytes.replace(/%[0-7][0-9a-f]/gi, byte => String.fromCharCode(Number.parseInt(byte.slice(1), 16)));
+      }
+    });
+    yield text;
+  }
+}
+
+export class CodexEnvironmentAuth {
+  readonly #auth: AcpEnvironmentAuth;
+  readonly #route: CodexAuthRoute;
+  readonly #percentCredentials: readonly RegExp[];
+
+  constructor(refs: AuthEnvironmentReferences, route: CodexAuthRoute, env: NodeJS.ProcessEnv = process.env) {
+    this.#route = parseCodexRoute(route);
+    const checked = parseCodexAuthEnvironment(refs, this.#route);
+    if (env.NEEDLEFISH_RUNNER_ENV_PASSTHROUGH?.trim()) {
+      throw new Error("Codex connection auth cannot be combined with legacy passthrough; explicitly reconcile routing before retrying.");
+    }
+    if (route.kind === "openai" && (env.CODEX_PROXY_BASE_URL?.trim() || env.CODEX_PROXY_API_KEY?.trim() || env.NEEDLEFISH_CODEX_PROXY_REQUIRED === "1")) {
+      throw new Error("Codex direct connection conflicts with ambient proxy routing. Remove the ambient proxy tuple or select an explicit cliproxyapi connection.");
+    }
+    this.#auth = new AcpEnvironmentAuth(checked, env);
+    const bound: NodeJS.ProcessEnv = {};
+    this.#auth.applyTo(bound);
+    this.#percentCredentials = Object.values(bound).flatMap(value => value === undefined ? [] : [percentCredentialPattern(value)]);
+    if (Object.values(bound).some(value => value !== undefined && /\s/.test(value))) {
+      throw new Error("Selected Codex connection credential contains whitespace. No default account was used.");
+    }
+    if (this.#route.kind === "cliproxyapi") {
+      this.#auth.assertOutputSafe(this.#route.baseUrl);
+      this.#auth.assertOutputSafe(decodeURIComponent(this.#route.baseUrl));
+    }
+    Object.freeze(this);
+  }
+
+  assertCompatible(runner: RunnerName): void {
+    if (runner !== "codex") throw new Error("Codex connection authentication requires the codex adapter.");
+  }
+
+  proxyBaseUrl(): string | undefined {
+    return this.#route.kind === "cliproxyapi" ? this.#route.baseUrl : undefined;
+  }
+
+  applyTo(env: NodeJS.ProcessEnv): void {
+    delete env.CODEX_API_KEY;
+    delete env.CODEX_PROXY_API_KEY;
+    this.#auth.applyTo(env);
+  }
+
+  screenDiagnostic(message: string): string {
+    for (const view of codexCredentialViews(message)) {
+      if (this.#percentCredentials.some(pattern => pattern.test(view))) return credentialDiagnostic;
+      const screened = this.#auth.screenDiagnostic(view);
+      if (screened !== view) return screened;
+    }
+    return message;
+  }
+
+  assertOutputSafe(output: string): void {
+    for (const view of codexCredentialViews(output)) {
+      if (this.#percentCredentials.some(pattern => pattern.test(view))) throw new ConnectionCredentialLeakError();
+      this.#auth.assertOutputSafe(view);
     }
   }
 }

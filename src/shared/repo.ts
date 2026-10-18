@@ -1,4 +1,5 @@
 import path from "node:path";
+import { binaryPathsFromNumstat } from "./diff-numstat.js";
 import { classifyFiles } from "./classify.js";
 import { normalizePrMeta } from "./normalize.js";
 import { runText, type RunOptions } from "./process.js";
@@ -110,6 +111,10 @@ function isRegularBlob(entry: TreeEntry | null): entry is TreeEntry {
 // the root after normalization) to a regular blob in the same tree — no
 // chains, no trees, no submodules. Anything else yields NO_AGENTS rather
 // than feeding the link's target path to the model as fake policy.
+//
+// Commit-based branch and PR callers pass the merge base (issue #240), so
+// a PR cannot rewrite its review policy. Uncommitted review uses HEAD as the
+// policy before the working changes. AGENTS.md edits are reviewed as code.
 export function readAgentsAt(cwd: string, ref: string): string {
   try {
     const entry = treeEntry(cwd, ref, "AGENTS.md");
@@ -131,6 +136,7 @@ export function readAgentsAt(cwd: string, ref: string): string {
 }
 
 export interface BundleInput {
+  readonly binaryFiles?: readonly string[];
   readonly repoPath: string;
   readonly baseSha: string;
   readonly headSha: string;
@@ -147,6 +153,7 @@ export interface BundleInput {
 
 export function makeBundle(input: BundleInput): Bundle {
   return {
+    ...(input.binaryFiles?.length ? { binaryFiles: input.binaryFiles } : {}),
     repoPath: input.repoPath,
     baseSha: input.baseSha,
     headSha: input.headSha,
@@ -324,5 +331,6 @@ export function prDiffFromShas(cwd: string, baseSha: string, headSha: string) {
     patch,
     patchStat: git([...reviewDiff(cwd), "--stat", mergeBase, headSha], cwd, { preserveOutput: true }),
     changedFiles: changedFiles(cwd, mergeBase, headSha),
+    binaryFiles: binaryPathsFromNumstat(git([...reviewDiff(cwd), "--numstat", "-z", mergeBase, headSha], cwd, { preserveOutput: true })),
   };
 }
