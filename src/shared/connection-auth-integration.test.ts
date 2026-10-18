@@ -312,10 +312,11 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args.includes('--input')) {
   fs.appendFileSync(${JSON.stringify(writes)}, fs.readFileSync(0,'utf8') + '\\n');
-  process.stdout.write('{"id":1}');
+  process.stdout.write('{"id":1,"app":{"id":15368,"slug":"github-actions"}}');
 } else if (args[1] === 'repos/frankekn/needlefish/pulls/7') {
   process.stdout.write(${JSON.stringify(JSON.stringify({ state: "open", author_association: "MEMBER", user: { login: "author", type: "User" }, head: { sha: f.head }, base: { sha: f.base } }))});
 } else if (args[1] === 'user') process.stdout.write('{"login":"github-actions[bot]"}');
+else if (args.some(a => a.includes('/check-runs?'))) process.stdout.write('[{"check_runs":[]}]');
 else if (args.includes('--paginate')) process.stdout.write('[[]]');
 else process.stdout.write('[]');
 `);
