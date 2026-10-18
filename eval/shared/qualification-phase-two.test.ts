@@ -185,8 +185,14 @@ test("Phase 2 enforces measured floors and never counts missing findings or wron
 function independentOracle(source: ReturnType<typeof campaign>) {
   const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
   return {
-    schemaVersion: 1,
-    identity: { broadSha256: digest(source.broad), deepSha256: digest(source.deep), fixtureSetSha256: fixtureSetSha256(specs) },
+    schemaVersion: 2,
+    identity: {
+      broadSha256: digest(source.broad), deepSha256: digest(source.deep), fixtureSetSha256: fixtureSetSha256(specs),
+      fixtureScoringSha256: digest({
+        fixtureSetSha256: fixtureSetSha256(specs),
+        families: [...specs].sort((a, b) => a.id.localeCompare(b.id)).map((spec) => ({ id: spec.id, defectClass: spec.defectClass })),
+      }),
+    },
     adjudication: {
       author: "independent-reviewer", provenance: "synthetic blind source review",
       rows: source.broad.results.flatMap((result) => (result.findings ?? []).map((_, findingIndex) => ({
@@ -317,12 +323,12 @@ test("Phase 2 rejects malformed, duplicate, foreign, wrong-report and out-of-ran
   for (const rows of rowInputs) assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, {
     ...oracle, adjudication: { ...oracle.adjudication, rows },
   }), /Phase 2 quality oracle/);
-  for (const key of ["broadSha256", "deepSha256", "fixtureSetSha256"] as const) {
+  for (const key of ["broadSha256", "deepSha256", "fixtureSetSha256", "fixtureScoringSha256"] as const) {
     assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, {
       ...oracle, identity: { ...oracle.identity, [key]: "0".repeat(64) },
     }), /identity mismatch/);
   }
-  for (const bad of [null, {}, { ...oracle, schemaVersion: 2 }, { ...oracle, adjudication: { ...oracle.adjudication, author: " " } }]) {
+  for (const bad of [null, {}, { ...oracle, schemaVersion: 1 }, { ...oracle, adjudication: { ...oracle.adjudication, author: " " } }]) {
     assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, bad), /invalid Phase 2 quality oracle/);
   }
   const changed = { ...source, broad: { ...source.broad, model: "different-model" } };
@@ -455,4 +461,26 @@ test("Phase 2 oracle rejects family regrouping that would repair an invalid fixt
   assert.deepEqual(original.reasons, ["need at least 5 Tier-1 defect families (found 1)"]);
   assert.equal(evaluatePhaseTwoQualification(source, specs, configuredPolicy, independentOracle(source)).eligible, true);
   assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, oracle), /identity mismatch: fixtureScoringSha256/);
+  const fiveFamilies = specs.map((spec, index) => ({ ...spec, defectClass: `family-${index % 5}` }));
+  const valid = evaluatePhaseTwoQualification(source, fiveFamilies, configuredPolicy, {
+    ...independentOracle(source), identity: phaseTwoOracleIdentity(source, fiveFamilies),
+  });
+  assert.equal(valid.eligible, true);
+  assert.deepEqual(Object.keys(valid.recallByTierOneFamily).sort(), ["family-0", "family-1", "family-2", "family-3", "family-4"]);
+  for (const metric of Object.values(valid.recallByTierOneFamily)) {
+    assert.deepEqual(metric, { status: "measured", value: 1, numerator: 18, denominator: 18 });
+  }
+});
+
+
+test("Phase 2 scoring identity is required and rejects older oracle contracts", () => {
+  const source = campaign();
+  const oracle = independentOracle(source);
+  const legacyIdentity = { ...oracle.identity };
+  Reflect.deleteProperty(legacyIdentity, "fixtureScoringSha256");
+  for (const invalid of [
+    { ...oracle, identity: legacyIdentity },
+    { ...oracle, identity: { ...oracle.identity, fixtureScoringSha256: "not-a-sha256" } },
+    { ...oracle, schemaVersion: 1, identity: legacyIdentity },
+  ]) assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, invalid), /invalid Phase 2 quality oracle/);
 });

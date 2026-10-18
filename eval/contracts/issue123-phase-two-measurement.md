@@ -77,20 +77,30 @@ oracle data. It follows `PhaseTwoQualityOracle` in
 with the existing Ajv dependency. Invalid data rejects the input. Partial
 adjudication produces unknown metrics and prevents eligibility.
 
-The version 1 contract contains these fields:
+The version 2 contract contains these fields:
 
-- `schemaVersion` is `1`.
-- `identity` contains `broadSha256`, `deepSha256`, and `fixtureSetSha256`.
+- `schemaVersion` is `2`. Version 1 oracles are rejected. The required scoring
+  identity makes this a breaking change to the unmerged oracle interface; no
+  historical report or canonical fixture hash is migrated.
+- `identity` contains `broadSha256`, `deepSha256`, `fixtureSetSha256`, and
+  `fixtureScoringSha256`.
   `phaseTwoOracleIdentity(campaign, specs)` hashes `JSON.stringify` of each
   complete report. Report array and object key order are significant. The
   fixture digest uses `fixtureSetSha256` from `fixture-catalog.ts`, the full
   SHA-256 of the same canonical serialization used by `fixtureSetHash`.
   Its first 16 hex characters equal the existing report fixture hash. Fixture
-  array order and the existing excluded metadata do not affect that identity;
-  canonical field selection and object-key ordering remain unchanged. These
-  hashes identify parsed values, not original JSON file bytes. Changes to a
-  report or canonical fixture value require a new oracle binding. Hash equality
-  does not establish source authenticity.
+  array order does not affect that digest; canonical field selection and
+  object-key ordering remain unchanged. The canonical digest already binds
+  `id`, `kind`, `tier`, and `expected`, which Phase 2 scoring consumes, but omits
+  `defectClass`. The extra `fixtureScoringSha256` is SHA-256 of `JSON.stringify`
+  of `{ fixtureSetSha256, families }`, in that key order. `families` is the full
+  fixture set sorted by `id.localeCompare`, projected to `{ id, defectClass }`
+  in that key order. It binds the additional family metadata used by fixture
+  quotas, recall, and localization without altering the canonical digest.
+  Display descriptions remain excluded. These hashes identify parsed values,
+  not original JSON file bytes. Changes to a report, canonical fixture value,
+  or family assignment require a new oracle binding. Hash equality does not
+  establish source authenticity.
 - `adjudication` records an independent `author`, an external evidence
   `provenance`, and `rows`. Every row identifies an exact broad `fixtureId`,
   zero-based `draw`, and zero-based `findingIndex` in that draw's findings array.

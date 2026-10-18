@@ -12,7 +12,7 @@ type Adjudication = FindingIdentity & (
   | { readonly decision: "unresolved"; readonly reason: string }
 );
 export interface PhaseTwoQualityOracle {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly identity: ReturnType<typeof phaseTwoOracleIdentity>;
   readonly adjudication: { readonly author: string; readonly provenance: string; readonly rows: readonly Adjudication[] };
   readonly severityGold: null | {
@@ -29,7 +29,12 @@ export interface PhaseTwoQualityOracle {
 
 export function phaseTwoOracleIdentity(campaign: Campaign, specs: readonly FixtureSpec[]) {
   const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-  return { broadSha256: digest(campaign.broad), deepSha256: digest(campaign.deep), fixtureSetSha256: fixtureSetSha256(specs) };
+  const canonicalSha256 = fixtureSetSha256(specs);
+  const families = [...specs].sort((a, b) => a.id.localeCompare(b.id)).map(({ id, defectClass }) => ({ id, defectClass }));
+  return {
+    broadSha256: digest(campaign.broad), deepSha256: digest(campaign.deep), fixtureSetSha256: canonicalSha256,
+    fixtureScoringSha256: digest({ fixtureSetSha256: canonicalSha256, families }),
+  };
 }
 
 const text = { type: "string", minLength: 1, pattern: "\\S" };
@@ -41,8 +46,8 @@ const findingIdentity = { fixtureId: text, draw: index, findingIndex: index };
 const hash = { type: "string", pattern: "^[a-f0-9]{64}$" };
 const ajv = new Ajv({ strict: true, allErrors: true });
 const validate = ajv.compile<PhaseTwoQualityOracle>(object({
-  schemaVersion: { const: 1 },
-  identity: object({ broadSha256: hash, deepSha256: hash, fixtureSetSha256: hash }),
+  schemaVersion: { const: 2 },
+  identity: object({ broadSha256: hash, deepSha256: hash, fixtureSetSha256: hash, fixtureScoringSha256: hash }),
   adjudication: object({ author: text, provenance: text, rows: { type: "array", items: { oneOf: [
     object({ ...findingIdentity, decision: { const: "actionable" }, defectId: text }),
     object({ ...findingIdentity, decision: { const: "false_positive" } }),
@@ -68,7 +73,7 @@ export function measureIndependentQuality(campaign: Campaign, specs: readonly Fi
   };
   if (!validate(input)) throw new Error(`invalid Phase 2 quality oracle: ${ajv.errorsText(validate.errors)}`);
   const identity = phaseTwoOracleIdentity(campaign, specs);
-  for (const key of ["broadSha256", "deepSha256", "fixtureSetSha256"] as const) {
+  for (const key of ["broadSha256", "deepSha256", "fixtureSetSha256", "fixtureScoringSha256"] as const) {
     if (input.identity[key] !== identity[key]) throw new Error(`Phase 2 quality oracle identity mismatch: ${key}`);
   }
   const ids = new Set(specs.filter((spec) => spec.kind === "positive" || spec.kind === "negative").map((spec) => spec.id));
