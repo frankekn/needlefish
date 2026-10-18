@@ -186,18 +186,25 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 	const pairWork = new Map<string, string>();
 	let running: ManagedRunnerProcessController | undefined;
 	let runningDone: Promise<unknown> = Promise.resolve();
-	let activeSlot: { index: number; startedNs: bigint } | null = null;
+	let activeSlot: { index: number; startedNs: bigint; accounting: Record<string, unknown> } | null = null;
 	const cancel = () => { stop = "CANCELLED"; running?.stop(); };
 	cancelSignal?.addEventListener("abort", cancel, { once: true });
 	const unregister = registerTerminationFinalizer(async () => { cancel(); await runningDone; persist(true); });
 	function persist(terminal = false) {
 		const observedNs = process.hrtime.bigint();
 		const observedAt = new Date().toISOString();
+		const sumAttempts = (arm: number, name: "nativeAttempted" | "nativeDrained" | "nativeEnded") =>
+			slots.filter(s => s.deepConcurrency === arm && s.elapsedMs !== null).reduce<number | null>((sum, s) => {
+				if (!s.detail || typeof s.detail !== "object" || Array.isArray(s.detail)) return null;
+				object(s.detail);
+				const count = s.detail[name];
+				return sum !== null && typeof count === "number" ? sum + count : null;
+			}, 0);
 		const arms = [3, 7].map(arm => ({ arm, planned: 12, started: slots.filter(s => s.deepConcurrency === arm && s.elapsedMs !== null).length,
 			completed: slots.filter(s => s.deepConcurrency === arm && s.outcome === "COMPLETED").length,
-			nativeAttempted: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeAttempted" in s.detail && typeof s.detail.nativeAttempted === "number" ? s.detail.nativeAttempted : 0), 0),
-			nativeDrained: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeDrained" in s.detail && typeof s.detail.nativeDrained === "number" ? s.detail.nativeDrained : 0), 0),
-			nativeEnded: slots.filter(s => s.deepConcurrency === arm).reduce((sum, s) => sum + (s.detail && typeof s.detail === "object" && "nativeEnded" in s.detail && typeof s.detail.nativeEnded === "number" ? s.detail.nativeEnded : 0), 0),
+			nativeAttempted: sumAttempts(arm, "nativeAttempted"),
+			nativeDrained: sumAttempts(arm, "nativeDrained"),
+			nativeEnded: sumAttempts(arm, "nativeEnded"),
 			needsHuman: slots.filter(s => s.deepConcurrency === arm && s.detail && typeof s.detail === "object" && "verdict" in s.detail && s.detail.verdict === "needs_human").length }));
 		const report = { startedAt, observedAt, endedAt: terminal ? observedAt : null, monotonicStartNs: begin.toString(), monotonicObservedNs: observedNs.toString(),
 			nativeCapacityEnforced: admission.lane === "OpenAI-ChatGPT-native", protocol: admission.protocol, gateClass: "R", lane: admission.lane, stop, slots, arms,
@@ -256,7 +263,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 			observe();
 			if (stop) break;
 			if (methodError) throw new Error(methodError);
-			activeSlot = { index, startedNs: before };
+			activeSlot = { index, startedNs: before, accounting: { nativeAttempted: null, nativeEnded: null, nativeDrained: null, accountingError: "native attempt capture not yet inspected" } };
 			const timer = setInterval(observe, 1000);
 			let processResult;
 			try {
@@ -277,31 +284,50 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 			write(path.join(slotDirectory, "supervisor-terminal.json"), { ...processResult, startedAt: slotStartedAt, endedAt: new Date().toISOString(), monotonicStartNs: before.toString(), monotonicEndNs: after.toString(), elapsedMs, observations: observations.length });
 			assert.ok(pgid);
 			if (groupAlive(pgid)) methodError = "worker group did not drain";
-			const detail = existsSync(path.join(slotDirectory, "terminal.json")) ? json(path.join(slotDirectory, "terminal.json")) : null;
+			const captureErrors: string[] = [];
+			const readRecord = (file: string) => {
+				try { return existsSync(file) ? json(file) : null; }
+				catch (error) { captureErrors.push(`${path.relative(slotDirectory, file)}: ${error instanceof Error ? error.message : String(error)}`); return null; }
+			};
 			const attempts = readdirSync(path.join(slotDirectory, "attempts")).map(id => ({ id,
-				start: existsSync(path.join(slotDirectory, "attempts", id, "start.json")) ? json(path.join(slotDirectory, "attempts", id, "start.json")) : null,
-				end: existsSync(path.join(slotDirectory, "attempts", id, "end.json")) ? json(path.join(slotDirectory, "attempts", id, "end.json")) : null }));
-
+				start: readRecord(path.join(slotDirectory, "attempts", id, "start.json")),
+				end: readRecord(path.join(slotDirectory, "attempts", id, "end.json")) }));
+			write(path.join(slotDirectory, "attempt-index.json"), attempts.map(attempt => ({ ...attempt, traceProvenanceCandidates: [] })));
+			Object.assign(activeSlot.accounting, { nativeAttempted: attempts.every(attempt => attempt.start && typeof attempt.start === "object" && "pid" in attempt.start && typeof attempt.start.pid === "number") ? attempts.length : null,
+				nativeEnded: attempts.every(attempt => attempt.end && typeof attempt.end === "object" && "endedAt" in attempt.end && typeof attempt.end.endedAt === "string") ? attempts.length : null,
+				observedStartRecords: attempts.filter(attempt => existsSync(path.join(slotDirectory, "attempts", attempt.id, "start.json"))).length,
+				observedEndRecords: attempts.filter(attempt => existsSync(path.join(slotDirectory, "attempts", attempt.id, "end.json"))).length,
+				accountingError: "native drain not yet verified", captureErrors });
+			const detail = readRecord(path.join(slotDirectory, "terminal.json"));
 			let nativeDrained = 0;
+			let drainUnknown = false;
 			for (const attempt of attempts) {
-				if (!attempt.start || !attempt.end) { methodError = "incomplete native attempt capture"; continue; }
-				object(attempt.start);
-				for (const stream of ["stdin.txt", "stdout.txt", "stderr.txt"]) assert.equal(existsSync(path.join(slotDirectory, "attempts", attempt.id, stream)), true, `lost native ${stream}`);
-				assert.equal(hash(readFileSync(path.join(slotDirectory, "attempts", attempt.id, "stdin.txt"))), attempt.start.promptSha256, "native stdin evidence drift");
-				assert.equal(attempt.start.baitSha256, snapshot.identity.baitSha256, "native canary bytes drift");
-				assert.equal(attempt.start.head, snapshot.identity.head, "native snapshot head drift");
-				assert.equal(attempt.start.headTree, snapshot.identity.headTree, "native snapshot tree drift");
-				assert.equal(attempt.start.baseTree, snapshot.identity.baseTree, "native snapshot base tree drift");
-				assert.equal(attempt.start.patchSha256, snapshot.identity.patchSha256, "native snapshot patch drift");
-				if (attempt.start.kind === "deep") assert.equal(attempt.start.policySha256, snapshot.identity.policySha256, "native policy bytes drift");
-				assert.equal(typeof attempt.start.pid, "number");
-				assert.ok(typeof attempt.start.pgid === "number" && Number.isSafeInteger(attempt.start.pgid) && attempt.start.pgid > 0);
-				if (groupAlive(attempt.start.pgid)) methodError = "native process group did not drain";
-				if (typeof attempt.start.pid === "number") {
-					try { process.kill(attempt.start.pid, 0); methodError = "native process did not drain"; }
-					catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH")) throw error; nativeDrained++; }
-				}
+				let drainObserved = false;
+				try {
+					if (!attempt.start || !attempt.end) throw new Error("incomplete native attempt capture");
+					object(attempt.start);
+					assert.equal(typeof attempt.start.pid, "number");
+					assert.ok(typeof attempt.start.pgid === "number" && Number.isSafeInteger(attempt.start.pgid) && attempt.start.pgid > 0);
+					const groupDrained = !groupAlive(attempt.start.pgid);
+					if (!groupDrained) methodError = "native process group did not drain";
+					if (typeof attempt.start.pid === "number") {
+						try { process.kill(attempt.start.pid, 0); methodError = "native process did not drain"; }
+						catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH")) throw error; if (groupDrained) nativeDrained++; }
+					}
+					drainObserved = true;
+					for (const stream of ["stdin.txt", "stdout.txt", "stderr.txt"]) assert.equal(existsSync(path.join(slotDirectory, "attempts", attempt.id, stream)), true, `lost native ${stream}`);
+					assert.equal(hash(readFileSync(path.join(slotDirectory, "attempts", attempt.id, "stdin.txt"))), attempt.start.promptSha256, "native stdin evidence drift");
+					assert.equal(attempt.start.baitSha256, snapshot.identity.baitSha256, "native canary bytes drift");
+					assert.equal(attempt.start.head, snapshot.identity.head, "native snapshot head drift");
+					assert.equal(attempt.start.headTree, snapshot.identity.headTree, "native snapshot tree drift");
+					assert.equal(attempt.start.baseTree, snapshot.identity.baseTree, "native snapshot base tree drift");
+					assert.equal(attempt.start.patchSha256, snapshot.identity.patchSha256, "native snapshot patch drift");
+					if (attempt.start.kind === "deep") assert.equal(attempt.start.policySha256, snapshot.identity.policySha256, "native policy bytes drift");
+				} catch (error) { if (!drainObserved) drainUnknown = true; captureErrors.push(`${attempt.id}: ${error instanceof Error ? error.message : String(error)}`); }
 			}
+			activeSlot.accounting.nativeDrained = drainUnknown ? null : nativeDrained;
+			activeSlot.accounting.accountingError = captureErrors.length ? captureErrors.join("\n") : null;
+			if (captureErrors.length) throw new Error(captureErrors.join("\n"));
 			if (detail && typeof detail === "object" && "result" in detail && detail.result && typeof detail.result === "object" && "traceDeliveryFailed" in detail.result && detail.result.traceDeliveryFailed) methodError = "core trace delivery failed";
 			const traceRows = existsSync(path.join(slotDirectory, "trace.jsonl")) ? readFileSync(path.join(slotDirectory, "trace.jsonl"), "utf8").trim().split("\n").map(line => { const row = jsonValue(line); object(row); object(row.event); return row.event; }) : [];
 			const linked = attempts.map(attempt => {
@@ -357,7 +383,7 @@ export async function executeStudy({ directory, admission, cancelSignal }: Execu
 		}
 	} catch (error) { stop = "METHOD_ERROR";
 		if (activeSlot) slots[activeSlot.index] = { ...slots[activeSlot.index], outcome: "METHOD_ERROR", elapsedMs: Number(process.hrtime.bigint() - activeSlot.startedNs) / 1e6,
-			detail: { error: error instanceof Error ? error.message : String(error) } };
+			detail: { ...activeSlot.accounting, error: error instanceof Error ? error.message : String(error) } };
 		write(path.join(directory, "method-error.json"), { error: error instanceof Error ? error.message : String(error) }); }
 	finally { cancelSignal?.removeEventListener("abort", cancel); unregister(); }
 	return persist(true);

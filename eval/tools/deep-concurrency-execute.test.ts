@@ -12,7 +12,7 @@ const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
 function setup(t: { readonly name: string; after: (fn: () => void) => void }, scenario: string) {
 	const directory = mkdtempSync(path.join(tmpdir(), "needlefish-paired-proof-"));
 	const previous = { ...process.env };
-	for (const key of Object.keys(process.env)) if (/PROXY|OPENAI_BASE_URL|NEEDLEFISH_.*CONNECTION|CODEX_PUBLIC/.test(key)) delete process.env[key];
+	for (const key of Object.keys(process.env)) if (/PROXY|OPENAI_BASE_URL|NEEDLEFISH_.*CONNECTION|CODEX_PUBLIC/i.test(key)) delete process.env[key];
 	process.env.PATH = `${path.dirname(process.execPath)}:${process.env.PATH}`;
 	process.env.NEEDLEFISH_NO_RETRY = "1";
 	const native = path.join(directory, "native.cjs");
@@ -23,6 +23,11 @@ const path = require('node:path');
 const scenario=${JSON.stringify(scenario)};
 const campaign=${JSON.stringify(path.join(directory, "campaign"))};
 if (process.argv.includes('--version')) {
+ if(scenario.startsWith('invalid-record-')&&fs.existsSync(path.join(campaign,'large-tail-boundary-bug-r1-c3','terminal.json'))){
+  const attempts=path.join(campaign,'large-tail-boundary-bug-r1-c3','attempts');
+  const id=fs.readdirSync(attempts)[0];
+  fs.writeFileSync(path.join(attempts,id,scenario.endsWith('start')?'start.json':'end.json'),'not-json');
+ }
  const trigger=path.join(campaign,'prelaunch-trigger.json');
  if(scenario.startsWith('prelaunch-')&&fs.existsSync(path.join(campaign,'large-tail-boundary-bug-r1-c3','input.json'))&&!fs.existsSync(trigger)){
   fs.writeFileSync(trigger,JSON.stringify({scenario,at:new Date().toISOString(),workerInputPresent:true}));
@@ -51,12 +56,12 @@ process.stdin.on('end', () => {
   if(scenario==='invalid') { fs.writeFileSync(out,'not JSON'); return; }
   if(scenario==='rate-limit') { process.stdout.write(JSON.stringify({type:'turn.failed',error:{message:'HTTP 429 Too Many Requests',status_code:429}})+'\\n'); process.stderr.write('HTTP 429 Too Many Requests'); process.exitCode=1; return; }
   if(scenario==='timeout'||scenario==='cancel'||scenario==='drift'||scenario==='lost-evidence') { emit({kind:'stuck'}); setTimeout(()=>{},60000); return; }
-  answer({summary:'mapped',hotspots:(scenario==='underfill' ? [] : scenario==='mismatch'&&activeSlot.endsWith('c7') ? changed.slice(1,7) : changed.slice(0,6)).map((file,i)=>({name:'h'+i,files:[file],why:'changed',risk:'high',edges:[]}))});
+  answer({summary:'mapped',hotspots:((scenario==='underfill'||scenario.startsWith('invalid-record-')) ? [] : scenario==='mismatch'&&activeSlot.endsWith('c7') ? changed.slice(1,7) : changed.slice(0,6)).map((file,i)=>({name:'h'+i,files:[file],why:'changed',risk:'high',edges:[]}))});
  }else if(input.includes('doing a DEEP review')){
   const hotspot=JSON.parse(input.split('# Hotspot (this surface)\\n')[1].split('\\n# Refs\\n')[0]);
   const name=hotspot.name;
   emit({kind:'start',name});
-  const arm=scenario==='underfill'?1:Number(/c([37])$/.exec(activeSlot)[1]);
+  const arm=(scenario==='underfill'||scenario.startsWith('invalid-record-'))?1:Number(/c([37])$/.exec(activeSlot)[1]);
   const deadline=Date.now()+5000;
   const wait=()=>{
    const events=fs.readFileSync(log,'utf8').trim().split('\\n').map(JSON.parse);
@@ -167,6 +172,24 @@ test("underfill stops only after completed whole review and preserves denominato
 	assert.deepEqual(attempts.map((attempt: {start:{kind:string}}) => attempt.start.kind).sort(), ["critic","deep","map"]);
 });
 
+test("offline execution clears synthetic lowercase proxy keys and restores the caller environment", async t => {
+	const keys = ["http_proxy", "https_proxy", "all_proxy"] as const;
+	const previous = keys.map(key => process.env[key]);
+	for (const key of keys) process.env[key] = "http://synthetic.invalid:9";
+	const { directory, admission } = setup(t, "underfill");
+	t.after(() => {
+		for (const [index, key] of keys.entries()) {
+			assert.equal(process.env[key], "http://synthetic.invalid:9", "setup must restore its caller environment");
+			if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index];
+			assert.equal(process.env[key], previous[index]);
+		}
+	});
+	assert.deepEqual(keys.filter(key => process.env[key] !== undefined), []);
+	const report = await executeStudy({ directory: path.join(directory, "campaign"), admission });
+	assert.equal(report.stop, "WORKLOAD_UNDERFILLED");
+	assert.deepEqual(report.arms.map(arm => [arm.nativeAttempted, arm.nativeEnded, arm.nativeDrained]), [[3,3,3],[0,0,0]]);
+});
+
 test("admission rejects absent authorization, identity drift, unsupported route and reused output", async t => {
 	const { directory, admission } = setup(t, "underfill");
 	assert.throws(() => parseAdmission({...admission,operatorApproved:false}));
@@ -248,6 +271,32 @@ for (const scenario of ["cancel", "drift", "lost-evidence"] as const) {
 			assert.equal(index[0].end.signal, "SIGTERM");
 			assert.equal(index[0].traceProvenanceCandidates.length, 0);
 		}
+	});
+}
+
+for (const record of ["start", "end"] as const) {
+	test(`invalid ${record} record retains raw evidence and reports unobservable accounting as null`, async t => {
+		const { directory, admission } = setup(t, `invalid-record-${record}`);
+		const campaign = path.join(directory, "campaign");
+		const report = await executeStudy({ directory: campaign, admission });
+		assert.equal(report.stop, "METHOD_ERROR");
+		assert.equal(report.slots[0].outcome, "METHOD_ERROR");
+		assert.equal(report.slots.length, 24);
+		const slotDirectory = path.join(campaign, report.slots[0].slot);
+		const index = JSON.parse(readFileSync(path.join(slotDirectory, "attempt-index.json"), "utf8"));
+		assert.equal(index.length, 3);
+		assert.equal(index.filter((attempt: Record<string, unknown>) => attempt[record] === null).length, 1);
+		for (const attempt of index) assert.deepEqual(attempt.traceProvenanceCandidates, []);
+		const invalid = index.find((attempt: Record<string, unknown>) => attempt[record] === null);
+		assert.equal(readFileSync(path.join(slotDirectory, "attempts", invalid.id, `${record}.json`), "utf8"), "not-json");
+		assert.match(readFileSync(path.join(campaign, "method-error.json"), "utf8"), /not-json|Unexpected token/);
+		assert.deepEqual(report.arms.map(arm => [arm.planned, arm.nativeAttempted, arm.nativeEnded, arm.nativeDrained]),
+			record === "start" ? [[12,null,3,null],[12,0,0,0]] : [[12,3,null,null],[12,0,0,0]]);
+		const detail = report.slots[0].detail;
+		assert.ok(detail && typeof detail === "object" && "observedStartRecords" in detail && "observedEndRecords" in detail && "accountingError" in detail);
+		assert.equal(detail.observedStartRecords, 3);
+		assert.equal(detail.observedEndRecords, 3);
+		assert.equal(typeof detail.accountingError, "string");
 	});
 }
 
