@@ -347,8 +347,8 @@ This preview does not qualify any provider, credential store or production insta
 
 ## Machine editor
 
-`needlefish connections <operation> --json [--repo <path>]` manages the same
-operator configuration. The commands never run a model, login command, or
+`needlefish connections <list|edit|validate|apply|inspect> --json [--repo <path>]`
+manages the same operator configuration. The commands never run a model, login command, or
 version probe. They do not bind credentials. Authentication and account identity
 remain `unknown`, and qualification remains `unqualified`.
 

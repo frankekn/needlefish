@@ -2438,3 +2438,17 @@ This metadata repair does not alter model inputs, scoring arithmetic, scorer
 identity or fixture answers. The combined pipeline change remains Class R and
 still requires its current-source gate before merge. No evaluation campaign or
 live-canary result is claimed by this entry.
+
+
+## 2026-10-18: boundary contract repair, no evaluation run
+
+Gate class **R**, pending. The shared critic schema/parser corpus exposed
+coercion of blank coverage entries and malformed residual shapes. The critic
+parser now enforces the existing structured contract before restoring candidate
+provenance. This changes usable model output and requires the exact-source full
+Class R gate; synthetic controls do not qualify it.
+
+Persisted external URLs are checked against the public structural contract
+before WHATWG normalization, including raw whitespace and port boundaries.
+Author-skip checks re-read live PR state and head immediately before posting.
+Historical model results, scorer owners and the failed 4f95 campaign are unchanged.

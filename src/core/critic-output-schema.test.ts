@@ -6,37 +6,48 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import Ajv from "ajv";
 import { CRITIC_OUTPUT_SCHEMA } from "./critic-output-schema.js";
-import { review } from "./review.js";
+import { parseCriticReview, review } from "./review.js";
 import { explainFinding } from "./explain.js";
 import { runCodex } from "../shared/codex.js";
 import { headSha, initRepo, isolateCodexTestHome } from "../shared/codex-runner-test-fixtures.js";
 import { captureEnv, restoreEnv } from "../shared/runner-test-fixtures.js";
-import type { Bundle } from "../shared/schema.js";
+import type { Bundle, Finding } from "../shared/schema.js";
 
 const validCritic = { summary: "critic summary", decisions: [], checked: ["critic coverage"], residual_risks: [] };
 const validate = new Ajv({ strict: true, allErrors: true }).compile(CRITIC_OUTPUT_SCHEMA);
 
 test("critic contract admits keep/drop and residuals and rejects malformed coverage and residual keys", () => {
-	assert.equal(validate(validCritic), true);
+	const source: Finding = { severity: "P2", category: "bug", file: "app.ts", lineStart: 1, lineEnd: 1, title: "lost guard", whyItBreaks: "unchecked input reaches the consumer", confidence: 0.8, suggestedFix: "restore guard", validation: "reject invalid input" };
+	const sources = new Map([["f0", source], ["f1", { ...source, title: "lost second guard" }]]);
+	const candidate = { summary: "candidates", findings: [...sources.values()], checked: ["candidate coverage"], residual_risks: [{ text: "unverified caller", blocks: true }] };
+	const base = { ...validCritic, decisions: [{ ref: "f0", action: "drop" }, { ref: "f1", action: "drop" }] };
+	const agrees = (value: unknown, accepted: boolean) => {
+		assert.equal(validate(value), accepted, JSON.stringify(value));
+		if (accepted) assert.doesNotThrow(() => parseCriticReview(value, sources, candidate));
+		else assert.throws(() => parseCriticReview(value, sources, candidate));
+	};
+	agrees(base, true);
 	const keep = { ref: "f0", action: "keep", severity: "P2", confidence: 0.8 };
-	assert.equal(validate({ ...validCritic, decisions: [keep, { ref: "f1", action: "drop" }], residual_risks: [{ text: "unverified caller", blocks: true }] }), true);
+	agrees({ ...base, decisions: [keep, { ref: "f1", action: "drop" }], residual_risks: [{ text: "unverified caller", blocks: true }] }, true);
 	for (const invalid of [
-		{ ...validCritic, checked: [] },
-		{ ...validCritic, checked: [" \t\n"] },
-		{ ...validCritic, checked: ["coverage", " "] },
-		{ ...validCritic, summary: " " },
-		{ ...validCritic, residual_risks: [{ risk: "caller", blocks: false }] },
-		{ ...validCritic, residual_risks: [{ text: " ", blocks: false }] },
-		{ ...validCritic, residual_risks: [{ text: "caller" }] },
-		{ ...validCritic, residual_risks: [{ text: "caller", blocks: false, risk: "alias" }] },
-		{ ...validCritic, extra: true },
-		{ ...validCritic, decisions: [{ ...keep, confidence: Infinity }] },
-		{ ...validCritic, decisions: [{ ...keep, confidence: -0.1 }] },
-		{ ...validCritic, decisions: [{ ...keep, confidence: 1.1 }] },
-		{ ...validCritic, decisions: [{ ...keep, severity: "P4" }] },
-		{ ...validCritic, decisions: [{ ref: "f0", action: "keep" }] },
-		{ ...validCritic, decisions: [{ ref: "f0", action: "drop", severity: "P2" }] },
-	]) assert.equal(validate(invalid), false, JSON.stringify(invalid));
+		{ ...base, checked: [] },
+		{ ...base, checked: [" \t\n"] },
+		{ ...base, checked: ["coverage", " "] },
+		{ ...base, summary: " " },
+		{ ...base, residual_risks: [{ risk: "caller", blocks: false }] },
+		{ ...base, residual_risks: [{ text: " ", blocks: false }] },
+		{ ...base, residual_risks: [{ text: "caller" }] },
+		{ ...base, residual_risks: [{ text: 1, blocks: false }] },
+		{ ...base, residual_risks: [{ text: "caller", blocks: "false" }] },
+		{ ...base, residual_risks: [{ text: "caller", blocks: false, risk: "alias" }] },
+		{ ...base, extra: true },
+		{ ...base, decisions: [{ ...keep, confidence: Infinity }, { ref: "f1", action: "drop" }] },
+		{ ...base, decisions: [{ ...keep, confidence: -0.1 }, { ref: "f1", action: "drop" }] },
+		{ ...base, decisions: [{ ...keep, confidence: 1.1 }, { ref: "f1", action: "drop" }] },
+		{ ...base, decisions: [{ ...keep, severity: "P4" }, { ref: "f1", action: "drop" }] },
+		{ ...base, decisions: [{ ref: "f0", action: "keep" }, { ref: "f1", action: "drop" }] },
+		{ ...base, decisions: [{ ref: "f0", action: "drop", severity: "P2" }, { ref: "f1", action: "drop" }] },
+	]) agrees(invalid, false);
 });
 
 interface Capture {
@@ -199,6 +210,6 @@ for (const scenario of ["write", "spawn"]) {
 		assert.ok(schemaPath);
 		assert.equal(existsSync(path.dirname(schemaPath)), false);
 		assert.equal(existsSync(log), false);
-		assert.deepEqual(readdirSync(managed, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name), []);
+		assert.deepEqual(readdirSync(managed).filter(name => !/^\.needlefish-(?:owner-lock-.+-\d+-\d+|sweep)\.lock$/.test(name)), []);
 	});
 }

@@ -41,12 +41,13 @@ function pull({
 	userType = "User",
 	headRepo = REPO,
 	state = "open",
+	headSha = HEAD,
 } = {}) {
 	return {
 		state,
 		author_association: association,
 		user: { type: userType },
-		head: { sha: HEAD, repo: { full_name: headRepo } },
+		head: { sha: headSha, repo: { full_name: headRepo } },
 		base: { sha: BASE },
 	};
 }
@@ -523,5 +524,25 @@ for (const [name, script, env] of [
     const known = parseMeasurement(postedCheck(second.posts[0])["output[text]"]);
     assert.deepEqual(unknown.workflow, { status: "unknown" });
     assert.notEqual(unknown.invocationId, known.invocationId);
+  });
+}
+
+
+for (const [name, script, env] of [
+  ["reusable", resolveScript, eventEnv({ association: "NONE" })],
+  ["composite", trustStep.run, actionEnv({ association: "NONE" })],
+]) {
+  for (const pr of [pull({ state: "closed" }), pull({ headSha: "f".repeat(40) })]) {
+    test(`${name} suppresses the author-skip check for a closed or superseded event: ${pr.state}/${pr.head.sha}`, () => {
+      const result = runStep(script, env, { pr });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.outputs.skip, "true");
+      assert.deepEqual(result.posts, [], result.log);
+    });
+  }
+  test(`${name} refuses a skip check when live PR revalidation is unavailable`, () => {
+    const result = runStep(script, { ...env, STUB_PULLS_FAIL: "1" });
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(result.posts, [], result.log);
   });
 }

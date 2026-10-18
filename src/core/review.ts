@@ -488,7 +488,7 @@ function takeResidual(
 	return matched;
 }
 
-function parseCriticReview(
+export function parseCriticReview(
 	raw: unknown,
 	candidates: ReadonlyMap<string, Finding>,
 	candidate: RawReview,
@@ -506,6 +506,14 @@ function parseCriticReview(
 		checked: raw.checked,
 		residual_risks: raw.residual_risks,
 	});
+	if (!Array.isArray(raw.checked) || raw.checked.some((item: unknown) => typeof item !== "string" || !item.trim())) {
+		throw new Error("malformed critic output: checked entries must be non-blank strings");
+	}
+	if (!Array.isArray(raw.residual_risks) || raw.residual_risks.some((risk: unknown) =>
+		typeof risk !== "object" || risk === null || Array.isArray(risk) || Object.keys(risk).length !== 2 ||
+		!("text" in risk) || typeof risk.text !== "string" || !risk.text.trim() || !("blocks" in risk) || typeof risk.blocks !== "boolean")) {
+		throw new Error("malformed critic output: residual risks require only non-blank text and boolean blocks");
+	}
 	const seen = new Set<string>();
 	const findings: Finding[] = [];
 	for (const decision of raw.decisions) {

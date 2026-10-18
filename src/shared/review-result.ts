@@ -26,6 +26,7 @@ import {
 type JsonRecord = Record<string, unknown>;
 
 const LABEL = "malformed review result";
+const PERSISTED_HTTP_URL = new RegExp("^https?://(?:[^\\s:/?#@\\[\\]\\\\]+|\\[[0-9A-Fa-f:.]+\\])(?::(?:0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(?:[/?#][^\\s]*)?(?![\\s\\S])");
 
 function isRecord(raw: unknown): raw is JsonRecord {
 	return typeof raw === "object" && raw !== null && !Array.isArray(raw);
@@ -155,6 +156,15 @@ function requireQuoteCheck(raw: unknown): NonNullable<Finding["quoteCheck"]> {
 	return { status };
 }
 
+function requireExternalClaims(raw: unknown) {
+	if (!Array.isArray(raw)) throw new Error("externalClaims not an array");
+	for (const item of raw) {
+		const url = requireString(requireRecord(requireRecord(item).source), "url");
+		if (!PERSISTED_HTTP_URL.test(url)) throw new Error("externalClaims source URL is not canonical HTTP(S) structure");
+	}
+	return parseExternalClaims(raw);
+}
+
 function requireEvidence(raw: unknown): FindingEvidence {
 	if (!isRecord(raw) || raw.toolRead !== "unknown" || !Array.isArray(raw.sources)) {
 		throw new Error("evidence requires unknown toolRead and sources array");
@@ -162,7 +172,7 @@ function requireEvidence(raw: unknown): FindingEvidence {
 	const sources = raw.sources.map((source): SourceEvidence => {
 		if (!isRecord(source)) throw new Error("evidence source not an object");
 		if (source.sourceType === "external" && source.status === "unverified_external_claim") {
-			const [claim] = parseExternalClaims([source]);
+			const [claim] = requireExternalClaims([source]);
 			return { ...claim, sourceType: "external", status: "unverified_external_claim" };
 		}
 		if (source.sourceType !== "git_blob" ||
@@ -241,7 +251,7 @@ function requireFinding(raw: unknown): Finding {
 		throw new Error("quote not a non-empty trimmed one-line string of at most 500 characters");
 	}
 	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
-	const externalClaims = raw.externalClaims === undefined ? undefined : parseExternalClaims(raw.externalClaims);
+	const externalClaims = raw.externalClaims === undefined ? undefined : requireExternalClaims(raw.externalClaims);
 	const evidence = raw.evidence === undefined ? undefined : requireEvidence(raw.evidence);
 	return {
 		severity,

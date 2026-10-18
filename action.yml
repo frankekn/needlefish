@@ -100,6 +100,16 @@ runs:
                  then {status: "recorded", runId: $run, runAttempt: ($attempt | tonumber), jobKey: $job} else {status: "unknown"} end),
                execution: {ordinal: 1, role: "unknown"}, summaryReviewId: null, inlineReviewIds: [],
                runtime: {status: "unknown"}, pipeline: {status: "unknown"}, outcome: "skipped", verdict: null, delivery: "not_applicable"}')
+            if ! live_pr="$(gh api "repos/$REPO/pulls/$pr" --jq '.state, .head.sha')"; then
+              echo "::error::could not revalidate PR before posting an author-skip check" >&2
+              exit 1
+            fi
+            mapfile -t live_fields <<< "$live_pr"
+            if [ "${live_fields[0]:-}" != "open" ] || [ "${live_fields[1]:-}" != "$head" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "skip_reason=closed_or_stale_head" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             gh api -X POST "repos/$REPO/check-runs" \
               -f name="Needlefish" \
               -f head_sha="$head" \

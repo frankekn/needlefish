@@ -492,6 +492,7 @@ test("public URL structure rejects malformed authority and ports without optiona
 	for (const url of [
 		"https://[::1", "https://example.com:bad/", "https://example.com:65536/",
 		"https://example.com:99999/", "https://example.com:-1/", "https://:443/",
+		" http://example.com ", "http://example.com:00080/", "https://example.com/\n", "https://example.com/\r\n", "https://example.com/path ",
 		"https://[]/", "https://[::1]]/", "https://user:password@example.com/", "file:///tmp/spec",
 	]) {
 		const result = externalUrlResult(url);
