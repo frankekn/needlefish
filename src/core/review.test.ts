@@ -12,7 +12,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { review, reviewPlan } from "./review";
+import { review, reviewPlan, reviewFailureStats } from "./review";
 import type { ReviewTraceEvent } from "./review-trace";
 import { renderMarkdown } from "../shared/render.js";
 import { classifySurface } from "../shared/classify";
@@ -940,6 +940,10 @@ test("a deep pass crash waits for concurrent siblings before snapshotting transc
 		(err: unknown) => err,
 	);
 	assert.ok(rejection instanceof Error, "the crashing deep pass must reject");
+	const stats = reviewFailureStats(rejection);
+	assert.equal(stats?.length, 3, "include map and both drained deep calls");
+	assert.equal(stats?.filter(stat => stat.ok).length, 2);
+	assert.ok(stats?.every(stat => stat.attempts === 1));
 	assert.match(
 		rejection.message,
 		/runner changed the review sandbox worktree/,

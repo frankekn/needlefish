@@ -15,14 +15,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../src/shared/repo";
 import { isDocsFastPathEligible } from "../src/shared/classify";
-import { review } from "../src/core/review";
+import { review, reviewFailureStats } from "../src/core/review";
 import {
 	hasPiProviderEnvCredential,
 	isRunnerSafetyError,
 	RunnerOperationalError,
 } from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
-import { parseRunnerName, type RunnerName } from "../src/shared/runner";
+import { parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
@@ -216,7 +216,7 @@ function validatePublicAttestationLabels(args: RunArgs): void {
 	}
 }
 
-async function runOne(
+export async function runOne(
 	spec: FixtureSpec,
 	runner: RunnerName,
 	model: string | null,
@@ -227,6 +227,7 @@ async function runOne(
 	const loaded = loadFixture(spec, canary);
 	const start = Date.now();
 	let result: ReviewResult | null = null;
+	let failedStats: readonly RunStat[] | undefined;
 	let error: string | undefined;
 	let operationalFailure: string | undefined;
 	let failedOutput: string | undefined;
@@ -250,6 +251,7 @@ async function runOne(
 		}
 	} catch (err) {
 		if (isRunnerSafetyError(err)) throw err;
+		failedStats = reviewFailureStats(err);
 		error = err instanceof Error ? err.message : String(err);
 		if (isOperationalEvalError(err)) operationalFailure = error;
 		// runJsonPrompt rides EVERY failed attempt's raw output along on parse
@@ -271,7 +273,7 @@ async function runOne(
 	if (hasFailedDeepPass(traceEvents)) {
 		operationalFailure = "deep review pass failed";
 	}
-	const stats = result?.stats;
+	const stats = result?.stats ?? failedStats;
 	const calls = stats?.length ?? 0;
 	const retries = stats?.reduce((sum, s) => sum + (s.attempts - 1), 0) ?? 0;
 	const findings = result?.findings ?? [];

@@ -7,7 +7,7 @@ import { diffBundle } from "../adapters/local.js";
 import { initRepo, commitAll } from "../shared/codex-runner-test-fixtures.js";
 import { CodexEnvironmentAuth } from "../shared/connection-auth.js";
 import { findRunnerFailure } from "../shared/runner-failure.js";
-import { review, reviewWithConnections } from "./review.js";
+import { review, reviewWithConnections, reviewFailureStats } from "./review.js";
 
 for (const stage of ["review", "critic", "map", "deep"]) {
   test(`ordered ${stage} quota restarts whole review from one captured source`, async (t) => {
@@ -17,9 +17,10 @@ for (const stage of ["review", "critic", "map", "deep"]) {
     assert.equal(result.verdict, "pass");
     assert.equal(result.summary, stage === "map" || stage === "deep" ? "mapped \u2014 second clean" : "second clean");
     assert.deepEqual(result.findings, []);
-    assert.ok(result.stats?.every(stat => stat.model === "second"));
     assert.deepEqual([...new Set(events)], [0,1]);
     const rows = f.rows();
+    assert.deepEqual(result.stats?.map(stat => stat.model), rows.map(row => row.model));
+    assert.ok(result.stats?.every(stat => stat.attempts === 1));
     assert.ok(rows.some(row => row.model === "first" && row.stage === stage));
     assert.deepEqual(rows.filter(row=>row.model === "second").map(row=>row.stage), stage === "map" || stage === "deep" ? ["map","deep","critic"] : ["review","critic"]);
     assert.ok(rows.every(row => row.source === "export const value = 2;\n"));
@@ -38,7 +39,10 @@ for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocki
     const routes = [{runner:"codex" as const, model:"first", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-first-fixture")} : {})}, {runner:"codex" as const,model:"second", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-second-fixture")} : {})}] as const;
     if ((["all-quota","auth","unknown"].includes(mode) || mode.startsWith("cross-key"))) {
       await assert.rejects(reviewWithConnections(f.bundle,routes), e => {
-        if(mode === "all-quota") assert.equal(findRunnerFailure(e)?.kind,"quota_exhausted");
+        if(mode === "all-quota") {
+          assert.equal(findRunnerFailure(e)?.kind,"quota_exhausted");
+          assert.deepEqual(reviewFailureStats(e)?.map(stat => [stat.model, stat.attempts, stat.ok]), [["first",1,false],["second",1,false]]);
+        }
         if(mode.startsWith("cross-key")) assert.equal(findRunnerFailure(e)?.name,"ConnectionCredentialLeakError");
         return true;
       });
@@ -73,7 +77,10 @@ for (const failure of ["safety", "unknown", "auth", "timeout"]) {
   test(`deep quota cannot hide concurrent ${failure} and no queued pass begins`, async(t)=>{
     const f=fixture(t,`mixed-${failure}`);
     process.env.NEEDLEFISH_DEEP_CONCURRENCY="2";
-    await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first",timeoutMs:1500},{runner:"codex",model:"second"}]));
+    await assert.rejects(reviewWithConnections(f.bundle,[{runner:"codex",model:"first",timeoutMs:1500},{runner:"codex",model:"second"}]), error => {
+      assert.equal(reviewFailureStats(error)?.length, 3, "include map and both drained deep calls");
+      return true;
+    });
     const rows=f.rows();
     assert.ok(rows.every(row=>row.model === "first"));
     assert.equal(rows.filter(row=>row.stage === "deep").length,2);
