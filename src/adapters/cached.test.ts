@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -132,6 +132,55 @@ test("render rejects a malformed cache file", (t) => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /invalid cached review/);
+});
+
+test("cached commands reject blank legacy content without printing a verdict", (t) => {
+  const invalid = [
+    { summary: "" },
+    { summary: " \t\r\n\u3000" },
+    { checked: [] },
+    { checked: [""] },
+    { checked: [" \t", "\n\u3000"] },
+    { checked: ["inspected diff", null] },
+    { summary: " ", checked: [""] },
+    {
+      verdict: "needs_human", checked: [" "],
+      residualRisks: [{ text: "not reviewed", blocks: true }],
+    },
+    {
+      verdict: "changes_requested", checked: [" "],
+      findings: [{
+        severity: "P2", title: "breaks", category: "bug", file: "src/app.ts",
+        lineStart: 1, lineEnd: 1, confidence: 0.9, whyItBreaks: "w",
+        suggestedFix: "f", validation: "",
+      }],
+    },
+  ];
+  for (const overrides of invalid) {
+    const file = fixture(t, baseResult(overrides));
+    for (const command of ["render", "verdict"]) {
+      const result = runCli([command, file]);
+      assert.equal(result.status, 1, `${command} ${JSON.stringify(overrides)}: ${result.stdout}`);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /invalid cached review.*malformed review/);
+    }
+  }
+});
+
+test("cached commands preserve a valid legacy pass without rewriting the cache", (t) => {
+  const file = fixture(t, baseResult({
+    summary: "  Legacy review.  ", checked: ["", "  inspected diff  "],
+  }));
+  const before = readFileSync(file, "utf8");
+  const rendered = runCli(["render", file]);
+  assert.equal(rendered.status, 0, rendered.stderr);
+  assert.match(rendered.stdout, /LGTM/);
+  assert.match(rendered.stdout, /Legacy review\./);
+  assert.match(rendered.stdout, / {2}inspected diff {2}/);
+  const verdict = runCli(["verdict", file]);
+  assert.equal(verdict.status, 0, verdict.stderr);
+  assert.equal(verdict.stdout, "stored:  pass\nderived: pass\n");
+  assert.equal(readFileSync(file, "utf8"), before);
 });
 
 test("render rejects a cache file with a verdict outside the schema", (t) => {

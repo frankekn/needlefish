@@ -13,8 +13,11 @@ import {
   terminalProgress,
 } from "./adapters/local.js";
 import { parseArgs, USAGE } from "./cli/args.js";
+import { resolveConnectionOptions } from "./shared/connections.js";
 import { serializeReviewResult } from "./shared/schema.js";
 import { initializeTempLifecycle } from "./shared/temp-lifecycle.js";
+import { runGuidedGithubSetup } from "./setup/guided.js";
+import { planGithubSetup, renderGithubSetup } from "./setup/github.js";
 import { readFileSync } from "node:fs";
 
 // package.json sits one level above both src/ (dev) and dist/ (published).
@@ -42,10 +45,8 @@ async function main() {
     case "verdict":
       runCachedVerdict(command.file);
       return;
-    // doctor spawns only runner status commands, never a review attempt, so
-    // it stays outside the runner temp lifecycle too.
     case "doctor": {
-      const report = runDoctor({
+      const report = await runDoctor({
         repo: command.repo ?? process.cwd(),
         version: VERSION,
         ...(command.runner !== undefined ? { runner: command.runner } : {}),
@@ -55,41 +56,60 @@ async function main() {
       if (!report.ok) process.exitCode = 1;
       return;
     }
+    case "setup-github": {
+      if (command.action) {
+        try {
+          const result = await runGuidedGithubSetup({ action: command.action, confirm: command.confirm === true,
+            replaceSecret: command.replaceSecret === true, ...(command.repository ? { repository: command.repository } : {}) });
+          process.stdout.write(JSON.stringify(result, null, command.json ? undefined : 2) + "\n");
+        } catch (error) {
+          if (!command.json) throw error;
+          process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "error", message: error instanceof Error ? error.message : "GitHub setup failed. Retry after checking your connection." }) + "\n");
+          process.exitCode = 1;
+        }
+        return;
+      }
+      const plan = planGithubSetup(command.repo ?? process.cwd());
+      process.stdout.write(renderGithubSetup(plan));
+      if (plan.kind === "conflict") process.exitCode = 1;
+      return;
+    }
+  }
+
+  if (command.kind !== "explain" && command.fix) {
+    process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
+    process.exitCode = 2;
+    return;
   }
 
   // --dry-run only collects and prints the bundle: no runners spawn, so the
   // runner temp-dir lifecycle (signal handlers, startup sweep) stays off.
   const dryRun =
     (command.kind === "local" || command.kind === "pr") && command.dryRun;
+  // Review adapters have the bundle needed to decide whether credentials are
+  // needed. Preview and explain resolve here; neither uses those adapters.
+  const opts = dryRun || command.kind === "explain"
+    ? resolveConnectionOptions(command.opts, command.repo ?? process.cwd(), process.env, !dryRun)
+    : command.opts;
   if (!dryRun) await initializeTempLifecycle();
 
   switch (command.kind) {
     case "github": {
-      if (command.fix) {
-        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
-        process.exitCode = 2;
-        return;
-      }
-      await runGithub(command.repo ?? process.cwd(), command.pr, command.opts, command.recheck);
+      await runGithub(command.repo ?? process.cwd(), command.pr, opts, command.recheck);
       return;
     }
     case "explain": {
-      await runGithubExplain(command.repo ?? process.cwd(), command.pr, command.finding, command.opts);
+      await runGithubExplain(command.repo ?? process.cwd(), command.pr, command.finding, opts);
       return;
     }
     case "local":
     case "pr": {
-      if (command.fix) {
-        process.stderr.write("--fix is not implemented (see FUTURE_TODO.md).\n");
-        process.exitCode = 2;
-        return;
-      }
       if (command.dryRun) {
         const cwd = command.repo ?? process.cwd();
         const report =
           command.kind === "pr"
-            ? localPrDryRun(cwd, command.pr, command.opts)
-            : localDryRun(cwd, command.opts);
+            ? localPrDryRun(cwd, command.pr, opts)
+            : localDryRun(cwd, opts);
         printDryRun(report, {
           json: command.json,
           printBundle: command.printBundle,
@@ -105,8 +125,8 @@ async function main() {
       const progress = terminalProgress(process.stderr, command.json);
       const result =
         command.kind === "pr"
-          ? await runLocalPr(cwd, command.pr, command.opts, progress)
-          : await runLocal(cwd, command.opts, progress);
+          ? await runLocalPr(cwd, command.pr, opts, progress)
+          : await runLocal(cwd, opts, progress);
       if (command.json) {
         process.stdout.write(serializeReviewResult(result));
       } else {

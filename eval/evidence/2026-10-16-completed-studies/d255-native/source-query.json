@@ -1,0 +1,25 @@
+{
+  "fullCount": 93,
+  "fullHash": "74c7943ce025fbb6",
+  "honeypots": [
+    "honeypot-clean-rename"
+  ],
+  "fixtures": [
+    {
+      "id": "honeypot-clean-rename",
+      "kind": "honeypot"
+    },
+    {
+      "id": "t3-cache-key-tenant",
+      "kind": "positive"
+    },
+    {
+      "id": "real-pr4-options-not-forwarded",
+      "kind": "positive"
+    }
+  ],
+  "fixtureSetHash": "2efafbb385a8bbf5",
+  "promptHash": "c59d803f0d0dc476",
+  "scorerHash": "8bbc6152d8b45a43",
+  "anticheatVersion": 2
+}

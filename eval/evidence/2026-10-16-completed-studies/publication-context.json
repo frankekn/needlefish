@@ -1,0 +1,582 @@
+{
+  "artifactType": "publication-extract-not-original-study-artifact",
+  "scope": "Selected non-private identity and receipt fields. Originals omitted for host-path privacy; hash references do not make private traces publicly reproducible.",
+  "studies": {
+    "issue84-t0": {
+      "fullCatalogCount": 93,
+      "fullCatalogHash": "5884011a9cfd9413",
+      "studyHash": "c28bb43f5fb2cc88",
+      "promptHash": "c59d803f0d0dc476",
+      "scorerHash": "8bbc6152d8b45a43",
+      "anticheatVersion": 2,
+      "fixtures": [
+        {
+          "id": "honeypot-clean-rename",
+          "kind": "honeypot",
+          "hash": "e302b96ae4eafc63"
+        },
+        {
+          "id": "neg-hard-dead-code-delete",
+          "kind": "negative",
+          "hash": "c9be7debeba6f3cd"
+        },
+        {
+          "id": "neg-hard-refactor-move",
+          "kind": "negative",
+          "hash": "ba36fc0c13cba526"
+        },
+        {
+          "id": "neg-hard-timing-hardening",
+          "kind": "negative",
+          "hash": "357db07d416dd975"
+        }
+      ],
+      "sourceSha": "a134550590251ee957543057a24b53e104e30199",
+      "node": "v24.15.0",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "arch": "arm64",
+      "packageManager": "pnpm@10.34.4",
+      "lockSha256": "707712c36a2ff0f91338a907b8969328c5516d11dea1e02f62dec9a207161205",
+      "codexVersion": "codex-cli 0.163.0",
+      "codexSha256": "8813367285524ac798dd96d1b071aea30d58708c7226fd236cd275cf1cfdee31",
+      "wrapperSha256": "39bceb875b270a02fe2f51854f738350822af3436a70909c690c0e7e9d65a0b6",
+      "authMode": "chatgpt",
+      "providerRoute": "native OpenAI Codex subscription; --ignore-user-config; no proxy env",
+      "apiKeyPresent": false,
+      "model": "gpt-5.6-terra",
+      "effort": "high",
+      "serviceTier": "runner default; no service_tier override",
+      "remoteBackendRevision": "not exposed; alias only",
+      "nonpublicOriginals": [
+        {
+          "sourceRelativePath": "identity.json",
+          "bytes": 2178,
+          "sha256": "f1173da7deb8ad7178d5d92bbf824223433c3739fb4fb66e68e27a2d8338227c"
+        },
+        {
+          "sourceRelativePath": "final-hashes.json",
+          "bytes": 68447,
+          "sha256": "255c02e0980e900f7500453a58311e12a3d52760eddff795527dabfbeecf1f89"
+        },
+        {
+          "sourceRelativePath": "raw-invocations.json",
+          "bytes": 112800,
+          "sha256": "f925c95fff84c9da79714e4cb91d013dbb56d1a2054b6a22960e2bfb880c8f72"
+        },
+        {
+          "sourceRelativePath": "native-profile-proof.json",
+          "bytes": 18595,
+          "sha256": "b065418a4823639268c8d3963aa851fbc646629af4708f94c7e3739180596f55"
+        },
+        {
+          "sourceRelativePath": "raw-parser-check.json",
+          "bytes": 99374,
+          "sha256": "0c359aa44ea01e57b097c4d0e0dc9b3bbaf6a47c8f4fbb506b314dbcb7378cae"
+        },
+        {
+          "sourceRelativePath": "completed-slots.json",
+          "bytes": 34841,
+          "sha256": "408e89360de8764cc2b07faeabda39d1bf442aee0ddabe1edd97a4088bb24fd2"
+        },
+        {
+          "sourceRelativePath": "indexed-draws.json",
+          "bytes": 99579,
+          "sha256": "a27b71f946a5077536976f345dac450e18ba94abb62a6ec87b226ecfed773d6d"
+        }
+      ],
+      "sourceSnapshotReceipts": [
+        {
+          "sourceRelativePath": "proofs/after.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/at-start.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/before.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-01.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-02.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-03.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-04.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-05.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-06.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-07.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-08.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-09.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-10.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-11.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-12.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-13.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-14.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-15.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-16.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-17.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-18.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-19.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-20.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-21.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-22.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-23.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-24.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-25.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-26.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-27.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-28.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-29.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-30.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-31.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-32.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-33.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-34.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-35.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-36.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-37.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-38.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-39.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-40.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-41.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-42.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-43.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-44.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-45.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-46.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-47.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-48.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-49.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-50.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-51.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-52.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-53.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-54.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-55.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-56.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-57.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-58.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-59.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        },
+        {
+          "sourceRelativePath": "proofs/slot-60.json",
+          "sha256": "3f894554c4615ab803d198b3ed55b6376f82ffe4e6691cbde2eb7cadae46c2c8",
+          "trackedFiles": 563,
+          "manifestSha256": "c512e7eaf8e2e30cccb115f68ac1116ec173d0b253c5cfea7af07ff38a04fdb2"
+        }
+      ]
+    },
+    "d255-native": {
+      "sourceSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+      "node": "v24.15.0",
+      "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+      "arch": "arm64",
+      "packageManager": "pnpm@10.34.4",
+      "lockSha256": "707712c36a2ff0f91338a907b8969328c5516d11dea1e02f62dec9a207161205",
+      "codexVersion": "codex-cli 0.163.0",
+      "codexSha256": "8813367285524ac798dd96d1b071aea30d58708c7226fd236cd275cf1cfdee31",
+      "wrapperSha256": "cde45563f3fa76f38dc873a4370d4d0b03ec911ff0a31555f4e8de25a10ea40e",
+      "criteriaSha256": "5c156c568536b580654e81e950d64f8f682d216656ed225f2b61598811c04e99",
+      "privateEnvironmentPresenceOnly": {
+        "OPENAI_API_KEY": false,
+        "OPENAI_BASE_URL": false,
+        "CODEX_PROXY_BASE_URL": false,
+        "CODEX_PROXY_API_KEY": false,
+        "NEEDLEFISH_CODEX_PROXY_REQUIRED": false,
+        "HTTP_PROXY": false,
+        "HTTPS_PROXY": false,
+        "http_proxy": false,
+        "https_proxy": false,
+        "CODEX_SERVICE_TIER": false
+      },
+      "profile": "--ignore-user-config, --ignore-rules, gpt-5.6-terra/high, no service-tier override",
+      "profileSha256": "a07048804ad59f3eb03d4bb034cbd646ad0c4fbfbd385f89fa77623034ee8e43",
+      "nonpublicOriginals": [
+        {
+          "sourceRelativePath": "identity.json",
+          "bytes": 1723,
+          "sha256": "f96d2e4bdc57e52d6ea329d1f71b8311de4936d45ca5ca137283112ed92f80a6"
+        },
+        {
+          "sourceRelativePath": "criteria.json",
+          "bytes": 1714,
+          "sha256": "5c156c568536b580654e81e950d64f8f682d216656ed225f2b61598811c04e99"
+        },
+        {
+          "sourceRelativePath": "attempt-audit.json",
+          "bytes": 50604,
+          "sha256": "e713992916c3b743e42c6fa34b5c13fbb248f37f1ef656b162c24e14cf187b2d"
+        },
+        {
+          "sourceRelativePath": "artifact-manifest.json",
+          "bytes": 23486,
+          "sha256": "af3273b08bb558d83806c50c6adb75353c408cba50d0a9ac20e722f6bc211ca6"
+        },
+        {
+          "sourceRelativePath": "auth-status.json",
+          "bytes": 201,
+          "sha256": "1bab1ba673acb5c899475ab1e5a8c97344a7de60962c702118205cc75e560e64"
+        },
+        {
+          "sourceRelativePath": "cleanup-proof.json",
+          "bytes": 396,
+          "sha256": "615b7255d2beedca152de7abedf594fcb34e769b9de9ea00d56252b9257511cf"
+        }
+      ],
+      "sourceSnapshotReceipts": [
+        {
+          "sourceRelativePath": "proofs/after.json",
+          "sha256": "30ea9c59f2be69a63c695cfec242bb30711d492f15e6ffdf219c50e44912698d",
+          "trackedFiles": 584,
+          "manifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e"
+        },
+        {
+          "sourceRelativePath": "proofs/before.json",
+          "sha256": "30ea9c59f2be69a63c695cfec242bb30711d492f15e6ffdf219c50e44912698d",
+          "trackedFiles": 584,
+          "manifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e"
+        },
+        {
+          "sourceRelativePath": "proofs/model-start.json",
+          "sha256": "30ea9c59f2be69a63c695cfec242bb30711d492f15e6ffdf219c50e44912698d",
+          "trackedFiles": 584,
+          "manifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e"
+        }
+      ],
+      "criteriaExtract": {
+        "declaredAt": "2026-10-16T09:20:23.582388+00:00",
+        "gateClass": "D",
+        "candidateSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+        "baseSha": "1654cbe33afea542d601e38a642c787627a44ca6",
+        "model": "gpt-5.6-terra",
+        "effort": "high",
+        "runner": "codex",
+        "runnerVersion": "codex-cli 0.163.0",
+        "fixtures": [
+          "real-pr4-options-not-forwarded",
+          "t3-cache-key-tenant",
+          "honeypot-clean-rename"
+        ],
+        "draws": 3,
+        "concurrency": 1,
+        "holdout": "include",
+        "thresholds": {
+          "expectedCompletedDraws": 9,
+          "malformedOutputErrors": 0,
+          "operationalFailures": 0,
+          "cheatDetections": 0,
+          "positiveFixtureRecall": 1
+        },
+        "residentPropertySuite": "src/core/residual-provenance.test.ts",
+        "driftReplay": "resident suite includes admitted in-bag wording/line drift plus identity-rejection corpus",
+        "liveCanary": "Separate Ubuntu owner; this unit certifies offline only",
+        "matchingBaseline": "No comparative D claim; absolute contract only. R x1 baseline does not substitute for D x3 candidate.",
+        "supersedes": "9ad9e7d829f3d70e64d4230bd166dbaa2c399309",
+        "newRunNoOldDrawReuse": true,
+        "rawAttemptPolicy": "Zero malformed intermediate native outputs, including repaired JSON re-asks; no replacement draws or resumed runs",
+        "instrumentation": "Native capture adapter buffers finite stdin to owned file and forwards stdout/stderr bytewise. Fake selfcheck proves bytes, exit, last-message and process group propagation; does not prove complete native-lane timing or pipe equivalence.",
+        "supervisorTimeoutSeconds": 1800
+      },
+      "observedAuthStatus": "Logged in using ChatGPT"
+    }
+  }
+}

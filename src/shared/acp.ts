@@ -5,7 +5,7 @@ import {
   type RunnerProcessResult,
 } from "./runner-process.js";
 import { requireRunnerCommand } from "./runner-detection.js";
-import type { RunUsage } from "./runner.js";
+import type { AcpLaunchSpec, RunUsage } from "./runner.js";
 
 import { RunnerFailure, type RunnerFailureKind } from "./runner-failure.js";
 
@@ -51,10 +51,13 @@ interface AcpClientState {
   phase: AcpRequestMethod;
 }
 
-export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunnerResult> {
+export async function runAcp(
+  invocation: AcpRunnerInvocation,
+  launch?: AcpLaunchSpec,
+): Promise<AcpRunnerResult> {
   let command: string;
   try {
-    command = requireRunnerCommand("acp");
+    command = launch?.command ?? requireRunnerCommand("acp");
   } catch {
     throw new RunnerFailure("startup_failed",
       "NEEDLEFISH_ACP_BIN is required for the acp runner; review not started. Configure the ACP launcher.");
@@ -82,7 +85,7 @@ export async function runAcp(invocation: AcpRunnerInvocation): Promise<AcpRunner
   try {
     res = await runManagedRunnerProcess({
       command,
-      args: [],
+      args: launch?.args ?? [],
       repoPath: invocation.repoPath,
       timeoutMs: invocation.timeoutMs,
       env: invocation.env,

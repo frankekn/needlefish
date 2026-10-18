@@ -1754,7 +1754,7 @@ test("runGithub treats corrupted state marker as first round", async (t) => {
 
 // --- Same-head dedupe ---
 
-test("runGithub skips re-review when previous review has same head (no recheck)", async (t) => {
+test("runGithub same-head skip ignores malformed connection configuration", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 30,
 		rawReview: JSON.stringify({
@@ -1770,7 +1770,10 @@ test("runGithub skips re-review when previous review has same head (no recheck)"
 	assert.ok(round1Count > 0, "round 1 should post");
 	const round1Runs = runnerInvocationCount(fixture);
 
-	const round2 = spawnGithubCli(fixture, 30);
+	const malformedConnections = path.join(path.dirname(fixture.repo), "malformed-connections.json");
+	writeFileSync(malformedConnections, "{");
+	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", malformedConnections);
+	const round2 = spawnGithubCli(fixture, 30, ["--connection", "selected"]);
 	assert.equal(round2.status, 0, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 

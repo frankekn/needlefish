@@ -25,6 +25,13 @@ export class RunnerFailure extends Error {
   }
 }
 
+export class ConnectionCredentialLeakError extends RunnerFailure {
+  constructor() {
+    super("protocol_error", "Needlefish withheld runner output: it contained a selected connection credential.");
+    this.name = "ConnectionCredentialLeakError";
+  }
+}
+
 // Shared lifecycle code wraps failures with Error.cause to keep its public
 // RunnerOperationalError contract. Walk only actual Error instances and own
 // data properties, without running getters or trusting JSON-shaped objects.
