@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { TextDecoder } from "node:util";
+import { isRepositoryPath } from "./path.js";
 
 type RecordedSource = {
   datasetId: "martian" | "swrbench";
@@ -114,7 +115,7 @@ const maxBytes = 8 * 1024 * 1024;
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 type GitObjects = { directory: string; objects?: string };
 function git(repo: GitObjects, args: string[]): Buffer {
-  const result = spawnSync("git", ["--no-replace-objects", "--no-optional-locks", "--no-pager", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", repo.directory, ...args], {
+  const result = spawnSync("git", ["--no-replace-objects", "--no-optional-locks", "--no-pager", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C", repo.directory, ...args], {
     env: { PATH: process.env.PATH, HOME: "/nonexistent", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0", GIT_ATTR_NOSYSTEM: "1", GIT_OBJECT_DIRECTORY: repo.objects },
     timeout: 5000, maxBuffer: maxBytes,
   });
@@ -129,17 +130,34 @@ function gitText(repo: GitObjects, args: string[]): string { return utf8(git(rep
 function checkEqual(actual: string, expected: string, reason: string): void {
   if (actual !== expected) throw new Error(reason);
 }
+function nulRecords(bytes: Buffer): Buffer[] {
+  const records: Buffer[] = [];
+  for (let start = 0; start < bytes.length;) {
+    const end = bytes.indexOf(0, start);
+    if (end < 0) throw new Error("invalid_git_record_framing");
+    records.push(bytes.subarray(start, end));
+    start = end + 1;
+  }
+  return records;
+}
+function repositoryPath(bytes: Buffer): string {
+  const path = utf8(bytes);
+  if (!isRepositoryPath(path)) throw new Error("unsupported_path_or_file_mode");
+  return path;
+}
 function treeFiles(repo: GitObjects, tree: string): CodeFile[] {
-  const entries = git(repo, ["ls-tree", "-r", "-z", tree]).toString("utf8").split("\0").filter(Boolean);
+  const entries = nulRecords(git(repo, ["ls-tree", "-r", "-z", tree]));
   if (entries.length > 1000) throw new Error("snapshot_file_limit");
   let total = 0;
   return entries.map((entry) => {
-    const match = /^(100644|100755) blob ([a-f0-9]{40})\t([a-zA-Z0-9._/@+-]+)$/.exec(entry);
-    if (!match) throw new Error("unsupported_path_or_file_mode");
+    const separator = entry.indexOf(9);
+    const match = /^(100644|100755) blob ([a-f0-9]{40})$/.exec(utf8(entry.subarray(0, separator)));
+    if (separator < 0 || !match) throw new Error("unsupported_path_or_file_mode");
+    const path = repositoryPath(entry.subarray(separator + 1));
     const bytes = git(repo, ["cat-file", "blob", match[2]]);
     total += bytes.length;
     if (total > maxBytes) throw new Error("snapshot_byte_limit");
-    return { path: match[3], mode: match[1], content: utf8(bytes) };
+    return { path, mode: match[1], content: utf8(bytes) };
   });
 }
 const diffArgs = ["diff", "--full-index", "--no-ext-diff", "--no-textconv", "--text", "--no-renames", "--no-color", "--diff-algorithm=myers", "--no-indent-heuristic", "--src-prefix=a/", "--dst-prefix=b/", "--unified=3"];
@@ -184,7 +202,7 @@ export function importManifest(manifest: ExternalManifest, repo?: string): Impor
     const diff = utf8(git(view, [...diffArgs, snapshot.reviewBaseSHA, snapshot.reviewHeadSHA, "--"]));
     if (!diff) throw new Error("empty_diff");
     checkEqual(sha256(diff), snapshot.diffSHA256, "diff_hash_mismatch_or_truncated_patch");
-    const paths = git(view, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", snapshot.reviewBaseSHA, snapshot.reviewHeadSHA, "--"]).toString("utf8").split("\0").filter(Boolean);
+    const paths = nulRecords(git(view, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-z", snapshot.reviewBaseSHA, snapshot.reviewHeadSHA, "--"])).map(repositoryPath);
     if (paths.length > 100) throw new Error("changed_file_limit");
     const lineMap: LineRange[] = [];
     for (const path of paths) {
@@ -209,7 +227,7 @@ export function evaluatorMetadata(manifest: ExternalManifest, result: ImportResu
     schemaVersion: 1, source: manifest.source, snapshot: manifest.snapshot, evaluator: manifest.evaluator,
     importStatus: result.status, exclusionReasons: result.status === "excluded" ? result.reasons : [],
     sourceProvenanceStatus: "recorded_metadata_not_reauthenticated",
-    scoringStatus: "unscorable", scoringReasons: ["common_rubric_not_frozen", ...(manifest.evaluator.label === "positive" ? ["gold_locations_missing"] : [])],
+    scoringStatus: "unscorable", scoringReasons: ["independent_evaluator_and_results_not_supplied", ...(manifest.evaluator.label === "positive" ? ["gold_locations_missing"] : [])],
     unmatchedFindingPolicy: "requires_blind_adjudication_not_automatic_false_positive", comparisonStatus: "NOT_RUN",
   };
 }

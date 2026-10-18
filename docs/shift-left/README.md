@@ -1,9 +1,9 @@
 # Review a branch before a pull request
 
 Use these optional templates in a repository you own. They require an installed
-`needlefish` that includes the pass-only exit contract from PR #257, and Node 20
-or later on macOS or Linux. This source preview does not claim that a released package includes
-that contract. Keep your required CI review and human approval rules.
+`needlefish` with the `--branch --json`, `verdict`, and `render` commands, and
+Node 20 or later on macOS or Linux. Keep your required CI review and human
+approval rules.
 
 ## Install the shared procedure
 
@@ -49,12 +49,14 @@ It writes that invocation's stdout to a private temporary file. It uses
 deterministic verdict check, then `needlefish render <file>` for display.
 It never reads `last-review.json`. Needlefish itself can still update its normal
 cache. Only an exit 0 review with a validated, matching `pass` result permits
-delivery. Both `changes_requested` and `needs_human` exit 1. Other nonzero codes
-are failures, not additional verdict classes.
+delivery. The gate always exits 1 for `changes_requested` and `needs_human`,
+even with older CLIs whose complete non-pass commands exit 0. For a fully
+validated non-pass result, each CLI command may exit 0 or 1. For `pass`, all
+three commands must exit 0. Other nonzero codes block delivery.
 
 The whole gate has a 20-minute deadline and an 8,000,000-byte output limit.
 The limit counts the combined raw stdout and stderr bytes from review, verdict,
-and render. Each child has closed stdin. Reading the temporary result file does
+render, and Git verification. Every child shares the deadline and has closed stdin. Reading the temporary result file does
 not add pipe output. The gate retains at most 16,384 characters of CLI stderr
 for diagnostics, within the same byte budget. To choose another deadline, set
 `NEEDLEFISH_SHIFT_LEFT_TIMEOUT_MS` to an integer from 1 through 2,147,483,647
