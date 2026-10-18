@@ -199,6 +199,7 @@ export function admitPhaseTwoReports(
       if (!gold) throw new Error(`Phase 2 ${name}: missing fixture gold`);
       const fastPath = "fastPath" in draw && draw.fastPath === "docs";
       if (fastPath && (!expected.fastPathFixtureIds?.includes(draw.fixtureId) || draw.calls !== 0)) fail("invalid docs fast path");
+      if (draw.score.formatOk && draw.calls === 0 && !fastPath) fail("successful zero-call draw requires docs fast path");
       validateStoredScore(draw, gold, fastPath);
       if (draw.matchEvidence !== undefined) {
         const findings = (draw.findings ?? []).map((finding) => ({ ...finding, confidence: 1, suggestedFix: "", validation: "" }));

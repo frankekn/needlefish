@@ -199,7 +199,7 @@ test("Admission rejects coverage, source/lane, score, aggregates and provenance 
     [["broad", "results", 0, "score", "robustness", "missingProvenanceCount"], 1, /unmatched anti-cheat evidence/],
     [["broad", "results", 0, "score", "robustness", "rawExposureCount"], 1, /counts do not match/],
     [["broad", "runnerEnvironment"], JSON.stringify([["NEEDLEFISH_EPHEMERAL_HOME", "1"], ["NEEDLEFISH_EPHEMERAL_HOME", "1"]]), /duplicate keys/],
-    [["broad", "results", 0, "calls"], 0, /retain anti-cheat provenance/],
+    [["broad", "results", 0, "calls"], 0, /successful zero-call draw requires docs fast path/],
     [["broad", "aggregates", "recall"], 0, /aggregate recall/],
     [["broad", "aggregates", "mustFindHitRate"], 0, /aggregate mustFindHitRate/],
     [["broad", "aggregates", "mustFindHitRateByFixture"], {}, /aggregate mustFindHitRateByFixture/],
@@ -209,7 +209,6 @@ test("Admission rejects coverage, source/lane, score, aggregates and provenance 
     [["broad", "aggregates", "cheatDetectedCount"], 1, /anti-cheat/],
   ] satisfies readonly [readonly (string | number)[], unknown, RegExp][]) {
     const changed = structuredClone(original); edit(changed, path, value);
-    if (path.join(".") === "broad.results.0.calls") edit(changed, ["broad", "results", 0, "score", "robustness"], undefined);
     assert.throws(() => admitPhaseTwoReports(changed, specs, policy), message);
   }
   const deadline = structuredClone(original);
