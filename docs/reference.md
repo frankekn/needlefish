@@ -409,12 +409,14 @@ blank (values are trimmed):
 | `openai` | none (HTTP, not a CLI) | `OPENAI_API_KEY` (required), `--model` / `OPENAI_MODEL` (required), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`) |
 
 All `*_BIN` executables must come from trusted operator-controlled paths.
-Codex and Grok resolve path-like relative `CODEX_BIN` and `GROK_BIN`
-against Needlefish's caller working directory. Detection and doctor use that same directory. The caller
-directory must be trusted; launching Needlefish from a PR-controlled checkout
-does not make its relative executable safe. Other CLI runners still resolve
-relative commands from the target clone at launch. Use absolute trusted paths
-for those runners. Bare executable names continue to use `PATH`.
+Every CLI runner resolves a path-like relative `*_BIN` against Needlefish's
+caller working directory, never the target clone. Detection and doctor use
+that same directory. The caller directory must be trusted; launching
+Needlefish from a PR-controlled checkout does not make its relative
+executable safe. On Windows, use a drive-qualified absolute path. A
+root-relative path such as `\tools\codex` is kept as is and resolves on the
+drive of the directory the runner starts in. Bare executable names continue
+to use `PATH`.
 
 ### How each runner is launched
 
@@ -474,7 +476,9 @@ and uncommitted `WORKING` heads, are marked `unchecked`. Findings marked
 `unchecked` or `not_found` appear in the review body with a location caveat,
 without a RIGHT-side inline comment. GitHub suggestions require a matched
 HEAD quote; base-only matches and relocated findings discard the replacement.
-Findings without a quote retain diff-based inline eligibility. The Class R gate
+Findings without a quote retain diff-based inline eligibility. A supplied quote
+that is not a usable one-line string is dropped; the finding is marked
+`unchecked` and loses its replacement. The Class R gate
 must record the fraction of findings posted inline to check for a drop under
 this conservative policy.
 
@@ -483,7 +487,10 @@ commit, with GitHub tokens stripped and the expected `HEAD` fixed. Codex
 and Grok start in their empty sibling directory. Other CLI runners start in
 the clone. After each successful model call, Needlefish re-checks the clone with `git status
 --porcelain --untracked-files=all --ignored=matching`, verifies `HEAD` did
-not move, and rejects any worktree mutation. The clone carries no remote: its
+not move, and rejects any worktree mutation. Needlefish does not check the
+empty start directory of Codex and Grok. A file a runner writes there through
+a relative path is not detected and is deleted with the run's temporary
+directory. The clone carries no remote: its
 `origin` (which would point at the original repository on the same
 filesystem) is removed before the runner starts, so an ordinary `git push`
 from inside the sandbox cannot create, force-update, or delete branches in

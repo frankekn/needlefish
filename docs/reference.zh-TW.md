@@ -303,6 +303,14 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
 | `acp` | `NEEDLEFISH_ACP_BIN`（必填） | — |
 | `openai` | 無（HTTP，不是 CLI） | `OPENAI_API_KEY`（必填）、`--model`／`OPENAI_MODEL`（必填）、`OPENAI_BASE_URL`（預設 `https://api.openai.com/v1`） |
 
+所有 `*_BIN` 執行檔都必須來自受信任、由 operator 控制的路徑。每個 CLI
+runner 都會把 path-like 的相對 `*_BIN` 對 Needlefish 的 caller 工作目錄
+解析，不會對 target clone 解析。偵測與 doctor 也用同一個目錄。caller 目
+錄必須可信；從 PR 控制的 checkout 啟動 Needlefish，不會讓其中的相對執
+行檔變安全。Windows 請用帶磁碟代號的絕對路徑。`\tools\codex` 這類
+root-relative 路徑會原樣保留，並在 runner 起始目錄所在的磁碟上解析。裸
+執行檔名稱仍走 `PATH`。
+
 ### 各 runner 的啟動方式
 
 - **Codex：** `--ignore-user-config --ignore-rules
@@ -323,11 +331,23 @@ runner 的 subprocess allowlist 內。`openai` runner 是 HTTP，在 process
   `session/cancel`，再套用與 CLI runner 相同的 process-group kill 路徑。
   prompt response 若包含 token usage，review stats 會保留 input／output 總量。
 
-每個 CLI runner 都在審查 head commit 的 **throwaway clean clone** 內執
-行，GitHub token 已移除，並固定預期的 `HEAD`。每次成功的模型呼叫後，
+引用位置若沒有經過驗證的 HEAD 證據（包括只在 base 找到的符合，以及未提交
+的 `WORKING` head），會標成 `unchecked`。標成 `unchecked` 或 `not_found`
+的 finding 會附位置說明放在 review 本文，不會成為 RIGHT 側 inline comment。
+GitHub suggestion 需要符合的 HEAD quote；只在 base 符合或位置被移動的
+finding 會捨棄 replacement。沒有 quote 的 finding 仍依 diff 判斷能否
+inline。有提供 quote 但不是可用的單行字串時，quote 會被丟棄，finding
+標成 `unchecked` 並捨棄 replacement。Class R gate 必須記錄 inline 發佈的
+finding 比例，以檢查這個保守策略是否造成下降。
+
+每個 CLI runner 都檢查審查 head commit 的 **throwaway clean clone**，
+GitHub token 已移除，並固定預期的 `HEAD`。Codex 與 Grok 從 clone 旁的空
+目錄啟動，其他 CLI runner 從 clone 啟動。每次成功的模型呼叫後，
 Needlefish 會用 `git status
 --porcelain --untracked-files=all --ignored=matching` 重新檢查 clone，驗
-證 `HEAD` 沒有移動，並拒絕任何 worktree 變更。clone 不帶 remote：其
+證 `HEAD` 沒有移動，並拒絕任何 worktree 變更。Needlefish 不檢查 Codex
+與 Grok 的空起始目錄。runner 用相對路徑寫到那裡的檔案不會被偵測，會隨
+這次執行的暫存目錄一起刪除。clone 不帶 remote：其
 `origin`（本會指向同一檔案系統上的原始 repo）會在 runner 啟動前移除，
 因此從 sandbox 內執行一般的 `git push` 無法在原始 repo 建立、強制更新
 或刪除 branch。這只關閉現成的 push 路徑；它不是 OS 層級的邊界，知道
