@@ -56,7 +56,7 @@ test("renderMarkdown uses the headline for each verdict and the first summary se
 	);
 	assert.equal(
 		renderMarkdown(baseResult([], "needs_human")).split("\n")[0],
-		"NEEDS HUMAN 👀 — First sentence.",
+		"REVIEW INCOMPLETE. HUMAN CONFIRMATION REQUIRED — First sentence.",
 	);
 
 	assert.equal(
@@ -346,7 +346,7 @@ test("renderMarkdown needs_human headline carries the blocking residual and a vi
 	const firstLine = markdown.split("\n")[0];
 	assert.match(
 		firstLine,
-		/NEEDS HUMAN 👀 — deep review of the auth hotspot failed/,
+		/REVIEW INCOMPLETE. HUMAN CONFIRMATION REQUIRED — deep review of the auth hotspot failed/,
 	);
 	const detailsIdx = markdown.indexOf("<details>");
 	assert.ok(detailsIdx > 0, "expected a collapsed details section");
@@ -545,4 +545,20 @@ test("renderMarkdown folds a bare CR in a hostile path so the note stays one par
 test("renderMarkdown warns when source quotes could not be verified at HEAD", () => {
 	const out = renderMarkdown(baseResult([finding("P2", "unchecked", "a.ts", { quoteCheck: { status: "unchecked" } })]));
 	assert.match(out, /_Location unverified: the quoted source could not be verified at this HEAD location\._/);
+});
+
+test("docs-only output identifies a policy skip without claiming a model review", () => {
+  const output = renderMarkdown({ ...baseResult([], "pass"),
+    summary: "Docs-only change (1 file(s)); model review skipped.",
+    docsOnlyFastPath: true,
+    checked: ["FAST_PATH docs-only files=[README.md]"],
+  });
+  assert.match(output, /Model review skipped by policy for this docs-only change/);
+});
+
+test("model checked text cannot manufacture a docs-only policy notice", () => {
+  const output = renderMarkdown({ ...baseResult([], "pass"),
+    checked: ["FAST_PATH docs-only files=[README.md]"],
+  });
+  assert.doesNotMatch(output, /Model review skipped by policy/);
 });

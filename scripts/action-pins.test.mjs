@@ -139,11 +139,11 @@ test("hosted action installs the latest runner CLI unless runner_version pins on
 });
 
 test("self-hosted fleet docs install the current Codex version", () => {
-  for (const file of ["README.md", "README.zh-TW.md"]) {
-    const readme = readFileSync(file, "utf8");
-    assert.match(readme, /npm install --global --prefix "\$HOME\/\.local" @openai\/codex@latest/);
-    assert.match(readme, /CODEX_BIN="\$HOME\/\.local\/bin\/codex"/);
-    assert.match(readme, /"\$CODEX_BIN" --version/);
+  for (const file of ["docs/reference.md", "docs/reference.zh-TW.md"]) {
+    const reference = readFileSync(file, "utf8");
+    assert.match(reference, /npm install --global --prefix "\$HOME\/\.local" @openai\/codex@latest/);
+    assert.match(reference, /CODEX_BIN="\$HOME\/\.local\/bin\/codex"/);
+    assert.match(reference, /"\$CODEX_BIN" --version/);
   }
 });
 

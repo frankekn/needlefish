@@ -120,6 +120,7 @@ export interface RawReview {
 }
 
 export interface ReviewResult {
+	readonly docsOnlyFastPath?: boolean;
 	readonly schemaVersion: typeof REVIEW_RESULT_SCHEMA_VERSION;
 	readonly verdict: Verdict;
 	readonly summary: string;

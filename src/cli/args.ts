@@ -1,3 +1,4 @@
+import type { SetupAction } from "../setup/guided.js";
 import type { LocalOptions } from "../adapters/local.js";
 import {
   parsePositiveInteger,
@@ -60,6 +61,11 @@ export type CliCommand =
   | {
       readonly kind: "setup-github";
       readonly repo?: string;
+      readonly action?: SetupAction;
+      readonly repository?: string;
+      readonly json?: boolean;
+      readonly confirm?: boolean;
+      readonly replaceSecret?: boolean;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -72,12 +78,18 @@ Usage:
                                        explain one finding on a PR (Action mode)
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
-                                       (exits 1 when stored and derived differ)
+                                       (exits 1 for non-pass verdicts or drift)
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)
   needlefish setup github [--repo <path>]
                                        preview a hosted PR workflow; writes nothing
+  needlefish setup github repositories|login [--confirm] [--json]
+                                       list admin repositories or authorize official gh
+  needlefish setup github status|create-pr|set-secret --repository <owner/name>
+                                       [--confirm] [--replace-secret] [--json]
+                                       inspect setup or explicitly create a PR/set a secret
+                                       credentials are accepted only through stdin
 
 Shared options:
   --repo <path>        target repository
@@ -183,15 +195,37 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
     if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
     let repo: string | undefined;
+    let repository: string | undefined;
+    let action: SetupAction | undefined;
+    let json = false, confirm = false, replaceSecret = false;
     for (let i = 2; i < argv.length; i++) {
-      if (argv[i] === "--help" || argv[i] === "-h") return { kind: "help" };
-      const value = optionValue(argv, i, "--repo");
-      if (!value) throw new Error(`setup github accepts only --repo (received ${argv[i]})`);
-      if (repo !== undefined) throw new Error("--repo may only be supplied once");
-      repo = value.value;
+      const arg = argv[i];
+      if (arg === "--help" || arg === "-h") return { kind: "help" };
+      if (arg === "--json") { json = true; continue; }
+      if (arg === "--confirm") { confirm = true; continue; }
+      if (arg === "--replace-secret") { replaceSecret = true; continue; }
+      if (arg === "repositories" || arg === "login" || arg === "status" || arg === "create-pr" || arg === "set-secret") {
+        if (action) throw new Error("Supply one setup operation");
+        action = arg;
+        continue;
+      }
+      const path = optionValue(argv, i, "--repo");
+      const remote = optionValue(argv, i, "--repository");
+      const value = path ?? remote;
+      if (!value) throw new Error("Unknown setup github option. Credentials are accepted only through stdin for set-secret.");
+      if (path) { if (repo !== undefined) throw new Error("--repo may only be supplied once"); repo = value.value; }
+      else { if (repository !== undefined) throw new Error("--repository may only be supplied once"); repository = value.value; }
       if (value.consumedNext) i++;
     }
-    return { kind: "setup-github", ...(repo !== undefined ? { repo } : {}) };
+    if (!action) {
+      if (json || repository || confirm || replaceSecret) throw new Error("Choose a guided setup operation first");
+      return { kind: "setup-github", ...(repo !== undefined ? { repo } : {}) };
+    }
+    if (repo) throw new Error("Guided setup uses --repository owner/name, not a local --repo path");
+    if (["status", "create-pr", "set-secret"].includes(action) && !repository) throw new Error("Supply --repository owner/name");
+    if (["repositories", "login"].includes(action) && repository) throw new Error("This operation does not accept --repository");
+    if (replaceSecret && action !== "set-secret") throw new Error("--replace-secret applies only to set-secret");
+    return { kind: "setup-github", action, json, confirm, replaceSecret, ...(repository ? { repository } : {}) };
   }
   const cachedCommand =
     argv[0] === "render" || argv[0] === "verdict" ? argv[0] : undefined;

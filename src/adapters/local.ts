@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   review,
+  isDocsOnlyFastPath,
   reviewPlan,
   type ReviewProgressEvent,
   type ReviewProgressObserver,
@@ -366,7 +367,7 @@ export async function runLocal(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle } = diffBundle(cwd, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
   const result = await review(bundle, resolvedOpts, undefined, onProgress);
   writeCache(bundle.repoPath, opts, result);
   return result;
@@ -379,7 +380,7 @@ export async function runLocalPr(
   onProgress?: ReviewProgressObserver
 ): Promise<ReviewResult> {
   const { bundle, pr } = prDiffBundle(cwd, prNumber, opts);
-  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !reviewPlan(bundle).docsOnlyFastPath);
+  const resolvedOpts = resolveConnectionOptions(opts, bundle.repoPath, process.env, !isDocsOnlyFastPath(bundle));
   // prNumber/prBaseSha are attached after review(): anything on the bundle
   // reaches the model via {{BUNDLE}}, so these live only on the result.
   // pr.baseSha is baseRefOid — the PR base tip; bundle.baseSha is the merge base.
@@ -441,6 +442,7 @@ export interface DryRunReport {
   readonly bundle: Bundle;
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
 }
 
 // Bundle collection only — no review(), no writeCache. Callers decide how to
@@ -448,12 +450,12 @@ export interface DryRunReport {
 // the repo AGENTS.md policy text verbatim.
 export function localDryRun(cwd: string, opts: LocalOptions): DryRunReport {
   const { bundle, mode } = diffBundle(cwd, opts);
-  return { mode, bundle, ...reviewPlan(bundle) };
+  return { mode, bundle, ...reviewPlan(bundle, opts) };
 }
 
 export function localPrDryRun(cwd: string, prNumber: number, opts: LocalOptions): DryRunReport {
   const { bundle } = prDiffBundle(cwd, prNumber, opts);
-  return { mode: "pr", bundle, ...reviewPlan(bundle) };
+  return { mode: "pr", bundle, ...reviewPlan(bundle, opts) };
 }
 
 interface DryRunSummary {
@@ -469,6 +471,7 @@ interface DryRunSummary {
   readonly untrackedSkipped: readonly UntrackedSkippedFile[];
   readonly docsOnlyFastPath: boolean;
   readonly largePath: boolean;
+  readonly capability: ReturnType<typeof reviewPlan>["capability"];
 }
 
 // The redacted summary: everything needed to answer "was the evidence in the
@@ -494,6 +497,7 @@ function dryRunSummary(report: DryRunReport): DryRunSummary {
     untrackedSkipped: bundle.untrackedSkipped ?? [],
     docsOnlyFastPath: report.docsOnlyFastPath,
     largePath: report.largePath,
+    capability: report.capability,
   };
 }
 
@@ -501,6 +505,10 @@ export function printDryRun(
   report: DryRunReport,
   opts: { readonly json?: boolean; readonly printBundle?: boolean } = {}
 ): void {
+  if (report.capability?.capability === "promptOnly") {
+    process.stderr.write(`needlefish: ${report.capability.detail}\n`);
+    process.exitCode = 1;
+  }
   if (opts.printBundle) {
     process.stdout.write(`${JSON.stringify(report.bundle, null, 2)}\n`);
     return;
@@ -544,5 +552,10 @@ export function printDryRun(
   }
   lines.push(`docsOnlyFastPath: ${summary.docsOnlyFastPath}`);
   lines.push(`largePath: ${summary.largePath}`);
+  if (summary.capability) {
+    const [first, ...rest] = summary.capability.detail.split("\n");
+    lines.push(`capability: ${summary.capability.capability === "unresolved" ? "unresolved; " : ""}${first}`);
+    for (const line of rest) lines.push(`  ${line}`);
+  }
   process.stdout.write(`${lines.join("\n")}\n`);
 }

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "datasetId": "martian",
+    "datasetRevision": "e616e849755441da38f18bf3adba2c9583b03803",
+    "sourceURL": "https://raw.githubusercontent.com/withmartian/code-review-benchmark/e616e849755441da38f18bf3adba2c9583b03803/offline/golden_comments/cal_dot_com.json",
+    "sourceBytes": {
+      "scope": "full",
+      "sha256": "f8d88e88392b4349c418ea844fce5d19b29b48c5ebc34a1501d849f126478750",
+      "byteLength": 15809,
+      "rangeStart": null
+    },
+    "instanceId": "calcom-cal-com-8087",
+    "canonicalRepo": "calcom/cal.diy",
+    "originalURL": "https://github.com/calcom/cal.com/pull/8087",
+    "datasetLicense": {
+      "spdx": "MIT",
+      "noticeSHA256": "3d0f7aacf358c3578c1e541bdd297b675d76805e6bf3dddaf89b6d2b45e3afad"
+    },
+    "upstreamCodeLicense": "unknown"
+  },
+  "snapshot": {
+    "kind": "metadata-only",
+    "sourceBaseSHA": "ba9688a04a8398c9a8332ee7061bfae2f2efd524",
+    "reviewHeadSHA": "820d7fa87e0c824c5dee8082a33efadb1a2566f7",
+    "observedFinalHeadSHA": "820d7fa87e0c824c5dee8082a33efadb1a2566f7",
+    "reviewBaseSHA": null,
+    "mergeBaseSHA": null,
+    "reasons": [
+      "historical_snapshot_equivalence_unknown",
+      "review_base_and_commit_lineage_unknown",
+      "local_code_objects_not_imported",
+      "tree_and_diff_hashes_unknown",
+      "upstream_code_license_unknown"
+    ]
+  },
+  "reviewText": {
+    "kind": "unknown",
+    "reason": "frozen_title_description_policy_not_imported"
+  },
+  "evaluator": {
+    "label": "positive",
+    "goldCount": 2,
+    "goldLocations": "missing",
+    "provenance": "Martian cal_dot_com.json metadata only. Human-verified is an upstream claim; no answer text or localization imported."
+  }
+}

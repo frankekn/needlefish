@@ -394,6 +394,7 @@ const OPTIONAL_FIELD_PARSERS: {
 	readonly [K in OptionalFieldKey]-?: (value: unknown) => ReviewResult[K];
 } = {
 	reviewTarget: stringField,
+	docsOnlyFastPath: booleanField,
 	prNumber: positiveIntegerField,
 	prBaseSha: stringField,
 	scopeCallouts: scopeCalloutListField,
