@@ -61,7 +61,7 @@ function metrics(f: ReturnType<typeof fixture>) {
 test("all three product adapters yield identical literal metrics and retained identities", () => {
   const f = fixture();
   try {
-    const expected = { matched: 1, missed: 0, falsePositive: 0, legitimateUnmatched: 0, unresolved: 0, findingCount: 1, goldCount: 1, recall: { numerator: 1, denominator: 1, value: 1 }, precision: { numerator: 1, denominator: 1, value: 1 } };
+    const expected = { matched: 1, missed: 0, duplicate: 0, falsePositive: 0, legitimateUnmatched: 0, unresolved: 0, findingCount: 1, goldCount: 1, recall: { numerator: 1, denominator: 1, value: 1 }, precision: { numerator: 1, denominator: 1, value: 1 } };
     assert.deepEqual(metrics(f), expected);
     f.results.product.name = "Codex review";
     f.results.attempts = [{ id: "attempt-1", status: "completed", format: "codex-review-capture-v1", findings: [{ id: "f1", title: "Zero divisor", body: "A zero value causes division by zero.", code_location: { file: "value.ts", side: "head", start: 1, end: 1 } }] }];
@@ -85,7 +85,7 @@ test("same description at wrong file, side or line never matches and is not auto
     for (const patch of patches) {
       attempt.findings[0] = { id: "f1", title: "Zero divisor", whyItBreaks: "A zero value causes division by zero.", file: "value.ts", side: "head", lineStart: 1, lineEnd: 1, ...patch };
       f.refresh();
-      assert.deepEqual(metrics(f), { matched: 0, missed: 1, falsePositive: 0, legitimateUnmatched: 0, unresolved: 1, findingCount: 1, goldCount: 1, recall: { numerator: 0, denominator: 1, value: null }, precision: { numerator: 0, denominator: 1, value: null } });
+      assert.deepEqual(metrics(f), { matched: 0, missed: 1, duplicate: 0, falsePositive: 0, legitimateUnmatched: 0, unresolved: 1, findingCount: 1, goldCount: 1, recall: { numerator: 0, denominator: 1, value: 0 }, precision: { numerator: 0, denominator: 1, value: null } });
     }
   } finally { f.cleanup(); }
 });
@@ -105,6 +105,27 @@ test("one finding cannot satisfy two golds; allocation reassigns to maximize one
   } finally { f.cleanup(); }
 });
 
+for (const disposition of ["unresolved", "false_positive"] as const) {
+  test(`eligible duplicate metrics ignore ${disposition} disposition and finding order`, () => {
+    const f = fixture();
+    try {
+      const attempt = f.results.attempts[0];
+      if (attempt.status !== "completed" || attempt.format !== "needlefish-capture-v1") assert.fail();
+      attempt.findings.push({ ...attempt.findings[0], id: "f2" });
+      f.evaluator.attempts[0].adjudications[0].unmatched = disposition;
+      f.evaluator.attempts[0].adjudications.push({ findingId: "f2", descriptionGoldIds: ["g1"], unmatched: "legitimate", rationale: "The same gold defect is independently confirmed." });
+      f.refresh();
+      const forward = metrics(f);
+      attempt.findings.reverse();
+      f.refresh();
+      const reversed = metrics(f);
+      assert.deepEqual(forward, reversed);
+      assert.deepEqual(forward, { matched: 1, missed: 0, duplicate: 1, falsePositive: 0, legitimateUnmatched: 0, unresolved: 0, findingCount: 2, goldCount: 1, recall: { numerator: 1, denominator: 1, value: 1 }, precision: { numerator: 1, denominator: 2, value: 0.5 } });
+      assert.equal(f.score().rubric, "external-description-location-v2");
+    } finally { f.cleanup(); }
+  });
+}
+
 test("description equivalence and explicit sibling/FP judgments control actual denominators", () => {
   const f = fixture();
   try {
@@ -116,7 +137,7 @@ test("description equivalence and explicit sibling/FP judgments control actual d
       { findingId: "false", descriptionGoldIds: [], unmatched: "false_positive", rationale: "Independent source inspection disproves this claim." },
     );
     f.refresh();
-    assert.deepEqual(metrics(f), { matched: 1, missed: 0, falsePositive: 1, legitimateUnmatched: 1, unresolved: 0, findingCount: 3, goldCount: 1, recall: { numerator: 1, denominator: 1, value: 1 }, precision: { numerator: 2, denominator: 3, value: 2 / 3 } });
+    assert.deepEqual(metrics(f), { matched: 1, missed: 0, duplicate: 0, falsePositive: 1, legitimateUnmatched: 1, unresolved: 0, findingCount: 3, goldCount: 1, recall: { numerator: 1, denominator: 1, value: 1 }, precision: { numerator: 2, denominator: 3, value: 2 / 3 } });
     f.evaluator.attempts[0].adjudications[0].descriptionGoldIds = [];
     assert.equal(metrics(f).matched, 0); assert.equal(metrics(f).unresolved, 1); assert.equal(metrics(f).precision.value, null);
     f.evaluator.attempts[0].adjudications.pop();
@@ -132,7 +153,7 @@ test("empty gold and empty findings never invent perfect rates; no gold location
     assert.equal(f.score().attempts[0].status, "unscorable"); assert.equal(f.score().attempts[0].metrics, null);
     f.evaluator.gold = { status: "ready", provenance: "Independent clean cohort", findings: [] };
     f.results.attempts = [{ id: "attempt-1", status: "completed", format: "needlefish-capture-v1", findings: [] }];
-    assert.deepEqual(metrics(f), { matched: 0, missed: 0, falsePositive: 0, legitimateUnmatched: 0, unresolved: 0, findingCount: 0, goldCount: 0, recall: { numerator: 0, denominator: 0, value: null }, precision: { numerator: 0, denominator: 0, value: null } });
+    assert.deepEqual(metrics(f), { matched: 0, missed: 0, duplicate: 0, falsePositive: 0, legitimateUnmatched: 0, unresolved: 0, findingCount: 0, goldCount: 0, recall: { numerator: 0, denominator: 0, value: null }, precision: { numerator: 0, denominator: 0, value: null } });
   } finally { f.cleanup(); }
 });
 
