@@ -1519,6 +1519,9 @@ function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[],
 	return null;
 }
 
+// Any newer owned round for this PR and head invalidates the receipt, including
+// in_progress rounds (orphaned or concurrent). This replaces #257's "ignore
+// in_progress" rule; the recovery budget, not the skip, bounds the rerun (#102).
 function hasNewerRound(state: RoundState, checks: readonly JsonRecord[], prNumber: number): boolean {
 	if (state.v !== 2) return false;
 	const receipt = state.delivery;
