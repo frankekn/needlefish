@@ -1,0 +1,22 @@
+✔ gate class D invariant: drift survives inside the candidate bag — echo (163.637477ms)
+✔ gate class D invariant: drift survives inside the candidate bag — paraphrased titles and why lines across all findings (120.691699ms)
+✔ gate class D invariant: drift survives inside the candidate bag — residual fully reworded after an earlier match (121.305962ms)
+✔ gate class D invariant: drift survives inside the candidate bag — middle finding dropped (121.909634ms)
+✔ gate class D invariant: drift survives inside the candidate bag — all findings pruned (124.536406ms)
+✔ gate class D invariant: drift survives inside the candidate bag — one residual legitimately dropped (121.830174ms)
+✔ gate class D invariant: drift survives inside the candidate bag — severity corrections in both directions (120.252767ms)
+✔ gate class D invariant: drift survives inside the candidate bag — line drift within the window (120.89237ms)
+✔ gate class D invariant: drift survives inside the candidate bag — findings reordered (123.460552ms)
+✔ gate class D invariant: identity break still rejects — invented finding (234.197477ms)
+✔ gate class D invariant: identity break still rejects — duplicated finding beyond candidate multiplicity (232.490989ms)
+✔ gate class D invariant: identity break still rejects — rewritten file axis (228.860704ms)
+✔ gate class D invariant: identity break still rejects — rewritten category axis (228.348513ms)
+✔ gate class D invariant: identity break still rejects — line drift outside the window (228.950895ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2468.107555

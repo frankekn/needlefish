@@ -1,9 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildRunnerEnv, hasRunnerEnvCredential } from "../shared/codex.js";
-import { git } from "../shared/repo.js";
+import { git, gitSupportsAttrSource } from "../shared/repo.js";
+import { runManagedRunnerProcess } from "../shared/runner-process.js";
+import { registerTerminationFinalizer } from "../shared/temp-lifecycle.js";
 import { RUNNER_DEFINITIONS as RUNNER_CATALOG } from "../shared/runner-definition.js";
 import {
   NO_AUTO_DETECTED_RUNNER_MESSAGE,
@@ -32,6 +33,7 @@ export interface DoctorCheck {
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly needlefish: string;
+  readonly repoRoot?: string;
   /** False when any check failed; an `unknown` check does not fail the report. */
   readonly ok: boolean;
   readonly checks: readonly DoctorCheck[];
@@ -58,14 +60,16 @@ type ProbeResult =
   | { readonly kind: "exited"; readonly status: number; readonly stdout: string; readonly stderr: string }
   | { readonly kind: "failed"; readonly reason: string };
 
-function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): ProbeResult {
-  const res = spawnSync(command, [...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: PROBE_TIMEOUT_MS,
-    maxBuffer: 1024 * 1024,
+async function probe(runner: RunnerName, command: string, args: readonly string[], cwd: string): Promise<ProbeResult> {
+  const res = await runManagedRunnerProcess({
+    command,
+    args,
+    repoPath: cwd,
+    timeoutMs: PROBE_TIMEOUT_MS,
+    timeoutKillSignal: "SIGKILL",
+    maxCombinedBufferBytes: 1024 * 1024,
     env: buildRunnerEnv(runner, path.join(os.tmpdir(), "needlefish-doctor-gh-empty")),
+    onSpawn: (controller) => controller.endStdin(),
   });
   if (res.error) {
     const code = "code" in res.error ? res.error.code : undefined;
@@ -99,7 +103,7 @@ type RunnerSelection =
   | { readonly kind: "http"; readonly runner: RunnerName }
   | { readonly kind: "unavailable" };
 
-function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
+async function selectRunner(explicit: RunnerName | undefined, probeCwd: string): Promise<{ readonly check: DoctorCheck; readonly selection: RunnerSelection }> {
   const envRunner = process.env.NEEDLEFISH_RUNNER;
   let runner: RunnerName | undefined = explicit;
   if (runner === undefined && envRunner) {
@@ -165,14 +169,14 @@ function selectRunner(explicit: RunnerName | undefined, probeCwd: string): { rea
   return cliRunnerCheck(runner, { ...binary, path: binary.path }, explicit === undefined ? "NEEDLEFISH_RUNNER" : "--runner", probeCwd);
 }
 
-function cliRunnerCheck(
+async function cliRunnerCheck(
   runner: RunnerName,
   binary: ResolvedRunnerBinary & { readonly path: string },
   source: string,
   probeCwd: string,
-): { readonly check: DoctorCheck; readonly selection: RunnerSelection } {
+): Promise<{ readonly check: DoctorCheck; readonly selection: RunnerSelection }> {
   // An ACP agent is a JSON-RPC process; `--version` is not part of that contract.
-  const version = runner === "acp" ? undefined : probe(runner, binary.path, ["--version"], probeCwd);
+  const version = runner === "acp" ? undefined : await probe(runner, binary.path, ["--version"], probeCwd);
   const versionText =
     version === undefined
       ? ""
@@ -185,7 +189,7 @@ function cliRunnerCheck(
   };
 }
 
-function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
+async function authCheck(selection: RunnerSelection, probeCwd: string): Promise<DoctorCheck> {
   if (selection.kind === "unavailable") {
     return { name: "auth", status: "unknown", detail: "skipped: no runner available" };
   }
@@ -213,7 +217,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
     };
   }
   const fix = `Run \`${login.command}\`.`;
-  const result = probe(runner, selection.binary.path, login.status.args, probeCwd);
+  const result = await probe(runner, selection.binary.path, login.status.args, probeCwd);
   const probeCommand = `${selection.binary.command} ${login.status.args.join(" ")}`;
   if (result.kind === "failed") {
     return { name: "auth", status: "unknown", detail: `${runner}: \`${probeCommand}\` ${result.reason}` };
@@ -251,6 +255,7 @@ function authCheck(selection: RunnerSelection, probeCwd: string): DoctorCheck {
 
 /** What the default `needlefish` run in this repo would review; undefined outside a git repo. */
 interface WorktreeState {
+  readonly repoRoot: string;
   readonly headExists: boolean;
   readonly dirty: boolean;
 }
@@ -282,12 +287,21 @@ function gitCheck(repo: string): { readonly check: DoctorCheck; readonly worktre
     if (!(error instanceof Error)) throw error;
     branch = "detached HEAD";
   }
+  const repoRoot = git(["rev-parse", "--show-toplevel"], repo, { preserveOutput: true }).replace(/\n$/, "");
   const changed = git(["status", "--porcelain"], repo).split("\n").filter(Boolean).length;
   const tree = changed === 0 ? "clean" : `${changed} uncommitted change(s)`;
   const commits = headExists ? "" : ", no commits yet";
+  const worktree = { repoRoot: path.resolve(repoRoot), headExists, dirty: changed > 0 };
+  const version = git(["--version"], repo);
+  if (!gitSupportsAttrSource(version)) {
+    return {
+      check: { name: "git", status: "fail", detail: `${version}; needlefish needs git 2.41 or later`, fix: "Upgrade git to 2.41 or later." },
+      worktree,
+    };
+  }
   return {
     check: { name: "git", status: "ok", detail: `${repo} (branch ${branch}, ${tree}${commits})` },
-    worktree: { headExists, dirty: changed > 0 },
+    worktree,
   };
 }
 
@@ -308,26 +322,32 @@ function baseCheck(repo: string, worktree: WorktreeState | undefined, override: 
   }
 }
 
-export function runDoctor(opts: DoctorOptions): DoctorReport {
+export async function runDoctor(opts: DoctorOptions): Promise<DoctorReport> {
   const repo = path.resolve(opts.repo);
   const probeCwd = mkdtempSync(path.join(os.tmpdir(), "needlefish-doctor-"));
+  const cleanup = (): void => rmSync(probeCwd, { recursive: true, force: true });
+  const unregisterCleanup = registerTerminationFinalizer(async () => cleanup());
   let checks: readonly DoctorCheck[];
+  let repoRoot: string | undefined;
   try {
-    const runner = selectRunner(opts.runner, probeCwd);
+    const runner = await selectRunner(opts.runner, probeCwd);
     const gitState = gitCheck(repo);
+    repoRoot = gitState.check.status === "ok" ? gitState.worktree?.repoRoot : undefined;
     checks = [
       nodeCheck(),
       runner.check,
-      authCheck(runner.selection, probeCwd),
+      await authCheck(runner.selection, probeCwd),
       gitState.check,
       baseCheck(repo, gitState.worktree, opts.base),
     ];
   } finally {
-    rmSync(probeCwd, { recursive: true, force: true });
+    unregisterCleanup();
+    cleanup();
   }
   return {
     schemaVersion: 1,
     needlefish: opts.version,
+    ...(repoRoot === undefined ? {} : { repoRoot }),
     ok: checks.every((check) => check.status !== "fail"),
     checks,
   };

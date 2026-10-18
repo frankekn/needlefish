@@ -1,0 +1,426 @@
+{
+  "seed": 8416269,
+  "algorithm": "Python random.Random(seed).shuffle over catalog-order fixture-major slots",
+  "slots": [
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 8,
+      "slot": 1,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-01.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 13,
+      "slot": 2,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-02.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 11,
+      "slot": 3,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-03.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 14,
+      "slot": 4,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-04.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 10,
+      "slot": 5,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-05.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 3,
+      "slot": 6,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-06.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 9,
+      "slot": 7,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-07.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 7,
+      "slot": 8,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-08.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 11,
+      "slot": 9,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-09.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 10,
+      "slot": 10,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-10.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 9,
+      "slot": 11,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-11.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 4,
+      "slot": 12,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-12.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 3,
+      "slot": 13,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-13.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 9,
+      "slot": 14,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-14.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 3,
+      "slot": 15,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-15.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 13,
+      "slot": 16,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-16.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 6,
+      "slot": 17,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-17.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 1,
+      "slot": 18,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-18.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 6,
+      "slot": 19,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-19.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 8,
+      "slot": 20,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-20.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 3,
+      "slot": 21,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-21.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 2,
+      "slot": 22,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-22.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 7,
+      "slot": 23,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-23.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 4,
+      "slot": 24,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-24.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 6,
+      "slot": 25,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-25.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 14,
+      "slot": 26,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-26.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 12,
+      "slot": 27,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-27.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 14,
+      "slot": 28,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-28.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 12,
+      "slot": 29,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-29.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 5,
+      "slot": 30,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-30.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 4,
+      "slot": 31,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-31.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 1,
+      "slot": 32,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-32.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 8,
+      "slot": 33,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-33.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 13,
+      "slot": 34,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-34.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 2,
+      "slot": 35,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-35.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 7,
+      "slot": 36,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-36.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 12,
+      "slot": 37,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-37.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 0,
+      "slot": 38,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-38.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 0,
+      "slot": 39,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-39.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 5,
+      "slot": 40,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-40.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 13,
+      "slot": 41,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-41.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 0,
+      "slot": 42,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-42.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 2,
+      "slot": 43,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-43.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 7,
+      "slot": 44,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-44.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 10,
+      "slot": 45,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-45.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 4,
+      "slot": 46,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-46.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 2,
+      "slot": 47,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-47.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 5,
+      "slot": 48,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-48.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 11,
+      "slot": 49,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-49.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 1,
+      "slot": 50,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-50.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 14,
+      "slot": 51,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-51.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 0,
+      "slot": 52,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-52.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 12,
+      "slot": 53,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-53.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 6,
+      "slot": 54,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-54.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 1,
+      "slot": 55,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-55.json"
+    },
+    {
+      "fixtureId": "neg-hard-timing-hardening",
+      "drawIndex": 10,
+      "slot": 56,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-56.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 11,
+      "slot": 57,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-57.json"
+    },
+    {
+      "fixtureId": "honeypot-clean-rename",
+      "drawIndex": 5,
+      "slot": 58,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-58.json"
+    },
+    {
+      "fixtureId": "neg-hard-refactor-move",
+      "drawIndex": 9,
+      "slot": 59,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-59.json"
+    },
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "drawIndex": 8,
+      "slot": 60,
+      "nativeDrawIndex": 0,
+      "report": "reports/slot-60.json"
+    }
+  ]
+}

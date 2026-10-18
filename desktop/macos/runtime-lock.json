@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "platform": "darwin-arm64",
+  "releaseApproved": false,
+  "qualification": "Blocked pending reviewed upstream digests, redistribution notices, exact Codex/model qualification, signing and clean-machine tests.",
+  "versions": {
+    "node": "24.15.0",
+    "git": "2.55.0",
+    "codex": "0.163.0",
+    "model": "gpt-5.6-sol",
+    "effort": "medium"
+  },
+  "sources": {
+    "node": "https://nodejs.org/dist/v24.15.0/",
+    "git": "https://git-scm.com/",
+    "codex": "https://github.com/openai/codex/releases/tag/rust-v0.163.0"
+  },
+  "runtime": {
+    "node": "bin/node",
+    "cli": "needlefish/dist/cli.js",
+    "git": "bin/git",
+    "codex": "bin/codex",
+    "development": false
+  },
+  "files": {},
+  "notices": []
+}
