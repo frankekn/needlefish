@@ -4371,3 +4371,24 @@ test("runGithub retains BASE-only quotes in the body instead of unrelated HEAD i
 	assert.match(payload.body, /removed source/);
 	assert.match(payload.body, /Location unverified/);
 });
+
+test("runGithub keeps a finding with an unusable quote in the body instead of inline", async (t) => {
+	const fixture = setupFixture(t, {
+		prNumber: 243,
+		readmeContent: "feature content\nsecond line\n",
+		rawReview: JSON.stringify({ summary: "two findings", findings: [
+			mkFinding({ title: "unusable quote", quote: "feature content\nsecond line", replacement: { lines: ["fixed"] } }),
+			mkFinding({ title: "no quote", lineStart: 2, lineEnd: 2 }),
+		], checked: ["checked"], residual_risks: [] }),
+	});
+	await runGithub(fixture.repo, 243, { timeoutMs: 1000 });
+	const posted = postedReview(readPosts(fixture.postLog), 243);
+	assert.ok(posted);
+	const payload = parseReviewPayload(posted.payload);
+	assert.equal(payload.comments.length, 1);
+	assert.equal(payload.comments[0].line, 2);
+	assert.match(String(payload.comments[0].body), /no quote/);
+	assert.match(payload.body, /unusable quote/);
+	assert.match(payload.body, /Location unverified: the quoted source could not be verified at this HEAD location\./);
+	assert.doesNotMatch(payload.body, /```suggestion/);
+});

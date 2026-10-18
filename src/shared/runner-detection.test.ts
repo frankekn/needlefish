@@ -158,7 +158,7 @@ test("runnerCommand trims every *_BIN override and treats blank as unset", (t) =
 });
 
 
-for (const runner of ["codex", "grok"] as const) {
+for (const runner of ["codex", "grok", "claude"] as const) {
   test(`${runner} resolves a relative executable from the caller, never the PR clone`, async (t) => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-relative-codex-"));
     const repo = initRepo(tmp);
@@ -181,13 +181,13 @@ for (const runner of ["codex", "grok"] as const) {
     chmodSync(untrustedBin, 0o755);
     commitAll(repo, "untrusted tracked executable");
     process.chdir(caller);
-    process.env[runner === "codex" ? "CODEX_BIN" : "GROK_BIN"] = "./tools/codex";
+    process.env[{ codex: "CODEX_BIN", grok: "GROK_BIN", claude: "CLAUDE_BIN" }[runner]] = "./tools/codex";
     const detected = resolveRunnerBinary(runner);
     assert.equal(realpathSync(detected?.path ?? ""), realpathSync(trustedBin));
     const output = await runCodex("prompt", { runner, repoPath: repo, targetHeadSha: headSha(repo), timeoutMs: 1000 });
     const [source, cwd] = output.trim().split("\n");
     assert.equal(source, "trusted-caller");
-    assert.equal(path.basename(cwd ?? ""), "runner-launch");
+    assert.equal(path.basename(cwd ?? ""), runner === "claude" ? "runner-repo" : "runner-launch");
     assert.equal(existsSync(attackMarker), false);
   });
 }

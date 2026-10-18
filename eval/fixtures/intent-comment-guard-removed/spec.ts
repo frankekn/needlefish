@@ -78,7 +78,35 @@ export function dispatch(route: string, req: Request): Response {
   expected: {
     verdict: "changes_requested",
     mustFind: [
-      { pattern: "admin|role|authoriz|permission|privilege|any.{0,12}(caller|user)|forbidden|403|unauthenticat" },
+      {
+        facts: [
+          {
+            id: "role_guard_missing",
+            meaning: "The admin role check was removed from the route, or nothing (including the dispatcher) checks the role.",
+            alternatives: [
+              { allOf: ["\\b(?:remov|dropp|strip|lost|missing|no longer|without|lacks?|absent|skip)\\w*.{0,40}(?:admin|role|requireRole|authoriz|permission|guard)"] },
+              { allOf: ["(?:admin|role|requireRole|authoriz|permission|guard)\\w*.{0,40}(?:remov|dropp|strip|missing|absent|gone)"] },
+              { allOf: ["dispatch", "(?:\\bno|\\bnot|\\bnever|n't|\\bwithout)\\b.{0,40}(?:role|admin|authoriz|permission)"] },
+            ],
+          },
+          {
+            id: "delete_account_action",
+            meaning: "The unguarded action is account deletion.",
+            alternatives: [
+              { allOf: ["delet\\w*.{0,30}account|account.{0,30}delet"] },
+            ],
+          },
+          {
+            id: "any_caller_can_delete",
+            meaning: "Any caller, including a non-admin or unauthorized one, can now delete accounts.",
+            alternatives: [
+              { allOf: ["\\b(?:any|every|arbitrary|all)\\s+(?:\\w+\\s+){0,2}(?:callers?|users?|clients?|requests?)\\b|\\b(?:anyone|anybody)\\b"] },
+              { allOf: ["non-?admin|unauthori[sz]ed|unauthenticat|escalat"] },
+              { allOf: ["\\b(?:regular|normal|ordinary|unprivileged)\\s+users?\\b|without\\s+(?:the\\s+)?admin"] },
+            ],
+          },
+        ],
+      },
     ],
     anchorFile: "src/server.ts",
     anchorLineRange: [6, 8],

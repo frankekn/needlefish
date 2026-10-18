@@ -235,9 +235,9 @@ function requireFinding(raw: unknown): Finding {
 	const quote = raw.quote;
 	if (
 		quote !== undefined &&
-		(typeof quote !== "string" || quote === "" || quote !== quote.trim() || quote.length > 500 || /[\r\n]/.test(quote))
+		(typeof quote !== "string" || quote === "" || quote !== quote.trim() || quote.length > 500 || /[\r\n\0]/.test(quote))
 	) {
-		throw new Error("quote not a non-empty trimmed one-line string of at most 500 characters");
+		throw new Error("quote not a non-empty trimmed one-line string without NUL of at most 500 characters");
 	}
 	const quoteCheck = raw.quoteCheck === undefined ? undefined : requireQuoteCheck(raw.quoteCheck);
 	const externalClaims = raw.externalClaims === undefined ? undefined : parseExternalClaims(raw.externalClaims);

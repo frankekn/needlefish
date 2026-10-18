@@ -1231,6 +1231,10 @@ async function runRunner(
 	}
 }
 
+function outsideLaunchPrompt(invocation: RunnerInvocation): string {
+	return `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`;
+}
+
 async function runCodexCli(
 	invocation: RunnerInvocation,
 ): Promise<RunnerResult> {
@@ -1281,7 +1285,7 @@ async function runCodexCli(
 	const res = await spawnRunnerProcess({
 		command,
 		args,
-		stdin: `The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		stdin: outsideLaunchPrompt(invocation),
 		repoPath: invocation.launchPath,
 		timeoutMs: invocation.timeoutMs,
 		env: invocation.env,
@@ -1402,7 +1406,7 @@ async function runGrok(invocation: RunnerInvocation): Promise<RunnerResult> {
 	const promptPath = path.join(invocation.tmp, "prompt.txt");
 	writeFileSync(
 		promptPath,
-		`The repository to inspect is ${JSON.stringify(invocation.repoPath)}. Your startup directory is outside it. Use git -C with that absolute path and absolute paths for other read-only inspection.\n\n${invocation.prompt}`,
+		outsideLaunchPrompt(invocation),
 		{ mode: 0o600 },
 	);
 	const args = [

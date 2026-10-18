@@ -307,6 +307,7 @@ test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 	};
 	for (const extra of [
 		{ quote: "a\nb" },
+		{ quote: "source\0" },
 		{ quote: "" },
 		{ quote: 7 },
 		{ quoteCheck: { status: "maybe" } },

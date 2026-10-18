@@ -684,7 +684,7 @@ test("normalizeReview drops malformed findings in loose mode", () => {
   assert.deepEqual(review.checked, ["diff"]);
 });
 
-test("normalizeFinding keeps a one-line quote trimmed and drops a malformed one", () => {
+test("normalizeFinding keeps a one-line quote trimmed and marks a malformed one unchecked", () => {
   const base = {
     severity: "P2",
     title: "Wrong branch",
@@ -697,12 +697,20 @@ test("normalizeFinding keeps a one-line quote trimmed and drops a malformed one"
   };
 
   assert.equal(normalizeFinding({ ...base, quote: "  return wrong;  " }).quote, "return wrong;");
-  for (const quote of ["a\nb", "a\rb", "return x;\0", "   ", "x".repeat(501), 42, undefined]) {
-    const finding = normalizeFinding({ ...base, quote });
+  for (const quote of ["   ", null, undefined]) {
+    const finding = normalizeFinding({ ...base, quote, replacement: { lines: ["fixed"] } });
+
+    assert.equal("quote" in finding, false);
+    assert.equal("quoteCheck" in finding, false);
+    assert.deepEqual(finding.replacement, { lines: ["fixed"] });
+  }
+  for (const quote of ["a\nb", "a\rb", "return x;\0", "x".repeat(501), 42]) {
+    const finding = normalizeFinding({ ...base, quote, replacement: { lines: ["fixed"] } });
 
     assert.equal(finding.title, "Wrong branch");
-    assert.equal(finding.quote, undefined);
     assert.equal("quote" in finding, false);
+    assert.deepEqual(finding.quoteCheck, { status: "unchecked" });
+    assert.equal(finding.replacement, undefined);
   }
 });
 

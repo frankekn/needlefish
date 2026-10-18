@@ -542,7 +542,7 @@ test("doctor probes a relative CODEX_BIN from the caller directory", async (t) =
   assert.equal(check(report, "auth").detail, "codex: Logged in using ChatGPT");
 });
 
-test("doctor preserves non-Codex relative executable probe behavior", async (t) => {
+test("doctor probes a relative CLAUDE_BIN from the caller directory", async (t) => {
   const f = setup(t);
   stub(f.bin, "claude", 'echo "claude 9.9.9-stub"');
   const previousCwd = process.cwd();
@@ -552,7 +552,7 @@ test("doctor preserves non-Codex relative executable probe behavior", async (t) 
 
   const report = await runDoctor({ repo: f.repo, runner: "claude", version: "0.0.0-test" });
 
-  assert.equal(check(report, "runner").detail, "claude (--runner; ./bin/claude, version unknown)");
+  assert.equal(check(report, "runner").detail, `claude (--runner; ${path.resolve("bin/claude")}, claude 9.9.9-stub)`);
 });
 
 test("doctor reports HTTP review capability as unsupported even with a configured credential", async (t) => {

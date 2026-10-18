@@ -271,7 +271,7 @@ for (const runner of ["claude", "grok"] as const) {
 		const binEnv = runner === "claude" ? "CLAUDE_BIN" : "GROK_BIN";
 		const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-test-"));
 		const repo = initRepo(tmp);
-		const bin = path.join(tmp, "claude-bin.js");
+		const bin = path.join(tmp, `${runner}-bin.js`);
 		const previous = {
 			bin: process.env[binEnv],
 			runner: process.env.NEEDLEFISH_RUNNER,
@@ -289,9 +289,8 @@ for (const runner of ["claude", "grok"] as const) {
 				"#!/usr/bin/env node",
 				"const fs = require('node:fs');",
 				...(runner === "grok" ? [
-					"const prompt = fs.readFileSync(process.argv[process.argv.indexOf('--prompt-file') + 1], 'utf8');",
-					"const repoPath = JSON.parse(prompt.slice('The repository to inspect is '.length, prompt.indexOf('. Your startup directory')));",
-					"fs.writeFileSync(require('node:path').join(repoPath, 'runner-wrote.txt'), 'dirty');",
+					"const path = require('node:path');",
+					"fs.writeFileSync(path.join(path.dirname(process.cwd()), 'runner-repo', 'runner-wrote.txt'), 'dirty');",
 				] : ["fs.writeFileSync('runner-wrote.txt', 'dirty');"]),
 				"process.stdout.write('{\"ok\":true}');",
 			].join("\n"),
@@ -602,7 +601,7 @@ test("Grok launches outside the target with absolute inspection paths and unrest
 				"const fs = require('node:fs');",
 				`fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));`,
 				"const prompt = fs.readFileSync(process.argv[process.argv.indexOf('--prompt-file') + 1], 'utf8');",
-				"const repoPath = prompt.startsWith('The repository to inspect is ') ? JSON.parse(prompt.slice('The repository to inspect is '.length, prompt.indexOf('. Your startup directory'))) : process.cwd();",
+				"const repoPath = JSON.parse(prompt.slice('The repository to inspect is '.length, prompt.indexOf('. Your startup directory')));",
 				"const head = require('node:child_process').execFileSync('git', ['-C', repoPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
 				`fs.writeFileSync(${JSON.stringify(argsPath + ".inspection")}, JSON.stringify({ cwd: process.cwd(), entries: fs.readdirSync(process.cwd()), repoPath: fs.realpathSync(repoPath), prompt, head }));`,
 				"process.stdout.write('{\"ok\":true}');",
