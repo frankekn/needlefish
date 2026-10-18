@@ -954,10 +954,7 @@ export function findPreviousReview(
 export function findDeliveredReview(repo: string, prNumber: number, expectedAppId: number | null): RoundState | null {
 	const previous = findPreviousReview(repo, prNumber, expectedAppId);
 	if (previous?.state.v !== 2) return null;
-	const receipt = previous.state.delivery;
-	const checks = readCheckRuns(repo, previous.state.headSha);
-	const owned = checks.some((check) => check.id === receipt.checkId && ownedCheckAppId(check.app, expectedAppId) === receipt.appId);
-	return owned && completedCheckVerdict(previous.state, checks, prNumber) !== null ? previous.state : null;
+	return deliveredVerdict(previous.state, readCheckRuns(repo, previous.state.headSha), prNumber, expectedAppId) !== null ? previous.state : null;
 }
 
 function ownedCheckAppId(app: unknown, expectedAppId: number | null): number | null {
@@ -1531,6 +1528,13 @@ function completedCheckVerdict(state: RoundState, checks: readonly JsonRecord[],
 	return null;
 }
 
+function deliveredVerdict(state: RoundState, checks: readonly JsonRecord[], prNumber: number, expectedAppId: number | null): Verdict | null {
+	if (state.v !== 2) return null;
+	const receipt = state.delivery;
+	const owned = checks.some((check) => check.id === receipt.checkId && ownedCheckAppId(check.app, expectedAppId) === receipt.appId);
+	return owned ? completedCheckVerdict(state, checks, prNumber) : null;
+}
+
 // Any newer owned round for this PR and head invalidates the receipt, including
 // in_progress rounds (orphaned or concurrent). This replaces #257's "ignore
 // in_progress" rule; the recovery budget, not the skip, bounds the rerun (#102).
@@ -1709,11 +1713,8 @@ export async function runGithub(
 		try { previousChecks = readCheckRuns(repo, previous.state.headSha); }
 		catch { previousChecks = null; }
 	}
-	const previousVerdict = previous && previousChecks ? completedCheckVerdict(previous.state, previousChecks, prNumber) : null;
-	const priorReceipt = previous?.state.v === 2 ? previous.state.delivery : null;
-	const previousCheckOwned = priorReceipt && previousChecks?.some((check) =>
-		check.id === priorReceipt.checkId && ownedCheckAppId(check.app, expectedAppId) === priorReceipt.appId);
-	const prev = previousVerdict !== null && previousCheckOwned ? previous : null;
+	const previousVerdict = previous && previousChecks ? deliveredVerdict(previous.state, previousChecks, prNumber, expectedAppId) : null;
+	const prev = previousVerdict !== null ? previous : null;
 	if (prev && previousVerdict !== null && prev.state.headSha === headSha && !recheck &&
 		checks && !hasNewerRound(prev.state, checks, prNumber)) {
 		process.exitCode = reviewExitCode(previousVerdict);
