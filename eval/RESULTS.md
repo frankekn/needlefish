@@ -2438,3 +2438,13 @@ This metadata repair does not alter model inputs, scoring arithmetic, scorer
 identity or fixture answers. The combined pipeline change remains Class R and
 still requires its current-source gate before merge. No evaluation campaign or
 live-canary result is claimed by this entry.
+
+
+## 2026-10-18: Phase 2 admission provenance repair, no evaluation run
+
+Phase 2 rejects missing, unsupported or mixed call-accounting versions and
+requires retained candidate artifacts for every successful non-docs draw.
+Producer aggregates are checked over the union of expected and reported keys;
+legacy optional fields remain optional when the report omits them. The scoring
+owners and historical results are unchanged. This remains a measurement-only
+source with a pending Class R gate and owner-approved quality floors.

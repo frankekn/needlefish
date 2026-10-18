@@ -52,6 +52,10 @@ export function filterByHoldout(
 // Stable 16-hex digest of the fixture set actually run. Two reports are only
 // comparable when both promptHash and fixtureSetHash match.
 export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
+	return fixtureSetSha256(specs).slice(0, 16);
+}
+
+export function fixtureSetSha256(specs: readonly FixtureSpec[]): string {
 	const canonical = [...specs]
 		.sort((a, b) => a.id.localeCompare(b.id))
 		.map((s) => ({
@@ -79,6 +83,5 @@ export function fixtureSetHash(specs: readonly FixtureSpec[]): string {
 		}));
 	return createHash("sha256")
 		.update(JSON.stringify(canonical))
-		.digest("hex")
-		.slice(0, 16);
+		.digest("hex");
 }

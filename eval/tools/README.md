@@ -153,3 +153,36 @@ It retains its existing token and permissions. If that token cannot read checks
 or Actions metadata, the weekly artifact is partial with unknown measurements.
 The weekly JSON parser preserves the join and checks its original identity,
 receipt and clocks. Metadata records the finding denominator and unknown count.
+
+
+## Phase 2 offline measurement
+
+```bash
+pnpm exec tsx eval/tools/qualify-phase-two.ts \
+  BROAD.json DEEP.json ORACLE.json POLICY.json NEW_MEASUREMENT.json
+```
+
+Supply frozen broad/deep reports, an independent quality oracle and an explicit
+policy containing all ten floors. The command validates inputs and creates a
+new `measurement_only` artifact. Exit 1 preserves a quality-failure artifact;
+parse or admission errors create no artifact. It never overwrites inputs or
+runs models. It grants no release qualification, blind-oracle proof or policy
+approval. See the [measurement contract](../contracts/issue123-phase-two-measurement.md).
+
+The production scorer remains byte-identical to 4f95 with identity
+`8bbc6152d8b45a43`. Oracle conflict checks use the existing public matcher and
+are tested against the unchanged scorer. Historical reports retain their
+original identities and results. The new measurement source still requires
+its own Class R gate, independent oracle evidence and owner-approved floors.
+
+Effective model/effort validation also affects resume, public site admission,
+weekly comparison, and runtime proof matching. Sentinel identities fail after
+explicit/environment resolution. New Grok runs capture the resolved package
+default, and report readers require that captured or explicit model identity.
+The existing Pi defaults remain unchanged; unknown Codex CLI defaults remain
+unknown. A valid identity does not itself grant a qualification proof.
+Successful model draws require retained `candidateFindings` and
+`candidateMatchEvidence`, including empty candidate bags. Admission recomputes
+evidence and aggregates and rejects unsupported extra aggregate claims.
+Broad and deep reports must record the same supported `callAccountingVersion`;
+unversioned historical reports can be inspected but cannot enter a new measurement.
