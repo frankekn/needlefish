@@ -235,6 +235,19 @@ for (const scenario of ["cancel", "drift", "lost-evidence"] as const) {
 		assert.equal(report.slots[0].outcome, scenario === "cancel" ? "CANCELLED" : "METHOD_ERROR");
 		assert.deepEqual(report.slots.slice(1).map(slot => slot.outcome), Array(23).fill("NOT_STARTED_EARLY_STOP"));
 		assert.ok(performance.now() - begin < 10000, "bounded stop must not wait for native 60-second hold");
+		const slotDirectory = path.join(campaign, report.slots[0].slot);
+		const rawAttempts = readdirSync(path.join(slotDirectory, "attempts"));
+		assert.equal(rawAttempts.length, 1);
+		assert.equal(existsSync(path.join(slotDirectory, "attempt-index.json")), true, "failed validation must retain the attempt index");
+		assert.deepEqual(report.arms.map(arm => [arm.planned, arm.nativeAttempted, arm.nativeEnded, arm.nativeDrained]), [[12,1,1,1],[12,0,0,0]]);
+		if (scenario === "lost-evidence") {
+			assert.match(readFileSync(path.join(campaign, "method-error.json"), "utf8"), /lost native stdin/);
+			const index = JSON.parse(readFileSync(path.join(slotDirectory, "attempt-index.json"), "utf8"));
+			assert.equal(index.length, 1);
+			assert.ok(index[0].start.birth);
+			assert.equal(index[0].end.signal, "SIGTERM");
+			assert.equal(index[0].traceProvenanceCandidates.length, 0);
+		}
 	});
 }
 
