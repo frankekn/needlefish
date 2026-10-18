@@ -46,7 +46,6 @@ for (const failure of ["marker", "rename", "open", "map registration", "active r
     const owner = spawnModule(`
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 const { createManagedTempDirectory, disposeManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
@@ -60,7 +59,7 @@ const originalWrite = fs.writeFileSync;
 const originalRename = fs.renameSync;
 const originalSet = Map.prototype.set;
 const originalAdd = Set.prototype.add;
-const originalRm = fsp.rm;
+const originalRm = fs.rmSync;
 let allocated;
 let descriptor;
 let replacementDescriptor;
@@ -112,12 +111,12 @@ Set.prototype.add = function (value) {
   }
   return result;
 };
-fsp.rm = async (target, options) => {
+fs.rmSync = (target, options) => {
   if (target === allocated && ${JSON.stringify(failure)} === "descriptor reuse") {
     replacementDescriptor = originalOpen("/dev/null", fs.constants.O_RDONLY);
-    assert.equal(replacementDescriptor, descriptor, "cleanup must release the descriptor before awaiting removal");
+    assert.equal(replacementDescriptor, descriptor, "cleanup must release the descriptor before removal");
   }
-  await originalRm(target, options);
+  originalRm(target, options);
   if (target === allocated && ${JSON.stringify(failure)} === "cleanup") throw new Error("forced cleanup error");
 };
 syncBuiltinESMExports();
@@ -128,7 +127,7 @@ fs.writeFileSync = originalWrite;
 fs.renameSync = originalRename;
 Map.prototype.set = originalSet;
 Set.prototype.add = originalAdd;
-fsp.rm = originalRm;
+fs.rmSync = originalRm;
 syncBuiltinESMExports();
 assert.equal(caught, injected);
 assert.ok(caught instanceof Error);
@@ -189,12 +188,15 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 const { createManagedTempDirectory, registerTerminationFinalizer, RunnerTerminatingError } = await import(${JSON.stringify(lifecycleUrl)});
-registerTerminationFinalizer(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+let finishFinalizer;
+const finalizer = new Promise((resolve) => { finishFinalizer = resolve; });
+registerTerminationFinalizer(() => finalizer);
 process.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(release)}, ""));
 const originalRm = fsp.rm;
 fsp.rm = async (target, options) => {
   if (String(target).includes(".needlefish-staging-")) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    finishFinalizer();
+    await new Promise(() => {});
   }
   return await originalRm(target, options);
 };
@@ -204,6 +206,7 @@ await assert.rejects(createManagedTempDirectory(), (error) => {
   assert.equal(error.name, "RunnerTerminatingError");
   assert.equal(error.message, "cannot schedule runner work while terminating from SIGTERM");
   fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ name: error.name, message: error.message }));
+  finishFinalizer();
   return true;
 });
 `, root, { PATH: `${fakebin}:${process.env.PATH ?? ""}`, NEEDLEFISH_TERMINATION_GRACE_MS: "2000" });

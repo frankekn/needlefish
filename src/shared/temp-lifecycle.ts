@@ -12,6 +12,7 @@ import {
   readdirSync,
   renameSync,
   rmdirSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -174,7 +175,7 @@ export async function createManagedTempDirectory(): Promise<string> {
       }
     }
     try {
-      await rm(directory, { recursive: true, force: true });
+      rmSync(directory, { recursive: true, force: true });
     } catch (cleanupError) {
       warnCleanupFailure(`temp directory ${directory}`, cleanupError);
     }
