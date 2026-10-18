@@ -724,9 +724,14 @@ function defaultRawReview(): string {
 	});
 }
 
-for (const opener of ["<!--", "```text"]) {
-	test(`oversized UTF-8 check summaries keep the link ahead of ${opener}`, async (t) => {
-		const evidence = `\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
+for (const [opener, prefix] of [
+	["<!--", "Checked evidence:"],
+	["```text", "Checked evidence:"],
+	["<!--", ""],
+	["```text", ""],
+]) {
+	test(`oversized UTF-8 check summaries keep the link ahead of ${opener} ${prefix ? "after text" : "at item start"}`, async (t) => {
+		const evidence = `${prefix}\n${opener}\n${"核對付款證據𠮷".repeat(5000)}`;
 		const fixture = setupFixture(t, {
 			prNumber: 44,
 			rawReview: JSON.stringify({
@@ -737,7 +742,8 @@ for (const opener of ["<!--", "```text"]) {
 		const posts = readPosts(fixture.postLog);
 		const reviewPost = postedReview(posts, 44);
 		assert.ok(reviewPost);
-		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence));
+		// Normalization trims item boundaries; delivery must retain everything else.
+		assert.ok(parseReviewPayload(reviewPost.payload).body.includes(evidence.trim()));
 		const checks = posts.filter((p) => p.args.some((a) => a.includes("check-runs")));
 		const payload = JSON.parse(checks.at(-1)!.payload) as {
 			conclusion: string; output: { summary: string };
@@ -1811,7 +1817,7 @@ test("runGithub treats corrupted state marker as first round", async (t) => {
 
 // --- Same-head dedupe ---
 
-test("runGithub skips re-review when previous review has same head (no recheck)", async (t) => {
+test("runGithub same-head skip ignores malformed connection configuration", async (t) => {
 	const fixture = setupFixture(t, {
 		prNumber: 30,
 		rawReview: JSON.stringify({
@@ -1827,7 +1833,10 @@ test("runGithub skips re-review when previous review has same head (no recheck)"
 	assert.ok(round1Count > 0, "round 1 should post");
 	const round1Runs = runnerInvocationCount(fixture);
 
-	const round2 = spawnGithubCli(fixture, 30);
+	const malformedConnections = path.join(path.dirname(fixture.repo), "malformed-connections.json");
+	writeFileSync(malformedConnections, "{");
+	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", malformedConnections);
+	const round2 = spawnGithubCli(fixture, 30, ["--connection", "selected"]);
 	assert.equal(round2.status, 1, round2.stderr);
 	const round2Posts = readPosts(fixture.postLog).slice(round1Count);
 
@@ -3987,15 +3996,14 @@ test("a malformed severity cannot inject an operational outcome or a trusted cau
 
 // --- Typed transport signals (no model text involved) ---
 
-// A real local endpoint the direct-HTTP runner can reach, answering with the
-// given status so the runner produces its typed `openai runner HTTP <nnn>`
-// failure. OPENAI_BASE_URL points at the returned URL.
-async function stubUpstreamBaseUrl(
+async function stubUpstream(
 	t: TestContext,
 	status: number,
 	body: string,
-): Promise<string> {
+): Promise<{ readonly baseUrl: string; readonly requests: number }> {
+	let requests = 0;
 	const server = createServer((req, res) => {
+		requests++;
 		// Drain the whole request body before answering: responding while the
 		// client is still writing can surface as a write error instead of the
 		// status we want the runner to classify.
@@ -4021,7 +4029,10 @@ async function stubUpstreamBaseUrl(
 	if (address === null || typeof address === "string") {
 		throw new Error("stub upstream did not bind a port");
 	}
-	return `http://127.0.0.1:${address.port}/v1`;
+	return {
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		get requests() { return requests; },
+	};
 }
 
 test("a real runner timeout emits operational:true with the network-error cause", (t) => {
@@ -4046,45 +4057,36 @@ test("a real runner timeout emits operational:true with the network-error cause"
 	);
 });
 
-test("a direct-HTTP upstream 5xx emits operational:true with the network-error cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 111, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 502, "Bad Gateway");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
+for (const [status, body, prNumber] of [[502, "Bad Gateway", 111], [429, "Too Many Requests", 112]] as const) {
+	test(`an unsupported HTTP review fails before reaching an upstream ${status}`, async (t) => {
+		const fixture = setupFixture(t, { prNumber, rawReview: defaultRawReview() });
+		const upstream = await stubUpstream(t, status, body);
+		process.env.NEEDLEFISH_RUNNER = "openai";
+		process.env.NEEDLEFISH_MODEL = "stub-model";
+		process.env.OPENAI_API_KEY = "stub-key";
+		process.env.OPENAI_BASE_URL = upstream.baseUrl;
+		process.env.NEEDLEFISH_NO_RETRY = "1";
 
-	const run = await spawnGithubCliAsync(fixture, 111);
+		const run = await spawnGithubCliAsync(fixture, prNumber);
 
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"network error","prNumber":111,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
-
-test("a direct-HTTP upstream 429 emits operational:true with the rate-limited cause", async (t) => {
-	const fixture = setupFixture(t, { prNumber: 112, rawReview: defaultRawReview() });
-	const baseUrl = await stubUpstreamBaseUrl(t, 429, "Too Many Requests");
-	process.env.NEEDLEFISH_RUNNER = "openai";
-	process.env.NEEDLEFISH_MODEL = "stub-model";
-	process.env.OPENAI_API_KEY = "stub-key";
-	process.env.OPENAI_BASE_URL = baseUrl;
-	process.env.NEEDLEFISH_NO_RETRY = "1";
-
-	const run = await spawnGithubCliAsync(fixture, 112);
-
-	assert.equal(run.status, 1, run.stderr);
-	assert.ok(
-		run.stdout.includes(
-			`needlefish-outcome {"outcome":"failure","operational":true,"cause":"rate limited","prNumber":112,"headSha":"${fixture.headSha}"}`,
-		),
-		run.stdout,
-	);
-});
+		assert.equal(run.status, 1, run.stderr);
+		assert.equal(
+			run.stdout.trim(),
+			`needlefish-outcome {"outcome":"failure","operational":false,"prNumber":${prNumber},"headSha":"${fixture.headSha}"}`,
+		);
+		assert.match(run.stderr, /unsupported-capability.*repositoryRead/);
+		assert.doesNotMatch(run.stdout + run.stderr, /"operational":true|"outcome":"pass"|network error|rate limited|openai runner HTTP/);
+		assert.equal(upstream.requests, 0);
+		assert.equal(runnerInvocationCount(fixture), 0);
+		const posts = readPosts(fixture.postLog);
+		assert.equal(postedReview(posts, prNumber), undefined);
+		const completed = posts.filter((post) => post.args.some((arg) => arg.includes("check-runs"))).at(-1);
+		assert.ok(completed);
+		const payload = parseJson(completed.payload);
+		assert.ok(typeof payload === "object" && payload !== null);
+		assert.equal(Reflect.get(payload, "conclusion"), "failure");
+	});
+}
 
 test("a CLI runner 5xx on stderr emits operational:true with the network-error cause", (t) => {
 	const fixture = setupFixture(t, {
@@ -5038,4 +5040,41 @@ test("pinned custom App cannot reconcile an Actions-authored review POST", (t) =
 	assert.equal(posts.filter(p => p.args.includes("POST") && p.args.includes("repos/frankekn/needlefish/pulls/249/reviews")).length, 1);
 	assert.equal(lastCheckCompletion(posts).output?.title, "Needlefish: review failed");
 	assert.match(result.stderr, /Cannot verify ownership of the stored review/);
+});
+
+function receiptRoundCheck(fixture: Fixture, id: number, conclusion: string, title: string, roundId = `round-${id}`): Record<string, unknown> {
+	return { id, name: "Needlefish", head_sha: fixture.headSha, app: { id: 15368, slug: "github-actions" },
+		external_id: JSON.stringify({ v: 2, prNumber: fixture.prNumber, roundId, runId: "fixture-run" }),
+		status: "completed", conclusion, output: { title } };
+}
+
+for (const [conclusion, title] of [
+	["failure", "Needlefish: review terminated"],
+	["failure", "Needlefish: review failed"],
+	["neutral", "Needlefish: superseded"],
+	["neutral", "Needlefish: needs_human"],
+] as const) {
+	test(`a newer ${title} check is not covered by an older same-head pass`, async (t) => {
+		const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+		seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha, 1),
+			user: { login: "github-actions[bot]", type: "Bot" } }]);
+		writeFileSync(fixture.checksState, JSON.stringify([
+			receiptRoundCheck(fixture, 1, "success", "Needlefish: pass", "fixture-round"),
+			receiptRoundCheck(fixture, 2, conclusion, title),
+		]));
+		await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+		assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
+	});
+}
+
+test("a newer same-head pass still covers an older terminated check", async (t) => {
+	const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+	seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha, 2),
+		user: { login: "github-actions[bot]", type: "Bot" } }]);
+	writeFileSync(fixture.checksState, JSON.stringify([
+		receiptRoundCheck(fixture, 1, "failure", "Needlefish: review terminated"),
+		receiptRoundCheck(fixture, 2, "success", "Needlefish: pass", "fixture-round"),
+	]));
+	await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+	assert.equal(runnerInvocationCount(fixture), 0, "a newer pass must still dedupe");
 });

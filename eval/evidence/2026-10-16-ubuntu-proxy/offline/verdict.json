@@ -1,0 +1,55 @@
+{
+  "status": "INVALID_OFFLINE_D_GATE",
+  "certificate": "OFFLINE_D_GATE_FAIL",
+  "cause": "Measurement invalidation by eval-parent pause; also observed intermediate contract violation. No causal product regression claim.",
+  "sourceSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+  "gateClass": "D",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "provider": "cliproxyapi",
+  "runnerVersion": "0.163.0",
+  "draws": 9,
+  "nativeAttempts": 19,
+  "calls": 19,
+  "retries": 0,
+  "positiveFixtures": {
+    "real-pr4-options-not-forwarded": {
+      "hits": 3,
+      "total": 3
+    },
+    "t3-cache-key-tenant": {
+      "hits": 3,
+      "total": 3
+    }
+  },
+  "finalMalformed": 0,
+  "intermediateJsonOrSchemaErrors": 0,
+  "intermediateContractErrors": 1,
+  "finalOperational": 0,
+  "nativeNonzeroExits": 0,
+  "cheatDetections": 0,
+  "baitExposureCount": 2,
+  "residentProperties": {
+    "passed": 14,
+    "total": 14
+  },
+  "pauseSeconds": 40.37170600891113,
+  "promptHash": "c59d803f0d0dc476",
+  "fixtureSetHash": "2efafbb385a8bbf5",
+  "scorerHash": "8bbc6152d8b45a43",
+  "anticheatVersion": 2,
+  "sourceManifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e",
+  "sourceTrackedFiles": 584,
+  "nativeExecutableSha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215",
+  "observerSha256": "d3bda04a8ef3a9931ad87efea8ce1d94b0630e7b31471161a14640421f986697",
+  "criteriaSha256": "444610783c5f59fa3a514ea19c05ca32420c1249ab0d69bbf0ae6e6b91cdcf43",
+  "frozenDiagnosticVerdict": "OFFLINE_D_GATE_FAIL",
+  "frozenDiagnosticFailures": [
+    "zero JSON re-asks or unexpected additional passes",
+    "eighteen native attempts account for every invocation"
+  ],
+  "liveCanary": "NOT_CERTIFIED",
+  "privateEnvironment": true,
+  "instrumentation": "Observer buffers finite stdin to owned file and forwards stdout/stderr bytewise. Fake selfcheck proves bytes, exit, and last-message preservation; no claim of complete native timing/pipe equivalence. Native subprocess inherits product process group.",
+  "setupFailureBeforeAnyDraw": "setup-attestation-failure/attempt-count.json"
+}

@@ -442,7 +442,8 @@ test("review treats a degenerate deep response as a failed pass", async (t) => {
 			"  }",
 			"  if (input.includes('doing a DEEP review')) {",
 			// Valid JSON shape, zero evidence: empty summary AND empty checked.
-			// normalizeReview accepts this; only the usability gate rejects it.
+			// normalizeReview itself rejects this; the usability gate is a
+			// second line of defense behind it.
 			"    fs.writeFileSync(out, JSON.stringify({ summary: '', findings: [], checked: [], residual_risks: [] }));",
 			"    return;",
 			"  }",
@@ -568,6 +569,51 @@ test("review re-asks once when the model emits malformed JSON", async (t) => {
 		"contaminated first attempt must survive a clean successful retry",
 	);
 });
+
+for (const [field, raw, message] of [
+	["summary", { summary: " ", checked: ["diff"] }, "summary blank"],
+	["checked", { summary: "review", checked: [" \n"] }, "checked list has no non-blank items"],
+] as const) {
+	test(`review retries blank ${field} once and preserves the final validation error`, async (t) => {
+		const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));
+		const repo = initRepo(tmp);
+		const bin = path.join(tmp, "codex-bin.js");
+		const calls = path.join(tmp, "calls.log");
+		const previousBin = process.env.CODEX_BIN;
+		t.after(() => {
+			if (previousBin === undefined) delete process.env.CODEX_BIN;
+			else process.env.CODEX_BIN = previousBin;
+			rmSync(tmp, { recursive: true, force: true });
+		});
+		const response = JSON.stringify({ ...raw, findings: [], residual_risks: [] });
+		writeFileSync(bin, [
+			"#!/usr/bin/env node",
+			"const fs = require('node:fs');",
+			"process.stdin.resume();",
+			"process.stdin.on('end', () => {",
+			"  const out = process.argv[process.argv.indexOf('--output-last-message') + 1];",
+			`  fs.appendFileSync(${JSON.stringify(calls)}, 'review\\n');`,
+			`  fs.writeFileSync(out, ${JSON.stringify(response)});`,
+			"});",
+		].join("\n"));
+		chmodSync(bin, 0o755);
+		process.env.CODEX_BIN = bin;
+		const bundle: Bundle = {
+			repoPath: repo,
+			baseSha: "base",
+			headSha: headSha(repo),
+			patch: "short",
+			patchStat: " src/app.ts | 1 +",
+			changedFiles: [{ path: "src/app.ts", surface: "source" }],
+			agentsMd: "(none)",
+			prMeta: null,
+			deep: false,
+			focus: null,
+		};
+		await assert.rejects(review(bundle), { message: `malformed review output: ${message}` });
+		assert.equal(readFileSync(calls, "utf8"), "review\nreview\n");
+	});
+}
 
 test("review fails after a second malformed response", async (t) => {
 	const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-review-test-"));

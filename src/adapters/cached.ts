@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { deriveVerdict, reviewExitCode } from "../core/verdict.js";
+import { normalizeReview } from "../shared/normalize.js";
 import { renderMarkdown } from "../shared/render.js";
 import { parseReviewResult } from "../shared/review-result.js";
 import type { ReviewResult } from "../shared/schema.js";
@@ -15,7 +16,15 @@ function loadCachedResult(file: string): ReviewResult {
 		});
 	}
 	try {
-		return parseReviewResult(JSON.parse(raw));
+		const result = parseReviewResult(JSON.parse(raw));
+		// Validate replay coverage without rewriting legacy text or persisted findings.
+		normalizeReview({
+			summary: result.summary,
+			checked: result.checked,
+			findings: [],
+			residual_risks: [],
+		});
+		return result;
 	} catch (err) {
 		const detail = err instanceof Error ? err.message : String(err);
 		throw new Error(`invalid cached review ${file}: ${detail}`, {

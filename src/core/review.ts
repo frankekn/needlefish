@@ -12,7 +12,8 @@ import {
 } from "../shared/runner.js";
 import { isDocsFastPathEligible } from "../shared/classify.js";
 import { envFlagOn } from "../shared/env.js";
-import { resolveRunner } from "../shared/runner-detection.js";
+import { findRunnerFailure } from "../shared/runner-failure.js";
+import { resolveRunner, runnerReviewCapability, RunnerSelectionError } from "../shared/runner-detection.js";
 import {
 	REVIEW_RESULT_SCHEMA_VERSION,
 	type Bundle,
@@ -252,13 +253,13 @@ function codexOptions(
 		// eval lane always runs with tracing on, and a prod review must not
 		// accumulate up to 64 MiB per failed stream for a scan that never runs.
 		onFailedRaw: (raw) => {
-			if (evalTraceOn()) run.failedRawOutputs.push(raw);
+			if (evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(raw);
 		},
 		// Successful attempts hand over their FULL transcript (resolved output
 		// + raw stdout/stderr): a status-0 runner emitting the canary on a
 		// stream while writing a clean final message must still reach the scan.
 		onRaw: (raw, runnerAttempt) => {
-			if (raw && evalTraceOn()) run.rawOutputs.push(raw);
+			if (raw && evalTraceOn() && !run.runnerOptions.connectionAuth) run.rawOutputs.push(raw);
 			traceAttempt.onSuccessfulRaw(raw, runnerAttempt);
 		},
 		onLfsReport: (report) => {
@@ -344,7 +345,7 @@ async function runJsonPrompt<T>(
 					outcome: "parse_failed",
 				});
 			}
-			if (out && evalTraceOn()) run.failedRawOutputs.push(out);
+			if (out && evalTraceOn() && !run.runnerOptions.connectionAuth) run.failedRawOutputs.push(out);
 			continue;
 		}
 		// The successful attempt's full transcript (out + raw streams) was
@@ -970,6 +971,8 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 					};
 				} catch (e) {
 					if (isRunnerSafetyError(e)) throw e;
+					const failure = findRunnerFailure(e);
+					if (failure?.kind === "startup_timeout" || failure?.kind === "startup_failed" || failure?.stage === "session/new") throw e;
 					const msg = e instanceof Error ? e.message : String(e);
 					// Swallowed failure; its raw attempts are already in run.failedRawOutputs
 					// (runJsonPrompt accumulates every failed parse there for the eval scan).
@@ -1047,7 +1050,7 @@ async function reviewLarge(run: ReviewRun): Promise<ReviewResult> {
 // Markdown). classify.ts rule order already routes workflow yml to
 // "workflow", so CI files can never ride this path. Executable files under
 // a docs/ directory are not classified "docs" (Markdown extension required).
-function isDocsOnlyFastPath(bundle: Bundle): boolean {
+export function isDocsOnlyFastPath(bundle: Bundle): boolean {
 	return (
 		bundle.changedFiles.length > 0 &&
 		bundle.changedFiles.every(
@@ -1060,12 +1063,27 @@ function isDocsOnlyFastPath(bundle: Bundle): boolean {
 // The two dispatch questions review() asks of a bundle, answered in one place
 // so --dry-run can report what a real run would do without duplicating
 // thresholds. review() itself consumes this; the private helpers stay the
-// only threshold owners.
-export function reviewPlan(bundle: Bundle): {
+// only threshold owners. runnerOptions defaults to {} only so the hash-pinned
+// study generator eval/tools/deep-concurrency.ts keeps type-checking unchanged.
+export function reviewPlan(bundle: Bundle, runnerOptions: RunnerOptions = {}): {
 	readonly docsOnlyFastPath: boolean;
 	readonly largePath: boolean;
+	readonly capability: ReturnType<typeof runnerReviewCapability> | {
+		readonly runner: null;
+		readonly capability: "unresolved";
+		readonly detail: string;
+	} | null;
 } {
 	const docsOnlyFastPath = isDocsOnlyFastPath(bundle);
+	let capability: ReturnType<typeof reviewPlan>["capability"] = null;
+	if (!docsOnlyFastPath) {
+		try {
+			capability = runnerReviewCapability(resolveRunner(runnerOptions));
+		} catch (error) {
+			if (!(error instanceof RunnerSelectionError)) throw error;
+			capability = { runner: null, capability: "unresolved", detail: error.message };
+		}
+	}
 	// Keep review()'s original evaluation order: the docs-only short-circuit
 	// returns before isLarge is ever reached. isLarge parses the
 	// NEEDLEFISH_LARGE_* env values, so an invalid value must not fail a
@@ -1074,6 +1092,7 @@ export function reviewPlan(bundle: Bundle): {
 	// fast path).
 	return {
 		docsOnlyFastPath,
+		capability,
 		largePath: docsOnlyFastPath ? false : bundle.deep || isLarge(bundle),
 	};
 }
@@ -1085,7 +1104,7 @@ export async function review(
 	onProgress?: ReviewProgressObserver,
 ): Promise<ReviewResult> {
 	const startedAt = Date.now();
-	const plan = reviewPlan(bundle);
+	const plan = reviewPlan(bundle, runnerOptions);
 
 	if (plan.docsOnlyFastPath) {
 		const paths = bundle.changedFiles.map((f) => f.path).join(", ");
@@ -1107,10 +1126,8 @@ export async function review(
 			totalDurationMs: Date.now() - startedAt,
 		};
 	}
-	if (plan.largePath && resolveRunner(runnerOptions) === "openai") {
-		throw new Error(
-			"The openai HTTP runner cannot inspect repository files; large/deep reviews require a tool-capable CLI runner (codex, claude, opencode, grok, pi, or acp).",
-		);
+	if (plan.capability?.capability === "promptOnly" || plan.capability?.capability === "unresolved") {
+		throw new Error(plan.capability.detail);
 	}
 
 	// Read only past the docs-only short-circuit, for the same reason
@@ -1122,8 +1139,8 @@ export async function review(
 		? performance.now() + parsePositiveInteger(reviewTimeout, "NEEDLEFISH_REVIEW_TIMEOUT_MS")
 		: undefined;
 
-	const traceHealth: TraceDeliveryHealth | undefined = onTrace
-		? { failed: false, pending: new Set() }
+	const traceHealth: TraceDeliveryHealth | undefined = onTrace || (runnerOptions.connectionAuth !== undefined && evalTraceOn())
+		? { failed: onTrace === undefined, pending: new Set() }
 		: undefined;
 	const run: ReviewRun = {
 		bundle,
@@ -1135,9 +1152,9 @@ export async function review(
 		...(onTrace && traceHealth
 			? {
 					onTrace: wrapTraceObserver(onTrace, traceHealth),
-					traceHealth,
 				}
 			: {}),
+		...(traceHealth ? { traceHealth } : {}),
 		...(onProgress ? { onProgress } : {}),
 		startedAt,
 		...(reviewDeadlineMs === undefined ? {} : { reviewDeadlineMs }),

@@ -1,0 +1,14 @@
+{
+  "uniqueSlots": 60,
+  "eachFixtureDraws": 15,
+  "nativeProfileVerifiedInvocations": 121,
+  "callsPlusRunnerRetriesEqualsObservedNativeAttempts": true,
+  "sourceAndInstrumentationHashesUnchanged": true,
+  "allSlotGroupsStoppedAtCompletion": true,
+  "recordedGroupCount": 186,
+  "activeRecordedNumericGroups": [],
+  "activeGroupMembers": [],
+  "allRawArchivesByteEqual": true,
+  "protocolSha256": "c355f13b8a103ecd8591deb32d6a4a076f863d23cd340ff990d2c681f1829dc0",
+  "captureManifestSha256": "6d04a0a3fa6da6d7d4cbecf70638e20502f6bf1758a22e9017a855ada66bf2c4"
+}
