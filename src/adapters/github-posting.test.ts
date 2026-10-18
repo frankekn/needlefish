@@ -4916,6 +4916,24 @@ test("early collection failures do not bypass the automatic recovery limit", (t)
 	]);
 });
 
+test("connection setup failures leave the automatic recovery budget intact", (t) => {
+	const fixture = setupFixture(t, { prNumber: 247, rawReview: defaultRawReview() });
+	const connections = path.join(path.dirname(fixture.repo), "connections.json");
+	writeFileSync(connections, "{");
+	setEnvForTest(t, "NEEDLEFISH_CONNECTIONS_FILE", connections);
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const run = spawnGithubCli(fixture, 247, ["--connection", "selected"]);
+		assert.equal(run.status, 1, run.stderr);
+		assert.match(run.stderr, /Connections file is not valid JSON/);
+	}
+	const failedAttemptPosts = readPosts(fixture.postLog);
+	writeFileSync(connections, JSON.stringify({ version: 1, connections: [{ id: "selected", adapter: "claude", model: "fixture-model" }] }));
+	const repaired = spawnGithubCli(fixture, 247, ["--connection", "selected"]);
+	assert.doesNotMatch(repaired.stderr, /recovery limit/i);
+	assert.equal(runnerInvocationCount(fixture), 2);
+	assert.deepEqual(failedAttemptPosts, []);
+});
+
 for (const postFailure of ["none", "stored", "not-stored"] as const) {
 	test(`review pre-read failure attempts one POST with ${postFailure} failure`, (t) => {
 		const fixture = setupFixture(t, { prNumber: 147, rawReview: defaultRawReview(), failReviewPreRead: true,

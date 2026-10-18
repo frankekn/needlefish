@@ -1711,6 +1711,10 @@ export async function runGithub(
 		return;
 	}
 
+	// A broken connection setup fails here, before a check exists, so it does
+	// not spend a recovery round. Credentials bind after collection, where
+	// the docs-only fast path is known.
+	resolveConnectionOptions(opts, repoPath, process.env, false);
 	const round: CheckRound = { v: 2, prNumber, roundId: randomUUID(), runId: process.env.GITHUB_RUN_ID || "", recheck };
 	const pending = createPendingCheck(repo, headSha, round, expectedAppId);
 	const pendingCheckId = pending?.id ?? null;
