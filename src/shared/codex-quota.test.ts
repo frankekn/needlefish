@@ -89,7 +89,7 @@ test("native runner keeps contradictory terminals as a private operational failu
   t.after(() => { process.env = previous; rmSync(tmp, { recursive: true, force: true }); });
   process.env.CODEX_BIN = bin;
   process.env.NEEDLEFISH_NO_RETRY = "1";
-  for (const events of [[completed, event("insufficient credits")], [event("insufficient credits"), event("insufficient credits")]]) {
+  for (const events of [[completed, event("insufficient credits")], [event("insufficient credits"), event("insufficient credits")], ...["429 Too Many Requests", "ECONNREFUSED", "empty output", "truncated output", "<html>bad gateway</html>"].map(message => [completed, event(message)])]) {
     const raw = events.join("\n") + "\n";
     writeFileSync(bin, `#!/usr/bin/env node\nrequire("node:fs").readFileSync(0);process.stdout.write(${JSON.stringify(raw)});process.exit(1);`);
     chmodSync(bin, 0o755);

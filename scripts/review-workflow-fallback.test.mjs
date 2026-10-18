@@ -294,8 +294,8 @@ function runnerCheck(overrides = {}) {
   };
 }
 
-test("installed runner auth misclassification uses this run check and Sol medium only on fallback", t => {
-  for (const out of [""]) {
+test("legacy runner checks apply when a matching machine failure outcome is unavailable", t => {
+  for (const out of ["", "needlefish-outcome {bad", outcome({ outcome: "failure", operational: false, prNumber: 8, headSha: "a".repeat(40) }), outcome({ outcome: "failure", operational: false, prNumber: 7, headSha: "b".repeat(40) })]) {
     const result = runReviewScript(t, {
       primary: { out, err: "needlefish review failed: codex runner exited 1; likely cause: auth rejected", code: 1 },
       fallback: { out: outcome({ outcome: "verdict", verdict: "pass" }), err: "", code: 0 },

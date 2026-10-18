@@ -31,14 +31,15 @@ for (const stage of ["review", "critic", "map", "deep"]) {
   });
 }
 
-for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocking","cross-key","cross-key-after","cross-key-percent","cross-key-mixed","trace-fail"]) {
+for (const mode of ["all-quota","auth","unknown","contradictory-completed","contradictory-failed","verdict","needs-human","blocking","cross-key","cross-key-after","cross-key-percent","cross-key-mixed","trace-fail"]) {
   test(`ordered review terminal control ${mode}`, async (t) => {
     const f=fixture(t,mode);
     const auth = (key: string) => new CodexEnvironmentAuth({CODEX_API_KEY:"SELECTED"}, {kind:"openai"}, {SELECTED:key});
     const routes = [{runner:"codex" as const, model:"first", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-first-fixture")} : {})}, {runner:"codex" as const,model:"second", ...(mode.startsWith("cross-key") ? {connectionAuth:auth("private-second-fixture")} : {})}] as const;
-    if ((["all-quota","auth","unknown"].includes(mode) || mode.startsWith("cross-key"))) {
+    if ((["all-quota","auth","unknown","contradictory-completed","contradictory-failed"].includes(mode) || mode.startsWith("cross-key"))) {
       await assert.rejects(reviewWithConnections(f.bundle,routes), e => {
         if(mode === "all-quota") assert.equal(findRunnerFailure(e)?.kind,"quota_exhausted");
+        if(mode.startsWith("contradictory-")) { assert.equal(findRunnerFailure(e),undefined); assert.ok(e instanceof Error); assert.doesNotMatch(e.message,/likely cause:/); }
         if(mode.startsWith("cross-key")) assert.equal(findRunnerFailure(e)?.name,"ConnectionCredentialLeakError");
         return true;
       });
@@ -48,7 +49,7 @@ for (const mode of ["all-quota","auth","unknown","verdict","needs-human","blocki
       if(mode === "trace-fail") assert.equal(result.traceDeliveryFailed,true);
     }
     if(mode.startsWith("cross-key")) assert.ok(f.rows().every(row=>row.keyMatches));
-    if (["auth","unknown","verdict","needs-human","blocking","cross-key"].includes(mode)) assert.ok(f.rows().every(row=>row.model === "first"));
+    if (["auth","unknown","contradictory-completed","contradictory-failed","verdict","needs-human","blocking","cross-key"].includes(mode)) assert.ok(f.rows().every(row=>row.model === "first"));
   });
 }
 
@@ -125,6 +126,10 @@ if(mode.startsWith('cross-key-')&&model==='second'){
  const key='private-first-fixture';
  const value=mode==='cross-key-percent'?Array.from(Buffer.from(key)).map(byte=>'%'+byte.toString(16).padStart(2,'0')).join(''):mode==='cross-key-mixed'?key.slice(0,8)+'%66'+key.slice(9):key;
  fs.writeFileSync(process.argv[process.argv.indexOf('--output-last-message')+1],JSON.stringify({summary:value,findings:[],checked:['checked'],residual_risks:[]}));process.exit(0);
+}
+if(mode.startsWith('contradictory-')){
+ console.log(JSON.stringify(mode==='contradictory-completed'?{type:'turn.completed',usage:{input_tokens:1,cached_input_tokens:0,output_tokens:1,reasoning_output_tokens:0}}:{type:'turn.failed',error:{message:'insufficient credits'}}));
+ console.log(JSON.stringify({type:'turn.failed',error:{message:'insufficient credits'}}));process.exit(1);
 }
 if(mode==='auth'||mode==='unknown'){console.log(JSON.stringify({type:'turn.failed',error:{message:mode==='auth'?'401 unauthorized':'429 Too Many Requests'}}));process.exit(1);}
 if(mode==='slow-quota'&&model==='second')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1500);

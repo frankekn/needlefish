@@ -498,6 +498,9 @@ jobs:
             # Prefer the controlled terminal outcome. Legacy runner faults require this run own check.
             outcome_line="$(grep -a '^needlefish-outcome ' <<<"$out" | tail -n 1 || true)"
             if ! node -e 'let s="";process.stdin.on("data",(d)=>{s+=d});process.stdin.on("end",()=>{let o;try{o=JSON.parse(s)}catch{process.exit(1)}process.exit(o&&o.outcome==="failure"&&o.operational===true?0:1)});' <<<"${outcome_line#needlefish-outcome }"; then
+              if node -e 'let s="";process.stdin.on("data",d=>{s+=d});process.stdin.on("end",()=>{let o;try{o=JSON.parse(s)}catch{process.exit(1)}process.exit(o?.outcome==="failure"&&o.operational===false&&o.prNumber===Number(process.env.PR_NUM)&&o.headSha===process.env.PR_HEAD_SHA?0:1)});' <<<"${outcome_line#needlefish-outcome }"; then
+                echo "needlefish: current failure is not operational; not switching provider" >&2; exit $rc
+              fi
               if ! runner_check_failed; then
                 echo "needlefish: no verified operational runner failure; not switching provider" >&2; exit $rc
               fi

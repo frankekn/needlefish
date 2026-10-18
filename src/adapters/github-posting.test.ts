@@ -3984,10 +3984,10 @@ test("Codex credit errors advance the provider chain while auth and malformed er
 	}
 });
 
-test("contradictory Codex terminals stop the real CLI and workflow provider chain", async (t) => {
+test("Codex terminal order controls the real CLI and workflow provider chain", async (t) => {
   const completed = { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } };
   const failed = { type: "turn.failed", error: { message: "insufficient credits" } };
-  for (const events of [[completed, failed], [failed, failed]]) {
+  for (const { events, operational } of [{ events: [completed, failed], operational: false }, { events: [failed, failed], operational: false }, { events: [failed], operational: true }]) {
     await t.test(events.map(event => event.type).join(" then "), t => {
       const fixture = setupFixture(t, { prNumber: 115, rawReview: defaultRawReview() });
       const bin = process.env.CLAUDE_BIN;
@@ -3999,20 +3999,22 @@ test("contradictory Codex terminals stop the real CLI and workflow provider chai
       process.env.CODEX_BIN = bin;
       process.env.NEEDLEFISH_RUNNER = "codex";
       process.env.NEEDLEFISH_NO_RETRY = "1";
+      setEnvForTest(t, "GITHUB_RUN_ID", "123");
       const run = spawnGithubCli(fixture, 115);
       assert.equal(run.status, 1, run.stderr);
       const line = run.stdout.split("\n").find(line => line.startsWith("needlefish-outcome "));
-      assert.equal(line, `needlefish-outcome {"outcome":"failure","operational":false,"prNumber":115,"headSha":"${fixture.headSha}"}`);
-      assert.doesNotMatch(run.stdout + run.stderr, /likely cause: (?:usage limit|rate limited|network error|empty output|truncated output|html error page)/);
+      assert.equal(line, `needlefish-outcome ${JSON.stringify({ outcome: "failure", operational, ...(operational ? { cause: "usage limit" } : {}), prNumber: 115, headSha: fixture.headSha })}`);
+      if (!operational) assert.doesNotMatch(run.stdout + run.stderr, /likely cause: (?:usage limit|rate limited|network error|empty output|truncated output|html error page)/);
 
       const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-terminal-workflow-"));
       t.after(() => rmSync(root, { recursive: true, force: true }));
-      const checks = readFileSync(fixture.checksState, "utf8");
+      const checks: unknown = parseJson(readFileSync(fixture.checksState, "utf8"));
+      assert.ok(Array.isArray(checks));
       const cliOutput = path.join(root, "cli-output");
       const log = path.join(root, "invocations");
       writeFileSync(cliOutput, run.stdout);
       writeFileSync(log, "");
-      writeFileSync(path.join(root, "checks"), checks);
+      writeFileSync(path.join(root, "checks"), JSON.stringify({ check_runs: checks }));
       for (const [name, body] of [
         ["needlefish", '#!/bin/sh\nprintf "run\\n" >> "$INVOCATIONS"\ncat "$CLI_OUTPUT"\nexit 1\n'],
         ["gh", '#!/bin/sh\ncase "$*" in *--jq*) echo 0;; *) cat "$CHECKS";; esac\n'],
@@ -4030,8 +4032,9 @@ test("contradictory Codex terminals stop the real CLI and workflow provider chai
         INVOCATIONS: log, CLI_OUTPUT: cliOutput, CHECKS: path.join(root, "checks"),
       } });
       assert.equal(routed.status, 1, routed.stderr);
-      assert.equal(readFileSync(log, "utf8"), "run\n", routed.stderr);
-      assert.doesNotMatch(routed.stdout + routed.stderr, /switching lane/);
+      assert.equal(readFileSync(log, "utf8"), operational ? "run\nrun\n" : "run\n", routed.stderr);
+      if (!operational) assert.doesNotMatch(routed.stdout + routed.stderr, /switching lane/);
+      else assert.match(routed.stdout + routed.stderr, /switching lane/);
     });
   }
 });
