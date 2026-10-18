@@ -50,7 +50,7 @@ export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
   const command = process.env[bin.env]?.trim() || bin.fallback;
-  return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
+  return command === undefined ? undefined : resolveCallerCommand(command);
 }
 
 export function resolveCallerCommand(command: string, cwd = process.cwd(), pathApi = path): string {
