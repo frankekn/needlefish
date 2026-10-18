@@ -341,7 +341,6 @@ test("HTTP dry-run renders its unsupported decision before rejecting the same sm
   assert.equal(existsSync(cacheFile(fixture)), false);
 });
 
-
 test("ACP dry-run reports unknown repository capability without launching the agent", (t) => {
   const fixture = setupDryRunFixture(t, [{ path: "app.ts", content: "export const value = 1;\n" }]);
   const result = runCli(fixture, ["--repo", fixture.repo, "--runner", "acp", "--dry-run", "--json"], {
