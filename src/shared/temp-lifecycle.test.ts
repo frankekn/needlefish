@@ -39,6 +39,193 @@ test("NEEDLEFISH_TMPDIR overrides the ambient temp root", (t) => {
   assert.equal(resolveNeedlefishTempRoot(), path.resolve("relative", "scratch"));
 });
 
+for (const failure of ["marker", "rename", "open", "map registration", "active registration", "cleanup", "descriptor reuse"] as const) {
+  test(`failed managed allocation cleans its directory and descriptor after ${failure}`, { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+    const receipt = path.join(root, "allocation.json");
+    const owner = spawnModule(`
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import path from "node:path";
+const { createManagedTempDirectory, disposeManagedTempDirectory } = await import(${JSON.stringify(lifecycleUrl)});
+const healthy = await createManagedTempDirectory();
+assert.match(path.basename(healthy), /^needlefish-managed-[A-Za-z0-9]{6}$/);
+assert.equal(fs.statSync(healthy).mode & 0o777, 0o700);
+await disposeManagedTempDirectory(healthy);
+const before = fs.readdirSync("/proc/self/fd").length;
+const originalOpen = fs.openSync;
+const originalWrite = fs.writeFileSync;
+const originalRename = fs.renameSync;
+const originalSet = Map.prototype.set;
+const originalAdd = Set.prototype.add;
+const originalRm = fs.rmSync;
+let allocated;
+let descriptor;
+let replacementDescriptor;
+let registeredMap;
+let registeredSet;
+let injected;
+const fail = () => { injected = new Error("forced allocation failure"); throw injected; };
+fs.writeFileSync = (target, ...args) => {
+  if (${JSON.stringify(failure)} === "marker" && String(target).includes(".needlefish-staging-")) {
+    allocated = path.dirname(String(target));
+    fail();
+  }
+  return originalWrite(target, ...args);
+};
+fs.renameSync = (source, target) => {
+  if (String(source).includes(".needlefish-staging-")) {
+    allocated = String(source);
+    if (${JSON.stringify(failure)} === "rename") fail();
+    originalRename(source, target);
+    allocated = String(target);
+    return;
+  }
+  return originalRename(source, target);
+};
+fs.openSync = (target, ...args) => {
+  if (target === allocated) {
+    if (["open", "cleanup"].includes(${JSON.stringify(failure)})) {
+      try { return originalOpen(path.join(target, ".needlefish-owner.json"), ...args); }
+      catch (error) { injected = error; throw error; }
+    }
+    descriptor = originalOpen(target, ...args);
+    return descriptor;
+  }
+  return originalOpen(target, ...args);
+};
+Map.prototype.set = function (key, value) {
+  const result = originalSet.call(this, key, value);
+  if (key === allocated) {
+    registeredMap = this;
+    if (${JSON.stringify(failure)} === "map registration") fail();
+  }
+  return result;
+};
+Set.prototype.add = function (value) {
+  const result = originalAdd.call(this, value);
+  if (value === allocated) {
+    registeredSet = this;
+    if (["active registration", "descriptor reuse"].includes(${JSON.stringify(failure)})) fail();
+  }
+  return result;
+};
+fs.rmSync = (target, options) => {
+  if (target === allocated && ${JSON.stringify(failure)} === "descriptor reuse") {
+    replacementDescriptor = originalOpen("/dev/null", fs.constants.O_RDONLY);
+    assert.equal(replacementDescriptor, descriptor, "cleanup must release the descriptor before removal");
+  }
+  originalRm(target, options);
+  if (target === allocated && ${JSON.stringify(failure)} === "cleanup") throw new Error("forced cleanup error");
+};
+syncBuiltinESMExports();
+let caught;
+try { await createManagedTempDirectory(); } catch (error) { caught = error; }
+fs.openSync = originalOpen;
+fs.writeFileSync = originalWrite;
+fs.renameSync = originalRename;
+Map.prototype.set = originalSet;
+Set.prototype.add = originalAdd;
+fs.rmSync = originalRm;
+syncBuiltinESMExports();
+assert.equal(caught, injected);
+assert.ok(caught instanceof Error);
+if (${JSON.stringify(failure)} === "open") assert.equal(caught.code, "ENOTDIR");
+assert.equal(typeof allocated, "string");
+assert.equal(registeredMap?.has(allocated) ?? false, false, "failed allocation must leave no descriptor registration");
+assert.equal(registeredSet?.has(allocated) ?? false, false, "failed allocation must leave no active registration");
+assert.equal(fs.existsSync(allocated), false, "failed allocation directory must be removed");
+assert.deepEqual(fs.readdirSync(${JSON.stringify(root)}).filter((name) => /^(needlefish-managed-|\\.needlefish-staging-)/.test(name)), []);
+if (replacementDescriptor !== undefined) {
+  assert.equal(fs.fstatSync(replacementDescriptor).isCharacterDevice(), true, "cleanup must not close a reused descriptor");
+  fs.closeSync(replacementDescriptor);
+}
+if (descriptor !== undefined) assert.throws(() => fs.fstatSync(descriptor), { code: "EBADF" });
+assert.equal(fs.readdirSync("/proc/self/fd").length, before, "failed allocation must not leak a descriptor");
+await assert.rejects(disposeManagedTempDirectory(allocated), /temp directory is not registered/);
+const next = await createManagedTempDirectory();
+assert.equal(fs.existsSync(path.join(next, ".needlefish-owner.json")), true);
+await disposeManagedTempDirectory(next);
+originalWrite(${JSON.stringify(receipt)}, JSON.stringify({ failure: ${JSON.stringify(failure)}, code: caught.code ?? null, directory: allocated, descriptor: descriptor ?? null, before, after: fs.readdirSync("/proc/self/fd").length }));
+`, root);
+    let stderr = "";
+    owner.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    t.after(() => {
+      killIfRunning(owner.pid);
+      rmSync(root, { recursive: true, force: true });
+    });
+    const [status, signal] = await waitForExit(owner);
+    assert.equal(signal, null);
+    assert.equal(status, 0, stderr);
+    const result: unknown = JSON.parse(readFileSync(receipt, "utf8"));
+    assert.ok(typeof result === "object" && result !== null && "failure" in result);
+    assert.equal(result.failure, failure);
+    t.diagnostic(JSON.stringify(result));
+  });
+}
+
+test("termination during owner acquisition removes unregistered staging before exit", { timeout: 10_000, skip: process.platform !== "linux" }, async (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
+  const acquiring = path.join(root, "acquiring");
+  const release = path.join(root, "release");
+  const receipt = path.join(root, "termination.json");
+  const fakebin = path.join(root, "fakebin");
+  mkdirSync(fakebin);
+  const flock = path.join(fakebin, "flock");
+  writeFileSync(flock, `#!/bin/sh
+case "$*" in
+  *needlefish-owner-lock-*)
+    : > '${acquiring}'
+    while [ ! -f '${release}' ]; do sleep 0.01; done
+    ;;
+esac
+exec /usr/bin/flock "$@"
+`, { mode: 0o755 });
+  const owner = spawnModule(`
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+const { createManagedTempDirectory, registerTerminationFinalizer, RunnerTerminatingError } = await import(${JSON.stringify(lifecycleUrl)});
+let finishFinalizer;
+const finalizer = new Promise((resolve) => { finishFinalizer = resolve; });
+registerTerminationFinalizer(() => finalizer);
+process.on("SIGTERM", () => fs.writeFileSync(${JSON.stringify(release)}, ""));
+const originalRm = fsp.rm;
+fsp.rm = async (target, options) => {
+  if (String(target).includes(".needlefish-staging-")) {
+    finishFinalizer();
+    await new Promise(() => {});
+  }
+  return await originalRm(target, options);
+};
+syncBuiltinESMExports();
+await assert.rejects(createManagedTempDirectory(), (error) => {
+  assert.ok(error instanceof RunnerTerminatingError);
+  assert.equal(error.name, "RunnerTerminatingError");
+  assert.equal(error.message, "cannot schedule runner work while terminating from SIGTERM");
+  fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ name: error.name, message: error.message }));
+  finishFinalizer();
+  return true;
+});
+`, root, { PATH: `${fakebin}:${process.env.PATH ?? ""}`, NEEDLEFISH_TERMINATION_GRACE_MS: "2000" });
+  let stderr = "";
+  owner.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+  t.after(() => {
+    killIfRunning(owner.pid);
+    rmSync(root, { recursive: true, force: true });
+  });
+  await waitForFile(acquiring);
+  assert.equal(owner.kill("SIGTERM"), true);
+  const [status, signal] = await waitForExit(owner);
+  assert.equal(signal, null);
+  assert.equal(status, 143, stderr);
+  assert.deepEqual(readdirSync(root).filter((name) => /^(needlefish-managed-|\.needlefish-staging-)/.test(name)), [], "termination must not interrupt failed allocation cleanup");
+  assert.equal(existsSync(receipt), true, "the original termination error must reach the caller before exit");
+  t.diagnostic(readFileSync(receipt, "utf8"));
+});
+
 test("startup reaper preserves a locked live directory and removes it after owner death", { skip: process.platform !== "linux" }, async (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "needlefish-lifecycle-test-"));
   const owner = spawnModule(`
