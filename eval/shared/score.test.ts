@@ -7,7 +7,6 @@ import {
 	fileMatchesAnchor,
 	matchEvidence,
 	matchesSpec,
-	isFalsePositiveFinding,
 	score,
 } from "./score";
 import type { Expected } from "./types";
@@ -536,19 +535,4 @@ test("slop-swallow oracle admits consequence phrasings on the anchor only", asyn
 	assert.equal(run("A missing key should never throw; this change is correct"), false);
 	assert.equal(run("The catch converts the error into a typed Result and callers must check it"), false);
 	assert.equal(run("The error is not propagated to the logger, only to the caller"), false);
-});
-
-
-test("isFalsePositiveFinding preserves blocking and explicit forbidden-match rules", () => {
-	const allowed = finding({ title: "sibling", whyItBreaks: "independent", file: "guard.ts", lineStart: 2 });
-	const noBlocking: Expected = { verdict: "pass", noBlockingFindings: true };
-	for (const severity of ["P0", "P1", "P2"] as const) {
-		assert.equal(isFalsePositiveFinding({ ...allowed, severity }, noBlocking), true);
-	}
-	assert.equal(isFalsePositiveFinding({ ...allowed, severity: "P3" }, noBlocking), false);
-	const forbidden: Expected = { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "guard.ts" }] };
-	assert.equal(isFalsePositiveFinding({ ...allowed, title: "forbidden", severity: "P3" }, forbidden), true);
-	assert.equal(isFalsePositiveFinding(allowed, forbidden), false);
-	assert.equal(isFalsePositiveFinding({ ...allowed, title: "forbidden", file: "other.ts" }, forbidden), false);
-	assert.equal(isFalsePositiveFinding(allowed, { verdict: "pass" }), false);
 });

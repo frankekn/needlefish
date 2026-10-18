@@ -244,70 +244,18 @@ the first model call remain external requirements. The CLI cannot prove those
 claims. A real campaign through this new Class R source has not run. The
 failed partial 4f95 campaign does not qualify this source.
 
-## Scorer identity migration and requalification
+## Preserved scorer identity
 
-The shared per-finding predicate extraction preserves the negative scoring
-rules but changes the raw `score.ts` bytes. `scorerHash()` and
-`gate-verdict.mjs` hash `score.ts`, `robustness.ts`, and `types.ts`, including
-file names and separators. The frozen 4f95 scorer identity is
-`8bbc6152d8b45a43`; this branch uses `f967f7cd2f043b06`. Output equivalence
-controls do not preserve that identity.
+The production scorer files remain byte-identical to 4f95, preserving scorer
+identity `8bbc6152d8b45a43` and existing reports' scorer comparability. The oracle
+owns its per-finding negative-conflict check and reuses the scorer's public
+matcher. Equivalence controls compare oracle diagnostics with the unchanged
+scorer, including permitted P3 findings and expressly forbidden findings.
 
-This change affects all published lanes and the baseline. `hasCurrentScorer`
-rejects reports with the old hash. Resume ignores their saved slots, Phase 2
-CLI admission rejects them, public site admission marks them stale, weekly
-comparison withholds stale metrics, and `gate-verdict.mjs` fails with
-`scorer-hash-mismatch`. Historical reports retain their original bytes, hashes,
-source, verdicts, and failure records. They are stale history under this source;
-do not relabel them or copy their metrics into a newly qualified report.
-
-The migration plan is mandatory before publishing a lane as tested or a new
-baseline:
-
-1. Freeze the final source SHA, scorer/prompt/fixture/anticheat identities,
-   production model and effort, provider route, runner version, external
-   admission, and sampling protocol. Inventory every actual published lane
-   and the baseline from the manifest. Keep the original reports immutable.
-2. Audit each historical artifact for retained complete findings, raw/trace
-   provenance, candidate evidence, anti-cheat evidence, and original input and
-   source identities. A new offline rescore artifact is permissible only when
-   those inputs can be admitted under the new contract. A rescore must identify
-   its original source and transformation; it cannot establish a new model
-   campaign or Class R gate. Missing evidence remains unknown.
-3. There is no accepted rescore CLI in this repository. Do not edit a report's
-   `scorerHash` or fabricate a rescore command. The supported execution path is
-   a fresh immutable campaign for each published lane and baseline. Schedule
-   those campaigns after external admission and resource authorization. The
-   failed partial 4f95 campaign cannot qualify this branch.
-4. Run the new full Class R gate on the final source, including holdouts and
-   required divergent-fixture confirmations. Requalify every actual published
-   lane and baseline against the current publication contract before updating
-   their manifest references. A historical rescore alone does not complete
-   these requirements. Retain failed and superseded artifacts.
-
-The following is the existing full-catalog runner command, to be expanded with
-one lane's frozen values and a fresh non-existing output path. It is a future
-campaign command, not an authorization or evidence that execution occurred.
-For the baseline use the same command with `--baseline`. Public native Codex
-lanes also need their admitted `--public-launcher-artifact` path; preserve any
-other route-specific admitted flags. The full external campaign protocol,
-including confirmation draws and stopping rules, still applies.
-
-```bash
-pnpm exec tsx eval/run.ts \
-  --runner "$LANE_RUNNER" --model "$LANE_MODEL" --effort "$LANE_EFFORT" \
-  --provider "$LANE_PROVIDER" --route "$LANE_ROUTE" \
-  --runner-version "$LANE_RUNNER_VERSION" \
-  --draws 3 --concurrency 1 --holdout include --gate-class R \
-  --report "$NEW_LANE_REPORT"
-```
-
-Do not use `--resume` or `--compare` with an old-scorer artifact. The runner
-command covers all fixtures because it omits the optional `--fixtures` regex.
-It does not select production quality floors or provide independent blind
-oracle evidence. Phase 2 broad/deep sampling still needs its separately frozen
-protocol and oracle binding. No rescore or new model campaign was executed for
-this migration disclosure.
+This preservation does not qualify the new oracle or measurement source.
+Independent evidence, owner-approved floors, the full Class R gate and complete
+broad/deep campaigns remain required. Historical reports retain their original
+bytes, identities and results.
 
 ## Effective identity across consumers
 

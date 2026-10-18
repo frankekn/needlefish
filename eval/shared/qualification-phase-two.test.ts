@@ -5,7 +5,7 @@ import type { Finding } from "../../src/shared/schema";
 import { score, drawFindings } from "./score";
 import { evaluatePhaseTwoQualification, type PhaseTwoQualificationPolicy } from "./qualification";
 import { fixtureSetHash, fixtureSetSha256 } from "./fixture-catalog";
-import { phaseTwoOracleIdentity } from "./quality-oracle";
+import { measureIndependentQuality, phaseTwoOracleIdentity } from "./quality-oracle";
 import type { DrawResult, FixtureSpec, Report } from "./types";
 
 const finding: Finding = {
@@ -485,6 +485,27 @@ test("Phase 2 scoring identity is required and rejects older oracle contracts", 
   ]) assert.throws(() => evaluatePhaseTwoQualification(source, specs, configuredPolicy, invalid), /invalid Phase 2 quality oracle/);
 });
 
+
+test("Phase 2 single-finding conflicts agree with the unchanged scorer", () => {
+  for (const { expected, candidate, conflict } of [
+    { expected: { verdict: "pass", noBlockingFindings: true }, candidate: { ...finding, severity: "P0" }, conflict: true },
+    { expected: { verdict: "pass", noBlockingFindings: true }, candidate: { ...finding, severity: "P1" }, conflict: true },
+    { expected: { verdict: "pass", noBlockingFindings: true }, candidate: { ...finding, severity: "P2" }, conflict: true },
+    { expected: { verdict: "pass", noBlockingFindings: true }, candidate: { ...finding, severity: "P3" }, conflict: false },
+    { expected: { verdict: "pass" }, candidate: finding, conflict: false },
+    { expected: { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "guard.ts" }] }, candidate: { ...finding, severity: "P3", title: "forbidden" }, conflict: true },
+    { expected: { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "other.ts" }] }, candidate: { ...finding, severity: "P3", title: "forbidden" }, conflict: false },
+    { expected: { verdict: "pass", mustNotFind: [{ pattern: "forbidden", file: "guard.ts", lineRange: [4, 6] }] }, candidate: { ...finding, severity: "P3", title: "forbidden" }, conflict: false },
+  ] satisfies readonly { expected: FixtureSpec["expected"]; candidate: Finding; conflict: boolean }[]) {
+    const selected = specs.map((spec) => spec.kind === "negative" ? { ...spec, expected } : spec);
+    const source = { ...campaign(selected), broad: report(selected, 3, (spec, index) =>
+      spec.kind === "positive" ? [finding] : index === 0 ? [candidate] : []) };
+    const oracle = { ...independentOracle(source), identity: phaseTwoOracleIdentity(source, selected) };
+    assert.equal(score({ verdict: "changes_requested", findings: [candidate] }, expected, "negative-equivalence").falsePositive, conflict);
+    assert.deepEqual(measureIndependentQuality(source, selected, oracle).diagnostics,
+      conflict ? ["independent actionable finding conflicts with negative false-positive proxy: negative draw 0"] : []);
+  }
+});
 
 for (const { name, expected, severity, title, conflict } of [
   { name: "permitted actionable P3 beside a false-positive P1", expected: { verdict: "pass", noBlockingFindings: true }, severity: "P3", title: "independent sibling", conflict: false },

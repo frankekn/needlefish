@@ -2,7 +2,7 @@ import Ajv from "ajv";
 import { createHash } from "node:crypto";
 import { fixtureSetSha256 } from "./fixture-catalog";
 import type { QualityRate } from "./qualification";
-import { isFalsePositiveFinding } from "./score";
+import { matchesSpec } from "./score";
 import type { DrawFinding, FixtureSpec, Report } from "./types";
 
 type Campaign = { readonly broad: Report; readonly deep: Report };
@@ -61,6 +61,11 @@ const validate = ajv.compile<PhaseTwoQualityOracle>(object({
     } }) },
   })] },
 }));
+
+function isFalsePositiveFinding(finding: DrawFinding, expected: FixtureSpec["expected"]): boolean {
+  return (expected.mustNotFind ?? []).some((spec) => matchesSpec(finding, spec)) ||
+    (expected.noBlockingFindings === true && ["P0", "P1", "P2"].includes(finding.severity));
+}
 
 export function measureIndependentQuality(campaign: Campaign, specs: readonly FixtureSpec[], input?: unknown): {
   actionablePrecision: QualityRate; severityCalibration: QualityRate; severityLabelCoverage: QualityRate;

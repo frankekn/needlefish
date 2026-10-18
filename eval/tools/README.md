@@ -164,16 +164,11 @@ parse or admission errors create no artifact. It never overwrites inputs or
 runs models. It grants no release qualification, blind-oracle proof or policy
 approval. See the [measurement contract](../contracts/issue123-phase-two-measurement.md).
 
-The scorer-owned predicate extraction changes scorer identity from
-`8bbc6152d8b45a43` (4f95) to `f967f7cd2f043b06`, despite unchanged scoring rules.
-Old published lanes and the baseline become stale under this source. Preserve
-original reports; do not replace their hashes. No accepted offline rescore CLI
-exists. The [migration plan](../contracts/issue123-phase-two-measurement.md#scorer-identity-migration-and-requalification)
-requires admitted retained inputs for any new rescore artifact, or fresh immutable
-campaigns when historical evidence is unavailable. A new full Class R gate and
-requalification of every actual published lane and baseline remain required
-before publication as tested. The failed partial 4f95 run cannot qualify this
-branch. No migration campaigns ran for this change.
+The production scorer remains byte-identical to 4f95 with identity
+`8bbc6152d8b45a43`. Oracle conflict checks use the existing public matcher and
+are tested against the unchanged scorer. Historical reports retain their
+original identities and results. The new measurement source still requires
+its own Class R gate, independent oracle evidence and owner-approved floors.
 
 Effective model/effort validation also affects resume, public site admission,
 weekly comparison, and runtime proof matching. Sentinel identities fail after

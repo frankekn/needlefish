@@ -129,16 +129,8 @@ export function matchEvidence(
 	});
 }
 
-function isBlocking(finding: Pick<Finding, "severity">): boolean {
+function isBlocking(finding: Finding): boolean {
 	return BLOCKING.includes(finding.severity);
-}
-
-export function isFalsePositiveFinding(
-	finding: FindingMatchFields & Pick<Finding, "severity">,
-	expected: Expected,
-): boolean {
-	return (expected.mustNotFind ?? []).some((spec) => matchesSpec(finding, spec)) ||
-		(expected.noBlockingFindings === true && isBlocking(finding));
 }
 
 // Critic prune-error: reuses the recall matcher. True when a mustFind spec
@@ -266,9 +258,11 @@ export function score(
 	const recall =
 		mustFind.length === 0 ? true : mustFindHits === mustFind.length;
 
-	const falsePositive = findings.some((finding) =>
-		isFalsePositiveFinding(finding, expected),
-	);
+	const falsePositive =
+		(expected.mustNotFind ?? []).some((spec) =>
+			findings.some((f) => matchesSpec(f, spec)),
+		) ||
+		(expected.noBlockingFindings === true && findings.some(isBlocking));
 
 	const mayFind = (expected.mayFind ?? []).filter((spec) =>
 		recallMatch(findings, spec, expected),
