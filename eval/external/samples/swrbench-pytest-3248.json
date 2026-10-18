@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "datasetId": "swrbench",
+    "datasetRevision": "67ae1d4395ac05f800d62b0e13678eadeb9fa5c7",
+    "sourceURL": "https://raw.githubusercontent.com/ZZR0/SWRench/67ae1d4395ac05f800d62b0e13678eadeb9fa5c7/data/swr_datasets_d5c5.jsonl",
+    "sourceBytes": {
+      "scope": "slice",
+      "sha256": "d18073b96b0eaf1b4c28697f63f70efdbcdeccb488bb8520e2bd82af647eaa65",
+      "byteLength": 131072,
+      "rangeStart": 60000000
+    },
+    "instanceId": "pytest-dev__pytest-3248",
+    "canonicalRepo": "pytest-dev/pytest",
+    "originalURL": "https://github.com/pytest-dev/pytest/pull/3248",
+    "datasetLicense": {
+      "spdx": "MIT",
+      "noticeSHA256": "568f99d2d8ac1f8a41402078816325f7a80d38c3e94432975e398584126ae9bf"
+    },
+    "upstreamCodeLicense": "unknown"
+  },
+  "snapshot": {
+    "kind": "metadata-only",
+    "sourceBaseSHA": "dae74b674ecb660082271d8bbe0e42ccb925eaa5",
+    "reviewBaseSHA": "053fc118b7af3b77c42daddd6ceacd13394cf64a",
+    "reviewHeadSHA": "6e14585ca20d27db81f122d2c3a76135e4192fc4",
+    "observedFinalHeadSHA": "147b43f83216c612ab0122c8a3961895c4222abe",
+    "mergeBaseSHA": "053fc118b7af3b77c42daddd6ceacd13394cf64a",
+    "reasons": [
+      "local_code_objects_not_imported",
+      "tree_and_diff_hashes_unknown",
+      "upstream_code_license_unknown"
+    ]
+  },
+  "reviewText": {
+    "kind": "unknown",
+    "reason": "frozen_title_description_policy_not_imported"
+  },
+  "evaluator": {
+    "label": "clean",
+    "goldCount": 0,
+    "goldLocations": "missing",
+    "provenance": "SWRench change_introduced=false and changes=[] in bounded metadata observation. Not proof that arbitrary new findings are false."
+  }
+}

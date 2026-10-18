@@ -17,10 +17,19 @@ export interface ResolvedRunnerBinary {
   readonly path: string | undefined;
 }
 
+export class RunnerSelectionError extends Error {}
+
 export function resolveRunner(opts: RunnerOptions): RunnerName {
   if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+  if (envRunner) {
+    try {
+      return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      throw new RunnerSelectionError(error.message, { cause: error });
+    }
+  }
   return autoDetectRunner();
 }
 
@@ -28,7 +37,7 @@ function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
   }
-  throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
+  throw new RunnerSelectionError(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 
 /**
@@ -40,7 +49,14 @@ function autoDetectRunner(): RunnerName {
 export function runnerCommand(runner: RunnerName): string | undefined {
   const bin = RUNNER_DEFINITIONS[runner].bin;
   if (bin === undefined) return undefined;
-  return process.env[bin.env]?.trim() || bin.fallback;
+  const command = process.env[bin.env]?.trim() || bin.fallback;
+  return (runner === "codex" || runner === "grok") && command !== undefined ? resolveCallerCommand(command) : command;
+}
+
+export function resolveCallerCommand(command: string, cwd = process.cwd(), pathApi = path): string {
+  return !pathApi.isAbsolute(command) && (command.includes("/") || command.includes(pathApi.sep))
+    ? pathApi.resolve(cwd, command)
+    : command;
 }
 
 /** runnerCommand at a spawn site: a runner with no command is an error naming what to set. */
@@ -58,8 +74,7 @@ export function resolveRunnerBinary(runner: RunnerName): ResolvedRunnerBinary | 
   const command = runnerCommand(runner);
   if (command === undefined) return undefined;
   if (path.isAbsolute(command) || command.includes(path.sep)) {
-    const resolved = runner === "codex" ? path.resolve(command) : command;
-    return { command, path: executableExists(resolved) ? resolved : undefined };
+    return { command, path: executableExists(command) ? command : undefined };
   }
   return { command, path: findOnPath(command) };
 }
@@ -93,4 +108,18 @@ function executableNames(command: string): readonly string[] {
     .split(";")
     .filter((ext: string) => ext);
   return [command, ...extensions.map((ext: string) => `${command}${ext}`)];
+}
+
+export function runnerReviewCapability(runner: RunnerName): {
+  readonly runner: RunnerName;
+  readonly capability: (typeof RUNNER_DEFINITIONS)[RunnerName]["reviewCapability"];
+  readonly detail: string;
+} {
+  const capability = RUNNER_DEFINITIONS[runner].reviewCapability;
+  const detail = capability === "promptOnly"
+    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex, claude, or opencode).`
+    : capability === "unknown"
+      ? `${runner}: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.`
+      : `${runner}: repositoryRead; the CLI adapter enables repository tools.`;
+  return { runner, capability, detail };
 }

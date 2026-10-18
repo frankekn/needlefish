@@ -192,19 +192,21 @@ test("malformed complete output with infra-looking prose is not retried", (t) =>
   assert.equal(result.invocations.length, 1, "malformed complete output must not be retried");
 });
 
-test("a same-head skip is not an operational failure", (t) => {
-  const result = runReviewScript(t, {
-    primary: {
-      out: `needlefish-skip ${JSON.stringify({ reason: "same_head", prNumber: 7, headSha: "a".repeat(40) })}`,
-      err: "",
-      code: 0,
-    },
-    fallback: { out: "", err: "", code: 0 },
-  });
+for (const exitCode of [0, 1]) {
+  test(`a same-head skip with exit ${exitCode} is not an operational failure`, (t) => {
+    const result = runReviewScript(t, {
+      primary: {
+        out: `needlefish-skip ${JSON.stringify({ reason: "same_head", prNumber: 7, headSha: "a".repeat(40) })}`,
+        err: "",
+        code: exitCode,
+      },
+      fallback: { out: "", err: "", code: 0 },
+    });
 
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.invocations.length, 1);
-});
+    assert.equal(result.status, exitCode, result.stderr);
+    assert.equal(result.invocations.length, 1);
+  });
+}
 
 test("a run that emits no outcome line fails closed", (t) => {
   const result = runReviewScript(t, {

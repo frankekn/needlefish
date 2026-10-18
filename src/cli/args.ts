@@ -1,3 +1,4 @@
+import type { SetupAction } from "../setup/guided.js";
 import type { LocalOptions } from "../adapters/local.js";
 import {
   parsePositiveInteger,
@@ -56,6 +57,15 @@ export type CliCommand =
       readonly runner?: RunnerName;
       readonly base?: string;
       readonly json: boolean;
+    }
+  | {
+      readonly kind: "setup-github";
+      readonly repo?: string;
+      readonly action?: SetupAction;
+      readonly repository?: string;
+      readonly json?: boolean;
+      readonly confirm?: boolean;
+      readonly replaceSecret?: boolean;
     };
 
 export const USAGE = `Needlefish — strict local PR review agent.
@@ -68,16 +78,25 @@ Usage:
                                        explain one finding on a PR (Action mode)
   needlefish render <file>             re-render a cached last-review.json
   needlefish verdict <file>            recompute a cached result's verdict
-                                       (exits 1 when stored and derived differ)
+                                       (exits 1 for non-pass verdicts or drift)
   needlefish doctor [options]          check runner, login, Node, git repo, and
                                        base ref; no model call (--repo, --runner,
                                        --base, --json; exits 1 when a check fails)
+  needlefish setup github [--repo <path>]
+                                       preview a hosted PR workflow; writes nothing
+  needlefish setup github repositories|login [--confirm] [--json]
+                                       list admin repositories or authorize official gh
+  needlefish setup github status|create-pr|set-secret --repository <owner/name>
+                                       [--confirm] [--replace-secret] [--json]
+                                       inspect setup or explicitly create a PR/set a secret
+                                       credentials are accepted only through stdin
 
 Shared options:
   --repo <path>        target repository
   --focus <text>       narrow the review lens
   --deep               wider context (call sites, history, adjacent tests)
   --runner <name>      codex | claude | opencode | openai | grok | pi | acp
+  --connection <id>    select one user-configured connection (no automatic fallback)
   --model <id>         model id for the selected runner
   --timeout-ms <ms>    per-call timeout
   --recheck            re-run review on current target
@@ -104,7 +123,8 @@ Env:
   OPENCODE_BIN            opencode executable (default: opencode)
   OPENCODE_IDLE_TIMEOUT_MS opencode inactivity timeout (default: min of per-call timeout and 600000)
   PI_BIN                  pi executable (default: pi)
-  NEEDLEFISH_ACP_BIN      ACP agent executable (required for acp)
+  NEEDLEFISH_ACP_BIN      ACP agent executable (required for legacy --runner acp)
+  NEEDLEFISH_CONNECTIONS_FILE  absolute user connections.json path (used only by --connection)
 `;
 
 type MutableLocalOptions = {
@@ -113,6 +133,7 @@ type MutableLocalOptions = {
   deep?: boolean;
   focus?: string;
   cacheDir?: string;
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -120,6 +141,7 @@ type MutableLocalOptions = {
 };
 
 type MutableRunnerOptions = {
+  connection?: string;
   runner?: RunnerName;
   model?: string;
   timeoutMs?: number;
@@ -161,6 +183,7 @@ function parsePr(value: string): number {
 
 function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
   const runnerOpts: MutableRunnerOptions = {};
+  if (opts.connection !== undefined) runnerOpts.connection = opts.connection;
   if (opts.runner) runnerOpts.runner = opts.runner;
   if (opts.model) runnerOpts.model = opts.model;
   if (opts.timeoutMs) runnerOpts.timeoutMs = opts.timeoutMs;
@@ -168,6 +191,42 @@ function runnerOptionsFrom(opts: MutableLocalOptions): RunnerOptions {
 }
 
 export function parseArgs(argv: readonly string[]): CliCommand {
+  if (argv[0] === "setup") {
+    if (argv[1] === "--help" || argv[1] === "-h") return { kind: "help" };
+    if (argv[1] !== "github") throw new Error("setup requires the github subcommand");
+    let repo: string | undefined;
+    let repository: string | undefined;
+    let action: SetupAction | undefined;
+    let json = false, confirm = false, replaceSecret = false;
+    for (let i = 2; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === "--help" || arg === "-h") return { kind: "help" };
+      if (arg === "--json") { json = true; continue; }
+      if (arg === "--confirm") { confirm = true; continue; }
+      if (arg === "--replace-secret") { replaceSecret = true; continue; }
+      if (arg === "repositories" || arg === "login" || arg === "status" || arg === "create-pr" || arg === "set-secret") {
+        if (action) throw new Error("Supply one setup operation");
+        action = arg;
+        continue;
+      }
+      const path = optionValue(argv, i, "--repo");
+      const remote = optionValue(argv, i, "--repository");
+      const value = path ?? remote;
+      if (!value) throw new Error("Unknown setup github option. Credentials are accepted only through stdin for set-secret.");
+      if (path) { if (repo !== undefined) throw new Error("--repo may only be supplied once"); repo = value.value; }
+      else { if (repository !== undefined) throw new Error("--repository may only be supplied once"); repository = value.value; }
+      if (value.consumedNext) i++;
+    }
+    if (!action) {
+      if (json || repository || confirm || replaceSecret) throw new Error("Choose a guided setup operation first");
+      return { kind: "setup-github", ...(repo !== undefined ? { repo } : {}) };
+    }
+    if (repo) throw new Error("Guided setup uses --repository owner/name, not a local --repo path");
+    if (["status", "create-pr", "set-secret"].includes(action) && !repository) throw new Error("Supply --repository owner/name");
+    if (["repositories", "login"].includes(action) && repository) throw new Error("This operation does not accept --repository");
+    if (replaceSecret && action !== "set-secret") throw new Error("--replace-secret applies only to set-secret");
+    return { kind: "setup-github", action, json, confirm, replaceSecret, ...(repository ? { repository } : {}) };
+  }
   const cachedCommand =
     argv[0] === "render" || argv[0] === "verdict" ? argv[0] : undefined;
   if (cachedCommand) {
@@ -275,6 +334,13 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       if (focusOption.consumedNext) i++;
       continue;
     }
+    const connectionOption = optionValue(argv, i, "--connection");
+    if (connectionOption) {
+      if (opts.connection !== undefined) throw new Error("--connection may only be supplied once");
+      opts.connection = connectionOption.value;
+      if (connectionOption.consumedNext) i++;
+      continue;
+    }
     const runnerOption = optionValue(argv, i, "--runner");
     if (runnerOption) {
       opts.runner = parseRunnerName(runnerOption.value, "--runner");
@@ -296,6 +362,10 @@ export function parseArgs(argv: readonly string[]): CliCommand {
     throw new Error(`unknown option ${arg}`);
   }
 
+  if (opts.connection !== undefined && (opts.runner !== undefined || opts.model !== undefined)) {
+    throw new Error("--connection cannot be combined with --runner or --model");
+  }
+
   if (sawUncommitted && sawBranch) {
     throw new Error("--uncommitted cannot be combined with --branch");
   }
@@ -312,6 +382,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
       opts.focus !== undefined ||
       opts.deep !== undefined ||
       opts.model !== undefined ||
+      opts.connection !== undefined ||
       opts.timeoutMs !== undefined ||
       opts.localMode !== undefined;
     if (unsupported) throw new Error("doctor accepts only --repo, --runner, --base, and --json");

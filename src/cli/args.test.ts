@@ -234,3 +234,22 @@ test("parseArgs accepts the doctor command with its diagnostic options only", ()
     assert.throws(() => parseArgs(["doctor", flag]), /doctor accepts only --repo, --runner, --base, and --json/, flag);
   }
 });
+
+test("parseArgs preserves local setup preview and validates guided operations", () => {
+  assert.deepEqual(parseArgs(["setup", "github"]), { kind: "setup-github" });
+  assert.deepEqual(parseArgs(["setup", "github", "--repo=/tmp/a"]), { kind: "setup-github", repo: "/tmp/a" });
+  assert.deepEqual(parseArgs(["setup", "github", "--repo", "/tmp/a"]), { kind: "setup-github", repo: "/tmp/a" });
+  assert.throws(() => parseArgs(["setup"]), /requires the github subcommand/);
+  assert.throws(() => parseArgs(["setup", "github", "--runner", "codex"]), /Unknown setup github option/);
+  assert.throws(() => parseArgs(["setup", "github", "--repo", "a", "--repo", "b"]), /may only be supplied once/);
+});
+
+
+test("guided setup parser separates repository and effect confirmations", () => {
+  assert.deepEqual(parseArgs(["setup", "github", "status", "--repository", "owner/repo", "--json"]), {
+    kind: "setup-github", action: "status", repository: "owner/repo", json: true, confirm: false, replaceSecret: false,
+  });
+  for (const args of [["status"], ["repositories", "--repository", "a/b"], ["status", "--repo", "/tmp"], ["status", "--repository", "a/b", "--replace-secret"], ["--json"]]) {
+    assert.throws(() => parseArgs(["setup", "github", ...args]));
+  }
+});

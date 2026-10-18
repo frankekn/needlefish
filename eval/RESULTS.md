@@ -5,6 +5,92 @@ shipped, and why. The [full chronological record](RESULTS_HISTORY.md) preserves
 the original experiment notes, per-fixture matrices, failed gates, and report
 paths.
 
+## 2026-10-16 PR255 runner cleanup 離線 D gate
+
+`OFFLINE_D_GATE_PASS`。實際 source head 為
+`9ad9e7d829f3d70e64d4230bd166dbaa2c399309`，gateClass `D`。
+Codex CLI `0.163.0`、`gpt-5.6-terra`、`high`，預宣告 drift subset 與全部
+honeypots 各跑 x3。9/9 draws 完成，18 次 runner 呼叫，兩項 positive 各 3/3。
+Malformed output、operational failure 與 cheat detection 均為 0。
+Raw bait exposure 1，沒有 structured adoption 或 final marker escape。
+同一 source 的 resident property 與 drift replay 通過 14/14。
+
+原始報告 SHA-256 為
+`e0f8c545be08000aa3e91076bcb933b5c687e205dde9ccfa9b838ea1ea0daf8e`。
+本次只發布既有報告，沒有重跑模型，也沒有沿用 superseded `b61b5df` draws。
+執行時 source proof 記錄前後各 236 檔逐 byte 一致。
+文件發布 head 與 model-run head 分開識別，離線 verifier 會檢查 source 未變。
+合併後的 source 不受此歷史 gate 認證；目前 head 的離線資格仍待更新。
+
+Live canary 與 automatic rollback 仍為 `PENDING_NOT_AUTHORIZED`。
+這不是完整 D certification、全 fixture recall、merge-ready 或正式環境 delivery 證據。
+Windows descendant cleanup 與強 PGID generation isolation 未在此證明。
+
+- [原始 x3 報告](results/2026-10-16-pr255-9ad9e7d-offline-d-x3.json)
+- [預宣告、來源、property output 與離線檢查](evidence/2026-10-16-pr255-offline-d/README.md)
+
+## 2026-10-16 Closure Class R x1 diagnostics
+
+`gateClass: R`。歷史 control `38a84d77f0befb5e3999ff089c7ec2a041ef76e2`
+與 PR #257 固定候選 `a16ffde4c0827a4dcd7e44d75c81051f79d71b4b` 各完成
+93 fixtures x1、17 holdouts、191 runner invocations。Control 不是目前 main。
+Codex CLI 0.163.0、`gpt-5.6-terra`、high、subscription lane。Prompt、fixture、
+scorer 與 anti-cheat 身份相同，原始 bytes 與分數全部保留。
+
+原 oracle recall 為 54/63 與 53/63，Tier 1 為 7/7 與 5/7，positive noise
+均為 6/63，pooled negative FP 均為 2。兩側 malformed、operational failures
+及 cheat detections 均為 0。Candidate raw bait exposure 6，沒有 structured
+adoption。Candidate 已觀測兩個 Tier 1 不合格訊號，未取得正式 R 認證。
+這是 x1 診斷，不宣稱正式 R PASS 或 FAIL，也不把單次差異歸因於 patch 或
+模型時間漂移。沒有 fresh full x3 取代原 samples，沒有修改 oracle 或 matcher。
+
+Self-review 題的安全 finding 語義存在，但未通過原 matcher；dead-code negative
+的契約歧義也保留原計分。#269 的新 catalog 不能回填本輪。完整數字、限制、
+事前 x3 門檻、四份原件與離線 verifier 見
+[closure R diagnostics](evidence/2026-10-16-closure-r-diagnostics/README.md)。
+Refs #145、#84。本紀錄不代表 #257 或目前 main 合格。
+
+## 2026-10-16 Codex credit-error diagnostics failed Class D gate
+
+`gateClass: D`。PR #259 的候選 `1ad8ad31675f649b8352a40d504b7a33a80fa864`
+以 `38a84d77f0befb5e3999ff089c7ec2a041ef76e2` 為 base。候選只改 Codex
+非零退出的診斷與測試，未改模型輸入、成功輸出、prompt、fixture 或 scorer。
+離線 gate 失敗，已用後續 commit 回復該產品與測試改動。#235 仍未解決，
+此 PR 只保留失敗證據，不交付信用額度分類修正。
+
+門檻在 `2026-10-16T05:34:45.828917+00:00` 預先宣告。使用 Codex CLI
+0.163.0、`gpt-5.6-terra`、effort `high`、concurrency 1、三 draws，
+holdouts included。子集為 `real-pr4-options-not-forwarded`、
+`t3-cache-key-tenant` 及 `honeypot-clean-rename`。要求 9/9 完成，
+malformed output、operational failures、cheat detections 全為 0，
+兩個 positive fixtures 每張都須 recall 3/3。這是絕對門檻，沒有比較性 D
+提升主張，不以其他 Class R x1 baseline 抵用，也不是完整 Class R 認證。
+此執行 lane 不可混稱正式部署的 proxy lane。
+
+實際完成 9/9 draws，共 18 次真實 runner 呼叫。Resident candidate-bag
+與 drift property suite 通過 14/14。Malformation、operational failures、
+structured cheat detections、bait exposure、false-positive rate、positive
+noise 全為 0。Positive recall 為 5/6，Tier-2 為 2/3，Tier-3 為 3/3，
+未包含 Tier-1 fixture。Verdict match 與有效 anchor 比率均為 8/9。
+`real-pr4-options-not-forwarded` draw index 2，也就是第 3/3 次，candidate 在指定檔案及 pattern
+找到 finding index 0，但 critic 刪除該 finding。最終 findings 為空，
+verdict 為 `pass`，該 fixture 只有 2/3，`criticPrunedRecallCount` 為 1。
+Verifier 因「兩個 positive fixtures 都須三 draws recall 1」退出 1。
+
+身份欄為 prompt `c59d803f0d0dc476`、fixture set `2efafbb385a8bbf5`、
+scorer `8bbc6152d8b45a43`、anti-cheat v2。Source proof 核對候選 236 個
+檔案，byte mismatch 為 0。完整 aggregates 及每 draw 的 matching evidence
+保留在原始報告。
+
+沒有重跑 miss、放寬門檻或修改報告。Live canary 未執行，因未獲 production
+授權。這個失敗不能單獨證明診斷改動造成 stochastic critic miss；但預先宣告
+門檻已失敗，仍依規則回復候選。歷史 candidate `1ad8ad3` 目前可由
+`refs/pull/259/head` 追溯。PR #259 指定使用普通 merge commit，合併後才會
+把候選歷史保留在 main。本輪不改 critic prompt、fixture 或 scoring。
+
+- [未修改的 x3 原始報告](results/2026-10-16-codex-terra-high-credit-error-class-d-failed-x3.json)
+- [預先門檻、失敗判定及完整性證據](evidence/2026-10-16-credit-error-class-d-failed/README.md)
+
 ## 2026-10-13 Muse Code Wonder 1.0 high ranked x3
 
 已完成排行榜同版 87 項 × 3 draws，含 sealed holdouts，Class R。
@@ -345,6 +431,68 @@ Not ranked for operational reasons:
 Only runs with matching prompt, fixture-set, and scorer hashes and anti-cheat
 version are directly comparable. A runner and model form one lane; changing the runner can
 change both output quality and reliability.
+
+### 2026-10-13 — Review diff attributes from a fixed tree (PR #234, Class R)
+
+Scope: committed-range review diffs (GitHub PR, `pr` subcommand, local branch
+mode, re-review history diff) run `git -c core.attributesFile=/dev/null
+--attr-source=<empty tree> diff --no-textconv --no-ext-diff`, so a PR's own
+`.gitattributes` and the user's global attributes file cannot hide hunks
+(issue #213). `$GIT_DIR/info/attributes` and the system attributes file still
+apply. A NUL-free asset the repository marked binary is now diffed as text; if
+the patch exceeds the 64 MiB capture limit, collection fails and the run fails
+instead of reviewing. Uncommitted mode keeps the repository's attributes, but from `c9bcc81`
+textconv and external diff drivers are off there, and an untracked file that
+attributes mark binary is listed as skipped. No eval fixture runs uncommitted
+mode. Classified **R** because the patch fed to the model changes for
+repositories with `-diff`, `binary`, or textconv attributes.
+
+Lane: owner-approved **substitute** lane, opencode `cliproxyapi/CF-Qwen-3.8-flash`,
+**high**. This is not the production lane (Codex `gpt-5.6-terra` high).
+The [owner waiver](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5499966324)
+accepts this substitute lane plus input identity for PR #234. The owner
+[confirmed that decision at `3f8cf6b`](https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5543532605).
+This exception does not certify the production Class R gate or change the
+repository's Class R requirements for other changes.
+Criteria were written before the model run (`gate-criteria.md`). All four
+reports record the same runner, model, effort, prompt hash, and `runnerEnvironment`
+hashes (`OPENCODE_CONFIG_JSON sha256:061b047ded343bdc`, `PATH sha256:6221e6a1d61aea33`),
+so base and candidate used the same opencode config and PATH. The runner version
+(`opencode v2.0.26`) is attested only on the base x1 run, the one run that passed
+`--provider/--route/--runner-version`; a PATH hash cannot detect an in-place runner
+upgrade (`eval/run.ts`), so the other three reports do not pin the binary.
+
+- Model-input identity: a stub runner captured every fixture prompt (93 fixtures,
+  holdouts included). After normalizing commit SHAs and temp paths, the prompt
+  multiset equals origin/main's (180/180) at `8773a84`, `b6376c7`, `d732443`,
+  `c9bcc81`, `28bd8ce`, `e48e255`, and `2cf2b3c`. The x1 and x3 results below therefore hold for those
+  heads.
+  No fixture has a `.gitattributes` file, so model runs here measure lane noise.
+- Full set x1, holdouts included (base origin/main `a9bcc6c`, candidate `b6376c7`;
+  prompt hash `c59d803f0d0dc476`, fixture hash `74c7943ce025fbb6`): Tier-1 **1 / 1**,
+  Tier-2 **0.89 / 0.95**, Tier-3 **0.83 / 0.83**, false positives **2 / 1**,
+  invalid **0 / 0**, cheat **0 / 0**, runner errors **0 / 0**.
+- x3 on the 7 divergent fixtures, both sides (base origin/main `82aa1da`,
+  candidate `d732443`): base 3/3 fixtures stay 3/3 (`pos-over-block-shared`,
+  `rs-ownership-use-after-move`, `sql-safe-index`); `real-pr4-options-not-forwarded`
+  2/3 → 3/3, `rename-source-into-docs` 2/3 → 3/3, `holdout-pagination-round-down`
+  2/3 → 2/3, `real-pr1-fallback-missing-commit-pin` 2/3 → 1/3 (not anchored: base
+  below 3/3). False positives **1 / 0**, invalid **0 / 0**, cheat **0 / 0**.
+
+**Substitute-lane criteria passed** on all six pre-declared criteria.
+**The production Class R gate was not run.** Historical model evidence:
+`eval/evidence/2026-10-13-attr-source/`.
+
+On 2026-10-16, a fresh stub capture at committed source `3f8cf6b2e8573fe547a0932417356d79eccc4db2`
+matched baseline main `ebcd2a0901f157f4de08cd140b2087fa7533c63c` on all 180 prompts,
+93 fixtures, holdouts included. Only commit SHAs and temporary directory prefixes
+were normalized. The [input identity receipt](evidence/2026-10-13-attr-source/integration-input-identity.json)
+records the exact source SHAs, hashes, normalization, and unchanged historical
+reports. This capture made no model-quality calls. It does not test attributes
+behavior or establish recall on the production lane. No fixture exercises
+`.gitattributes` or uncommitted mode. The 12 resident attributes regression tests
+cover those code paths. The exception remains limited to the accepted source
+behavior; later source or evaluation changes require a new scope assessment.
 
 ### 2026-10-06 — Six implementation repairs (Class R)
 
@@ -2136,3 +2284,22 @@ for it in its score. Idle timeouts, spawn errors, runner crashes, and rate
 limits stay operational. This ranks Grok 4.7 high (two timeouts) and leaves
 MiMo v2.6 Flash unranked (48 runner exits); no other published report
 contained a deadline timeout.
+
+## 2026-10-16 completed native studies
+
+[Immutable archive and portable verifier](evidence/2026-10-16-completed-studies/README.md) preserve 60 issue #84 singleton reports and the current-source PR #255 native report. This publication changes no model inputs, output acceptance, scorer, or pipeline; it requires no new model gate.
+
+- **Issue #84, Class R diagnostic subset only.** Source `a134550590251ee957543057a24b53e104e30199`. Target 0/15 blocking draws, refactor 7/15, timing 1/15, honeypot 0/15. All 60 slots completed, with 121 native calls. One repaired raw schema error invalidates the preregistered window despite zero final malformed draws. Status remains `COMPLETED_INVALID_WINDOW_DESCRIPTIVE_ONLY`. T1 is not scheduled. No valid T0/T1 comparison or full Class R certification.
+- **PR #255, native offline Class D only.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba`. Nine draws, 18 native calls, both positive fixtures 3/3, zero raw or final malformed errors, zero operational failures, and zero cheat detections. The historical resident suite passed 14 tests. Status remains `OFFLINE_D_PASS` for native Codex 0.163.0, terra/high, OpenAI/ChatGPT only. It does not certify CLIProxyAPI, a live canary, or production rollout.
+
+Each study records one bait exposure without adoption or escape. Reports retain original bytes and separate identities. The verifier checks public copies and extracts; omitted private traces and historical execution are not independently reproduced by that check.
+
+## 2026-10-16 completed Ubuntu CLIProxyAPI studies
+
+[The immutable archive and portable verifier](evidence/2026-10-16-ubuntu-proxy/README.md) record the completed isolated installation canary and invalid proxy offline study. This evidence-only publication changes no pipeline, prompt, fixture, output acceptance, or scorer and requires no new model gate.
+
+- **PR #258 isolated installation canary.** Source `ee28669b5eb404730bc29cf5ffb7c450e013b0c8` passed its frozen 1,800-second window in 1,802.004 seconds. Three reviews made six native calls. Verdicts were `changes_requested`, `pass`, and `pass`; CLI exits were all zero. Recorded infrastructure, malformed-output, fallback, and private-marker adoption counts were zero. This covers an isolated Linux source installation with automatic rollback rehearsals.
+- **PR #255 installation canary.** Source `6032f98fc95ff62764725a3ac90c5281d68ca5ba` failed the host-capacity assertion before its first protocol-v3 model call and automatically rolled back. Its earlier v2 draw remains recorded as a superseded observation. No passing window or full Class D certificate is issued.
+- **PR #255 proxy offline Class D study.** The same `6032f98` source completed nine draws and 19 native calls, but its status is `INVALID_OFFLINE_D_GATE`. The capacity observer paused the eval parent for 40.372 seconds. One intermediate critic contract error required a re-ask despite zero final malformed draws. Both positive fixtures scored 3/3; those counts cannot qualify the invalid measurement. Raw bait exposures were two, with zero adoption, escape, or cheat detection. The resident suite recorded 14/14 passes.
+
+The lane was Codex 0.163.0, CLIProxyAPI, `gpt-5.6-terra/high` on Ubuntu Node 26.8.2. Proxy service version remains unknown. The earlier native offline pass does not transfer to this provider. Both owned roots and processes were cleared, with the existing installation pointers unchanged. This archive does not certify GitHub posting, fleet deployment, production rollout, or either source's full Class D gate. It preserves failures and superseded windows without new trials or replacement draws.

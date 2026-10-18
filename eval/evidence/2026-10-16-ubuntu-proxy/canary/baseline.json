@@ -1,0 +1,33 @@
+{
+  "status": "REAL_BASELINE_REVIEW_PASS",
+  "sourceSha": "1654cbe33afea542d601e38a642c787627a44ca6",
+  "verdict": "pass",
+  "runnerCalls": 2,
+  "runnerExits": [
+    0,
+    0
+  ],
+  "stats": [
+    {
+      "label": "review",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "durationMs": 35082,
+      "attempts": 1,
+      "ok": true
+    },
+    {
+      "label": "critic",
+      "runner": "codex",
+      "model": "gpt-5.6-terra",
+      "durationMs": 8943,
+      "attempts": 1,
+      "ok": true
+    }
+  ],
+  "posthocValidation": true,
+  "cliExit": "original harness verified in [0,1] before transcript parser failure; exact exit was not persisted",
+  "reason": "rawOutputs contains complete trace, not pure final JSON; observer stdout has one valid JSON block per stage",
+  "validatedAt": 1792143270.5065606,
+  "criteriaSha256": "6dd7539dc1949ef4890046dc7f4192a0e30006fede85c289ed1ef7a9c61c9564"
+}

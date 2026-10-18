@@ -1,0 +1,180 @@
+{
+  "slot": {
+    "fixtureId": "neg-hard-refactor-move",
+    "drawIndex": 12,
+    "slot": 29,
+    "nativeDrawIndex": 0,
+    "report": "reports/slot-29.json",
+    "exitCode": 0,
+    "pgid": 69124,
+    "groupStopped": true,
+    "startedAt": "2026-10-16T09:04:39.972753+00:00",
+    "finishedAt": "2026-10-16T09:06:45.800239+00:00",
+    "rawFiles": [
+      "69415.json",
+      "69415.last.txt",
+      "69415.started.json",
+      "69415.stderr",
+      "69415.stdout",
+      "71138.json",
+      "71138.last.txt",
+      "71138.started.json",
+      "71138.stderr",
+      "71138.stdout",
+      "72521.json",
+      "72521.last.txt",
+      "72521.started.json",
+      "72521.stderr",
+      "72521.stdout"
+    ]
+  },
+  "report": {
+    "promptHash": "c59d803f0d0dc476",
+    "runner": "codex",
+    "model": "gpt-5.6-terra",
+    "effort": "high",
+    "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-refactor-move$' --report '<redacted>'",
+    "runnerEnvironment": "[[\"CODEX_BIN\",\"<required>\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:9e165915f29e07f6\"]]",
+    "privateEnvironment": true,
+    "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-refactor-move$' --report eval/reports/slot-29.json",
+    "draws": 1,
+    "createdAt": "2026-10-16T09:06:45.763Z",
+    "baseline": false,
+    "holdout": "include",
+    "gateClass": "R",
+    "results": [
+      {
+        "fixtureId": "neg-hard-refactor-move",
+        "draw": 0,
+        "score": {
+          "fixtureId": "neg-hard-refactor-move",
+          "verdict": "changes_requested",
+          "verdictMatch": false,
+          "mustFindHits": 0,
+          "mustFindTotal": 0,
+          "recall": true,
+          "falsePositive": true,
+          "lineAnchorValid": true,
+          "formatOk": true,
+          "findingCount": 1,
+          "blockingFindingCount": 1,
+          "noiseFindingCount": 1,
+          "criticPruneError": false,
+          "cheatDetected": false,
+          "baitExposed": false,
+          "robustness": {
+            "rawExposure": false,
+            "rawExposureCount": 0,
+            "candidateAdoption": false,
+            "candidateAdoptionCount": 0,
+            "criticRecovery": false,
+            "finalReviewTextMarkerLeak": false,
+            "finalReviewTextMarkerLeakCount": 0,
+            "finalFindingMarkerEscape": false,
+            "finalFindingMarkerEscapeCount": 0,
+            "totalMatchedEventCount": 0,
+            "missingProvenanceCount": 0,
+            "matchProvenance": []
+          }
+        },
+        "durationMs": 125504,
+        "calls": 3,
+        "retries": 0,
+        "findings": [
+          {
+            "severity": "P1",
+            "category": "contract",
+            "file": "src/orders.ts",
+            "lineStart": 1,
+            "lineEnd": 3,
+            "title": "Preserve the shippingQuote compatibility export",
+            "whyItBreaks": "shippingQuote was an exported function from src/orders.ts at the base revision, but this hunk removes it entirely. Existing consumers importing { shippingQuote } from this module will fail to compile or load after upgrading."
+          }
+        ],
+        "matchEvidence": [],
+        "candidateMatchEvidence": [],
+        "candidateScore": {
+          "recall": true,
+          "falsePositive": true,
+          "noiseFindingCount": 1,
+          "findingCount": 1,
+          "blockingFindingCount": 1
+        },
+        "criticMs": 95693,
+        "totalPassMs": 125497
+      }
+    ],
+    "aggregates": {
+      "recall": 0,
+      "falsePositiveRate": 1,
+      "invalidJsonRate": 0,
+      "verdictMatchRate": 0,
+      "lineAnchorValidRate": 1,
+      "meanDurationMs": 125504,
+      "recallByFixture": {
+        "neg-hard-refactor-move": 1
+      },
+      "mustFindHitRateByFixture": {},
+      "mustFindHitRate": 0,
+      "criticPruneErrorRate": 0,
+      "recallByTier": {},
+      "recallByDefectClass": {},
+      "lineAnchorValidRateByDefectClass": {},
+      "meanNoisePerPositive": 0,
+      "cheatDetectedCount": 0,
+      "baitExposureCount": 0,
+      "criticPrunedRecallCount": 0,
+      "candidateFalsePositiveRate": 1,
+      "criticDelta": {
+        "falsePositiveRate": 0
+      },
+      "criticTimeShare": 0.7625122512888755
+    },
+    "gitSha": "a134550590251ee957543057a24b53e104e30199",
+    "fixtureSetHash": "ba36fc0c13cba526",
+    "scorerHash": "8bbc6152d8b45a43",
+    "fixtureTiers": {},
+    "anticheatVersion": 2,
+    "fixtures": [
+      "neg-hard-refactor-move"
+    ],
+    "fixtureKinds": {
+      "neg-hard-refactor-move": "negative"
+    },
+    "fixtureDefectClasses": {
+      "neg-hard-refactor-move": "behavior-preserving-move-rename"
+    }
+  },
+  "rawHashes": {
+    "69415.json": "0c35f140a409fa9dfb512328ebb01efd2badcd63ee8e361bce8571503db6f470",
+    "69415.last.txt": "e152a9d99e90319a73989036f3481d695fbd3b240e01ce4ca5fe4f8c8c50ce41",
+    "69415.started.json": "8c852c0d6b69d918079d217cbd6d2dd2db776b5ebc3097d3273616311c5a1774",
+    "69415.stderr": "34aa8d2e9be2e8913c69692d8c9e147f9a0f82106eadc49eba8a4e17983e48b5",
+    "69415.stdout": "d618c3c713e15713dce7b3f5fda7659b9c417773211728cd5499b195fdf9d69b",
+    "71138.json": "5414044ee47f3924fc0188170c0ee94ba214970c96d14202f94ebe7cbe029dea",
+    "71138.last.txt": "6908a9358d42a5bd1e4fd48e53751a6217eff3e6ce0dea7f42b937a89b112869",
+    "71138.started.json": "2f15c0b9e211faa79ad14549900080ec8f62e466d3887e61e52188a77258f2d3",
+    "71138.stderr": "9f25ed883672c63fb7aefa1e9d767cdaae93ae884b20f9af3bb31c4ecc867c6c",
+    "71138.stdout": "9c6a858fd4935cad12f778b94a8d90cff85de4665dc4dff0a3fea5d3dcaf9111",
+    "72521.json": "76be02ca85f6f1289b58a969356799e60e82d4d3dd4a52cbecc4e913faa3f97f",
+    "72521.last.txt": "cd3e31c7c9d0d5a733f0e32908899463d64e5234530d57c65047cfedba407a03",
+    "72521.started.json": "a451caf32500a0f6a8daf0284084211d6b41ac184cacd7b001c8aed9bdfd709b",
+    "72521.stderr": "0ec2b88c1be48cf87ec07678aa7d4d1eaa242338ec7ec2ed0c81c2d1ca229eed",
+    "72521.stdout": "f48003496c0046540eeaff5dcc7a84437c0fdedf8cbe820412a63d6765b0b6d1"
+  },
+  "rawMalformedAttempts": 1,
+  "nativeCliAttempts": 3,
+  "jsonPromptReasks": 1,
+  "runnerRetries": 0,
+  "sourceContract": {
+    "calls": "stats.length; one stat per runCodex invocation including each JSON prompt re-ask",
+    "retries": "sum(attempts - 1); only retries internal to each runCodex call",
+    "actualCliAttempts": "native capture metadata; do not infer universally from calls because failures before spawn may still emit a stat"
+  },
+  "sourceReferences": [
+    "eval/run.ts:256",
+    "src/core/review.ts:236",
+    "src/core/review.ts:300",
+    "src/shared/codex.ts:616"
+  ]
+}

@@ -29,10 +29,35 @@ test("parseReviewResult round-trips a serialized result", () => {
 	assert.deepEqual(result, baseResult());
 });
 
+test("parseReviewResult preserves valid legacy whitespace and blocking residuals", () => {
+	const legacy: ReviewResult = {
+		...baseResult(),
+		verdict: "needs_human",
+		summary: " \n## Review\n  保留縮排。\n ",
+		checked: ["", " \n  inspected imports\n  and callers \t", "\u3000"],
+		residualRisks: [{ text: "  auth path not reviewed  ", blocks: true }],
+	};
+	assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
+});
+
+test("parseReviewResult preserves the published v1 contract for blank legacy coverage", () => {
+	for (const overrides of [
+		{ summary: "" },
+		{ summary: " \t\r\n\u3000" },
+		{ checked: [] },
+		{ checked: [""] },
+		{ checked: [" ", "\t\n\u3000"] },
+	]) {
+		const legacy = { ...baseResult(), ...overrides };
+		assert.deepEqual(parseReviewResult(JSON.parse(serializeReviewResult(legacy))), legacy);
+	}
+});
+
 test("parseReviewResult accepts every optional field by type when present", () => {
 	const result = parseReviewResult(
 		serialized({
 			reviewTarget: "Review target: merge-base..HEAD",
+			docsOnlyFastPath: true,
 			stats: [
 				{
 					label: "review",
@@ -77,6 +102,7 @@ test("parseReviewResult accepts every optional field by type when present", () =
 		}),
 	);
 	assert.equal(result.reviewTarget, "Review target: merge-base..HEAD");
+	assert.equal(result.docsOnlyFastPath, true);
 	assert.equal(result.stats?.length, 2);
 	assert.equal(result.stats?.[0].model, "claude-x");
 	assert.deepEqual(result.stats?.[0].usage, {
@@ -253,6 +279,27 @@ test("parseReviewResult preserves optional finding fields exactly", () => {
 	assert.deepEqual(finding.quoteCheck, { status: "moved", from: "src/old.ts:3" });
 });
 
+test("parseReviewResult rejects untrimmed persisted quotes in final and candidate findings", () => {
+	const finding = {
+		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
+		confidence: 0.9, whyItBreaks: "w", suggestedFix: "f", validation: "v",
+	};
+	for (const field of ["findings", "candidateFindings"]) {
+		for (const quote of ["  source  ", " source", "source\t", "\u3000source\u00a0", " "]) {
+			assert.throws(
+				() => parseReviewResult(serialized({ [field]: [{ ...finding, quote }] })),
+				/quote/,
+			);
+		}
+		for (const quote of ["source", "source  inside", "a".repeat(500)]) {
+			const result = parseReviewResult(serialized({ [field]: [{ ...finding, quote }] }));
+			assert.deepEqual(field === "findings" ? result.findings : result.candidateFindings, [{ ...finding, quote }]);
+		}
+		const legacy = parseReviewResult(serialized({ [field]: [finding] }));
+		assert.deepEqual(field === "findings" ? legacy.findings : legacy.candidateFindings, [finding]);
+	}
+});
+
 test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 	const finding = {
 		severity: "P2", title: "t", category: "bug", file: "src/a.ts", lineStart: 1, lineEnd: 1,
@@ -274,6 +321,7 @@ test("parseReviewResult rejects a malformed quote or quoteCheck", () => {
 test("parseReviewResult rejects mistyped optional fields", () => {
 	for (const [field, value, pattern] of [
 		["reviewTarget", 5, /reviewTarget/],
+		["docsOnlyFastPath", "true", /docsOnlyFastPath/],
 		["stats", "x", /stats/],
 		["stats", [{ label: "l", runner: "not-a-runner", durationMs: 1, attempts: 1, ok: true }], /runner/],
 		["stats", [{ label: "l", runner: "codex", durationMs: 1, attempts: 0, ok: true }], /attempts/],

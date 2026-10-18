@@ -1144,7 +1144,7 @@ test("prepareRunnerSandbox leaves no origin write-back route for a WORKING targe
   assertRunnerSandboxClean("codex", sandbox.repoPath, sandbox.expectedHeadSha);
 });
 
- test("prepareRunnerSandbox rejects Codex launch under the source repository, including symlinks", (t) => {
+ test("prepareRunnerSandbox rejects sibling launch under the source repository, including symlinks", (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-launch-test-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const repo = initRepo(tmp);
@@ -1152,7 +1152,9 @@ test("prepareRunnerSandbox leaves no origin write-back route for a WORKING targe
   mkdirSync(inside);
   const linked = path.join(tmp, "linked");
   symlinkSync(inside, linked, "dir");
-  for (const work of [inside, linked]) {
-    assert.throws(() => prepareRunnerSandbox({ runner: "codex", repoPath: repo, prompt: "", targetHeadSha: headSha(repo), tmp: work }), /launch directory must be outside the target repository/);
+  for (const runner of ["codex", "grok"] as const) {
+    for (const work of [inside, linked]) {
+      assert.throws(() => prepareRunnerSandbox({ runner, repoPath: repo, prompt: "", targetHeadSha: headSha(repo), tmp: work }), /launch directory must be outside the target repository/);
+    }
   }
 });

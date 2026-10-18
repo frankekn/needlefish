@@ -1,0 +1,43 @@
+{
+  "kind": "stub-model-input-identity-only",
+  "date": "2026-10-16",
+  "baselineSourceSha": "ebcd2a0901f157f4de08cd140b2087fa7533c63c",
+  "candidateSourceSha": "3f8cf6b2e8573fe547a0932417356d79eccc4db2",
+  "ownerWaiver": "https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5499966324",
+  "ownerConfirmationAtCandidate": "https://github.com/frankekn/needlefish/pull/234#pullrequestreview-5543532605",
+  "fixtureCount": 93,
+  "holdout": "include",
+  "basePrompts": 180,
+  "candidatePrompts": 180,
+  "identicalAfterNormalization": true,
+  "normalization": {
+    "commitShaPattern": "\\b[0-9a-f]{40}\\b",
+    "commitShaReplacement": "<sha>",
+    "temporaryDirectoryPattern": "(?:/private)?/tmp/needlefish-[^/\\s\"\\\\]+",
+    "temporaryDirectoryReplacement": "<tmp>"
+  },
+  "multisetDigestEncoding": "SHA256 of LF-joined sorted SHA256 hex digests of normalized UTF-8 prompts",
+  "normalizedPromptMultisetSha256": "bbf021ee859b0795ae670492da9f773855bf155cf8cc308e15bc51fb729b4186",
+  "promptHash": "c59d803f0d0dc476",
+  "fixtureSetHash": "74c7943ce025fbb6",
+  "scorerHash": "8bbc6152d8b45a43",
+  "anticheatVersion": 2,
+  "captureReportsSha256": {
+    "base": "8a154e35faf34ac3c24b2d5e2618a0c95dd93ba15c6218817e69592c06d188bd",
+    "candidate": "daa78eaaeb6fbff3a8713439eb0950b3258fa26233b6cbd4fbbe23c9bb60ea5c"
+  },
+  "historicalEvidenceSha256": {
+    "base-82aa1da-divergent-x3.json": "c0ee9e3e39ca608b7d3bc678b91b9600543d585bd6a0f183500dba7aeed8c4fa",
+    "base-a9bcc6c-x1.json": "ce08f336d9eb87e75b15173b2326c05390fc8c16c61d1924c9f77be32b03dcb6",
+    "cand-b6376c7-x1.json": "f4427746e532e6e24117862935938dc4cc3fd389335e5e530d9b71ed5e3526df",
+    "cand-d732443-divergent-x3.json": "2c31fb7d1c7e3fb9b606e59b966ec452e6e7432aa567ae37f4fe5ccd30a8a082",
+    "gate-criteria.md": "b1f4dc8e6723fcfb4c5da4af3c6c41d12ec699afeb28dbf34b9c1d532e33817e"
+  },
+  "modelQualityRuns": 0,
+  "productionClassRGateRun": false,
+  "limitations": [
+    "The stub returns invalid JSON, so captures do not measure model quality or certify a Class R gate.",
+    "No fixture exercises .gitattributes or uncommitted mode. Attributes behavior is covered by resident regression tests.",
+    "Identity is limited to the two exact source SHAs above. A later source, prompt, fixture, scoring, or gate change requires a new scope assessment."
+  ]
+}

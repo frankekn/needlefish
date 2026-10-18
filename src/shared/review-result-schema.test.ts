@@ -127,7 +127,7 @@ function makeRepo(tmp: string, files: Readonly<Record<string, string>>): string 
 
 // Runs the real CLI entry point with --json against a stub claude runner
 // that answers every pass (review and critic) with STUB_REVIEW.
-function cliJson(tmp: string, repo: string, env: Readonly<Record<string, string>>): unknown {
+function cliJson(tmp: string, repo: string, env: Readonly<Record<string, string>>, expectedExitCode: 0 | 1 = 1): unknown {
 	const bin = path.join(tmp, "claude-bin.js");
 	writeFileSync(
 		bin,
@@ -149,7 +149,7 @@ function cliJson(tmp: string, repo: string, env: Readonly<Record<string, string>
 			env: { ...process.env, CLAUDE_BIN: bin, HOME: path.join(tmp, "home"), NEEDLEFISH_NO_RETRY: "1", ...env },
 		},
 	);
-	assert.equal(result.status, 0, result.stderr);
+	assert.equal(result.status, expectedExitCode, result.stderr);
 	return JSON.parse(result.stdout);
 }
 
@@ -193,10 +193,11 @@ test("--json output with eval tracing validates against the published schema", (
 
 test("--json docs-only fast-path output validates against the published schema", (t) => {
 	const tmp = withTmp(t);
-	const output = cliJson(tmp, makeRepo(tmp, { "docs/guide.md": "# Guide\n" }), {});
+	const output = cliJson(tmp, makeRepo(tmp, { "docs/guide.md": "# Guide\n" }), {}, 0);
 
 	assert.equal(schemaErrors(output), "");
 	assert.equal(asObject(output, "output").verdict, "pass");
+	assert.equal(asObject(output, "output").docsOnlyFastPath, true);
 });
 
 // The schema and parseReviewResult (the reader the CLI itself uses for
@@ -224,6 +225,11 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["PR context fields", true, (r) => Object.assign(r, { prNumber: 7, prBaseSha: "c".repeat(40) })],
 		["unknown additive field", true, (r) => { r.futureField = { any: "shape" }; }],
 		["negative consumerLine", true, (_r, f) => { f.consumerLine = -3; }],
+		["legacy whitespace", true, (r) => { r.summary = "  Review.  "; r.checked = ["", " checked ", "\u3000"]; }],
+		["empty summary", true, (r) => { r.summary = ""; }],
+		["whitespace summary", true, (r) => { r.summary = " \t\n\u3000"; }],
+		["empty checked", true, (r) => { r.checked = []; }],
+		["blank checked entries", true, (r) => { r.checked = ["", " \t\n\u3000"]; }],
 		["wrong schemaVersion", false, (r) => { r.schemaVersion = 2; }],
 		["unknown verdict", false, (r) => { r.verdict = "approve"; }],
 		["missing headSha", false, (r) => { delete r.headSha; }],
@@ -250,6 +256,8 @@ test("schema agrees with parseReviewResult on accepted and rejected shapes", (t)
 		["token count above MAX_SAFE_INTEGER", false, (_r, _f, s) => {
 			s.usage = { totalTokens: Number.MAX_SAFE_INTEGER + 1, inputTokens: 0, outputTokens: 0 };
 		}],
+		["docs skip flag", true, (r) => { r.docsOnlyFastPath = true; }],
+		["invalid docs skip flag", false, (r) => { r.docsOnlyFastPath = "true"; }],
 		["unknown callout surface", false, (r) => { r.scopeCallouts = [{ surface: "docs", files: ["a.md"] }]; }],
 		["callout without files", false, (r) => { r.scopeCallouts = [{ surface: "config", files: [] }]; }],
 		["pointer-only coverage gap", true, (r) => { r.coverageGaps = [{ kind: "lfs_pointer_only", file: "assets/model.bin" }]; }],
@@ -301,6 +309,7 @@ test("schema covers every ReviewResult field with the TypeScript optionality", (
 		baseSha: "required",
 		headSha: "required",
 		reviewTarget: "optional",
+		docsOnlyFastPath: "optional",
 		prNumber: "optional",
 		prBaseSha: "optional",
 		scopeCallouts: "optional",
