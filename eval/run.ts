@@ -22,7 +22,7 @@ import {
 	RunnerOperationalError,
 } from "../src/shared/codex";
 import type { ReviewTraceEvent } from "../src/core/review-trace.js";
-import { parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
+import { GROK_DEFAULT_MODEL, parseRunnerName, type RunnerName, type RunStat } from "../src/shared/runner";
 import type { ReviewResult } from "../src/shared/schema";
 import { loadFixture } from "./shared/fixture";
 import { filterByHoldout, fixtureSetHash, loadFixtures } from "./shared/fixture-catalog";
@@ -674,6 +674,9 @@ function effectiveInvocationEnv(args: RunArgs): Record<string, string> {
 	if (args.model !== null) {
 		delete effective.NEEDLEFISH_MODEL;
 		delete effective[`${args.runner.toUpperCase()}_MODEL`];
+	}
+	if (args.runner === "grok" && args.model === null && effective.NEEDLEFISH_MODEL === undefined && effective.GROK_MODEL === undefined) {
+		effective.GROK_MODEL = GROK_DEFAULT_MODEL;
 	}
 	if (args.runner === "codex" && args.effort !== null) {
 		delete effective.CODEX_REASONING_EFFORT;

@@ -1,4 +1,4 @@
-import { GROK_DEFAULT_MODEL, PI_DEFAULT_MODEL, type RunnerName } from "./runner.js";
+import { PI_DEFAULT_MODEL, type RunnerName } from "./runner.js";
 import { isPublicAttestationLabel, publicRuntimeIdentityFromReport } from "./public-runtime-identity.js";
 export interface ReportAttestation {
   readonly provider?: string;
@@ -58,7 +58,7 @@ export function hasResolvedModelIdentity(
     report.model ??
     environment.get("NEEDLEFISH_MODEL") ??
     environment.get(RUNNER_MODEL_ENV[report.runner] ?? "") ??
-    (report.runner === "pi" ? PI_DEFAULT_MODEL : report.runner === "grok" ? GROK_DEFAULT_MODEL : undefined);
+    (report.runner === "pi" ? PI_DEFAULT_MODEL : undefined);
   const effort =
     report.effort ??
     (report.runner === "codex"
