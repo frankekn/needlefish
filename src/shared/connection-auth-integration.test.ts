@@ -534,7 +534,7 @@ for (const mode of ["dirty-baseline", "dirty-baseline-failure"]) {
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /Needlefish withheld runner diagnostic: the modified review sandbox may contain a selected connection credential/);
     assert.doesNotMatch(result.stdout + result.stderr, /status-marker|TEST-ACCOUNT/);
-    if (mode === "dirty-baseline-failure") assert.match(result.stderr, /^needlefish: acp runner exited 1;/);
+    if (mode === "dirty-baseline-failure") assert.match(result.stderr, /^needlefish: Needlefish withheld runner diagnostic:[^\n]*\nacp runner exited 1;/);
     assert.equal(existsSync(path.join(f.home, ".cache", "needlefish", "repo", "last-review.json")), false);
     writeFileSync(source, "export const value = 2;\n");
     f.clean();

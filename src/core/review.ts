@@ -1098,9 +1098,14 @@ function assertSnapshotClean(snapshot: RunnerSandbox, runnerOptions: RunnerOptio
 		assertRunnerSandboxClean(resolveRunner(runnerOptions), snapshot.repoPath, snapshot.expectedHeadSha);
 	} catch (err) {
 		withholdRunnerDiagnostic(err, runnerOptions.connectionAuth);
-		// A violation found after a failed run must not replace that failure, its type, or its raws.
-		if (!(failure instanceof Error) || !(err instanceof Error)) throw err;
-		failure.message += `\n${err.message}`;
+		// The violation wins so isRunnerSafetyError still sees it; a failed run stays as its cause, message, and raws.
+		if (failure instanceof Error && err instanceof Error) {
+			err.message += `\n${failure.message}`;
+			err.cause = failure;
+			const raws = (failure as Error & { rawOutputs?: readonly string[] }).rawOutputs;
+			if (raws) (err as Error & { rawOutputs?: readonly string[] }).rawOutputs = raws;
+		}
+		throw err;
 	}
 }
 

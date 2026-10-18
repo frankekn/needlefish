@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { diffBundle } from "../adapters/local.js";
 import { commitAll, gitText, initRepo } from "../shared/codex-runner-test-fixtures.js";
-import { assertRunnerSandboxClean, prepareRunnerSandbox } from "../shared/runner-sandbox.js";
+import { assertRunnerSandboxClean, isRunnerSafetyError, prepareRunnerSandbox } from "../shared/runner-sandbox.js";
 import { review } from "./review.js";
 
 for (const unborn of [false, true]) {
@@ -137,7 +137,7 @@ for (const deleteRefs of [false, true]) {
   });
 }
 
-test("WORKING baseline violation after a failed run keeps the original error and its raws", async (t) => {
+test("WORKING baseline violation after a failed run stays a safety error and keeps the failure and its raws", async (t) => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "needlefish-working-dirty-baseline-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const repo = initRepo(tmp);
@@ -164,7 +164,10 @@ process.stdin.on('end', () => {
   t.after(() => { process.env = previous; });
   const err: unknown = await review(bundle, { runner: "claude", timeoutMs: 5000 }).then(() => undefined, (e: unknown) => e);
   assert.ok(err instanceof Error);
-  assert.match(err.message, /^no JSON object found in codex output\.[^\n]*\nclaude runner changed the review sandbox worktree: .*baseline-marker\.txt/);
+  assert.equal(isRunnerSafetyError(err), true);
+  assert.match(err.message, /^claude runner changed the review sandbox worktree: [^\n]*baseline-marker\.txt[^\n]*\nno JSON object found in codex output\./);
+  assert.ok(err.cause instanceof Error);
+  assert.match(err.cause.message, /^no JSON object found in codex output\./);
   assert.ok((err as Error & { rawOutputs?: readonly string[] }).rawOutputs?.some(raw => raw.includes("RAW-CANARY")));
   assert.deepEqual(readdirSync(managedRoot).filter(name => /^needlefish-(?:managed-)?/.test(name)), []);
 });
