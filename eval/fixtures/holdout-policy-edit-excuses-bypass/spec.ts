@@ -96,6 +96,7 @@ export function getOrders(req: Request): Response {
             alternatives: [
               { allOf: ["(?:query|param)\\w*.{0,40}account|account.{0,40}(?:query|param)"] },
               { allOf: ["req\\.query"] },
+              { allOf: ["\\?account\\b|\\[\\s*[\"']account[\"']\\s*\\]"] },
             ],
           },
           {
