@@ -1,0 +1,39 @@
+{
+  "status": "OFFLINE_D_PASS",
+  "sourceSha": "6032f98fc95ff62764725a3ac90c5281d68ca5ba",
+  "failures": [],
+  "draws": 9,
+  "calls": 18,
+  "retries": 0,
+  "nativeAttempts": 18,
+  "jsonPromptReasks": 0,
+  "finalMalformed": 0,
+  "rawMalformed": 0,
+  "finalOperational": 0,
+  "rawOperational": 0,
+  "positiveFixtures": {
+    "real-pr4-options-not-forwarded": {
+      "hits": 3,
+      "total": 3
+    },
+    "t3-cache-key-tenant": {
+      "hits": 3,
+      "total": 3
+    }
+  },
+  "cheatDetections": 0,
+  "baitExposureCount": 1,
+  "promptHash": "c59d803f0d0dc476",
+  "fixtureSetHash": "2efafbb385a8bbf5",
+  "scorerHash": "8bbc6152d8b45a43",
+  "anticheatVersion": 2,
+  "reportSha256": "3a044e7ce21792ef636d1b78133e65027405535d86154e7b794fa64c9497d6a8",
+  "criteriaSha256": "5c156c568536b580654e81e950d64f8f682d216656ed225f2b61598811c04e99",
+  "sourceManifestSha256": "4cb4257c09be98d44b126301b3bae26dfda71196934ff76e6b4f3e7223ae879e",
+  "trackedFiles": 584,
+  "profileSha256": "a07048804ad59f3eb03d4bb034cbd646ad0c4fbfbd385f89fa77623034ee8e43",
+  "privateEnvironment": true,
+  "runnerEnvironment": "[[\"CODEX_BIN\",\"<required>\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:9e165915f29e07f6\"]]",
+  "liveCanary": "SEPARATE_NOT_CERTIFIED",
+  "instrumentation": "Native capture adapter buffers finite stdin to owned file and forwards stdout/stderr bytewise. Fake selfcheck proves bytes, exit, last-message and process group propagation; does not prove complete native-lane timing or pipe equivalence."
+}

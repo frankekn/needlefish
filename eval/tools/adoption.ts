@@ -101,6 +101,8 @@ export interface PrNode {
   readonly merged: boolean;
   readonly updatedAt: string;
   readonly reviewBodies: readonly string[];
+  readonly stateReviewIds: readonly string[];
+  readonly reviewBefore: string | null;
   readonly threads: readonly ThreadNode[];
   readonly threadsTruncated: boolean;
 }
@@ -153,14 +155,26 @@ function parseThread(raw: unknown): ThreadNode | null {
   };
 }
 
+function parseReviews(raw: unknown): Pick<PrNode, "reviewBodies" | "stateReviewIds" | "reviewBefore"> {
+  const reviewConn = record(raw, "pullRequest.reviews");
+  const stateReviewIds: string[] = [];
+  const reviewBodies = nodes(reviewConn, "pullRequest.reviews").map((r) => {
+    const review = record(r, "review");
+    const body = typeof review.body === "string" ? review.body : "";
+    if (parseState(body)) stateReviewIds.push(str(review, "id", "review"));
+    return body;
+  });
+  const pageInfo = record(reviewConn.pageInfo, "reviews.pageInfo");
+  const reviewBefore = bool(pageInfo, "hasPreviousPage", "reviews.pageInfo")
+    ? str(pageInfo, "startCursor", "reviews.pageInfo") : null;
+  if (reviewBefore === "") throw new Error("expected a non-empty previous-page cursor");
+  return { reviewBodies, stateReviewIds, reviewBefore };
+}
+
 function parsePr(raw: unknown): PrNode {
   const pr = record(raw, "pullRequest");
   const number = pr.number;
   if (typeof number !== "number") throw new Error("expected pullRequest.number to be a number");
-  const reviewBodies = nodes(pr.reviews, "pullRequest.reviews").map((r) => {
-    const body = record(r, "review").body;
-    return typeof body === "string" ? body : "";
-  });
   const threadConn = record(pr.reviewThreads, "pullRequest.reviewThreads");
   const threads = nodes(threadConn, "pullRequest.reviewThreads")
     .map(parseThread)
@@ -170,31 +184,31 @@ function parsePr(raw: unknown): PrNode {
     state: str(pr, "state", "pullRequest"),
     merged: bool(pr, "merged", "pullRequest"),
     updatedAt: str(pr, "updatedAt", "pullRequest"),
-    reviewBodies,
+    ...parseReviews(pr.reviews),
     threads,
     threadsTruncated: bool(record(threadConn.pageInfo, "reviewThreads.pageInfo"), "hasNextPage", "reviewThreads.pageInfo"),
   };
 }
 
 export function parsePrPage(raw: unknown): PrPage {
-  const data = record(record(raw, "graphql response").data, "data");
+  const data = responseData(raw);
   const conn = record(record(data.repository, "data.repository").pullRequests, "repository.pullRequests");
   const pageInfo = record(conn.pageInfo, "pullRequests.pageInfo");
-  const hasNext = bool(pageInfo, "hasNextPage", "pullRequests.pageInfo");
-  const cursor = pageInfo.endCursor;
   return {
     prs: nodes(conn, "pullRequests").map(parsePr),
-    endCursor: hasNext && typeof cursor === "string" ? cursor : null,
+    endCursor: nextCursor(pageInfo),
   };
 }
 
-// Category lookup from the round-state marker. Each round PUTs a fresh marker
-// onto the first-round review body, replacing the previous one, so only the
-// latest round's findings are present; earlier-round threads end up unknown.
-function stateCategories(reviewBodies: readonly string[]): Map<string, string> {
-  const categories = new Map<string, string>();
+function stateCategories(reviewBodies: readonly string[]): Map<string, Set<string>> {
+  const categories = new Map<string, Set<string>>();
   for (const body of reviewBodies) {
-    for (const key of parseState(body)?.findings ?? []) categories.set(key.title, key.category);
+    for (const key of parseState(body)?.findings ?? []) {
+      const identity = JSON.stringify([key.file, key.title]);
+      const matches = categories.get(identity) ?? new Set<string>();
+      matches.add(key.category);
+      categories.set(identity, matches);
+    }
   }
   return categories;
 }
@@ -206,11 +220,13 @@ export function rowsFromPr(repo: string, pr: PrNode, since: string | null): Adop
     if (since !== null && thread.createdAt < since) continue;
     const header = parseFindingHeader(thread.body);
     if (!header) continue;
+    const matches = categories.get(JSON.stringify([thread.path, normalizeTitle(header.title)]));
+    const category = matches?.size === 1 ? [...matches][0] : "unknown";
     rows.push({
       repo,
       pr: pr.number,
       severity: header.severity,
-      category: header.category ?? categories.get(normalizeTitle(header.title)) ?? "unknown",
+      category: header.category ?? category,
       fate: classifyFate(pr, thread.isOutdated),
       resolved: thread.isResolved,
       path: thread.path,
@@ -295,7 +311,7 @@ const QUERY = `query($owner: String!, $name: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number state merged updatedAt
-        reviews(last: 50) { nodes { body } }
+        reviews(last: 50) { pageInfo { hasPreviousPage startCursor } nodes { id body } }
         reviewThreads(first: 100) {
           pageInfo { hasNextPage }
           nodes {
@@ -308,14 +324,120 @@ const QUERY = `query($owner: String!, $name: String!, $after: String) {
   }
 }`;
 
-function fetchPage(repo: string, after: string | null): PrPage {
-  const [owner, name] = repo.split("/");
-  const args = ["api", "graphql", "-f", `query=${QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`];
-  if (after) args.push("-F", `after=${after}`);
+const REVIEWS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $before: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $pr) {
+      reviews(last: 50, before: $before) {
+        pageInfo { hasPreviousPage startCursor }
+        nodes { id body }
+      }
+    }
+  }
+}`;
+
+const HISTORY_QUERY = `query($id: ID!, $after: String) {
+  node(id: $id) {
+    ... on PullRequestReview {
+      userContentEdits(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { deletedAt diff }
+      }
+    }
+  }
+}`;
+
+function responseData(raw: unknown): JsonRecord {
+  const response = record(raw, "graphql response");
+  if (Array.isArray(response.errors) && response.errors.length > 0) {
+    throw new Error(`GitHub GraphQL errors: ${JSON.stringify(response.errors)}`);
+  }
+  return record(response.data, "data");
+}
+
+function nextCursor(pageInfo: JsonRecord): string | null {
+  if (!bool(pageInfo, "hasNextPage", "pageInfo")) return null;
+  const cursor = str(pageInfo, "endCursor", "pageInfo");
+  if (!cursor) throw new Error("expected a non-empty next-page cursor");
+  return cursor;
+}
+
+function graphql(repo: string, query: string, fields: readonly string[]): unknown {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  for (const field of fields) args.push("-F", field);
   const res = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
   if (res.error) throw res.error;
   if (res.status !== 0) throw new Error(`gh api graphql for ${repo} failed: ${res.stderr.trim()}`);
-  return parsePrPage(JSON.parse(res.stdout));
+  return JSON.parse(res.stdout);
+}
+
+function fetchPage(repo: string, after: string | null): PrPage {
+  const [owner, name] = repo.split("/");
+  const fields = [`owner=${owner}`, `name=${name}`];
+  if (after) fields.push(`after=${after}`);
+  return parsePrPage(graphql(repo, QUERY, fields));
+}
+
+function historyBodies(repo: string, pr: PrNode): string[] {
+  const bodies: string[] = [];
+  for (const id of pr.stateReviewIds) {
+    let after: string | null = null;
+    const cursors = new Set<string>();
+    let unavailable = 0;
+    for (;;) {
+      const fields = [`id=${id}`];
+      if (after) fields.push(`after=${after}`);
+      const data = responseData(graphql(repo, HISTORY_QUERY, fields));
+      const edits = data.node === null ? null : record(data.node, "review").userContentEdits;
+      if (edits === null) {
+        process.stderr.write(`adoption: ${repo}#${pr.number} review ${id} history unavailable\n`);
+        break;
+      }
+      const conn = record(edits, "userContentEdits");
+      for (const raw of nodes(conn, "userContentEdits")) {
+        if (raw === null) {
+          unavailable++;
+          continue;
+        }
+        const edit = record(raw, "userContentEdit");
+        if (edit.deletedAt === null && typeof edit.diff === "string" && parseState(edit.diff)) {
+          bodies.push(edit.diff);
+        } else {
+          unavailable++;
+        }
+      }
+      after = nextCursor(record(conn.pageInfo, "userContentEdits.pageInfo"));
+      if (after === null) break;
+      if (cursors.has(after)) throw new Error(`repeated history cursor for ${repo}#${pr.number} review ${id}`);
+      cursors.add(after);
+    }
+    if (unavailable > 0) {
+      process.stderr.write(`adoption: ${repo}#${pr.number} review ${id}: ${unavailable} edits unavailable or without valid state\n`);
+    }
+  }
+  return bodies;
+}
+
+function recoverCategories(repo: string, pr: PrNode, since: string | null): AdoptionRow[] {
+  const [owner, name] = repo.split("/");
+  const reviewBodies = [...pr.reviewBodies];
+  const stateReviewIds = [...pr.stateReviewIds];
+  let before = pr.reviewBefore;
+  const cursors = new Set<string>();
+  while (before !== null) {
+    if (cursors.has(before)) throw new Error(`repeated reviews cursor for ${repo}#${pr.number}`);
+    cursors.add(before);
+    const data = responseData(graphql(repo, REVIEWS_QUERY, [
+      `owner=${owner}`, `name=${name}`, `pr=${pr.number}`, `before=${before}`,
+    ]));
+    const pullRequest = record(record(data.repository, "repository").pullRequest, "pullRequest");
+    const previous = parseReviews(pullRequest.reviews);
+    reviewBodies.push(...previous.reviewBodies);
+    stateReviewIds.push(...previous.stateReviewIds);
+    before = previous.reviewBefore;
+  }
+  const complete = { ...pr, reviewBodies, stateReviewIds };
+  reviewBodies.push(...historyBodies(repo, complete));
+  return rowsFromPr(repo, complete, since);
 }
 
 // PRs are paged by last update, newest first. A thread created on or after
@@ -331,7 +453,13 @@ function collect(repo: string, since: string | null): AdoptionRow[] {
       if (pr.threadsTruncated) {
         process.stderr.write(`adoption: ${repo}#${pr.number} has more than 100 review threads; only the first 100 are counted\n`);
       }
-      rows.push(...rowsFromPr(repo, pr, since));
+      const needsState = pr.threads.some((thread) =>
+        (since === null || thread.createdAt >= since) && parseFindingHeader(thread.body)?.category === null);
+      if (needsState) {
+        rows.push(...recoverCategories(repo, pr, since));
+      } else {
+        rows.push(...rowsFromPr(repo, pr, since));
+      }
     }
     if (page.endCursor === null) return rows;
     after = page.endCursor;

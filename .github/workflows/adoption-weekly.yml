@@ -1,0 +1,45 @@
+name: needlefish-adoption-weekly
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: needlefish-adoption-weekly
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.repository == 'frankekn/needlefish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: |
+          corepack enable
+          PNPM_VERSION=$(node -p "require('./package.json').packageManager")
+          corepack prepare "$PNPM_VERSION" --activate
+          pnpm install --frozen-lockfile
+      - name: Collect the previous seven UTC days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm exec tsx eval/tools/adoption-weekly.ts adoption-weekly
+      - name: Preserve report and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: adoption-weekly-${{ github.run_id }}-${{ github.run_attempt }}
+          path: adoption-weekly/
+          if-no-files-found: error
+          retention-days: 90

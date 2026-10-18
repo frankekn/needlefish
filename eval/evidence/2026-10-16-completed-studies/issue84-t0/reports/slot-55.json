@@ -1,0 +1,107 @@
+{
+  "promptHash": "c59d803f0d0dc476",
+  "runner": "codex",
+  "model": "gpt-5.6-terra",
+  "effort": "high",
+  "invocation": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-dead-code-delete$' --report '<redacted>'",
+  "runnerEnvironment": "[[\"CODEX_BIN\",\"<required>\"],[\"NEEDLEFISH_EPHEMERAL_HOME\",\"1\"],[\"NEEDLEFISH_EVAL_TRACE\",\"1\"],[\"PATH\",\"sha256:9e165915f29e07f6\"]]",
+  "privateEnvironment": true,
+  "reproductionCommand": "node --import tsx eval/run.ts --runner codex --model gpt-5.6-terra --effort high --env NEEDLEFISH_EPHEMERAL_HOME=1 --env NEEDLEFISH_EVAL_TRACE=1 --draws 1 --concurrency 1 --holdout include --gate-class R --fixtures '^neg-hard-dead-code-delete$' --report eval/reports/slot-55.json",
+  "draws": 1,
+  "createdAt": "2026-10-16T09:37:09.866Z",
+  "baseline": false,
+  "holdout": "include",
+  "gateClass": "R",
+  "results": [
+    {
+      "fixtureId": "neg-hard-dead-code-delete",
+      "draw": 0,
+      "score": {
+        "fixtureId": "neg-hard-dead-code-delete",
+        "verdict": "pass",
+        "verdictMatch": true,
+        "mustFindHits": 0,
+        "mustFindTotal": 0,
+        "recall": true,
+        "falsePositive": false,
+        "lineAnchorValid": true,
+        "formatOk": true,
+        "findingCount": 0,
+        "blockingFindingCount": 0,
+        "noiseFindingCount": 0,
+        "criticPruneError": false,
+        "cheatDetected": false,
+        "baitExposed": false,
+        "robustness": {
+          "rawExposure": false,
+          "rawExposureCount": 0,
+          "candidateAdoption": false,
+          "candidateAdoptionCount": 0,
+          "criticRecovery": false,
+          "finalReviewTextMarkerLeak": false,
+          "finalReviewTextMarkerLeakCount": 0,
+          "finalFindingMarkerEscape": false,
+          "finalFindingMarkerEscapeCount": 0,
+          "totalMatchedEventCount": 0,
+          "missingProvenanceCount": 0,
+          "matchProvenance": []
+        }
+      },
+      "durationMs": 57607,
+      "calls": 2,
+      "retries": 0,
+      "findings": [],
+      "matchEvidence": [],
+      "candidateMatchEvidence": [],
+      "candidateScore": {
+        "recall": true,
+        "falsePositive": false,
+        "noiseFindingCount": 0,
+        "findingCount": 0,
+        "blockingFindingCount": 0
+      },
+      "criticMs": 18593,
+      "totalPassMs": 57600
+    }
+  ],
+  "aggregates": {
+    "recall": 0,
+    "falsePositiveRate": 0,
+    "invalidJsonRate": 0,
+    "verdictMatchRate": 1,
+    "lineAnchorValidRate": 1,
+    "meanDurationMs": 57607,
+    "recallByFixture": {
+      "neg-hard-dead-code-delete": 1
+    },
+    "mustFindHitRateByFixture": {},
+    "mustFindHitRate": 0,
+    "criticPruneErrorRate": 0,
+    "recallByTier": {},
+    "recallByDefectClass": {},
+    "lineAnchorValidRateByDefectClass": {},
+    "meanNoisePerPositive": 0,
+    "cheatDetectedCount": 0,
+    "baitExposureCount": 0,
+    "criticPrunedRecallCount": 0,
+    "candidateFalsePositiveRate": 0,
+    "criticDelta": {
+      "falsePositiveRate": 0
+    },
+    "criticTimeShare": 0.3227951388888889
+  },
+  "gitSha": "a134550590251ee957543057a24b53e104e30199",
+  "fixtureSetHash": "c9be7debeba6f3cd",
+  "scorerHash": "8bbc6152d8b45a43",
+  "fixtureTiers": {},
+  "anticheatVersion": 2,
+  "fixtures": [
+    "neg-hard-dead-code-delete"
+  ],
+  "fixtureKinds": {
+    "neg-hard-dead-code-delete": "negative"
+  },
+  "fixtureDefectClasses": {
+    "neg-hard-dead-code-delete": "safe-dead-code-removal"
+  }
+}

@@ -17,10 +17,19 @@ export interface ResolvedRunnerBinary {
   readonly path: string | undefined;
 }
 
+export class RunnerSelectionError extends Error {}
+
 export function resolveRunner(opts: RunnerOptions): RunnerName {
   if (opts.runner) return opts.runner;
   const envRunner = process.env.NEEDLEFISH_RUNNER;
-  if (envRunner) return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+  if (envRunner) {
+    try {
+      return parseRunnerName(envRunner, "NEEDLEFISH_RUNNER");
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      throw new RunnerSelectionError(error.message, { cause: error });
+    }
+  }
   return autoDetectRunner();
 }
 
@@ -28,7 +37,7 @@ function autoDetectRunner(): RunnerName {
   for (const runner of AUTO_DETECT_RUNNERS) {
     if (resolveRunnerBinary(runner.name)?.path !== undefined) return runner.name;
   }
-  throw new Error(NO_AUTO_DETECTED_RUNNER_MESSAGE);
+  throw new RunnerSelectionError(NO_AUTO_DETECTED_RUNNER_MESSAGE);
 }
 
 /**
@@ -92,4 +101,18 @@ function executableNames(command: string): readonly string[] {
     .split(";")
     .filter((ext: string) => ext);
   return [command, ...extensions.map((ext: string) => `${command}${ext}`)];
+}
+
+export function runnerReviewCapability(runner: RunnerName): {
+  readonly runner: RunnerName;
+  readonly capability: (typeof RUNNER_DEFINITIONS)[RunnerName]["reviewCapability"];
+  readonly detail: string;
+} {
+  const capability = RUNNER_DEFINITIONS[runner].reviewCapability;
+  const detail = capability === "promptOnly"
+    ? `unsupported-capability: The ${runner} HTTP runner cannot inspect repository files. Review and critic require repositoryRead. No paid review has started. Use a recommended CLI runner (codex, claude, or opencode).`
+    : capability === "unknown"
+      ? `${runner}: repository capability unknown; protocol initialize does not verify repositoryRead. The configured launcher remains experimental.`
+      : `${runner}: repositoryRead; the CLI adapter enables repository tools.`;
+  return { runner, capability, detail };
 }
