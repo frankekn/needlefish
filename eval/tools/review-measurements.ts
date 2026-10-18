@@ -185,6 +185,7 @@ export function collectReviewMeasurements(query: MeasurementQuery, githubRead: G
           const matches = allJobs?.filter((item) => item.name === query.jobName);
           const match = matches?.length === 1 ? matches[0] : null;
           if (!match || !id(match.id) || !id(match.run_id) || String(match.run_id) !== workflow.runId || match.run_attempt !== workflow.runAttempt || jobCheckId(match.check_run_url, query.repository) === null) binding = unknown(allJobs === null ? "jobs_incomplete" : "job_binding_conflict");
+          else if (jobCheckId(match.check_run_url, query.repository) !== check.id) binding = unknown("check_job_association_unverified");
           else { job = match; binding = { status: "producer_attested" }; }
         }
       }

@@ -15,7 +15,7 @@ function receipt(overrides: Partial<MeasurementV1> = {}): MeasurementV1 {
 function fixture(record = receipt(), overrides: { check?: Record<string, unknown>; run?: Record<string, unknown>; job?: Record<string, unknown>; checks?: readonly Record<string, unknown>[]; jobs?: readonly Record<string, unknown>[] } = {}): { read: GithubRead; calls: string[] } {
   const check = { id: 30, name: "Needlefish", head_sha: query.targetHeadSha, status: "completed", conclusion: "success", started_at: "2026-10-16T00:00:00Z", completed_at: "2026-10-16T00:00:20Z", app: { id: 15368, slug: "github-actions" }, external_id: JSON.stringify({ v: 2, prNumber: 7, roundId: record.invocationId, runId: "10" }), output: { text: JSON.stringify(record) }, ...overrides.check };
   const run = { id: 10, run_attempt: 2, workflow_id: 44, path: query.workflowPath, repository: { full_name: query.repository }, head_sha: "b".repeat(40), created_at: "2026-10-16T00:00:00Z", ...overrides.run };
-  const job = { id: 20, run_id: 10, run_attempt: 2, name: "review", status: "completed", created_at: "2026-10-16T00:00:01Z", started_at: "2026-10-16T00:00:11Z", check_run_url: "https://api.github.com/repos/org/repo/check-runs/21", ...overrides.job };
+  const job = { id: 20, run_id: 10, run_attempt: 2, name: "review", status: "completed", created_at: "2026-10-16T00:00:01Z", started_at: "2026-10-16T00:00:11Z", check_run_url: "https://api.github.com/repos/org/repo/check-runs/30", ...overrides.job };
   const calls: string[] = [];
   const read = (endpoint: string): unknown => {
     calls.push(endpoint);
@@ -27,14 +27,14 @@ function fixture(record = receipt(), overrides: { check?: Record<string, unknown
   return { read, calls };
 }
 
-test("collector separates target head, merge ref, job ID and self-created check ID", () => {
+test("collector binds the exact job check and separates target head, merge ref and job ID", () => {
   const record = receipt(); const source = fixture(record); const report = collectReviewMeasurements(query, source.read);
   assert.equal(report.partial, false); assert.deepEqual(report.diagnostics, []);
   assert.equal(report.rows.length, 1);
   const row = report.rows[0];
   assert.equal(row.measurement.targetHeadSha, query.targetHeadSha); assert.equal(row.workflowRefSha, "b".repeat(40));
   assert.equal(row.checkRunId, 30); assert.equal(row.workflowRunId, 10); assert.equal(row.runAttempt, 2);
-  assert.equal(row.checkStatus, "completed"); assert.equal(row.evidenceStatus, "delivered"); assert.equal(row.workflowJobDatabaseId, 20); assert.equal(row.workflowJobCheckRunId, 21);
+  assert.equal(row.checkStatus, "completed"); assert.equal(row.evidenceStatus, "delivered"); assert.equal(row.workflowJobDatabaseId, 20); assert.equal(row.workflowJobCheckRunId, 30);
   assert.deepEqual(row.binding, { status: "producer_attested" });
   assert.deepEqual(row.durations, {
     pipelineMs: { status: "observed", valueMs: 2500, clock: "producer_monotonic" },
@@ -43,6 +43,17 @@ test("collector separates target head, merge ref, job ID and self-created check 
     triggerToTerminalMs: { status: "unknown", reason: "missing_trusted_event_time" }, pushToTerminalMs: { status: "unknown", reason: "missing_trusted_push_time" },
   });
   assert.equal(source.calls.length, 3);
+});
+
+test("a different job's check remains unknown despite a matching run and review job", () => {
+  const report = collectReviewMeasurements(query, fixture(receipt(), { job: {
+    check_run_url: "https://api.github.com/repos/org/repo/check-runs/21",
+  } }).read);
+  assert.equal(report.rows[0].checkRunId, 30);
+  assert.deepEqual(report.rows[0].binding, { status: "unknown", reason: "check_job_association_unverified" });
+  assert.equal(report.rows[0].workflowJobDatabaseId, null);
+  assert.equal(report.rows[0].evidenceStatus, "unknown");
+  assert.deepEqual(report.rows[0].durations.jobQueueMs, { status: "unknown", reason: "unbound_job" });
 });
 
 for (const [name, overrides, reason] of [
@@ -174,7 +185,7 @@ test("collector never exceeds the global API read budget", () => {
     if (endpoint.includes("/commits/")) return { total_count: checks.length, check_runs: checks };
     const match = /\/runs\/(\d+)\/attempts\/2/.exec(endpoint); assert.ok(match);
     const runId = Number(match[1]);
-    if (endpoint.includes("/jobs?")) return { total_count: 1, jobs: [{ id: runId + 1000, run_id: runId, run_attempt: 2, name: "review", status: "completed", check_run_url: `https://api.github.com/repos/org/repo/check-runs/${runId + 2000}` }] };
+    if (endpoint.includes("/jobs?")) return { total_count: 1, jobs: [{ id: runId + 1000, run_id: runId, run_attempt: 2, name: "review", status: "completed", check_run_url: `https://api.github.com/repos/org/repo/check-runs/${runId + 90}` }] };
     return { id: runId, run_attempt: 2, workflow_id: 44, path: query.workflowPath, repository: { full_name: query.repository }, head_sha: "b".repeat(40) };
   });
   assert.equal(calls, 100); assert.equal(report.rows.length, 60); assert.equal(report.partial, true);
@@ -192,12 +203,12 @@ test("a different job whose display name equals the captured key is not selected
   const namedQuery = { ...query, jobKey: "review", jobName: "Review PR" };
   const job = { run_id: 10, run_attempt: 2, status: "completed", created_at: "2026-10-16T00:00:01Z", started_at: "2026-10-16T00:00:11Z" };
   const report = collectReviewMeasurements(namedQuery, fixture(receipt(), { jobs: [
-    { ...job, id: 20, name: "Review PR", check_run_url: "https://api.github.com/repos/org/repo/check-runs/21" },
+    { ...job, id: 20, name: "Review PR", check_run_url: "https://api.github.com/repos/org/repo/check-runs/30" },
     { ...job, id: 999, name: "review", check_run_url: "https://api.github.com/repos/org/repo/check-runs/1000" },
   ] }).read);
   assert.deepEqual(report.rows[0].binding, { status: "producer_attested" });
   assert.equal(report.rows[0].workflowJobDatabaseId, 20);
-  assert.equal(report.rows[0].workflowJobCheckRunId, 21);
+  assert.equal(report.rows[0].workflowJobCheckRunId, 30);
 });
 
 test("captured job key cannot borrow another supplied display-name contract", () => {
