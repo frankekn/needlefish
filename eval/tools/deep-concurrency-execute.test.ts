@@ -20,19 +20,31 @@ function setup(t: { readonly name: string; after: (fn: () => void) => void }, sc
 const fs = require('node:fs');
 const cp = require('node:child_process');
 const path = require('node:path');
-if (process.argv.includes('--version')) { process.stdout.write('offline-native 1.0\\n'); process.exit(0); }
+const scenario=${JSON.stringify(scenario)};
+const campaign=${JSON.stringify(path.join(directory, "campaign"))};
+if (process.argv.includes('--version')) {
+ const trigger=path.join(campaign,'prelaunch-trigger.json');
+ if(scenario.startsWith('prelaunch-')&&fs.existsSync(path.join(campaign,'large-tail-boundary-bug-r1-c3','input.json'))&&!fs.existsSync(trigger)){
+  fs.writeFileSync(trigger,JSON.stringify({scenario,at:new Date().toISOString(),workerInputPresent:true}));
+  if(scenario==='prelaunch-cancel')fs.writeFileSync(path.join(campaign,'CANCEL'),'cancel before launch');
+  else{
+   const snapshot=JSON.parse(fs.readFileSync(path.join(campaign,'large-tail-boundary-bug.snapshot.json'),'utf8'));
+   fs.appendFileSync(path.join(snapshot.bundle.repoPath,snapshot.bundle.changedFiles[0].path),'\\nprelaunch source drift\\n');
+  }
+ }
+ process.stdout.write('offline-native 1.0\\n'); process.exit(0);
+}
+fs.appendFileSync(${JSON.stringify(path.join(directory, "native-invocations.jsonl"))},JSON.stringify({pid:process.pid,args:process.argv.slice(2)})+'\\n');
 let input='';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', x => input += x);
 process.stdin.on('end', () => {
- const scenario=${JSON.stringify(scenario)};
  const repo=JSON.parse(/^The repository to inspect is ("[^\\n]+")./.exec(input)[1]);
  const log=${JSON.stringify(path.join(directory, "events.jsonl"))};
  const emit=x=>fs.appendFileSync(log,JSON.stringify({...x,pid:process.pid})+'\\n');
  const out=process.argv[process.argv.indexOf('--output-last-message')+1];
  const answer=x=>fs.writeFileSync(out,JSON.stringify(x));
  const changed=cp.execFileSync('git',['--no-optional-locks','-C',repo,'diff','--name-only','HEAD~1','HEAD'],{encoding:'utf8'}).trim().split('\\n');
- const campaign=${JSON.stringify(path.join(directory, "campaign"))};
  const activeSlot=fs.readdirSync(campaign).filter(x=>/-r\\d+-c[37]$/.test(x)).find(x=>!fs.existsSync(path.join(campaign,x,'supervisor-terminal.json')));
  if(input.includes('review-MAP pass')){
   emit({kind:'map'});
@@ -76,6 +88,7 @@ process.stdin.on('end', () => {
 			writeFileSync(path.join(target,"control-name.json"), JSON.stringify({name:t.name,scenario}));
 			writeFileSync(path.join(target,"fake-native.cjs"), readFileSync(native));
 			if (existsSync(path.join(directory,"events.jsonl"))) writeFileSync(path.join(target,"fake-events.jsonl"), readFileSync(path.join(directory,"events.jsonl")));
+			if (existsSync(path.join(directory,"native-invocations.jsonl"))) writeFileSync(path.join(target,"native-invocations.jsonl"), readFileSync(path.join(directory,"native-invocations.jsonl")));
 		}
 		for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
 		Object.assign(process.env, previous);
@@ -84,6 +97,28 @@ process.stdin.on('end', () => {
 	return { directory, admission };
 }
 
+
+for (const scenario of ["prelaunch-cancel", "prelaunch-drift"] as const) {
+	test(`${scenario} prevents worker birth after capture with the real loader available`, async t => {
+		const { directory, admission } = setup(t, scenario);
+		const campaign = path.join(directory, "campaign");
+		assert.equal(existsSync(path.resolve("node_modules/tsx/dist/loader.mjs")), true);
+		const report = await executeStudy({ directory: campaign, admission });
+		const workerBirths = report.slots.filter(slot => existsSync(path.join(campaign, slot.slot, "worker-birth.json"))).length;
+		const invocationsFile = path.join(directory, "native-invocations.jsonl");
+		const nativeInvocations = existsSync(invocationsFile) ? readFileSync(invocationsFile, "utf8").trim().split("\n").length : 0;
+		const observed = { stop: report.stop, outcomes: report.slots.map(slot => slot.outcome), workerBirths, nativeInvocations, loaderAvailable: true };
+		writeFileSync(path.join(campaign, "prelaunch-observation.json"), JSON.stringify(observed, null, 2));
+		t.diagnostic(JSON.stringify(observed));
+		assert.equal(existsSync(path.join(campaign, "prelaunch-trigger.json")), true);
+		assert.equal(workerBirths, 0, "known pre-launch failure must prevent worker birth");
+		assert.equal(nativeInvocations, 0, "known pre-launch failure must prevent native invocation");
+		assert.equal(report.stop, scenario === "prelaunch-cancel" ? "CANCELLED" : "METHOD_ERROR");
+		assert.deepEqual(report.slots.map(slot => [slot.outcome, slot.elapsedMs]), Array.from({ length: 24 }, () => ["NOT_STARTED_EARLY_STOP", null]));
+		assert.deepEqual(report.arms.map(arm => [arm.planned, arm.started, arm.nativeAttempted]), [[12,0,0],[12,0,0]]);
+		if (scenario === "prelaunch-drift") assert.match(readFileSync(path.join(campaign, "method-error.json"), "utf8"), /captured source drift/);
+	});
+}
 
 test("executor drives all 24 registered reviews through production API with stable captured Git objects and 3/7 barriers", async t => {
 	const { directory, admission } = setup(t, "complete");
