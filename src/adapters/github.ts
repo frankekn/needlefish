@@ -1432,7 +1432,9 @@ function skipReasonForPr(pr: unknown, prNumber: number, headSha: string): SkipRe
 // check (or only an infra-failure check, or a check still in progress) reruns.
 // The newest completed check decides: any newer completed non-verdict check
 // (failed, terminated, superseded, skipped or legacy neutral) is not covered by
-// an older verdict on the same head.
+// an older verdict on the same head. In-progress checks are ignored, so an
+// orphaned in_progress check (runner killed before termination handling) does
+// not stop the skip; recover it with --recheck (#102).
 //
 // Fail-closed on an unreadable check list: an extra review is the safe error,
 // a silently skipped one is not.

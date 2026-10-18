@@ -4317,3 +4317,15 @@ for (const [conclusion, title] of [
     assert.ok(runnerInvocationCount(fixture) >= 1, "the newest completed check must decide");
   });
 }
+
+test("a newer same-head pass still covers an older terminated check", async (t) => {
+  const fixture = setupFixture(t, { prNumber: 109, rawReview: defaultRawReview() });
+  seedReviews(fixture.reviewsState, [{ id: 1, body: stateReviewBody(fixture.headSha),
+    user: { login: "github-actions[bot]", type: "Bot" } }]);
+  writeFileSync(fixture.checksState, JSON.stringify([
+    { id: 1, status: "completed", conclusion: "failure", output: { title: "Needlefish: review terminated" } },
+    { id: 2, status: "completed", conclusion: "success", output: { title: "Needlefish: pass" } },
+  ]));
+  await runGithub(fixture.repo, 109, { timeoutMs: 1000 });
+  assert.equal(runnerInvocationCount(fixture), 0, "a newer pass must still dedupe");
+});
