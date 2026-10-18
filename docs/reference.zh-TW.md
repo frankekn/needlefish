@@ -78,8 +78,12 @@ GitHub 模式在診斷輸出後附上最終 `needlefish-outcome {json}`。
 exit 1，跳過仍使用 `needlefish-skip`。
 
 Same-head dedupe 必須有可信收據與已完成的 verdict check。收據在交付
-完成後才寫入；失敗、缺少、terminated 或 superseded 的 check 不會讓
-舊收據阻止恢復審查。
+完成後才寫入；缺少的 check、基礎設施故障、terminated 或 superseded 的
+check 不會讓舊收據阻止恢復審查。same-head 跳過時沿用已完成 verdict 的
+exit status。舊版 neutral `needs_human` check 在同一 head 再次觸發時會
+完整重新審查。升級後請手動重跑帶有舊版 neutral `needs_human` check 的
+開啟中 PR。既有 check 不會自動更新，neutral check 仍可能滿足 branch
+protection。
 
 ### 基準偵測
 
