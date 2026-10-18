@@ -148,3 +148,18 @@ It retains its existing token and permissions. If that token cannot read checks
 or Actions metadata, the weekly artifact is partial with unknown measurements.
 The weekly JSON parser preserves the join and checks its original identity,
 receipt and clocks. Metadata records the finding denominator and unknown count.
+
+
+## Phase 2 offline measurement
+
+```bash
+pnpm exec tsx eval/tools/qualify-phase-two.ts \
+  BROAD.json DEEP.json ORACLE.json POLICY.json NEW_MEASUREMENT.json
+```
+
+Supply frozen broad/deep reports, an independent quality oracle and an explicit
+policy containing all ten floors. The command validates inputs and creates a
+new `measurement_only` artifact. Exit 1 preserves a quality-failure artifact;
+parse or admission errors create no artifact. It never overwrites inputs or
+runs models. It grants no release qualification, blind-oracle proof or policy
+approval. See the [measurement contract](../contracts/issue123-phase-two-measurement.md).

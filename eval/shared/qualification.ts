@@ -123,7 +123,7 @@ export type QualityRate =
   | { readonly status: "measured"; readonly value: number; readonly numerator: number; readonly denominator: number }
   | { readonly status: "unknown"; readonly reason: string };
 
-const PHASE_TWO_FLOORS = [
+export const PHASE_TWO_FLOORS = [
   "minNoisePerPositive", "minTierOneAggregate", "minTierOnePerFixture",
   "minTierOneFamilyRecall", "minTierOneFamilyLocalization", "minActionablePrecision",
   "maxNegativeFalsePositiveDrawRate", "minSeverityCalibration", "minSeverityLabelCoverage", "minObservedPassK",

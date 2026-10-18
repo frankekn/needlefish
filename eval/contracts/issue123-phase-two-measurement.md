@@ -19,7 +19,8 @@ foreign IDs, and fractional, negative, or out-of-range draw indices reject the
 input. Array length alone cannot establish completeness. Invalid or compromised
 draws prevent eligibility. A complete report can still fail quality gates.
 
-This entry point expects typed reports after the existing report parser.
+The library entry point expects typed reports. The offline CLI described below
+validates unknown JSON with `phase-two-input.ts` before calling it.
 It does not replace publication checks for lane identity, hashes, operational
 failures, provenance, or anti-cheat attestations. The campaign must predeclare
 whether broad draws count toward deep draws. This function does not infer that
@@ -184,10 +185,55 @@ severity gold, actionable adjudication, and the complete campaign protocol.
 Existing sealed fixtures and reports remain unchanged. Neither this contract
 nor synthetic tests complete issue #123 or replace the full Class R campaign.
 
-## Integration still required
+## Offline CLI
 
-This PR exposes a library entry point only. No current CLI or campaign script
-loads oracle JSON or calls this fourth-argument path for a real campaign. That
-wiring, frozen input admission, and retained external evidence remain follow-up
-work under issue #123. The caller must use the existing report parser before
-this evaluator. Synthetic library tests do not complete the campaign integration.
+```bash
+pnpm exec tsx eval/tools/qualify-phase-two.ts \
+  BROAD.json DEEP.json ORACLE.json POLICY.json NEW_MEASUREMENT.json
+```
+
+The five paths are mandatory. The tool reads regular UTF-8 JSON files with a
+32-MiB cap per input and creates the output with `wx`. It never overwrites an
+existing file, including any input. It does not execute models or access the
+network. The production entry point loads its own complete fixture catalog;
+there is no command-line catalog override. Oracle gold stays evaluator-only.
+
+`phase-two-input.ts` validates the complete report fields and every field used
+by admission, including draw scores, findings, match evidence, robustness,
+aggregates, fixture metadata and public runner attestations. It returns the
+original parsed objects without rebuilding or sorting them. Unknown additive
+metadata remains part of the oracle identity but carries no validation claim.
+The policy parser requires all ten floor names, rejects unknown keys and
+invalid values, and supplies no defaults. A `null` floor remains unset.
+
+Admission checks exact fixture/draw coverage, holdout inclusion, gate class R,
+current prompt/scorer/anticheat hashes, fixture classifications, stored scores,
+anti-cheat provenance and aggregate consistency. Broad and deep reports use
+their own subset fixture hashes; those hashes need not match each other. Their
+source SHA and lane identities must match. Private, unresolved or unguarded
+runner attestations reject the input. A docs-only zero-call exemption applies
+only to the existing canonical docs fast path. Infrastructure failures reject
+admission. The existing runner deadline timeout classification remains intact;
+invalid output still prevents measurement eligibility.
+
+The new artifact has `status: "measurement_only"`. It contains the unchanged
+Phase 2 evaluator result, raw SHA-256 for each input, parsed-value oracle
+identity, policy identity, declared report source SHA and a digest inventory of
+the evaluator implementation files. The digest inventory identifies those
+files, not a full Git tree or authenticated campaign source. The artifact is
+not a release `QualificationProof`, public leaderboard admission or merge
+permission. A self-declared matching source SHA does not authenticate a report.
+
+Exit 0 means the supplied measurements pass the supplied explicit floors.
+Exit 1 with a measurement artifact means they do not qualify, including unknown
+required quality metrics. Parse, identity and admission errors exit 1 without creating a measurement
+artifact. Output errors also exit 1; existing paths remain untouched. No threshold, provider or model is
+selected by this command. Synthetic CLI controls do not complete issue #123.
+
+## External admission still required
+
+Frozen campaign admission, authentic source evidence, owner-approved floors,
+independent blind oracle authorship, and immutable gold evidence from before
+the first model call remain external requirements. The CLI cannot prove those
+claims. A real campaign through this new Class R source has not run. The
+running frozen 4f95 campaign does not qualify this source.
