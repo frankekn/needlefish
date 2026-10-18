@@ -163,3 +163,20 @@ new `measurement_only` artifact. Exit 1 preserves a quality-failure artifact;
 parse or admission errors create no artifact. It never overwrites inputs or
 runs models. It grants no release qualification, blind-oracle proof or policy
 approval. See the [measurement contract](../contracts/issue123-phase-two-measurement.md).
+
+The scorer-owned predicate extraction changes scorer identity from
+`8bbc6152d8b45a43` (4f95) to `f967f7cd2f043b06`, despite unchanged scoring rules.
+Old published lanes and the baseline become stale under this source. Preserve
+original reports; do not replace their hashes. No accepted offline rescore CLI
+exists. The [migration plan](../contracts/issue123-phase-two-measurement.md#scorer-identity-migration-and-requalification)
+requires admitted retained inputs for any new rescore artifact, or fresh immutable
+campaigns when historical evidence is unavailable. A new full Class R gate and
+requalification of every actual published lane and baseline remain required
+before publication as tested. The failed partial 4f95 run cannot qualify this
+branch. No migration campaigns ran for this change.
+
+Effective model/effort validation also affects resume, public site admission,
+weekly comparison, and runtime proof matching. Sentinel identities fail after
+explicit/environment resolution. Pi and Grok use their unchanged package model
+defaults; unknown Codex CLI defaults remain unknown. A valid default identity
+does not itself grant a qualification proof.

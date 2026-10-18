@@ -426,3 +426,22 @@ test("Actual CLI rejects malformed, unbounded and nonregular input without overw
     assert.equal(existsSync(data.output), false);
   } finally { rmSync(data.directory, { recursive: true, force: true }); }
 });
+
+test("Grok null-model high-effort reports pass real Phase 2 admission and offline CLI", () => {
+  const data = stored();
+  try {
+    for (const report of [data.input.broad, data.input.deep]) {
+      Reflect.set(report, "runner", "grok");
+      Reflect.set(report, "model", null);
+    }
+    Reflect.set(data.input.oracle, "identity", phaseTwoOracleIdentity(data.input, specs));
+    admitPhaseTwoReports(data.input, specs, policy);
+    assert.equal(evaluatePhaseTwoQualification(data.input, specs, policy, data.input.oracle).eligible, true);
+    [data.input.broad, data.input.deep, data.input.oracle].forEach((value, index) => writeFileSync(data.paths[index], JSON.stringify(value)));
+    const child = cli(data.directory, [...data.paths, data.output], true);
+    assert.equal(child.status, 0, child.stderr);
+    const measurement = JSON.parse(readFileSync(data.output, "utf8"));
+    assert.equal(measurement.result.eligible, true);
+    assert.deepEqual(measurement.result.reasons, []);
+  } finally { rmSync(data.directory, { recursive: true, force: true }); }
+});

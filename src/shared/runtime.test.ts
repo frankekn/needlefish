@@ -17,6 +17,7 @@ import { renderMarkdown } from "./render";
 import { parseReviewResult } from "./review-result";
 import { parseReviewRuntime, reviewRuntime, sourceShaFromRelease } from "./runtime";
 import { parsePositiveInteger } from "./runner";
+import { hasResolvedModelIdentity } from "./runner-attestation";
 import { serializeReviewResult, type Bundle } from "./schema";
 
 function environment(t: TestContext, values: Readonly<Record<string, string | undefined>>): void {
@@ -51,6 +52,32 @@ test("runtime records effective defaults and never qualifies incomplete identiti
   assert.throws(() => resolveRunnerConfig({ runner: "opencode", model: "provider/model#low", reasoningEffort: "high" }), /OpenCode reviews are temporarily disabled/);
   assert.throws(() => parseReviewRuntime({ ...acp, qualification: { matchStatus: "tested" } }), /qualification/);
   assert.deepEqual(parseReviewRuntime({ ...acp, runnerVersion: { status: "operator_attested", value: "1.2.3" } }).runnerVersion, { status: "operator_attested", value: "1.2.3" });
+});
+
+test("Grok config and attestation agree on default, environment and explicit model precedence", (t) => {
+  environment(t, { NEEDLEFISH_MODEL: undefined, GROK_MODEL: undefined });
+  const cases = [
+    { top: undefined, runner: undefined, explicit: undefined, expected: "grok-build" },
+    { top: undefined, runner: "runner-model", explicit: undefined, expected: "runner-model" },
+    { top: "top-model", runner: "runner-model", explicit: undefined, expected: "top-model" },
+    { top: "top-model", runner: "runner-model", explicit: "explicit-model", expected: "explicit-model" },
+  ];
+  for (const { top, runner, explicit, expected } of cases) {
+    if (top === undefined) delete process.env.NEEDLEFISH_MODEL;
+    else process.env.NEEDLEFISH_MODEL = top;
+    if (runner === undefined) delete process.env.GROK_MODEL;
+    else process.env.GROK_MODEL = runner;
+    const config = resolveRunnerConfig({ runner: "grok", model: explicit, reasoningEffort: "high" });
+    assert.equal(config.model, expected);
+    assert.equal(config.effectiveEffort, "high");
+    assert.equal(hasResolvedModelIdentity({
+      runner: "grok", model: explicit ?? null, effort: "high",
+      runnerEnvironment: JSON.stringify([
+        ...(top === undefined ? [] : [["NEEDLEFISH_MODEL", top]]),
+        ...(runner === undefined ? [] : [["GROK_MODEL", runner]]),
+      ]),
+    }), true);
+  }
 });
 
 test("effective config preserves bound auth methods and the frozen parsed ACP launch", (t) => {
